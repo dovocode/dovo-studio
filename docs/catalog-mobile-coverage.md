@@ -53,6 +53,8 @@ normal Expo identity. Do not install it over a personal production app without a
 - No production `App`, `RuntimeProvider`, `MobileAccountProvider`, push registration or live
   activity provider is mounted. The account context has no session/directory and sign-in is
   disabled. Pairing/runtime commands use the rejecting catalog runtime.
+- Browser release checks return a synthetic stable release through a screen-specific adapter; they
+  do not query GitHub. Production release discovery is unchanged.
 - Browser preferences/storage are catalog adapters. Native preferences/drafts belong to the
   separately installed catalog app, never a production account or a paired computer.
 - Runtime example addresses use `catalog.invalid`. They are illustrative HTTP LAN/VPN values, not a

@@ -60,6 +60,11 @@ const config: StorybookConfig = {
         },
         resolveId(source, importer) {
           if (
+            source === '@dovo/protocol' &&
+            importer?.endsWith('/apps/mobile/src/screens/app-updates.tsx')
+          )
+            return catalogBoundary('mobile-screen-releases.ts')
+          if (
             importer &&
             source.startsWith('.') &&
             resolve(dirname(importer), source).endsWith(
