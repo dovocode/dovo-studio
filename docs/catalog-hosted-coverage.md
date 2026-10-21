@@ -51,8 +51,9 @@ sitemap are not UI pages.
 - Theme review exposes the current production website theme behavior; the catalog does not add a
   production theme switch.
 
-Run `node scripts/build-hosted-catalog.mjs` to regenerate ignored bundles and public assets, then
-the normal design-system build. Generated bundles never contain credentials.
+The design-system dev, build and typecheck commands run `prepare:catalog` first. This regenerates
+hosted bundles, website assets and the mobile terminal/Mermaid viewers even when dependency install
+scripts are disabled. Generated bundles never contain credentials.
 
 ## Findings exposed by full pages
 

@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node ../../scripts/build-hosted-catalog.mjs && node ../../scripts/build-mcp-apps.mjs && storybook dev -p 6006 --no-open --disable-telemetry",
-    "build": "node ../../scripts/build-hosted-catalog.mjs && node ../../scripts/build-mcp-apps.mjs && storybook build --disable-telemetry",
-    "typecheck": "node ../../scripts/build-hosted-catalog.mjs && tsc --noEmit"
+    "dev": "pnpm prepare:catalog && storybook dev -p 6006 --no-open --disable-telemetry",
+    "build": "pnpm prepare:catalog && storybook build --disable-telemetry",
+    "typecheck": "pnpm prepare:catalog && tsc --noEmit",
+    "prepare:catalog": "node ../../scripts/build-hosted-catalog.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs && node ../../scripts/build-mcp-apps.mjs"
   },
   "dependencies": {
     "@dovo/design": "workspace:*",
