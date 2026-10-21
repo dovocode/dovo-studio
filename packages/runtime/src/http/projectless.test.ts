@@ -118,6 +118,93 @@ it('rejects empty Dovo project names and managed folders inside a Git checkout',
   expect(nested.status).toBe(409)
   expect(f.runtime.services.store.get().repositories).toEqual([])
 })
+it('deletes a project history while preserving repository and checkout files, and rejects General or active work', async () => {
+  const f = await setup()
+  const repositoryPath = join(f.root, 'deletable-project')
+  await mkdir(repositoryPath)
+  await f.runtime.services.git.command(repositoryPath, ['init', '-q'])
+  await f.runtime.services.git.command(repositoryPath, ['config', 'user.email', 'fixture@test'])
+  await f.runtime.services.git.command(repositoryPath, ['config', 'user.name', 'Fixture'])
+  await writeFile(join(repositoryPath, 'tracked.txt'), 'tracked')
+  await f.runtime.services.git.command(repositoryPath, ['add', 'tracked.txt'])
+  await f.runtime.services.git.command(repositoryPath, ['commit', '-qm', 'fixture'])
+  const added = await f.request('/api/scm/repositories/add', {
+    source: 'local',
+    name: 'Deletable project',
+    path: repositoryPath,
+  })
+  expect(added.status).toBe(200)
+  const repository = decode(repositorySchema, await added.json())
+  const projectTask = {
+    ...f.draft('project-thread', repository.id),
+    execution: 'worktree' as const,
+    messages: [{ id: 'project-thread', role: 'user' as const, text: 'fixture prompt' }],
+  }
+  const unrelatedTask = f.draft('unrelated-thread')
+  await Promise.all([f.create(projectTask), f.create(unrelatedTask)])
+  const checkout = await f.runtime.services.checkouts.directory(projectTask.id)
+  f.runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: workspace.tasks.map((task) =>
+      task.id === unrelatedTask.id
+        ? {
+            ...task,
+            linkedCheckouts: [
+              {
+                id: 'deleted-project-link',
+                repositoryId: repository.id,
+                execution: 'main' as const,
+                access: 'read-only' as const,
+              },
+            ],
+          }
+        : task,
+    ),
+  }))
+  f.runtime.services.db
+    .prepare('INSERT INTO artifact_feeds VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('fixture-publication', projectTask.id, 'fixture-artifact', 1, 'owner', null, 0, '')
+  await writeFile(join(repositoryPath, 'keep.txt'), 'repository stays')
+  await writeFile(join(checkout, 'keep.txt'), 'checkout stays')
+  expect(checkout).not.toBe(repositoryPath)
+  f.runtime.services.preferences.save({ removeWorktreesOnThreadDelete: true })
+  const general = await f.request('/api/scm/repositories/delete', {
+    repositoryId: SCRATCH_PROJECT_ID,
+  })
+  expect(general.status).toBe(409)
+  f.runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: workspace.tasks.map((task) =>
+      task.id === projectTask.id ? { ...task, status: 'running' as const } : task,
+    ),
+  }))
+  const active = await f.request('/api/scm/repositories/delete', { repositoryId: repository.id })
+  expect(active.status).toBe(409)
+  f.runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: workspace.tasks.map((task) =>
+      task.id === projectTask.id ? { ...task, status: 'draft' as const } : task,
+    ),
+  }))
+  const response = await f.request('/api/scm/repositories/delete', {
+    repositoryId: repository.id,
+  })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ ok: true })
+  expect(
+    f.runtime.services.store.get().repositories.some((item) => item.id === repository.id),
+  ).toBe(false)
+  const remainingTask = f.runtime.services.store.get().tasks[0]!
+  expect(remainingTask.id).toBe(unrelatedTask.id)
+  expect(remainingTask.linkedCheckouts).toEqual([])
+  expect(
+    f.runtime.services.db
+      .prepare('SELECT publication FROM artifact_feeds WHERE publication=?')
+      .get('fixture-publication'),
+  ).toBeUndefined()
+  expect(await readFile(join(repositoryPath, 'keep.txt'), 'utf8')).toBe('repository stays')
+  expect(await readFile(join(checkout, 'keep.txt'), 'utf8')).toBe('checkout stays')
+})
 it('offers No project on an empty server and isolates files per thread, preserving them across restarts and deletion', async () => {
   const f = await setup()
   const snapshot = decode(

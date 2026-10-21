@@ -1187,6 +1187,7 @@ export function taskLifecycle(
   id: string,
   action: 'archive' | 'restore' | 'delete',
   removeWorktrees?: boolean,
+  deletionReservation?: symbol,
 ) {
   return routeProgram(
     Effect.gen(function* () {
@@ -1198,7 +1199,7 @@ export function taskLifecycle(
       const ids = taskFamilyIds(s.store.get().tasks, id)
       const requireIdle = () => {
         for (const taskId of ids) {
-          s.tasks.requireIdle(taskId)
+          s.tasks.requireIdle(taskId, deletionReservation)
           s.jobs.requireTaskIdle(taskId)
         }
         if (

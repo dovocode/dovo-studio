@@ -22,6 +22,7 @@ import { CreationTarget } from '../runtime/connection/creation-target'
 import { clientScopeKey } from '@dovo/client-runtime'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { IconButton } from '../ui/controls/icon-button'
+import { DeleteProjectAction } from '../scm/connections/project-deletion'
 export default function RepositoriesScreen() {
   const { styles } = useTheme()
 
@@ -66,7 +67,10 @@ export default function RepositoriesScreen() {
               {entry.connected ? '' : ' · Offline'}
             </Text>
             {entry.snapshot?.workspace.repositories.map((repository) => (
-              <RepositoryCheckouts key={repository.id} repository={repository} />
+              <View key={repository.id} style={{ gap: 8 }}>
+                <RepositoryCheckouts repository={repository} />
+                {repository.kind !== 'scratch' && <DeleteProjectAction repository={repository} />}
+              </View>
             ))}
           </RuntimeScope>
         ))}
@@ -74,6 +78,7 @@ export default function RepositoriesScreen() {
     </View>
   )
 }
+
 export function AddProject({
   onClose,
   initialSource = 'dovo',

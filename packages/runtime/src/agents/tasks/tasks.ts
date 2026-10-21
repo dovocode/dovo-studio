@@ -151,6 +151,7 @@ export class Tasks {
     })
   }
   private mcpApps?: McpApps
+  private deletionReservations = new Map<string, symbol>()
   setMcpApps(apps: McpApps) {
     this.mcpApps = apps
     this.runner.setMcpApps(apps)
@@ -158,7 +159,23 @@ export class Tasks {
   setTaskTools(port: number, token: string, host: string) {
     this.runner.setTaskTools(port, token, host)
   }
-  requireIdle(id: string) {
+  reserveDeletion(ids: readonly string[]) {
+    const reservation = Symbol('task deletion')
+    for (const id of ids) {
+      if (this.deletionReservations.has(id))
+        throw new HttpError(409, 'This thread is already being deleted.')
+    }
+    for (const id of ids) this.deletionReservations.set(id, reservation)
+    return reservation
+  }
+  releaseDeletion(ids: readonly string[], reservation: symbol) {
+    for (const id of ids)
+      if (this.deletionReservations.get(id) === reservation) this.deletionReservations.delete(id)
+  }
+  requireIdle(id: string, reservation?: symbol) {
+    const activeDeletion = this.deletionReservations.get(id)
+    if (activeDeletion && activeDeletion !== reservation)
+      throw new HttpError(409, 'This thread is being deleted.')
     const task = this.store.taskSummary(id)
     if (task.status === 'running' || this.running.has(id))
       throw new HttpError(409, 'Stop the active turn before archiving or deleting this thread.')

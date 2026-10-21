@@ -68,11 +68,13 @@ export function TaskHeader({
   onProjectPanel,
   onCreate,
   onDeselect,
+  onProjectDeleted,
 }: {
   projectPanelOpen: boolean
   onProjectPanel: () => void
   onCreate: () => void
   onDeselect: () => void
+  onProjectDeleted?: () => void
   task: Task
   parentThread?: StudioThreadReference
   windowRightEdge?: boolean
@@ -167,6 +169,7 @@ export function TaskHeader({
       onCreate={onCreate}
       onFilter={onCreate}
       onDeselect={onDeselect}
+      onProjectDeleted={onProjectDeleted}
       onError={setMenuError}
     >
       <button

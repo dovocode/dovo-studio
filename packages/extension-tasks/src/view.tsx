@@ -861,6 +861,7 @@ export default function TasksView({ entityId, threadParent }: StudioViewProps) {
               void startTask(taskCollectionKey(activeRuntimeId, task.repositoryId), true)
             }
             onDeselect={deselectTask}
+            onProjectDeleted={() => setProjectId('scratch')}
             surface={surface}
             onSurface={(next) => {
               if (next === 'terminal') setTerminalFocus('')

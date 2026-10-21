@@ -37,6 +37,7 @@ export class Jobs {
   revision = 0
   private runs = new Map<string, StoredRun>()
   private active = new Map<string, Fiber.Fiber<void, never>>()
+  private deletionReservations = new Map<string, symbol>()
   private readonly executor = ManagedRuntime.make(Layer.empty)
   private stopping = false
   private scheduler?: ReturnType<typeof startPolling>
@@ -180,7 +181,23 @@ export class Jobs {
     this.revision++
     return run
   }
-  private requireIdle(automationId: string, except?: string) {
+  reserveDeletion(ids: readonly string[]) {
+    const reservation = Symbol('automation deletion')
+    for (const id of ids) {
+      if (this.deletionReservations.has(id))
+        throw new HttpError(409, 'This automation is already being deleted.')
+    }
+    for (const id of ids) this.deletionReservations.set(id, reservation)
+    return reservation
+  }
+  releaseDeletion(ids: readonly string[], reservation: symbol) {
+    for (const id of ids)
+      if (this.deletionReservations.get(id) === reservation) this.deletionReservations.delete(id)
+  }
+  requireIdle(automationId: string, except?: string, reservation?: symbol) {
+    const activeDeletion = this.deletionReservations.get(automationId)
+    if (activeDeletion && activeDeletion !== reservation)
+      throw new HttpError(409, 'This automation is being deleted.')
     if (this.stopping) throw new HttpError(503, 'Runtime is shutting down')
     if (
       [...this.runs.values()].some(

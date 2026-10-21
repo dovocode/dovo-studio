@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "test:project-transfer:browser": "node scripts/check-project-transfer-browser.mjs",
+    "test:project-deletion:browser": "node scripts/check-project-deletion-browser.mjs && node scripts/check-mobile-project-deletion-browser.mjs",
     "dev": "pnpm --filter @dovo/client-runtime build && vp run --parallel dev",
     "dev:api": "pnpm --filter @dovo/runtime... -r build && vp -C apps/api dev",
     "dev:desktop": "pnpm --filter @dovo/api... -r build && vp -C apps/desktop dev",
@@ -155,8 +156,8 @@
     "test:permission-policy:browser": "node scripts/check-permission-policy-browser.mjs",
     "test:mobile-thread-files:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-mobile-thread-files-browser.mjs",
     "test:custom-turn:browser": "node scripts/check-custom-turn-browser.mjs",
-    "design:dev": "pnpm --filter @dovo/design build && pnpm --filter @dovo/design-system dev",
-    "design:build": "pnpm --filter @dovo/design build && pnpm --filter @dovo/design-system build",
+    "design:dev": "pnpm --filter @dovo/design-system^... -r build && pnpm --filter @dovo/design-system dev",
+    "design:build": "pnpm --filter @dovo/design-system... -r build",
     "test:design-system:browser": "pnpm design:build && node scripts/check-design-system-browser.mjs"
   },
   "devDependencies": {

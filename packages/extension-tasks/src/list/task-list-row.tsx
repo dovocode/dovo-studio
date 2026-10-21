@@ -25,6 +25,7 @@ export type TaskListRowActions = {
   subagent: (key: string, taskId: string) => void
   deselect: () => void
   error: (message: string) => void
+  projectDeleted: () => void
   clickCapture: (key: string, event: MouseEvent<HTMLDivElement>) => void
   contextMenuCapture: (key: string) => void
 }
@@ -214,6 +215,7 @@ function TaskListRowView({
           onSplit={canSplit ? split : undefined}
           onTemplate={canTemplate ? template : undefined}
           onDeselect={actions.deselect}
+          onProjectDeleted={actions.projectDeleted}
           onError={actions.error}
           onActiveChange={setActive}
         >

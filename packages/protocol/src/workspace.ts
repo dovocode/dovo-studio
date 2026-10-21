@@ -258,6 +258,10 @@ export const repositorySchema = mutableStruct({
   path: minValue(Schema.String, 1),
   branch: Schema.String,
 })
+export const deleteProjectSchema = strictStruct({
+  repositoryId: maxValue(minValue(Schema.String, 1), 200),
+})
+export type DeleteProject = Schema.Schema.Type<typeof deleteProjectSchema>
 const reviewVersionSchema = Schema.Number.pipe(
   Schema.check(Schema.isInt()),
   Schema.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),

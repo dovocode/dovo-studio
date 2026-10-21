@@ -143,6 +143,14 @@ export class ThreadWatch {
       .filter((state) => state.parentId === parentId)
       .map((state) => this.publicSummary(state))
   }
+  forgetTasks(taskIds: readonly string[]) {
+    const ids = new Set(taskIds)
+    for (const state of this.states()) {
+      if (!ids.has(state.parentId)) continue
+      this.db.prepare('DELETE FROM task_thread_watches WHERE id=?').run(key(state))
+      revisions.set(this.db, (revisions.get(this.db) ?? 0) + 1)
+    }
+  }
   watch(
     parentId: string,
     runtimeId: string,

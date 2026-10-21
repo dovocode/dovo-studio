@@ -6,6 +6,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const importer = root + 'apps/mobile/src/screens/repositories.tsx'
 const controls = `
 export const View=({children})=><div>{children}</div>;export const ScrollView=View;
+export const Alert={alert:()=>{}};
 export const Text=({children})=><span>{children}</span>;
 export const Action=({label,disabled,onPress})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Field=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
@@ -17,6 +18,7 @@ const mocks = {
   '../runtime/state/application-state': "export {useState as useApplicationState} from 'react';",
   '../runtime/connection/provider':
     'export const useRuntime=()=>window.runtime;export const RuntimeScope=({children})=>children;',
+  '../scm/connections/project-deletion': 'export const DeleteProjectAction=()=>null;',
   '../shell/navigation': 'export const useNavigation=()=>({});',
   '../scm/connections/repository-checkouts': 'export const RepositoryCheckouts=()=>null;',
   '../scm/connections/directory-picker': `export const DirectoryPicker=({onSelect})=><>{['/Users/test/Code/first-project','C:\\\\Code\\\\second-project\\\\','/Users/test/Code/custom-project','/Users/test/CloneParent'].map(path=><button key={path} onClick={()=>onSelect(path)}>{path}</button>)}</>;`,

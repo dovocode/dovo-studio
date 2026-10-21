@@ -36,7 +36,11 @@ class FeedAccessError extends HttpError {}
 export class ArtifactFeeds {
   private previews = new Map<string, Preview>()
   private previewReads = 0
-  private running = new Map<string, { controller: AbortController; promise: Promise<void> }>()
+  private running = new Map<
+    string,
+    { taskId: string; controller: AbortController; promise: Promise<void> }
+  >()
+  private deletingTasks = new Set<string>()
   private timer?: ReturnType<typeof setInterval>
   private closed = false
   constructor(
@@ -53,6 +57,8 @@ export class ArtifactFeeds {
   private authorize(ref: Reference, device: string) {
     if (this.closed || !this.enabled())
       throw new FeedAccessError(403, 'Artifact data feeds are disabled')
+    if (this.deletingTasks.has(ref.taskId))
+      throw new FeedAccessError(409, 'The publisher project is being deleted')
     if (
       device !== 'owner' &&
       !this.devices.list().some((value) => value.id === device && !value.revokedAt)
@@ -181,6 +187,8 @@ export class ArtifactFeeds {
       ...preview.config,
       credential: decode(artifactFeedCredentialSchema, credential),
     }
+    if (this.deletingTasks.has(config.taskId))
+      throw new FeedAccessError(409, 'The publisher project is being deleted')
     const capacity = () => {
       if (
         decode(
@@ -261,17 +269,21 @@ export class ArtifactFeeds {
     if (this.closed) return
     const rows = this.db
       .prepare(
-        'SELECT publication,config FROM artifact_feeds WHERE config IS NOT NULL AND next<=? ORDER BY next LIMIT 16',
+        'SELECT publication,task,config FROM artifact_feeds WHERE config IS NOT NULL AND next<=? ORDER BY next LIMIT 16',
       )
       .all(Date.now())
       .map((row) =>
-        decode(mutableStruct({ publication: Schema.String, config: Schema.String }), row),
+        decode(
+          mutableStruct({ publication: Schema.String, task: Schema.String, config: Schema.String }),
+          row,
+        ),
       )
     for (const row of rows) {
       if (this.running.size >= 2) break
       if (
         typeof row.publication !== 'string' ||
         typeof row.config !== 'string' ||
+        this.deletingTasks.has(row.task) ||
         this.running.has(row.publication)
       )
         continue
@@ -281,8 +293,25 @@ export class ArtifactFeeds {
       const promise = this.refresh(id, input, controller.signal).finally(() =>
         this.running.delete(id),
       )
-      this.running.set(id, { controller, promise })
+      this.running.set(id, { taskId: row.task, controller, promise })
     }
+  }
+  /** Stops local writers for deleted task histories; hosted publication copies remain independent. */
+  async stopTasks(taskIds: readonly string[]) {
+    const ids = new Set(taskIds)
+    if (!ids.size) return
+    for (const id of ids) this.deletingTasks.add(id)
+    const running = [...this.running.values()].filter((entry) => ids.has(entry.taskId))
+    for (const entry of running) entry.controller.abort()
+    await Promise.allSettled(running.map((entry) => entry.promise))
+    this.previews.forEach((preview, id) => {
+      if (ids.has(preview.config.taskId)) this.previews.delete(id)
+    })
+    const placeholders = [...ids].map(() => '?').join(',')
+    this.db.prepare(`DELETE FROM artifact_feeds WHERE task IN (${placeholders})`).run(...ids)
+  }
+  releaseTasks(taskIds: readonly string[]) {
+    for (const id of taskIds) this.deletingTasks.delete(id)
   }
   private async refresh(id: string, input: string, signal: AbortSignal) {
     let seconds = 60

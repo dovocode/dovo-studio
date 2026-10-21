@@ -31,6 +31,7 @@ import { RepositoryCheckouts } from './repository-checkouts'
 import { ProjectForgeBinding } from './forge-repository'
 import { ProjectIconSettings } from './project-icon-settings'
 import { ProjectTransferSettings } from './project-transfer'
+import { ProjectDeletion } from './project-deletion'
 export function ProjectsMenu({
   value,
   onChange,
@@ -405,7 +406,22 @@ export function ProjectsMenu({
             <DialogTitle>{managed?.name}</DialogTitle>
             <DialogDescription className="break-all">{managed?.path}</DialogDescription>
           </DialogHeader>
-          {managed && <ProjectSettings repository={managed} />}
+          {managed && (
+            <ProjectSettings
+              repository={managed}
+              onDeleted={(refreshError) => {
+                if (refreshError)
+                  setError(
+                    `Project deleted, but the project list could not refresh: ${refreshError}`,
+                  )
+                const next =
+                  workspace.repositories.find((entry) => entry.kind === 'scratch') ??
+                  workspace.repositories.find((entry) => entry.id !== managed.id)
+                onChange(next?.id ?? '')
+                setManaging(null)
+              }}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </>
@@ -415,8 +431,12 @@ export function ProjectsMenu({
 /** The same project controls are available from the project picker and a thread. */
 export function ProjectSettings({
   repository,
+  onDeleted,
+  allowDelete = true,
 }: {
   repository: import('@dovo/protocol').Repository
+  onDeleted?: (refreshError?: string) => void
+  allowDelete?: boolean
 }) {
   const { activeRuntimeId, connection } = useWorkspace()
   return (
@@ -439,6 +459,7 @@ export function ProjectSettings({
           repo={repository}
         />
       )}
+      {allowDelete && <ProjectDeletion repository={repository} onDeleted={onDeleted} />}
     </>
   )
 }

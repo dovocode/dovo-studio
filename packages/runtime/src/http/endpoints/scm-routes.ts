@@ -42,6 +42,7 @@ import {
 } from '../../scm/forges/providers/jira-sources.js'
 import { listBranchesEffect, switchBranchEffect } from '../../scm/git/branches.js'
 import { addRepositoryEffect } from '../../scm/repositories/repositories.js'
+import { deleteProjectEffect } from '../../scm/repositories/project-deletion.js'
 import { listDirectories } from '../../scm/repositories/directories.js'
 import { listGithubRepositories } from '../../scm/forges/providers/github-repositories.js'
 import { createPullTaskEffect } from '../../scm/pulls/pull-task.js'
@@ -72,6 +73,9 @@ export function scmRoute(request: IncomingMessage, path: string) {
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/scm/repositories/delete') {
+        return yield* deleteProjectEffect(s, yield* serviceResult(body(request)))
+      }
       if (method === 'POST' && path === '/api/scm/pulls/link-thread') {
         const input = decode(
           mutableStruct({

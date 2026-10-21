@@ -77,6 +77,7 @@ export function TaskContextMenu({
   onSplit,
   onTemplate,
   onDeselect,
+  onProjectDeleted,
   onError,
   onActiveChange,
   selectionMenu,
@@ -97,6 +98,7 @@ export function TaskContextMenu({
   /** Starts a new task in this task's project from one of its templates. */
   onTemplate?: (templateId: string) => void
   onDeselect: () => void
+  onProjectDeleted?: () => void
   onError: (message: string) => void
   /** Reports an open menu, dialog or action, so a windowed list keeps this row mounted. */
   onActiveChange?: (active: boolean) => void
@@ -776,7 +778,21 @@ export function TaskContextMenu({
         <DialogContent className="max-h-[85dvh] overflow-y-auto">
           <DialogTitle>{repository?.name} settings</DialogTitle>
           <DialogDescription>{repository?.path}</DialogDescription>
-          {repository && <ProjectSettings repository={repository} />}
+          {repository && (
+            <ProjectSettings
+              repository={repository}
+              onDeleted={(refreshError) => {
+                if (refreshError)
+                  onError(
+                    `Project deleted, but the project list could not refresh: ${refreshError}`,
+                  )
+                setDialog(null)
+                onDeselect()
+                onProjectDeleted?.()
+                host.navigate({ viewId: 'tasks' })
+              }}
+            />
+          )}
         </DialogContent>
       </Dialog>
       <Dialog
