@@ -48,7 +48,11 @@ export default function AppearanceSettings() {
             onChange={(colorVision) => updateAppPreferences({ colorVision })}
           />
         </SettingRow>
-        <div className="flex flex-wrap gap-4 px-4 py-3 text-xs" aria-label="Status color preview">
+        <div
+          role="group"
+          className="flex flex-wrap gap-4 px-4 py-3 text-xs"
+          aria-label="Status color preview"
+        >
           <span className="flex items-center gap-1 text-status-success">
             <CircleCheck className="size-4" aria-hidden="true" />
             Finished
@@ -239,6 +243,8 @@ export default function AppearanceSettings() {
         </SettingRow>
         <div
           className="overflow-x-auto bg-muted/30 px-4 py-4 text-sm"
+          role="region"
+          tabIndex={0}
           aria-label="Terminal font preview"
           style={{
             fontFamily: fontStack(terminalFontFamily, systemMonoFont),

@@ -23,7 +23,12 @@ export function SettingsPage({
           </span>
         )}
       </PageHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+      <div
+        role="region"
+        aria-label={`${title} settings`}
+        tabIndex={0}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
+      >
         <div className="mx-auto max-w-3xl space-y-4">{children}</div>
       </div>
     </section>

@@ -87,6 +87,33 @@ export async function checkScreenInteractions(page, origin) {
       checks++
     }
 
+    await open('dovo-screens-desktop--jira')
+    await page.getByRole('button', { name: 'Filters', exact: true }).click()
+    const statusFilters = page.getByRole('group', { name: 'Status category' })
+    await statusFilters.getByRole('button', { name: 'Done', exact: true }).click()
+    await page.keyboard.press('Escape')
+    const activeFilters = page.getByRole('group', { name: 'Active Jira filters' })
+    await activeFilters.getByRole('button', { name: /Done/ }).waitFor()
+    await page.getByRole('region', { name: 'Jira issue results' }).waitFor({ state: 'attached' })
+    await open('dovo-screens-desktop--usage')
+    await page
+      .getByRole('img', { name: /No usage/ })
+      .first()
+      .waitFor()
+    await open('dovo-screens-desktop--appearance')
+    const terminalPreview = page.getByRole('region', { name: 'Terminal font preview' })
+    await terminalPreview.focus()
+    assert.equal(await terminalPreview.evaluate((node) => node === document.activeElement), true)
+    await open('dovo-screens-desktop--shortcuts')
+    const shortcuts = page.getByRole('region', { name: 'Keyboard shortcuts settings' })
+    await shortcuts.focus()
+    await shortcuts.press('End')
+    await page.waitForFunction(() => {
+      const region = document.querySelector('[aria-label="Keyboard shortcuts settings"]')
+      return region && region.scrollTop > 0
+    })
+    checks += 4
+
     await page.setViewportSize({ width: 390, height: 900 })
     await open('dovo-screens-mobile--full-composer')
     await visible('Full native composer')

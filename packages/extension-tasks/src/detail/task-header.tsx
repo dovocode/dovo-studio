@@ -260,7 +260,7 @@ export function TaskHeader({
                     : ['Done', 'Finished', 'Settled'].includes(presentation.state)
                       ? 'text-status-success'
                       : presentation.state === 'Working'
-                        ? 'text-sky-400'
+                        ? 'text-primary'
                         : 'text-muted-foreground',
               )}
             >

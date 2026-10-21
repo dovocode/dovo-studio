@@ -302,7 +302,7 @@ export function JiraToolbar({
           columns and filters are available in Jira.
         </p>
       )}
-      <div className="flex flex-wrap gap-1.5" aria-label="Active Jira filters">
+      <div role="group" className="flex flex-wrap gap-1.5" aria-label="Active Jira filters">
         {filters.assignee &&
           filters.assignee !== 'all' &&
           chip(filters.assignee === 'mine' ? 'Assigned to me' : 'Unassigned', () =>

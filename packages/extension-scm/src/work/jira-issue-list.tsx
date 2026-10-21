@@ -62,7 +62,7 @@ export function JiraIssueList({
   }
   const ordered = [...groups.values()].flat()
   return (
-    <div className="@container/jira-list" aria-label="Jira issue results">
+    <div role="region" className="@container/jira-list" aria-label="Jira issue results">
       {!!rows.length && (
         <div
           aria-hidden="true"

@@ -299,6 +299,7 @@ export default function UsageSettings() {
                 return (
                   <div
                     key={day.key}
+                    role="img"
                     aria-label={label}
                     title={label}
                     className="flex h-full min-w-0 flex-1 items-end"
