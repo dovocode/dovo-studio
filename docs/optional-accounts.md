@@ -80,6 +80,21 @@ Compose file binds port 8081 to loopback for a local ingress. Dokploy should rou
 domain to container port 8080. Health is `GET /health`. Account-free runtime and notification relay
 health are independent of this service.
 
+The production Dokploy Compose deployment uses GitHub repository `dovocode/dovo-studio`, branch
+`main`, and `apps/connect-server/compose.dokploy.yaml`. Deploy with builds enabled for both services
+(`compose up -d --build`); do not retain the previous `--no-build --no-deps connect` command. Keep
+the existing project name, domain targeting `connect:8080`, and relay detached from Dokploy's
+ingress network. This definition reuses the external `dovo-studio-connect-data` volume and builds
+Connect and its private notification relay from the same checkout.
+
+Private service configuration lives in `/etc/dokploy/secrets/dovo-studio-connect/connect.env` and
+`relay.env`, outside the checkout. Preserve the existing values when migrating; restrict these files
+to the deployment host administrator. Connect also reads the TURN operator's existing
+`/var/lib/docker/volumes/dovo-turn-operator-private/_data/turn.env`, so credential rotation
+continues to use its authoritative file. The relay's APNs and Firebase keys remain read-only mounts
+from `/etc/dokploy/secrets/dovo-notification-relay`. Back up these private settings with the
+deployment; never commit them or replace the persistent data volume during a redeploy.
+
 Back up SQLite with a consistent online backup or `VACUUM INTO` from a separate SQLite connection;
 do not copy only the live database while ignoring its WAL. Keep backups private and include the
 Compose/environment configuration. Connect/SQLite and Casdoor/PostgreSQL have daily private local

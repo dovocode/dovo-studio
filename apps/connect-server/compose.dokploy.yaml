@@ -1,0 +1,80 @@
+# Production settings and provider keys live outside the Git checkout.
+services:
+  connect:
+    build:
+      context: ../..
+      dockerfile: apps/connect-server/Dockerfile
+    restart: unless-stopped
+    init: true
+    user: '1000:1000'
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - /etc/dokploy/secrets/dovo-studio-connect/connect.env
+      - /var/lib/docker/volumes/dovo-turn-operator-private/_data/turn.env
+    volumes:
+      - connect-data:/data
+    expose:
+      - '8080'
+    depends_on:
+      relay:
+        condition: service_healthy
+    networks:
+      - default
+      - dokploy-network
+      - push-backend
+  relay:
+    build:
+      context: ../..
+      dockerfile: apps/notification-relay/Dockerfile
+    restart: unless-stopped
+    init: true
+    user: '1000:1000'
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - /etc/dokploy/secrets/dovo-studio-connect/relay.env
+    volumes:
+      - type: bind
+        source: /etc/dokploy/secrets/dovo-notification-relay/apns.p8
+        target: /run/secrets/apns.p8
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /etc/dokploy/secrets/dovo-notification-relay/apns-sandbox.p8
+        target: /run/secrets/apns-sandbox.p8
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /etc/dokploy/secrets/dovo-notification-relay/firebase.json
+        target: /run/secrets/firebase.json
+        read_only: true
+        bind:
+          create_host_path: false
+    expose:
+      - '8080'
+    networks:
+      push-backend:
+        aliases:
+          - dovo-studio-connect-push-relay
+volumes:
+  connect-data:
+    name: dovo-studio-connect-data
+    external: true
+networks:
+  dokploy-network:
+    external: true
+  push-backend:
+    driver: bridge
