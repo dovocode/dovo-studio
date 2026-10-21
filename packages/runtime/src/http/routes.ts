@@ -1307,7 +1307,7 @@ export function route(
       }
       if (method === 'POST' && path === '/api/runtime/peer/upgrade/request') {
         const input = decode(
-          mutableStruct({ relay: Schema.optional(Schema.Literal('dovo')) }),
+          mutableStruct({ relay: Schema.optional(Schema.Literals(['dovo', 'custom'])) }),
           yield* serviceResult(body(request)),
         )
         return s.peers.upgrades.request(device.id, input.relay)

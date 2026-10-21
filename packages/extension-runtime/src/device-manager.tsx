@@ -142,9 +142,11 @@ export function DeviceManager({ connectPhone = false }: { connectPhone?: boolean
               No new access to files or tools is granted.
             </p>
             <p className="text-muted-foreground">
-              {upgrade.relay === 'dovo'
-                ? 'Allows Dovo relay fallback: encrypted traffic may pass through Dovo servers. Operator approval is also required.'
-                : 'Direct WebRTC only. No relay will carry your content.'}
+              {upgrade.relay === 'custom'
+                ? 'Direct first, with the configured computer or organization TURN relay as fallback.'
+                : upgrade.relay === 'dovo'
+                  ? 'Allows Dovo relay fallback: encrypted traffic may pass through Dovo servers. Operator approval is also required.'
+                  : 'Direct WebRTC only. No relay will carry your content.'}
             </p>
             <div className="flex gap-2">
               {[true, false].map((allow) => (

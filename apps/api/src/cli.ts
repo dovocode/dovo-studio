@@ -211,7 +211,7 @@ Device listings show paired devices, not live network presence.`)
     if (values.json) console.log(JSON.stringify(result))
     else
       console.log(
-        `Pending requests:\n${result.pending.map((device) => `${device.id}  ${device.name}  expires ${device.expiresAt}`).join('\n') || 'None'}\n\nInternet access requests:\n${result.internet.map((request) => `${request.id}  ${request.name}  ${request.relay === 'dovo' ? 'Dovo relay fallback (encrypted)' : 'Direct only'}  expires ${request.expiresAt}`).join('\n') || 'None'}\n\nPaired devices:\n${result.paired.map((device) => `${device.id}  ${device.name}`).join('\n') || 'None'}`,
+        `Pending requests:\n${result.pending.map((device) => `${device.id}  ${device.name}  expires ${device.expiresAt}`).join('\n') || 'None'}\n\nInternet access requests:\n${result.internet.map((request) => `${request.id}  ${request.name}  ${request.relay === 'custom' ? 'Computer / organization relay fallback (encrypted)' : request.relay === 'dovo' ? 'Dovo relay fallback (encrypted)' : 'Direct only'}  expires ${request.expiresAt}`).join('\n') || 'None'}\n\nPaired devices:\n${result.paired.map((device) => `${device.id}  ${device.name}`).join('\n') || 'None'}`,
       )
   } else {
     decode(

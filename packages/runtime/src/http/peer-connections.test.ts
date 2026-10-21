@@ -258,6 +258,29 @@ it('allows confirmed paired TURN setup, keeps secrets out of snapshots and refre
   expect((await call({ consent: true, config })).status).toBe(401)
 })
 
+it('accepts a custom relay choice when upgrading an existing LAN pairing and binds owner approval to it', async () => {
+  const { runtime } = await fixture()
+  const token = 'custom-upgrade-phone'
+  runtime.services.devices.add('Phone', token)
+  const call = (path: string, input: unknown, credential = token) =>
+    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + credential, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  const response = await call('/api/runtime/peer/upgrade/request', { relay: 'custom' })
+  expect(response.status).toBe(200)
+  const request = (await response.json()) as { id: string; relay: string }
+  expect(request.relay).toBe('custom')
+  expect(
+    (await call('/api/runtime/peer/upgrade/approve', { id: request.id, allow: true }, ownerToken))
+      .status,
+  ).toBe(200)
+  const claimed = await call('/api/runtime/peer/upgrade/claim', { id: request.id })
+  expect(claimed.status).toBe(200)
+  expect(await claimed.json()).toMatchObject({ peer: { relay: 'custom' } })
+})
+
 it('pairs remotely, carries authenticated HTTP and live WebSockets, then revokes all peer access', async () => {
   const { runtime, tunnel } = await fixture()
   const code = runtime.services.pairing.createCode()

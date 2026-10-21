@@ -169,6 +169,17 @@ export async function checkPeerUpgrades(browser, root) {
       1,
       'A late claim after cancellation cannot switch the saved connection',
     )
+    await page.evaluate(() => window.reset())
+    await page.getByRole('combobox', { name: 'Relay fallback' }).last().selectOption('custom')
+    await page.getByRole('button', { name: 'Enable internet connection', exact: true }).click()
+    await page
+      .getByText(/Direct first, with the configured computer or organization TURN relay/)
+      .waitFor()
+    await page
+      .getByRole('button', { name: 'Approve internet access for My phone', exact: true })
+      .click()
+    await page.getByText('Internet enabled', { exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.upgrades.at(-1).peer.relay), 'custom')
     assert.deepEqual(errors, [])
     console.log(
       'Existing pairing upgrade UI: owner approval, relay consent, denial, cancel races, probe failure and successful form disposal passed.',

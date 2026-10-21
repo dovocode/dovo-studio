@@ -196,48 +196,52 @@ it.each(['approve', 'deny'])(
   },
 )
 
-it('lists internet requests with explicit relay consent for headless server operators', async () => {
-  vi.resetModules()
-  outputOptions.json = false
-  outputOptions.positionals = ['devices']
-  const snapshot = decode(snapshotSchema, {
-    owner: true,
-    revision: 0,
-    workspace: {
-      version: 1,
-      agents: [],
-      repositories: [],
-      tasks: [],
-      automations: [],
-      runtimeAddress: '',
-    },
-    approvals: [],
-    terminals: [],
-    runs: [],
-    devices: [],
-    pendingDevices: [],
-    pendingPeerUpgrades: [
-      {
-        id: 'upgrade-id',
-        deviceId: 'phone',
-        name: 'My phone',
-        status: 'pending',
-        relay: 'dovo',
-        expiresAt: new Date(Date.now() + 120000).toISOString(),
+it.each([
+  ['dovo', 'Dovo relay fallback (encrypted)'],
+  ['custom', 'Computer / organization relay fallback (encrypted)'],
+])(
+  'lists %s internet requests with explicit relay consent for headless server operators',
+  async (relay, label) => {
+    vi.resetModules()
+    outputOptions.json = false
+    outputOptions.positionals = ['devices']
+    const snapshot = decode(snapshotSchema, {
+      owner: true,
+      revision: 0,
+      workspace: {
+        version: 1,
+        agents: [],
+        repositories: [],
+        tasks: [],
+        automations: [],
+        runtimeAddress: '',
       },
-    ],
-  })
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => Response.json(snapshot)),
-  )
-  const output = vi.spyOn(console, 'log').mockImplementation(() => {})
-  await import('./cli')
-  await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
-  expect(output).toHaveBeenCalledWith(
-    expect.stringContaining('upgrade-id  My phone  Dovo relay fallback (encrypted)'),
-  )
-})
+      approvals: [],
+      terminals: [],
+      runs: [],
+      devices: [],
+      pendingDevices: [],
+      pendingPeerUpgrades: [
+        {
+          id: 'upgrade-id',
+          deviceId: 'phone',
+          name: 'My phone',
+          status: 'pending',
+          relay,
+          expiresAt: new Date(Date.now() + 120000).toISOString(),
+        },
+      ],
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json(snapshot)),
+    )
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {})
+    await import('./cli')
+    await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
+    expect(output).toHaveBeenCalledWith(expect.stringContaining(`upgrade-id  My phone  ${label}`))
+  },
+)
 
 it('shows only the public relay key for headless server admission', async () => {
   vi.resetModules()
