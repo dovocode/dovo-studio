@@ -57,6 +57,7 @@ type PickerProps = {
   selection: string
   agent: Agent
   disabled: boolean
+  modelsOnly?: boolean
   onChange: (selection: string, agent: Agent) => void
 }
 function ComputerModelPicker({
@@ -66,6 +67,7 @@ function ComputerModelPicker({
   selection,
   agent,
   disabled,
+  modelsOnly = false,
   onChange,
 }: PickerProps) {
   const { colors, styles } = useTheme()
@@ -396,41 +398,43 @@ function ComputerModelPicker({
           backgroundColor: colors.surface,
         }}
       >
-        {tabs.map((item) => (
-          <Pressable
-            key={item.id}
-            accessibilityRole="tab"
-            accessibilityLabel={item.name}
-            accessibilityState={{ selected: tab === item.id }}
-            onPress={() => {
-              setTab(item.id)
-              filter('')
-              setCustom(false)
-            }}
-            style={({ pressed }) => ({
-              flex: 1,
-              minWidth: 0,
-              minHeight: 44,
-              paddingHorizontal: 6,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 10,
-              backgroundColor: tab === item.id ? colors.selection : 'transparent',
-              opacity: pressed ? 0.6 : 1,
-            })}
-          >
-            <Text
-              numberOfLines={1}
-              style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: tab === item.id ? colors.text : colors.muted,
+        {tabs
+          .filter((item) => !modelsOnly || item.id !== 'agents')
+          .map((item) => (
+            <Pressable
+              key={item.id}
+              accessibilityRole="tab"
+              accessibilityLabel={item.name}
+              accessibilityState={{ selected: tab === item.id }}
+              onPress={() => {
+                setTab(item.id)
+                filter('')
+                setCustom(false)
               }}
+              style={({ pressed }) => ({
+                flex: 1,
+                minWidth: 0,
+                minHeight: 44,
+                paddingHorizontal: 6,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 10,
+                backgroundColor: tab === item.id ? colors.selection : 'transparent',
+                opacity: pressed ? 0.6 : 1,
+              })}
             >
-              {item.name}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                numberOfLines={1}
+                style={{
+                  fontSize: 14,
+                  fontWeight: '600',
+                  color: tab === item.id ? colors.text : colors.muted,
+                }}
+              >
+                {item.name}
+              </Text>
+            </Pressable>
+          ))}
       </View>
 
       {tab !== 'agents' && (

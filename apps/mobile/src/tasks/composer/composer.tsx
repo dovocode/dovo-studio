@@ -1,5 +1,5 @@
 import { TurnModelControls } from './turn-model-controls'
-import { turnSettingsLabel } from '@dovo/protocol'
+import { applyTurnSettings } from '@dovo/protocol'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FileDropTarget } from './file-drop-target'
 import { changeTaskProject, changeTaskAutoProject } from '@dovo/protocol'
@@ -91,7 +91,20 @@ export function Composer({
     turnSettings,
     setTurnSettings,
   } = actions
-  const { modelName, catalog: modelCatalog } = useModelCatalog(agent)
+  const nextTurnControls =
+    !!snapshot?.queuedTurnSettingsSupported &&
+    !!agent &&
+    (task.status === 'running' || !!task.queue?.length || !!turnSettings)
+  const composerAgent =
+    agent && nextTurnControls ? applyTurnSettings(agent, turnSettings ?? undefined) : agent
+  const { modelName, catalog: modelCatalog } = useModelCatalog(composerAgent)
+  const modelLabel = taskHarnessLabel(
+    nextTurnControls && turnSettings ? { ...task, modelSelection: undefined } : task,
+    composerAgent,
+    snapshot?.acpInstallations,
+    modelName,
+    modelCatalog?.harness?.name,
+  )
   const { navigate } = useNavigation()
   const forkAction = useAction()
   const checkoutAction = useAction()
@@ -780,65 +793,36 @@ export function Composer({
                 gap: 8,
               }}
             >
-              {showOptions &&
-                !dictation.active &&
-                snapshot?.queuedTurnSettingsSupported &&
-                (task.status === 'running' || !!task.queue?.length || !!turnSettings) &&
-                agent && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Next turn model and reasoning"
-                    disabled={busy || !!task.archived}
-                    onPress={() => {
-                      Keyboard.dismiss()
-                      setTurnModelOpen(true)
-                    }}
-                    style={{
-                      minHeight: 44,
-                      flexShrink: 1,
-                      justifyContent: 'center',
-                      paddingHorizontal: 4,
-                    }}
-                  >
-                    <Text numberOfLines={1} style={[styles.muted, { fontSize: 12 }]}>
-                      {turnSettings
-                        ? `Next: ${turnSettingsLabel(turnSettings)}`
-                        : 'Next turn: defaults'}{' '}
-                      ▾
-                    </Text>
-                  </Pressable>
-                )}
               {turnModelOpen && agent && (
-                <Sheet title="Next turn model & reasoning" onClose={() => setTurnModelOpen(false)}>
+                <Sheet title="Agent & model" onClose={() => setTurnModelOpen(false)}>
                   <TurnModelControls
+                    task={task}
                     agent={agent}
                     value={turnSettings}
                     onChange={setTurnSettings}
-                    disabled={busy}
+                    disabled={busy || !!task.archived}
                   />
                 </Sheet>
               )}
-              {showOptions && !dictation.active && !(task.status === 'running' && hasInput) && (
+              {showOptions && !dictation.active && (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Agent & model"
                   accessibilityValue={{
-                    text: taskHarnessLabel(
-                      task,
-                      agent,
-                      snapshot?.acpInstallations,
-                      modelName,
-                      modelCatalog?.harness?.name,
-                    ),
+                    text: `${nextTurnControls ? 'Next turn: ' : ''}${modelLabel}`,
                   }}
                   accessibilityState={{
-                    disabled: busy || task.status === 'running' || !!task.archived,
+                    disabled:
+                      busy || (task.status === 'running' && !nextTurnControls) || !!task.archived,
                   }}
-                  disabled={busy || task.status === 'running' || task.archived}
+                  disabled={
+                    busy || (task.status === 'running' && !nextTurnControls) || task.archived
+                  }
                   onPress={() => {
                     if (dictation.active) dictation.stop()
                     Keyboard.dismiss()
-                    setSettings(true)
+                    if (nextTurnControls) setTurnModelOpen(true)
+                    else setSettings(true)
                   }}
                   style={({ pressed }) => ({
                     flex: 1,
@@ -848,16 +832,22 @@ export function Composer({
                     alignItems: 'center',
                     gap: 5,
                     opacity:
-                      pressed || busy || task.status === 'running' || task.archived ? 0.5 : 1,
+                      pressed ||
+                      busy ||
+                      (task.status === 'running' && !nextTurnControls) ||
+                      task.archived
+                        ? 0.5
+                        : 1,
                   })}
                 >
-                  {(task.modelSelection === 'auto' || task.modelSelection === 'smart') && (
-                    <Icon
-                      name={task.modelSelection === 'auto' ? 'tune' : 'maestro'}
-                      size={15}
-                      color={colors.muted}
-                    />
-                  )}
+                  {!nextTurnControls &&
+                    (task.modelSelection === 'auto' || task.modelSelection === 'smart') && (
+                      <Icon
+                        name={task.modelSelection === 'auto' ? 'tune' : 'maestro'}
+                        size={15}
+                        color={colors.muted}
+                      />
+                    )}
                   <Text
                     numberOfLines={1}
                     style={[
@@ -868,13 +858,7 @@ export function Composer({
                       },
                     ]}
                   >
-                    {taskHarnessLabel(
-                      task,
-                      agent,
-                      snapshot?.acpInstallations,
-                      modelName,
-                      modelCatalog?.harness?.name,
-                    )}
+                    {nextTurnControls ? `Next: ${modelLabel}` : modelLabel}
                   </Text>
                   <Icon name="down" size={10} color={colors.muted} />
                 </Pressable>

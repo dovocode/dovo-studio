@@ -20,6 +20,7 @@ export const IconButton=({label,onPress,disabled})=><button aria-label={label} d
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Glass=View;
 export const Choice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select>;
+export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>;
 export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>({dismiss:callback=>{onClose();queueMicrotask(()=>callback?.())}}));return <div role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close</button></div>};
 export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff'},styles:{content:{},muted:{color:'#999'}}});
@@ -36,6 +37,11 @@ const stubs = [
     '../../ui/layout/glass',
     '../../ui/layout/sheet',
     '../../ui/theme',
+    '../ui/theme',
+    '../ui/content/text',
+    '../ui/controls/action',
+    '../ui/controls/field',
+    '../ui/controls/icon',
   ].map((path) => ({ path, importer: mobile, contents: controls })),
   {
     path: '../../runtime/state/application-state',
@@ -63,11 +69,12 @@ const stubs = [
     importer: mobile,
     contents: 'export const useCarMode=()=>false;',
   },
+  { path: './harness-icon', importer: mobile, contents: 'export const HarnessIcon=()=>null;' },
   {
     path: '../../agents/use-model-catalog',
     importer: mobile,
     contents:
-      'export const useModelCatalog=()=>({modelName:"GPT",catalog:{models:[{id:"large-model",name:"Large model"},{id:"fast-model",name:"Fast model"}],reasoning:[{id:"high",name:"High"},{id:"low",name:"Low"}]}});',
+      'export const useCachedModelCatalog=()=>({modelName:"Model"});export const useModelCatalog=()=>({modelName:"GPT",catalog:{models:[{id:"large-model",name:"Large model"},{id:"fast-model",name:"Fast model"}],reasoning:[{id:"high",name:"High"},{id:"low",name:"Low"}]}});',
   },
   {
     path: 'react-native-safe-area-context',
@@ -95,6 +102,14 @@ const stubs = [
     ['./car-composer', 'CarComposer'],
   ].map(([path, name]) => ({ path, importer: mobile, contents: `export const ${name}=()=>null;` })),
 ]
+stubs.push({
+  ...stubs.find((stub) => stub.path === '../../agents/use-model-catalog'),
+  path: './use-model-catalog',
+})
+stubs.push({
+  ...stubs.find((stub) => stub.path === '../../runtime/connection/provider'),
+  path: '../runtime/connection/provider',
+})
 const built = await bundleBrowser(
   {
     stdin: {
@@ -108,7 +123,7 @@ window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
 function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
   const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;const [text,setText]=useState('Continue the review');const [connected,setConnected]=useState(true);
-  window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
+  window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
   const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,questions:[],workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const draft={text,ready:true,key:'draft',revision:text,update:setText};
   window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
@@ -165,22 +180,32 @@ try {
   await page.getByRole('button', { name: 'Steer agent', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'steer' })
   assert.equal(await page.getByRole('dialog', { name: 'Message actions' }).count(), 0)
-  await page.getByRole('button', { name: 'Next turn model and reasoning', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Turn model', exact: true }).selectOption('large-model')
-  await page
-    .getByRole('combobox', { name: 'Turn reasoning level', exact: true })
-    .selectOption('high')
+  assert.equal(await page.getByRole('button', { name: 'Agent & model', exact: true }).count(), 1)
+  assert.equal(
+    await page.getByRole('button', { name: 'Next turn model and reasoning', exact: true }).count(),
+    0,
+  )
+  const activeHarness = await page.evaluate(() => window.currentTask.harness)
+  await page.getByRole('button', { name: 'Agent & model', exact: true }).click()
+  assert.equal(await page.getByRole('tab', { name: 'Agents', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Large model', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).selectOption('high')
   assert.deepEqual(await page.evaluate(() => window.turnSettings), {
     provider: 'codex',
     model: 'large-model',
     reasoning: 'high',
   })
+  assert.deepEqual(await page.evaluate(() => window.currentTask.harness), activeHarness)
+  assert.equal(
+    await page.evaluate(() => window.calls.some((call) => call.path === '/api/workspace')),
+    false,
+  )
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   assert.equal(
     await page.getByRole('button', { name: 'Steer agent', exact: true }).isDisabled(),
     true,
   )
-  await page.getByRole('button', { name: 'Next turn model and reasoning', exact: true }).click()
+  await page.getByRole('button', { name: 'Agent & model', exact: true }).click()
   await page.getByRole('button', { name: 'Use thread defaults', exact: true }).click()
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('button', { name: 'Fork', exact: true }).click()

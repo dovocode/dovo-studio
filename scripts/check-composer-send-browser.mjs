@@ -2,10 +2,15 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
+const catalogMock = `export const useHarnessCatalog=()=>({modelName:'',catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});`
 const mocks = {
-  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
+  './harness-catalog': catalogMock,
+  './use-harness-availability': `export const useHarnessAvailability=()=>({available:new Set(['harness:codex']),loading:false,refresh:()=>{}});`,
+  './agent-avatar': `export const AgentAvatar=()=>null;`,
+  './harness-icon': `export const HarnessIcon=()=>null;`,
+  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
+  '@dovo/studio-ui': `export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
   './composer-editor': `import {useState,useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText,disabled})=>{const[mount]=useState(()=>++window.editorMounts);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea data-editor-mount={mount} aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} disabled={disabled} onChange={event=>controller.update(event.target.value)}/>};`,
 }
@@ -273,12 +278,15 @@ try {
   )
     throw new Error(JSON.stringify(requests))
   // A one-turn choice is carried through a failed send and resets after acknowledgement.
-  await page.getByRole('button', { name: 'Next turn model and reasoning' }).click()
-  await page.getByRole('button', { name: 'Turn model', exact: true }).click()
-  await page.getByRole('option', { name: 'Large model', exact: true }).click()
-  await page.getByRole('button', { name: 'Turn reasoning level', exact: true }).click()
-  await page.getByRole('option', { name: 'High', exact: true }).click()
-  await page.keyboard.press('Escape')
+  assert.equal(await page.getByRole('button', { name: 'Next turn model and reasoning' }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Configure task permissions' }).count(), 0)
+  await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: 'Custom configurations' }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Agent configuration' }).count(), 0)
+  await page.locator('[role=option][data-value=large-model]').click()
+  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.current.harness ?? null), null)
   await submit('Use a larger model')
   const selectedId = await page.evaluate(() => window.pending.message.id)
   const selectedSettings = { provider: 'codex', model: 'large-model', reasoning: 'high' }
@@ -297,10 +305,12 @@ try {
   )
   await acknowledge('queue')
   await respond()
-  await page.waitForFunction(() =>
-    document
-      .querySelector('[aria-label="Next turn model and reasoning"]')
-      ?.textContent.includes('thread defaults'),
+  await page
+    .getByRole('button', { name: 'Use thread defaults', exact: true })
+    .waitFor({ state: 'detached' })
+  assert.equal(
+    await page.getByRole('button', { name: 'Choose agent and model', exact: true }).isEnabled(),
+    true,
   )
   await page.evaluate(() =>
     window.setTask((task) => ({

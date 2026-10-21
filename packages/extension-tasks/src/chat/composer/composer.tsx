@@ -546,20 +546,19 @@ export function Composer({
             <span className="text-xs text-muted-foreground">
               Answer the question above to continue.
             </span>
+          ) : snapshot?.queuedTurnSettingsSupported &&
+            agent &&
+            (task.status === 'running' || !!task.queue?.length || !!turnSettings) ? (
+            <TurnModelControls
+              composer
+              repositoryId={task.repositoryId}
+              agent={agent}
+              value={turnSettings}
+              onChange={changeTurnSettings}
+              disabled={sending || !!task.archived}
+            />
           ) : (
-            <>
-              <ComposerHarnessControls task={task} disabled={sending || !!task.archived} />
-              {snapshot?.queuedTurnSettingsSupported &&
-                agent &&
-                (task.status === 'running' || !!task.queue?.length || !!turnSettings) && (
-                  <TurnModelControls
-                    agent={agent}
-                    value={turnSettings}
-                    onChange={changeTurnSettings}
-                    disabled={sending || !!task.archived}
-                  />
-                )}
-            </>
+            <ComposerHarnessControls task={task} disabled={sending || !!task.archived} />
           )
         }
         actions={

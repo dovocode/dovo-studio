@@ -58,8 +58,10 @@ export function ComposerModelPicker({
   modelSelection,
   onSelectMode,
   automaticModesEnabled = false,
+  modelsOnly = false,
 }: {
   automaticModesEnabled?: boolean
+  modelsOnly?: boolean
   modelSelection?: 'inherit' | 'auto' | 'smart'
   onSelectMode?: (mode: 'inherit' | 'auto' | 'smart') => Promise<boolean>
   agents: readonly Agent[]
@@ -411,25 +413,27 @@ export function ComposerModelPicker({
               <Star className="size-3.5 shrink-0" aria-hidden="true" />
               Favorites
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label="Custom configurations"
-              title="Custom configurations"
-              aria-pressed={mode === 'agents'}
-              className={cn(
-                'w-full justify-start gap-2 px-2 text-xs',
-                mode === 'agents' && 'bg-accent',
-              )}
-              onClick={() => {
-                setMode('agents')
-                setQuery('')
-                setActive(0)
-              }}
-            >
-              <Bot className="size-3.5 shrink-0" aria-hidden="true" />
-              Custom
-            </Button>
+            {!modelsOnly && (
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Custom configurations"
+                title="Custom configurations"
+                aria-pressed={mode === 'agents'}
+                className={cn(
+                  'w-full justify-start gap-2 px-2 text-xs',
+                  mode === 'agents' && 'bg-accent',
+                )}
+                onClick={() => {
+                  setMode('agents')
+                  setQuery('')
+                  setActive(0)
+                }}
+              >
+                <Bot className="size-3.5 shrink-0" aria-hidden="true" />
+                Custom
+              </Button>
+            )}
             <div className="my-1 w-full border-t" />
             {availableProviders.map((p) => (
               <Button
@@ -516,20 +520,22 @@ export function ComposerModelPicker({
                 </span>
               </Button>
             ))}
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label="Agent configuration"
-              title="Agent configuration"
-              className="mt-auto size-9"
-              onClick={() => {
-                setOpen(false)
-                onConfigure()
-              }}
-            >
-              <Settings2 className="size-4" />
-            </Button>
+            {!modelsOnly && (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label="Agent configuration"
+                title="Agent configuration"
+                className="mt-auto size-9"
+                onClick={() => {
+                  setOpen(false)
+                  onConfigure()
+                }}
+              >
+                <Settings2 className="size-4" />
+              </Button>
+            )}
           </div>
           <div className="flex min-w-0 flex-1 flex-col p-2">
             <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">

@@ -4,8 +4,15 @@ import {
   modelCatalogChoices,
   type Agent,
   type TurnSettings,
+  type TaskHarness,
 } from '@dovo/protocol'
-import { Button, ChoicePicker, Popover, useHarnessCatalog } from '@dovo/studio-ui'
+import {
+  Button,
+  ChoicePicker,
+  ComposerSettingsControls,
+  Popover,
+  useHarnessCatalog,
+} from '@dovo/studio-ui'
 import { useState } from 'react'
 
 /** Model choices here belong to one message, never to the active run or thread defaults. */
@@ -15,17 +22,21 @@ export function TurnModelControls({
   onChange,
   disabled,
   inline = false,
+  composer = false,
+  repositoryId,
 }: {
   agent: Agent
   value?: TurnSettings | null
   onChange: (value: TurnSettings | null) => void
   disabled?: boolean
   inline?: boolean
+  composer?: boolean
+  repositoryId?: string
 }) {
   const [open, setOpen] = useState(false)
   const [custom, setCustom] = useState(false)
   const selected = applyTurnSettings(agent, value ?? undefined)
-  const { catalog, error, loading } = useHarnessCatalog(selected, inline || open)
+  const { catalog, error, loading } = useHarnessCatalog(selected, composer || inline || open)
   const models = modelCatalogChoices(catalog?.models ?? []).filter(
     (m) => !m.hidden || m.id === selected.model,
   )
@@ -110,6 +121,48 @@ export function TurnModelControls({
       )}
     </div>
   )
+  if (composer) {
+    const change = async (next: TaskHarness) => {
+      if (
+        disabled ||
+        next.provider !== agent.provider ||
+        next.acpInstallationId !== agent.acpInstallationId
+      )
+        return false
+      onChange(agentTurnSettings(next))
+      return true
+    }
+    return (
+      <>
+        <span
+          className="text-xs text-muted-foreground"
+          title="Model and reasoning apply to the next queued message"
+        >
+          Next turn
+        </span>
+        <ComposerSettingsControls
+          modelOnly
+          value={selected}
+          disabled={!!disabled}
+          agents={[]}
+          repositoryId={repositoryId}
+          lockedProvider={agent.provider}
+          lockedInstallationId={
+            agent.provider === 'acp' ? (agent.acpInstallationId ?? '') : undefined
+          }
+          onChange={change}
+          onUseHarness={change}
+          onSelectAgent={async () => false}
+          onConfigure={() => {}}
+        />
+        {value && (
+          <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onChange(null)}>
+            Use thread defaults
+          </Button>
+        )}
+      </>
+    )
+  }
   if (inline) return controls
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>

@@ -1,10 +1,13 @@
 import { View } from 'react-native'
+import { HarnessModelPicker } from '../../agents/harness-model-picker'
 import {
   agentTurnSettings,
+  harnessChoiceId,
   applyTurnSettings,
   modelCatalogChoices,
   type Agent,
   type TurnSettings,
+  type Task,
 } from '@dovo/protocol'
 import { useState } from 'react'
 import { useModelCatalog } from '../../agents/use-model-catalog'
@@ -19,11 +22,13 @@ export function TurnModelControls({
   value,
   onChange,
   disabled,
+  task,
 }: {
   agent: Agent
   value?: TurnSettings | null
   onChange: (value: TurnSettings | null) => void
   disabled?: boolean
+  task?: Task
 }) {
   const { styles } = useTheme()
   const [custom, setCustom] = useState(false)
@@ -44,57 +49,83 @@ export function TurnModelControls({
       <Text style={styles.muted}>
         Only this turn. The active run and thread defaults stay unchanged.
       </Text>
-      <Choice
-        label="Turn model"
-        value={value ? selected.model : '__inherit__'}
-        disabled={disabled}
-        items={[
-          { id: '__inherit__', name: 'Thread defaults' },
-          { id: '', name: 'Provider default' },
-          ...models,
-          ...(selected.model && !models.some((m) => m.id === selected.model)
-            ? [{ id: selected.model, name: `${selected.model} (saved/custom)` }]
-            : []),
-          { id: '__custom__', name: 'Custom model…' },
-        ]}
-        onChange={(model) => {
-          if (model === '__inherit__') {
-            onChange(null)
-            setCustom(false)
-          } else if (model === '__custom__') {
-            setCustomId(selected.model)
-            setCustom(true)
-          } else {
-            setCustom(false)
-            update({ model, reasoning: model === selected.model ? (selected.reasoning ?? '') : '' })
-          }
-        }}
-      />
-      {custom && (
-        <View style={{ gap: 8 }}>
-          <Field
-            label="Turn custom model ID"
-            editable={!disabled}
-            value={customId}
-            maxLength={500}
-            onChangeText={setCustomId}
-          />
-          <Action
-            label="Use model"
-            disabled={disabled || !customId.trim()}
-            onPress={() => {
-              update({ model: customId.trim(), reasoning: '' })
-              setCustom(false)
+      {task ? (
+        <HarnessModelPicker
+          modelsOnly
+          task={task}
+          agents={[]}
+          choices={[{ id: harnessChoiceId(agent), name: agent.name, provider: agent.provider }]}
+          selection={harnessChoiceId(agent)}
+          agent={selected}
+          disabled={!!disabled}
+          onChange={(_selection, next) => {
+            if (
+              !disabled &&
+              next.provider === agent.provider &&
+              next.acpInstallationId === agent.acpInstallationId
+            )
+              onChange(agentTurnSettings(next))
+          }}
+        />
+      ) : (
+        <>
+          <Choice
+            label="Turn model"
+            value={value ? selected.model : '__inherit__'}
+            disabled={disabled}
+            items={[
+              { id: '__inherit__', name: 'Thread defaults' },
+              { id: '', name: 'Provider default' },
+              ...models,
+              ...(selected.model && !models.some((m) => m.id === selected.model)
+                ? [{ id: selected.model, name: `${selected.model} (saved/custom)` }]
+                : []),
+              { id: '__custom__', name: 'Custom model…' },
+            ]}
+            onChange={(model) => {
+              if (model === '__inherit__') {
+                onChange(null)
+                setCustom(false)
+              } else if (model === '__custom__') {
+                setCustomId(selected.model)
+                setCustom(true)
+              } else {
+                setCustom(false)
+                update({
+                  model,
+                  reasoning: model === selected.model ? (selected.reasoning ?? '') : '',
+                })
+              }
             }}
           />
-        </View>
+          {custom && (
+            <View style={{ gap: 8 }}>
+              <Field
+                label="Turn custom model ID"
+                editable={!disabled}
+                value={customId}
+                maxLength={500}
+                onChangeText={setCustomId}
+              />
+              <Action
+                label="Use model"
+                disabled={disabled || !customId.trim()}
+                onPress={() => {
+                  update({ model: customId.trim(), reasoning: '' })
+                  setCustom(false)
+                }}
+              />
+            </View>
+          )}
+        </>
       )}
       <Choice
-        label="Turn reasoning level"
+        row={!!task}
+        label={task ? 'Reasoning level' : 'Turn reasoning level'}
         disabled={disabled}
-        value={value ? (selected.reasoning ?? '') : '__inherit__'}
+        value={task || value ? (selected.reasoning ?? '') : '__inherit__'}
         items={[
-          ...(!value ? [{ id: '__inherit__', name: 'Thread defaults' }] : []),
+          ...(!task && !value ? [{ id: '__inherit__', name: 'Thread defaults' }] : []),
           { id: '', name: 'Provider default reasoning' },
           ...efforts,
           ...(selected.reasoning && !efforts.some((e) => e.id === selected.reasoning)
@@ -113,18 +144,22 @@ export function TurnModelControls({
           onPress={() => onChange(null)}
         />
       )}
-      {loading && <Text style={styles.muted}>Loading models…</Text>}
-      {!!error && (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {error}
-        </Text>
+      {!task && (
+        <>
+          {loading && <Text style={styles.muted}>Loading models…</Text>}
+          {!!error && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          )}
+          <Action
+            secondary
+            label="Refresh models"
+            disabled={loading || !canDiscover}
+            onPress={refresh}
+          />
+        </>
       )}
-      <Action
-        secondary
-        label="Refresh models"
-        disabled={loading || !canDiscover}
-        onPress={refresh}
-      />
     </View>
   )
 }
