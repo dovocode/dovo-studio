@@ -105,7 +105,10 @@ export async function checkMobileSettingsAndThreads(page, origin) {
   assert.equal(await finished.getAttribute('aria-expanded'), 'true')
   await page.getByText('Finish the local settings fixture', { exact: true }).waitFor()
 
-  await page.getByRole('button', { name: 'Acknowledge failure', exact: true }).click()
+  const acknowledge = page.getByRole('button', { name: 'Acknowledge failure', exact: true })
+  const acknowledgementBounds = await acknowledge.boundingBox()
+  assert.ok(acknowledgementBounds && acknowledgementBounds.height >= 44)
+  await acknowledge.click()
   await page
     .getByRole('button', { name: 'Acknowledge failure', exact: true })
     .waitFor({ state: 'hidden' })

@@ -523,7 +523,9 @@ try {
   assert.deepEqual(errors, [], 'Interactive stories must not throw page errors')
   assert.deepEqual(externalRequests, [], 'Stories must not contact runtimes or external services')
   console.log(
-    `Dovo design catalog: ${checks} story/theme/viewport checks, axe accessibility, composer focus and submit pass.`,
+    checks
+      ? `Dovo design catalog: ${checks} story/theme/viewport checks, axe accessibility, composer focus and submit pass.`
+      : 'Dovo design catalog: interaction checks passed (matrix and axe audit not run).',
   )
 } finally {
   await browser.close()

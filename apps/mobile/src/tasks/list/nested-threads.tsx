@@ -103,7 +103,7 @@ export const NestedThreads = memo(function NestedThreads({
             accessibilityRole="button"
             accessibilityLabel="Acknowledge failure"
             disabled={disabled}
-            style={{ paddingVertical: 12 }}
+            style={{ minHeight: 44, paddingVertical: 12 }}
             onPress={() => onAcknowledgeFailure(child.failureKey!)}
           >
             <Text style={[styles.muted, { fontSize: 12 }]}>Acknowledge failure</Text>
@@ -145,7 +145,7 @@ export const NestedThreads = memo(function NestedThreads({
                     accessibilityRole="button"
                     accessibilityLabel={`Acknowledge failure in ${agent.name}`}
                     disabled={disabled}
-                    style={{ paddingVertical: 12 }}
+                    style={{ minHeight: 44, paddingVertical: 12 }}
                     onPress={() => onAcknowledgeFailure(agent.key)}
                   >
                     <Text style={[styles.muted, { fontSize: 12 }]}>
@@ -163,7 +163,7 @@ export const NestedThreads = memo(function NestedThreads({
             accessibilityRole="button"
             disabled={disabled}
             onPress={() => navigate(child)}
-            style={{ paddingVertical: 12 }}
+            style={{ minHeight: 44, paddingVertical: 12 }}
           >
             <Text style={[styles.muted, { fontSize: 12 }]}>
               Open {child.nativeAgentOverflow.total} additional agents in {child.title}
@@ -183,7 +183,7 @@ export const NestedThreads = memo(function NestedThreads({
               <Pressable
                 accessibilityRole="button"
                 disabled={disabled}
-                style={{ paddingVertical: 12 }}
+                style={{ minHeight: 44, paddingVertical: 12 }}
                 onPress={() => onAcknowledgeFailure(child.nativeAgentOverflow!.failureKey!)}
               >
                 <Text style={[styles.muted, { fontSize: 12 }]}>
