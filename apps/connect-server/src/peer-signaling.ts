@@ -193,7 +193,7 @@ export function attachPeerSignaling(
             if (
               input.type === 'host' &&
               input.relayIdentity &&
-              relayAdmission &&
+              (input.accountGrant || relayAdmission) &&
               Object.values(relayIssuers).some(Boolean)
             ) {
               admissionChallenge = randomBytes(32).toString('hex')
@@ -244,11 +244,12 @@ export function attachPeerSignaling(
             const challenge = admissionChallenge
             admissionChallenge = undefined
             const room = availableRoom()
-            if (!room || room.host !== client || !hello.relayIdentity || !relayAdmission)
+            if (!room || room.host !== client || !hello.relayIdentity)
               throw new Error('Relay installation is unavailable')
             const admit = room.accountGrant
               ? approvedRelayInstallations([hello.relayIdentity])
               : relayAdmission
+            if (!admit) throw new Error('Relay installation is unavailable')
             room.relayApproved = admit(
               hello.relayIdentity,
               peerRelayAdmissionPayload(

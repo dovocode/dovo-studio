@@ -18,6 +18,8 @@ import {
   peerDigest,
   signPeerSignal,
   peerSignalSchema,
+  peerReadySchema,
+  validPeerRelay,
   syncTicketSchema,
   verifyPeerSignal,
   type PeerConfig,
@@ -27,6 +29,8 @@ import { InternetStore } from '../../../../apps/connect-server/src/internet-stor
 import { internetApi } from '../../../../apps/connect-server/src/internet-api.js'
 import { accountApi } from '../../../../apps/connect-server/src/account-api.js'
 import { attachPeerSignaling } from '../../../../apps/connect-server/src/peer-signaling.js'
+import { dovoTurn } from '../../../../apps/connect-server/src/dovo-turn.js'
+import type { PeerRelayIssuer } from '../../../../apps/connect-server/src/relay-credentials.js'
 import { RequestError } from '../../../../apps/connect-server/src/http.js'
 import { startRuntime } from '../index.js'
 const cleanup: Array<() => void | Promise<void>> = []
@@ -36,7 +40,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
-async function fixture(persistent = false) {
+async function fixture(persistent = false, issueRelay?: PeerRelayIssuer) {
   const accounts = new AccountStore(':memory:')
   cleanup.push(() => accounts.db.close())
   let handler: ReturnType<typeof internetApi> | undefined
@@ -60,7 +64,7 @@ async function fixture(persistent = false) {
   attachPeerSignaling(
     broker,
     [],
-    {},
+    { dovo: issueRelay },
     undefined,
     origin,
     (grant, identity) => internet.host(grant)?.identity === identity,
@@ -401,3 +405,83 @@ it('fails closed when the authorization lease expires during a Connect outage', 
     ).status,
   ).toBe(403)
 }, 20000)
+
+it('automatically authorizes Dovo TURN with the account grant and installation proof, including after restart', async () => {
+  const issue = vi.fn<PeerRelayIssuer>(
+    dovoTurn({
+      urls: ['turn:turn.dovo.studio:3478?transport=udp'],
+      secret: 'account-internet-test-turn-secret-1234567890',
+    }),
+  )
+  // No legacy operator admission callback or approved installation list.
+  const f = await fixture(true, issue)
+  expect((await f.request({ enabled: true, accountToken: f.owner })).status).toBe(200)
+  await f.client.load()
+  const connection = await f.client.connectInternet(
+    f.client.snapshot().directory!.servers[0],
+    randomBytes(32),
+    AbortSignal.timeout(20000),
+  )
+  const config = connection.peer!
+  expect(config.relay).toBe('dovo')
+  expect(f.runtime.services.pairing.pending()).toEqual([])
+  const join = async () => {
+    const socket = new WebSocket(peerSocketUrl(config))
+    cleanup.push(() => socket.terminate())
+    await once(socket, 'open')
+    const ready = once(socket, 'message')
+    socket.send(
+      JSON.stringify({
+        type: 'client',
+        room: peerRoom(config),
+        key: peerCapability(config, 'client'),
+        session: randomBytes(32).toString('hex'),
+        relay: config.relay,
+      }),
+    )
+    const result = decode(peerReadySchema, JSON.parse(String((await ready)[0])))
+    expect(result.relayUnavailable).toBeUndefined()
+    expect(validPeerRelay(result.relay!, 'dovo')).toBe(true)
+    return socket
+  }
+  const first = await join()
+  expect(issue).toHaveBeenLastCalledWith(
+    peerRoom(config),
+    '127.0.0.1',
+    f.runtime.services.peers.relayIdentity().publicKey,
+  )
+  const device = f.runtime.services.devices.authenticate(connection.token).id
+  const disconnected = once(first, 'close')
+  await f.restart()
+  await disconnected
+  await vi.waitFor(
+    () => {
+      expect(f.runtime.services.peers.internet.status().connected).toBe(true)
+      expect(f.runtime.services.peers.enabled(device)).toBe(true)
+    },
+    { timeout: 5000 },
+  )
+  const restored = await join()
+  expect(issue).toHaveBeenCalledTimes(2)
+  const revoked = once(restored, 'close')
+  f.accounts.revoke(f.owner)
+  await revoked
+  await vi.waitFor(() => expect(f.runtime.services.peers.internet.status().enabled).toBe(false), {
+    timeout: 6000,
+  })
+  const denied = new WebSocket(peerSocketUrl(config))
+  cleanup.push(() => denied.terminate())
+  await once(denied, 'open')
+  const closed = once(denied, 'close')
+  denied.send(
+    JSON.stringify({
+      type: 'client',
+      room: peerRoom(config),
+      key: peerCapability(config, 'client'),
+      session: randomBytes(32).toString('hex'),
+      relay: config.relay,
+    }),
+  )
+  expect((await closed)[0]).toBe(1008)
+  expect(issue).toHaveBeenCalledTimes(2)
+}, 30000)

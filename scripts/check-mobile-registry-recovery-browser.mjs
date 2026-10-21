@@ -22,6 +22,8 @@ window.servers={};window.patchOffline=false;window.patchCalls=[];
 window.fetch=async(url,init={})=>{
   window.requests.push(String(url));const parsed=new URL(url);
   if(window.rejectPeerSnapshot && parsed.host==='127.0.0.1:44555')return Response.json({error:'Peer path unavailable'},{status:503});
+  // Model a history-heavy runtime whose full snapshot cannot fit a mobile connection.
+  if(parsed.host==='127.0.0.1:44555' && parsed.pathname==='/api/snapshot' && !parsed.searchParams.has('scope'))return Response.json({error:'Full history download exceeds this connection budget'},{status:413});
   if(parsed.pathname==='/api/mutations/status')return Response.json({version:1,workspaceMutations:1});
   const server=window.servers[parsed.host]??= {revision:1,runtimeInstanceId:'runtime-'+parsed.host,owner:false,workspaceReconciliationSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],tasks:[],repositories:[{id:'repo',name:'Runtime name',path:'/before',branch:'main'}],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]};
   if(parsed.pathname==='/api/workspace'){

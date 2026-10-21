@@ -799,10 +799,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             ),
           )
         if (proof || value.accountSession) {
+          // Verify identity and learn routes without downloading the computer's history.
           const snapshot = yield* runtimeRequestEffect(
             value,
             value.address,
-            '/api/snapshot',
+            '/api/snapshot?scope=overview',
             undefined,
             snapshotSchema,
             'GET',
@@ -1004,7 +1005,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           const snapshot = yield* runtimeRequestEffect(
             connection,
             address,
-            '/api/snapshot',
+            '/api/snapshot?scope=overview',
             undefined,
             snapshotSchema,
             'GET',

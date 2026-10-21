@@ -61,6 +61,7 @@ directory entry may remain until it can be unlinked.
 Connect checks the current account grant before accepting installation proofs, completing joins
 (including after asynchronous relay issuance), or forwarding offers and answers. Its background
 revocation sweep only cleans up idle signaling sockets; active operations do not wait for it.
+Account installation proofs do not depend on a legacy approval callback or approved-key list.
 
 On the phone, an ephemeral loopback listener carries existing HTTP, WebSockets, images, files and
 WebViews over the same peer connection. On the computer, the only tunnel destination is an ordinary
@@ -83,6 +84,11 @@ rather than switching to a relay or advertised LAN routes. TURN supports UDP and
 `DOVO_TURN_TLS_PORT` to a dedicated port (443 on a dedicated host, or 5349/8443 alongside an
 existing HTTPS ingress). UPnP is not used. Keep Dovo running and the computer awake. Existing
 HTTP/HTTPS LAN and VPN pairing remains available separately, including Tailscale/NetBird.
+
+Mobile verifies a new account connection or an upgraded peer route using the authenticated
+`/api/snapshot?scope=overview` response, then loads subscribed threads with paged history. The
+initial identity check must not download the legacy full snapshot: a computer with extensive history
+can otherwise complete WebRTC setup but exceed the mobile request deadline.
 
 ## Operating Connect
 
@@ -232,7 +238,16 @@ relay. The browser check verifies direct, UDP, TCP and TLS paths independently. 
 choose a comma-separated subset of the advertised transports. For deployed relay checks, use
 `DOVO_TEST_PEER_DATABASE` to retain the test installation's identity across protocol checks,
 explicitly approve that public key on Connect, then remove its approval when testing is complete.
-Never copy the installation private key to Connect.
+Never copy the installation private key to Connect. This browser fixture uses the legacy,
+account-free admission path. A legacy pairing probe without an account grant does not test
+account-authorized relay access; its missing-approval warning is not evidence that signed-in access
+is broken. Signed-in installations use their active account grant and fresh installation proof,
+without adding keys to `DOVO_RELAY_APPROVED_KEYS`.
+
+The runtime `account-internet.test.ts` integration suite covers the signed-in phone request,
+encrypted connection delivery, Dovo TURN issuance without legacy approval configuration, runtime
+restart, and account revocation. Check credential issuance separately from relay payload traffic; an
+issued TURN credential alone does not establish that a native connection works.
 
 Public TURN DNS/TLS, real iPhone/Android network handover and cellular/restrictive-network behavior
 must be checked on deployed native builds. Server and mobile JavaScript bundle tests do not
