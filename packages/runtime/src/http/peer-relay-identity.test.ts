@@ -1,4 +1,5 @@
 import { expect, it } from 'vite-plus/test'
+import { createPublicKey, verify } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { peerRelayIdentity } from './peer-relay-identity.js'
 import { approvedRelayInstallations } from '../../../../apps/connect-server/src/relay-admission.js'
@@ -47,7 +48,25 @@ it('keeps an installation identity across restarts and proves possession without
       ),
     ).toBe(false)
     expect(Object.keys(proof).sort()).toEqual(['signature', 'type'])
-    expect(Object.keys(first).sort()).toEqual(['prove', 'publicKey'])
+    const registration = 'account-bound registration'
+    const signature = restored.signRegistration(registration)
+    const publicKey = createPublicKey({
+      key: Buffer.from(first.publicKey, 'base64url'),
+      format: 'der',
+      type: 'spki',
+    })
+    expect(
+      verify(null, Buffer.from(registration), publicKey, Buffer.from(signature, 'base64url')),
+    ).toBe(true)
+    expect(
+      verify(
+        null,
+        Buffer.from('another registration'),
+        publicKey,
+        Buffer.from(signature, 'base64url'),
+      ),
+    ).toBe(false)
+    expect(Object.keys(first).sort()).toEqual(['prove', 'publicKey', 'signRegistration'])
   } finally {
     db.close()
   }
