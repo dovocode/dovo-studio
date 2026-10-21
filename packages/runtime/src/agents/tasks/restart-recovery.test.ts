@@ -803,6 +803,8 @@ it('recovers the interrupted turn with its saved model choices while leaving thr
   expect(runs[0].agent).toMatchObject({ model: 'queued-model', reasoning: 'high' })
   expect(runtime.services.store.get().agents[0].model).toBe('')
   expect(runtime.services.store.task(id).agentOverrides?.model).toBeUndefined()
+  // Review is saved before the worker's finalizer releases execution ownership.
+  await waitForRecovery(() => expect(runtime.services.tasks.hasWorkingFamily(id)).toBe(false))
   await (
     await runtime.services.tasks.start(id)
   ).done
