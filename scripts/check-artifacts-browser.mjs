@@ -135,12 +135,13 @@ const built = await build({
 })
 const mocks = {
   'expo-router': `export const router={dismissTo:href=>window.artifactBackRoute=href};`,
-  // The real markdown renderer now follows the selected Studio palette.
-  '@dovo/studio-core': `export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo'});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
+  // Keep account/feed hooks real; these local-artifact scenarios have no account host.
+  '@dovo/studio-core': `export {useAccount} from '${root}packages/studio-core/src/use-account.ts';export {useArtifactFeed} from '${root}packages/studio-core/src/use-artifact-feed.ts';export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo'});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
   '@dovo/studio-ui': `
 import React from 'react';import {Button} from '${uiRoot}components/ui/button.tsx';
 export {Button};export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {cn} from '${uiRoot}lib/utils.ts';
 export {Input} from '${uiRoot}components/ui/input.tsx';
+export {Textarea} from '${uiRoot}components/ui/textarea.tsx';
 export {PageHeader} from '${uiRoot}page-header.tsx';
 export {Dialog,DialogContent,DialogDescription,DialogTitle} from '${uiRoot}components/ui/dialog.tsx';
 export {EmptyState} from '${uiRoot}components/empty-state.tsx';
@@ -149,6 +150,7 @@ export const IconButton=({label,...props})=><Button variant="ghost" size="icon" 
 export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true,()=>{}];
 export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=({children})=>children;export const TooltipContent=()=>null;
 `,
+  '../../runtime/connection/account-provider': `import {useAccount} from '@dovo/studio-core';const storage={read:async()=>null,write:async()=>{throw Error('Local artifact fixture has no account storage')}};export const useMobileAccount=()=>useAccount(storage,async url=>window.openedArtifactLinks.push(url));`,
   '../../runtime/connection/provider': `import {useWorkspace} from '@dovo/studio-core';export const useRuntime=()=>{const value=useWorkspace();return {...value,read:value.request,activeId:value.activeRuntimeId}};`,
   'react-native': `
 import React from 'react';
@@ -161,7 +163,7 @@ export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,
 export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={event=>onValueChange(event.target.checked)}/>;
 export const Image=({source,style})=><img src={source.uri} style={webStyle(style)}/>;export const Text=({children,style})=><span style={webStyle(style)}>{children}</span>;
 export const FlatList=({data,renderItem,ListEmptyComponent,contentContainerStyle})=><ScrollView contentContainerStyle={contentContainerStyle}>{data.length?data.map((item,index)=><React.Fragment key={index}>{renderItem({item})}</React.Fragment>):ListEmptyComponent}</ScrollView>;
-export const Alert={alert:(...args)=>(window.artifactAlerts??=[]).push(args)};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};
+export const Linking={openURL:async url=>window.openedArtifactLinks.push(url)};export const Alert={alert:(...args)=>(window.artifactAlerts??=[]).push(args)};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};
 `,
   'react-native-safe-area-context': `import {View} from 'react-native';export const SafeAreaProvider=({children})=><View style={{flex:1,minHeight:0}}>{children}</View>;export const SafeAreaView=View;`,
   'react-native-webview': `import React,{useEffect,useMemo,useRef} from 'react';export default ({source,onContentProcessDidTerminate,onRenderProcessGone,onMessage})=>{const frame=useRef(),callback=useRef(onMessage);callback.current=onMessage;const editor=source.html.includes('id="canvas"');const html=useMemo(()=>source.html.replace('<head>','<head><script>window.ReactNativeWebView={postMessage:data=>parent.postMessage({nativeArtifactMessage:data},"*")}</script>'),[source.html]);useEffect(()=>{if(!editor)window.mobilePreviewMounts=(window.mobilePreviewMounts||0)+1;const receive=event=>{if(event.source===frame.current?.contentWindow&&typeof event.data?.nativeArtifactMessage==='string')callback.current?.({nativeEvent:{data:event.data.nativeArtifactMessage}})};window.addEventListener('message',receive);return()=>window.removeEventListener('message',receive)},[editor]);if(!editor){window.terminateMobilePreview=()=>onContentProcessDidTerminate?.();window.crashMobilePreview=()=>onRenderProcessGone?.()}return <iframe ref={frame} title={editor?'Export editor':'Mobile preview'} sandbox={editor?'allow-scripts allow-same-origin':'allow-scripts allow-downloads'} style={editor?{height:'100%',flex:1,border:0}:undefined} srcDoc={html}/>;};`,
