@@ -23,7 +23,7 @@ if (
   throw new Error('Usage: node scripts/run-browser-suites.mjs [shard] [count] [--list]')
 if (mode !== '--list') {
   for (const args of [
-    ['--filter', '@dovo/design', '--filter', '@dovo/api...', '-r', 'build'],
+    ['--filter', '@dovo/web-ui...', '--filter', '@dovo/api...', '-r', 'build'],
     ['--filter', '@dovo/web', 'build'],
     ['--filter', '@dovo/desktop', 'build'],
   ]) {

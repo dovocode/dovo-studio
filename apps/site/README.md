@@ -62,6 +62,6 @@ workbench. It cleans up that runtime and does not connect to your personal works
 Brand assets come from the existing shared Dovo logo. Canonical URLs, sitemap and robots metadata
 use `https://dovo.studio`.
 
-Dokploy builds `apps/site/Dockerfile` with the repository root as context. It builds
-workspace dependencies (including `@dovo/web-ui`) before Next's static export, then serves `out` on
-port 80 with `/health`. No runtime environment variables or account credentials enter the site.
+Dokploy builds `apps/site/Dockerfile` with the repository root as context. It builds workspace
+dependencies (including `@dovo/web-ui`) before Next's static export, then serves `out` on port 80
+with `/health`. No runtime environment variables or account credentials enter the site.
