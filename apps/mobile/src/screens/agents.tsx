@@ -51,14 +51,14 @@ function EnvironmentTools() {
           <Text style={styles.text}>Installations & text generation · this computer</Text>
           <HarnessUpdates />
           <AcpRegistrySettings />
-          <TitleSettings />
-          <TitleSettings selection />
         </>
       ) : (
         <Text style={styles.muted}>
           Reconnect this computer to manage installations and text generation.
         </Text>
       )}
+      <TitleSettings />
+      <TitleSettings selection />
     </View>
   )
 }

@@ -1251,6 +1251,9 @@ export class GitService {
     ref: string,
     source?: NonNullable<Task['pullRequest']>,
   ) {
+    // Only disposable Studio attribute refs may move backwards after a force-push.
+    const refspec = (head: string) =>
+      `${ref.startsWith('refs/dovo/pull-attributes/') ? '+' : ''}${head}:${ref}`
     if (source?.provider && source.provider !== 'github') {
       if (!source.cloneUrl || !source.headRef)
         throw new HttpError(
@@ -1271,7 +1274,7 @@ export class GitService {
           '--no-write-fetch-head',
           '--',
           source.cloneUrl,
-          `${source.headRef}:${ref}`,
+          refspec(source.headRef),
         ],
         60000,
         12 * 1024 * 1024,
@@ -1293,7 +1296,7 @@ export class GitService {
           '--no-write-fetch-head',
           '--',
           remote,
-          `refs/pull/${number}/head:${ref}`,
+          refspec(`refs/pull/${number}/head`),
         ],
         60000,
         12 * 1024 * 1024,
@@ -1314,7 +1317,7 @@ export class GitService {
         '--no-write-fetch-head',
         '--',
         remote,
-        `refs/pull/${number}/head:${ref}`,
+        refspec(`refs/pull/${number}/head`),
       ],
       this.nonInteractive(),
     )

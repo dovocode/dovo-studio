@@ -428,3 +428,37 @@ it('opens unlinked GitHub PRs using URL targets without adding a project, with c
   expect(read).toHaveBeenCalledTimes(2)
   expect(services.store.get().repositories).toEqual(before)
 })
+it('routes an unbound known remote through its sole configured provider without GitHub discovery', async () => {
+  const { services: s, f } = await setup()
+  await s.git.command(f.directory, [
+    'remote',
+    'add',
+    'origin',
+    'https://bitbucket.org/team/studio.git',
+  ])
+  s.store.update((value) => ({
+    ...value,
+    repositories: value.repositories.map((repo) => ({ ...repo, forge: undefined })),
+  }))
+  const github = vi.spyOn(s.git, 'github')
+  const scope = await s.pulls.sourceContext(f.directory)
+  expect(scope.provider).toBe('bitbucket')
+  expect(scope.repository).toBe('team/studio')
+  expect(github).not.toHaveBeenCalled()
+})
+it('asks for a provider binding on unknown private hosts instead of attempting GitHub authentication', async () => {
+  const { services: s, f } = await setup()
+  await s.git.command(f.directory, [
+    'remote',
+    'add',
+    'origin',
+    'http://git.internal.example/team/studio.git',
+  ])
+  s.store.update((value) => ({
+    ...value,
+    repositories: value.repositories.map((repo) => ({ ...repo, forge: undefined })),
+  }))
+  const github = vi.spyOn(s.git, 'github')
+  await expect(s.pulls.sourceContext(f.directory)).rejects.toThrow('source control provider')
+  expect(github).not.toHaveBeenCalled()
+})

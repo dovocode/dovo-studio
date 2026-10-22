@@ -55,7 +55,7 @@ app.on('browser-window-created', (_event, window) => {
         input('Terminal shell','/bin/bash',HTMLInputElement);
         input('Shell arguments','--noprofile\\n--norc',HTMLTextAreaElement);
         input('Git executable','/usr/bin/git',HTMLInputElement);
-        await new Promise(r=>setTimeout(r,100));button('Save command settings').click();
+        await new Promise(r=>setTimeout(r,100));button('Save changes').click();
         await wait(()=>document.body.innerText.includes('Command settings saved.'));
         const settings=(await call('/api/commands/read',{})).settings;
         if(settings.shell!=='/bin/bash' || settings.git!=='/usr/bin/git' || settings.shellArgs.join(',')!=='--noprofile,--norc')throw new Error('Command settings did not persist');

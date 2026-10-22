@@ -43,6 +43,7 @@ it('follows a task’s pull request by branch and archives it on merge only when
   })
   cleanups.push(() => runtime.close())
   const s = runtime.services
+  f.workspace.repositories[0]!.gitIdentity = 'github.com/o/r'
   s.store.update(() => f.workspace)
   const task = s.tasks.create({
     title: 'Fix',
@@ -109,6 +110,7 @@ it('finds branch pull requests on later pages and reuses those pages for the rep
   })
   cleanups.push(() => runtime.close())
   const s = runtime.services
+  f.workspace.repositories[0]!.gitIdentity = 'github.com/o/r'
   s.store.update(() => f.workspace)
   const tasks = ['dovo/older', 'dovo/newer'].map((branch) => {
     const task = s.tasks.create({
@@ -149,6 +151,7 @@ async function smartFixture(state: 'closed' | 'merged' = 'closed') {
   })
   cleanups.push(() => runtime.close())
   const s = runtime.services
+  f.workspace.repositories[0]!.gitIdentity = 'github.com/o/r'
   s.store.update(() => f.workspace)
   const task = s.tasks.create({
     title: 'Fix',
@@ -749,4 +752,49 @@ it('refreshes every linked PR independently, including foreign repositories, and
   status.mockRejectedValue(new Error('offline'))
   await f.watcher.refresh()
   expect(f.s.store.task(f.task.id).pullStatuses).toMatchObject(saved!)
+})
+it('never looks up a foreign project mention by number in the current repository', async () => {
+  const f = await smartFixture()
+  f.s.store.updateTask(f.task.id, (value) => ({ ...value, checkoutBranch: undefined }))
+  f.s.store.updateTaskHistory(f.task.id, (value) => ({
+    ...value,
+    messages: [
+      {
+        id: 'foreign-mention',
+        role: 'assistant',
+        text: 'See https://github.com/another/project/pull/142 and https://github.com/o/r/pull/7',
+      },
+    ],
+  }))
+  await f.watcher.refresh()
+  expect(f.detail).toHaveBeenCalledTimes(1)
+  expect(f.detail).toHaveBeenCalledWith(expect.any(String), 7, false, true)
+  await f.watcher.refresh()
+  expect(f.detail.mock.calls.every(([, number]) => number === 7)).toBe(true)
+})
+it('matches mentions to the configured PR target when it differs from the clone origin', async () => {
+  const f = await smartFixture()
+  f.s.store.update((value) => ({
+    ...value,
+    repositories: value.repositories.map((repo) => ({
+      ...repo,
+      gitIdentity: 'github.com/fork/r',
+      pullIdentity: 'github.com/o/r',
+      forge: { connectionId: 'selected', repository: 'o/r' },
+    })),
+  }))
+  f.s.store.updateTask(f.task.id, (value) => ({ ...value, checkoutBranch: undefined }))
+  f.s.store.updateTaskHistory(f.task.id, (value) => ({
+    ...value,
+    messages: [
+      {
+        id: 'bound-mention',
+        role: 'assistant',
+        text: 'See https://github.com/o/r/pull/7 and https://github.com/fork/r/pull/142',
+      },
+    ],
+  }))
+  await f.watcher.refresh()
+  expect(f.detail).toHaveBeenCalledTimes(1)
+  expect(f.detail).toHaveBeenCalledWith(expect.any(String), 7, false, true)
 })

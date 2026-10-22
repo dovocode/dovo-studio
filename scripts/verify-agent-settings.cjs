@@ -37,7 +37,7 @@ app.on('browser-window-created', (_event, window) => {
         if(!effort)throw new Error('No discovered reasoning level');
         const effortId=effort.dataset.value;effort.click();await wait(()=>!document.querySelector('[role="listbox"]'));
         await new Promise(r=>setTimeout(r,100));
-        button('Save configuration').click();
+        button('Save changes').click();
         await wait(()=>document.body.innerText.includes('saved at'));
         let saved;
         for(let i=0;i<50;i++){saved=(await snapshot()).workspace.agents.find(a=>a.model===modelId && a.reasoning===effortId);if(saved)break;await new Promise(r=>setTimeout(r,100))}

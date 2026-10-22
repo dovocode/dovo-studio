@@ -1,4 +1,4 @@
-import { ScrollView } from 'react-native'
+import { SettingsScrollView } from './settings-search'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { usePushNotifications } from '../notifications/provider'
@@ -16,7 +16,7 @@ export default function NotificationsSettingsScreen() {
   return (
     <SettingsPage>
       <ScreenHeader title="Notifications" />
-      <ScrollView contentContainerStyle={styles.content}>
+      <SettingsScrollView contentContainerStyle={styles.content}>
         <Text style={styles.muted}>
           This device only · choose which paired computers can send alerts to this phone
         </Text>
@@ -71,7 +71,7 @@ export default function NotificationsSettingsScreen() {
             {activity.error}
           </Text>
         )}
-      </ScrollView>
+      </SettingsScrollView>
     </SettingsPage>
   )
 }

@@ -58,6 +58,7 @@ export class PullCache {
   private pending = new Map<string, Fiber.Fiber<unknown, RuntimeFailure>>()
   private executor = ManagedRuntime.make(Layer.empty)
   private invalidated = new Set<string>()
+  private missing = new Map<string, { at: number; error: RuntimeFailure }>()
   private failedAt = new Map<string, number>()
   private errors = new Map<string, string>()
   private stopped = false
@@ -158,6 +159,7 @@ export class PullCache {
                 'DELETE FROM pull_cache WHERE key IN (SELECT key FROM pull_cache ORDER BY updated DESC LIMIT -1 OFFSET 500)',
               )
               .run()
+            this.missing.delete(key)
             this.errors.delete(key)
             this.failedAt.delete(key)
             return value
@@ -165,6 +167,14 @@ export class PullCache {
         }).pipe(
           Effect.tapError((error) =>
             Effect.sync(() => {
+              const cause = error instanceof RuntimeOperationError ? error.cause : error
+              const status = decodeResult(mutableStruct({ status: Schema.Number }), cause)
+              this.missing.delete(key)
+              if (status.success && status.data.status === 404) {
+                this.missing.set(key, { at: Date.now(), error })
+                while (this.missing.size > 500)
+                  this.missing.delete(this.missing.keys().next().value!)
+              }
               this.errors.set(key, errorMessage(error))
               this.failedAt.set(key, Date.now())
               if (this.errors.size > 500) {
@@ -189,6 +199,17 @@ export class PullCache {
         return Fiber.join(fiber)
       })
       const stale = !!cached?.stale || (!!row && Date.now() - row.updated >= ttl)
+      const missing = this.missing.get(key)
+      // Confirmed missing PRs are credential/destination scoped; an explicit refresh bypasses this.
+      if (!force && missing && Date.now() - missing.at < 30 * 60_000)
+        return cached && row
+          ? {
+              ...cached,
+              cachedAt: cached.cachedAt ?? new Date(row.updated).toISOString(),
+              stale: true,
+              refreshError: errorMessage(missing.error),
+            }
+          : yield* Effect.fail(missing.error)
       if (cached && row && !force) {
         if (!this.stopped && stale && Date.now() - (this.failedAt.get(key) ?? 0) >= 60000)
           this.executor.runFork(refresh.pipe(Effect.ignore)) // Failure is retained for the next cached response.

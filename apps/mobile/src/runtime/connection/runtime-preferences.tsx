@@ -1,3 +1,5 @@
+import { useSettingsDraft } from '../preferences/settings-target'
+import { router } from 'expo-router'
 import { useEffect, type ReactNode } from 'react'
 import { View } from 'react-native'
 import { SettingsGroup, SettingsSwitchRow } from '../../screens/settings-group'
@@ -42,12 +44,13 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
   const show = (group: RuntimePreferencesSection) => !section || section === group
   const { styles } = useTheme()
 
-  const { connected, snapshot, readEffect, callEffect, overviews } = useRuntime()
+  const { connected, snapshot, readEffect, callEffect, overviews, activeId } = useRuntime()
   const webRulesSupported = snapshot?.allowWebRequests !== undefined
   const [value, setValue] = useApplicationState<Preferences | null>(null)
   const [memoryProjects, setMemoryProjects] = useApplicationState<
     typeof memoryProjectsSchema.Type.projects
   >([])
+  const [loading, setLoading] = useApplicationState(true)
   const [loadError, setLoadError] = useApplicationState('')
   const [memoryError, setMemoryError] = useApplicationState('')
   const [memoryLoading, setMemoryLoading] = useApplicationState(false)
@@ -55,16 +58,26 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
   const [saved, setSaved] = useApplicationState(false)
   const { act, busy, error } = useAction()
   useEffect(() => {
-    setValue(null)
+    setLoading(connected)
     setSaved(false)
     setLoadError('')
     if (!connected) return
     const scope = clientTaskScope()
     void scope.run(
       readEffect('/api/runtime/preferences/read', {}, runtimePreferencesSchema).pipe(
-        Effect.tap((settings) => Effect.sync(() => setValue(settings))),
+        Effect.tap((settings) =>
+          Effect.sync(() => {
+            setValue(settings)
+            setLoading(false)
+          }),
+        ),
         Effect.asVoid,
-        Effect.catch((error) => Effect.sync(() => setLoadError(error.message))),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            setLoadError(error.message)
+            setLoading(false)
+          }),
+        ),
       ),
     )
     return () => {
@@ -129,12 +142,14 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
       ),
     )
   }
-  const disabled = !connected || busy || value === null
+  const disabled = !connected || busy || loading || value === null
   const [prefixDraft, setPrefixDraft] = useApplicationState<string | null>(null)
+  useSettingsDraft(prefixDraft !== null && prefixDraft !== (value?.branchPrefix ?? ''), busy)
   const branchPrefix = normalizeBranchPrefix(prefixDraft ?? value?.branchPrefix ?? '')
   useEffect(() => {
-    if (prefixDraft !== null && branchPrefix.prefix === value?.branchPrefix) setPrefixDraft(null)
-  }, [prefixDraft, branchPrefix.prefix, value?.branchPrefix, setPrefixDraft])
+    if (prefixDraft !== null && branchPrefix.valid && branchPrefix.prefix === value?.branchPrefix)
+      setPrefixDraft(null)
+  }, [prefixDraft, branchPrefix.prefix, branchPrefix.valid, value?.branchPrefix, setPrefixDraft])
   const commitPrefix = () => {
     if (prefixDraft !== null && branchPrefix.valid && branchPrefix.prefix !== value?.branchPrefix)
       save({ branchPrefix: branchPrefix.prefix })
@@ -142,6 +157,29 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
   }
   return (
     <View style={{ gap: 28 }}>
+      {section && (
+        <Text style={styles.muted}>
+          Switches and choices save automatically. Text fields show a Save button.
+        </Text>
+      )}
+      {show('tasks') && (
+        <>
+          <Text style={styles.muted}>
+            Computer defaults apply when scoped Task lifecycle settings inherit. Scoped restart and
+            archiving rules take precedence.
+          </Text>
+          <Action
+            secondary
+            label="Open scoped task lifecycle"
+            onPress={() =>
+              router.push({
+                pathname: '/settings/task-lifecycle',
+                params: { runtimeId: activeId ?? '' },
+              })
+            }
+          />
+        </>
+      )}
       {!section && (
         <Text style={styles.muted}>
           Saved on this computer and shared with its paired devices. Switches and choices save
@@ -229,7 +267,9 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                   }
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Running, waiting, pinned tasks and tasks with an open terminal are never archived.
+                  Computer fallback when no scoped archiving rule is set. Scoped On archives after
+                  time in Settled; scoped Off disables automatic archiving. Running, waiting, pinned
+                  tasks and open terminals are protected.
                 </Text>
               </View>
               <View style={{ gap: 6 }}>
@@ -248,7 +288,11 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
             </Section>
           )}
           {show('tasks') && (
-            <Section title="Model modes (experimental)">
+            <Section
+              title="Model modes (experimental)"
+              advanced
+              searchLabels={['Tune & Maestro modes (experimental)']}
+            >
               <SettingsSwitchRow
                 first
                 label="Tune & Maestro modes (experimental)"
@@ -264,7 +308,11 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
             </Section>
           )}
           {show('tasks') && (
-            <Section title="Project mode (experimental)">
+            <Section
+              title="Project mode (experimental)"
+              advanced
+              searchLabels={['Scope mode (experimental)', 'Scope model mode']}
+            >
               <SettingsSwitchRow
                 first
                 label="Scope mode (experimental)"
@@ -694,8 +742,13 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
   )
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return <SettingsGroup title={title}>{children}</SettingsGroup>
+function Section(props: {
+  title: string
+  children: ReactNode
+  advanced?: boolean
+  searchLabels?: readonly string[]
+}) {
+  return <SettingsGroup {...props} />
 }
 
 function ChildAgentLimit({
@@ -708,9 +761,12 @@ function ChildAgentLimit({
   onSave: (value: number) => void
 }) {
   const [draft, setDraft] = useApplicationState<string | null>(null)
+  useSettingsDraft(draft !== null && draft !== String(value ?? 4))
   const limit = Number(draft ?? value ?? 4)
   const valid = Number.isSafeInteger(limit) && limit >= 1
-  useEffect(() => setDraft(null), [value, setDraft])
+  useEffect(() => {
+    if (draft !== null && valid && limit === value) setDraft(null)
+  }, [draft, valid, limit, value, setDraft])
   const commit = () => {
     if (draft !== null && valid && limit !== value) onSave(limit)
   }

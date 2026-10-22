@@ -2,7 +2,7 @@ import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode } from '@dovo/protocol'
 import { ChoicePicker } from './choice-picker'
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import {
   agentSchema,
   modelPreferenceKey,
@@ -169,7 +169,7 @@ export function ModelSettings({
         </ChoicePicker>
       </FormField>
       {modes && agent.provider === 'acp' && catalog?.acp && (
-        <>
+        <ProviderOptions collapsed={layout === 'settings'}>
           {!!catalog.acp.modes.length && (
             <FormField label="ACP mode" layout={layout}>
               <ChoicePicker
@@ -244,10 +244,10 @@ export function ModelSettings({
               </ul>
             </details>
           )}
-        </>
+        </ProviderOptions>
       )}
       {modes && agent.provider === 'codex' && (
-        <>
+        <ProviderOptions collapsed={layout === 'settings'}>
           <FormField label="Speed" layout={layout}>
             <ChoicePicker
               aria-label="Service tier"
@@ -309,7 +309,7 @@ export function ModelSettings({
               ? 'Authorized cybersecurity mode for each turn. Codex checks account and model access. Auto review is recommended; your access setting stays unchanged.'
               : 'Daybreak requires an eligible ChatGPT account and an updated Codex harness. Available programs appear after model discovery.'}
           </p>
-        </>
+        </ProviderOptions>
       )}
       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>
@@ -377,5 +377,17 @@ export function ModelSettings({
         </p>
       )}
     </div>
+  )
+}
+
+function ProviderOptions({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
+  if (!collapsed) return <>{children}</>
+  return (
+    <details className="rounded-lg border p-3">
+      <summary className="cursor-pointer text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        Advanced provider options
+      </summary>
+      <div className="mt-3 grid gap-3">{children}</div>
+    </details>
   )
 }

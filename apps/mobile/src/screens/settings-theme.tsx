@@ -1,4 +1,12 @@
-import { createContext, useContext, useMemo, type ComponentProps, type ReactNode } from 'react'
+import { SettingsFooterContext } from './settings-save-bar'
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react'
 import { ScrollView, StyleSheet, View } from 'react-native'
 import { MobileThemeContext, useTheme } from '../ui/theme'
 import { Sheet } from '../ui/layout/sheet'
@@ -67,9 +75,15 @@ export function SettingsTheme({ children }: { children: ReactNode }) {
 
 export function SettingsPage({ children }: { children: ReactNode }) {
   const { styles } = useSettingsTheme()
+  const [footer, setFooter] = useState<ReactNode>(null)
   return (
     <SettingsTheme>
-      <View style={styles.screen}>{children}</View>
+      <SettingsFooterContext.Provider value={setFooter}>
+        <View style={styles.screen}>
+          {children}
+          {footer}
+        </View>
+      </SettingsFooterContext.Provider>
     </SettingsTheme>
   )
 }

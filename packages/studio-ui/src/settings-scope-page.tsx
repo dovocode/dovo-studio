@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Layers } from 'lucide-react'
+import * as Popover from '@radix-ui/react-popover'
 import {
   settingsProjectChoices,
   settingsScopeSummary,
@@ -40,82 +41,94 @@ export function SettingsScopePage({
           className="shrink-0 border-b bg-card/40 px-4 py-3 sm:px-6"
           aria-label="Settings target"
         >
-          <div className={`mx-auto ${width} space-y-2.5`}>
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold [overflow-wrap:anywhere]">
-                  Editing {summary.title}
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  {summary.description}
-                </p>
-              </div>
-              <span className="max-w-full rounded-md border bg-background/60 px-2 py-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                {summary.storage}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-xs">
-              <Layers className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <span className="font-medium">Edit defaults for</span>
-              <ChoicePicker
-                aria-label="Settings project"
-                className="h-8 w-auto min-w-40 max-w-full bg-background/60"
-                value={target.projectId}
-                onValueChange={(projectId) => setTarget({ ...target, projectId })}
-              >
-                <option value="">All projects</option>
-                {target.projectId &&
-                  !projects.some((project) => project.id === target.projectId) && (
-                    <option value={target.projectId}>Project unavailable on this computer</option>
-                  )}
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </ChoicePicker>
-              {sources.length > 1 && (
-                <>
-                  <span className="text-muted-foreground">on</span>
-                  <ChoicePicker
-                    aria-label="Settings machine"
-                    className="h-8 w-auto min-w-40 max-w-full bg-background/60"
-                    value={target.environmentId}
-                    onValueChange={(environmentId) => setTarget({ ...target, environmentId })}
-                  >
-                    <option value="">All machines</option>
-                    {target.environmentId &&
-                      !sources.some((entry) => entry.profile.id === target.environmentId) && (
-                        <option value={target.environmentId}>Computer unavailable</option>
-                      )}
-                    {sources.map((entry) => (
-                      <option key={entry.profile.id} value={entry.profile.id}>
-                        {entry.name}
-                        {entry.connected ? '' : ' · Offline'}
-                      </option>
-                    ))}
-                  </ChoicePicker>
-                </>
-              )}
-              {sources.length === 1 && (
+          <div className={`mx-auto ${width} flex flex-wrap items-center gap-2 text-xs`}>
+            <span className="max-w-full break-words text-xs font-medium">{summary.title}</span>
+            <Popover.Root>
+              <Popover.Trigger asChild>
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    const environmentId = target.environmentId ? '' : sources[0].profile.id
-                    const choices = settingsProjectChoices(sources, environmentId)
-                    setTarget({
-                      environmentId,
-                      projectId: choices.some((project) => project.id === target.projectId)
-                        ? target.projectId
-                        : '',
-                    })
-                  }}
+                  className="size-8 shrink-0 p-0"
+                  aria-label="Settings inheritance details"
+                  title={summary.title}
                 >
-                  {target.environmentId ? 'Edit shared defaults' : 'Edit computer overrides'}
+                  <Layers className="size-4" aria-hidden="true" />
                 </Button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  align="start"
+                  sideOffset={8}
+                  className="z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-lg"
+                >
+                  <p className="font-semibold">Editing {summary.title}</p>
+                  <p>{summary.description}</p>
+                  <p className="text-muted-foreground">{summary.storage}</p>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+            {source && !source.connected && (
+              <span role="status" className="text-xs text-muted-foreground">
+                Offline · edits kept here
+              </span>
+            )}
+            <ChoicePicker
+              aria-label="Settings project"
+              className="h-8 w-auto min-w-40 max-w-full bg-background/60"
+              value={target.projectId}
+              onValueChange={(projectId) => setTarget({ ...target, projectId })}
+            >
+              <option value="">All projects</option>
+              {target.projectId && !projects.some((project) => project.id === target.projectId) && (
+                <option value={target.projectId}>Project unavailable on this computer</option>
               )}
-            </div>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </ChoicePicker>
+            {sources.length > 1 && (
+              <>
+                <span className="text-muted-foreground">on</span>
+                <ChoicePicker
+                  aria-label="Settings machine"
+                  className="h-8 w-auto min-w-40 max-w-full bg-background/60"
+                  value={target.environmentId}
+                  onValueChange={(environmentId) => setTarget({ ...target, environmentId })}
+                >
+                  <option value="">All computers</option>
+                  {target.environmentId &&
+                    !sources.some((entry) => entry.profile.id === target.environmentId) && (
+                      <option value={target.environmentId}>Computer unavailable</option>
+                    )}
+                  {sources.map((entry) => (
+                    <option key={entry.profile.id} value={entry.profile.id}>
+                      {entry.name}
+                      {entry.connected ? '' : ' · Offline'}
+                    </option>
+                  ))}
+                </ChoicePicker>
+              </>
+            )}
+            {sources.length === 1 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const environmentId = target.environmentId ? '' : sources[0].profile.id
+                  const choices = settingsProjectChoices(sources, environmentId)
+                  setTarget({
+                    environmentId,
+                    projectId: choices.some((project) => project.id === target.projectId)
+                      ? target.projectId
+                      : '',
+                  })
+                }}
+              >
+                {target.environmentId ? 'Edit shared defaults' : 'Edit computer overrides'}
+              </Button>
+            )}
           </div>
         </div>
       }

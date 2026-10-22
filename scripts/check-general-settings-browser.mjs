@@ -83,6 +83,7 @@ import Diffs from '${root}/packages/studio-shell/src/app-settings/diffs.tsx';
 import Usage from '${root}/packages/studio-shell/src/app-settings/usage.tsx';
 import Agents from '${root}/packages/extension-agents/src/view.tsx';
 import TaskDefaults from '${root}/packages/extension-runtime/src/task-defaults-view.tsx';
+import TaskBehavior from '${root}/packages/extension-runtime/src/task-behavior-view.tsx';
 window.repo={id:'project',name:'Dovo',gitIdentity:'github.com/team/dovo',path:'/repo',branch:'main'};
 const global={taskDefaults:{setupCommand:'pnpm install'},resources:{skills:[],mcpServers:[]},taskBehavior:{quotaResume:true}};
 window.sources=[{profile:{id:'computer',name:'MacBook Pro',connection:{address:'http://computer.local',token:'test-token'}},name:'MacBook Pro',scope:'computer',connected:true,snapshot:{scopedAgentsSupported:true,taskBehaviorSupported:true,threadBehaviorSupported:true,defaults:{scopedSettings:{environment:{},shared:[{key:'global',updatedAt:1,changeId:'global',value:global}]}},workspace:{agents:[],tasks:[],planLimits:[],repositories:[window.repo]}}}];
@@ -105,7 +106,7 @@ window.updateState={status:'idle',channel:'stable'};window.updateCalls=[];window
 window.updates={state:async()=>window.updateState,subscribe:fn=>{window.updateListeners.add(fn);return()=>window.updateListeners.delete(fn)},check:async()=>window.updateCalls.push('check'),install:async()=>window.updateCalls.push('install'),setChannel:async channel=>{window.updateCalls.push(channel);window.publishUpdate({...window.updateState,channel})}};
 const localPages={appearance:Appearance,notifications:Notifications,shortcuts:Shortcuts,'browser-settings':Browser,'pull-request-monitoring-settings':PullRequests,diffs:Diffs,usage:Usage,'task-list-settings':TaskList};
 const views=[appSettingsExtension,agentsExtension,runtimeExtension,scmExtension,tasksExtension].flatMap(extension=>extension.views).filter(view=>view.navigationGroup==='settings');
-function Content(){useAppearance();window.diffOptions=useDiffOptions();const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=id=>{if(id!==view&&confirm())setView(id)};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/>{Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</div>}
+function Content(){useAppearance();window.diffOptions=useDiffOptions();const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=id=>{if(id!==view&&confirm())setView(id)};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/><main data-settings-content className="flex min-h-0 min-w-0 flex-1 flex-col">{view==='task-behavior'?<TaskBehavior/>:Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</main></div>}
 createRoot(document.getElementById('app')).render(<SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider>);`,
     loader: 'tsx',
     resolveDir: root,
@@ -280,7 +281,10 @@ try {
     .getByText('Task defaults · Computer & project', { exact: true })
     .waitFor()
   await page.getByRole('heading', { name: 'General', exact: true, level: 1 }).waitFor()
-  await page.getByRole('dialog').getByText('All projects · All machines', { exact: true }).waitFor()
+  await page
+    .getByRole('dialog')
+    .getByText('All projects · All computers', { exact: true })
+    .waitFor()
   await page.keyboard.press('Escape')
   const deviceScope = settingsSidebar.getByRole('button', {
     name: 'Settings scope for General',
@@ -331,9 +335,11 @@ try {
   await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).waitFor()
   await page.evaluate(() => window.changeView('general'))
   for (const [category, titles] of [
-    ['This app', ['General', 'Conversation', 'Browser']],
+    ['App preferences', ['General', 'Conversation', 'Browser', 'Task list & projects']],
+    ['New task defaults', ['Task defaults']],
+    ['Running task behavior', ['Running tasks', 'Task lifecycle']],
     ['Agents & tools', ['Agents', 'CLI commands & shell', 'Studio Tools', 'Memory']],
-    ['Tasks & projects', ['Task list & projects', 'Task defaults', 'Running tasks']],
+    ['Tasks & projects', ['Worktrees', 'Artifacts']],
     ['Computers', ['Devices & runtime', 'Device previews']],
     ['History', ['Activity & message history', 'Archived tasks']],
   ]) {
@@ -354,6 +360,62 @@ try {
   await settingsSidebar.getByRole('status').filter({ hasText: 'No settings match' }).waitFor()
   await search.press('Escape')
   assert.equal(await search.inputValue(), '')
+  // Search opens the exact control, including inside collapsed advanced groups.
+  await search.fill('long lines')
+  await search.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), 'Long lines')
+  await page.keyboard.press('Enter')
+  await page.locator('[data-search-highlight][data-setting-label="Long lines"]').waitFor()
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.dataset.settingLabel),
+    'Long lines',
+  )
+  await search.fill('preferred computer')
+  await search.press('Enter')
+  await settingsSidebar.getByRole('status').filter({ hasText: 'Choose a project first.' }).waitFor()
+  await search.fill('submodules')
+  await search.press('Enter')
+  const advancedSetup = page.locator(
+    'details:has(> summary[data-setting-label="Advanced workspace setup"])',
+  )
+  await page.locator('[data-search-highlight][data-setting-label="Submodules"]').waitFor()
+  assert.equal(await advancedSetup.getAttribute('open'), '')
+  const writesBeforeDiscard = await page.evaluate(() => window.writes.length)
+  await choose('Working directory', 'New worktree')
+  const actions = await page
+    .getByRole('group', { name: 'Settings save actions', exact: true })
+    .boundingBox()
+  assert.ok(
+    actions && actions.y >= 0 && actions.y + actions.height <= 901,
+    'Save and Discard stay inside the visible settings area',
+  )
+  // Rejecting search navigation preserves the draft and never highlights another page.
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await search.fill('time format')
+  await search.press('Enter')
+  await page.getByRole('heading', { name: 'Task defaults', level: 1, exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('combobox', { name: 'Working directory', exact: true }).innerText(),
+    'New worktree',
+  )
+  await page.getByRole('button', { name: 'Discard', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.writes.length), writesBeforeDiscard)
+  assert.equal(
+    await page.getByRole('button', { name: 'Save changes', exact: true }).isDisabled(),
+    true,
+  )
+  await search.press('Enter')
+  await page.locator('[data-search-highlight][data-setting-label="Time format"]').waitFor()
+  await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
+  assert.equal(await page.locator('[data-search-highlight]').count(), 0)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await search.fill('long lines')
+  await settingsSidebar.getByRole('button', { name: 'Long lines', exact: true }).click()
+  await page.locator('[data-search-highlight][data-setting-label="Long lines"]').waitFor()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await search.press('Escape')
+  await page.setViewportSize({ width: 1280, height: 900 })
   await search.fill('confirmation')
   await search.press('Enter')
   await page.getByRole('heading', { name: 'Task list & projects', exact: true, level: 1 }).waitFor()
@@ -407,13 +469,14 @@ try {
   await screenshot('agents-dark')
   await profiles.getByRole('button', { name: /Claude Code/ }).click()
   await page.getByLabel('Instructions', { exact: true }).fill('Always explain your changes.')
-  await page.getByRole('button', { name: 'Save configuration', exact: true }).click()
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'Claude Code saved' }).waitFor()
   assert.equal((await page.evaluate(() => window.writes.at(-1))).after.agents[0].id, 'dovo:claude')
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
   await page.getByText(/Saving creates an override/).waitFor()
   assert.deepEqual(await page.evaluate(() => window.writes.at(-1).after.agents), [])
   await page.getByRole('button', { name: 'Open task defaults', exact: true }).click()
+  await settingsSidebar.getByRole('button', { name: 'Task lifecycle', exact: true }).click()
   await page.getByRole('combobox', { name: 'Auto-resume limited tasks', exact: true }).waitFor()
   await screenshot('task-defaults-dark')
   await choose('Auto-resume limited tasks', 'Off')
@@ -421,8 +484,8 @@ try {
   await page
     .getByRole('spinbutton', { name: 'Days in Settled before archiving', exact: true })
     .fill('12')
-  await page.getByRole('button', { name: 'Save lifecycle settings', exact: true }).click()
-  await page.getByRole('status').filter({ hasText: 'Lifecycle settings saved.' }).waitFor()
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Changes saved.' }).waitFor()
   let writes = await page.evaluate(() => window.writes)
   assert.equal(writes.at(-1).scope, 'global')
   assert.equal(writes.at(-1).after.taskBehavior.quotaResume, false)
@@ -436,25 +499,28 @@ try {
     .getByLabel('Inherited settings target')
     .getByText('Dovo · MacBook Pro', { exact: true })
     .waitFor()
-  await page.getByText('Editing Dovo on MacBook Pro', { exact: true }).waitFor()
+  await page.getByText('Dovo on MacBook Pro', { exact: true }).waitFor()
   if (process.env.DOVO_SETTINGS_SCREENSHOTS)
-    await page.getByRole('heading', { name: 'New tasks', exact: true }).evaluate((element) => {
-      element.scrollIntoView({ block: 'start' })
-    })
+    await page
+      .getByRole('heading', { name: 'Task lifecycle', exact: true, level: 2 })
+      .evaluate((element) => {
+        element.scrollIntoView({ block: 'start' })
+      })
   await screenshotThemes('task-defaults-project-computer-desktop')
   await choose('Auto-resume limited tasks', 'On')
-  await page.getByRole('button', { name: 'Save lifecycle settings', exact: true }).click()
-  await page.getByRole('status').filter({ hasText: 'Lifecycle settings saved.' }).waitFor()
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Changes saved.' }).waitFor()
   writes = await page.evaluate(() => window.writes)
   assert.equal(writes.at(-1).scope, 'environment-project')
   assert.equal(writes.at(-1).repositoryId, 'project')
   await page
     .getByRole('button', { name: 'Use inherited auto-resume limited tasks: Off', exact: true })
     .click()
-  await page.getByRole('button', { name: 'Save lifecycle settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.waitForFunction(
     () => window.writes.at(-1).after.taskBehavior.quotaResume === undefined,
   )
+  await settingsSidebar.getByRole('button', { name: 'Task defaults', exact: true }).click()
   await choose('Working directory', 'New worktree')
   page.once('dialog', (dialog) => dialog.dismiss())
   await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
@@ -475,7 +541,7 @@ try {
       .getAttribute('aria-current'),
     'page',
   )
-  await page.getByText('Editing Dovo on MacBook Pro', { exact: true }).waitFor()
+  await page.getByText('Dovo on MacBook Pro', { exact: true }).waitFor()
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Conversation', exact: true }).click()
   await page.getByRole('switch', { name: 'Formatted composer preview', exact: true }).click()
@@ -734,9 +800,9 @@ try {
   await page.getByRole('combobox', { name: 'Settings section', exact: true }).click()
   const sectionChoices = page.getByRole('listbox')
   for (const [category, title] of [
-    ['This app', 'General'],
+    ['App preferences', 'General'],
     ['Agents & tools', 'Agents'],
-    ['Tasks & projects', 'Task defaults'],
+    ['New task defaults', 'Task defaults'],
     ['Computers', 'Devices & runtime'],
     ['History', 'Archived tasks'],
   ]) {

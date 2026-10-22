@@ -12,7 +12,11 @@ export function FormField({
 }) {
   if (layout === 'settings')
     return (
-      <label className="grid gap-3 text-xs font-medium text-muted-foreground sm:grid-cols-[minmax(10rem,1fr)_minmax(0,1.5fr)] sm:items-start">
+      <label
+        data-setting-label={label}
+        tabIndex={-1}
+        className="scroll-mt-4 outline-none grid gap-3 text-xs font-medium text-muted-foreground sm:grid-cols-[minmax(10rem,1fr)_minmax(0,1.5fr)] sm:items-start"
+      >
         <span className="pt-2">{label}</span>
         <div className="min-w-0 space-y-2">{children}</div>
         {error && (

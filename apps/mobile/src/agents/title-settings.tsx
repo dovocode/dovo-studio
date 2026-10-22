@@ -1,12 +1,14 @@
-import { supportsUtilities } from '@dovo/protocol'
+import { SettingsSaveBar } from '../screens/settings-save-bar'
+import { useSettingsDraft } from '../runtime/preferences/settings-target'
+import { settingsChanges, supportsUtilities } from '@dovo/protocol'
 import { configuredTaskHarness } from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
-import { useEffect } from 'react'
-import { View } from 'react-native'
+import { useEffect, useRef } from 'react'
+import { Alert, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
   agentSchema,
@@ -39,7 +41,12 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
     [loadError, setLoadError] = useApplicationState('')
   const [retry, setRetry] = useApplicationState(0)
   const [saved, setSaved] = useApplicationState(false)
+  const dirty = !!settings && JSON.stringify(settings) !== JSON.stringify(baseline)
+  const protectDraft = useRef(false)
+  protectDraft.current = dirty
+  useSettingsDraft(dirty, busy)
   useEffect(() => {
+    if (protectDraft.current) return
     let active = true
     setSettings(undefined)
     setBaseline(undefined)
@@ -232,9 +239,24 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
           }
         />
       )}
-      <Action
-        wide
-        label={busy ? 'Saving…' : selection ? 'Save selection model' : 'Save title settings'}
+      <SettingsSaveBar
+        inline
+        dirty={dirty}
+        saving={busy}
+        saved={saved}
+        changes={settingsChanges(baseline ?? {}, settings)}
+        saveError={error}
+        readLatestChanges={async () =>
+          settingsChanges(
+            baseline ?? {},
+            await call(`${settingsPath}/read`, {}, titleGenerationSettingsSchema),
+          )
+        }
+        onDiscard={() => {
+          setSettings(baseline)
+          setSaved(false)
+        }}
+        saveLabel={selection ? 'Save selection model' : 'Save title settings'}
         disabled={
           !connected ||
           busy ||
@@ -243,7 +265,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
           (!(selection && settings.inheritTitleModel) &&
             (!settings.model.trim() || (!settings.harness && !settings.agentId)))
         }
-        onPress={() =>
+        onSave={() =>
           act(() =>
             mobileWorkflow(function* () {
               const saved = yield* callEffect(
@@ -265,7 +287,35 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
             : 'Title settings saved. Applies to new titles and dictation cleanup.'}
         </Text>
       )}
-      {!!error && <Text style={styles.error}>{error}</Text>}
+      {!!error && (
+        <>
+          <Text accessibilityRole="alert" style={styles.error}>
+            {error}
+          </Text>
+          <Action
+            secondary
+            label="Reload settings"
+            disabled={!connected || busy}
+            onPress={() => {
+              const reload = () => {
+                protectDraft.current = false
+                setSettings(undefined)
+                setRetry((value) => value + 1)
+              }
+              if (!dirty) reload()
+              else
+                Alert.alert(
+                  'Discard unsaved edits?',
+                  'Load the latest saved settings and discard your edits?',
+                  [
+                    { text: 'Keep editing', style: 'cancel' },
+                    { text: 'Discard and reload', style: 'destructive', onPress: reload },
+                  ],
+                )
+            }}
+          />
+        </>
+      )}
     </View>
   )
 }

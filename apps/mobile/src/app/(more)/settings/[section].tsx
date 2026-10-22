@@ -1,3 +1,9 @@
+import { useSettingsDraftState } from '../../../runtime/preferences/settings-target'
+import { usePreventRemove } from 'expo-router'
+import { useState } from 'react'
+import { Alert } from 'react-native'
+import { SettingsSearchContext } from '../../../screens/settings-search'
+import TaskLifecycleScreen from '../../../screens/task-lifecycle'
 import type { ComponentType } from 'react'
 import SettingsScreen from '../../../screens/settings'
 import TaskDefaultsScreen from '../../../screens/task-defaults'
@@ -34,6 +40,8 @@ import { useTheme } from '../../../ui/theme'
 
 const screens: Readonly<Partial<Record<string, ComponentType>>> = {
   'app-preferences': () => <SettingsScreen categorySlug="app-preferences" />,
+  'new-task-defaults': () => <SettingsScreen categorySlug="new-task-defaults" />,
+  'running-task-settings': () => <SettingsScreen categorySlug="running-task-settings" />,
   'agent-settings': () => <SettingsScreen categorySlug="agent-settings" />,
   'task-settings': () => <SettingsScreen categorySlug="task-settings" />,
   'computer-settings': () => <SettingsScreen categorySlug="computer-settings" />,
@@ -41,6 +49,7 @@ const screens: Readonly<Partial<Record<string, ComponentType>>> = {
   'device-hosts': DeviceHostsScreen,
   appearance: AppearanceScreen,
   'task-defaults': TaskDefaultsScreen,
+  'task-lifecycle': TaskLifecycleScreen,
   updates: AppUpdates,
   general: GeneralScreen,
   devices: DevicesScreen,
@@ -64,8 +73,24 @@ const screens: Readonly<Partial<Record<string, ComponentType>>> = {
 
 export default function SettingsSection() {
   const { styles } = useTheme()
+  const draftFlags = useSettingsDraftState()
+  const [leaving, setLeaving] = useState(false)
+  usePreventRemove(!!draftFlags && !leaving, ({ repeat }) => {
+    if (draftFlags & 2) return
+    Alert.alert('Unsaved settings', 'Discard unsaved settings changes?', [
+      { text: 'Keep editing', style: 'cancel' },
+      {
+        text: 'Discard',
+        style: 'destructive',
+        onPress: () => {
+          setLeaving(true)
+          repeat()
+        },
+      },
+    ])
+  })
 
-  const { section } = useLocalSearchParams<{ section: string }>()
+  const { section, setting } = useLocalSearchParams<{ section: string; setting?: string }>()
   const Screen = Object.hasOwn(screens, section) ? screens[section] : undefined
   return (
     <WorkbenchDetailRoute tab="settings" bottomInset>
@@ -76,7 +101,9 @@ export default function SettingsSection() {
             else router.dismissTo('/settings')
           }}
         >
-          <Screen />
+          <SettingsSearchContext.Provider value={setting ?? ''}>
+            <Screen />
+          </SettingsSearchContext.Provider>
         </ScreenBackContext.Provider>
       ) : (
         <View style={styles.screen}>

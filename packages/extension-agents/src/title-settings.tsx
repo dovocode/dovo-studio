@@ -1,4 +1,4 @@
-import { supportsUtilities } from '@dovo/protocol'
+import { settingsChanges, supportsUtilities } from '@dovo/protocol'
 import { configuredTaskHarness } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -9,17 +9,26 @@ import {
   titleSettingsForHarness,
 } from '@dovo/protocol'
 import { AcpRegistry } from './acp-registry'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import {
   titleGenerationSettingsSchema,
   modelCatalogSchema,
   useWorkspace,
+  useSettingsDraft,
   providers,
   providerSchema,
   type TitleGenerationSettings as Settings,
   type AgentDiscovery,
 } from '@dovo/studio-core'
-import { Button, ChoicePicker, FormField, ModelSettings, Input, Textarea } from '@dovo/studio-ui'
+import {
+  SettingsSaveBar,
+  Button,
+  ChoicePicker,
+  FormField,
+  ModelSettings,
+  Input,
+  Textarea,
+} from '@dovo/studio-ui'
 export function TitleSettings({ selection = false }: { selection?: boolean }) {
   const settingsPath = selection ? '/api/agents/selection-settings' : '/api/agents/title-settings'
   const { workspace, request, connected, snapshot } = useWorkspace()
@@ -31,7 +40,10 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
   const [reload, setReload] = useApplicationState(0)
   const [busy, setBusy] = useApplicationState(false)
   const [saved, setSaved] = useApplicationState(false)
+  const form = useRef<HTMLFormElement>(null)
+  const protectDraft = useRef(false)
   useEffect(() => {
+    if (protectDraft.current) return
     let stopped = false
     if (!connected) return
     setSettings(null)
@@ -64,6 +76,14 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
     .filter((provider) => !supportsUtilities(provider))
     .map((provider) => providers[provider].short)
   const dirty = !!settings && JSON.stringify(settings) !== JSON.stringify(baseline)
+  protectDraft.current = dirty
+  useSettingsDraft(dirty, busy)
+  const reloadSettings = () => {
+    if (dirty && !window.confirm('Discard your unsaved edits and load the latest saved settings?'))
+      return
+    setBaseline(settings)
+    setReload((value) => value + 1)
+  }
   const edit = (next: Settings) => {
     setSettings(next)
     setSaved(false)
@@ -96,7 +116,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
         ) : loadError ? (
           <div role="alert" className="flex flex-wrap items-center gap-3 text-xs text-destructive">
             <span>Title settings could not be loaded. {loadError}</span>
-            <Button size="sm" variant="outline" onClick={() => setReload(reload + 1)}>
+            <Button size="sm" variant="outline" onClick={reloadSettings}>
               Try again
             </Button>
           </div>
@@ -106,6 +126,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
           </p>
         ) : (
           <form
+            ref={form}
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault()
@@ -273,45 +294,33 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                   The selected profile is no longer available. Choose another provider.
                 </p>
               )}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-                <span aria-live="polite" className="text-xs text-muted-foreground">
-                  {busy
-                    ? 'Saving…'
-                    : dirty
-                      ? 'Unsaved changes'
-                      : saved
-                        ? selection
-                          ? 'Selection model settings saved.'
-                          : 'Title settings saved.'
-                        : 'No unsaved changes'}
-                </span>
-                <div className="flex gap-2">
-                  {dirty && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        setSettings(baseline)
-                        setError('')
-                      }}
-                    >
-                      Discard changes
-                    </Button>
-                  )}
-                  <Button
-                    type="submit"
-                    disabled={
-                      !dirty ||
-                      (!(selection && settings.inheritTitleModel) &&
-                        (!harness ||
-                          !settings.model.trim() ||
-                          (!settings.harness && !settings.agentId)))
-                    }
-                  >
-                    {busy ? 'Saving…' : selection ? 'Save selection model' : 'Save title settings'}
-                  </Button>
-                </div>
-              </div>
+              <SettingsSaveBar
+                saveLabel={selection ? 'Save selection model' : 'Save title settings'}
+                dirty={dirty}
+                saving={busy}
+                saved={saved}
+                changes={settingsChanges(baseline ?? {}, settings)}
+                saveError={error}
+                readLatestChanges={async () =>
+                  settingsChanges(
+                    baseline ?? {},
+                    await request(`${settingsPath}/read`, {}, titleGenerationSettingsSchema),
+                  )
+                }
+                description="Changes apply to new tasks. Save to apply."
+                disabled={
+                  !connected ||
+                  (!(selection && settings.inheritTitleModel) &&
+                    (!harness ||
+                      !settings.model.trim() ||
+                      (!settings.harness && !settings.agentId)))
+                }
+                onDiscard={() => {
+                  setSettings(baseline)
+                  setError('')
+                }}
+                onSave={() => form.current?.requestSubmit()}
+              />
             </fieldset>
           </form>
         )}
@@ -326,10 +335,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
               size="sm"
               variant="outline"
               disabled={busy || !connected}
-              onClick={() => {
-                if (!dirty || window.confirm('Discard unsaved title settings and reload?'))
-                  setReload((value) => value + 1)
-              }}
+              onClick={reloadSettings}
             >
               Reload settings
             </Button>

@@ -853,3 +853,32 @@ it('cleans only the interrupted worktree on restart, including custom worktree l
   await again.post('discard', { id: nextId })
   expect(await readdir(worktrees)).toEqual(['keep'])
 })
+it('accepts more than 100,000 files through the authenticated transfer route and still bounds metadata', async () => {
+  const { target } = await setup()
+  const entries = Array.from({ length: 100001 }, (_, index) => ({
+    path: `src/component-${index}.txt`,
+    kind: 'file' as const,
+    bytes: 0,
+    sha256: createHash('sha256').update('').digest('hex'),
+    mode: 0o644,
+  }))
+  const manifest = {
+    id: randomUUID(),
+    runtimeId: target.services.runtimeId,
+    name: 'Large project',
+    entries,
+  }
+  expect(Buffer.byteLength(JSON.stringify(manifest))).toBeGreaterThan(8 * 1024 * 1024)
+  const response = await target.post('begin', manifest)
+  expect(response.status).toBe(200)
+  expect((await target.post('discard', { id: manifest.id })).status).toBe(200)
+  expect(
+    (
+      await target.post('begin', {
+        ...manifest,
+        id: randomUUID(),
+        entries: Array(260003).fill(entries[0]),
+      })
+    ).status,
+  ).toBe(400)
+})

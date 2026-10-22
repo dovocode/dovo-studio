@@ -1,6 +1,6 @@
+import { SettingsScrollView } from './settings-search'
 import { router } from 'expo-router'
 import type { ReactNode } from 'react'
-import { ScrollView } from 'react-native'
 import { useEffect, useState } from 'react'
 import { requireOptionalNativeModule } from 'expo'
 import type { ExpoSpeechRecognitionModule } from 'expo-speech-recognition'
@@ -30,13 +30,13 @@ function LocalSettingsPage({ title, children }: { title: string; children: React
   return (
     <SettingsPage>
       <ScreenHeader title={title} />
-      <ScrollView
+      <SettingsScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.content, { paddingTop: 4, gap: 20 }]}
       >
         <Text style={[styles.muted, { fontSize: 13 }]}>Saved automatically on this device.</Text>
         {children}
-      </ScrollView>
+      </SettingsScrollView>
     </SettingsPage>
   )
 }

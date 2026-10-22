@@ -5,6 +5,8 @@ import { dirname } from 'node:path'
 import { chromium } from './browser/harness.mjs'
 const webRequire = createRequire(new URL('../packages/studio-ui/package.json', import.meta.url))
 const mocks = {
+  '../screens/settings-theme': 'export const useInsideSettings=()=>false;',
+  '../screens/settings-group': 'export const SettingsGroup=({children})=>children;',
   '../../ui/layout/sheet': `export const Sheet=({title,children,onClose})=><section>{title&&<h2>{title}</h2>}{children}</section>;`,
   'expo-router': `export const router={navigate:()=>{}};`,
   '../ui/content/format-date': `export const formatDateTime=value=>value;`,

@@ -165,29 +165,25 @@ it('reports authentication, missing environment tokens, permission and rate-limi
   expect((await f.check({ connectionId: environment.id })).message).toContain('token')
 })
 
-it('uses the checkout context and captured credential for automatic GitHub detection', async () => {
+it('uses the checkout context and sole configured Enterprise credential for automatic GitHub detection', async () => {
   const f = await setup()
-  const discover = vi
-    .spyOn(f.s.git, 'github')
-    .mockResolvedValue(
-      JSON.stringify({ nameWithOwner: 'team/app', url: 'https://github.example/team/app' }),
-    )
-  const credential = vi
-    .spyOn(f.s.git, 'githubCredential')
-    .mockResolvedValue({ host: 'github.example', token: 'private-fixture-token' })
+  await f.s.git.command(f.directory, [
+    'remote',
+    'add',
+    'origin',
+    'https://github.example/team/app.git',
+  ])
+  const discover = vi.spyOn(f.s.git, 'github')
+  const credential = vi.spyOn(f.s.git, 'githubCredential')
   expect(await f.check({ repositoryId: 'repo', refresh: true })).toMatchObject({
     status: 'verified',
     login: 'work-user',
     host: 'github.example',
     repository: 'team/app',
   })
-  expect(discover).toHaveBeenCalledWith(f.directory, [
-    'repo',
-    'view',
-    '--json',
-    'nameWithOwner,url',
-  ])
-  expect(credential).toHaveBeenCalledWith(f.directory, 'github.example', undefined, true)
+  expect(discover).not.toHaveBeenCalled()
+  expect(credential).not.toHaveBeenCalled()
+  expect(f.provider).toHaveBeenCalled()
 })
 
 it('rejects unknown sources and mismatched project bindings before contacting GitHub', async () => {

@@ -102,8 +102,10 @@ export function RuntimeDiagnosticsPanel() {
           </p>
           <h3 className="font-medium">Database backups</h3>
           <p className="text-muted-foreground">
-            Daily verified backups retain up to five copies within 512 MB. Includes conversation
-            history, credentials and attachment data. Repository files need their own backup.
+            Daily verified backups retain up to {status.backups.maxCount} copies within{' '}
+            {(status.backups.maxBytes / 1024 / 1024).toFixed(0)} MB. The budget grows with the
+            database. Includes conversation history, credentials and attachment data. Repository
+            files need their own backup.
           </p>
           <Button
             size="sm"

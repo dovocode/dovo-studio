@@ -1,4 +1,6 @@
 import {
+  settingsChangeCount,
+  settingsChanges,
   selectDefaultPermissionPreset,
   resolveDefaultPermissionPolicy,
   permissionPolicyLabel,
@@ -6,20 +8,17 @@ import {
 import { Struct } from 'effect'
 import { randomUUID } from 'expo-crypto'
 import {
-  runtimePreferencesSchema,
   runtimeComputerName,
   scopedSettingsResultSchema,
   taskDefaultOrigins,
-  taskBehaviorOrigin,
   providerDisplayName,
   scopedAgentEntries,
   settingsScopes,
   settingsScopeLabels,
   type SettingsScope,
-  type TaskBehavior,
   type SavedPrompt,
 } from '@dovo/protocol'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Alert, View } from 'react-native'
 import {
   executionSchema,
@@ -55,6 +54,7 @@ import {
 } from '../../agents/permission-policy-controls'
 import { SettingSource } from './setting-source'
 import { useSettingsDraft } from './settings-target'
+import { SettingsSaveBar } from '../../screens/settings-save-bar'
 export function TaskDefaultSettings(props: {
   repository?: Repository
   inline?: boolean
@@ -110,32 +110,19 @@ function TaskDefaultSettingsForm({
   const [prompts, setPrompts] = useApplicationState<SavedPrompt[]>([])
   const [loadedScope, setLoadedScope] = useApplicationState('')
 
-  const [legacyBehavior, setLegacyBehavior] = useApplicationState<TaskBehavior>({})
-  const [behavior, setBehavior] = useApplicationState<TaskBehavior>({})
   const [draft, setDraft] = useApplicationState<ProjectTaskDefaults>({})
   const [loadError, setLoadError] = useApplicationState('')
   const [showSetupCommand, setShowSetupCommand] = useApplicationState(false)
   const [saved, setSaved] = useApplicationState(false)
   const [retry, setRetry] = useApplicationState(0)
+  const protectDraft = useRef(false)
   useEffect(() => {
+    if (protectDraft.current && loadedScope === `${scope}:${repository?.id ?? ''}`) return
     let active = true
     setSettings(null)
     setLoadError('')
     setSaved(false)
     if (!connected) return
-    if (snapshot?.taskBehaviorSupported)
-      void call('/api/runtime/preferences/read', {}, runtimePreferencesSchema)
-        .then((value) => {
-          if (active)
-            setLegacyBehavior({
-              continueAfterRestart: value.autoContinueAfterRestart,
-              settleMerged: value.settleOnPullClose,
-              settleClosed: value.settleOnPullClose,
-            })
-        })
-        .catch((cause) => {
-          if (active) setLoadError(String(cause))
-        })
     void call(
       '/api/agents/settings/read',
       { scope, repositoryId: repository?.id },
@@ -148,7 +135,6 @@ function TaskDefaultSettingsForm({
           setLoadedScope(`${scope}:${repository?.id ?? ''}`)
           setDraft(value.value.taskDefaults ?? {})
           setShowSetupCommand(!!value.value.taskDefaults?.setupCommand)
-          setBehavior(value.value.taskBehavior ?? {})
         }
       })
       .catch((error: unknown) => {
@@ -166,7 +152,6 @@ function TaskDefaultSettingsForm({
   const harness = draft.harness
   const policySupported = snapshot?.permissionPolicySupported === true
   const inherited = settings?.inherited.taskDefaults
-  const inheritedBehavior = settings?.inherited.taskBehavior ?? {}
   const inheritedPrompts = settings?.inherited.prompts ?? []
   const scopeValue = settings?.value ?? {}
   const inheritedHarness = inherited?.harness ?? defaultTaskHarness('codex')
@@ -216,12 +201,12 @@ function TaskDefaultSettingsForm({
   )
   const dirty =
     !!settings &&
-    JSON.stringify({ draft, prompts, behavior }) !==
+    JSON.stringify({ draft, prompts }) !==
       JSON.stringify({
         draft: scopeValue.taskDefaults ?? {},
         prompts: scopeValue.prompts ?? [],
-        behavior: scopeValue.taskBehavior ?? {},
       })
+  protectDraft.current = dirty
   useSettingsDraft(dirty, busy)
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange])
   useEffect(() => onSavingChange?.(busy), [busy, onSavingChange])
@@ -245,7 +230,7 @@ function TaskDefaultSettingsForm({
           )}
           {dirty && !saved && (
             <Text style={styles.muted}>
-              Unsaved changes · Save defaults to apply them at this level.
+              Unsaved changes · Save changes to apply them at this level.
             </Text>
           )}
           {!selectedScope && (
@@ -489,10 +474,17 @@ function TaskDefaultSettingsForm({
             </>
           )}
           {!repository?.kind && (
-            <>
-              <Text style={[styles.text, { marginTop: 8, fontWeight: '600' }]}>
-                Workspace & setup
-              </Text>
+            <SettingsGroup
+              title="Advanced workspace setup"
+              advanced
+              searchLabels={[
+                'Working directory',
+                'Submodules',
+                'Worktree setup',
+                'Setup command',
+                'Start from origin',
+              ]}
+            >
               <Choice
                 row
                 label="Working directory"
@@ -603,7 +595,7 @@ function TaskDefaultSettingsForm({
                 Five-minute limit. Failures stop startup; retrying the task retries setup. Use an
                 idempotent command.
               </Text>
-            </>
+            </SettingsGroup>
           )}
         </View>
       </SettingsGroup>
@@ -678,171 +670,39 @@ function TaskDefaultSettingsForm({
           />
         </View>
       </SettingsGroup>
-      {snapshot?.taskBehaviorSupported && (
-        <SettingsGroup title="Task lifecycle">
-          <View style={{ padding: 16, gap: 12 }}>
-            <Text style={styles.muted}>
-              Applies to existing tasks too. Off overrides an inherited On.
-            </Text>
-            {(
-              [
-                ['quotaResume', 'Auto-resume limited tasks'],
-                ['quotaSnooze', 'Snooze limited tasks'],
-                ['settleMerged', 'Auto-settle merged tasks'],
-                ['settleClosed', 'Auto-settle closed tasks'],
-                ['settleInactive', 'Auto-settle inactive tasks'],
-                ['autoArchiveSettled', 'Auto-archive settled tasks'],
-                ['continueAfterRestart', 'Continue after restarts'],
-              ] as const
-            ).map(([key, label]) => (
-              <View key={key} style={{ gap: 4 }}>
-                <Choice
-                  label={label}
-                  value={behavior[key] === undefined ? 'inherit' : behavior[key] ? 'on' : 'off'}
-                  disabled={
-                    disabled || (key === 'autoArchiveSettled' && !snapshot?.threadBehaviorSupported)
-                  }
-                  items={[
-                    {
-                      id: 'inherit',
-                      name: `Inherit (${(inheritedBehavior[key] ?? legacyBehavior[key]) ? 'On' : 'Off'})`,
-                    },
-                    { id: 'on', name: 'On' },
-                    { id: 'off', name: 'Off' },
-                  ]}
-                  onChange={(value) => {
-                    setSaved(false)
-                    setBehavior({
-                      ...behavior,
-                      [key]: value === 'inherit' ? undefined : value === 'on',
-                    })
-                  }}
-                />
-                <SettingSource
-                  {...taskBehaviorOrigin(
-                    snapshot?.defaults,
-                    repository,
-                    scope,
-                    behavior,
-                    key,
-                    legacyBehavior[key] !== undefined,
-                  )}
-                  label={label}
-                  setting={{
-                    field: { group: 'taskBehavior', key },
-                    repository,
-                    scope,
-                    value: behavior[key],
-                    inheritedValue: inheritedBehavior[key] ?? legacyBehavior[key] ?? false,
-                  }}
-                  disabled={disabled}
-                  onReset={() => {
-                    setBehavior({ ...behavior, [key]: undefined })
-                    setSaved(false)
-                  }}
-                />
-              </View>
-            ))}
-            <Field
-              label="Days of inactivity before settling"
-              value={behavior.inactiveDays === undefined ? '' : String(behavior.inactiveDays)}
-              placeholder={`Inherit (${inheritedBehavior.inactiveDays ?? 3})`}
-              editable={!disabled}
-              keyboardType="number-pad"
-              onChangeText={(value) => {
-                if (!value) {
-                  setBehavior({ ...behavior, inactiveDays: undefined })
-                  setSaved(false)
-                } else if (
-                  Number.isInteger(Number(value)) &&
-                  Number(value) >= 1 &&
-                  Number(value) <= 365
-                ) {
-                  setBehavior({ ...behavior, inactiveDays: Number(value) })
-                  setSaved(false)
-                }
-              }}
-            />
-            <SettingSource
-              {...taskBehaviorOrigin(
-                snapshot?.defaults,
-                repository,
-                scope,
-                behavior,
-                'inactiveDays',
-              )}
-              setting={{
-                field: { group: 'taskBehavior', key: 'inactiveDays' },
-                repository,
-                scope,
-                value: behavior.inactiveDays,
-                inheritedValue: inheritedBehavior.inactiveDays ?? 3,
-              }}
-              label="Days of inactivity before settling"
-              disabled={disabled}
-              onReset={() => {
-                setBehavior({ ...behavior, inactiveDays: undefined })
-                setSaved(false)
-              }}
-            />
-            <Text style={styles.muted}>
-              Archive only after a task stays in Settled for this period. Reopening resets the
-              clock.
-            </Text>
-            <Field
-              label="Days in Settled before archiving"
-              value={
-                behavior.archiveAfterSettledDays === undefined
-                  ? ''
-                  : String(behavior.archiveAfterSettledDays)
-              }
-              placeholder={`Inherit (${inheritedBehavior.archiveAfterSettledDays ?? 7})`}
-              editable={!disabled && !!snapshot?.threadBehaviorSupported}
-              keyboardType="number-pad"
-              onChangeText={(value) => {
-                if (!value) {
-                  setBehavior({ ...behavior, archiveAfterSettledDays: undefined })
-                  setSaved(false)
-                } else if (
-                  Number.isInteger(Number(value)) &&
-                  Number(value) >= 1 &&
-                  Number(value) <= 365
-                ) {
-                  setBehavior({ ...behavior, archiveAfterSettledDays: Number(value) })
-                  setSaved(false)
-                }
-              }}
-            />
-            <SettingSource
-              {...taskBehaviorOrigin(
-                snapshot?.defaults,
-                repository,
-                scope,
-                behavior,
-                'archiveAfterSettledDays',
-              )}
-              setting={{
-                field: { group: 'taskBehavior', key: 'archiveAfterSettledDays' },
-                repository,
-                scope,
-                value: behavior.archiveAfterSettledDays,
-                inheritedValue: inheritedBehavior.archiveAfterSettledDays ?? 7,
-              }}
-              label="Days in Settled before archiving"
-              disabled={disabled}
-              onReset={() => {
-                setBehavior({ ...behavior, archiveAfterSettledDays: undefined })
-                setSaved(false)
-              }}
-            />
-          </View>
-        </SettingsGroup>
-      )}
-      <Action
-        wide
-        label={busy ? 'Saving…' : 'Save defaults'}
-        disabled={disabled || !dirty || !!policyIssue}
-        onPress={() =>
+      <SettingsSaveBar
+        changes={settingsChanges(
+          { ...scopeValue.taskDefaults, prompts: scopeValue.prompts ?? [] },
+          { ...draft, prompts },
+        )}
+        saveError={error}
+        readLatestChanges={async () =>
+          settingsChanges(
+            scopeValue,
+            (
+              await call(
+                '/api/agents/settings/read',
+                { scope, repositoryId: repository?.id },
+                scopedSettingsResultSchema,
+              )
+            ).value,
+          )
+        }
+        dirty={dirty}
+        saving={busy}
+        disabled={disabled || !!policyIssue}
+        saved={saved}
+        changeCount={
+          settingsChangeCount(scopeValue.taskDefaults ?? {}, draft) +
+          (JSON.stringify(prompts) !== JSON.stringify(scopeValue.prompts ?? []) ? 1 : 0)
+        }
+        onDiscard={() => {
+          setDraft(scopeValue.taskDefaults ?? {})
+          setPrompts(scopeValue.prompts ?? [])
+          setShowSetupCommand(!!scopeValue.taskDefaults?.setupCommand)
+          setSaved(false)
+        }}
+        onSave={() =>
           act(async () => {
             if (!settings || disabled || policyIssue) return
             const value = decode(projectTaskDefaultsSchema, draft)
@@ -856,7 +716,6 @@ function TaskDefaultSettingsForm({
                 after: {
                   ...scopeValue,
                   taskDefaults: value,
-                  ...(snapshot?.taskBehaviorSupported ? { taskBehavior: behavior } : {}),
                   prompts: prompts.map((prompt) => ({
                     ...prompt,
                     name: prompt.name.trim().replace(/\s+/g, '-'),
@@ -868,7 +727,6 @@ function TaskDefaultSettingsForm({
             )
             setSettings(result)
             setDraft(result.value.taskDefaults ?? {})
-            setBehavior(result.value.taskBehavior ?? {})
             setPrompts(result.value.prompts ?? [])
             setSaved(true)
           })
@@ -882,8 +740,7 @@ function TaskDefaultSettingsForm({
       />
       {saved && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Settings saved at {settingsScopeLabels[scope]}. Launch defaults apply to new tasks;
-          lifecycle rules also apply to existing tasks.
+          Settings saved at {settingsScopeLabels[scope]}. Defaults apply to new tasks.
         </Text>
       )}
       {!!(error || loadError) && (
@@ -896,8 +753,21 @@ function TaskDefaultSettingsForm({
             label="Reload settings"
             disabled={!connected || busy}
             onPress={() => {
-              setLoadError('')
-              setRetry(retry + 1)
+              const reload = () => {
+                setSettings(null)
+                setLoadError('')
+                setRetry(retry + 1)
+              }
+              if (!dirty) reload()
+              else
+                Alert.alert(
+                  'Discard unsaved edits?',
+                  'Load the latest saved settings and discard your edits?',
+                  [
+                    { text: 'Keep editing', style: 'cancel' },
+                    { text: 'Discard and reload', style: 'destructive', onPress: reload },
+                  ],
+                )
             }}
           />
         </>

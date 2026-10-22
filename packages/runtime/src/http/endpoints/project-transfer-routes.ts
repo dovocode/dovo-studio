@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http'
 import { Effect, Schema } from 'effect'
 import {
   decode,
+  PROJECT_TRANSFER_MANIFEST_BYTES,
   mutableStruct,
   projectTransferStartSchema,
   projectTransferSourceSchema,
@@ -28,7 +29,9 @@ export function projectTransferRoute(
       const s = yield* RuntimeServices
       const transfers = s.projectTransfers
       if (request.method !== 'POST') throw new HttpError(405, 'Use POST for project copies')
-      const input = yield* serviceResult(body(request))
+      const input = yield* serviceResult(
+        body(request, path.endsWith('/begin') ? PROJECT_TRANSFER_MANIFEST_BYTES : undefined),
+      )
       switch (path.slice('/api/scm/project-transfer/'.length)) {
         case 'targets':
           return transfers.targets()

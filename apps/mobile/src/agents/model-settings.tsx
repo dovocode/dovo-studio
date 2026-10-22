@@ -1,3 +1,6 @@
+import type { ReactNode } from 'react'
+import { useInsideSettings } from '../screens/settings-theme'
+import { SettingsGroup } from '../screens/settings-group'
 import { Schema } from 'effect'
 import { mobileModelCatalogKey } from './model-catalog-cache'
 import { useModelCatalog } from './use-model-catalog'
@@ -261,7 +264,14 @@ export function ModelSettings({
         }
       />
       {serviceTier && agent.provider === 'acp' && catalog?.acp && (
-        <>
+        <ProviderOptions
+          labels={[
+            'ACP mode',
+            ...(catalog?.acp?.configOptions.map((option) =>
+              option.category ? `${option.category} · ${option.name}` : option.name,
+            ) ?? []),
+          ]}
+        >
           {!!catalog.acp.modes.length && (
             <Choice
               row
@@ -315,10 +325,10 @@ export function ModelSettings({
               Commands: {catalog.acp.commands.map((command) => command.name).join(' · ')}
             </Text>
           )}
-        </>
+        </ProviderOptions>
       )}
       {serviceTier && agent.provider === 'codex' && (
-        <>
+        <ProviderOptions labels={['Speed', 'Daybreak mode']}>
           <Choice
             row
             label="Speed"
@@ -370,7 +380,7 @@ export function ModelSettings({
               Daybreak needs an eligible ChatGPT account and an updated Codex harness.
             </Text>
           )}
-        </>
+        </ProviderOptions>
       )}
       {(loading || !connected) && (
         <Text style={styles.muted}>
@@ -398,5 +408,15 @@ export function ModelSettings({
         </Text>
       )}
     </View>
+  )
+}
+
+function ProviderOptions({ children, labels }: { children: ReactNode; labels: readonly string[] }) {
+  return useInsideSettings() ? (
+    <SettingsGroup title="Advanced model options" advanced searchLabels={labels}>
+      {children}
+    </SettingsGroup>
+  ) : (
+    children
   )
 }

@@ -341,3 +341,24 @@ it('resets inherited custom policy at a narrower scope without resurrecting harn
     sandboxMode: 'read-only',
   })
 })
+it('reviews scoped edits as labeled values without confusing explicit inheritance with a change', async () => {
+  const { settingsChanges, validSettingsDays } = await import('./scoped-settings')
+  expect(
+    settingsChanges(
+      { taskBehavior: { quotaResume: false }, taskDefaults: {} },
+      { taskBehavior: { quotaResume: true }, taskDefaults: { setupCommand: undefined } },
+    ),
+  ).toEqual([
+    {
+      key: 'taskBehavior.quotaResume',
+      label: 'Auto-resume limited tasks',
+      before: 'Off',
+      after: 'On',
+    },
+  ])
+  expect(settingsChanges({ setupCommand: 'before' }, { setupCommand: 'after' })).toEqual([
+    { key: 'setupCommand', label: 'Setup command', before: 'before', after: 'after' },
+  ])
+  for (const value of ['', '1', '365']) expect(validSettingsDays(value)).toBe(true)
+  for (const value of ['0', '366', '-1', '1.5', 'abc']) expect(validSettingsDays(value)).toBe(false)
+})

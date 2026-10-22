@@ -11,6 +11,10 @@ import { rotateRuntimeLogs } from './log-rotation'
 import { WorkspaceStore } from './workspace'
 import type { Task } from '@dovo/protocol'
 import * as backup from './backup'
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, statfs: vi.fn(actual.statfs) }
+})
 const paths: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -172,5 +176,56 @@ it('rotates bounded tails while keeping an existing append descriptor usable', a
     expect(await stat(path + '.4').catch(() => null)).toBeNull()
   } finally {
     await handle.close()
+  }
+})
+it('backs up databases above the old budget and retains two large verified snapshots', async () => {
+  const f = await setup()
+  const original = backup.backupRuntimeDatabase
+  vi.spyOn(backup, 'backupRuntimeDatabase').mockImplementation(async (source, destination) => {
+    await original(source, destination)
+    // SQLite's logical page count stays valid; a sparse tail simulates a large snapshot.
+    await truncate(destination, 513 * 1024 * 1024)
+  })
+  try {
+    for (let i = 0; i < 3; i++) await f.backups.create()
+    const status = await f.backups.status()
+    expect(status.failure).toBeNull()
+    expect(status.entries).toHaveLength(2)
+    expect(status.maxBytes).toBe(2 * 513 * 1024 * 1024)
+    status.entries.forEach((entry) => verifyRuntimeBackup(entry.path))
+  } finally {
+    f.db.close()
+  }
+})
+it('backs off persisted automatic failures while allowing an explicit recovery attempt', async () => {
+  const f = await setup()
+  const writer = vi
+    .spyOn(backup, 'backupRuntimeDatabase')
+    .mockRejectedValueOnce(new Error('disk full'))
+  try {
+    await expect(f.backups.automatic()).rejects.toThrow('disk full')
+    await new RuntimeBackups(f.path).automatic()
+    expect(writer).toHaveBeenCalledTimes(1)
+    await new RuntimeBackups(f.path).create()
+    expect(writer).toHaveBeenCalledTimes(2)
+  } finally {
+    f.db.close()
+  }
+})
+it('rejects insufficient free space before copying and preserves the last verified backup', async () => {
+  const fs = await import('node:fs/promises')
+  const f = await setup()
+  try {
+    const previous = await f.backups.create()
+    const space = await fs.statfs(f.dir)
+    vi.mocked(fs.statfs).mockResolvedValue(Object.assign(space, { bavail: 0 }))
+    const writer = vi.spyOn(backup, 'backupRuntimeDatabase')
+    await expect(f.backups.create()).rejects.toThrow('Not enough free disk space')
+    expect(writer).not.toHaveBeenCalled()
+    expect((await f.backups.list()).map((entry) => entry.path)).toContain(previous.path)
+    verifyRuntimeBackup(previous.path)
+  } finally {
+    vi.mocked(fs.statfs).mockReset()
+    f.db.close()
   }
 })

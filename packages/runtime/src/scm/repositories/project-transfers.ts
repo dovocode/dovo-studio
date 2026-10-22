@@ -1,4 +1,5 @@
 import {
+  PROJECT_TRANSFER_MANIFEST_BYTES,
   createRuntimeClient,
   decode,
   mutableStruct,
@@ -423,7 +424,7 @@ export class ProjectTransfers {
       }
       // Validate locally too, so both ends agree on bounded names, hashes and sizes.
       decode(projectTransferManifestSchema, manifest)
-      if (Buffer.byteLength(JSON.stringify(manifest)) > 8 * 1024 * 1024)
+      if (Buffer.byteLength(JSON.stringify(manifest)) > PROJECT_TRANSFER_MANIFEST_BYTES)
         throw new HttpError(
           413,
           'This project has too many files or long paths to copy. Exclude generated files and try again.',

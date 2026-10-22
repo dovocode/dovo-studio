@@ -15,9 +15,9 @@ export const Platform={OS:'ios'};export const StyleSheet={create:value=>value,ha
 export const Field=({label,value,onChangeText,editable})=><label>{label}<input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/></label>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;`
-const core = `export {commandFields,commandSettingsResponse,cuaCheckResponse} from '${root}/packages/protocol/src/shared/commands.ts';export const useWorkspace=()=>({request:window.request,connected:true});`
-const ui = `export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {Toggle,SettingRow,SettingsGroup} from '${root}/packages/studio-ui/src/settings-layout.tsx';`
-const runtime = `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,read:window.request,readEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error}),callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`
+const core = `export {commandFields,commandSettingsResponse,cuaCheckResponse} from '${root}/packages/protocol/src/shared/commands.ts';export const useSettingsDraft=()=>{};export const useWorkspace=()=>({request:window.request,connected:window.online!==false});`
+const ui = `export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {Toggle,SettingRow,SettingsGroup,SettingsSaveBar} from '${root}/packages/studio-ui/src/settings-layout.tsx';`
+const runtime = `import {Effect} from 'effect';export const useRuntime=()=>({connected:window.online!==false,read:window.request,readEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error}),callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`
 const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
@@ -25,6 +25,8 @@ try {
       '@dovo/studio-core': core,
       '@dovo/studio-core/state': state,
       '@dovo/studio-ui': ui,
+      './settings-target': 'export const useSettingsDraft=()=>{};',
+      '../ui/controls/icon': 'export const Icon=()=>null;',
       '../state/application-state': state,
       '../connection/provider': runtime,
       'react-native': controls,
@@ -54,8 +56,12 @@ window.request=async(path,input)=>{
   window.calls.push({path,input});
   if(path==='/api/commands/read')return {settings:window.commands,defaultShell:'/bin/zsh'};
   if(path==='/api/commands/save'){window.commands=input.after;return {settings:window.commands,defaultShell:'/bin/zsh'}}
-  if(path.endsWith('/check'))return window.check;
+  if(path.endsWith('/check')){
+    if(window.holdCheck)await new Promise(resolve=>window.finishCheck=resolve);
+    return window.check;
+  }
   if(path.endsWith('/action')){
+    if(window.holdAction)await new Promise(resolve=>window.finishAction=resolve);
     if(window.fail)throw Error('Driver action failed');
     const action=input.action;
     if(action==='history-enable')window.check={...window.check,historyState:{...window.check.historyState,enabled:true,admitted:true,health:'ok'}};
@@ -64,7 +70,7 @@ window.request=async(path,input)=>{
   }
   throw Error(path);
 };
-function App(){const [computerUse,setComputerUse]=useState(true);return <main style={{maxWidth:740,margin:'auto',padding:16}}><button onClick={()=>setComputerUse(!computerUse)}>Switch settings page</button><CommandSettings key={String(computerUse)} computerUse={computerUse}/></main>}
+function App(){const [,render]=useState(0);window.setConnection=online=>{window.online=online;render(value=>value+1)};const [computerUse,setComputerUse]=useState(true);return <main style={{maxWidth:740,margin:'auto',padding:16}}><button onClick={()=>setComputerUse(!computerUse)}>Switch settings page</button><CommandSettings key={String(computerUse)} computerUse={computerUse}/></main>}
 createRoot(document.getElementById('app')).render(<App/>);`,
         loader: 'tsx',
         resolveDir: root,
@@ -190,14 +196,99 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       await page
         .getByRole('checkbox', { name: 'Enable agent computer use on this computer', exact: true })
         .check()
-    await page.getByRole('button', { name: 'Save computer-use settings', exact: true }).click()
+    if (!mobile)
+      await page
+        .getByRole('switch', { name: 'Enable agent computer use on this computer', exact: true })
+        .click()
     await page
-      .getByText('Computer-use settings saved. Applies to new turns.', { exact: true })
+      .getByRole('button', {
+        name: 'Save changes',
+        exact: true,
+      })
+      .click()
+    await page
+      .getByText(mobile ? 'Computer-use settings saved. Applies to new turns.' : 'Changes saved.', {
+        exact: true,
+      })
       .waitFor()
     assert.deepEqual(
       await page.evaluate(() => ({ git: window.commands.git, args: window.commands.shellArgs })),
       { git: '/custom/git', args: ['-l', ''] },
     )
+    if (!mobile) {
+      const access = page.getByRole('switch', {
+        name: 'Enable agent computer use on this computer',
+        exact: true,
+      })
+      await access.click()
+      await page.evaluate(() => (window.holdAction = true))
+      await page.getByRole('button', { name: 'Run diagnostics', exact: true }).click()
+      await page.waitForFunction(() => !!window.finishAction)
+      await page.evaluate(() => window.setConnection(false))
+      await page
+        .getByText('Reconnect this computer to change command settings.', { exact: true })
+        .waitFor()
+      await page.evaluate(() => window.setConnection(true))
+      await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
+      assert.equal(
+        await page.getByRole('button', { name: 'Save changes', exact: true }).isEnabled(),
+        true,
+      )
+      assert.equal(await access.getAttribute('aria-checked'), 'false')
+      await page.evaluate(() => {
+        window.holdAction = false
+        window.finishAction()
+      })
+      await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+      await page.getByText('Changes saved.', { exact: true }).waitFor()
+      await access.click()
+      await page.evaluate(() => (window.holdCheck = true))
+      await page.getByRole('button', { name: 'Check Cua Driver', exact: true }).click()
+      await page.waitForFunction(() => !!window.finishCheck)
+      await page.evaluate(() => window.setConnection(false))
+      await page
+        .getByText('Reconnect this computer to change command settings.', { exact: true })
+        .waitFor()
+      await page.evaluate(() => window.setConnection(true))
+      await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
+      assert.equal(
+        await page.getByRole('button', { name: 'Save changes', exact: true }).isEnabled(),
+        true,
+      )
+      assert.equal(await access.getAttribute('aria-checked'), 'true')
+      await page.evaluate(() => {
+        window.holdCheck = false
+        window.finishCheck()
+      })
+      await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+      await page.getByText('Changes saved.', { exact: true }).waitFor()
+    } else {
+      const access = page.getByRole('checkbox', {
+        name: 'Enable agent computer use on this computer',
+        exact: true,
+      })
+      await access.uncheck()
+      await page.evaluate(() => window.setConnection(false))
+      await page
+        .getByText('Offline · your unsaved edits are kept here. Reconnect to save.', {
+          exact: true,
+        })
+        .waitFor()
+      assert.equal(
+        await page.getByRole('button', { name: 'Run diagnostics', exact: true }).isDisabled(),
+        true,
+      )
+      assert.equal(
+        await page.getByRole('button', { name: 'Save changes', exact: true }).isDisabled(),
+        true,
+      )
+      assert.equal(await access.isChecked(), false)
+      await page.evaluate(() => window.setConnection(true))
+      await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+      await page
+        .getByText('Computer-use settings saved. Applies to new turns.', { exact: true })
+        .waitFor()
+    }
     await page.getByRole('button', { name: 'Switch settings page', exact: true }).click()
     await page.getByLabel('Git executable').waitFor()
     assert.equal(

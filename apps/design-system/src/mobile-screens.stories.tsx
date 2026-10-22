@@ -51,6 +51,7 @@ export const Battery: Story = { args: { screen: 'battery' } }
 export const TaskPreferences: Story = { args: { screen: 'task-preferences' } }
 export const Notifications: Story = { args: { screen: 'notifications' } }
 export const TaskDefaults: Story = { args: { screen: 'task-defaults' } }
+export const TaskLifecycle: Story = { args: { screen: 'task-lifecycle', state: 'offline' } }
 export const Agents: Story = { args: { screen: 'agents' } }
 export const Resources: Story = { args: { screen: 'resources' } }
 export const DeviceHosts: Story = { args: { screen: 'device-hosts' } }

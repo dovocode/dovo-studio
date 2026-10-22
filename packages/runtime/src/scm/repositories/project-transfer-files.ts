@@ -15,7 +15,7 @@ import { dirname, isAbsolute, join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { createWriteStream } from 'node:fs'
 import type { ProjectTransferManifest } from '@dovo/protocol'
-import { gitRemoteIdentity } from '@dovo/protocol'
+import { gitRemoteIdentity, PROJECT_TRANSFER_MAX_FILES } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { runClientEffect } from '@dovo/client-runtime'
 import { worktreeChoicesEffect } from '../git/worktrees.js'
@@ -159,10 +159,10 @@ export async function inspectTransfer(
       else if (info?.isDirectory() && git)
         throw new HttpError(409, `Submodules must be copied separately: ${path}`)
     }
-    if (files.length + ignoredFiles.length > 100000)
+    if (files.length > PROJECT_TRANSFER_MAX_FILES)
       throw new HttpError(
         413,
-        'This workspace has too many files to copy. Remove generated files first.',
+        `This workspace exceeds the ${PROJECT_TRANSFER_MAX_FILES.toLocaleString()} file copy limit.`,
       )
   }
   if (git) {

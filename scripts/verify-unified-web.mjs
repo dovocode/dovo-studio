@@ -644,7 +644,7 @@ try {
   const activeBeforeSettings = await active()
   await click('Configure', false, `document.querySelector('[aria-label="Agents on Linux"]')`)
   await input('Name', 'Linux edited agent')
-  await click('Save configuration')
+  await click('Save changes')
   await wait(has('Linux edited agent'))
   check(
     first.services.store.get().agents[0].name === 'Mac agent',
@@ -705,7 +705,7 @@ try {
   await click('CLI commands & shell')
   await wait(`!!document.querySelector('[aria-label="Bitbucket CLI executable (gildas)"]')`)
   await input('Bitbucket CLI executable (gildas)', '/fixture/linux-bb')
-  await click('Save command settings')
+  await click('Save changes')
   await wait(has('Command settings saved.'))
   check(
     second.services.commands.get().bb === '/fixture/linux-bb',

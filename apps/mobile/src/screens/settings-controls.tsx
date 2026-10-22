@@ -1,3 +1,5 @@
+import { SettingsAnchor } from './settings-search'
+import { Field } from '../ui/controls/field'
 import type { ComponentProps } from 'react'
 import { Platform, Pressable, View, useWindowDimensions } from 'react-native'
 import { Choice, type ChoiceProps } from '../ui/controls/choice'
@@ -10,6 +12,13 @@ import { useInsideSheet } from '../ui/layout/sheet'
 
 /** Preserve native choice menus, with a quiet trailing value in settings. */
 export function SettingsChoice(props: ChoiceProps) {
+  return (
+    <SettingsAnchor label={props.label}>
+      <SettingsChoiceControl {...props} />
+    </SettingsAnchor>
+  )
+}
+function SettingsChoiceControl(props: ChoiceProps) {
   const settings = useInsideSettings()
   const theme = useTheme()
   const { width, fontScale } = useWindowDimensions()
@@ -63,7 +72,13 @@ export function SettingsChoice(props: ChoiceProps) {
 }
 
 // Field reads the current theme itself; duplicating input styles would override multiline sizing.
-export { Field as SettingsField } from '../ui/controls/field'
+export function SettingsField(props: ComponentProps<typeof Field>) {
+  return (
+    <SettingsAnchor label={props.label}>
+      <Field {...props} />
+    </SettingsAnchor>
+  )
+}
 
 export function SettingsSearchField(props: ComponentProps<typeof SearchField>) {
   const settings = useInsideSettings()

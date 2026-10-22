@@ -1,5 +1,6 @@
+import { SettingsScrollView } from './settings-search'
 import { useEffect, useRef } from 'react'
-import { Alert, ScrollView, View } from 'react-native'
+import { Alert, View } from 'react-native'
 import * as Crypto from 'expo-crypto'
 import {
   deviceHostSettingsResultSchema,
@@ -377,7 +378,7 @@ export default function DeviceHostsScreen() {
   return (
     <SettingsPage>
       <ScreenHeader title="Device previews" />
-      <ScrollView
+      <SettingsScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
@@ -387,7 +388,7 @@ export default function DeviceHostsScreen() {
         ) : (
           <Text style={styles.muted}>Pair a computer to configure its device hosts.</Text>
         )}
-      </ScrollView>
+      </SettingsScrollView>
     </SettingsPage>
   )
 }

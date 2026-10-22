@@ -142,6 +142,8 @@ try {
   await page.getByRole('button', { name: 'Edit note-00', exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: /^Edit note-/ }).count(), 50)
   await page.evaluate(() => window.show('running'))
+  await page.locator('summary[data-setting-label="Model modes (experimental)"]').click()
+  await page.locator('summary[data-setting-label="Project mode (experimental)"]').click()
   const linkedTool = page.getByRole('switch', { name: 'Linked projects tool', exact: true })
   await linkedTool.waitFor()
   await page.waitForFunction(

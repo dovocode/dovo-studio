@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
+  settingsChangeCount,
+  settingsChanges,
+  validSettingsDays,
   runtimePreferencesSchema,
   scopedSettingsResultSchema,
   taskBehaviorOrigin,
@@ -8,7 +11,7 @@ import {
   type TaskBehavior,
 } from '@dovo/protocol'
 import { useSettingsDraft, useWorkspace } from '@dovo/studio-core'
-import { SettingsGroup, SettingRow } from './settings-layout'
+import { SettingsGroup, SettingRow, SettingsSaveBar } from './settings-layout'
 import {
   Select,
   SelectContent,
@@ -69,15 +72,27 @@ export function TaskBehaviorSettings({
   const [loaded, setLoaded] = useState<typeof scopedSettingsResultSchema.Type | null>(null)
   const [draft, setDraft] = useState<TaskBehavior>({})
   const [error, setError] = useState('')
+  const [dayInputs, setDayInputs] = useState<
+    Partial<Record<'inactiveDays' | 'archiveAfterSettledDays', string>>
+  >({})
+  const invalidDays = Object.values(dayInputs).some(
+    (value) => value !== undefined && !validSettingsDays(value),
+  )
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [legacy, setLegacy] = useState<typeof runtimePreferencesSchema.Type | null>(null)
   const [retry, setRetry] = useState(0)
   const dirty =
-    !!loaded && JSON.stringify(draft) !== JSON.stringify(loaded.value.taskBehavior ?? {})
+    !!loaded &&
+    (invalidDays || JSON.stringify(draft) !== JSON.stringify(loaded.value.taskBehavior ?? {}))
+  const protectDraft = useRef(false)
+  const loadedTarget = useRef('')
+  protectDraft.current = dirty
   useSettingsDraft(dirty, busy)
   useEffect(() => {
     let active = true
+    const target = `${scope}:${repository?.id ?? ''}`
+    if (protectDraft.current && loadedTarget.current === target) return
     setLoaded(null)
     setError('')
     if (connected)
@@ -97,8 +112,10 @@ export function TaskBehaviorSettings({
       ).then(
         (value) => {
           if (active) {
+            loadedTarget.current = target
             setLoaded(value)
             setDraft(value.value.taskBehavior ?? {})
+            setDayInputs({})
             setSaved(false)
           }
         },
@@ -120,12 +137,17 @@ export function TaskBehaviorSettings({
         ? legacy?.settleOnPullClose
         : false) ??
     false
+  const archivePolicy = !legacy
+    ? 'Computer policy · loading…'
+    : legacy.autoArchiveDays
+      ? `Computer policy · ${legacy.autoArchiveDays} days of inactivity`
+      : 'Computer policy · Never'
   function change(value: TaskBehavior) {
     setDraft(value)
     setSaved(false)
   }
   async function save() {
-    if (!loaded) return
+    if (!loaded || invalidDays) return
     setBusy(true)
     setError('')
     try {
@@ -142,6 +164,7 @@ export function TaskBehaviorSettings({
       )
       setLoaded(value)
       setDraft(value.value.taskBehavior ?? {})
+      setDayInputs({})
       setSaved(true)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -174,7 +197,10 @@ export function TaskBehaviorSettings({
                     repository,
                     scope,
                     value: draft[key],
-                    inheritedValue: fallback(key),
+                    inheritedValue:
+                      key === 'autoArchiveSettled' && inherited?.[key] === undefined
+                        ? archivePolicy
+                        : fallback(key),
                   }}
                   origin={taskBehaviorOrigin(
                     snapshot?.defaults,
@@ -184,7 +210,8 @@ export function TaskBehaviorSettings({
                     key,
                     key === 'continueAfterRestart' ||
                       key === 'settleMerged' ||
-                      key === 'settleClosed',
+                      key === 'settleClosed' ||
+                      key === 'autoArchiveSettled',
                   )}
                   onReset={() => change({ ...draft, [key]: undefined })}
                 />
@@ -201,7 +228,15 @@ export function TaskBehaviorSettings({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="inherit">Inherit ({fallback(key) ? 'On' : 'Off'})</SelectItem>
+                  <SelectItem value="inherit">
+                    Inherit (
+                    {key === 'autoArchiveSettled' && inherited?.[key] === undefined
+                      ? archivePolicy
+                      : fallback(key)
+                        ? 'On'
+                        : 'Off'}
+                    )
+                  </SelectItem>
                   <SelectItem value="on">On</SelectItem>
                   <SelectItem value="off">Off</SelectItem>
                 </SelectContent>
@@ -228,29 +263,41 @@ export function TaskBehaviorSettings({
                   draft,
                   'inactiveDays',
                 )}
-                onReset={() => change({ ...draft, inactiveDays: undefined })}
+                onReset={() => {
+                  change({ ...draft, inactiveDays: undefined })
+                  setDayInputs((current) => ({ ...current, inactiveDays: undefined }))
+                }}
               />
             }
           >
-            <Input
-              aria-label="Days of inactivity before settling"
-              type="number"
-              min={1}
-              max={365}
-              className="w-24"
-              placeholder={String(inherited?.inactiveDays ?? 3)}
-              value={draft.inactiveDays ?? ''}
-              onChange={(event) => {
-                const value = event.target.value
-                if (!value) change({ ...draft, inactiveDays: undefined })
-                else if (
-                  Number.isInteger(Number(value)) &&
-                  Number(value) >= 1 &&
-                  Number(value) <= 365
-                )
-                  change({ ...draft, inactiveDays: Number(value) })
-              }}
-            />
+            <div className="space-y-1">
+              <Input
+                aria-label="Days of inactivity before settling"
+                type="text"
+                inputMode="numeric"
+                min={1}
+                max={365}
+                className="w-24"
+                placeholder={String(inherited?.inactiveDays ?? 3)}
+                value={dayInputs.inactiveDays ?? String(draft.inactiveDays ?? '')}
+                aria-invalid={
+                  dayInputs.inactiveDays !== undefined && !validSettingsDays(dayInputs.inactiveDays)
+                }
+                onChange={(event) => {
+                  const value = event.target.value
+                  setDayInputs((current) => ({ ...current, inactiveDays: value }))
+                  setSaved(false)
+                  if (validSettingsDays(value))
+                    change({ ...draft, inactiveDays: value === '' ? undefined : Number(value) })
+                }}
+              />
+              {dayInputs.inactiveDays !== undefined &&
+                !validSettingsDays(dayInputs.inactiveDays) && (
+                  <p role="alert" className="text-xs text-destructive">
+                    Enter 1–365 days, or leave empty to inherit.
+                  </p>
+                )}
+            </div>
           </SettingRow>
           <SettingRow
             label="Days in Settled before archiving"
@@ -272,30 +319,48 @@ export function TaskBehaviorSettings({
                   draft,
                   'archiveAfterSettledDays',
                 )}
-                onReset={() => change({ ...draft, archiveAfterSettledDays: undefined })}
+                onReset={() => {
+                  change({ ...draft, archiveAfterSettledDays: undefined })
+                  setDayInputs((current) => ({ ...current, archiveAfterSettledDays: undefined }))
+                }}
               />
             }
           >
-            <Input
-              disabled={!snapshot?.threadBehaviorSupported}
-              aria-label="Days in Settled before archiving"
-              type="number"
-              min={1}
-              max={365}
-              className="w-24"
-              placeholder={String(inherited?.archiveAfterSettledDays ?? 7)}
-              value={draft.archiveAfterSettledDays ?? ''}
-              onChange={(event) => {
-                const value = event.target.value
-                if (!value) change({ ...draft, archiveAfterSettledDays: undefined })
-                else if (
-                  Number.isInteger(Number(value)) &&
-                  Number(value) >= 1 &&
-                  Number(value) <= 365
-                )
-                  change({ ...draft, archiveAfterSettledDays: Number(value) })
-              }}
-            />
+            <div className="space-y-1">
+              <Input
+                disabled={!snapshot?.threadBehaviorSupported}
+                aria-label="Days in Settled before archiving"
+                type="text"
+                inputMode="numeric"
+                min={1}
+                max={365}
+                className="w-24"
+                placeholder={String(inherited?.archiveAfterSettledDays ?? 7)}
+                value={
+                  dayInputs.archiveAfterSettledDays ?? String(draft.archiveAfterSettledDays ?? '')
+                }
+                aria-invalid={
+                  dayInputs.archiveAfterSettledDays !== undefined &&
+                  !validSettingsDays(dayInputs.archiveAfterSettledDays)
+                }
+                onChange={(event) => {
+                  const value = event.target.value
+                  setDayInputs((current) => ({ ...current, archiveAfterSettledDays: value }))
+                  setSaved(false)
+                  if (validSettingsDays(value))
+                    change({
+                      ...draft,
+                      archiveAfterSettledDays: value === '' ? undefined : Number(value),
+                    })
+                }}
+              />
+              {dayInputs.archiveAfterSettledDays !== undefined &&
+                !validSettingsDays(dayInputs.archiveAfterSettledDays) && (
+                  <p role="alert" className="text-xs text-destructive">
+                    Enter 1–365 days, or leave empty to inherit.
+                  </p>
+                )}
+            </div>
           </SettingRow>
         </SettingsGroup>
       </fieldset>
@@ -307,26 +372,60 @@ export function TaskBehaviorSettings({
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error}{' '}
-          <Button variant="ghost" onClick={() => setRetry((value) => value + 1)}>
+          <Button
+            variant="ghost"
+            disabled={!connected || busy}
+            onClick={() => {
+              if (
+                dirty &&
+                !window.confirm('Discard your unsaved edits and load the latest saved settings?')
+              )
+                return
+              protectDraft.current = false
+              setLoaded(null)
+              setRetry((value) => value + 1)
+            }}
+          >
             Reload
           </Button>
         </p>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3">
-        <p role="status" className="text-xs text-muted-foreground">
-          {saved
-            ? 'Lifecycle settings saved.'
-            : dirty
-              ? 'Unsaved lifecycle changes'
-              : 'Changes apply to existing tasks too'}
-        </p>
-        <Button
-          disabled={!supported || !loaded || busy || !connected || !dirty}
-          onClick={() => void save()}
-        >
-          {busy ? 'Saving…' : 'Save lifecycle settings'}
-        </Button>
-      </div>
+      <SettingsSaveBar
+        changes={settingsChanges(loaded?.value.taskBehavior ?? {}, {
+          ...draft,
+          ...Object.fromEntries(
+            Object.entries(dayInputs).filter(
+              ([, value]) => value !== undefined && !validSettingsDays(value),
+            ),
+          ),
+        })}
+        saveError={error}
+        readLatestChanges={async () =>
+          settingsChanges(
+            loaded?.value ?? {},
+            (
+              await request(
+                '/api/agents/settings/read',
+                { scope, repositoryId: repository?.id },
+                scopedSettingsResultSchema,
+              )
+            ).value,
+          )
+        }
+        dirty={dirty}
+        changeCount={settingsChangeCount(loaded?.value.taskBehavior ?? {}, draft)}
+        saving={busy}
+        disabled={!supported || !loaded || !connected || invalidDays}
+        saved={saved}
+        description="Changes apply to existing tasks too. Save to apply."
+        onSave={() => void save()}
+        onDiscard={() => {
+          setDraft(loaded?.value.taskBehavior ?? {})
+          setDayInputs({})
+          setSaved(false)
+          setError('')
+        }}
+      />
     </div>
   )
 }

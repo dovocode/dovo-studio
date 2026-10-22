@@ -1,3 +1,4 @@
+import TaskLifecycleScreen from '../screens/task-lifecycle'
 import type { ComponentType } from 'react'
 import { MobileScreenParamsContext, mobileScreenRouteParams } from './screens-params'
 import { MobileComposerScreen, MobileThreadScreen, MobileNewThreadScreen } from './screens-composer'
@@ -69,6 +70,8 @@ export const mobileCatalogScreens = {
   computers: DevicesScreen,
   settings: SettingsScreen,
   'app-preferences': () => <SettingsScreen categorySlug="app-preferences" />,
+  'new-task-defaults': () => <SettingsScreen categorySlug="new-task-defaults" />,
+  'running-task-settings': () => <SettingsScreen categorySlug="running-task-settings" />,
   'agent-settings': () => <SettingsScreen categorySlug="agent-settings" />,
   'task-settings': () => <SettingsScreen categorySlug="task-settings" />,
   'computer-settings': () => <SettingsScreen categorySlug="computer-settings" />,
@@ -82,6 +85,7 @@ export const mobileCatalogScreens = {
   'task-preferences': TaskPreferencesScreen,
   notifications: NotificationsSettingsScreen,
   'task-defaults': TaskDefaultsScreen,
+  'task-lifecycle': TaskLifecycleScreen,
   agents: AgentsScreen,
   resources: ResourcesScreen,
   'device-hosts': DeviceHostsScreen,

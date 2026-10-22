@@ -52,7 +52,11 @@ function LinkCard({
   action?: ReactNode
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/30 p-4">
+    <div
+      data-setting-label={title}
+      tabIndex={-1}
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/30 p-4"
+    >
       <div className="min-w-0 flex-1">
         <h2 className="text-xs font-medium">{title}</h2>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
@@ -66,7 +70,10 @@ function EnvironmentTools() {
   const host = useStudioHost()
   return (
     <details className="rounded-xl border p-4">
-      <summary className="cursor-pointer text-sm font-medium">
+      <summary
+        data-setting-label="Installations & sign-in"
+        className="cursor-pointer text-sm font-medium"
+      >
         Installations & sign-in · this computer
       </summary>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">

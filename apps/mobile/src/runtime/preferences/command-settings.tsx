@@ -1,3 +1,5 @@
+import { useSettingsDraft } from './settings-target'
+import { SettingsSaveBar } from '../../screens/settings-save-bar'
 import { Switch } from '../../ui/controls/switch'
 import { mobileWorkflow, nativeEffect } from '../state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -8,6 +10,8 @@ import { Alert, Linking, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import {
   commandFields,
+  settingsChangeCount,
+  settingsChanges,
   commandSettingsResponse,
   cuaCheckResponse,
   cuaActionResponse,
@@ -38,9 +42,14 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
   const [output, setOutput] = useApplicationState('')
   const [saved, setSaved] = useApplicationState(false)
   const [retry, setRetry] = useApplicationState(0)
+  const dirty = !!baseline && settingsChangeCount(baseline, settings ?? {}) > 0
+  const protectDraft = useRef(false)
+  protectDraft.current = dirty
+  useSettingsDraft(dirty, busy)
   useEffect(() => {
-    let stopped = false
     const generation = ++cuaGeneration.current
+    if (protectDraft.current) return
+    let stopped = false
     setSaved(false)
     setSettings(null)
     setBaseline(null)
@@ -106,14 +115,13 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
         }
       }),
     )
-  if (!connected)
-    return (
-      <Text accessibilityRole="alert" style={styles.muted}>
-        This computer is offline. Reconnect to load its command settings.
-      </Text>
-    )
   return (
     <View style={styles.card}>
+      {!connected && (
+        <Text accessibilityRole="alert" style={styles.muted}>
+          Offline · your unsaved edits are kept here. Reconnect to save.
+        </Text>
+      )}
       <Text style={styles.text}>{computerUse ? 'Computer use' : 'CLI commands & shell'}</Text>
       <Text style={styles.muted}>
         {computerUse
@@ -134,7 +142,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                 key={field.id}
                 label={field.label}
                 value={settings[field.id]}
-                editable={!busy}
+                editable={!busy && connected}
                 autoCapitalize="none"
                 autoCorrect={false}
                 placeholder={field.id === 'shell' ? defaultShell : field.placeholder}
@@ -156,7 +164,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
             <Field
               label="Shell arguments (one per line)"
               multiline
-              editable={!busy}
+              editable={!busy && connected}
               value={settings.shellArgs.join('\n')}
               onChangeText={(value) => {
                 setSettings({
@@ -179,7 +187,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                 <Switch
                   accessibilityLabel="Enable agent computer use on this computer"
                   value={settings.cuaEnabled}
-                  disabled={busy}
+                  disabled={busy || !connected}
                   onValueChange={(value) => {
                     setSettings({ ...settings, cuaEnabled: value })
                     setSaved(false)
@@ -215,14 +223,14 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
               )}
               <Action
                 label="Install and set up Cua Driver"
-                disabled={busy}
+                disabled={busy || !connected}
                 onPress={() =>
                   act(() => Linking.openURL('https://cua.ai/docs/cua-driver/quickstart'))
                 }
               />
               <Action
                 label="Detect / check Cua Driver"
-                disabled={busy}
+                disabled={busy || !connected}
                 onPress={() =>
                   act(() =>
                     mobileWorkflow(function* () {
@@ -266,7 +274,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                         <Action
                           key={action.id}
                           label={action.label}
-                          disabled={busy || cuaActionDisabled(action.id, cua)}
+                          disabled={busy || !connected || cuaActionDisabled(action.id, cua)}
                           onPress={() => {
                             if (action.id === 'history-delete') {
                               Alert.alert(
@@ -325,17 +333,27 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
               )}
             </>
           )}
-          <Action
-            wide
-            label={
-              busy
-                ? 'Saving…'
-                : computerUse
-                  ? 'Save computer-use settings'
-                  : 'Save command settings'
+          <SettingsSaveBar
+            changes={settingsChanges(baseline ?? {}, settings ?? {})}
+            saveError={error}
+            readLatestChanges={async () =>
+              settingsChanges(
+                baseline ?? {},
+                await runClientEffect(
+                  readEffect('/api/commands/read', {}, commandSettingsResponse),
+                ).then((value) => value.settings),
+              )
             }
-            disabled={busy || !baseline || JSON.stringify(settings) === JSON.stringify(baseline)}
-            onPress={() =>
+            dirty={dirty}
+            saving={busy}
+            disabled={!connected || !baseline}
+            saved={saved}
+            changeCount={settingsChangeCount(baseline ?? {}, settings ?? {})}
+            onDiscard={() => {
+              setSettings(baseline)
+              setSaved(false)
+            }}
+            onSave={() =>
               act(() =>
                 mobileWorkflow(function* () {
                   const result = yield* callEffect(
@@ -369,13 +387,28 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
           {error || loadError}
         </Text>
       )}
-      {!!loadError && (
+      {!!(loadError || error) && (
         <Action
           wide
           secondary
           label="Retry command settings"
-          disabled={busy}
-          onPress={() => setRetry(retry + 1)}
+          disabled={busy || !connected}
+          onPress={() => {
+            const reload = () => {
+              setBaseline(settings)
+              setRetry(retry + 1)
+            }
+            if (!dirty) reload()
+            else
+              Alert.alert(
+                'Discard unsaved edits?',
+                'Load the latest saved settings and discard your edits?',
+                [
+                  { text: 'Keep editing', style: 'cancel' },
+                  { text: 'Discard and reload', style: 'destructive', onPress: reload },
+                ],
+              )
+          }}
         />
       )}
     </View>

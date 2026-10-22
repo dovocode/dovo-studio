@@ -13,7 +13,7 @@ try {
       : root + '/packages/studio-core/src'
     const header = mobile ? 'ScopedSettings' : 'SettingsScopePage'
     const core = `import {createContext,useContext} from 'react';export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft} from '${root}/packages/studio-core/src/settings-target.tsx';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,activeRuntimeId:profile.id,snapshot:entry.snapshot,connected:entry.connected,request:(path,input)=>window.request(profile.id,path,input)}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
-    const nativeRuntime = `import {createContext,useContext} from 'react';const Scope=createContext(null);export const useRuntime=()=>useContext(Scope)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const entry=window.sources.find(entry=>entry.profile.id===runtimeId);return <Scope.Provider value={{...window.runtime,activeId:runtimeId,snapshot:entry.snapshot,connected:entry.connected,call:(path,input)=>window.request(runtimeId,path,input)}}><div data-owner={runtimeId}>{children}</div></Scope.Provider>};`
+    const nativeRuntime = `import {createContext,useContext,useCallback} from 'react';const Scope=createContext(null);export const useRuntime=()=>useContext(Scope)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const call=useCallback((path,input)=>window.request(runtimeId,path,input),[runtimeId]);const entry=window.sources.find(entry=>entry.profile.id===runtimeId);return <Scope.Provider value={{...window.runtime,activeId:runtimeId,snapshot:entry.snapshot,connected:entry.connected,call}}><div data-owner={runtimeId}>{children}</div></Scope.Provider>};`
     const mocks = {
       '@dovo/studio-core': core,
       './workspace/provider': `export const useWorkspace=()=>window.runtime;`,
@@ -70,26 +70,34 @@ try {
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     page.on('dialog', (dialog) => dialog.accept())
-    await page.getByText('Editing All projects on all machines', { exact: true }).waitFor()
-    await page.getByText('Shared across paired machines', { exact: true }).waitFor()
+    await page.getByText('All projects on all machines', { exact: true }).waitFor()
+    if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
+    if (!mobile) await page.getByText('Shared across paired machines', { exact: true }).waitFor()
+    if (!mobile) await page.keyboard.press('Escape')
     const projects = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
-    const environments = page.getByLabel(mobile ? 'Machine' : 'Settings machine', {
+    const environments = page.getByLabel(mobile ? 'Computer' : 'Settings machine', {
       exact: true,
     })
     await projects.waitFor()
-    assert.equal(await environments.locator('option').first().textContent(), 'All machines')
+    assert.equal(await environments.locator('option').first().textContent(), 'All computers')
     assert.equal(await projects.locator('option').first().textContent(), 'All projects')
     assert.equal(await page.getByRole('button', { name: /Edit .* settings/ }).count(), 0)
     assert.equal(await page.getByRole('button', { name: 'Change scope', exact: true }).count(), 0)
     assert.equal(await page.getByLabel('Settings scope', { exact: true }).count(), 0)
     await projects.selectOption('git:github.com/team/repo')
     await environments.selectOption('linux')
-    await page.getByText('Editing Shared project on Linux', { exact: true }).waitFor()
-    await page.getByText('Saved on Linux', { exact: true }).waitFor()
+    await page.getByText('Shared project on Linux', { exact: true }).waitFor()
+    if (!mobile) await page.getByRole('button', { name: 'Settings inheritance details' }).click()
+    if (!mobile) await page.getByText('Saved on Linux', { exact: true }).waitFor()
+    if (!mobile) {
+      await page.keyboard.press('Escape')
+      await page.locator('summary[data-setting-label="Advanced workspace setup"]').click()
+    } else
+      await page.getByRole('button', { name: 'Show Advanced workspace setup', exact: true }).click()
     await page.getByLabel('Setup command', { exact: true }).fill('project setup')
-    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click()
     await page
-      .getByText(mobile ? /^Settings saved at / : 'Defaults saved for new tasks.', {
+      .getByText(mobile ? /^Settings saved at / : 'Changes saved.', {
         exact: !mobile,
       })
       .waitFor()
@@ -117,12 +125,16 @@ try {
     await projects.selectOption('')
     assert.equal(await page.getByTestId('target').textContent(), 'global:')
     await page.getByRole('button', { name: 'Defaults page', exact: true }).click()
+    if (!mobile)
+      await page.locator('summary[data-setting-label="Advanced workspace setup"]').click()
+    else
+      await page.getByRole('button', { name: 'Show Advanced workspace setup', exact: true }).click()
     await page
       .getByRole('button', { name: 'Use inherited worktree setup: No setup command', exact: true })
       .click()
-    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click()
     await page
-      .getByText(mobile ? /^Settings saved at / : 'Defaults saved for new tasks.', {
+      .getByText(mobile ? /^Settings saved at / : 'Changes saved.', {
         exact: !mobile,
       })
       .waitFor()
@@ -142,10 +154,14 @@ try {
     await page.getByRole('button', { name: 'Open Machine settings for Linux', exact: true }).click()
     assert.equal(await environments.inputValue(), 'linux')
     assert.equal(await projects.inputValue(), '')
-    await page.getByText('Editing Linux defaults', { exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Save defaults', exact: true }).waitFor()
+    await page.getByText('Linux defaults', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Save changes', exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: /overridden at/ }).count(), 0)
     await environments.selectOption('')
+    if (!mobile)
+      await page.locator('summary[data-setting-label="Advanced workspace setup"]').click()
+    else
+      await page.getByRole('button', { name: 'Show Advanced workspace setup', exact: true }).click()
     await overridden.click()
     await page
       .getByRole('button', { name: 'Reset all later worktree setup overrides', exact: true })
@@ -160,7 +176,7 @@ try {
     await page.evaluate(() => window.configureSources(1))
     await environments.waitFor({ state: 'detached' })
     await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
-    await page.getByText('Editing Mac defaults', { exact: true }).waitFor()
+    await page.getByText('Mac defaults', { exact: true }).waitFor()
     assert.equal(await page.getByTestId('target').textContent(), 'environment:')
     await projects.selectOption('git:github.com/team/repo')
     assert.equal(await page.getByTestId('target').textContent(), 'environment-project:mac-repo')

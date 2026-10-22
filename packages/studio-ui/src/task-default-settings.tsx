@@ -1,11 +1,13 @@
 import {
+  settingsChangeCount,
+  settingsChanges,
   selectDefaultPermissionPreset,
   resolveDefaultPermissionPolicy,
   permissionPolicyLabel,
 } from '@dovo/protocol'
 import { Struct } from 'effect'
 import { WandSparkles } from 'lucide-react'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import {
   accessLabel,
   runtimeComputerName,
@@ -50,7 +52,7 @@ import {
   SelectValue,
 } from './components/ui/select'
 import { ModelSettings } from './model-settings'
-import { SettingsGroup, SettingRow, Toggle } from './settings-layout'
+import { SettingsGroup, SettingRow, SettingsSaveBar, Toggle } from './settings-layout'
 import { PermissionPolicyFields, permissionPolicyUIIssue } from './permission-policy-fields'
 import { SettingSource } from './setting-source'
 
@@ -111,8 +113,10 @@ function TaskDefaultSettingsForm({
   const [saved, setSaved] = useApplicationState(false)
   const [retry, setRetry] = useApplicationState(0)
   const [showSetupCommand, setShowSetupCommand] = useApplicationState(false)
+  const protectDraft = useRef(false)
   useEffect(() => {
     let active = true
+    if (protectDraft.current && loadedScope === `${scope}:${repository?.id ?? ''}`) return
     setSettings(null)
     setError('')
     setSaved(false)
@@ -196,6 +200,7 @@ function TaskDefaultSettingsForm({
         taskDefaults: settings.value.taskDefaults ?? {},
         prompts: settings.value.prompts ?? [],
       })
+  protectDraft.current = dirty
   useSettingsDraft(dirty, busy)
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange])
   useEffect(() => onSavingChange?.(busy), [busy, onSavingChange])
@@ -421,6 +426,10 @@ function TaskDefaultSettingsForm({
           </SettingRow>
           <div className="space-y-3 p-4">
             <PermissionPolicyFields
+              sources={{
+                approvalPolicy: source('approvalPolicy'),
+                sandboxMode: source('sandboxMode'),
+              }}
               value={{
                 ...defaultPolicy,
                 approvalPolicy: draft.approvalPolicy ?? undefined,
@@ -440,8 +449,6 @@ function TaskDefaultSettingsForm({
                 change(field ? { ...draft, [field]: policy[field] } : { ...draft, ...policy })
               }
             />
-            {source('approvalPolicy')}
-            {source('sandboxMode')}
             {policyIssue && (
               <p role="alert" className="text-xs text-destructive">
                 {policyIssue}
@@ -548,149 +555,157 @@ function TaskDefaultSettingsForm({
           </SettingsGroup>
         )}
         {!repository?.kind && (
-          <SettingsGroup
-            title="Workspace & setup"
-            description="How a new task checks out your code and prepares its workspace."
-          >
-            <SettingRow
-              label="Working directory"
-              description="Use your checkout or give each task an isolated worktree."
-              source={source('execution')}
+          <>
+            <SettingsGroup
+              title="Workspace & setup"
+              description="How a new task checks out your code and prepares its workspace."
             >
-              <Select
-                value={draft.execution ?? 'inherit'}
-                onValueChange={(value) =>
-                  change({
-                    ...draft,
-                    execution: value === 'inherit' ? undefined : decode(executionSchema, value),
-                  })
-                }
+              <SettingRow
+                label="Working directory"
+                description="Use your checkout or give each task an isolated worktree."
+                source={source('execution')}
               >
-                <SelectTrigger aria-label="Working directory">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">
-                    Inherit ({inherited.execution === 'worktree' ? 'Worktree' : 'Local checkout'})
-                  </SelectItem>
-                  <SelectItem value="main">Local checkout</SelectItem>
-                  <SelectItem value="worktree">New worktree</SelectItem>
-                </SelectContent>
-              </Select>
-            </SettingRow>
-            <SettingRow
-              label="Start from origin"
-              description="Prefer the latest matching origin branch for new worktrees, falling back to origin’s default branch. You can still select a local base branch for a task."
-              source={source('worktreeFromOrigin')}
-            >
-              <Toggle
+                <Select
+                  value={draft.execution ?? 'inherit'}
+                  onValueChange={(value) =>
+                    change({
+                      ...draft,
+                      execution: value === 'inherit' ? undefined : decode(executionSchema, value),
+                    })
+                  }
+                >
+                  <SelectTrigger aria-label="Working directory">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">
+                      Inherit ({inherited.execution === 'worktree' ? 'Worktree' : 'Local checkout'})
+                    </SelectItem>
+                    <SelectItem value="main">Local checkout</SelectItem>
+                    <SelectItem value="worktree">New worktree</SelectItem>
+                  </SelectContent>
+                </Select>
+              </SettingRow>
+              <SettingRow
                 label="Start from origin"
-                checked={
-                  draft.worktreeFromOrigin ??
-                  inherited.worktreeFromOrigin ??
-                  defaultWorktreeFromOrigin
-                }
-                onChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
-              />
-            </SettingRow>
-            <SettingRow
-              label="Submodules"
-              description="Choose which submodules to initialize before setup."
-              source={source('submodules')}
-            >
-              <Select
-                disabled={!snapshot?.taskBehaviorSupported}
-                value={draft.submodules ?? 'inherit'}
-                onValueChange={(value) =>
-                  change({
-                    ...draft,
-                    submodules:
-                      value === 'none' || value === 'direct' || value === 'recursive'
-                        ? value
-                        : undefined,
-                  })
-                }
+                description="Prefer the latest matching origin branch for new worktrees, falling back to origin’s default branch. You can still select a local base branch for a task."
+                source={source('worktreeFromOrigin')}
               >
-                <SelectTrigger aria-label="Submodules">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">
-                    Inherit (
-                    {inherited.submodules === 'recursive'
-                      ? 'All levels'
-                      : inherited.submodules === 'direct'
-                        ? 'Top level only'
-                        : 'None'}
-                    )
-                  </SelectItem>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="direct">Top level only</SelectItem>
-                  <SelectItem value="recursive">All levels</SelectItem>
-                </SelectContent>
-              </Select>
-            </SettingRow>
-            <SettingRow
-              label="Worktree setup"
-              description={
-                draft.setupCommand === ''
-                  ? 'Setup is disabled at this level.'
-                  : (draft.setupCommand ?? inherited.setupCommand) || 'No setup command.'
-              }
-              source={source('setupCommand')}
-            >
-              <Select
-                value={
-                  draft.setupCommand === undefined
-                    ? 'inherit'
-                    : showSetupCommand
-                      ? 'custom'
-                      : 'disabled'
-                }
-                onValueChange={(value) => {
-                  setShowSetupCommand(value === 'custom')
-                  change({
-                    ...draft,
-                    setupCommand:
-                      value === 'inherit'
-                        ? undefined
-                        : value === 'disabled'
-                          ? ''
-                          : inherited.setupCommand || '',
-                  })
-                }}
-              >
-                <SelectTrigger aria-label="Worktree setup">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inherit">
-                    Inherit{inherited.setupCommand ? ' command' : ' (no setup)'}
-                  </SelectItem>
-                  <SelectItem value="custom">Custom command</SelectItem>
-                  <SelectItem value="disabled">Disable setup</SelectItem>
-                </SelectContent>
-              </Select>
-            </SettingRow>
-            {draft.setupCommand !== undefined && showSetupCommand && (
-              <div className="space-y-2 p-4">
-                <label className="text-xs font-medium" htmlFor="task-setup-command">
-                  Setup command
-                </label>
-                <Textarea
-                  id="task-setup-command"
-                  aria-label="Setup command"
-                  value={draft.setupCommand}
-                  placeholder="pnpm install --frozen-lockfile"
-                  onChange={(event) => change({ ...draft, setupCommand: event.target.value })}
+                <Toggle
+                  label="Start from origin"
+                  checked={
+                    draft.worktreeFromOrigin ??
+                    inherited.worktreeFromOrigin ??
+                    defaultWorktreeFromOrigin
+                  }
+                  onChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Runs in each new worktree before the agent starts. Leave empty to disable setup.
-                  Five-minute limit; failures stop startup.
-                </p>
-              </div>
-            )}
-          </SettingsGroup>
+              </SettingRow>
+            </SettingsGroup>
+            <SettingsGroup
+              advanced
+              title="Advanced workspace setup"
+              description="Submodules and commands to run before starting a task."
+            >
+              <SettingRow
+                label="Submodules"
+                description="Choose which submodules to initialize before setup."
+                source={source('submodules')}
+              >
+                <Select
+                  disabled={!snapshot?.taskBehaviorSupported}
+                  value={draft.submodules ?? 'inherit'}
+                  onValueChange={(value) =>
+                    change({
+                      ...draft,
+                      submodules:
+                        value === 'none' || value === 'direct' || value === 'recursive'
+                          ? value
+                          : undefined,
+                    })
+                  }
+                >
+                  <SelectTrigger aria-label="Submodules">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">
+                      Inherit (
+                      {inherited.submodules === 'recursive'
+                        ? 'All levels'
+                        : inherited.submodules === 'direct'
+                          ? 'Top level only'
+                          : 'None'}
+                      )
+                    </SelectItem>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="direct">Top level only</SelectItem>
+                    <SelectItem value="recursive">All levels</SelectItem>
+                  </SelectContent>
+                </Select>
+              </SettingRow>
+              <SettingRow
+                label="Worktree setup"
+                description={
+                  draft.setupCommand === ''
+                    ? 'Setup is disabled at this level.'
+                    : (draft.setupCommand ?? inherited.setupCommand) || 'No setup command.'
+                }
+                source={source('setupCommand')}
+              >
+                <Select
+                  value={
+                    draft.setupCommand === undefined
+                      ? 'inherit'
+                      : showSetupCommand
+                        ? 'custom'
+                        : 'disabled'
+                  }
+                  onValueChange={(value) => {
+                    setShowSetupCommand(value === 'custom')
+                    change({
+                      ...draft,
+                      setupCommand:
+                        value === 'inherit'
+                          ? undefined
+                          : value === 'disabled'
+                            ? ''
+                            : inherited.setupCommand || '',
+                    })
+                  }}
+                >
+                  <SelectTrigger aria-label="Worktree setup">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">
+                      Inherit{inherited.setupCommand ? ' command' : ' (no setup)'}
+                    </SelectItem>
+                    <SelectItem value="custom">Custom command</SelectItem>
+                    <SelectItem value="disabled">Disable setup</SelectItem>
+                  </SelectContent>
+                </Select>
+              </SettingRow>
+              {draft.setupCommand !== undefined && showSetupCommand && (
+                <div className="space-y-2 p-4">
+                  <label className="text-xs font-medium" htmlFor="task-setup-command">
+                    Setup command
+                  </label>
+                  <Textarea
+                    id="task-setup-command"
+                    aria-label="Setup command"
+                    value={draft.setupCommand}
+                    placeholder="pnpm install --frozen-lockfile"
+                    onChange={(event) => change({ ...draft, setupCommand: event.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Runs in each new worktree before the agent starts. Leave empty to disable setup.
+                    Five-minute limit; failures stop startup.
+                  </p>
+                </div>
+              )}
+            </SettingsGroup>
+          </>
         )}
         <SettingsGroup
           title="Saved prompts"
@@ -777,29 +792,50 @@ function TaskDefaultSettingsForm({
             </Button>
           </div>
         </SettingsGroup>
-        <div
-          className={`z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background/95 p-3 shadow-sm backdrop-blur ${dirty ? 'sticky -bottom-6' : ''}`}
-        >
-          <p role="status" className="text-xs text-muted-foreground">
-            {saved
-              ? 'Defaults saved for new tasks.'
-              : dirty
-                ? `Unsaved changes · ${settingsScopeLabels[scope]}`
-                : 'Changes apply to new tasks'}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" size="sm" onClick={() => change({})}>
-              Reset task defaults to inherited settings
-            </Button>
-            <Button disabled={!dirty || !!policyIssue} onClick={() => void save()}>
-              {busy ? 'Saving…' : 'Save defaults'}
-            </Button>
-          </div>
-        </div>
       </fieldset>
+      <SettingsSaveBar
+        changes={settingsChanges(
+          { ...settings?.value.taskDefaults, prompts: settings?.value.prompts ?? [] },
+          { ...draft, prompts },
+        )}
+        saveError={error}
+        readLatestChanges={async () =>
+          settingsChanges(
+            settings?.value ?? {},
+            (
+              await request(
+                '/api/agents/settings/read',
+                { scope, repositoryId: repository?.id },
+                scopedSettingsResultSchema,
+              )
+            ).value,
+          )
+        }
+        dirty={dirty}
+        changeCount={
+          settingsChangeCount(settings?.value.taskDefaults ?? {}, draft) +
+          (JSON.stringify(prompts) !== JSON.stringify(settings?.value.prompts ?? []) ? 1 : 0)
+        }
+        saving={busy}
+        disabled={!!policyIssue || disabled}
+        saved={saved}
+        description="Changes apply to new tasks. Save to apply."
+        onSave={() => void save()}
+        onDiscard={() => {
+          setDraft(settings?.value.taskDefaults ?? {})
+          setPrompts(settings?.value.prompts ?? [])
+          setShowSetupCommand(!!settings?.value.taskDefaults?.setupCommand)
+          setSaved(false)
+          setError('')
+        }}
+      >
+        <Button variant="ghost" size="sm" disabled={disabled} onClick={() => change({})}>
+          Reset task defaults to inherited settings
+        </Button>
+      </SettingsSaveBar>
       {!connected && (
         <p role="status" className="text-xs text-muted-foreground">
-          Connect to this computer to edit settings.
+          This computer is offline. Your unsaved edits are kept here; reconnect to save.
         </p>
       )}
       {connected && !settings && !error && (
@@ -810,7 +846,20 @@ function TaskDefaultSettingsForm({
       {error && (
         <div role="alert" className="flex items-center gap-2 text-xs text-destructive">
           {error}
-          <Button variant="ghost" onClick={() => setRetry(retry + 1)}>
+          <Button
+            variant="ghost"
+            disabled={!connected || busy}
+            onClick={() => {
+              if (
+                dirty &&
+                !window.confirm('Discard your unsaved edits and load the latest saved settings?')
+              )
+                return
+              protectDraft.current = false
+              setSettings(null)
+              setRetry(retry + 1)
+            }}
+          >
             Reload settings
           </Button>
         </div>

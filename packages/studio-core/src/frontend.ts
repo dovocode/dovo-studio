@@ -48,6 +48,10 @@ export type SettingsSection = 'app' | 'agents' | 'coding' | 'computers' | 'archi
 export type SettingsStorage = 'device' | 'computer' | 'inherited'
 export interface StudioView {
   navigationGroup?: 'settings' | 'hidden'
+  /** Searchable control labels; used without loading a settings page. */
+  settingsFields?: readonly string[]
+  /** Requirements for controls that only appear in some targets or editors. */
+  settingsFieldRequirements?: Readonly<Record<string, string>>
   /** Heading a settings page is listed under. */
   settingsSection?: SettingsSection
   /** Where a settings page stores values: this device, one computer, or the inherited

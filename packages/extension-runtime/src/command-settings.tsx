@@ -1,4 +1,6 @@
 import {
+  settingsChangeCount,
+  settingsChanges,
   cuaActions,
   cuaActionDisabled,
   cuaHistorySummary,
@@ -14,6 +16,7 @@ import {
   commandSettingsResponse,
   cuaCheckResponse,
   useWorkspace,
+  useSettingsDraft,
   type CommandSettings as Settings,
 } from '@dovo/studio-core'
 import {
@@ -24,6 +27,7 @@ import {
   Toggle,
   SettingRow,
   SettingsGroup,
+  SettingsSaveBar,
 } from '@dovo/studio-ui'
 export function CommandSettings({ computerUse = false }: { computerUse?: boolean }) {
   const { request, connected } = useWorkspace()
@@ -33,12 +37,24 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
   const [error, setError] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const cuaGeneration = useRef(0)
+  const actionPending = useRef(false)
   const [cua, setCua] = useApplicationState<CuaCheck | null>(null)
   const [output, setOutput] = useApplicationState('')
   const [saved, setSaved] = useApplicationState(false)
+  const form = useRef<HTMLFormElement>(null)
+  const dirty = !!baseline && JSON.stringify(settings) !== JSON.stringify(baseline)
+  const protectDraft = useRef(false)
+  protectDraft.current = dirty
+  const [retry, setRetry] = useApplicationState(0)
+  useSettingsDraft(dirty, busy)
   useEffect(() => {
-    let stopped = false
     const generation = ++cuaGeneration.current
+    if (actionPending.current) {
+      actionPending.current = false
+      setBusy(false)
+    }
+    if (protectDraft.current) return
+    let stopped = false
     setSettings(null)
     setBaseline(null)
     setError('')
@@ -73,7 +89,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
       stopped = true
       cuaGeneration.current++
     }
-  }, [request, connected, computerUse])
+  }, [request, connected, computerUse, retry])
   const change = (next: Settings) => {
     if (next.cua !== settings?.cua) {
       cuaGeneration.current++
@@ -86,6 +102,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
   const runAction = (action: CuaAction) => {
     if (!settings) return
     const generation = ++cuaGeneration.current
+    actionPending.current = true
     setBusy(true)
     setError('')
     setOutput('')
@@ -99,7 +116,10 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
         if (generation === cuaGeneration.current) setError(String(error))
       })
       .finally(() => {
-        if (generation === cuaGeneration.current) setBusy(false)
+        if (generation === cuaGeneration.current) {
+          actionPending.current = false
+          setBusy(false)
+        }
       })
   }
   return (
@@ -111,10 +131,11 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
       </p>
       {settings && (
         <form
+          ref={form}
           className="grid gap-3"
           onSubmit={(event) => {
             event.preventDefault()
-            if (!baseline) return
+            if (!baseline || busy || !connected || !dirty) return
             setBusy(true)
             setError('')
             setSaved(false)
@@ -249,6 +270,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                   disabled={busy || !connected}
                   onClick={() => {
                     const generation = ++cuaGeneration.current
+                    actionPending.current = true
                     setBusy(true)
                     setError('')
                     setCua(null)
@@ -265,7 +287,10 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                           if (generation === cuaGeneration.current) setError(String(error))
                         })
                         .finally(() => {
-                          if (generation === cuaGeneration.current) setBusy(false)
+                          if (generation === cuaGeneration.current) {
+                            actionPending.current = false
+                            setBusy(false)
+                          }
                         })
                   }}
                 >
@@ -367,22 +392,27 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
               )}
             </div>
           )}
-          <div className="flex justify-end border-t pt-4">
-            <Button type="submit" disabled={busy || !connected || !baseline}>
-              {busy
-                ? 'Working…'
-                : computerUse
-                  ? 'Save computer-use settings'
-                  : 'Save command settings'}
-            </Button>
-          </div>
-          {saved && (
-            <p role="status" className="text-xs text-muted-foreground">
-              {computerUse
-                ? 'Computer-use settings saved. Applies to new turns.'
-                : 'Command settings saved.'}
-            </p>
-          )}
+          <SettingsSaveBar
+            changes={settingsChanges(baseline ?? {}, settings ?? {})}
+            saveError={error}
+            readLatestChanges={async () =>
+              settingsChanges(
+                baseline ?? {},
+                (await request('/api/commands/read', {}, commandSettingsResponse)).settings,
+              )
+            }
+            dirty={dirty}
+            changeCount={settingsChangeCount(baseline ?? {}, settings ?? {})}
+            saving={busy}
+            disabled={!connected || !baseline}
+            saved={saved}
+            description="Changes apply to new processes. Save to apply."
+            onSave={() => form.current?.requestSubmit()}
+            onDiscard={() => {
+              if (baseline) change(baseline)
+              setError('')
+            }}
+          />
         </form>
       )}
       {connected && !settings && !error && (
@@ -398,6 +428,22 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error}
+          <Button
+            variant="ghost"
+            disabled={!connected || busy}
+            onClick={() => {
+              if (
+                dirty &&
+                !window.confirm('Discard your unsaved edits and load the latest saved settings?')
+              )
+                return
+              protectDraft.current = false
+              setBaseline(null)
+              setRetry((value) => value + 1)
+            }}
+          >
+            Reload settings
+          </Button>
         </p>
       )}
     </article>

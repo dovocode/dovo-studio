@@ -101,7 +101,10 @@ export function DesktopScreen({
                         onSelect={setActiveId}
                       />
                     )}
-                    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    <div
+                      data-settings-content={settings ? '' : undefined}
+                      className="flex min-h-0 min-w-0 flex-1 flex-col"
+                    >
                       <ErrorBoundary key={activeId}>
                         <Suspense
                           fallback={
@@ -151,6 +154,7 @@ export const Agents: Story = { args: { route: 'agents' } }
 export const Jobs: Story = { args: { route: 'jobs' } }
 export const Runtime: Story = { args: { route: 'runtime' } }
 export const TaskDefaults: Story = { args: { route: 'task-defaults' } }
+export const TaskLifecycle: Story = { args: { route: 'task-behavior' } }
 export const Commands: Story = { args: { route: 'commands' } }
 export const ComputerUse: Story = { args: { route: 'computer-use' } }
 export const RemoteDesktop: Story = { args: { route: 'remote-desktop' } }

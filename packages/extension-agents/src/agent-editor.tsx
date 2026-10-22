@@ -1,3 +1,4 @@
+import { settingsChanges } from '@dovo/protocol'
 import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { useEffect, useRef, type ReactNode } from 'react'
@@ -34,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
   FormField,
+  SettingsSaveBar,
   Input,
   Select,
   SelectContent,
@@ -66,6 +68,7 @@ export function AgentEditor({
 }) {
   const { connected, snapshot } = useWorkspace()
   const pending = useRef(false)
+  const form = useRef<HTMLFormElement>(null)
   const [busy, setBusy] = useApplicationState(false)
   const [agent, setAgent] = useApplicationState(initial)
   const [error, setError] = useApplicationState('')
@@ -117,6 +120,7 @@ export function AgentEditor({
         </ol>
       )}
       <form
+        ref={form}
         className="space-y-5"
         onSubmit={(event) => {
           event.preventDefault()
@@ -456,54 +460,56 @@ export function AgentEditor({
               {error}
             </p>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-            <span aria-live="polite" className="text-xs text-muted-foreground">
-              {!creating &&
-                (dirty
-                  ? `Unsaved changes · saves at ${computerName}`
-                  : `No unsaved changes · ${computerName}`)}
-            </span>
-            <div className="flex gap-2">
-              {!creating && dirty && (
-                <Button type="button" variant="ghost" disabled={busy} onClick={discard}>
-                  Discard changes
-                </Button>
+          {!creating ? (
+            <SettingsSaveBar
+              changes={settingsChanges(
+                { ...initial, env: undefined, environment: formatAgentEnvironment(initial.env) },
+                { ...agent, env: undefined, environment },
               )}
-              {creating && step > 0 && (
+              dirty={dirty}
+              saving={busy}
+              disabled={
+                !connected ||
+                !!permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true) ||
+                !supportsAccess(agent.provider, agent.permission)
+              }
+              description={`Changes apply to new turns on ${computerName}. Save to apply.`}
+              onDiscard={discard}
+              onSave={() => form.current?.requestSubmit()}
+            />
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+              <div className="flex gap-2">
+                {step > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setError('')
+                      setStep(step - 1)
+                    }}
+                  >
+                    Back
+                  </Button>
+                )}
                 <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setError('')
-                    setStep(step - 1)
-                  }}
+                  type="submit"
+                  disabled={
+                    busy ||
+                    !connected ||
+                    (step === 2 &&
+                      (!!permissionPolicyUIIssue(
+                        agent,
+                        snapshot?.permissionPolicySupported === true,
+                      ) ||
+                        !supportsAccess(agent.provider, agent.permission)))
+                  }
                 >
-                  Back
+                  {busy ? 'Saving…' : step < 2 ? 'Next' : 'Add configuration'}
                 </Button>
-              )}
-              <Button
-                type="submit"
-                disabled={
-                  busy ||
-                  !connected ||
-                  (step === 2 &&
-                    (!!permissionPolicyUIIssue(
-                      agent,
-                      snapshot?.permissionPolicySupported === true,
-                    ) ||
-                      !supportsAccess(agent.provider, agent.permission)))
-                }
-              >
-                {busy
-                  ? 'Saving…'
-                  : creating && step < 2
-                    ? 'Next'
-                    : creating
-                      ? 'Add configuration'
-                      : 'Save configuration'}
-              </Button>
+              </div>
             </div>
-          </div>
+          )}
         </fieldset>
       </form>
     </EditorShell>

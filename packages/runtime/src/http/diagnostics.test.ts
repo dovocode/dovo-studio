@@ -49,3 +49,46 @@ it('keeps public health lightweight and readiness authenticated, showing stale s
     await runtime.close()
   }
 })
+it('keeps historical uncertain actions visible without making healthy infrastructure unready', async () => {
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'healthy-history-owner-token-with-thirty-two-characters',
+    port: 0,
+  })
+  try {
+    const s = runtime.services
+    const now = Date.now()
+    s.tasks.schedulerStatus.lastSuccess = new Date(now).toISOString()
+    s.jobs.schedulerStatus.lastSuccess = new Date(now).toISOString()
+    s.store.providerActions.record({
+      id: 'old-uncertain',
+      taskId: 'old-task',
+      attemptId: 'old-attempt',
+      kind: 'start',
+      state: 'uncertain',
+    })
+    const task = s.tasks.create({
+      title: 'Cancelled',
+      repositoryId: '',
+      agentId: '',
+      objective: '',
+    })
+    s.store.updateTask(task.id, (value) => ({
+      ...value,
+      status: 'cancelled',
+      error: 'Cancelled by user',
+      queuePaused: true,
+      queue: [{ id: 'queued', role: 'user', text: 'Next', createdAt: new Date(now).toISOString() }],
+    }))
+    const result = await runtimeDiagnostics(s, now)
+    expect(result.ready).toBe(true)
+    expect(result.uncertain.count).toBe(1)
+    expect(result.warnings).toContain(
+      '1 provider operations have uncertain outcomes; they will not be replayed automatically.',
+    )
+    expect(result.warnings.some((message) => message.includes('paused after an error'))).toBe(false)
+    expect(s.store.providerActions.state('old-uncertain')).toBe('uncertain')
+  } finally {
+    await runtime.close()
+  }
+})

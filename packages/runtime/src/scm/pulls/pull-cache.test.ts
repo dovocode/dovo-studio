@@ -648,3 +648,21 @@ it('preserves the PR owner timestamp through gateway persistence, restart and of
   expect(offline.stale).toBe(true)
   expect(offline.refreshError).toBe('PR computer offline')
 })
+it('backs off confirmed missing PRs per account while allowing explicit refresh and account changes', async () => {
+  const { db, pulls, store } = setup()
+  let account = 'one'
+  const cache = new PullCache(db, pulls, store, async () => account)
+  cleanup.push(() => cache.dispose())
+  const missing = Object.assign(new Error('Missing PR'), { status: 404 })
+  const load = vi.spyOn(pulls, 'status').mockRejectedValue(missing)
+  const now = vi.spyOn(Date, 'now')
+  await expect(cache.status('/repo', 142)).rejects.toThrow('Missing PR')
+  now.mockReturnValue(Date.now() + 120_000)
+  await expect(cache.status('/repo', 142)).rejects.toThrow('Missing PR')
+  expect(load).toHaveBeenCalledTimes(1)
+  await expect(cache.status('/repo', 142, true)).rejects.toThrow('Missing PR')
+  expect(load).toHaveBeenCalledTimes(2)
+  account = 'two'
+  await expect(cache.status('/repo', 142)).rejects.toThrow('Missing PR')
+  expect(load).toHaveBeenCalledTimes(3)
+})

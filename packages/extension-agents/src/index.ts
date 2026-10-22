@@ -4,6 +4,7 @@ export const agentsExtension = defineStudioExtension(
   [
     {
       id: 'resources',
+      settingsFields: ['MCP servers', 'Skills', 'Agent loop hooks'],
       navigationGroup: 'settings',
       settingsScope: 'inherited',
       title: 'MCP, skills & hooks',
@@ -15,6 +16,7 @@ export const agentsExtension = defineStudioExtension(
     },
     {
       id: 'text-generation',
+      settingsFields: ['Titles & dictation provider', 'Model', 'Reasoning level'],
       navigationGroup: 'settings',
       settingsScope: 'computer',
       title: 'Titles & dictation',
@@ -27,6 +29,7 @@ export const agentsExtension = defineStudioExtension(
     },
     {
       id: 'agents',
+      settingsFields: ['Default agent for new tasks', 'Installations & sign-in'],
       navigationGroup: 'settings',
       settingsScope: 'inherited',
       title: 'Agents',

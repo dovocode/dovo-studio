@@ -1,3 +1,6 @@
+import { SettingsSaveBar } from '../screens/settings-save-bar'
+import { settingsChanges } from '@dovo/protocol'
+import { useSettingsDraft } from '../runtime/preferences/settings-target'
 import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { runtimeComputerName } from '@dovo/protocol'
 import { changeAgentProvider, changeAgentConnection, agentConnectionValue } from '@dovo/protocol'
@@ -40,6 +43,10 @@ export function AgentEditor({
     [draft, setDraft] = useApplicationState(original)
   const [showConnection, setShowConnection] = useApplicationState(false)
   const [environment, setEnvironment] = useApplicationState(formatAgentEnvironment(original.env))
+  const dirty =
+    JSON.stringify(draft) !== JSON.stringify(original) ||
+    environment !== formatAgentEnvironment(original.env)
+  useSettingsDraft(dirty, busy)
   const close = () => {
     if (busy) return
     if (
@@ -229,21 +236,45 @@ export function AgentEditor({
           </>
         </View>
       )}
-      <View style={styles.row}>
-        <Action
-          wide
-          label="Save agent"
+      {!creating ? (
+        <SettingsSaveBar
+          inline
+          dirty={dirty}
+          saving={busy}
+          saveLabel="Save agent"
+          changes={settingsChanges(
+            { ...original, env: undefined, environment: formatAgentEnvironment(original.env) },
+            { ...draft, env: undefined, environment },
+          )}
           disabled={
             !connected ||
-            busy ||
             !draft.name.trim() ||
             !!permissionPolicyUIIssue(draft, snapshot?.permissionPolicySupported === true) ||
             !supportsAccess(draft.provider, draft.permission)
           }
-          onPress={() => act(save)}
+          onDiscard={() => {
+            setDraft(original)
+            setEnvironment(formatAgentEnvironment(original.env))
+          }}
+          onSave={() => act(save)}
         />
-        <Action secondary label="Cancel" disabled={busy} onPress={close} />
-      </View>
+      ) : (
+        <View style={styles.row}>
+          <Action
+            wide
+            label="Save agent"
+            disabled={
+              !connected ||
+              busy ||
+              !draft.name.trim() ||
+              !!permissionPolicyUIIssue(draft, snapshot?.permissionPolicySupported === true) ||
+              !supportsAccess(draft.provider, draft.permission)
+            }
+            onPress={() => act(save)}
+          />
+          <Action secondary label="Cancel" disabled={busy} onPress={close} />
+        </View>
+      )}
       {!!error && <Text style={styles.error}>{error}</Text>}
     </Sheet>
   )

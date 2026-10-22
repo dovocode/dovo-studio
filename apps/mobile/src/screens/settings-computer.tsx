@@ -1,5 +1,7 @@
+import { useConfirmSettingsNavigation } from '../runtime/preferences/settings-target'
+import { SettingsScrollView } from './settings-search'
 import { useLocalSearchParams } from 'expo-router'
-import { ScrollView, View } from 'react-native'
+import { View } from 'react-native'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/state/application-state'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
@@ -20,6 +22,7 @@ function ComputerSettingsPage({
   section: RuntimePreferencesSection
 }) {
   const { styles } = useSettingsTheme()
+  const confirmNavigation = useConfirmSettingsNavigation()
   const { overviews, activeId } = useRuntime()
   const { runtimeId } = useLocalSearchParams<{ runtimeId?: string }>()
   const [selected, setComputer] = useApplicationState(runtimeId ?? activeId ?? '')
@@ -29,7 +32,10 @@ function ComputerSettingsPage({
   return (
     <SettingsPage>
       <ScreenHeader title={title} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <SettingsScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={{ gap: 10 }}>
           {overviews.length > 1 && (
             <SettingsChoice
@@ -39,7 +45,7 @@ function ComputerSettingsPage({
                 id: item.profile.id,
                 name: `${runtimeComputerName(item)}${item.connected ? '' : ' · Offline'}`,
               }))}
-              onChange={setComputer}
+              onChange={(value) => confirmNavigation(() => setComputer(value))}
             />
           )}
           <Text style={[styles.muted, { paddingHorizontal: 16 }]}>
@@ -55,13 +61,13 @@ function ComputerSettingsPage({
             <RuntimePreferences section={section} />
           </RuntimeScope>
         )}
-      </ScrollView>
+      </SettingsScrollView>
     </SettingsPage>
   )
 }
 
 export function TaskBehaviorSettingsScreen() {
-  return <ComputerSettingsPage title="Task behavior" section="tasks" />
+  return <ComputerSettingsPage title="Running tasks" section="tasks" />
 }
 export function PullSettingsScreen() {
   return <ComputerSettingsPage title="Pull requests & pipelines" section="pulls" />

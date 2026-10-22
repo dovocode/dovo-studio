@@ -1,6 +1,16 @@
+import { Icon } from '../../ui/controls/icon'
+import { SettingsScrollView } from '../../screens/settings-search'
 import { projectDisplayName, runtimeComputerName } from '@dovo/protocol'
-import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react'
-import { Alert, ScrollView, View } from 'react-native'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
+import { Alert, Pressable, View } from 'react-native'
 import {
   settingsProjectChoices,
   resolveSettingsTarget,
@@ -17,6 +27,8 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
 const Context = createContext<{
+  draftFlags: number
+  confirmNavigation: (proceed: () => void) => void
   target: SettingsTarget
   setTarget: (target: SettingsTarget) => void
   registerDraft: (id: symbol, dirty: boolean, saving: boolean) => () => void
@@ -27,26 +39,50 @@ export function SettingsTargetProvider({ children }: { children: ReactNode }) {
     projectId: '',
   })
   const drafts = useRef(new Map<symbol, { dirty: boolean; saving: boolean }>())
-  const registerDraft = useCallback((id: symbol, dirty: boolean, saving: boolean) => {
-    drafts.current.set(id, { dirty, saving })
-    return () => {
-      drafts.current.delete(id)
-    }
+  const [draftFlags, setDraftFlags] = useState(0)
+  const notifyDrafts = useCallback(() => {
+    const values = [...drafts.current.values()]
+    setDraftFlags(
+      (values.some((draft) => draft.dirty) ? 1 : 0) |
+        (values.some((draft) => draft.saving) ? 2 : 0),
+    )
   }, [])
-  const setTarget = (next: SettingsTarget) => {
-    if (next.environmentId === target.environmentId && next.projectId === target.projectId) return
+  const registerDraft = useCallback(
+    (id: symbol, dirty: boolean, saving: boolean) => {
+      drafts.current.set(id, { dirty, saving })
+      notifyDrafts()
+      return () => {
+        drafts.current.delete(id)
+        notifyDrafts()
+      }
+    },
+    [notifyDrafts],
+  )
+  const confirmNavigation = (proceed: () => void) => {
     const values = [...drafts.current.values()]
     if (values.some((draft) => draft.saving)) return
-    if (!values.some((draft) => draft.dirty)) updateTarget(next)
+    if (!values.some((draft) => draft.dirty)) proceed()
     else
       Alert.alert('Unsaved settings', 'Discard unsaved settings changes?', [
         { text: 'Keep editing', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => updateTarget(next) },
+        { text: 'Discard', style: 'destructive', onPress: proceed },
       ])
   }
+  const setTarget = (next: SettingsTarget) => {
+    if (next.environmentId === target.environmentId && next.projectId === target.projectId) return
+    confirmNavigation(() => updateTarget(next))
+  }
   return (
-    <Context.Provider value={{ target, setTarget, registerDraft }}>{children}</Context.Provider>
+    <Context.Provider value={{ target, setTarget, registerDraft, draftFlags, confirmNavigation }}>
+      {children}
+    </Context.Provider>
   )
+}
+export function useSettingsDraftState() {
+  return useContext(Context)?.draftFlags ?? 0
+}
+export function useConfirmSettingsNavigation() {
+  return useContext(Context)?.confirmNavigation ?? ((proceed: () => void) => proceed())
 }
 export function useSettingsDraft(dirty: boolean, saving = false) {
   const context = useContext(Context)
@@ -78,7 +114,7 @@ function useSettingsTargetState() {
       ? resolved.source
         ? runtimeComputerName(resolved.source)
         : 'Unavailable computer'
-      : 'All machines',
+      : 'All computers',
   }
 }
 /** The target bar above scoped pages, like T3 Code's "Applying settings for". */
@@ -90,6 +126,7 @@ export function ScopedSettings({
   scrollable?: boolean
 }) {
   const { colors, styles } = useTheme()
+  const [headerHeight, setHeaderHeight] = useState(0)
   const { target, setTarget, source, scope, repository, projectName, computerName } =
     useSettingsTargetState()
   const { overviews } = useRuntime()
@@ -98,17 +135,27 @@ export function ScopedSettings({
   const content = [
     <View
       key="target"
+      onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
       accessibilityLabel="Settings target"
       style={[
         styles.card,
         { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: colors.surface },
       ]}
     >
-      <Text style={[styles.text, { fontWeight: '600' }]}>Editing {summary.title}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={[styles.text, { fontWeight: '600', flex: 1 }]}>{summary.title}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Settings inheritance details"
+          onPress={() => Alert.alert(summary.title, `${summary.description}\n\n${summary.storage}`)}
+          style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Icon name="stack" size={18} color={colors.muted} />
+        </Pressable>
+      </View>
+      {source && !source.connected && <Text style={styles.muted}>Offline · edits kept here</Text>}
     </View>,
-    <View key="choices" accessibilityLabel="Settings choices" style={[styles.card, { gap: 12 }]}>
-      <Text style={[styles.text, { fontWeight: '600' }]}>{summary.storage}</Text>
-      <Text style={[styles.muted, { fontSize: 13, lineHeight: 18 }]}>{summary.description}</Text>
+    <View key="choices" accessibilityLabel="Settings choices" style={[styles.card, { gap: 8 }]}>
       <Choice
         label="Project"
         row
@@ -124,11 +171,11 @@ export function ScopedSettings({
       />
       {overviews.length > 1 && (
         <Choice
-          label="Machine"
+          label="Computer"
           row
           value={target.environmentId}
           items={[
-            { id: '', name: 'All machines' },
+            { id: '', name: 'All computers' },
             ...(target.environmentId &&
             !overviews.some((entry) => entry.profile.id === target.environmentId)
               ? [{ id: target.environmentId, name: 'Computer unavailable' }]
@@ -181,17 +228,18 @@ export function ScopedSettings({
     </View>,
   ]
   return scrollable ? (
-    <ScrollView
+    <SettingsScrollView
       style={{ flex: 1 }}
       contentContainerStyle={styles.content}
       stickyHeaderIndices={[0]}
+      searchHeaderHeight={headerHeight}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       automaticallyAdjustKeyboardInsets
     >
       {content}
-    </ScrollView>
+    </SettingsScrollView>
   ) : (
-    <View style={{ gap: 28 }}>{content}</View>
+    <View style={{ gap: 20 }}>{content}</View>
   )
 }

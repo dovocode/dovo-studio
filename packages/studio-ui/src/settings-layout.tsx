@@ -1,7 +1,9 @@
+import type { SettingsChange } from '@dovo/protocol'
 import { Card } from '@dovo/web-ui/card'
 import { Switch } from './components/ui/switch'
 import { PageHeader } from './page-header'
-import { useId, useRef, type ReactNode } from 'react'
+import { useId, useRef, useState, useEffect, type ReactNode } from 'react'
+import { Button } from './components/ui/button'
 
 /** Settings page frame and row, in the label-left / control-right style of Codex and T3 Code. */
 export function SettingsPage({
@@ -38,7 +40,9 @@ export function SettingsPage({
         tabIndex={0}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-6"
       >
-        <div className={`mx-auto ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-4`}>{children}</div>
+        <div className={`mx-auto ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-4 pb-24`}>
+          {children}
+        </div>
       </div>
     </section>
   )
@@ -47,14 +51,43 @@ export function SettingsGroup({
   title,
   description,
   children,
+  advanced = false,
 }: {
   title: string
   description?: string
   children: ReactNode
+  advanced?: boolean
 }) {
   const id = useId()
+  const content = (
+    <Card asChild className="divide-y p-0">
+      <div>{children}</div>
+    </Card>
+  )
+  if (advanced)
+    return (
+      <details className="group space-y-2 rounded-lg border p-3">
+        <summary
+          data-setting-label={title}
+          className="cursor-pointer text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {title}
+          {description && (
+            <span className="mt-1 block text-xs font-normal leading-relaxed text-muted-foreground">
+              {description}
+            </span>
+          )}
+        </summary>
+        {content}
+      </details>
+    )
   return (
-    <section aria-labelledby={id} className="space-y-2">
+    <section
+      data-setting-label={title}
+      tabIndex={-1}
+      aria-labelledby={id}
+      className="scroll-mt-4 space-y-2 outline-none"
+    >
       <div>
         <h2 id={id} className="text-sm font-semibold tracking-tight">
           {title}
@@ -65,9 +98,7 @@ export function SettingsGroup({
           </p>
         )}
       </div>
-      <Card asChild className="divide-y p-0">
-        <div>{children}</div>
-      </Card>
+      {content}
     </section>
   )
 }
@@ -84,7 +115,11 @@ export function SettingRow({
 }) {
   const id = useId()
   return (
-    <div className="flex flex-col items-stretch justify-between gap-2 px-3 py-3 sm:flex-row sm:items-center sm:gap-4">
+    <div
+      data-setting-label={label}
+      tabIndex={-1}
+      className="flex scroll-mt-4 flex-col items-stretch justify-between gap-2 px-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[search-highlight]:bg-accent data-[search-highlight]:ring-2 data-[search-highlight]:ring-inset data-[search-highlight]:ring-ring sm:flex-row sm:items-center sm:gap-4"
+    >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-1.5">
           <p id={`${id}-label`} className="text-[0.8125rem] font-medium">
@@ -109,6 +144,159 @@ export function SettingRow({
       >
         {children}
       </div>
+    </div>
+  )
+}
+
+/** Explicit-save editors share status, discard behavior and persistent actions. */
+export function SettingsSaveBar({
+  dirty,
+  saving,
+  saveLabel = 'Save changes',
+  disabled,
+  saved,
+  description,
+  onSave,
+  onDiscard,
+  children,
+  changeCount,
+  changes = [],
+  saveError,
+  readLatestChanges,
+}: {
+  changeCount?: number
+  changes?: SettingsChange[]
+  saveError?: string
+  readLatestChanges?: () => Promise<SettingsChange[]>
+  saveLabel?: string
+  dirty: boolean
+  saving: boolean
+  disabled?: boolean
+  saved?: boolean
+  description: string
+  onSave: () => void
+  onDiscard: () => void
+  children?: ReactNode
+}) {
+  const [review, setReview] = useState(false)
+  const [latest, setLatest] = useState<SettingsChange[] | null>(null)
+  const [reviewError, setReviewError] = useState('')
+  const reader = useRef(readLatestChanges)
+  reader.current = readLatestChanges
+  useEffect(() => {
+    setLatest(null)
+    setReviewError('')
+    if (!saveError || !dirty || !reader.current) return
+    let active = true
+    void reader.current().then(
+      (value) => {
+        if (active) {
+          setLatest(value)
+          setReview(true)
+        }
+      },
+      (error: unknown) => {
+        if (active) setReviewError(error instanceof Error ? error.message : String(error))
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [saveError, dirty])
+  const count = changeCount || changes.length || 1
+  const status = saving
+    ? 'Saving…'
+    : dirty
+      ? `${count} unsaved ${count === 1 ? 'change' : 'changes'}`
+      : saved
+        ? 'Changes saved.'
+        : description
+  return (
+    <div
+      className={`flex flex-wrap items-center justify-between gap-3 rounded-xl p-3 ${dirty || saving ? 'sticky bottom-0 z-10 border bg-background/95 shadow-sm backdrop-blur' : 'border-t text-muted-foreground'}`}
+      role="group"
+      aria-label="Settings save actions"
+    >
+      <div role="status" className="text-xs text-muted-foreground">
+        {dirty && changes.length > 0 ? (
+          <button
+            type="button"
+            className="rounded px-1 py-2 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-expanded={review}
+            onClick={() => setReview((value) => !value)}
+          >
+            {status}
+          </button>
+        ) : (
+          status
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {children && (
+          <details className="relative">
+            <summary
+              className="cursor-pointer rounded-md px-2 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="More settings actions"
+            >
+              More
+            </summary>
+            <div className="absolute bottom-full right-0 mb-2 w-64 rounded-lg border bg-popover p-2 text-popover-foreground shadow-lg">
+              {children}
+            </div>
+          </details>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={!dirty || saving}
+          onClick={onDiscard}
+        >
+          Discard
+        </Button>
+        <Button type="button" disabled={!dirty || saving || disabled} onClick={onSave}>
+          {saving ? 'Saving…' : saveLabel}
+        </Button>
+      </div>
+      {dirty && review && (
+        <div
+          className="max-h-64 w-full space-y-3 overflow-auto text-xs"
+          aria-label="Settings change review"
+        >
+          <p className="font-medium">Your changes</p>
+          {changes.map((change) => (
+            <div key={change.key} className="break-words [overflow-wrap:anywhere]">
+              <p className="font-medium">{change.label}</p>
+              <p className="whitespace-pre-wrap text-muted-foreground">
+                {change.before} → {change.after}
+              </p>
+            </div>
+          ))}
+          {latest && (
+            <>
+              <p className="font-medium">Latest saved changes · your draft is kept</p>
+              {latest.length ? (
+                latest.map((change) => (
+                  <div key={change.key} className="break-words [overflow-wrap:anywhere]">
+                    <p className="font-medium">{change.label}</p>
+                    <p className="whitespace-pre-wrap text-muted-foreground">
+                      {change.before} → {change.after}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p>No remotely changed fields found.</p>
+              )}
+              <p>Discard and reload to use the latest saved settings.</p>
+            </>
+          )}
+        </div>
+      )}
+      {reviewError && (
+        <p role="alert" className="w-full text-xs text-destructive">
+          Could not read latest saved changes: {reviewError}. Your draft is kept.
+        </p>
+      )}
     </div>
   )
 }

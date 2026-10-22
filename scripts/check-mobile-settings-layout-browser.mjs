@@ -11,7 +11,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 // Model RN's column layout, zero default shrink and explicit font scaling. These checks
 // exercise real settings components; UIKit/SwiftUI measurement still needs a device.
 const native = `
-  import {Children,useLayoutEffect,useRef,useSyncExternalStore} from 'react';
+  import {Children,useLayoutEffect,useRef,useImperativeHandle,useSyncExternalStore} from 'react';
   const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
   const css=styles=>{const style=flat(styles);return Object.fromEntries(Object.entries({...style,
     ...(style.paddingHorizontal!=null?{paddingLeft:style.paddingLeft??style.paddingHorizontal,paddingRight:style.paddingRight??style.paddingHorizontal}:{}),
@@ -21,11 +21,11 @@ const native = `
   export const StyleSheet={create:style=>style,flatten:flat,hairlineWidth:1};
   export const Platform={OS:window.platform};
   const base={display:'flex',flexDirection:'column',alignItems:'stretch',flexShrink:0,minHeight:0,position:'relative',boxSizing:'border-box'};
-  export const View=({children,style,testID,accessibilityLabel,onLayout})=>{
-    const ref=useRef();useLayoutEffect(()=>{if(!onLayout)return;const observer=new ResizeObserver(()=>{const {width,height}=ref.current.getBoundingClientRect();onLayout({nativeEvent:{layout:{width,height}}})});observer.observe(ref.current);return ()=>observer.disconnect()},[onLayout]);
+  export const View=({children,style,testID,accessibilityLabel,onLayout,ref:forwarded})=>{
+    const ref=useRef();useImperativeHandle(forwarded,()=>{const node=ref.current;node.measureLayout=(parent,done)=>{const a=node.getBoundingClientRect(),b=parent.getBoundingClientRect();done(a.x-b.x,a.y-b.y)};return node;});useLayoutEffect(()=>{if(!onLayout)return;const observer=new ResizeObserver(()=>{const {width,height}=ref.current.getBoundingClientRect();onLayout({nativeEvent:{layout:{width,height}}})});observer.observe(ref.current);return ()=>observer.disconnect()},[onLayout]);
     return <div ref={ref} data-testid={testID} aria-label={accessibilityLabel} style={{...base,...css(style)}}>{children}</div>;
   };
-  export const ScrollView=({children,style,contentContainerStyle,stickyHeaderIndices})=><View style={[{overflowY:'auto',flex:1},style]}><View style={contentContainerStyle}>{Children.toArray(children).map((child,index)=>stickyHeaderIndices?.includes(index)?<View key={index} style={{position:'sticky',top:0,zIndex:1}}>{child}</View>:child)}</View></View>;
+  export const ScrollView=({children,style,contentContainerStyle,stickyHeaderIndices,ref:forwarded,onContentSizeChange})=>{const outer=useRef(),inner=useRef();useImperativeHandle(forwarded,()=>({getInnerViewNode:()=>inner.current,scrollTo:({y})=>{outer.current.scrollTop=y}}));useLayoutEffect(()=>{if(!onContentSizeChange)return;const observer=new ResizeObserver(()=>{const {width,height}=inner.current.getBoundingClientRect();onContentSizeChange(width,height)});observer.observe(inner.current);return()=>observer.disconnect()},[onContentSizeChange]);return <div ref={outer} style={{...base,overflowY:'auto',flex:1,...css(style)}}><div ref={inner} style={{...base,...css(contentContainerStyle)}}>{Children.toArray(children).map((child,index)=>stickyHeaderIndices?.includes(index)?<View key={index} style={{position:'sticky',top:0,zIndex:1}}>{child}</View>:child)}</div></div>};
   export const Pressable=({children,style,onPress,testID,accessibilityLabel,accessibilityRole,accessibilityState,accessibilityValue,disabled})=><button data-testid={testID} aria-label={accessibilityLabel} role={accessibilityRole} aria-pressed={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-value={accessibilityValue?.text} disabled={disabled} onClick={onPress} style={{...base,backgroundColor:'transparent',border:0,margin:0,padding:0,font:'inherit',textAlign:'left',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
   export const Text=({children,style,numberOfLines,testID,accessibilityRole})=>{
     const textStyle=css(style),scale=window.fontScale;
@@ -83,7 +83,7 @@ const mocks = {
   './native-icon': `export const NativeIcon=({name,size,color})=><span data-icon={name} aria-hidden style={{width:size,height:size,flexShrink:0,color}}>⌄</span>;export const NativeIconLabel=({title,icon})=><><span aria-hidden data-icon={icon}/>{title}</>;`,
   './icon': `import {iconAssets} from './src/ui/controls/icon-assets';export const Icon=({name,size=20,color})=>{const asset=iconAssets[name];const url=typeof asset==='string'?asset:asset?.default;return <span data-icon={name} aria-hidden style={{display:'block',width:size,height:size,flexShrink:0,color,backgroundColor:color||'currentColor',maskImage:'url('+url+')',maskSize:'contain',maskRepeat:'no-repeat'}}/>};`,
   '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;export const carZoom=1.4;`,
-  'expo-router': `export const router={push:path=>window.navigate(path),dismissTo:path=>window.navigate(path),canGoBack:()=>window.routeHistory.length>1,back:()=>window.goBack()};export const useLocalSearchParams=()=>({section:window.section,runtimeId:window.requestedRuntimeId});`,
+  'expo-router': `export const usePreventRemove=()=>{};export const router={push:path=>window.navigate(path),dismissTo:path=>window.navigate(path),canGoBack:()=>window.routeHistory.length>1,back:()=>window.goBack()};export const useLocalSearchParams=()=>({section:window.section,runtimeId:window.requestedRuntimeId,setting:window.requestedSetting});`,
   expo: `export const requireOptionalNativeModule=()=>({getSupportedLocales:async()=>({locales:['en-US','de-DE']})});`,
   'expo-speech': `export const getAvailableVoicesAsync=async()=>[{identifier:'siri',name:'Siri',language:'en-US',quality:'Enhanced'}];`,
   'expo-constants': `export default {expoConfig:{version:'test'}};`,
@@ -119,6 +119,7 @@ const built = await build({
       import {ScrollView,View,Text as RNText} from 'react-native';
       import {createMobileTheme,MobileThemeContext,useTheme} from './src/ui/theme';
       import {SettingsPage,SettingsSheet} from './src/screens/settings-theme';
+      import {SettingsScrollView,SettingsAnchor,SettingsSearchContext} from './src/screens/settings-search';
       import {SettingsGroup,SettingsRow,SettingsSwitchRow} from './src/screens/settings-group';
       import {SettingsChoice,SettingsField,SettingsAction} from './src/screens/settings-controls';
       import {SettingsTargetProvider,ScopedSettings} from './src/runtime/preferences/settings-target';
@@ -135,7 +136,7 @@ const built = await build({
       window.runtime.overviews.push({...window.runtime.overviews[0],profile:{...window.runtime.overviews[0].profile,id:'other',name:'Build server'},snapshot:{...window.runtime.overviews[0].snapshot,defaults:{scopedSettings:{environment:{},shared:[]}}}});
       window.computerPreferences={};window.computerReads=[];window.computerSaves=[];
       for(const entry of window.runtime.overviews){
-        const id=entry.profile.id;window.computerPreferences[id]=decode(runtimePreferencesSchema,{});
+        const id=entry.profile.id;window.computerPreferences[id]=decode(runtimePreferencesSchema,{});entry.call=async(path)=>path==='/api/runtime/preferences/read'?structuredClone(window.computerPreferences[id]):({value:{},inherited:{}});
         entry.readEffect=(path)=>Effect.sync(()=>{window.computerReads.push({id,path});if(path==='/api/memory/projects/read')return {projects:[]};return structuredClone(window.computerPreferences[id])});
         entry.callEffect=(path,changes)=>Effect.sync(()=>{window.computerSaves.push({id,path,changes});const preferences=window.computerPreferences[id];if(path==='/api/memory/settings/save'){if(changes.scope==='system')preferences.memory.systemEnabled=changes.enabled;return structuredClone(preferences.memory)}Object.assign(preferences,changes);return structuredClone(preferences)});
       }
@@ -150,9 +151,9 @@ const built = await build({
           <SettingsAction secondary label="Reset all later worktree setup overrides" onPress={()=>{}}/>
         </>;
       }
-      function App(){const [accessibility,setAccessibility]=useState(false);window.showAccessibility=()=>setAccessibility(true);const [navigation,setNavigation]=useState(false);const [path,setPath]=useState('/settings');const [revision,setRevision]=useState(0);window.refreshSettings=()=>setRevision(revision+1);window.showNavigation=()=>setNavigation(true);window.routeHistory??=['/settings'];window.navigate=path=>{window.routeHistory.push(path);window.section=path.split('/')[2];setPath(path)};window.goBack=()=>{window.routeHistory.pop();const path=window.routeHistory.at(-1);window.section=path.split('/')[2];setPath(path)};const [mode,setMode]=useState('dark');const [sheet,setSheet]=useState(false);const [scopeOnly,setScopeOnly]=useState(false);window.showScoped=setScopeOnly;window.setMode=setMode;window.showSheet=setSheet;
+      function App(){const [probe,setProbe]=useState(false);window.showSearchProbe=setProbe;const [probeTarget,setProbeTarget]=useState('Probe setting');window.setProbeTarget=setProbeTarget;const [probeRevision,setProbeRevision]=useState(0);window.remountProbe=()=>setProbeRevision(value=>value+1);const [probeHeaderHeight,setProbeHeaderHeight]=useState(0);const [accessibility,setAccessibility]=useState(false);window.showAccessibility=(value=true)=>setAccessibility(value);const [navigation,setNavigation]=useState(false);const [path,setPath]=useState('/settings');const [revision,setRevision]=useState(0);window.refreshSettings=()=>setRevision(revision+1);window.showNavigation=()=>setNavigation(true);window.routeHistory??=['/settings'];window.navigate=target=>{const path=typeof target==='string'?target:target.pathname;window.requestedSetting=typeof target==='string'?undefined:target.params?.setting;window.requestedRuntimeId=typeof target==='string'?undefined:target.params?.runtimeId;window.routeHistory.push(path);window.section=path.split('/')[2];setPath(path)};window.goBack=()=>{window.routeHistory.pop();const path=window.routeHistory.at(-1);window.section=path.split('/')[2];setPath(path)};const [mode,setMode]=useState('dark');const [sheet,setSheet]=useState(false);const [scopeOnly,setScopeOnly]=useState(false);window.showScoped=setScopeOnly;window.setMode=setMode;window.showSheet=setSheet;
         if(accessibility)return <MobileAppearance><AppearanceScreen/><MotionProbe/></MobileAppearance>;
-        return <MobileThemeContext.Provider value={createMobileTheme('dovo',mode)}><SettingsPage>{navigation?<SettingsTargetProvider>{path==='/settings'?<SettingsScreen/>:<SettingsSection key={path}/>}</SettingsTargetProvider>:scopeOnly?<SettingsTargetProvider><ScopedSettings scrollable>{()=> <View style={{height:1800}}><RNText>Settings content</RNText></View>}</ScopedSettings></SettingsTargetProvider>:<ScrollView contentContainerStyle={{padding:16,gap:24}}>
+        return <MobileThemeContext.Provider value={createMobileTheme('dovo',mode)}><SettingsPage>{probe?<SettingsSearchContext.Provider value={probeTarget}><SettingsScrollView searchHeaderHeight={probeHeaderHeight} stickyHeaderIndices={[0]} style={{flex:1}}><View accessibilityLabel='Probe scope header' onLayout={event=>setProbeHeaderHeight(event.nativeEvent.layout.height)} style={{height:84*window.fontScale,backgroundColor:'#333'}}><RNText>Scope header</RNText></View><View style={{height:800}}/><SettingsAnchor key={probeRevision} label='Probe setting'><View accessibilityLabel='Probe destination' style={{height:100}}><RNText>Probe setting</RNText></View></SettingsAnchor><View style={{height:1000}}/></SettingsScrollView></SettingsSearchContext.Provider>:navigation?<SettingsTargetProvider>{path==='/settings'?<SettingsScreen/>:<SettingsSection key={path}/>}</SettingsTargetProvider>:scopeOnly?<SettingsTargetProvider><ScopedSettings scrollable>{()=> <View style={{height:1800}}><RNText>Settings content</RNText></View>}</ScopedSettings></SettingsTargetProvider>:<ScrollView contentContainerStyle={{padding:16,gap:24}}>
           <SettingsGroup title="Computers"><SettingsRow title="Settings scope" subtitle="All projects on this computer" value={computer} icon="device" tint="#087f5b" mark={{icon:'stack',label:'Computer settings'}} onPress={()=>{}}/></SettingsGroup>
           <SettingsGroup title="Preferences"><Controls/></SettingsGroup>
           <SettingsTargetProvider><ScopedSettings>{()=> <SettingSource source="global" overridden={false} label="Worktree setup" setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:undefined,inheritedValue:undefined}}/>}</ScopedSettings></SettingsTargetProvider>
@@ -202,7 +203,7 @@ const built = await build({
                   : path === 'state'
                     ? `export {useState as useApplicationState} from 'react';`
                     : path === 'runtime'
-                      ? `import {createContext,useContext} from 'react';const Context=createContext(null);export const useRuntime=()=>useContext(Context)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const runtime=useRuntime();const entry=runtime.overviews.find(item=>item.profile.id===runtimeId);return entry?<Context.Provider value={{...runtime,...entry}}>{children}</Context.Provider>:null};`
+                      ? `import {createContext,useContext} from 'react';const Context=createContext(null);export const useRuntime=()=>useContext(Context)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const runtime=useRuntime();const entry=runtime.overviews.find(item=>item.profile.id===runtimeId);return entry?<Context.Provider value={{...runtime,...entry,activeId:runtimeId}}>{children}</Context.Provider>:null};`
                       : path === 'sheet'
                         ? `import {createContext,useContext} from 'react';import {View} from 'react-native';const Context=createContext(false);export const useInsideSheet=()=>useContext(Context);export const Sheet=({children,title})=><Context.Provider value><View accessibilityLabel={title} style={{position:'fixed',inset:0,background:'#f2f2f7',zIndex:1}}>{children}</View></Context.Provider>;`
                         : mocks[path],
@@ -386,7 +387,7 @@ try {
       await page.evaluate(() => window.showSheet(false))
       await page.evaluate(() => window.showScoped(true))
       const sticky = page.getByLabel('Settings target', { exact: true })
-      await sticky.getByText('Editing All projects on all machines', { exact: true }).waitFor()
+      await sticky.getByText('All projects on all machines', { exact: true }).waitFor()
       const storage = page.getByText('Shared across paired machines', { exact: true })
       const description = page.getByText(
         'Defaults for all projects on all machines. More-specific overrides keep their own values.',
@@ -400,10 +401,13 @@ try {
             (mode === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(242, 242, 247)'),
           mode,
         )
-        await storage.waitFor()
-        await description.waitFor()
+        assert.equal(await storage.count(), 0)
+        assert.equal(await description.count(), 0)
+        await sticky
+          .getByRole('button', { name: 'Settings inheritance details', exact: true })
+          .waitFor()
         await page.getByLabel('Project', { exact: true }).waitFor()
-        await page.getByLabel('Machine', { exact: true }).waitFor()
+        await page.getByLabel('Computer', { exact: true }).waitFor()
         assert.equal(
           await page.getByRole('button', { name: 'Change scope', exact: true }).count(),
           0,
@@ -455,7 +459,7 @@ try {
     // Exercise the actual settings index, section route and moved controls.
     await page.evaluate(() => window.showNavigation())
     for (const category of [
-      'This app',
+      'App preferences',
       'Agents & tools',
       'Tasks & projects',
       'Computers',
@@ -466,7 +470,7 @@ try {
     const search = page.getByLabel('Search settings', { exact: true })
     const row = (name) => page.getByRole('button', { name, exact: true })
     const categories = [
-      ['This app', 'app-preferences'],
+      ['App preferences', 'app-preferences'],
       ['Agents & tools', 'agent-settings'],
       ['Tasks & projects', 'task-settings'],
       ['Computers', 'computer-settings'],
@@ -487,6 +491,14 @@ try {
       await page.getByRole('heading', { name, exact: true }).waitFor()
       await page.getByRole('button', { name: 'Back', exact: true }).click()
     }
+    await search.fill('Time format')
+    await row('Time format').click()
+    await page
+      .getByTestId('Settings search highlight')
+      .getByLabel('Time format', { exact: true })
+      .waitFor()
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await search.fill('')
     await row('Conversation').click()
     await page.getByRole('heading', { name: 'Conversation', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Back', exact: true }).click()
@@ -512,12 +524,12 @@ try {
       ['standalone relay', 'Notifications', 'notifications'],
       ['live activities', 'Notifications', 'notifications'],
       ['widgets refresh', 'Battery & background', 'battery'],
-      ['maximum child agents', 'Task behavior', 'task-behavior'],
-      ['interrupted restart', 'Task behavior', 'task-behavior'],
-      ['tune maestro', 'Task behavior', 'task-behavior'],
-      ['scope model', 'Task behavior', 'task-behavior'],
-      ['supervised web requests', 'Task behavior', 'task-behavior'],
-      ['code reviews', 'Task behavior', 'task-behavior'],
+      ['maximum child agents', 'Running tasks', 'task-behavior'],
+      ['interrupted restart', 'Running tasks', 'task-behavior'],
+      ['tune maestro', 'Running tasks', 'task-behavior'],
+      ['scope model', 'Running tasks', 'task-behavior'],
+      ['supervised web requests', 'Running tasks', 'task-behavior'],
+      ['code reviews', 'Running tasks', 'task-behavior'],
       ['smart pr linking', 'Pull requests & pipelines', 'pull-requests'],
       ['feedback watcher', 'Pull requests & pipelines', 'pull-requests'],
       ['last thread', 'Worktrees', 'worktrees'],
@@ -653,7 +665,7 @@ try {
       window.navigate('/settings')
     })
     await search.fill('task behavior')
-    await page.getByRole('button', { name: 'Task behavior', exact: true }).click()
+    await page.getByRole('button', { name: 'Running tasks', exact: true }).click()
     await page.getByText('Running tasks', { exact: true }).waitFor()
     assert.equal(await page.getByText('Memory', { exact: true }).count(), 0)
     assert.equal(await page.getByText('Pull requests & pipelines', { exact: true }).count(), 0)
@@ -688,6 +700,20 @@ try {
         (item) => item.id === 'other' && item.changes.autoContinueAfterRestart === true,
       ),
     )
+    await page.getByRole('button', { name: 'Open scoped task lifecycle', exact: true }).click()
+    await page.getByText('Build server defaults', { exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => window.requestedRuntimeId), 'other')
+    await page
+      .getByRole('button', { name: 'Open computer running-task defaults', exact: true })
+      .click()
+    await page
+      .getByText('Saved on Build server. Changes are shared with its paired devices.', {
+        exact: true,
+      })
+      .waitFor()
+    assert.equal(await page.evaluate(() => window.requestedRuntimeId), 'other')
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
     await page.evaluate(() => {
       window.runtime.activeId = 'computer'
     })
@@ -714,8 +740,7 @@ try {
     assert.equal(await resume.count(), 0)
     await page.evaluate(() => {
       window.runtime.overviews[0].connected = true
-      window.requestedRuntimeId = 'missing'
-      window.navigate('/settings/artifacts')
+      window.navigate({ pathname: '/settings/artifacts', params: { runtimeId: 'missing' } })
     })
     await page
       .getByText('This computer is unavailable. Choose another computer above.', { exact: true })
@@ -928,6 +953,47 @@ try {
       'Accessibility settings must fit with large system text',
     )
     assert.deepEqual(errors, [])
+    await page.evaluate(() => {
+      window.setFontScale(1.8)
+      window.showAccessibility(false)
+      window.showSearchProbe(true)
+    })
+    const probe = page.getByLabel('Probe destination', { exact: true })
+    await probe.waitFor()
+    await page.waitForFunction(() => {
+      const target = document
+        .querySelector('[aria-label="Probe destination"]')
+        .getBoundingClientRect()
+      const header = document
+        .querySelector('[aria-label="Probe scope header"]')
+        .getBoundingClientRect()
+      return target.top >= header.bottom && target.top <= header.bottom + 20
+    })
+    await page.evaluate(() => window.setProbeTarget('Unavailable setting'))
+    await page
+      .getByRole('alert')
+      .filter({ hasText: 'is not available for this settings target' })
+      .waitFor()
+    await page.evaluate(() => {
+      window.setProbeTarget('Probe setting')
+      window.remountProbe()
+    })
+    await page.waitForFunction(() => {
+      const target = document
+        .querySelector('[aria-label="Probe destination"]')
+        .getBoundingClientRect()
+      const header = document
+        .querySelector('[aria-label="Probe scope header"]')
+        .getBoundingClientRect()
+      return target.top >= header.bottom && target.top <= header.bottom + 20
+    })
+    assert.equal(
+      await page
+        .getByRole('alert')
+        .filter({ hasText: 'is not available for this settings target' })
+        .count(),
+      0,
+    )
     await page.close()
   }
   console.log(

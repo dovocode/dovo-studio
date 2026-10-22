@@ -11,7 +11,7 @@ import {
   decode,
   DIAGNOSTIC_RETENTION_DAYS,
 } from '@dovo/protocol'
-import { clientTaskScope, useWorkspace } from '@dovo/studio-core'
+import { clientTaskScope, useWorkspace, useSettingsDraft } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   Input,
@@ -31,6 +31,7 @@ type Preferences = typeof runtimePreferencesSchema.Type
 function useRuntimePreferences(onSaved?: () => void) {
   const { requestEffect, connected } = useWorkspace()
   const [value, setValue] = useApplicationState<Preferences | null>(null)
+  const [loading, setLoading] = useApplicationState(true)
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const generation = useRef(0)
@@ -39,7 +40,7 @@ function useRuntimePreferences(onSaved?: () => void) {
     const version = ++generation.current
     saving.current = false
     setBusy(false)
-    setValue(null)
+    setLoading(connected)
     setError('')
     if (!connected) return
     const scope = clientTaskScope()
@@ -47,13 +48,19 @@ function useRuntimePreferences(onSaved?: () => void) {
       requestEffect('/api/runtime/preferences/read', {}, runtimePreferencesSchema).pipe(
         Effect.tap((settings) =>
           Effect.sync(() => {
-            if (version === generation.current) setValue(settings)
+            if (version === generation.current) {
+              setValue(settings)
+              setLoading(false)
+            }
           }),
         ),
         Effect.asVoid,
         Effect.catch((error) =>
           Effect.sync(() => {
-            if (version === generation.current) setError(error.message)
+            if (version === generation.current) {
+              setError(error.message)
+              setLoading(false)
+            }
           }),
         ),
       ),
@@ -103,7 +110,14 @@ function useRuntimePreferences(onSaved?: () => void) {
       ),
     )
   }
-  return { value, save, error, busy, connected, disabled: !connected || busy || value === null }
+  return {
+    value,
+    save,
+    error,
+    busy,
+    connected,
+    disabled: !connected || busy || loading || value === null,
+  }
 }
 
 /** Settings → Computers → Running tasks: what this computer does with tasks on its own. Stored
@@ -114,7 +128,7 @@ export function RunningTaskPreferences() {
   const { value, save, error, busy, connected, disabled } = useRuntimePreferences()
   return (
     <>
-      <SettingsGroup title="Model modes (experimental)">
+      <SettingsGroup advanced title="Model modes (experimental)">
         <SettingRow
           label="Tune & Maestro modes (experimental)"
           description="Tune chooses a model within the default agent. Maestro chooses the agent and model together. Both choose reasoning once before the first turn. Inherit keeps project defaults."
@@ -127,7 +141,7 @@ export function RunningTaskPreferences() {
           />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup title="Project mode (experimental)">
+      <SettingsGroup advanced title="Project mode (experimental)">
         <SettingRow
           label="Scope mode (experimental)"
           description="Find primary and linked projects from the first message on this computer. If no project matches, continue in General."
@@ -239,7 +253,7 @@ export function RunningTaskPreferences() {
       <SettingsGroup title="Archiving">
         <SettingRow
           label="Auto-archive inactive tasks"
-          description="Tasks that are running, waiting for you, pinned or have an open terminal are never archived. Restore them from Archived tasks."
+          description="Computer fallback when no scoped archiving rule is set. A scoped On archives after time in Settled; scoped Off disables automatic archiving. Running, waiting, pinned tasks and open terminals are protected."
         >
           <Select
             disabled={disabled}
@@ -566,8 +580,9 @@ function WorktreeRoot({
 }) {
   const [draft, setDraft] = useApplicationState<string | null>(null)
   useEffect(() => {
-    setDraft(null)
-  }, [value, setDraft])
+    if (draft !== null && draft.trim() === value) setDraft(null)
+  }, [value, draft, setDraft])
+  useSettingsDraft(draft !== null && draft.trim() !== (value ?? ''))
   const commit = () => {
     if (draft !== null && draft.trim() !== value) onSave(draft.trim())
   }
@@ -612,7 +627,9 @@ function PreferencesStatus({
             ? 'Loading settings…'
             : 'Saving…'}
       </p>
-    ) : null
+    ) : (
+      <p className="text-xs text-muted-foreground">Saved automatically on this computer.</p>
+    )
   return (
     <p role="alert" className="py-2 text-xs text-destructive">
       {error}
@@ -631,13 +648,15 @@ function BranchPrefix({
   onSave: (prefix: string) => void
 }) {
   const [draft, setDraft] = useApplicationState<string | null>(null)
+  useSettingsDraft(draft !== null && draft !== (value ?? ''))
   const text = draft ?? value ?? ''
   const { prefix: normalized, valid } = normalizeBranchPrefix(text)
   useEffect(() => {
-    if (draft !== null && normalized === value) setDraft(null)
-  }, [draft, normalized, value, setDraft])
+    if (draft !== null && valid && normalized === value) setDraft(null)
+  }, [draft, normalized, valid, value, setDraft])
   const commit = () => {
-    if (draft === null || !valid || normalized === value) return setDraft(null)
+    if (!valid) return
+    if (draft === null || normalized === value) return setDraft(null)
     onSave(normalized)
   }
   return (
@@ -687,7 +706,10 @@ function ChildAgentLimit({
   const errorId = useId()
   const limit = Number(draft ?? value ?? 4)
   const valid = Number.isSafeInteger(limit) && limit >= 1
-  useEffect(() => setDraft(null), [value, setDraft])
+  useEffect(() => {
+    if (draft !== null && valid && limit === value) setDraft(null)
+  }, [draft, valid, limit, value, setDraft])
+  useSettingsDraft(draft !== null && draft !== String(value ?? 4))
   const commit = () => {
     if (draft !== null && valid && limit !== value) onSave(limit)
   }

@@ -6,6 +6,8 @@ import {
   taskPullStatusFor,
   gitRemoteIdentity,
   pullRepositoryIdentity,
+  threadPullLink,
+  type Repository,
 } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
@@ -16,6 +18,7 @@ import { archiveTask, taskIsBusy } from '../../agents/tasks/housekeeping.js'
 type PullStatus = NonNullable<TaskSummary['pullStatus']>
 type WatcherServices = Pick<
   Services,
+  | 'git'
   | 'store'
   | 'pullCache'
   | 'preferences'
@@ -116,9 +119,14 @@ export class TaskPullWatcher {
       ),
     }))
   }
-  private async linkMentions(task: TaskSummary, path: string) {
+  private async linkMentions(task: TaskSummary, repo: Repository) {
     const matches: Array<Awaited<ReturnType<Services['pullCache']['status']>>['pull']> = []
     if (!this.s.preferences.get().autoLinkPullRequests) return matches
+    const identity =
+      pullRepositoryIdentity(repo) ??
+      (!repo.forge && !repo.gitIdentityError && task.history.pullReferences?.length
+        ? await this.s.git.repositoryIdentity(repo.path)
+        : undefined)
     for (const reference of task.history.pullReferences ?? []) {
       if (
         task.ignoredPullRequestUrls?.includes(reference.url) ||
@@ -127,9 +135,13 @@ export class TaskPullWatcher {
         task.pullRequest?.url === reference.url
       )
         continue
+      const link = threadPullLink(reference.url)
+      // Reject foreign repository mentions before looking up their number in this project.
+      if (!identity || !link?.repositoryUrl || gitRemoteIdentity(link.repositoryUrl) !== identity)
+        continue
       try {
         // Lookup uses this repository's configured forge, never a URL supplied in agent text.
-        const { pull } = await this.s.pullCache.status(path, reference.number, false, true)
+        const { pull } = await this.s.pullCache.status(repo.path, reference.number, false, true)
         verifyPullUrl(reference.url, pull.url)
         matches.push(pull)
         this.attach(task, pull)
@@ -324,7 +336,7 @@ export class TaskPullWatcher {
       const repo = workspace.repositories.find((item) => item.id === task.repositoryId)
       if (!repo || repo.kind) continue
       try {
-        const mentioned = await this.linkMentions(task, repo.path)
+        const mentioned = await this.linkMentions(task, repo)
         if (!task.pullRequest && !task.checkoutBranch) continue
         let open = openPulls.get(repo.path)
         if (!open) {

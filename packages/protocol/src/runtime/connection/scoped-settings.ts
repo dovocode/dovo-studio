@@ -458,3 +458,73 @@ export function resolveScopedAgents(
 ) {
   return scopedAgentEntries(runtime, repository, legacy).map((entry) => entry.agent)
 }
+
+/** Counts edited fields, treating a missing value and explicit undefined as inheritance. */
+export function settingsChangeCount(before: object, after: object): number {
+  const previous = new Map<string, unknown>(Object.entries(before))
+  const next = new Map<string, unknown>(Object.entries(after))
+  return [...new Set([...previous.keys(), ...next.keys()])].filter(
+    (key) => JSON.stringify(previous.get(key)) !== JSON.stringify(next.get(key)),
+  ).length
+}
+
+export type SettingsChange = { key: string; label: string; before: string; after: string }
+const changeLabels: Record<string, string> = {
+  inactiveDays: 'Days of inactivity before settling',
+  archiveAfterSettledDays: 'Days in Settled before archiving',
+  autoArchiveSettled: 'Auto-archive settled tasks',
+  continueAfterRestart: 'Continue after restarts',
+  settleMerged: 'Auto-settle merged tasks',
+  settleClosed: 'Auto-settle closed tasks',
+  settleInactive: 'Auto-settle inactive tasks',
+  quotaResume: 'Auto-resume limited tasks',
+  quotaSnooze: 'Snooze limited tasks',
+  defaultServerId: 'Default computer',
+  modelSelection: 'Model selection',
+  agentId: 'Agent',
+  setupCommand: 'Setup command',
+  prompts: 'Saved prompts',
+  approvalPolicy: 'Approval policy',
+  sandboxMode: 'Sandbox mode',
+  worktreeFromOrigin: 'Create worktrees from remote',
+}
+function changeValue(value: unknown): string {
+  if (value === undefined) return 'Inherit'
+  if (value === null) return 'Provider default'
+  if (typeof value === 'boolean') return value ? 'On' : 'Off'
+  if (value === '') return 'Empty'
+  return typeof value === 'string' ? value : JSON.stringify(value)
+}
+/** A review of the actual edited fields, also used to compare a CAS baseline with remote edits. */
+export function settingsChanges(before: object, after: object): SettingsChange[] {
+  const previous = new Map<string, unknown>(Object.entries(before))
+  const next = new Map<string, unknown>(Object.entries(after))
+  return [...new Set([...previous.keys(), ...next.keys()])].flatMap((key) => {
+    const a = previous.get(key),
+      b = next.get(key)
+    if (JSON.stringify(a) === JSON.stringify(b)) return []
+    // Scoped settings contain independent groups; review their fields separately.
+    if (['taskDefaults', 'taskBehavior', 'commands'].includes(key)) {
+      const object = (value: unknown): object =>
+        value !== null && typeof value === 'object' ? value : {}
+      return settingsChanges(object(a), object(b)).map((entry) => ({
+        ...entry,
+        key: `${key}.${entry.key}`,
+      }))
+    }
+    const words = key.replace(/([a-z])([A-Z])/g, '$1 $2')
+    return [
+      {
+        key,
+        label: changeLabels[key] ?? words.charAt(0).toUpperCase() + words.slice(1),
+        before: changeValue(a),
+        after: changeValue(b),
+      },
+    ]
+  })
+}
+
+/** Empty inherits; invalid text remains in the editor until corrected or discarded. */
+export function validSettingsDays(value: string) {
+  return value === '' || (/^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= 365)
+}

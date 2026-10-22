@@ -777,7 +777,10 @@ function WorkbenchContent({
                     onSelect={navigateSection}
                   />
                 )}
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div
+                  data-settings-content={inSettings ? '' : undefined}
+                  className="flex min-h-0 min-w-0 flex-1 flex-col"
+                >
                   <ErrorBoundary key={target.viewId}>
                     <Suspense
                       fallback={

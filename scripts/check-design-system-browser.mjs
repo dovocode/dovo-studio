@@ -214,7 +214,7 @@ try {
     .waitFor()
   await page.getByRole('button', { name: 'Settings project', exact: true }).click()
   await page.getByRole('option', { name: 'Dovo Studio', exact: true }).click()
-  await page.getByText('Editing Dovo Studio project defaults', { exact: true }).waitFor()
+  await page.getByText('Dovo Studio project defaults', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Settings machine', exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).waitFor()
   const inactiveSetting = page.getByRole('combobox', {
@@ -223,10 +223,10 @@ try {
   })
   await inactiveSetting.click()
   await page.getByRole('option', { name: 'Off', exact: true }).click()
-  const saveLifecycle = page.getByRole('button', { name: 'Save lifecycle settings', exact: true })
+  const saveLifecycle = page.getByRole('button', { name: 'Save changes', exact: true })
   assert.ok(await saveLifecycle.isEnabled(), 'Changing a scoped value enables saving')
   await saveLifecycle.click()
-  await page.getByRole('status').filter({ hasText: 'Lifecycle settings saved.' }).waitFor()
+  await page.getByRole('status').filter({ hasText: 'Changes saved.' }).waitFor()
   assert.equal(await inactiveSetting.innerText(), 'Off')
   await page
     .getByRole('button', {

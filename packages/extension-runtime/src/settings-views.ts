@@ -1,8 +1,36 @@
+import { commandFields, studioToolSettings } from '@dovo/protocol'
 import type { StudioView } from '@dovo/studio-core'
 
 export const runtimeSettings: readonly StudioView[] = [
   {
     id: 'task-defaults',
+    settingsFieldRequirements: {
+      'Preferred computer': 'Choose a project first.',
+      Provider: 'Customize the agent configuration first.',
+      Model: 'Customize the agent configuration first.',
+      'Reasoning level': 'Choose an agent and model that support reasoning.',
+      Speed: 'Choose a model that supports speed options.',
+    },
+    settingsFields: [
+      'Preferred computer',
+      'Model selection',
+      'Agent configuration',
+      'Access mode',
+      'Approval policy',
+      'Sandbox',
+      'Provider',
+      'Working directory',
+      'Start from origin',
+      'Submodules',
+      'Worktree setup',
+      'Model',
+      'Reasoning level',
+      'Instructions',
+      'Speed',
+      'Daybreak mode',
+      'Connection override',
+      'Saved prompts',
+    ],
     navigationGroup: 'settings',
     settingsScope: 'inherited',
     title: 'Task defaults',
@@ -14,7 +42,34 @@ export const runtimeSettings: readonly StudioView[] = [
     load: () => import('./task-defaults-view'),
   },
   {
+    id: 'task-behavior',
+    navigationGroup: 'settings',
+    settingsScope: 'inherited',
+    title: 'Task lifecycle',
+    icon: 'runtime',
+    order: 3.05,
+    settingsSection: 'coding',
+    keywords:
+      'running tasks behavior quota limited resume snooze settle merged closed inactive archive restart lifecycle',
+    settingsFields: [
+      'Auto-resume limited tasks',
+      'Snooze limited tasks',
+      'Auto-settle merged tasks',
+      'Auto-settle closed tasks',
+      'Auto-settle inactive tasks',
+      'Auto-archive settled tasks',
+      'Continue tasks after restarts',
+      'Days of inactivity before settling',
+      'Days in Settled before archiving',
+    ],
+    load: () => import('./task-behavior-view'),
+  },
+  {
     id: 'commands',
+    settingsFields: [
+      ...commandFields.filter(({ id }) => id !== 'cua').map(({ label }) => label),
+      'Shell arguments (one per line)',
+    ],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'CLI commands & shell',
@@ -26,6 +81,7 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'computer-use',
+    settingsFields: ['Cua Driver', 'Enable agent computer use on this computer'],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Computer use',
@@ -38,6 +94,7 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'remote-desktop',
+    settingsFields: ['Enable remote desktop'],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Remote desktop',
@@ -49,6 +106,7 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'device-previews',
+    settingsFields: ['Enable Device Hub', 'Device hosts', 'Default device host'],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Device previews',
@@ -61,6 +119,16 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'pull-request-monitoring-settings',
+    settingsFields: [
+      'Independent code reviews (experimental)',
+      'Automatically link pull requests',
+      'Settle when the PR closes',
+      'Archive when the PR closes',
+      'Share retrieval with paired computers',
+      'Preferred retrieval computer',
+      'PR feedback watcher (experimental)',
+      'Pipeline watcher (experimental)',
+    ],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Pull requests & pipelines',
@@ -73,6 +141,7 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'studio-tools-settings',
+    settingsFields: studioToolSettings.map(({ label }) => label),
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Studio Tools',
@@ -85,6 +154,7 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'artifact-settings',
+    settingsFields: ['Enable artifacts', 'Artifacts when settled', 'Artifacts when archived'],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Artifacts',
@@ -97,6 +167,7 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'memory',
+    settingsFields: ['Memory scope', 'Enable memory for this scope', 'Search memory'],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Memory',
@@ -108,6 +179,12 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'worktrees',
+    settingsFields: [
+      'Worktree folder location',
+      'Branch prefix',
+      'Remove worktrees of archived tasks',
+      'Remove worktrees when deleting their last thread',
+    ],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Worktrees',
@@ -120,6 +197,17 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'running-tasks',
+    settingsFields: [
+      'Tune & Maestro modes (experimental)',
+      'Scope mode (experimental)',
+      'Scope model mode',
+      'Linked projects tool',
+      'Always allow web requests',
+      'Continue interrupted tasks',
+      'Keep this computer awake',
+      'Auto-archive inactive tasks',
+      'Maximum concurrent child agents',
+    ],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Running tasks',
@@ -132,6 +220,7 @@ export const runtimeSettings: readonly StudioView[] = [
   },
   {
     id: 'activity',
+    settingsFields: ['Keep activity history'],
     navigationGroup: 'settings',
     settingsScope: 'computer',
     title: 'Activity & message history',

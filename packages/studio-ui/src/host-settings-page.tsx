@@ -104,7 +104,8 @@ export function HostSettingsPage({
           {!source.connected && (
             <div className="space-y-3">
               <p role="status" className="text-xs text-muted-foreground">
-                {source.name} is offline. Reconnect it to view or change these settings.
+                {source.name} is offline. Your unsaved edits are kept here. Reconnect to save
+                changes.
               </p>
               <Button
                 size="sm"
@@ -121,7 +122,7 @@ export function HostSettingsPage({
               )}
             </div>
           )}
-          {source.connected && children}
+          {children}
         </WorkspaceScope>
       )}
     </SettingsPage>

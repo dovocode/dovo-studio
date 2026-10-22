@@ -1,6 +1,9 @@
+import type { IconName } from '../ui/controls/icon'
+import { mobileSettingsFields } from './settings-search-data'
+import { SettingsScrollView } from './settings-search'
 import { appVersion, appBuild, appChannel } from '../runtime/preferences/app-build'
 import { router } from 'expo-router'
-import { View, ScrollView } from 'react-native'
+import { Alert, View } from 'react-native'
 import { useApplicationState } from '../runtime/state/application-state'
 import { SettingsGroup, SettingsRow } from './settings-group'
 import { SettingsSearchField as SearchField } from './settings-controls'
@@ -11,6 +14,34 @@ import { ScreenHeader } from '../ui/layout/screen-header'
 import { SettingsAction as Action } from './settings-controls'
 import { useEffect } from 'react'
 import { clearLastCrash, readLastCrash, type CrashRecord } from '../runtime/diagnostics/crash-log'
+
+const inheritedPages = new Set([
+  '/settings/task-defaults',
+  '/settings/task-lifecycle',
+  '/settings/agents',
+  '/settings/resources',
+])
+function settingsLocation(path: string, local: boolean): { icon: IconName; description: string } {
+  if (path === '/settings/devices')
+    return {
+      icon: 'laptop',
+      description:
+        'Connections stay on this device. Computer settings are saved on the selected computer and shared with paired devices.',
+    }
+  if (path === '/settings/usage' || path === '/settings/archived')
+    return { icon: 'stack', description: 'Information from your paired computers.' }
+  if (local) return { icon: 'device', description: 'Saved automatically on this device.' }
+  if (inheritedPages.has(path))
+    return {
+      icon: 'stack',
+      description:
+        'Shared defaults → Computer → Project → Project on computer. Choose a target at the top of the page; inheritance icons explain each setting.',
+    }
+  return {
+    icon: 'server',
+    description: 'Saved on the computer selected on this page and shared with its paired devices.',
+  }
+}
 
 export default function SettingsScreen({ categorySlug }: { categorySlug?: string } = {}) {
   const { colors, styles } = useTheme()
@@ -38,7 +69,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
   )
   const groups = [
     {
-      title: 'This app',
+      title: 'App preferences',
       path: '/settings/app-preferences',
       items: [
         {
@@ -109,6 +140,64 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           local: true,
           keywords: 'version build testflight google play release install upgrade',
         },
+        {
+          title: 'Task & PR preferences',
+          subtitle: 'Task list, confirmations and merge preferences',
+          icon: 'tasks',
+          path: '/settings/task-preferences',
+          group: 'On this device',
+          local: true,
+          keywords:
+            'sort group working section organization archive stop confirm pull requests draft squash rebase merge',
+        },
+      ],
+    },
+    {
+      title: 'New task defaults',
+      path: '/settings/new-task-defaults',
+      items: [
+        {
+          title: 'Task defaults',
+          subtitle: 'Agent, workspace and prompts',
+          icon: 'settings',
+          path: '/settings/task-defaults',
+          group: 'Shared defaults',
+          keywords:
+            'inherit global computer project checkout worktree setup submodules quota resume settle restart',
+        },
+      ],
+    },
+    {
+      title: 'Running task behavior',
+      path: '/settings/running-task-settings',
+      items: [
+        {
+          title: 'Task lifecycle',
+          subtitle: 'Recovery, settling and archiving across scopes',
+          icon: 'tasks',
+          path: '/settings/task-lifecycle',
+          group: 'Task workflow',
+          keywords:
+            'inherit quota limited resume snooze settle merged closed inactive archive restart lifecycle',
+        },
+        {
+          title: 'Running tasks',
+          subtitle: 'Running tasks, child agents, approvals and reviews',
+          icon: 'tasks',
+          path: '/settings/task-behavior',
+          group: 'Task workflow',
+          keywords:
+            'restart resume interrupted sleep awake auto archive inactive maximum concurrent child agents limit experimental models tune maestro scope project supervised allow web requests approvals code reviews verification',
+        },
+        {
+          title: 'Pull requests & pipelines',
+          subtitle: 'PR linking, lifecycle and feedback watchers',
+          icon: 'changes',
+          path: '/settings/pull-requests',
+          group: 'Task workflow',
+          keywords:
+            'smart linking settle merge closed archive watcher monitoring checks pipeline pr pull requests feedback',
+        },
       ],
     },
     {
@@ -156,43 +245,6 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       title: 'Tasks & projects',
       path: '/settings/task-settings',
       items: [
-        {
-          title: 'Task & PR preferences',
-          subtitle: 'Task list, confirmations and merge preferences',
-          icon: 'tasks',
-          path: '/settings/task-preferences',
-          group: 'On this device',
-          local: true,
-          keywords:
-            'sort group working section organization archive stop confirm pull requests draft squash rebase merge',
-        },
-        {
-          title: 'Task defaults',
-          subtitle: 'Agent, workspace, lifecycle and prompts',
-          icon: 'settings',
-          path: '/settings/task-defaults',
-          group: 'Shared defaults',
-          keywords:
-            'inherit global computer project checkout worktree setup submodules quota resume settle restart',
-        },
-        {
-          title: 'Task behavior',
-          subtitle: 'Running tasks, child agents, approvals and reviews',
-          icon: 'tasks',
-          path: '/settings/task-behavior',
-          group: 'Task workflow',
-          keywords:
-            'restart resume interrupted sleep awake auto archive inactive maximum concurrent child agents limit experimental models tune maestro scope project supervised allow web requests approvals code reviews verification',
-        },
-        {
-          title: 'Pull requests & pipelines',
-          subtitle: 'PR linking, lifecycle and feedback watchers',
-          icon: 'changes',
-          path: '/settings/pull-requests',
-          group: 'Task workflow',
-          keywords:
-            'smart linking settle merge closed archive watcher monitoring checks pipeline pr pull requests feedback',
-        },
         {
           title: 'Worktrees',
           subtitle: 'Branch names and checkout cleanup',
@@ -303,7 +355,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       ...group,
       items: group.items.filter((item) => {
         const text =
-          `${group.title} ${item.group} ${item.title} ${item.subtitle} ${'keywords' in item ? item.keywords : ''}`.toLowerCase()
+          `${group.title} ${item.group} ${item.title} ${item.subtitle} ${'keywords' in item ? item.keywords : ''} ${(mobileSettingsFields[item.path] ?? []).join(' ')}`.toLowerCase()
         return needle.split(/\s+/).every((term) => text.includes(term))
       }),
     }))
@@ -311,7 +363,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
   return (
     <SettingsPage>
       <ScreenHeader title={category?.title ?? 'Settings'} testID="Settings heading" />
-      <ScrollView
+      <SettingsScrollView
         contentContainerStyle={[styles.content, { paddingTop: 4, gap: 20 }]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
@@ -352,23 +404,53 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             footer={'footer' in group ? group.footer : undefined}
           >
             {group.items.map((item) => (
-              <SettingsRow
-                key={item.path}
-                title={item.title}
-                subtitle={item.subtitle}
-                value={
-                  item.path === '/settings/devices'
-                    ? `${online} online`
-                    : item.path === '/settings/archived'
-                      ? String(archived)
-                      : undefined
-                }
-                icon={item.icon}
-                testID={'testID' in item ? item.testID : undefined}
-                tint={'tint' in item ? item.tint : undefined}
-                disabled={!profiles.length && !('local' in item && item.local)}
-                onPress={() => router.push(item.path)}
-              />
+              <View key={item.path}>
+                <SettingsRow
+                  key={item.path}
+                  title={item.title}
+                  subtitle={item.subtitle}
+                  value={
+                    item.path === '/settings/devices'
+                      ? `${online} online`
+                      : item.path === '/settings/archived'
+                        ? String(archived)
+                        : undefined
+                  }
+                  icon={item.icon}
+                  testID={'testID' in item ? item.testID : undefined}
+                  tint={'tint' in item ? item.tint : undefined}
+                  disabled={!profiles.length && !('local' in item && item.local)}
+                  mark={{
+                    icon: settingsLocation(item.path, 'local' in item && item.local).icon,
+                    label: `Settings scope for ${item.title}`,
+                    onPress: () =>
+                      Alert.alert(
+                        item.title,
+                        settingsLocation(item.path, 'local' in item && item.local).description,
+                      ),
+                  }}
+                  onPress={() => router.push(item.path)}
+                />
+                {!!needle &&
+                  (mobileSettingsFields[item.path] ?? [])
+                    .filter((label) =>
+                      needle
+                        .split(/\s+/)
+                        .every((term) => `${label} ${item.title}`.toLowerCase().includes(term)),
+                    )
+                    .map((label) => (
+                      <SettingsRow
+                        key={label}
+                        title={label}
+                        subtitle={item.title}
+                        icon="settings"
+                        disabled={!profiles.length && !('local' in item && item.local)}
+                        onPress={() =>
+                          router.push({ pathname: item.path, params: { setting: label } })
+                        }
+                      />
+                    ))}
+              </View>
             ))}
           </SettingsGroup>
         ))}
@@ -385,7 +467,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             {appChannel ? ` · ${appChannel}` : ''}
           </Text>
         )}
-      </ScrollView>
+      </SettingsScrollView>
     </SettingsPage>
   )
 }

@@ -92,7 +92,7 @@ const mocks = {
   '@dovo/protocol': `export * from '${root}packages/protocol/src/index.ts';`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-core': `export * from '@dovo/protocol';export {providers} from '${root}packages/studio-core/src/providers';export {updateTask} from '${root}packages/studio-core/src/workspace/actions';import {createContext,useContext} from 'react';export const WorkspaceContext=createContext(null);export const useWorkspace=()=>useContext(WorkspaceContext);export const useSettingsDraft=()=>{};`,
-  '@dovo/studio-ui': `export {ComposerSettingsControls} from '${ui}src/composer-settings-controls';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${ui}src/permission-policy-fields';export {AgentAvatar,agentIconChoices} from '${ui}src/agent-avatar';export {FormField} from '${ui}src/components/form-field';export {Button} from '${ui}src/components/ui/button';export {Input} from '${ui}src/components/ui/input';export {Textarea} from '${ui}src/components/ui/textarea';export * from '${ui}src/components/ui/select';export * from '${ui}src/components/ui/dialog';`,
+  '@dovo/studio-ui': `export {SettingsSaveBar} from '${ui}src/settings-layout';export {ComposerSettingsControls} from '${ui}src/composer-settings-controls';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${ui}src/permission-policy-fields';export {AgentAvatar,agentIconChoices} from '${ui}src/agent-avatar';export {FormField} from '${ui}src/components/form-field';export {Button} from '${ui}src/components/ui/button';export {Input} from '${ui}src/components/ui/input';export {Textarea} from '${ui}src/components/ui/textarea';export * from '${ui}src/components/ui/select';export * from '${ui}src/components/ui/dialog';`,
   'react-native': `
     export const Platform={OS:'android'};
     export const Alert={alert:()=>{}};
@@ -226,10 +226,12 @@ async function expandAdvanced(page) {
   if (await more.count()) await more.click()
   for (const details of await page.locator('details').all()) {
     if (
-      (await details.locator('summary').textContent())?.startsWith('Advanced') &&
+      /^(Advanced|Custom agent defaults)/.test(
+        (await details.locator(':scope > summary').textContent()) ?? '',
+      ) &&
       (await details.getAttribute('open')) === null
     )
-      await details.locator('summary').click()
+      await details.locator(':scope > summary').click()
   }
   for (const button of await page.getByRole('button', { name: /^Advanced ·/ }).all()) {
     if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click()
@@ -369,7 +371,7 @@ try {
       await nativeChoice(page, 'Approval policy', 'On request')
       await nativeChoice(page, 'Sandbox', 'Workspace write')
     }
-    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByRole('button', { name: /^(Save defaults|Save changes)$/, exact: true }).click()
     await page.waitForFunction(() => window.saved.length === 1)
     if (providerSwitch)
       assert.deepEqual(
@@ -402,7 +404,9 @@ try {
     true,
   )
   assert.equal(
-    await oldDefaults.getByRole('button', { name: 'Save defaults', exact: true }).isDisabled(),
+    await oldDefaults
+      .getByRole('button', { name: /^(Save defaults|Save changes)$/, exact: true })
+      .isDisabled(),
     true,
   )
   await oldDefaults.close()
@@ -411,7 +415,7 @@ try {
     await desktopChoice(page, 'Approval policy', 'Untrusted commands')
     await desktopChoice(page, 'Sandbox', 'Workspace write')
     if (kind === 'desktop-agent') {
-      await page.getByRole('button', { name: 'Save configuration', exact: true }).click()
+      await page.getByRole('button', { name: 'Save changes', exact: true }).click()
       await page.waitForFunction(() => window.saved.length === 1)
       assert.deepEqual(
         await page.evaluate(() => [window.saved[0].approvalPolicy, window.saved[0].sandboxMode]),
@@ -473,7 +477,7 @@ try {
     assert.ok((await page.getByText(/Update this runtime/).count()) > 0)
     if (kind === 'desktop-agent')
       assert.equal(
-        await page.getByRole('button', { name: 'Save configuration', exact: true }).isDisabled(),
+        await page.getByRole('button', { name: 'Save changes', exact: true }).isDisabled(),
         true,
       )
     if (kind === 'native-agent')
@@ -647,7 +651,7 @@ try {
     const choose = kind === 'desktop-defaults' ? desktopChoice : nativeChoice
     await choose(page, 'Approval policy', 'On request')
     await choose(page, 'Sandbox', 'Read only')
-    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByRole('button', { name: /^(Save defaults|Save changes)$/, exact: true }).click()
     await page.waitForFunction(() => window.saved.length === 1)
     assert.deepEqual(
       await page.evaluate(() => [
@@ -658,7 +662,7 @@ try {
     )
     await choose(page, 'Approval policy', 'Inherit from access mode')
     await choose(page, 'Sandbox', 'Inherit from access mode')
-    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByRole('button', { name: /^(Save defaults|Save changes)$/, exact: true }).click()
     await page.waitForFunction(() => window.saved.length === 2)
     assert.equal(
       await page.evaluate(() =>
@@ -672,7 +676,7 @@ try {
       await page.getByRole('combobox', { name: 'Provider', exact: true }).click()
       await page.getByRole('option', { name: 'Claude Code', exact: true }).click()
     } else await nativeChoice(page, 'Harness', 'Claude Code')
-    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByRole('button', { name: /^(Save defaults|Save changes)$/, exact: true }).click()
     await page.waitForFunction(() => window.saved.length === 3)
     assert.deepEqual(
       await page.evaluate(() => [
@@ -698,7 +702,9 @@ try {
       await old.getByRole('option', { name: 'Supervised', exact: true }).click()
     } else await nativeChoice(old, 'Access mode', 'Supervised')
     assert.equal(
-      await old.getByRole('button', { name: 'Save defaults', exact: true }).isDisabled(),
+      await old
+        .getByRole('button', { name: /^(Save defaults|Save changes)$/, exact: true })
+        .isDisabled(),
       true,
     )
     assert.equal(await old.evaluate(() => window.saved.length), 0)
@@ -718,7 +724,7 @@ try {
     await expandAdvanced(page)
     const choose = kind === 'desktop-defaults' ? desktopChoice : nativeChoice
     await choose(page, 'Approval policy', 'On request')
-    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByRole('button', { name: /^(Save defaults|Save changes)$/, exact: true }).click()
     await page.waitForFunction(() => window.saved.length === 1)
     assert.deepEqual(
       await page.evaluate(() => [
@@ -728,11 +734,11 @@ try {
       ['on-request', null],
     )
     await choose(page, 'Sandbox', 'Inherit (Read only)')
-    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByRole('button', { name: /^(Save defaults|Save changes)$/, exact: true }).click()
     await page.waitForFunction(() => window.saved.length === 2)
     assert.equal(await page.evaluate(() => window.saved[1].taskDefaults.sandboxMode), undefined)
     await page.getByRole('button', { name: 'Reset to access mode', exact: true }).first().click()
-    await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+    await page.getByRole('button', { name: /^(Save defaults|Save changes)$/, exact: true }).click()
     await page.waitForFunction(() => window.saved.length === 3)
     assert.deepEqual(
       await page.evaluate(() => [

@@ -6,6 +6,14 @@ export const appSettingsExtension = defineStudioExtension(
   [
     {
       id: 'general',
+      settingsFields: [
+        'Global new task shortcut',
+        'Issues',
+        'Jira',
+        'Time format',
+        'Background activity',
+        'Quit shortcut',
+      ],
       navigationGroup: 'settings',
       settingsScope: 'device',
       title: 'General',
@@ -17,6 +25,17 @@ export const appSettingsExtension = defineStudioExtension(
     },
     {
       id: 'task-list-settings',
+      settingsFields: [
+        'Group matching projects',
+        'Project order',
+        'Add project starts in',
+        'Group running tasks',
+        'Default task sort',
+        'Confirm before archiving a task',
+        'Confirm before stopping a running task',
+        'Confirm before deleting a task',
+        'Confirm before unpinning a task',
+      ],
       navigationGroup: 'settings',
       settingsScope: 'device',
       title: 'Task list & projects',
@@ -29,6 +48,15 @@ export const appSettingsExtension = defineStudioExtension(
     },
     {
       id: 'conversation-settings',
+      settingsFields: [
+        'Send messages with',
+        'Follow-ups while a task runs',
+        'Response streaming',
+        'Tool activity',
+        'Show tool call details',
+        'Show skills in the / menu',
+        'Formatted composer preview',
+      ],
       navigationGroup: 'settings',
       settingsScope: 'device',
       title: 'Conversation',
@@ -52,6 +80,7 @@ export const appSettingsExtension = defineStudioExtension(
     },
     {
       id: 'browser-settings',
+      settingsFields: ['Default viewport'],
       navigationGroup: 'settings',
       settingsScope: 'device',
       title: 'Browser',
@@ -63,6 +92,14 @@ export const appSettingsExtension = defineStudioExtension(
     },
     {
       id: 'notifications',
+      settingsFields: [
+        'In-app notifications',
+        'When a task needs your input',
+        'When a task finishes',
+        'When an automation finishes',
+        'Quick input preview',
+        'Play a sound',
+      ],
       navigationGroup: 'settings',
       settingsScope: 'device',
       title: 'Notifications',
@@ -75,6 +112,18 @@ export const appSettingsExtension = defineStudioExtension(
     },
     {
       id: 'appearance',
+      settingsFields: [
+        'Status colors',
+        'Higher contrast',
+        'Animations',
+        'Color scheme',
+        'App font',
+        'Code font',
+        'Text size',
+        'Terminal font',
+        'Terminal font size',
+        'Chat width',
+      ],
       navigationGroup: 'settings',
       settingsScope: 'device',
       title: 'Appearance',
@@ -87,6 +136,15 @@ export const appSettingsExtension = defineStudioExtension(
     },
     {
       id: 'diffs',
+      settingsFields: [
+        'Hide whitespace changes',
+        'Open review panels automatically',
+        'Collapse changed files by default',
+        'Default diff layout',
+        'Long lines',
+        'Show line numbers',
+        'Changes within a line',
+      ],
       navigationGroup: 'settings',
       settingsScope: 'device',
       title: 'Review & diffs',
@@ -111,6 +169,7 @@ export const appSettingsExtension = defineStudioExtension(
     },
     {
       id: 'shortcuts',
+      settingsFields: ['Everywhere', 'Composer', 'Tasks', 'Folder picker'],
       navigationGroup: 'settings',
       settingsScope: 'device',
       title: 'Keyboard shortcuts',

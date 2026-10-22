@@ -3,6 +3,9 @@ import { maxValue, minValue, mutableArray, mutableStruct } from '../../shared/sc
 import { deviceHostSchema } from '../../runtime/previews/device-hosts.js'
 import type { RuntimeProfile, RuntimeOverview } from '../../runtime/connection/runtime-fleet.js'
 
+export const PROJECT_TRANSFER_MAX_FILES = 250000
+export const PROJECT_TRANSFER_MANIFEST_BYTES = 64 * 1024 * 1024
+
 const text = (max = 200) => maxValue(minValue(Schema.String, 1), max)
 const integer = Schema.Number.pipe(
   Schema.check(Schema.isInt()),
@@ -97,7 +100,7 @@ export const projectTransferManifestSchema = mutableStruct({
   id: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9-]{36}$/))),
   runtimeId: text(),
   name: text(),
-  entries: maxValue(mutableArray(projectTransferEntrySchema), 100000),
+  entries: maxValue(mutableArray(projectTransferEntrySchema), PROJECT_TRANSFER_MAX_FILES + 10002),
   thread: Schema.optional(transferThreadSchema),
   worktree: Schema.optional(
     mutableStruct({

@@ -41,8 +41,17 @@ export async function runtimeDiagnostics(
   }
   if (schedulers.errors.length)
     warnings.push(`${schedulers.errors.length} automation schedules need attention.`)
+  // Readiness describes the runtime infrastructure, not historical task outcomes.
+  const ready = warnings.length === 0
   const tasks = s.store.get().tasks
-  const blockedQueues = tasks.filter((task) => task.queuePaused && task.queue?.length && task.error)
+  const blockedQueues = tasks.filter(
+    (task) =>
+      task.queuePaused &&
+      task.queue?.length &&
+      task.error &&
+      !task.archivedAt &&
+      task.status !== 'cancelled',
+  )
   if (blockedQueues.length)
     warnings.push(
       `${blockedQueues.length} queues are paused after an error. Review the affected tasks before resuming.`,
@@ -84,7 +93,7 @@ export async function runtimeDiagnostics(
   }
   if (backups.failure) warnings.push(`Backup: ${backups.failure.message}`)
   return {
-    ready: warnings.length === 0,
+    ready,
     checkedAt: new Date(now).toISOString(),
     warnings,
     roots: {

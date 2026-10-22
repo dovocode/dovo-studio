@@ -1,7 +1,7 @@
 import { decode, mutableStruct } from '@dovo/protocol'
 import { Schema } from 'effect'
 import Database from 'better-sqlite3'
-import { mkdir, readdir, stat, rm, rename, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, stat, rm, rename, readFile, writeFile, statfs } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { backupRuntimeDatabase } from './backup.js'
@@ -9,6 +9,8 @@ import { acquireProcessLock } from './process-lock.js'
 
 const MAX_BACKUPS = 5
 const MAX_BYTES = 512 * 1024 * 1024
+const AUTOMATIC_RETRY_MS = 60 * 60 * 1000
+const retentionBytes = (newestSize = 0) => Math.max(MAX_BYTES, newestSize * 2)
 const failureSchema = Schema.NullOr(mutableStruct({ at: Schema.String, message: Schema.String }))
 export function verifyRuntimeBackup(path: string) {
   const db = new Database(path, { readonly: true, fileMustExist: true })
@@ -78,12 +80,13 @@ export class RuntimeBackups {
     }
   }
   async status() {
+    const entries = await this.list()
     return {
-      entries: await this.list(),
+      entries,
       failure: await this.savedFailure(),
       active: !!this.active,
       maxCount: MAX_BACKUPS,
-      maxBytes: MAX_BYTES,
+      maxBytes: retentionBytes(entries[0]?.size),
     }
   }
   create() {
@@ -121,16 +124,23 @@ export class RuntimeBackups {
     // A killed writer may leave partial snapshots. The OS lock proves none is still active.
     for (const name of await readdir(this.directory))
       if (/^runtime-backup-.*\.sqlite\.partial$/.test(name)) await rm(join(this.directory, name))
+    // Keep the last verified backup intact if the replacement cannot fit.
+    const source = await stat(this.databasePath)
+    const wal = await stat(this.databasePath + '-wal').catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+      throw error
+    })
+    const space = await statfs(this.directory)
+    if (space.bavail * space.bsize < source.size + (wal?.size ?? 0) + 16 * 1024 * 1024)
+      throw new Error(
+        'Not enough free disk space for a runtime backup. Free space and try again; existing backups are preserved.',
+      )
     const path = join(this.directory, `runtime-backup-${Date.now()}-${randomUUID()}.sqlite`)
     const temporary = path + '.partial'
     try {
       await backupRuntimeDatabase(this.databasePath, temporary)
       verifyRuntimeBackup(temporary)
       const info = await stat(temporary)
-      if (info.size > MAX_BYTES)
-        throw new Error(
-          'Database exceeds the 512 MB backup budget. Create an operator-managed backup before recovery.',
-        )
       await rename(temporary, path)
       this.failure = null
       await this.pruneEntries()
@@ -146,14 +156,21 @@ export class RuntimeBackups {
   private async pruneEntries() {
     let bytes = 0,
       count = 0
-    for (const entry of await this.list()) {
-      bytes += entry.size
-      if (++count > MAX_BACKUPS || (bytes > MAX_BYTES && count > 1)) await rm(entry.path)
+    const entries = await this.list()
+    const budget = retentionBytes(entries[0]?.size)
+    for (const entry of entries) {
+      if (count >= MAX_BACKUPS || (count > 0 && bytes + entry.size > budget)) await rm(entry.path)
+      else {
+        bytes += entry.size
+        count++
+      }
     }
   }
   async automatic(now = Date.now()) {
     if (this.databasePath === ':memory:') return
     const latest = (await this.list())[0]
+    const failure = await this.savedFailure()
+    if (failure && now - Date.parse(failure.at) < AUTOMATIC_RETRY_MS) return
     if (!latest || now - Date.parse(latest.createdAt) >= 86_400_000) await this.create()
     else await this.prune()
   }

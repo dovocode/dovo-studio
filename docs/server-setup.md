@@ -747,13 +747,15 @@ shrink; returning that space to disk needs a separately scheduled SQLite compact
 backup, with the runtime stopped.
 
 The runtime creates a verified SQLite backup on its first upkeep pass and at least daily while it
-runs. Backups live beside the database in `backups/`, with five copies and a 512 MB retention
-budget. The newest pre-update rollback snapshot is always retained, even if it alone exceeds that
-budget. Routine backups larger than 512 MB fail explicitly; use operator-managed SQLite backups for
-larger databases. Failed writes retain earlier snapshots, and an interrupted partial snapshot is
-removed under the backup lock before the next write. The panel shows the most recent successful
-snapshot and persisted failure. SQLite's backup API includes committed WAL contents and attachment
-BLOBs; repository/worktree files, host `settings.json` and owner-token files need their own backup.
+runs. Backups live beside the database in `backups/`, retaining up to five copies. The byte budget
+is at least 512 MB and grows to twice the newest snapshot size for larger databases. The newest
+snapshot is always retained; older copies are pruned only after a replacement has been verified.
+Free-space checks preserve existing snapshots when a replacement cannot fit. Automatic failures back
+off for an hour; explicit backup attempts remain available. Failed writes retain earlier snapshots,
+and an interrupted partial snapshot is removed under the backup lock before the next write. The
+panel shows the most recent successful snapshot and persisted failure. SQLite's backup API includes
+committed WAL contents and attachment BLOBs; repository/worktree files, host `settings.json` and
+owner-token files need their own backup.
 
 ```sh
 dovo-server backup --data-dir ~/.dovo

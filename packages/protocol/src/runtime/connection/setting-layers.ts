@@ -53,6 +53,8 @@ export function settingValueDescription(
   if (field.group === 'taskBehavior') {
     if (field.key === 'inactiveDays') return `${settingValueLabel(value ?? 3)} days`
     if (field.key === 'archiveAfterSettledDays') return `${settingValueLabel(value ?? 7)} days`
+    if (field.key === 'autoArchiveSettled' && value === undefined)
+      return 'Computer inactivity policy'
     return value === undefined ? 'Off' : settingValueLabel(value)
   }
   if (value === undefined) {
@@ -151,7 +153,8 @@ export function settingBaseLabel(field: SettingField) {
     field.group === 'taskBehavior' &&
     (field.key === 'continueAfterRestart' ||
       field.key === 'settleMerged' ||
-      field.key === 'settleClosed')
+      field.key === 'settleClosed' ||
+      field.key === 'autoArchiveSettled')
   )
     return 'Computer lifecycle preference'
   return `${settingValueDescription(field, undefined)} · Dovo default`

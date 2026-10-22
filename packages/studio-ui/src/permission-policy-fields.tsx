@@ -11,6 +11,8 @@ import {
 } from '@dovo/protocol'
 import { ChoicePicker } from './choice-picker'
 import { FormField } from './components/form-field'
+import { SettingRow } from './settings-layout'
+import type { ReactNode } from 'react'
 
 export const approvalPolicyNames = {
   untrusted: 'Untrusted commands',
@@ -43,6 +45,7 @@ export function PermissionPolicyFields({
   onReset,
   resetFields,
   onResetField,
+  sources,
 }: {
   value: PermissionPolicy
   onChange: (
@@ -56,6 +59,7 @@ export function PermissionPolicyFields({
   onReset?: () => void
   resetFields?: readonly ('approvalPolicy' | 'sandboxMode')[]
   onResetField?: (field: 'approvalPolicy' | 'sandboxMode') => void
+  sources?: { approvalPolicy?: ReactNode; sandboxMode?: ReactNode }
 }) {
   const capabilities = permissionPolicyCapabilities(value.provider)
   const displayed = {
@@ -90,7 +94,7 @@ export function PermissionPolicyFields({
           Reset to access mode
         </button>
       )}
-      <FormField label="Approval policy" layout={layout}>
+      <PolicyField label="Approval policy" layout={layout} source={sources?.approvalPolicy}>
         <ChoicePicker
           aria-label="Approval policy"
           value={
@@ -127,8 +131,8 @@ export function PermissionPolicyFields({
         <p className="text-xs font-normal text-muted-foreground">
           {capabilities.approvalDescription}
         </p>
-      </FormField>
-      <FormField label="Sandbox" layout={layout}>
+      </PolicyField>
+      <PolicyField label="Sandbox" layout={layout} source={sources?.sandboxMode}>
         <ChoicePicker
           aria-label="Sandbox"
           value={resetFields?.includes('sandboxMode') ? 'access-mode' : (value.sandboxMode ?? '')}
@@ -161,7 +165,7 @@ export function PermissionPolicyFields({
         <p className="text-xs font-normal text-muted-foreground">
           {capabilities.sandboxDescription}
         </p>
-      </FormField>
+      </PolicyField>
       {!supported && (
         <p role="status" className="text-xs text-muted-foreground">
           {permissionPolicyUpdateMessage}
@@ -181,5 +185,25 @@ export function PermissionPolicyFields({
         Wider access applies on the next turn. Tightening access stops affected running agents.
       </p>
     </details>
+  )
+}
+
+function PolicyField({
+  label,
+  layout,
+  source,
+  children,
+}: {
+  label: string
+  layout?: 'settings'
+  source?: ReactNode
+  children: ReactNode
+}) {
+  return layout === 'settings' ? (
+    <SettingRow label={label} source={source}>
+      <div className="w-full space-y-2">{children}</div>
+    </SettingRow>
+  ) : (
+    <FormField label={label}>{children}</FormField>
   )
 }

@@ -1,5 +1,6 @@
+import { SettingsScrollView } from './settings-search'
 import { CircleCheck, CircleX, TriangleAlert } from 'lucide-react-native'
-import { Pressable, ScrollView, View } from 'react-native'
+import { Pressable, View } from 'react-native'
 import { studioThemeIds, studioThemes, type StudioThemeColors } from '@dovo/studio-core/themes'
 import {
   useMobilePreferences,
@@ -29,7 +30,7 @@ export default function AppearanceScreen() {
   return (
     <SettingsPage>
       <ScreenHeader title="Appearance" />
-      <ScrollView contentContainerStyle={[styles.content, { paddingTop: 8, gap: 24 }]}>
+      <SettingsScrollView contentContainerStyle={[styles.content, { paddingTop: 8, gap: 24 }]}>
         <Text style={[styles.muted, { fontSize: 13 }]}>This device · saved automatically</Text>
         <SettingsGroup
           title="Accessibility"
@@ -187,7 +188,7 @@ export default function AppearanceScreen() {
             }}
           />
         </SettingsGroup>
-      </ScrollView>
+      </SettingsScrollView>
     </SettingsPage>
   )
 }

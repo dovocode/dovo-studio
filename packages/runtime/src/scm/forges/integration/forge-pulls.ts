@@ -7,6 +7,7 @@ import { homedir } from 'node:os'
 import { Schema } from 'effect'
 import {
   forgeRepositorySchema,
+  gitRemoteIdentity,
   forgePullTarget,
   forgeLabels,
   pullLineCommentSchema,
@@ -550,7 +551,45 @@ export class ForgePullRequests {
   }
   async sourceContext(cwd: string, refresh = false): Promise<SourceContext> {
     const repository = await this.boundRepository(cwd)
-    const selected = repository?.forge
+    let selected = repository?.forge
+    const savedBinding = selected
+    if (!selected) {
+      const remote = (await this.git.command(cwd, ['remote', 'get-url', 'origin'])).trim()
+      const identity = gitRemoteIdentity(remote)
+      if (!identity)
+        throw new HttpError(
+          409,
+          'Configure a source control remote and select its provider account in project settings.',
+        )
+      const candidates = this.connections.list().flatMap((connection) => {
+        const base = new URL(
+          connection.provider === 'bitbucket' ? 'https://bitbucket.org' : connection.baseUrl,
+        )
+        const prefix = `${base.host}${base.pathname}`.replace(/\/$/, '') + '/'
+        return identity.startsWith(prefix)
+          ? [
+              {
+                connectionId: connection.id,
+                repository:
+                  connection.provider === 'azure-devops'
+                    ? identity.slice(prefix.length).replace('/_git/', '/')
+                    : identity.slice(prefix.length),
+              },
+            ]
+          : []
+      })
+      if (candidates.length > 1)
+        throw new HttpError(
+          409,
+          'Multiple source control accounts match this remote. Select an account in project settings.',
+        )
+      if (candidates[0]) selected = candidates[0]
+      else if (!identity.startsWith('github.com/'))
+        throw new HttpError(
+          409,
+          'Connect this remote’s source control provider and select its account in project settings.',
+        )
+    }
     let connection = selected ? this.connections.get(selected.connectionId) : undefined
     if (selected && connection?.credential === 'cli') {
       this.connections.forgetCredentials(selected.connectionId)
@@ -564,7 +603,7 @@ export class ForgePullRequests {
         : undefined
       if (
         repository &&
-        (!exact || exact.path !== repository.path || !isDeepStrictEqual(exact.forge, selected))
+        (!exact || exact.path !== repository.path || !isDeepStrictEqual(exact.forge, savedBinding))
       )
         throw new HttpError(409, 'This project source changed. Refresh before continuing.')
       if (
