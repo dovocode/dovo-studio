@@ -161,12 +161,10 @@ export function FileBrowserTree({
             node.viewed && selected !== node.path && 'text-muted-foreground',
           )}
         >
-          <span className="w-3 shrink-0" aria-hidden />
-          {node.changeKind ? (
-            <ChangeTypeIndicator kind={node.changeKind} />
-          ) : (
-            <FileTypeIcon path={node.path} />
-          )}
+          <span className="flex w-3 shrink-0 justify-center">
+            {node.changeKind && <ChangeTypeIndicator kind={node.changeKind} />}
+          </span>
+          <FileTypeIcon path={node.path} />
           <span className="min-w-0 flex-1">
             <span className="block truncate">{node.name}</span>
             {flat && node.path.includes('/') && (
