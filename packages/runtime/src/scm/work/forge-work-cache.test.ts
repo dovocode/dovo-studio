@@ -29,6 +29,11 @@ function setup() {
     ],
   }))
   const git = new GitService()
+  vi.spyOn(git, 'command').mockImplementation(async (_cwd, args) => {
+    if (args.length === 1 && args[0] === 'remote') return 'origin\n'
+    expect(args).toEqual(['remote', 'get-url', 'origin'])
+    return 'https://github.com/me/app.git\n'
+  })
   const github = vi.spyOn(git, 'github').mockResolvedValue(
     JSON.stringify({
       nameWithOwner: 'me/app',

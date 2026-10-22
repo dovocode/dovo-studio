@@ -574,7 +574,7 @@ it('shuts down running jobs before storage closes and resumes interrupted work e
   const f = await fixture()
   cleanups.push(f.cleanup)
   const options = {
-    databasePath: join(f.directory, 'shutdown.sqlite'),
+    databasePath: await databaseFile('shutdown.sqlite'),
     ownerToken: 'test-owner-token-with-at-least-32-characters',
     port: 0,
   }
@@ -597,7 +597,14 @@ it('shuts down running jobs before storage closes and resumes interrupted work e
     run: execute,
   })
   const id = runtime.services.jobs.start('flow')
-  await waitForJob(() => expect(execute).toHaveBeenCalledTimes(1))
+  await waitForJob(() => {
+    const job = runtime.services.jobs.list()[0]
+    expect({ status: job.status, error: job.error }).toEqual({
+      status: 'running',
+      error: undefined,
+    })
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
   const taskId = runtime.services.jobs.list()[0].taskIds[0]
   await runtime.close()
   runtime = await startRuntime(options)

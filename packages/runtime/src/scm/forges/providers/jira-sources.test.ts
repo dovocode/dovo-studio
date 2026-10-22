@@ -439,6 +439,11 @@ it('does not create a task after its independent Jira source or destination chan
 })
 it('restores repository native issues when legacy Jira bindings migrate', async () => {
   const { s } = await setup()
+  vi.spyOn(s.git, 'command').mockImplementation(async (_cwd, args) => {
+    if (args.length === 1 && args[0] === 'remote') return 'origin\n'
+    expect(args).toEqual(['remote', 'get-url', 'origin'])
+    return 'https://github.com/me/app.git\n'
+  })
   s.store.update((w) => ({
     ...w,
     repositories: [

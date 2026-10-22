@@ -554,7 +554,19 @@ export class ForgePullRequests {
     let selected = repository?.forge
     const savedBinding = selected
     if (!selected) {
-      const remote = (await this.git.command(cwd, ['remote', 'get-url', 'origin'])).trim()
+      const remotes = (await this.git.command(cwd, ['remote'])).trim().split('\n').filter(Boolean)
+      if (!remotes.length) throw new HttpError(404, 'no git remotes found')
+      const name = remotes.includes('origin')
+        ? 'origin'
+        : remotes.length === 1
+          ? remotes[0]
+          : undefined
+      if (!name)
+        throw new HttpError(
+          409,
+          'Multiple source control remotes are configured. Select a provider account in project settings.',
+        )
+      const remote = (await this.git.command(cwd, ['remote', 'get-url', name])).trim()
       const identity = gitRemoteIdentity(remote)
       if (!identity)
         throw new HttpError(

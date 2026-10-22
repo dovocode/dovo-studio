@@ -428,22 +428,59 @@ it('opens unlinked GitHub PRs using URL targets without adding a project, with c
   expect(read).toHaveBeenCalledTimes(2)
   expect(services.store.get().repositories).toEqual(before)
 })
-it('routes an unbound known remote through its sole configured provider without GitHub discovery', async () => {
-  const { services: s, f } = await setup()
-  await s.git.command(f.directory, [
-    'remote',
-    'add',
-    'origin',
-    'https://bitbucket.org/team/studio.git',
-  ])
+it.each(['origin', 'upstream'])(
+  'routes an unbound %s remote through its sole configured provider without GitHub discovery',
+  async (remote) => {
+    const { services: s, f } = await setup()
+    await s.git.command(f.directory, [
+      'remote',
+      'add',
+      remote,
+      'https://bitbucket.org/team/studio.git',
+    ])
+    s.store.update((value) => ({
+      ...value,
+      repositories: value.repositories.map((repo) => ({ ...repo, forge: undefined })),
+    }))
+    const github = vi.spyOn(s.git, 'github')
+    const scope = await s.pulls.sourceContext(f.directory)
+    expect(scope.provider).toBe('bitbucket')
+    expect(scope.repository).toBe('team/studio')
+    expect(github).not.toHaveBeenCalled()
+  },
+)
+it('keeps unbound repositories without remotes as empty issue and pipeline sources', async () => {
+  const { services: s } = await setup()
   s.store.update((value) => ({
     ...value,
     repositories: value.repositories.map((repo) => ({ ...repo, forge: undefined })),
   }))
   const github = vi.spyOn(s.git, 'github')
-  const scope = await s.pulls.sourceContext(f.directory)
-  expect(scope.provider).toBe('bitbucket')
-  expect(scope.repository).toBe('team/studio')
+  await expect(s.forgeWork.request('repo', 'options', {})).resolves.toMatchObject({
+    issues: false,
+    pipelines: false,
+  })
+  await expect(s.forgeWork.request('repo', 'issues/list', {})).resolves.toEqual({ items: [] })
+  await expect(s.forgeWork.request('repo', 'pipelines/list', {})).resolves.toEqual({ items: [] })
+  expect(github).not.toHaveBeenCalled()
+})
+it('requires a binding when multiple remotes have no origin', async () => {
+  const { services: s, f } = await setup()
+  await s.git.command(f.directory, [
+    'remote',
+    'add',
+    'upstream',
+    'https://bitbucket.org/team/studio.git',
+  ])
+  await s.git.command(f.directory, ['remote', 'add', 'fork', 'https://github.com/me/studio.git'])
+  s.store.update((value) => ({
+    ...value,
+    repositories: value.repositories.map((repo) => ({ ...repo, forge: undefined })),
+  }))
+  const github = vi.spyOn(s.git, 'github')
+  await expect(s.pulls.sourceContext(f.directory)).rejects.toThrow(
+    'Multiple source control remotes',
+  )
   expect(github).not.toHaveBeenCalled()
 })
 it('asks for a provider binding on unknown private hosts instead of attempting GitHub authentication', async () => {
