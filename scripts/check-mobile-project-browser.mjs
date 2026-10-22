@@ -45,8 +45,8 @@ const built = await build({
         const defaults={scopedSettings:{environment:{},shared:[{key:'project:host/team/project',updatedAt:1,changeId:'one',value:{taskDefaults:{defaultServerId:'remote'}}}]}};
         const overviews=(multiple?['local','remote','empty']:['local']).map(id=>({profile:{id,name:id+' server',nameIsCustom:true,connection:{address:'http://'+id,token:'test'}},connected:id==='local'||remoteOnline,snapshot:{defaults,workspace:{repositories:inventory[id]}}}));
         window.runtime={connected:true,activeId:active,overviews,profile:overviews.find(entry=>entry.profile.id===active)?.profile};window.active=active;window.repository=repository;
-        return <FolderPicker stacked={stacked} repositories={inventory[active]} value={repository} allowMachineChange={allow} autoProject={auto} onAuto={autoEnabled?async()=>{setAuto(true);setRepository(inventory[active].find(repo=>repo.kind==='scratch').id)}:undefined}
-          onChange={async(id,target,runtimeId,preserveAuto)=>{if(window.fail)throw Error('Fixture move failed');window.choices.push({id,runtimeId});if(!preserveAuto)setAuto(false);setActive(runtimeId);setRepository(id)}}/>;
+        return <div data-stacked={stacked}><FolderPicker stacked={stacked} repositories={inventory[active]} value={repository} allowMachineChange={allow} autoProject={auto} onAuto={autoEnabled?async()=>{setAuto(true);setRepository(inventory[active].find(repo=>repo.kind==='scratch').id)}:undefined}
+          onChange={async(id,target,runtimeId,preserveAuto)=>{if(window.fail)throw Error('Fixture move failed');window.choices.push({id,runtimeId});if(!preserveAuto)setAuto(false);setActive(runtimeId);setRepository(id)}}/></div>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -125,9 +125,15 @@ try {
   assert.deepEqual(await appearance(project), await appearance(server))
   for (const stacked of [true, false]) {
     await page.evaluate((stacked) => window.update({ stacked }), stacked)
+    // A state setter returns before React commits. Otherwise the two reads can
+    // measure opposite sides of the row/column layout transition.
+    await page.locator(`[data-stacked="${stacked}"]`).waitFor()
     const projectBounds = await project.boundingBox(),
       serverBounds = await server.boundingBox()
-    assert.ok(Math.abs(projectBounds.width - serverBounds.width) < 1)
+    assert.ok(
+      Math.abs(projectBounds.width - serverBounds.width) < 1,
+      JSON.stringify({ stacked, projectBounds, serverBounds }),
+    )
     assert.ok(serverBounds.x + serverBounds.width <= 320)
   }
   await project.click()

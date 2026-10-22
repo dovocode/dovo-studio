@@ -115,7 +115,12 @@ export async function checkScreenInteractions(page, origin) {
     checks += 4
 
     await open('dovo-screens-desktop--runtime')
-    await page.getByRole('button', { name: 'Check updates', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Check updates', exact: true }).count(), 0)
+    await page.getByRole('button', { name: 'Computer updates', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: 'Computer updates', exact: true })
+      .getByRole('button', { name: 'Check updates', exact: true })
+      .waitFor()
     await page.waitForFunction(() =>
       [...document.querySelectorAll('[role="button"],button')].some(
         (node) =>

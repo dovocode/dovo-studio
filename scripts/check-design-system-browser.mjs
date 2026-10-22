@@ -212,7 +212,15 @@ try {
     .getByRole('status')
     .filter({ hasText: 'Changes apply to existing tasks too' })
     .waitFor()
-  await page.getByRole('button', { name: 'Edit Project settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Settings project', exact: true }).click()
+  await page.getByRole('option', { name: 'Dovo Studio', exact: true }).click()
+  await page.getByText('Editing Dovo Studio project defaults', { exact: true }).waitFor()
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Settings machine', exact: true })
+      .getAttribute('data-value'),
+    '',
+  )
   const inactiveSetting = page.getByRole('combobox', {
     name: 'Auto-settle inactive tasks',
     exact: true,

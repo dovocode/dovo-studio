@@ -180,7 +180,9 @@ export function PullDetail({
   useEffect(() => {
     if (!destination?.comment || routedFragment.current === fragment) return
     routedFragment.current = fragment
-    if (destination.tab !== tab) setTab(destination.tab)
+    // Link initialization can reset a retained tab in the same commit. Always
+    // apply the comment destination last, even if this render already has it.
+    setTab(destination.tab)
     if (destination.tab === 'changes') setChangesOpened(true)
   }, [destination?.comment, destination?.tab, fragment, tab])
   const scrollToAnchor = (node: ComponentRef<typeof View>) => {

@@ -278,6 +278,31 @@ try {
     await page.getByRole('combobox', { name: 'Changed file' }).inputValue(),
     'src/new.ts',
   )
+  await page.getByText('Inline target', { exact: true }).waitFor()
+  // Reopen both anchor types with their destination already retained. The
+  // initial Overview route must not win over the link after the first render.
+  for (const [fragment, label, tab] of [
+    ['#discussion_r2', 'Inline target', 'Files'],
+    ['#issuecomment-1', 'Discussion target', 'Activity'],
+    ['#issuecomment-1', 'Discussion target', 'Activity'],
+  ]) {
+    await page.evaluate(() => window.show('empty'))
+    await page.getByText('Closed', { exact: true }).waitFor()
+    await page.evaluate((fragment) => window.show('pr', 'overview', fragment), fragment)
+    await page.getByText(label, { exact: true }).waitFor()
+    await page.evaluate(() => window.update({}))
+    assert.equal(
+      await page.getByRole('tab', { name: tab, exact: true }).getAttribute('aria-selected'),
+      'true',
+    )
+  }
+  // Once routed, refreshing must not pull the user back to the linked comment.
+  await page.getByRole('tab', { name: 'Checks', exact: true }).click()
+  await page.evaluate(() => window.update({}))
+  assert.equal(
+    await page.getByRole('tab', { name: 'Checks', exact: true }).getAttribute('aria-selected'),
+    'true',
+  )
   await page.evaluate(() => window.show('draft'))
   await page.getByRole('textbox', { name: 'Message' }).fill('Full unsent native draft\nsecond line')
   await page.evaluate(() => {

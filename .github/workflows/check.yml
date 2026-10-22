@@ -53,6 +53,9 @@ jobs:
         shard: [0, 1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # Keep catalog interactions here; its full matrix has a separate job below.
+      DOVO_DESIGN_INTERACTIONS_ONLY: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-build
@@ -68,6 +71,22 @@ jobs:
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       # All registered suites run; four jobs keep each shard bounded.
       - run: node scripts/run-browser-suites.mjs ${{ matrix.shard }} 4
+  # The 1,000+ story/theme/viewport cases must not consume another shard's time budget.
+  design-system:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+        id: setup
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/save-dependencies
+        with:
+          store: ${{ steps.setup.outputs.store }}
+          key: ${{ steps.setup.outputs.store-key }}
+      - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: pnpm test:design-system:browser
   # The full suite above covers Linux. Keep real macOS native/process behavior exercised too.
   runtime-mac:
     runs-on: macos-15
