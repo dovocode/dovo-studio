@@ -25,6 +25,7 @@ const mocks = {
   '../../ui/theme': controls,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../runtime/connection/provider': `export const useRuntime=()=>window.runtime;export const RuntimeScope=({children,runtimeId})=><div data-runtime={runtimeId}>{children}</div>;`,
+  '../../scm/connections/project-transfer': `export const ProjectTransferDialog=({repository,onClose})=><div role="dialog" aria-label="Add to another machine"><output>{repository.id}</output><button onClick={onClose}>Close transfer</button></div>;`,
   '../../screens/repositories': `export const AddProject=({onClose,onAdded})=><div role="dialog" aria-label="Add project flow"><button onClick={()=>{onAdded({id:'added',name:'Added project',path:'/added'});onClose()}}>Finish adding</button><button onClick={onClose}>Cancel adding</button></div>;`,
 }
 const built = await build({
@@ -43,7 +44,7 @@ const built = await build({
         window.update=changes=>{if('stacked' in changes)setStacked(changes.stacked);if('autoEnabled' in changes)setAutoEnabled(changes.autoEnabled);if('multiple' in changes)setMultiple(changes.multiple);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('allow' in changes)setAllow(changes.allow)};
         const defaults={scopedSettings:{environment:{},shared:[{key:'project:host/team/project',updatedAt:1,changeId:'one',value:{taskDefaults:{defaultServerId:'remote'}}}]}};
         const overviews=(multiple?['local','remote','empty']:['local']).map(id=>({profile:{id,name:id+' server',nameIsCustom:true,connection:{address:'http://'+id,token:'test'}},connected:id==='local'||remoteOnline,snapshot:{defaults,workspace:{repositories:inventory[id]}}}));
-        window.runtime={activeId:active,overviews,profile:overviews.find(entry=>entry.profile.id===active)?.profile};window.active=active;window.repository=repository;
+        window.runtime={connected:true,activeId:active,overviews,profile:overviews.find(entry=>entry.profile.id===active)?.profile};window.active=active;window.repository=repository;
         return <FolderPicker stacked={stacked} repositories={inventory[active]} value={repository} allowMachineChange={allow} autoProject={auto} onAuto={autoEnabled?async()=>{setAuto(true);setRepository(inventory[active].find(repo=>repo.kind==='scratch').id)}:undefined}
           onChange={async(id,target,runtimeId,preserveAuto)=>{if(window.fail)throw Error('Fixture move failed');window.choices.push({id,runtimeId});if(!preserveAuto)setAuto(false);setActive(runtimeId);setRepository(id)}}/>;
       }
@@ -100,6 +101,14 @@ try {
   await runtimePanel.waitFor({ state: 'hidden' })
 
   await page.evaluate(() => window.update({ multiple: true }))
+  await server.click()
+  await page.getByRole('button', { name: 'Add to another machine', exact: true }).click()
+  const transfer = page.getByRole('dialog', { name: 'Add to another machine', exact: true })
+  await transfer.waitFor()
+  assert.equal(await transfer.locator('output').textContent(), 'local')
+  assert.equal(await page.getByRole('dialog', { name: 'Server', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Close transfer', exact: true }).click()
+
   const appearance = (locator) =>
     locator.evaluate((node) => {
       const style = getComputedStyle(node),

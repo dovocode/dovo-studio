@@ -31,7 +31,7 @@ import {createRoot} from 'react-dom/client';import {useState,useCallback} from '
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
 const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[],queuedTurnSettingsSupported:true}};return <WorkspaceHarness value={value}><><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{...inputs,queuedTurnSettingsSupported:true}};return <WorkspaceHarness value={value}><><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -647,6 +647,42 @@ try {
   assert.equal(await queueTab.getAttribute('aria-selected'), 'true')
   assert.equal(await queuedEdit.inputValue(), 'Unsaved queue edit')
   assert.equal(await queueTab.evaluate((el) => el === document.activeElement), true)
+  const expandActivity = page.getByRole('button', { name: 'Expand composer activity', exact: true })
+  await page.evaluate(() =>
+    window.setInputs({
+      questions: [{ id: 'foreign', taskId: 'other', prompt: {} }],
+      approvals: [],
+    }),
+  )
+  assert.equal(await queuedEdit.isVisible(), true)
+  await page.evaluate(() =>
+    window.setInputs({
+      questions: [{ id: 'question', taskId: 'task', prompt: { blocking: false } }],
+      approvals: [],
+    }),
+  )
+  await expandActivity.waitFor()
+  assert.equal(await queuedEdit.isVisible(), false)
+  await queueTab.click()
+  assert.equal(await queuedEdit.inputValue(), 'Unsaved queue edit')
+  await page.evaluate(() =>
+    window.setInputs({
+      questions: [{ id: 'question', taskId: 'task', prompt: { blocking: false } }],
+      approvals: [],
+    }),
+  )
+  assert.equal(await queuedEdit.isVisible(), true)
+  await page.evaluate(() =>
+    window.setInputs({
+      questions: [{ id: 'question', taskId: 'task', prompt: { blocking: false } }],
+      approvals: [{ id: 'approval', taskId: 'task' }],
+    }),
+  )
+  await expandActivity.waitFor()
+  await expandActivity.click()
+  assert.equal(await queuedEdit.inputValue(), 'Unsaved queue edit')
+  await page.evaluate(() => window.setInputs({ questions: [], approvals: [] }))
+  assert.equal(await queuedEdit.isVisible(), true)
   await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
   await page.getByRole('tab', { name: 'Queue · 0', exact: true }).waitFor()
   assert.equal(await queuedEdit.inputValue(), 'Unsaved queue edit')

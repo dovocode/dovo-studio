@@ -12,6 +12,8 @@ import {
   projectTransferStartSchema,
   projectTransferTargetsSchema,
   worktreeChoicesSchema,
+  worktreeListSchema,
+  type Task,
   type ProjectTransfer,
   type Repository,
 } from '@dovo/protocol'
@@ -25,13 +27,22 @@ import {
   SettingsField as Field,
 } from '../../screens/settings-controls'
 import { Switch } from '../../ui/controls/switch'
+import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 
-export function ProjectTransferSettings({ repository }: { repository: Repository }) {
+export function ProjectTransferSettings({
+  repository,
+  sourceTask,
+  initiallyOpen = false,
+}: {
+  repository: Repository
+  sourceTask?: Task
+  initiallyOpen?: boolean
+}) {
   const { navigate } = useNavigation()
   const runtime = useRuntime(),
     { styles, colors } = useTheme()
-  const [open, setOpen] = useState(false),
+  const [open, setOpen] = useState(initiallyOpen),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const [inspection, setInspection] = useState<typeof projectTransferInspectionSchema.Type | null>(
@@ -39,7 +50,7 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
   )
   const [worktreePath, setWorktreePath] = useState('')
   const [worktrees, setWorktrees] = useState<typeof worktreeChoicesSchema.Type.worktrees>([])
-  const [createThread, setCreateThread] = useState(false)
+  const [createThread, setCreateThread] = useState(!!sourceTask)
   const [prompt, setPrompt] = useState('')
   const [targets, setTargets] = useState<typeof projectTransferTargetsSchema.Type>([])
   const [targetId, setTargetId] = useState(''),
@@ -84,9 +95,30 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
       setRuntimePort(url.protocol === 'https:' ? '5235' : url.port || '80')
     }
   }
+  const sourceResolved = useRef(false)
+  const initialLoad = useRef(initiallyOpen)
   const load = (sourcePath = worktreePath) =>
     act(async () => {
       setInspection(null)
+      if (sourceTask && !sourceResolved.current) {
+        if (!runtime.snapshot?.projectWorktreeTransfersSupported)
+          throw new Error('Update this computer to copy worktrees to another computer.')
+        if (sourceTask.existingWorktreePath) sourcePath = sourceTask.existingWorktreePath
+        else {
+          const list = await runtime.call('/api/scm/worktrees/read', {}, worktreeListSchema)
+          const source = list.worktrees.find(
+            (item) =>
+              item.repositoryId === repository.id &&
+              !item.prunable &&
+              item.branch === sourceTask.checkoutBranch &&
+              (item.taskId === sourceTask.id || item.threadIds.includes(sourceTask.id)),
+          )
+          if (!source) throw new Error('This thread’s worktree is no longer available.')
+          sourcePath = source.path
+        }
+        setWorktreePath(sourcePath)
+        sourceResolved.current = true
+      }
       const peers = projectTransferPeers(
         runtime.profiles,
         runtime.overviews,
@@ -120,6 +152,11 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
       )
       if (!machines.some((machine) => machine.id === targetId)) choose(machines[0]?.id ?? '')
     })
+  useEffect(() => {
+    if (!initialLoad.current) return
+    initialLoad.current = false
+    void load()
+  })
   useEffect(() => {
     if (job?.state !== 'completed' || refreshed.current === job.id) return
     const target = runtime.overviews.find(
@@ -496,5 +533,25 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
         </Text>
       )}
     </View>
+  )
+}
+
+/** Reuse the project copy flow from machine pickers and thread menus. */
+export function ProjectTransferDialog({
+  repository,
+  sourceTask,
+  onClose,
+}: {
+  repository: Repository
+  sourceTask?: Task
+  onClose: () => void
+}) {
+  return (
+    <Sheet
+      title={sourceTask ? 'Copy worktree to another machine' : 'Add to another machine'}
+      onClose={onClose}
+    >
+      <ProjectTransferSettings repository={repository} sourceTask={sourceTask} initiallyOpen />
+    </Sheet>
   )
 }

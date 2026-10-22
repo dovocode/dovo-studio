@@ -16,6 +16,7 @@ const mocks = {
   '../../ui/controls/icon': `export const Icon=()=>null;`,
   '../../ui/content/text': `export const Text=({children})=><span>{children}</span>;`,
   '../../ui/theme': `export const useTheme=()=>({styles:{},colors:{}});`,
+  '../../scm/connections/project-transfer': `export const ProjectTransferDialog=()=>null;`,
   '../../screens/repositories': `import {useRuntime} from '../../runtime/connection/provider';export const AddProject=({initialSource,onClose,onAdded})=>{const runtime=useRuntime();window.addScope=runtime.scope;return <div role="dialog" aria-label="Add project"><span>{initialSource}</span><button onClick={()=>{onAdded({id:'added',name:'Added',path:'/added'});onClose()}}>Add</button></div>;};`,
 }
 const built = await build({

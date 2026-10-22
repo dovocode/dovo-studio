@@ -69,7 +69,9 @@ checklist. Prefer the provider's native tools where available; do not maintain a
 the fallback tool. Parent checklists exclude native child progress. Desktop and mobile attach the
 checklist to the composer. When queued messages and a checklist both exist, **Queue** and
 **Checklist** tabs share that bar. Switching tabs preserves unsaved queue edits. Lists scroll within
-a bounded area so the composer stays reachable.
+a bounded area so the composer stays reachable. The bar can be collapsed while its counts and
+progress remain visible. New questions or approval requests for the thread collapse both panels
+automatically; selecting a tab or expanding the bar reopens them without losing queue edits.
 
 When the thread stops with work left, both clients label the list **Unfinished** and stop its
 running indicator without marking items complete. Unfinished lists survive provider-session

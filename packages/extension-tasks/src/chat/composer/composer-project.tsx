@@ -15,6 +15,7 @@ import {
   projectDefaultServer,
 } from '@dovo/protocol'
 import { Button, Input, Popover } from '@dovo/studio-ui'
+import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
 import { RepositoryDialog } from '@dovo/extension-scm/repository-dialog'
 import {
   Check,
@@ -55,6 +56,7 @@ export function ComposerProject({
   const host = useStudioHost()
   const [open, setOpen] = useState(false)
   const [serverOpen, setServerOpen] = useState(false)
+  const [transferring, setTransferring] = useState(false)
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState<TaskSource | null>(null)
   const [busy, setBusy] = useState(false)
@@ -466,10 +468,27 @@ export function ComposerProject({
                     </button>
                   )
                 })}
+              {!task.autoProject && repository && repository.kind !== 'scratch' && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={locked || !store.connected}
+                  className="mt-2 w-full justify-start gap-2 border-t px-2 text-sm font-normal"
+                  onClick={() => {
+                    setServerOpen(false)
+                    setTransferring(true)
+                  }}
+                >
+                  <Plus className="size-4" /> Add to another machine
+                </Button>
+              )}
               {feedback}
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>
+      )}
+      {transferring && repository && (
+        <ProjectTransferDialog repository={repository} onClose={() => setTransferring(false)} />
       )}
       {adding &&
         (adding.runtimeId === store.activeRuntimeId ? (

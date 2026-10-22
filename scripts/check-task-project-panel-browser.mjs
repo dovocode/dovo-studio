@@ -16,6 +16,7 @@ const mocks = {
     export const acpHarnessName=()=>'';
     export const formatDateTime=value=>String(value);
     export const useWorkspace=()=>window.store;
+    export const WorkspaceScope=({children})=>children;
     export const useWorkspaceSelector=select=>select(window.store);
     export const sameWorkspaceFields=()=>false;
     export const useStudioHost=()=>window.host;
@@ -48,6 +49,7 @@ const mocks = {
     export const TaskDefaultSettings=()=> <p>Project defaults</p>;
     export const RepositoryOpenItems=({onSelect,disabled,itemClass})=><Menu.Item className={itemClass} disabled={disabled} onSelect={()=>onSelect('zed','Zed')}>Open in Zed</Menu.Item>;
   `,
+  '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/projects': 'export const ProjectSettings=()=> <p>Project defaults</p>;',
   '@dovo/extension-scm/repository-actions':
     'export const RepositoryActions=()=> <p>Advanced Git actions</p>;',

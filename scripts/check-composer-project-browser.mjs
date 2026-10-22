@@ -52,6 +52,7 @@ const built = await build({
         const mocks = {
           '@dovo/studio-core': `export * from '../protocol/src/index';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});export const WorkspaceScope=({profile,children})=><div data-runtime-scope={profile.id}>{children}</div>;`,
           '@dovo/studio-ui': `export const ComposerWorkspaceBar=({children})=><div role="group" aria-label="Project and checkout">{children}</div>;export {LinkedCheckoutEditor} from '../studio-ui/src/linked-checkouts';export {ChoicePicker} from '../studio-ui/src/choice-picker';export * from '../studio-ui/src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {Button} from '../studio-ui/src/components/ui/button';export {Input} from '../studio-ui/src/components/ui/input';export * as Popover from '@radix-ui/react-popover';`,
+          '@dovo/extension-scm/project-transfer': `export const ProjectTransferDialog=({repository,onClose})=><div role="dialog" aria-label="Add to another machine"><output>{repository.id}</output><button onClick={onClose}>Close transfer</button></div>;`,
           '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=({onClose})=><div role="dialog" aria-label="Add project"><button onClick={onClose}>Cancel adding</button></div>;`,
         }
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
@@ -118,6 +119,15 @@ try {
 
   // All projects are visible without choosing a server; matching copies appear once.
   await page.evaluate(() => window.configure({ multiple: true }))
+  await server.click()
+  await page.getByRole('button', { name: 'Add to another machine', exact: true }).click()
+  const transfer = page.getByRole('dialog', { name: 'Add to another machine', exact: true })
+  await transfer.waitFor()
+  assert.equal(await transfer.locator('output').textContent(), 'other')
+  assert.equal(await page.getByLabel('Choose a server', { exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Close transfer', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
+
   await trigger.click()
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 1)
   assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)
@@ -182,7 +192,7 @@ try {
   await page.waitForFunction(() => window.active === 'local')
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'local')
   await server.click()
-  assert.equal(await serverPanel.getByRole('button').count(), 2)
+  assert.equal(await serverPanel.getByRole('button').count(), 3)
   await page.getByRole('button', { name: 'remote machine', exact: true }).click()
   await page.evaluate(() => window.finish())
   await serverPanel.waitFor({ state: 'hidden' })

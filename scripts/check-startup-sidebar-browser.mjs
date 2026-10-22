@@ -30,6 +30,7 @@ export const SidebarHeader=()=>null;
     export function Composer({task}){const store=useWorkspace();return <input aria-label="Message" value={task.draft} onChange={event=>store.setWorkspace(workspace=>({...workspace,tasks:workspace.tasks.map(item=>item.id===task.id?{...item,draft:event.target.value}:item)}))}/>}
   `,
   '../chat/composer/composer-workspace': 'export const ComposerWorkspace=()=>null;',
+  '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',
   '../detail/task-context-menu':
     'export const TaskContextMenu=({children})=><div>{children}</div>;',

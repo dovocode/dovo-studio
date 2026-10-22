@@ -1,4 +1,5 @@
 import { taskSnoozeOptions } from '@dovo/protocol'
+import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
 import { ProjectSettings } from '@dovo/extension-scm/projects'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -19,6 +20,7 @@ import {
   responses,
   readAppPreferences,
   useStudioHost,
+  WorkspaceScope,
   type Task,
 } from '@dovo/studio-core'
 import {
@@ -112,7 +114,7 @@ export function TaskContextMenu({
   const pendingRef = useRef(false)
   const [error, setError] = useApplicationState('')
   const [dialog, setDialog] = useApplicationState<
-    'rename' | 'delete' | 'template' | 'project' | 'archive-period' | null
+    'rename' | 'delete' | 'template' | 'project' | 'transfer' | 'archive-period' | null
   >(null)
   const supportsWorktreeOverride = source.worktreeDeletionOverrideSupported
   const [removeWorktrees, setRemoveWorktrees] = useApplicationState(false)
@@ -381,6 +383,18 @@ export function TaskContextMenu({
               </>
             )}
             <Menu.Separator className={separatorClass} />
+            {repository &&
+              !repository.kind &&
+              task.execution === 'worktree' &&
+              (task.checkoutBranch || task.existingWorktreePath) && (
+                <Menu.Item
+                  className={itemClass}
+                  disabled={!canEdit}
+                  onSelect={() => setDialog('transfer')}
+                >
+                  <Copy /> Copy worktree to another machine…
+                </Menu.Item>
+              )}
             <Menu.Sub>
               <Menu.SubTrigger className={itemClass}>
                 <Plus /> New thread <ChevronRight className="ml-auto" />
@@ -774,6 +788,24 @@ export function TaskContextMenu({
           </form>
         </DialogContent>
       </Dialog>
+      {dialog === 'transfer' &&
+        repository &&
+        (local || client.profile) &&
+        (local ? (
+          <ProjectTransferDialog
+            repository={repository}
+            sourceTask={task}
+            onClose={() => setDialog(null)}
+          />
+        ) : client.profile ? (
+          <WorkspaceScope profile={client.profile}>
+            <ProjectTransferDialog
+              repository={repository}
+              sourceTask={task}
+              onClose={() => setDialog(null)}
+            />
+          </WorkspaceScope>
+        ) : null)}
       <Dialog open={dialog === 'project'} onOpenChange={(open) => !open && setDialog(null)}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto">
           <DialogTitle>{repository?.name} settings</DialogTitle>

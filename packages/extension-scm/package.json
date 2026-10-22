@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./repository-dialog": "./src/connections/repository-dialog.tsx",
+    "./project-transfer": "./src/connections/project-transfer.tsx",
     "./projects": "./src/connections/projects-menu.tsx",
     "./connections": "./src/connections/forge-connections.tsx",
     "./pull-detail": "./src/pulls/detail/detail.tsx",

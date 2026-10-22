@@ -126,9 +126,10 @@ import {Composer} from './src/tasks/composer/composer';import {ComposerActivity}
 window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
 function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
+  const [inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;
   const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;const [text,setText]=useState('Continue the review');const [connected,setConnected]=useState(true);
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
-  const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,questions:[],workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
+  const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const draft={text,ready:true,key:'draft',revision:text,update:setText};
   window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
   window.conversation={send:mode=>window.calls.push({mode:mode??'queue'}),stop:()=>window.calls.push({mode:'stop'}),actions:{turnSettings,setTurnSettings,agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!text,canSend:connected&&!!text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
@@ -364,6 +365,13 @@ try {
   await page.getByText('Native progress step', { exact: true }).waitFor()
   assert.equal(await queueTab.getAttribute('aria-selected'), 'false')
   assert.equal(await page.getByTestId('Queued messages').isVisible(), false)
+  const collapse = page.getByRole('button', { name: 'Collapse composer activity', exact: true })
+  const expand = page.getByRole('button', { name: 'Expand composer activity', exact: true })
+  await collapse.click()
+  assert.equal(await page.getByText('Native progress step', { exact: true }).isVisible(), false)
+  assert.equal(await expand.getAttribute('aria-expanded'), 'false')
+  await checklistTab.click()
+  await page.getByText('Native progress step', { exact: true }).waitFor()
   await queueTab.click()
   await page.getByTestId('Queued messages').waitFor()
   await page.getByTestId('Queued messages').click()
@@ -371,6 +379,48 @@ try {
   await page
     .getByRole('textbox', { name: 'Edit queued message', exact: true })
     .fill('Keep native queue edit')
+  await page.evaluate(() =>
+    window.setInputs({
+      questions: [{ id: 'foreign', taskId: 'other', prompt: {} }],
+      approvals: [],
+    }),
+  )
+  assert.equal(
+    await page.getByRole('dialog', { name: 'Queued messages', exact: true }).isVisible(),
+    true,
+  )
+  await page.evaluate(() =>
+    window.setInputs({
+      questions: [{ id: 'question', taskId: 'task', prompt: { blocking: false } }],
+      approvals: [],
+    }),
+  )
+  await expand.waitFor()
+  assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
+  await expand.click()
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Edit queued message', exact: true }).inputValue(),
+    'Keep native queue edit',
+  )
+  await page.evaluate(() =>
+    window.setInputs({
+      questions: [{ id: 'question', taskId: 'task', prompt: { blocking: false } }],
+      approvals: [],
+    }),
+  )
+  assert.equal(
+    await page.getByRole('dialog', { name: 'Queued messages', exact: true }).isVisible(),
+    true,
+  )
+  await page.evaluate(() =>
+    window.setInputs({
+      questions: [{ id: 'question', taskId: 'task', prompt: { blocking: false } }],
+      approvals: [{ id: 'approval', taskId: 'task' }],
+    }),
+  )
+  await expand.waitFor()
+  await page.evaluate(() => window.setInputs({ questions: [], approvals: [] }))
+  await expand.click()
   await page.evaluate(() => window.setTask({ queue: [] }))
   await page.getByRole('tab', { name: 'Queue · 0', exact: true }).waitFor()
   assert.equal(
@@ -380,6 +430,14 @@ try {
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByText('Native progress step', { exact: true }).waitFor()
   assert.equal(await page.getByRole('tab').count(), 0)
+  await collapse.click()
+  assert.equal(await page.getByText('Native progress step', { exact: true }).isVisible(), false)
+  await page.evaluate(() =>
+    window.setTask({ nativeTodos: [{ text: 'Updated progress step', status: 'completed' }] }),
+  )
+  await expand.waitFor()
+  await expand.click()
+  await page.getByText('Updated progress step', { exact: true }).waitFor()
   await page.evaluate(() => window.setTask({ nativeTodos: [] }))
   await page.getByLabel('Composer activity', { exact: true }).waitFor({ state: 'detached' })
   assert.deepEqual(errors, [])

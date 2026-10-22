@@ -537,7 +537,7 @@ return <div>{h.task.messages.map(message=><div data-pending-message={message.id}
               contents = "export const useTaskViewed=()=>({error:'',retry:()=>{}})"
             else {
               const names = {
-                'message-queue': 'MessageQueue',
+                'composer-activity': 'ComposerActivity',
                 'task-questions': 'TaskQuestions',
                 'run-controls': 'RunControls',
                 composer: 'Composer',

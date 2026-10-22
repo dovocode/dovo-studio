@@ -10,6 +10,8 @@ import {
   projectTransferInspectionSchema,
   projectTransferTargetsSchema,
   worktreeChoicesSchema,
+  worktreeListSchema,
+  type Task,
   projectTransferActive,
   projectTransferLabel,
   projectTransferPeers,
@@ -17,12 +19,20 @@ import {
   type Repository,
 } from '@dovo/protocol'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
-import { Button, Input, FormField } from '@dovo/studio-ui'
+import { Button, Input, FormField, Dialog, DialogContent, DialogTitle } from '@dovo/studio-ui'
 
-export function ProjectTransferSettings({ repository }: { repository: Repository }) {
+export function ProjectTransferSettings({
+  repository,
+  sourceTask,
+  initiallyOpen = false,
+}: {
+  repository: Repository
+  sourceTask?: Task
+  initiallyOpen?: boolean
+}) {
   const store = useWorkspace()
   const host = useStudioHost()
-  const [open, setOpen] = useState(false),
+  const [open, setOpen] = useState(initiallyOpen),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const [inspection, setInspection] = useState<typeof projectTransferInspectionSchema.Type | null>(
@@ -30,7 +40,7 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
   )
   const [worktreePath, setWorktreePath] = useState('')
   const [worktrees, setWorktrees] = useState<typeof worktreeChoicesSchema.Type.worktrees>([])
-  const [createThread, setCreateThread] = useState(false)
+  const [createThread, setCreateThread] = useState(!!sourceTask)
   const [prompt, setPrompt] = useState('')
   const [targets, setTargets] = useState<typeof projectTransferTargetsSchema.Type>([])
   const [targetId, setTargetId] = useState(''),
@@ -74,9 +84,30 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
       setRuntimePort(url.protocol === 'https:' ? '5235' : url.port || '80')
     }
   }
+  const sourceResolved = useRef(false)
+  const initialLoad = useRef(initiallyOpen)
   const load = (sourcePath = worktreePath) =>
     act(async () => {
       setInspection(null)
+      if (sourceTask && !sourceResolved.current) {
+        if (!store.snapshot?.projectWorktreeTransfersSupported)
+          throw new Error('Update this computer to copy worktrees to another computer.')
+        if (sourceTask.existingWorktreePath) sourcePath = sourceTask.existingWorktreePath
+        else {
+          const list = await store.request('/api/scm/worktrees/read', {}, worktreeListSchema)
+          const source = list.worktrees.find(
+            (item) =>
+              item.repositoryId === repository.id &&
+              !item.prunable &&
+              item.branch === sourceTask.checkoutBranch &&
+              (item.taskId === sourceTask.id || item.threadIds.includes(sourceTask.id)),
+          )
+          if (!source) throw new Error('This thread’s worktree is no longer available.')
+          sourcePath = source.path
+        }
+        setWorktreePath(sourcePath)
+        sourceResolved.current = true
+      }
       const peers = projectTransferPeers(
         store.runtimeRegistry.profiles,
         store.runtimes,
@@ -110,6 +141,11 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
       )
       if (!machines.some((machine) => machine.id === targetId)) choose(machines[0]?.id ?? '')
     })
+  useEffect(() => {
+    if (!initialLoad.current) return
+    initialLoad.current = false
+    void load()
+  })
   useEffect(() => {
     if (job?.state !== 'completed' || refreshed.current === job.id) return
     const target = store.runtimes.find(
@@ -483,5 +519,32 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
         </p>
       )}
     </section>
+  )
+}
+
+/** Reuse the project copy flow from machine pickers and thread menus. */
+export function ProjectTransferDialog({
+  repository,
+  sourceTask,
+  onClose,
+}: {
+  repository: Repository
+  sourceTask?: Task
+  onClose: () => void
+}) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <DialogContent className="max-h-[85dvh] overflow-y-auto">
+        <DialogTitle>
+          {sourceTask ? 'Copy worktree to another machine' : 'Add to another machine'}
+        </DialogTitle>
+        <ProjectTransferSettings repository={repository} sourceTask={sourceTask} initiallyOpen />
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -44,6 +44,7 @@ import { Conversation } from '../conversation/view'
 import { ConversationProvider } from '../conversation/state/provider'
 import { useNavigation } from '../../shell/navigation'
 import { ComposerActivity } from '../composer/composer-activity'
+import { ProjectTransferDialog } from '../../scm/connections/project-transfer'
 import { TaskQuestions } from './task-questions'
 import { LinkedProjects } from './linked-projects'
 import { RenameThread } from './rename-thread'
@@ -208,6 +209,7 @@ function TaskDetailContent({
   const { width } = useWindowDimensions()
   const { snapshot, connected, profiles, profile, callEffect, activeId, connection } = useRuntime()
   const worktreeThread = useAction()
+  const [transferring, setTransferring] = useState(false)
   const worktreeActions: HeaderAction[] =
     task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
       ? (['reuse', 'fork'] as const).map((mode) => ({
@@ -435,6 +437,24 @@ function TaskDetailContent({
                   },
                 ],
               ),
+          },
+        ]
+      : []
+  const transferActions: HeaderAction[] =
+    inWorktree &&
+    (task.checkoutBranch || task.existingWorktreePath) &&
+    !snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.kind
+      ? [
+          {
+            label: 'Copy worktree to another machine',
+            group: 'Project',
+            icon: 'copy',
+            overflow: true,
+            disabled: !connected,
+            onPress: () => {
+              Keyboard.dismiss()
+              setTransferring(true)
+            },
           },
         ]
       : []
@@ -859,6 +879,7 @@ function TaskDetailContent({
                   branchActions,
                   worktreeActions,
                   moveActions,
+                  transferActions,
                 )
                 .sort((a, b) => {
                   const order = ['Navigate', 'Thread', 'Project', 'Tools', 'Advanced', 'Delete']
@@ -873,7 +894,7 @@ function TaskDetailContent({
           inline
           task={task}
           scripts={projectActions}
-          branchActions={[...branchActions, ...worktreeActions, ...moveActions]}
+          branchActions={[...branchActions, ...worktreeActions, ...moveActions, ...transferActions]}
           onClose={() => setProjectInfo(false)}
           onProjects={() => {
             setProjectInfo(false)
@@ -1153,6 +1174,13 @@ function TaskDetailContent({
           )}
         </ConversationProvider>
       </View>
+      {transferring && repository && (
+        <ProjectTransferDialog
+          repository={repository}
+          sourceTask={task}
+          onClose={() => setTransferring(false)}
+        />
+      )}
       {artifactsOpen && snapshot?.artifactsEnabled && (
         <ArtifactBrowser
           key={`${activeId}:${task.id}`}

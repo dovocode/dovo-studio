@@ -14,6 +14,8 @@ import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
+import { Action } from '../../ui/controls/action'
+import { ProjectTransferDialog } from '../../scm/connections/project-transfer'
 import { AddProject } from '../../screens/repositories'
 
 export function FolderPicker({
@@ -49,6 +51,7 @@ export function FolderPicker({
   const { colors, styles } = useTheme()
   const runtime = useRuntime()
   const [open, setOpen] = useApplicationState(false)
+  const [transferring, setTransferring] = useApplicationState(false)
   const [mode, setMode] = useApplicationState<'projects' | 'servers' | 'add-runtime'>('projects')
   const [query, setQuery] = useApplicationState('')
   const [adding, setAdding] = useApplicationState<string | null>(null)
@@ -239,7 +242,7 @@ export function FolderPicker({
           </Pressable>
         )}
       </View>
-      {open && !adding && (
+      {open && !adding && !transferring && (
         <Sheet
           title={
             mode === 'projects' ? 'Project' : mode === 'add-runtime' ? 'Select runtime' : 'Server'
@@ -385,6 +388,14 @@ export function FolderPicker({
               })}
             </>
           )}
+          {mode === 'servers' && !autoProject && selected && selected.kind !== 'scratch' && (
+            <Action
+              secondary
+              label="Add to another machine"
+              disabled={locked || !runtime.connected}
+              onPress={() => setTransferring(true)}
+            />
+          )}
           {busy && <Text style={styles.muted}>Selecting project…</Text>}
           {!!error && (
             <Text accessibilityRole="alert" style={styles.error}>
@@ -392,6 +403,15 @@ export function FolderPicker({
             </Text>
           )}
         </Sheet>
+      )}
+      {transferring && selected && (
+        <ProjectTransferDialog
+          repository={selected}
+          onClose={() => {
+            setTransferring(false)
+            setOpen(false)
+          }}
+        />
       )}
       {adding && (
         <RuntimeScope runtimeId={adding}>

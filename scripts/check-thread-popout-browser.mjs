@@ -24,12 +24,17 @@ window.calls=[];window.popped=[];window.snapshotRevision=1;
 window.fetch=async(url,init={})=>{
  const parsed=new URL(url),path=parsed.pathname,input=init.body?JSON.parse(init.body):undefined;
  window.calls.push({host:parsed.host,path,input});
- if(path==='/api/snapshot')return Response.json(decode(snapshotSchema,{revision:window.snapshotRevision,owner:false,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[],automations:[],tasks:[{id:'thread',title:'Thread on '+parsed.hostname+(window.snapshotRevision>1?' update '+window.snapshotRevision:''),agentId:'',repositoryId:'',status:'draft',sessionId:'session',createdAt:'2026-10-12',messages:[],files:[],draft:'',example:false}]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]}));
+ if(path==='/api/snapshot')return Response.json(decode(snapshotSchema,{revision:window.snapshotRevision,owner:false,projectTransfersSupported:true,projectWorktreeTransfersSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'project',name:'Project',path:'/project',branch:'main'}],automations:[],tasks:[{id:'thread',title:'Thread on '+parsed.hostname+(window.snapshotRevision>1?' update '+window.snapshotRevision:''),agentId:'',repositoryId:'project',execution:'worktree',checkoutBranch:'feature',status:'draft',sessionId:'session',createdAt:'2026-10-12',messages:[],files:[],draft:'',example:false}]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]}));
+ if(path==='/api/scm/worktrees/read')return Response.json({root:'/worktrees',worktrees:[{path:'/worktrees/feature',branch:'feature',repositoryId:'project',repositoryName:'Project',taskId:'thread',threadIds:['thread'],state:'active',dirty:true,prunable:false}]});
+ if(path==='/api/scm/worktrees/choices')return Response.json({worktrees:[{path:'/worktrees/feature',branch:'feature',dirty:true}]});
+ if(path==='/api/scm/project-transfer/inspect')return Response.json({files:2,bytes:20,skippedLinks:0,ignoredFiles:[]});
+ if(path==='/api/scm/project-transfer/targets')return Response.json([{id:'machine-destination',name:'Destination'}]);
+ if(path==='/api/retrieval/peers')return Response.json({ok:true});
  if(path==='/api/mutations/status')return Response.json({version:1});
  if(path==='/api/tasks/compact')return Response.json({ok:true,revision:1});
  throw new Error('Unexpected request '+url);
 };
-function Thread({entityId,threadParent}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><span>{threadParent&&<button aria-label={"Open parent thread "+threadParent.title} onClick={()=>host.openThread(threadParent)}>{threadParent.title}</button>}</span><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskContextMenu dropdown task={task} owner={{runtimeId:value.activeRuntimeId,name:'Owner',online:value.connected,agents:[],repositories:[],worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Task actions</button></TaskContextMenu>}</>}
+function Thread({entityId,threadParent}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><span>{threadParent&&<button aria-label={"Open parent thread "+threadParent.title} onClick={()=>host.openThread(threadParent)}>{threadParent.title}</button>}</span><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskContextMenu dropdown task={task} owner={{runtimeId:value.activeRuntimeId,name:'Owner',online:value.connected,agents:[],repositories:value.workspace.repositories,worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Task actions</button></TaskContextMenu>}{task&&value.activeRuntimeId===profiles[0].id&&<TaskContextMenu dropdown task={task} owner={{runtimeId:profiles[1].id,name:'Remote owner',online:true,agents:[],repositories:value.workspace.repositories,worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Remote task actions</button></TaskContextMenu>}</>}
 window.taskViewLoads=0;
 window.featureLoads={};
 function Feature({view,threadConnection}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;window.threadConnection=threadConnection;return <output id="feature">{view+'|'+value.activeRuntimeId}</output>}
@@ -126,6 +131,33 @@ try {
   await main.evaluate(() => {
     window.initialHost = window.host
   })
+  await main.evaluate(() => window.host.navigate({ viewId: 'tasks', entityId: 'thread' }))
+  // The thread menu scopes copy inspection to the row's owner, even on another active computer.
+  await main.getByRole('button', { name: 'Remote task actions', exact: true }).click()
+  await main
+    .getByRole('menuitem', { name: 'Copy worktree to another machine…', exact: true })
+    .click()
+  await main
+    .getByRole('dialog', { name: 'Copy worktree to another machine', exact: true })
+    .waitFor()
+  await main.waitForFunction(
+    () => document.querySelector('[aria-label="Source checkout"]')?.value === '/worktrees/feature',
+  )
+  assert.equal(
+    await main
+      .getByRole('checkbox', { name: 'Create a thread on destination', exact: true })
+      .isChecked(),
+    true,
+  )
+  assert.equal(
+    await main.evaluate(
+      () =>
+        window.calls.filter((row) => row.path === '/api/scm/project-transfer/inspect').at(-1).host,
+    ),
+    'host1.lan:8787',
+  )
+  assert.equal(await main.evaluate(() => window.store.activeRuntimeId), 'http://host0.lan:8787')
+  await main.keyboard.press('Escape')
   for (const view of ['pulls', 'agents', 'runtime']) {
     await main.evaluate((view) => window.host.navigate({ viewId: view }), view)
     await main.waitForFunction(

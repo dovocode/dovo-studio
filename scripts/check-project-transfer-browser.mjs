@@ -28,6 +28,12 @@ try {
             contents: `export const useNavigation=()=>({navigate:(...args)=>window.opened=args});`,
           },
           { path: 'react-native', contents: native },
+          {
+            path: '../../ui/layout/sheet',
+            importer,
+            contents:
+              'export const Sheet=({title,children,onClose})=><div role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close copy</button></div>',
+          },
           ...[
             '../../ui/content/text',
             '../../screens/settings-controls',
@@ -51,7 +57,7 @@ try {
           },
           {
             path: '@dovo/studio-ui',
-            contents: `export {Button} from './packages/studio-ui/src/components/ui/button';export {Input} from './packages/studio-ui/src/components/ui/input';export {FormField} from './packages/studio-ui/src/components/form-field';`,
+            contents: `export {Button} from './packages/studio-ui/src/components/ui/button';export {Input} from './packages/studio-ui/src/components/ui/input';export {FormField} from './packages/studio-ui/src/components/form-field';export * from './packages/studio-ui/src/components/ui/dialog';`,
           },
         ]
     const built = await bundleBrowser(
@@ -61,13 +67,14 @@ try {
           loader: 'tsx',
           contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';
-import {ProjectTransferSettings} from './${path}';
+import {ProjectTransferSettings,ProjectTransferDialog} from './${path}';
 const profile={id:'destination',name:'Desktop',connection:{address:'http://desktop:5235',runtimeId:'machine-b',token:'paired-device-token-with-32-characters'}};
 const repo={id:'project',name:'My project',path:'/project',branch:'main'};
 window.calls=[];window.refreshes=0;let current=null;
-function App(){const [job,setJob]=useState(null),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true);window.setSupported=setSupported;window.setConnected=setConnected;
+function App(){const [source,setSource]=useState(null);window.setSource=setSource;const [job,setJob]=useState(null),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true);window.setSupported=setSupported;window.setConnected=setConnected;
 window.setJob=changes=>setJob(old=>{current={...old,...changes,updatedAt:(old?.updatedAt??0)+100};return current});
 const request=async(path,input)=>{window.calls.push({path,input});
+if(path==='/api/scm/worktrees/read')return {root:'/worktrees',worktrees:window.missingWorktree?[]:[{path:'/worktrees/feature',repositoryId:'project',branch:'feature',taskId:'owner',threadIds:['owner','reused'],prunable:false}]};
 if(path.endsWith('/choices'))return {worktrees:[{path:'/worktrees/feature',branch:'feature',dirty:true}]};
 if(path.endsWith('/targets'))return [{id:'machine-b',name:'Desktop'}];
 if(path.endsWith('/inspect'))return {files:3,bytes:1500,skippedLinks:1,ignoredFiles:[{path:'.env.local',bytes:12},{path:'private.key',bytes:7}]};
@@ -76,7 +83,7 @@ if(path.endsWith('/retry')){window.setJob({state:'preparing',error:undefined});r
 if(path.endsWith('/cancel')){window.setJob({state:'cancelled'});return {ok:true}}
 return {ok:true};};
 window.store={connected,request,read:request,call:request,snapshot:{runtimeId:'machine-a',projectTransfersSupported:supported,projectWorktreeTransfersSupported:supported,projectTransfers:job?[job]:[]},runtimeRegistry:{profiles:[profile]},profiles:[profile],runtimes:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],overviews:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],switchRuntime:async id=>{window.switched=id},refreshRuntime:async()=>{window.refreshes++}};
-return <ProjectTransferSettings repository={repo}/>;}
+return source ? <ProjectTransferDialog key={source.id} repository={repo} sourceTask={source} onClose={()=>setSource(null)}/> : <ProjectTransferSettings repository={repo}/>;}
 createRoot(document.getElementById('app')).render(<App/>);`,
         },
         bundle: true,
@@ -223,6 +230,66 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         ? ['tasks', 'copied-thread', 'destination']
         : { viewId: 'tasks', entityId: 'copied-thread' },
     )
+    // Thread entry resolves the exact owned worktree and starts a fresh destination thread.
+    await page.evaluate(() => {
+      window.setJob({ state: 'cancelled' })
+      window.setSource({
+        id: 'reused',
+        repositoryId: 'project',
+        execution: 'worktree',
+        checkoutBranch: 'feature',
+      })
+    })
+    await page.getByLabel('Source checkout').waitFor()
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[aria-label="Source checkout"]')?.value === '/worktrees/feature',
+    )
+    assert.equal(
+      await page
+        .getByRole('checkbox', { name: 'Create a thread on destination', exact: true })
+        .isChecked(),
+      true,
+    )
+    await page.getByRole('button', { name: 'Copy and create thread', exact: true }).click()
+    assert.equal(
+      await page.evaluate(
+        () => window.calls.filter((call) => call.path.endsWith('/start')).at(-1).input.worktreePath,
+      ),
+      '/worktrees/feature',
+    )
+    // Missing worktrees never silently copy the project checkout instead.
+    await page.evaluate(() => {
+      window.missingWorktree = true
+      window.setJob({ state: 'cancelled' })
+      window.setSource({
+        id: 'missing',
+        repositoryId: 'project',
+        execution: 'worktree',
+        checkoutBranch: 'missing',
+      })
+    })
+    await page
+      .getByText('This thread’s worktree is no longer available.', { exact: true })
+      .waitFor()
+    assert.equal(
+      await page.getByRole('button', { name: 'Copy and create thread', exact: true }).isDisabled(),
+      true,
+    )
+    // Explicit registered worktrees do not require Dovo ownership; inspection validates them.
+    await page.evaluate(() =>
+      window.setSource({
+        id: 'external',
+        repositoryId: 'project',
+        execution: 'worktree',
+        existingWorktreePath: '/worktrees/feature',
+      }),
+    )
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[aria-label="Source checkout"]')?.value === '/worktrees/feature',
+    )
+    await page.getByRole('button', { name: 'Copy and create thread', exact: true }).waitFor()
     await page.close()
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'} project copy: P2P, SSH validation, private files, progress, cancellation, saved retry and offline/capability checks pass.`,

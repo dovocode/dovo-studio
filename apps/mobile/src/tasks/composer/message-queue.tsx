@@ -17,10 +17,12 @@ import { mobileWorkflow } from '../../runtime/state/native-effect'
 export function MessageQueue({
   task,
   embedded = false,
+  hidden = false,
   onOpenChange,
 }: {
   task: Task
   embedded?: boolean
+  hidden?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
   const { colors, styles } = useTheme()
@@ -164,7 +166,7 @@ export function MessageQueue({
           <Icon name="next" size={12} color={colors.muted} />
         </Pressable>
       )}
-      {open && (
+      {open && !hidden && (
         <Sheet title="Queued messages" onClose={() => changeOpen(false)} busy={busy}>
           {!!queue.length && (
             <Action

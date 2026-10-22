@@ -23,6 +23,7 @@ const mocks = {
     export const readAppPreferences=()=>preferences;
   `,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
+  '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=()=>null;`,
   './use-attachments': `export const useAttachments=()=>({files:[],previews:[],uploading:[],busy:false,error:'',upload:async()=>{},remove:()=>{}});`,
   './task-activity': `const tools=[];export const useTaskActivity=()=>({tools,error:''});export const TaskActivity=()=>null;`,

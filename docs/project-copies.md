@@ -2,8 +2,11 @@
 
 On desktop, open the project's settings. On mobile, open the project in Projects. Choose **Add to
 another computer**, select a paired destination, and choose **Dovo P2P** or **SSH tunnel**. Both
-computers need an updated Dovo runtime. The source sends files directly to the destination; the
-phone or desktop UI does not relay them.
+computers need an updated Dovo runtime. From the composer’s machine picker, a selected project also
+has **Add to another machine**. For a thread with a worktree, choose **Copy worktree to another
+machine** from the thread menu; that checkout is preselected and destination thread creation is
+enabled. The source sends files directly to the destination; the phone or desktop UI does not relay
+them.
 
 SSH uses the source computer's OpenSSH client, configured keys or an optional key path, and an
 already trusted host key. Enter the destination's SSH host/user and the local HTTP port of its Dovo

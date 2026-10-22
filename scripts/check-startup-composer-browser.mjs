@@ -64,6 +64,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
 }
 for (const [path, names] of [
   ['@dovo/extension-scm/pull-detail', ['PullDetail']],
+  ['@dovo/extension-scm/project-transfer', ['ProjectTransferDialog']],
   ['@dovo/extension-scm/projects', ['ProjectsMenu']],
   ['./detail/task-tools', ['TaskTools']],
   ['./detail/linked-projects', ['LinkedProjects']],
@@ -75,7 +76,7 @@ for (const [path, names] of [
   ['./dialogs/task-search-dialog', ['TaskSearchDialog']],
   ['./task-creation/project-selection-dialog', ['ProjectSelectionDialog']],
   ['./chat/thread/side-question', ['SideQuestion']],
-  ['../chat/thread/message-queue', ['MessageQueue']],
+  ['../chat/composer/composer-activity', ['ComposerActivity']],
   ['../chat/thread/task-questions', ['TaskQuestions']],
   ['../chat/actions/run-controls', ['RunControls']],
   ['../chat/thread/preparation-progress', ['PreparationProgress']],

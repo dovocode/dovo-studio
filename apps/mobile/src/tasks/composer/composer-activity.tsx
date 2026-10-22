@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
 import { nativeTodoSummary, type Task } from '@dovo/protocol'
+import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { useTaskConversation } from '../conversation/state/provider'
@@ -13,6 +14,21 @@ export function ComposerActivity({ task }: { task: Task }) {
   const { actions } = useTaskConversation()
   const [selected, setSelected] = useState('queue')
   const [queueOpen, setQueueOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const previousInputs = useRef(new Set<string>())
+  const { snapshot } = actions
+  useEffect(() => {
+    const inputs = [
+      ...(snapshot?.questions ?? [])
+        .filter((item) => item.taskId === task.id)
+        .map((item) => item.id),
+      ...(snapshot?.approvals ?? [])
+        .filter((item) => item.taskId === task.id)
+        .map((item) => item.id),
+    ]
+    if (inputs.some((id) => !previousInputs.current.has(id))) setCollapsed(true)
+    previousInputs.current = new Set(inputs)
+  }, [task.id, snapshot?.questions, snapshot?.approvals])
   const summary = nativeTodoSummary(task)
   const queue = pendingQueue(task, actions.pendingMessages)
   const hasQueue = !!queue.length || queueOpen
@@ -34,58 +50,81 @@ export function ComposerActivity({ task }: { task: Task }) {
         backgroundColor: colors.surface,
       }}
     >
-      <View
-        accessibilityRole={both ? 'tablist' : undefined}
-        style={{ flexDirection: 'row', paddingHorizontal: 8 }}
-      >
-        {[
-          ...(hasQueue ? [{ value: 'queue', label: `Queue · ${queue.length}` }] : []),
-          ...(summary
-            ? [
-                {
-                  value: 'checklist',
-                  label: `Checklist · ${summary.completed}/${summary.total}${summary.unfinished ? ' · Unfinished' : ''}`,
-                },
-              ]
-            : []),
-        ].map(({ value, label }) =>
-          both ? (
-            <Pressable
-              key={value}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active === value }}
-              onPress={() => setSelected(value)}
-              style={{
-                minHeight: 44,
-                justifyContent: 'center',
-                paddingHorizontal: 10,
-                borderBottomWidth: active === value ? 2 : 0,
-                borderBottomColor: colors.accent,
-              }}
-            >
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}>
+        <View
+          accessibilityRole={both ? 'tablist' : undefined}
+          style={{ flexDirection: 'row', flex: 1, flexShrink: 1 }}
+        >
+          {[
+            ...(hasQueue ? [{ value: 'queue', label: `Queue · ${queue.length}` }] : []),
+            ...(summary
+              ? [
+                  {
+                    value: 'checklist',
+                    label: `Checklist · ${summary.completed}/${summary.total}${summary.unfinished ? ' · Unfinished' : ''}`,
+                  },
+                ]
+              : []),
+          ].map(({ value, label }) =>
+            both ? (
+              <Pressable
+                key={value}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active === value }}
+                onPress={() => {
+                  setSelected(value)
+                  setCollapsed(false)
+                }}
+                style={{
+                  minHeight: 44,
+                  flexShrink: 1,
+                  justifyContent: 'center',
+                  paddingHorizontal: 10,
+                  borderBottomWidth: active === value ? 2 : 0,
+                  borderBottomColor: colors.accent,
+                }}
+              >
+                <Text
+                  style={[
+                    styles.muted,
+                    { color: active === value ? colors.text : colors.muted, fontSize: 12 },
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ) : (
               <Text
-                style={[
-                  styles.muted,
-                  { color: active === value ? colors.text : colors.muted, fontSize: 12 },
-                ]}
+                key={value}
+                style={[styles.muted, { padding: 10, fontSize: 12, flexShrink: 1 }]}
               >
                 {label}
               </Text>
-            </Pressable>
-          ) : (
-            <Text key={value} style={[styles.muted, { padding: 10, fontSize: 12 }]}>
-              {label}
-            </Text>
-          ),
-        )}
+            ),
+          )}
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={collapsed ? 'Expand composer activity' : 'Collapse composer activity'}
+          accessibilityState={{ expanded: !collapsed }}
+          onPress={() => setCollapsed((value) => !value)}
+          style={{ width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Icon name={collapsed ? 'next' : 'down'} size={16} color={colors.muted} />
+        </Pressable>
       </View>
       {hasQueue && (
-        <View style={{ display: active === 'queue' ? 'flex' : 'none' }}>
-          <MessageQueue task={task} embedded onOpenChange={setQueueOpen} />
+        <View style={{ display: !collapsed && active === 'queue' ? 'flex' : 'none' }}>
+          <MessageQueue
+            task={task}
+            embedded
+            hidden={collapsed || active !== 'queue'}
+            onOpenChange={setQueueOpen}
+          />
         </View>
       )}
       {summary && (
-        <View style={{ display: active === 'checklist' ? 'flex' : 'none' }}>
+        <View style={{ display: !collapsed && active === 'checklist' ? 'flex' : 'none' }}>
           <NativeTodos task={task} embedded />
         </View>
       )}

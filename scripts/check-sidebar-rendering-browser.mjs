@@ -9,6 +9,7 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   '@dovo/studio-core': `export * from '${root}packages/studio-core/src/index.ts';export const useStudioHost=()=>window.host;`,
+  '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/projects':
     'export const ProjectsMenu=()=>null;export const ProjectSettings=()=>null;',
   './section-order-dialog':

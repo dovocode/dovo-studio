@@ -13,7 +13,7 @@ const mocks = {
   '../chat/composer/composer': `export function Composer({collapsed}){return <form data-collapsed={collapsed} style={{height:collapsed?48:150}}><textarea aria-label="Message" style={{width:'100%',height:collapsed?30:100}} onChange={e=>{e.currentTarget.form.style.height=e.target.value.length>20?'300px':'150px'}}/></form>}`,
 }
 for (const [path, name] of [
-  ['../chat/thread/message-queue', 'MessageQueue'],
+  ['../chat/composer/composer-activity', 'ComposerActivity'],
   ['../chat/thread/task-questions', 'TaskQuestions'],
   ['../chat/actions/run-controls', 'RunControls'],
   ['../chat/thread/preparation-progress', 'PreparationProgress'],

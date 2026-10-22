@@ -63,6 +63,7 @@ async function bundle(contents) {
     '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;import {useSyncExternalStore} from 'react';export * from '@dovo/protocol';export const providers={codex:{short:'Codex',name:'Codex'}};export const useWorkspace=()=>window.store;export const useWorkspaceSelector=select=>select(window.store);export const sameWorkspaceFields=()=>false;export const useStudioHost=()=>window.host;export const useAppPreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateAppPreferences=changes=>window.updatePreferences(changes);export const readAppPreferences=()=>window.preferences;export const useRuntimeSources=()=>[window.overview];export const formatDateTime=x=>String(x);`,
     '@dovo/studio-core/state': state,
     '@dovo/studio-ui': controls,
+    '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
     '@dovo/extension-scm/projects': 'export const ProjectsMenu=()=>null;',
     'react-native': controls,
     'react-native-gesture-handler': controls,

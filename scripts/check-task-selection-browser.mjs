@@ -33,6 +33,7 @@ export * as ContextMenu from '@radix-ui/react-context-menu';
 export const Button = ({variant,size,children,...props}) => React.createElement('button',props,children);
 export const Input = props => React.createElement('input',props);
 export const ChoicePicker = ({onValueChange,children,...props})=>React.createElement('select',{...props,onChange:event=>onValueChange(event.target.value)},children);`,
+  '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/projects': `export const ProjectsMenu = () => null;`,
   './task-row': `import React from 'react'; export const TaskRow = ({task,onSelect,selected,multiSelected,disabled}) => React.createElement('button',{'aria-current':selected?'true':undefined,'data-multi-selected':multiSelected?'true':'false',disabled,onClick:onSelect},task.title);`,
   '../detail/task-context-menu': `import React from 'react';import * as Menu from '@radix-ui/react-context-menu';export const TaskContextMenu = ({children,selectionMenu})=>React.createElement(Menu.Root,null,React.createElement(Menu.Trigger,{asChild:true},React.createElement('div',null,children)),React.createElement(Menu.Portal,null,React.createElement(Menu.Content,null,selectionMenu)));`,

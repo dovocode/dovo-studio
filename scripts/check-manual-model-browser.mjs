@@ -82,7 +82,7 @@ for (const [path, names] of [
   ['./dialogs/task-search-dialog', ['TaskSearchDialog']],
   ['./task-creation/project-selection-dialog', ['ProjectSelectionDialog']],
   ['./chat/thread/side-question', ['SideQuestion']],
-  ['../chat/thread/message-queue', ['MessageQueue']],
+  ['../chat/composer/composer-activity', ['ComposerActivity']],
   ['../chat/thread/task-questions', ['TaskQuestions']],
   ['../chat/actions/run-controls', ['RunControls']],
   ['../chat/thread/preparation-progress', ['PreparationProgress']],
@@ -97,6 +97,7 @@ for (const [path, names] of [
   ['./composer-command-dialog', ['ComposerCommandDialog']],
   ['../../dialogs/saved-prompts-dialog', ['SavedPromptsDialog']],
   ['../thread/context-meter', ['ContextMeter']],
+  ['@dovo/extension-scm/project-transfer', ['ProjectTransferDialog']],
   ['@dovo/extension-scm/repository-dialog', ['RepositoryDialog']],
 ])
   mocks[path] = names.map((name) => `export const ${name}=()=>null;`).join('\n')
