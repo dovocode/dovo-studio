@@ -10,7 +10,7 @@ const mocks = {
   '../../runtime/connection/provider': `export const useRuntime=()=>({activeId:window.runtimeId??'computer',legacyDraftRuntimeId:null});`,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../ui/theme': `export const useTheme=()=>({styles:{chatText:{}}});`,
-  '../../ui/controls/field': `import {useRef,useImperativeHandle,useEffect} from 'react';export function Field({value,defaultValue,inputRef,onChangeText,onSelectionChange,editable,label,style,scrollEnabled}){const input=useRef();useEffect(()=>{window.mounts++},[]);useImperativeHandle(inputRef,()=>({clear:()=>{window.clears++;window.writes.push('');input.current.value=''},setNativeProps:props=>{window.writes.push(props.text);if(props.text!==defaultValue)input.current.value=props.text}}),[]);window.composerLayout=style.at(-1);return <textarea style={{height:style.at(-1).height,minHeight:style.at(-1).minHeight,maxHeight:style.at(-1).maxHeight}} data-scroll-enabled={String(scrollEnabled)} ref={input} aria-label={label} value={value} defaultValue={defaultValue} disabled={!editable} onChange={e=>onChangeText(e.target.value)} onSelect={e=>onSelectionChange({nativeEvent:{selection:{start:e.target.selectionStart,end:e.target.selectionEnd}}})}/>;}`,
+  '../../ui/controls/field': `import {useRef,useImperativeHandle,useEffect} from 'react';export function Field({value,defaultValue,inputRef,onChangeText,onSelectionChange,editable,label,style,scrollEnabled}){const input=useRef();useEffect(()=>{window.mounts++},[]);useImperativeHandle(inputRef,()=>({focus:()=>input.current.focus(),clear:()=>{window.clears++;window.writes.push('');input.current.value=''},setNativeProps:props=>{window.writes.push(props.text);if(props.text!==defaultValue)input.current.value=props.text}}),[]);window.composerLayout=style.at(-1);return <textarea style={{height:style.at(-1).height,minHeight:style.at(-1).minHeight,maxHeight:style.at(-1).maxHeight}} data-scroll-enabled={String(scrollEnabled)} ref={input} aria-label={label} value={value} defaultValue={defaultValue} disabled={!editable} onChange={e=>onChangeText(e.target.value)} onSelect={e=>onSelectionChange({nativeEvent:{selection:{start:e.target.selectionStart,end:e.target.selectionEnd}}})}/>;}`,
 }
 const built = await build({
   stdin: {
@@ -19,7 +19,7 @@ import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
 import {ComposerField} from '${root}/apps/mobile/src/tasks/composer/composer-field.tsx';
 import {useDraft} from '${root}/apps/mobile/src/tasks/draft/use-draft.ts';
 window.mounts=0;window.writes=[];window.clears=0;window.storageText=()=>localStorage.getItem('dovo.draft.computer.task');
-function App(){const draft=useDraft('task','Recovered draft');const [echo,setEcho]=useState(null);const [sending,setSending]=useState(false);const [stream,setStream]=useState(0);const type=useCallback(text=>draft.update(text,'keyboard'),[draft.update]);const select=useCallback(()=>{},[]);window.draft=draft;window.echo=text=>flushSync(()=>setEcho(text));window.stream=()=>flushSync(()=>setStream(n=>n+1));window.switchRuntime=id=>{window.runtimeId=id;flushSync(()=>setStream(n=>n+1))};window.apply=text=>flushSync(()=>{setEcho(null);setSending(false);draft.update(text)});window.send=()=>flushSync(()=>{setEcho(null);setSending(true)});window.fail=()=>flushSync(()=>setSending(false));return <div data-stream={stream}><ComposerField key={draft.key} value={echo??(sending?'':draft.text)} revision={JSON.stringify([draft.revision,sending])} onChangeText={type} onSelectionChange={select} editable={draft.ready} showOptions placeholder="Message"/></div>};
+function App(){const [focusKey,setFocusKey]=useState(undefined);window.editFocus=()=>setFocusKey('queued');const draft=useDraft('task','Recovered draft');const [echo,setEcho]=useState(null);const [sending,setSending]=useState(false);const [stream,setStream]=useState(0);const type=useCallback(text=>draft.update(text,'keyboard'),[draft.update]);const select=useCallback(()=>{},[]);window.draft=draft;window.echo=text=>flushSync(()=>setEcho(text));window.stream=()=>flushSync(()=>setStream(n=>n+1));window.switchRuntime=id=>{window.runtimeId=id;flushSync(()=>setStream(n=>n+1))};window.apply=text=>flushSync(()=>{setEcho(null);setSending(false);draft.update(text)});window.send=()=>flushSync(()=>{setEcho(null);setSending(true)});window.fail=()=>flushSync(()=>setSending(false));return <div data-stream={stream}><ComposerField focusKey={focusKey} key={draft.key} value={echo??(sending?'':draft.text)} revision={JSON.stringify([draft.revision,sending])} onChangeText={type} onSelectionChange={select} editable={draft.ready} showOptions placeholder="Message"/></div>};
 createRoot(document.getElementById('app')).render(<App/>);
 `,
     loader: 'tsx',
@@ -129,6 +129,11 @@ try {
   assert.equal(await input.inputValue(), '')
   assert.equal(await page.evaluate(() => window.clears), cleared + 1)
   await page.evaluate(() => window.fail())
+  assert.equal(await input.inputValue(), 'Fresh message')
+  await input.blur()
+  await page.evaluate(() => window.editFocus())
+  await page.waitForFunction(() => document.activeElement?.tagName === 'TEXTAREA')
+  assert.equal(await page.evaluate(() => window.mounts), 3)
   assert.equal(await input.inputValue(), 'Fresh message')
   assert.deepEqual(errors, [])
   console.log(

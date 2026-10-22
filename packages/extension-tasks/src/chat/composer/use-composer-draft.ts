@@ -3,13 +3,17 @@ import { updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import { createComposerDraft } from './composer-draft'
 
 /** The parent keys the composer by task; cleanup always writes to that same task. */
-export function useComposerDraft(task: Task, immediate = false) {
+export function useComposerDraft(
+  task: Task,
+  immediate = false,
+  editController?: ReturnType<typeof createComposerDraft>,
+) {
   const { setWorkspace } = useWorkspace()
   const [error, setError] = useState('')
   const report = useCallback((cause: unknown) => {
     setError(`Could not save the draft. ${String(cause)}`)
   }, [])
-  const [controller] = useState(() =>
+  const [savedController] = useState(() =>
     createComposerDraft(
       task.draft,
       (draft) => {
@@ -20,13 +24,14 @@ export function useComposerDraft(task: Task, immediate = false) {
       report,
     ),
   )
+  const controller = editController ?? savedController
   useEffect(() => {
-    controller.rebind((draft) => {
+    savedController.rebind((draft) => {
       setWorkspace((workspace) =>
         updateTask(workspace, task.id, (current) => ({ ...current, draft })),
       )
     })
-  }, [controller, setWorkspace, task.id])
+  }, [savedController, setWorkspace, task.id])
   const hasText = useSyncExternalStore(
     controller.subscribe,
     () => !!controller.text.trim(),
@@ -42,8 +47,8 @@ export function useComposerDraft(task: Task, immediate = false) {
     }
   }
   useEffect(() => {
-    controller.receive(task.draft)
-  }, [controller, task.draft])
+    savedController.receive(task.draft)
+  }, [savedController, task.draft])
   useEffect(
     () => () => {
       try {
@@ -65,13 +70,13 @@ export function useComposerDraft(task: Task, immediate = false) {
   const accept = useCallback(
     (submitted: string) => {
       try {
-        controller.accept(submitted)
+        savedController.accept(submitted)
         setError('')
       } catch (cause) {
         report(cause)
       }
     },
-    [controller, report],
+    [savedController, report],
   )
   return {
     controller,

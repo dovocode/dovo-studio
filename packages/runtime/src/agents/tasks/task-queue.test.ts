@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { canChangeTaskCheckout } from '@dovo/protocol'
+import { canChangeTaskCheckout, agentTurnSettings, defaultTaskHarness } from '@dovo/protocol'
 import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'
 import { Activity } from '../../storage/activity'
@@ -701,6 +701,58 @@ it('persists per-message choices through reorder, editing, admission and restore
     })
     queue.add('task', 'other-sender', 'Other device uses defaults')
     expect(restored.task('task').draftTurnSettings).toEqual(settings)
+  } finally {
+    db.close()
+  }
+})
+
+it('includes full turn settings in stable submission receipts', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const harness = defaultTaskHarness('codex')
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Queue',
+          repositoryId: '',
+          agentId: '',
+          harness,
+          status: 'draft',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    const settings = agentTurnSettings(
+      { ...harness, permission: 'full-access', env: { A: '1', B: '2' } },
+      true,
+    )
+    queue.add('task', 'message', 'Next', [], undefined, false, false, undefined, {
+      turnSettings: settings,
+    })
+    expect(
+      queue.add('task', 'message', 'Next', [], undefined, false, false, undefined, {
+        turnSettings: agentTurnSettings(
+          { ...harness, permission: 'full-access', env: { B: '2', A: '1' } },
+          true,
+        ),
+      }),
+    ).toBe(false)
+    expect(() =>
+      queue.add('task', 'message', 'Next', [], undefined, false, false, undefined, {
+        turnSettings: agentTurnSettings(
+          { ...harness, permission: 'ask', env: { A: '1', B: '2' } },
+          true,
+        ),
+      }),
+    ).toThrow('different')
   } finally {
     db.close()
   }

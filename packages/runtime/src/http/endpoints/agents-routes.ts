@@ -665,6 +665,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             expectedText: Schema.optional(maxValue(Schema.String, 120000)),
             turnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
             expectedTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
+            attachmentIds: Schema.optional(attachmentIdsSchema),
+            expectedAttachmentIds: Schema.optional(attachmentIdsSchema),
             runId: Schema.optional(idSchema),
           }),
           yield* serviceResult(body(request)),
@@ -682,6 +684,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             input.expectedText,
             input.turnSettings,
             input.expectedTurnSettings,
+            input.attachmentIds ? s.attachments.metadata(input.id, input.attachmentIds) : undefined,
+            input.expectedAttachmentIds,
           )
         } else if (input.action === 'move') {
           if (!input.messageId || input.beforeMessageId === undefined)

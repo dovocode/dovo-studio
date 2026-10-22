@@ -13,6 +13,7 @@ import {
   attachmentReadSchema,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
+  type Attachment,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
@@ -20,7 +21,14 @@ import { useAction } from '../../ui/controls/use-action'
 export type AttachmentAsset = { uri: string; name: string; mimeType?: string | null }
 
 // This controller belongs to the conversation, not a button that moves when the keyboard closes.
-export function useAttachmentPicker(taskId: string) {
+export function useAttachmentPicker(
+  taskId: string,
+  editing?: {
+    messageId: string
+    files: Attachment[]
+    uploaded: (file: Attachment, replaceId?: string) => void
+  },
+) {
   const { connected, callEffect, snapshot } = useRuntime()
   const { busy, error, act, run } = useAction()
   const imageEditor = useImageEditor()
@@ -43,7 +51,10 @@ export function useAttachmentPicker(taskId: string) {
   const uploadAssets = (assets: AttachmentAsset[], replaceId?: string) =>
     mobileWorkflow(function* () {
       const count =
-        snapshot?.workspace.tasks.find((task) => task.id === taskId)?.draftAttachments?.length ?? 0
+        (editing
+          ? editing.files.length
+          : snapshot?.workspace.tasks.find((task) => task.id === taskId)?.draftAttachments
+              ?.length) ?? 0
       let accepted = 0
       const rejected: string[] = []
       for (const asset of assets) {
@@ -64,10 +75,11 @@ export function useAttachmentPicker(taskId: string) {
               if (prepared.uri !== asset.uri) file.delete()
             }
           })
-          yield* callEffect(
+          const result = yield* callEffect(
             replaceId ? '/api/attachments/replace' : '/api/attachments/upload',
             {
               taskId,
+              queuedMessageId: editing?.messageId,
               id: randomUUID(),
               name: prepared.name,
               data,
@@ -75,6 +87,7 @@ export function useAttachmentPicker(taskId: string) {
             },
             attachmentResultSchema,
           )
+          editing?.uploaded(result.attachment, replaceId)
           accepted++
         }).pipe(
           Effect.catch((cause) =>

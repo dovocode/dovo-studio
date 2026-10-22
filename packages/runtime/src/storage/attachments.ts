@@ -44,6 +44,9 @@ export class Attachments {
     db.exec(
       'CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, task TEXT NOT NULL, metadata TEXT NOT NULL, data BLOB NOT NULL)',
     )
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS queued_attachment_uploads (id TEXT PRIMARY KEY, task TEXT NOT NULL, created_at INTEGER NOT NULL)',
+    )
     this.root =
       db.name === ':memory:'
         ? mkdtempSync(join(tmpdir(), 'dovo-attachments-'))
@@ -81,6 +84,11 @@ export class Attachments {
   async upload(value: unknown, replaceId?: string) {
     const input = decode(attachmentUploadSchema, value)
     const task = this.store.taskSummary(input.taskId)
+    if (
+      input.queuedMessageId &&
+      !task.queue?.some((message) => message.id === input.queuedMessageId)
+    )
+      throw new HttpError(409, 'This message already started or was removed')
     if (task.archivedAt) throw new HttpError(409, 'Restore the task before attaching files')
     const data = Buffer.from(input.data, 'base64')
     if (data.toString('base64') !== input.data) throw new HttpError(400, 'Invalid file data')
@@ -94,6 +102,7 @@ export class Attachments {
         throw new HttpError(409, 'Upload ID already has different contents')
       if (
         replaceId &&
+        !input.queuedMessageId &&
         (task.draftAttachments?.some((file) => file.id === replaceId) ||
           !task.draftAttachments?.some((file) => file.id === input.id))
       )
@@ -122,8 +131,15 @@ export class Attachments {
           throw new HttpError(409, 'Upload ID already has different contents')
         return
       }
+      if (
+        input.queuedMessageId &&
+        !current.queue?.some((message) => message.id === input.queuedMessageId)
+      )
+        throw new HttpError(409, 'This message already started or was removed')
       if (replaceId) {
-        const original = current.draftAttachments?.find((file) => file.id === replaceId)
+        const original = input.queuedMessageId
+          ? this.read(input.taskId, replaceId).attachment
+          : current.draftAttachments?.find((file) => file.id === replaceId)
         if (!original)
           throw new HttpError(
             409,
@@ -132,11 +148,21 @@ export class Attachments {
         if (!isImageAttachment(original) || !isImageAttachment(attachment))
           throw new HttpError(400, 'Only image attachments can be edited')
       }
-      if (!replaceId && (current.draftAttachments?.length ?? 0) >= MAX_ATTACHMENTS)
+      if (
+        !input.queuedMessageId &&
+        !replaceId &&
+        (current.draftAttachments?.length ?? 0) >= MAX_ATTACHMENTS
+      )
         throw new HttpError(409, 'Attach up to 5 files per message')
       this.db
         .prepare('INSERT INTO attachments VALUES(?,?,?,?)')
         .run(input.id, input.taskId, JSON.stringify(attachment), data)
+      if (input.queuedMessageId) {
+        this.db
+          .prepare('INSERT INTO queued_attachment_uploads VALUES(?,?,?)')
+          .run(input.id, input.taskId, Date.now())
+        return
+      }
       this.store.updateTask(input.taskId, (t) => ({
         ...t,
         draftAttachments: replaceId
@@ -188,6 +214,21 @@ export class Attachments {
         .map((file) => file.id),
       ...this.store.messageAttachmentIds(),
     ])
+    // Edits keep uploads separate from the ordinary draft. Unreferenced uploads can be collected after a day.
+    const taskIds = new Set(this.store.get().tasks.map((task) => task.id))
+    const pendingUploads = this.db
+      .prepare('SELECT id, task, created_at FROM queued_attachment_uploads')
+      .all()
+    const removePending = this.db.prepare('DELETE FROM queued_attachment_uploads WHERE id=?')
+    for (const row of pendingUploads) {
+      const upload = decode(
+        mutableStruct({ id: Schema.String, task: Schema.String, created_at: Schema.Number }),
+        row,
+      )
+      if (taskIds.has(upload.task) && upload.created_at > Date.now() - 24 * 60 * 60 * 1000)
+        retained.add(upload.id)
+      else removePending.run(upload.id)
+    }
     const rows = this.db
       .prepare('SELECT id FROM attachments')
       .all()

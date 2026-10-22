@@ -23,6 +23,7 @@ export function MessageAttachments({
   files = [],
   removable,
   edit,
+  remove,
   disabled,
   onBusy,
 }: {
@@ -30,6 +31,7 @@ export function MessageAttachments({
   files?: Attachment[]
   removable?: boolean
   edit?: (id: string) => Promise<void>
+  remove?: (id: string) => void
   disabled?: boolean
   onBusy?: (busy: boolean) => void
 }) {
@@ -113,7 +115,11 @@ export function MessageAttachments({
               label={`Remove ${file.name}`}
               disabled={!connected || busy || disabled}
               onPress={() =>
-                void act(() => {
+                void act(async () => {
+                  if (remove) {
+                    remove(file.id)
+                    return
+                  }
                   return runClientEffect(
                     mobileWorkflow(function* () {
                       yield* callEffect(

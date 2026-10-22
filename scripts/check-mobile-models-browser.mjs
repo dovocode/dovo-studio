@@ -35,18 +35,19 @@ import {useState,useEffect} from 'react';import {createRoot} from 'react-dom/cli
 window.requests=[];window.finishes=[];
 const readRuntime=async(profile,path,input)=>path==='/api/agents/models/cached'?null:new Promise(resolve=>{window.requests.push({host:profile.id,path,input});window.finishes.push(resolve)});
 function App(){
+ const[turn,setTurn]=useState(undefined);window.turn=turn;window.openTurn=()=>{setTurn(null);setTask(old=>({...old,status:'running',messages:[{id:'first',role:'user',text:'Started'}]}));setEditing(true)};
  const[queueStatus,setQueueStatus]=useState({pending:0,error:null});window.queueStatus=setQueueStatus;
  const[task,setTask]=useState(null),[editing,setEditing]=useState(false),[pending,setPending]=useState([]),[revision,setRevision]=useState(1);
  window.openTask=()=>{if(!task)setTask(decode(taskSchema,{id:'task',repositoryId:'repo',agentId:'',title:'Task',status:'draft',createdAt:'2026-09-23T10:00:00Z',messages:[],files:[],draft:'',example:false,harness:defaultTaskHarness('codex')}));setEditing(true)};
  const[host,setHost]=useState('one');const[agent,setAgent]=useState({...defaultTaskHarness('codex'),id:'agent',name:'Agent',model:''});const[online,setOnline]=useState(true);
  window.host=setHost;window.harness=provider=>setAgent({...defaultTaskHarness(provider),id:'agent',name:'Agent',model:''});window.online=setOnline;
  const profile={id:host,name:host,connection:{address:'http://'+host,token:'private-token'}};
- const snapshot={smartModelSelectionEnabled:true,revision,runtimeInstanceId:host,defaults:{},workspace:{agents:[],repositories:[],tasks:task?[task]:[]},acpInstallations:[]};
+ const snapshot={permissionPolicySupported:true,fullTurnSettingsSupported:true,smartModelSelectionEnabled:true,revision,runtimeInstanceId:host,defaults:{},workspace:{agents:[],repositories:[],tasks:task?[task]:[]},acpInstallations:[]};
  const entry={profile,snapshot};const visible=previewTasks(entry,pending).snapshot.workspace.tasks[0];window.visibleTask=visible;window.rawTask=task;
  window.publishTask=(nextRevision,nextTask)=>{setRevision(nextRevision);if(nextTask)setTask(nextTask)};
  useEffect(()=>setPending(items=>{const next=items.filter(item=>!optimisticTaskConfirmed(item,entry,items));return next.length===items.length?items:next}),[task,revision]);
  const value={profile,ready:true,overviews:[{...entry,connected:online}],mutationStatus:()=>queueStatus,refreshAll:async()=>{},connected:online,readRuntime,snapshot,previewTaskEffect:(owner,taskId,changes,request)=>optimisticTaskEffect({id:Symbol(),connection:owner.connection,taskId,changes,runtimeInstanceId:host},setPending,request),callEffect:(path,input,schema,method)=>Effect.tryPromise({try:()=>{if(path==='/api/agents/models/preference'){const result={modelPreferences:{[input.key]:{favorite:input.favorite,disabled:false}}};return window.deferPreference?new Promise(resolve=>{window.finishPreference=()=>resolve(result)}):Promise.resolve(result)}if(path==='/api/workspace'){if(method!=='PATCH')throw Error('Workspace changes require PATCH');const wire=JSON.parse(JSON.stringify(input));decode(taskSchema,{...task,...Object.fromEntries(Object.entries(wire.changes).map(([key,change])=>[key,change.after??undefined]))})}window.saved={path,input,method};return new Promise((resolve,reject)=>{window.finishSave=fail=>fail?reject(new Error('Model save rejected')):resolve({revision:revision+1,runtimeInstanceId:host})})},catch:error=>error}),refresh:async()=>{}};
- return <Context.Provider value={value}>{task?<><span data-selected-model>{resolveTaskAgent(visible,[])?.model||'Default'}</span>{editing&&<HarnessSettings task={visible} onClose={()=>setEditing(false)}/>}</>:<ModelSettings agent={agent} onChange={setAgent}/>}<ConnectionPill/></Context.Provider>
+ return <Context.Provider value={value}>{task?<><span data-selected-model>{resolveTaskAgent(visible,[])?.model||'Default'}</span>{editing&&<HarnessSettings task={visible} turn={turn!==undefined?{value:turn,onChange:setTurn}:undefined} onClose={()=>setEditing(false)}/>}</>:<ModelSettings agent={agent} onChange={setAgent}/>}<ConnectionPill/></Context.Provider>
 };createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../apps/mobile/', import.meta.url)),
@@ -569,6 +570,22 @@ try {
     throw new Error('A late favorite save from the previous computer leaked into this computer')
   if (await star.isDisabled())
     throw new Error("The previous computer's pending favorite save blocked this computer")
+
+  const defaultsBeforeTurn = await page.evaluate(() => window.rawTask.harness)
+  await page.evaluate(() => window.openTurn())
+  const more = page.getByRole('button', { name: 'More settings', exact: true })
+  await more.click()
+  const access = page.getByRole('combobox', { name: 'Access mode', exact: true })
+  if (await access.isDisabled()) throw new Error('Next-turn permissions are disabled during a run')
+  await access.selectOption('full-access')
+  await page.waitForFunction(() => window.turn?.harness.permission === 'full-access')
+  if (
+    JSON.stringify(await page.evaluate(() => window.rawTask.harness)) !==
+    JSON.stringify(defaultsBeforeTurn)
+  )
+    throw new Error('Next-turn settings changed the thread defaults')
+  await page.getByRole('button', { name: 'Use thread defaults', exact: true }).click()
+  await page.waitForFunction(() => window.turn === null)
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse/Cursor model selection, reasoning, OpenCode v1/v2 labels, and task model/reasoning saves with unavailable provider discovery passed.',

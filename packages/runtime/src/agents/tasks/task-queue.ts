@@ -1,6 +1,10 @@
 import {
   MAX_ATTACHMENTS,
   sameTurnSettings,
+  turnSettingsKey,
+  applyTurnSettings,
+  permissionPolicyIssue,
+  supportsAccess,
   resolveTaskAgent,
   turnSettingsMatchHarness,
   type TurnSettings,
@@ -22,6 +26,11 @@ const fingerprint = (text: string, attachments: Attachment[], turnSettings?: Tur
                 acpInstallationId: turnSettings.acpInstallationId,
                 model: turnSettings.model,
                 reasoning: turnSettings.reasoning,
+                ...(turnSettings.harness
+                  ? {
+                      harness: turnSettingsKey(turnSettings),
+                    }
+                  : {}),
               },
             }
           : {}),
@@ -38,7 +47,14 @@ export class TaskQueue {
     if (!settings) return
     const agent = resolveTaskAgent(this.store.taskSummary(id), this.store.get().agents)
     if (!agent || !turnSettingsMatchHarness(settings, agent))
-      throw new HttpError(409, 'Choose a model within this thread’s current harness')
+      throw new HttpError(409, 'Choose settings within this thread’s current harness')
+    if (settings.harness) {
+      const selected = applyTurnSettings(agent, settings)
+      const issue = permissionPolicyIssue(selected)
+      if (issue) throw new HttpError(400, issue)
+      if (!supportsAccess(selected.provider, selected.permission))
+        throw new HttpError(400, 'This access mode is unavailable for this harness.')
+    }
   }
   accepted(
     id: string,
@@ -160,6 +176,8 @@ export class TaskQueue {
     expectedText: string,
     turnSettings?: TurnSettings | null,
     expectedTurnSettings?: TurnSettings | null,
+    attachments?: Attachment[],
+    expectedAttachmentIds?: string[],
   ) {
     const task = this.store.taskSummary(id)
     const message = task.queue?.find((item) => item.id === messageId)
@@ -171,7 +189,16 @@ export class TaskQueue {
           !sameTurnSettings(message.turnSettings, expectedTurnSettings)))
     )
       throw new HttpError(409, 'This queued message changed. Reopen it before editing.')
-    if (!text.trim() && !message.attachments?.length)
+    if (
+      attachments &&
+      (!expectedAttachmentIds ||
+        JSON.stringify(message.attachments?.map((file) => file.id) ?? []) !==
+          JSON.stringify(expectedAttachmentIds))
+    )
+      throw new HttpError(409, 'This queued message changed. Reopen it before editing.')
+    if (attachments && attachments.length > MAX_ATTACHMENTS)
+      throw new HttpError(400, 'Attach up to 5 files per message')
+    if (!text.trim() && !(attachments ?? message.attachments)?.length)
       throw new HttpError(400, 'A message needs text or attachments')
     this.validateSettings(id, turnSettings)
     this.store.updateTask(id, (current) => ({
@@ -182,6 +209,7 @@ export class TaskQueue {
               ...item,
               text,
               ...(turnSettings !== undefined ? { turnSettings: turnSettings ?? undefined } : {}),
+              ...(attachments ? { attachments } : {}),
             }
           : item,
       ),

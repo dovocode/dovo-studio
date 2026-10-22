@@ -38,6 +38,7 @@ export const attachmentReadSchema = mutableStruct({
 })
 export const attachmentUploadSchema = mutableStruct({
   taskId: minValue(Schema.String, 1),
+  queuedMessageId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   id: uuidSchema,
   name: maxValue(minValue(Schema.String, 1), 250),
   data: maxValue(Schema.String, Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4),

@@ -2,19 +2,20 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
-const catalogMock = `export const useHarnessCatalog=()=>({modelName:'',catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});`
+const catalogMock = `export const useHarnessCatalog=()=>({modelName:'',catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model',serviceTiers:[{id:'priority',name:'Fast'}]}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});`
 const mocks = {
   './harness-catalog': catalogMock,
   './use-harness-availability': `export const useHarnessAvailability=()=>({available:new Set(['harness:codex']),loading:false,refresh:()=>{}});`,
   './agent-avatar': `export const AgentAvatar=()=>null;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
-  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
+  '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
   './composer-editor': `import {useState,useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText,disabled})=>{const[mount]=useState(()=>++window.editorMounts);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea data-editor-mount={mount} aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} disabled={disabled} onChange={event=>controller.update(event.target.value)}/>};`,
 }
 for (const [path, name] of [
+  ['../../dialogs/harness-dialog', 'HarnessDialog'],
   ['./attachment-picker', 'AttachmentPicker'],
   ['./message-attachments', 'MessageAttachments'],
   ['./composer-command-dialog', 'ComposerCommandDialog'],
@@ -31,7 +32,7 @@ import {createRoot} from 'react-dom/client';import {useState,useCallback} from '
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
 const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{...inputs,queuedTurnSettingsSupported:true}};return <WorkspaceHarness value={value}><><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{...inputs,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -319,17 +320,15 @@ try {
     })),
   )
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Edited queued input')
+  await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
+  await page.locator('[role=option][data-value=fast-model]').click()
+  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'Low', exact: true }).click()
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page
-    .getByRole('textbox', { name: 'Edit queued message', exact: true })
-    .fill('Edited queued input')
-  await page.getByRole('button', { name: 'Turn model', exact: true }).click()
-  await page.getByRole('option', { name: 'Fast model', exact: true }).click()
-  await page.getByRole('button', { name: 'Turn reasoning level', exact: true }).click()
-  await page.getByRole('option', { name: 'Low', exact: true }).click()
-  await page.getByRole('button', { name: 'Save', exact: true }).click()
-  await page
-    .getByRole('textbox', { name: 'Edit queued message', exact: true })
-    .waitFor({ state: 'hidden' })
+    .getByRole('button', { name: 'Cancel edit', exact: true })
+    .waitFor({ state: 'detached' })
   const edit = await page.evaluate(() => window.requests.at(-1))
   if (
     edit.path !== '/api/tasks/queue' ||
@@ -637,11 +636,11 @@ try {
   const checklistTab = page.getByRole('tab', { name: /Checklist · 1\/2/ })
   await queueTab.waitFor()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
-  const queuedEdit = page.getByRole('textbox', { name: 'Edit queued message', exact: true })
+  const queuedEdit = page.getByRole('textbox', { name: 'Message', exact: true })
   await queuedEdit.fill('Unsaved queue edit')
   await checklistTab.click()
   await page.getByRole('list', { name: 'Checklist items' }).waitFor()
-  assert.equal(await queuedEdit.isVisible(), false)
+  assert.equal(await queuedEdit.isVisible(), true)
   assert.equal(await checklistTab.getAttribute('aria-selected'), 'true')
   await checklistTab.press('ArrowLeft')
   assert.equal(await queueTab.getAttribute('aria-selected'), 'true')
@@ -662,7 +661,7 @@ try {
     }),
   )
   await expandActivity.waitFor()
-  assert.equal(await queuedEdit.isVisible(), false)
+  assert.equal(await queuedEdit.isVisible(), true)
   await queueTab.click()
   assert.equal(await queuedEdit.inputValue(), 'Unsaved queue edit')
   await page.evaluate(() =>
@@ -684,10 +683,10 @@ try {
   await page.evaluate(() => window.setInputs({ questions: [], approvals: [] }))
   assert.equal(await queuedEdit.isVisible(), true)
   await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
-  await page.getByRole('tab', { name: 'Queue · 0', exact: true }).waitFor()
+  await page.getByRole('list', { name: 'Checklist items' }).waitFor()
   assert.equal(await queuedEdit.inputValue(), 'Unsaved queue edit')
   await page
-    .getByText('This message already started or was removed. Your edit is kept below.', {
+    .getByText('This message already started or was removed. Your edit is kept in the composer.', {
       exact: true,
     })
     .waitFor()
@@ -759,6 +758,33 @@ try {
   assert.equal(await queuedEdit.inputValue(), 'Keep edit after clearing checklist')
   assert.equal(await page.getByRole('button', { name: 'Clear checklist', exact: true }).count(), 0)
   assert.equal(await page.evaluate(() => window.current.queue[0].text), 'Preserve queued message')
+
+  await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
+  await input.fill('Preserve my draft')
+  await page.evaluate(() => window.setFull(true))
+  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  await input.fill('Use the full composer')
+  await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()
+  await page.getByRole('button', { name: 'Custom configurations', exact: true }).waitFor()
+  await page.locator('[role=option][data-value=large-model]').click()
+  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
+  await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: /Fast/, exact: false }).click()
+  await page.getByRole('button', { name: 'Configure task permissions', exact: true }).click()
+  await page.locator('[role=menuitemradio][data-value=full-access]').click()
+  assert.equal(await input.inputValue(), 'Use the full composer')
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Cancel edit', exact: true })
+    .waitFor({ state: 'detached' })
+  const fullEdit = await page.evaluate(() => window.requests.at(-1).input)
+  assert.equal(fullEdit.turnSettings.harness.permission, 'full-access')
+  assert.equal(fullEdit.turnSettings.harness.serviceTier, 'priority')
+  assert.equal(fullEdit.turnSettings.harness.reasoning, 'high')
+  assert.equal(fullEdit.expectedText, 'Preserve queued message')
+  assert.equal(await input.inputValue(), 'Preserve my draft')
+  assert.equal(await page.evaluate(() => window.current.harness ?? null), null)
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch and immediate side-chat sending via icon and shortcut passed.',

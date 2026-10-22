@@ -1,14 +1,14 @@
-import { TurnModelControls } from './turn-model-controls'
-import { sameTurnSettings, turnSettingsLabel, type TurnSettings } from '@dovo/protocol'
+import { sameTurnSettings, turnSettingsLabel } from '@dovo/protocol'
 import { pendingQueue } from './pending-send'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { Pressable, View, TextInput } from 'react-native'
+import { Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { Action } from '../../ui/controls/action'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
+import { useRef } from 'react'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
 import { useTheme } from '../../ui/theme'
@@ -27,45 +27,14 @@ export function MessageQueue({
 }) {
   const { colors, styles } = useTheme()
 
-  const { connected, callEffect, snapshot } = useRuntime(),
+  const { connected, callEffect } = useRuntime(),
     { act, busy, error } = useAction()
   const { actions } = useTaskConversation()
+  const sheet = useRef<SheetHandle>(null)
   const [open, setOpen] = useApplicationState(false)
   const changeOpen = (value: boolean) => {
     setOpen(value)
     onOpenChange?.(value)
-  }
-  const [editing, setEditing] = useApplicationState<{
-    id: string
-    text: string
-    expectedText: string
-    turnSettings: TurnSettings | null
-    expectedTurnSettings: TurnSettings | null
-  } | null>(null)
-  const saveEdit = () => {
-    if (!editing) return
-    act(() =>
-      mobileWorkflow(function* () {
-        yield* callEffect(
-          '/api/tasks/queue',
-          {
-            id: task.id,
-            action: 'edit',
-            messageId: editing.id,
-            text: editing.text,
-            expectedText: editing.expectedText,
-            ...(snapshot?.queuedTurnSettingsSupported
-              ? {
-                  turnSettings: editing.turnSettings,
-                  expectedTurnSettings: editing.expectedTurnSettings,
-                }
-              : {}),
-          },
-          responses.ok,
-        )
-        setEditing(null)
-      }),
-    )
   }
   const pendingMessages = actions.pendingMessages
   const pending = pendingMessages.find((item) => item.destination === 'queue')
@@ -167,7 +136,7 @@ export function MessageQueue({
         </Pressable>
       )}
       {open && !hidden && (
-        <Sheet title="Queued messages" onClose={() => changeOpen(false)} busy={busy}>
+        <Sheet ref={sheet} title="Queued messages" onClose={() => changeOpen(false)} busy={busy}>
           {!!queue.length && (
             <Action
               secondary
@@ -175,51 +144,6 @@ export function MessageQueue({
               disabled={!connected || busy || !task.queue?.length || task.archived}
               onPress={() => change(task.queuePaused ? 'resume' : 'pause')}
             />
-          )}
-          {editing && (
-            <>
-              {!queue.some((message) => message.id === editing.id) && (
-                <Text style={styles.muted}>
-                  This message already started or was removed. Your edit is kept below.
-                </Text>
-              )}
-              <View style={{ gap: 8 }}>
-                <TextInput
-                  accessibilityLabel="Edit queued message"
-                  multiline
-                  autoFocus
-                  style={[styles.input, { minHeight: 80 }]}
-                  value={editing.text}
-                  onChangeText={(text) => setEditing({ ...editing, text })}
-                  editable={!busy}
-                />
-                {actions.agent && snapshot?.queuedTurnSettingsSupported && (
-                  <TurnModelControls
-                    agent={actions.agent}
-                    value={editing.turnSettings}
-                    onChange={(turnSettings) => setEditing({ ...editing, turnSettings })}
-                    disabled={busy}
-                  />
-                )}
-                <Action
-                  label="Save changes"
-                  disabled={
-                    !connected ||
-                    busy ||
-                    !queue.some((message) => message.id === editing.id) ||
-                    (!editing.text.trim() &&
-                      !queue.find((message) => message.id === editing.id)?.attachments?.length)
-                  }
-                  onPress={saveEdit}
-                />
-                <Action
-                  secondary
-                  label="Cancel edit"
-                  disabled={busy}
-                  onPress={() => setEditing(null)}
-                />
-              </View>
-            </>
           )}
           {queue.map((message, index) => (
             <View
@@ -264,17 +188,15 @@ export function MessageQueue({
                 disabled={
                   !connected ||
                   busy ||
+                  !!actions.editing ||
+                  actions.busy ||
+                  actions.attaching ||
+                  actions.dictation.active ||
                   pendingMessages.some((item) => item.message.id === message.id)
                 }
-                onPress={() =>
-                  setEditing({
-                    id: message.id,
-                    text: message.text,
-                    expectedText: message.text,
-                    turnSettings: message.turnSettings ?? null,
-                    expectedTurnSettings: message.turnSettings ?? null,
-                  })
-                }
+                onPress={() => {
+                  sheet.current?.dismiss(() => actions.beginEdit(message))
+                }}
               />
               <IconButton
                 icon="next"
@@ -305,6 +227,7 @@ export function MessageQueue({
                 disabled={
                   !connected ||
                   busy ||
+                  !!actions.editing ||
                   pendingMessages.some((item) => item.message.id === message.id)
                 }
                 onPress={() => restore(message)}

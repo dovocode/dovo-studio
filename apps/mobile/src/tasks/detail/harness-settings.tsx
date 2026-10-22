@@ -6,6 +6,9 @@ import {
   permissionPolicyLabel,
   changeTaskModelSelection,
   canChangeTaskCheckout,
+  applyTurnSettings,
+  agentTurnSettings,
+  type TurnSettings,
 } from '@dovo/protocol'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { workspacePatchResultSchema } from '@dovo/protocol'
@@ -48,13 +51,16 @@ export function HarnessSettings({
   onClose,
   inline = false,
   onBusyChange,
+  turn,
 }: {
   task: Task
   onClose: () => void
   inline?: boolean
   onBusyChange?: (busy: boolean) => void
+  turn?: { value: TurnSettings | null; onChange: (value: TurnSettings | null) => void }
 }) {
   const { styles } = useTheme()
+  const [turnError, setTurnError] = useState('')
   const [advanced, setAdvanced] = useState(false)
 
   const { snapshot, connected, profile, callEffect, previewTaskEffect } = useRuntime(),
@@ -69,12 +75,16 @@ export function HarnessSettings({
     snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
     snapshot?.workspace.agents ?? [],
   )
-  const selection = taskHarnessSelection(task)
-  const agent = resolveTaskAgent(task, agents) ?? {
+  const defaultAgent = resolveTaskAgent(task, agents) ?? {
     ...defaultTaskHarness('codex'),
     id: 'task',
     name: 'Codex',
   }
+  const agent = applyTurnSettings(defaultAgent, turn?.value ?? undefined)
+  const selectionTask = turn?.value
+    ? { ...task, agentId: '', agentOverrides: undefined, harness: agent, modelSelection: undefined }
+    : task
+  const selection = taskHarnessSelection(selectionTask)
   const custom = selection.startsWith('agent:')
   const installations = snapshot?.acpInstallations ?? []
   const availability = useHarnessAvailability(task.repositoryId, agents)
@@ -91,9 +101,25 @@ export function HarnessSettings({
   const selectionAllowed = choices.some(
     (choice) => choice.id === selection && choice.provider === agent.provider,
   )
-  const controlsDisabled = busy || task.status === 'running' || !!task.archived || !connected
+  const controlsDisabled =
+    busy || (!turn && task.status === 'running') || !!task.archived || !connected
   const save = (next: Agent, nextSelection = selection) => {
     if (controlsDisabled) return
+    if (turn) {
+      const issue = permissionPolicyUIIssue(next, snapshot?.permissionPolicySupported === true)
+      if (issue) {
+        setTurnError(issue)
+        return
+      }
+      if (
+        next.provider !== defaultAgent.provider ||
+        next.acpInstallationId !== defaultAgent.acpInstallationId
+      )
+        return
+      setTurnError('')
+      turn.onChange(agentTurnSettings(next, true))
+      return
+    }
     act(() =>
       mobileWorkflow(function* () {
         if (
@@ -131,7 +157,7 @@ export function HarnessSettings({
   const content = (
     <>
       {/* The selection mode decides whether the picker below applies, so it leads. */}
-      {canChangeTaskCheckout(task) && !task.delegation && (
+      {!turn && canChangeTaskCheckout(task) && !task.delegation && (
         <Choice
           row
           label="Model selection"
@@ -220,7 +246,7 @@ export function HarnessSettings({
           }}
         />
       )}
-      {(task.modelSelection === 'auto' || task.modelSelection === 'smart') && (
+      {!turn && (task.modelSelection === 'auto' || task.modelSelection === 'smart') && (
         <Choice
           row
           label="Difficulty"
@@ -257,17 +283,17 @@ export function HarnessSettings({
           }
         />
       )}
-      {!!error && (
+      {!!(error || turnError) && (
         <Text accessibilityRole="alert" style={styles.error}>
-          {error}
+          {error || turnError}
         </Text>
       )}
-      {task.modelSelection !== 'auto' && task.modelSelection !== 'smart' && (
+      {(turn || (task.modelSelection !== 'auto' && task.modelSelection !== 'smart')) && (
         <>
           {!advanced && (
             <>
               <HarnessModelPicker
-                task={task}
+                task={selectionTask}
                 agents={agents}
                 choices={choices}
                 selection={selection}
@@ -386,10 +412,20 @@ export function HarnessSettings({
                 )}
             </>
           )}
-          {task.status === 'running' ? (
+          {!turn && task.status === 'running' ? (
             <Text style={styles.muted}>Stop the active turn to change model settings.</Text>
           ) : (
-            <Text style={styles.muted}>Applies to the next turn.</Text>
+            <Text style={styles.muted}>
+              Applies to {turn ? 'this message only' : 'the next turn'}.
+            </Text>
+          )}
+          {turn?.value && (
+            <Action
+              secondary
+              label="Use thread defaults"
+              onPress={() => turn.onChange(null)}
+              disabled={controlsDisabled}
+            />
           )}
           {!selectionAllowed && (
             <Text accessibilityRole="alert" style={styles.error}>

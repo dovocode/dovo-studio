@@ -142,6 +142,7 @@ export const snapshotSchema = mutableStruct({
   settingsScopesSupported: Schema.optional(Schema.Boolean),
   worktreeDeletionOverrideSupported: Schema.optional(Schema.Boolean),
   threadBehaviorSupported: Schema.optional(Schema.Boolean),
+  fullTurnSettingsSupported: Schema.optional(Schema.Boolean),
   queuedTurnSettingsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),
   projectWorktreeTransfersSupported: Schema.optional(Schema.Boolean),

@@ -15,6 +15,7 @@ import {
   useWorkspace,
   type AgentDiscovery,
   type Task,
+  type TaskHarness,
 } from '@dovo/studio-core'
 import {
   Button,
@@ -31,17 +32,28 @@ import {
 } from '@dovo/studio-ui'
 import { HarnessFields } from '../harness-fields'
 import { changeTaskHarness } from '../chat/composer/task-harness-selection'
-export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => void }) {
+export function HarnessDialog({
+  task,
+  onClose,
+  initialValue,
+  onSave,
+}: {
+  task: Task
+  onClose: () => void
+  initialValue?: TaskHarness
+  onSave?: (value: TaskHarness) => Promise<boolean>
+}) {
   const { workspace, setWorkspace, flush, request, connected, snapshot } = useWorkspace()
   const agents = resolveScopedAgents(
     snapshot?.defaults,
     workspace.repositories.find((repo) => repo.id === task.repositoryId),
     workspace.agents,
   )
-  const customAgent = agents.find((agent) => agent.id === task.agentId)
+  const customAgent = onSave ? undefined : agents.find((agent) => agent.id === task.agentId)
   const providerLock = lockedTaskProvider(task, agents)
   const installationLock = lockedAcpInstallationId(task, agents)
   const [value, setValue] = useApplicationState(() => {
+    if (initialValue) return initialValue
     const agent = resolveTaskAgent(task, agents)
     return agent ? decode(taskHarnessSchema, agent) : defaultTaskHarness(providerLock ?? 'codex')
   })
@@ -55,13 +67,17 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
     if (
       busy ||
       !connected ||
-      task.status === 'running' ||
+      (!onSave && task.status === 'running') ||
       permissionPolicyUIIssue(value, snapshot?.permissionPolicySupported === true)
     )
       return
     setBusy(true)
     setError('')
     try {
+      if (onSave) {
+        if (await onSave(value)) onClose()
+        return
+      }
       setWorkspace((workspace) =>
         updateTask(workspace, task.id, (current) => {
           if (current.status === 'running')
@@ -96,10 +112,15 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
         <DialogHeader>
           <DialogTitle>Task harness</DialogTitle>
           <DialogDescription>
-            Model, reasoning and access for this task. Saved agents stay unchanged.
+            {onSave
+              ? 'Settings for this message only.'
+              : 'Model, reasoning and access for this task. Saved agents stay unchanged.'}
           </DialogDescription>
         </DialogHeader>
-        <fieldset className="grid gap-3" disabled={!connected || busy || task.status === 'running'}>
+        <fieldset
+          className="grid gap-3"
+          disabled={!connected || busy || (!onSave && task.status === 'running')}
+        >
           {customAgent ? (
             <>
               <p className="text-xs text-muted-foreground">
@@ -144,7 +165,7 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
               <PermissionPolicyFields
                 value={value}
                 supported={snapshot?.permissionPolicySupported === true}
-                disabled={!connected || busy || task.status === 'running'}
+                disabled={!connected || busy || (!onSave && task.status === 'running')}
                 onChange={(policy) => setValue({ ...value, ...policy })}
               />
             </>
@@ -169,7 +190,7 @@ export function HarnessDialog({ task, onClose }: { task: Task; onClose: () => vo
             Save harness
           </Button>
         </fieldset>
-        {task.status === 'running' && (
+        {!onSave && task.status === 'running' && (
           <p className="text-xs text-muted-foreground">
             Stop the current turn to change its harness.
           </p>

@@ -88,13 +88,15 @@ export function Composer({
     hasInput,
     canSend,
     patch,
+    editing,
+    cancelEdit,
     turnSettings,
     setTurnSettings,
   } = actions
   const nextTurnControls =
     !!snapshot?.queuedTurnSettingsSupported &&
     !!agent &&
-    (task.status === 'running' || !!task.queue?.length || !!turnSettings)
+    (!!editing || task.status === 'running' || !!task.queue?.length || !!turnSettings)
   const composerAgent =
     agent && nextTurnControls ? applyTurnSettings(agent, turnSettings ?? undefined) : agent
   const { modelName, catalog: modelCatalog } = useModelCatalog(composerAgent)
@@ -151,6 +153,7 @@ export function Composer({
   const { call, callEffect: commandCall, activeId } = useRuntime()
   const askAside = async () => {
     if (
+      !!editing ||
       !onAsk ||
       !connected ||
       !draft.ready ||
@@ -337,7 +340,7 @@ export function Composer({
   // Car mode starts with speech; the regular composer is one tap away for a passenger.
   const [typing, setTyping] = useApplicationState(false)
   const showOptions = focused || hasInput || firstMessage
-  const hasSideQuestion = !!onAsk && task.messages.length > 0
+  const hasSideQuestion = !editing && !!onAsk && task.messages.length > 0
   const showFollowupActions =
     showOptions && !dictation.active && task.status === 'running' && hasInput
   const showFork = hasGit && !!task.repositoryId
@@ -609,7 +612,13 @@ export function Composer({
     <FileDropTarget
       key={actions.threadScope}
       enabled={
-        connected && draft.ready && !busy && !attaching && !dictation.active && !task.archivedAt
+        connected &&
+        draft.ready &&
+        !busy &&
+        !attaching &&
+        !dictation.active &&
+        !task.archivedAt &&
+        (!editing || !!snapshot?.fullTurnSettingsSupported)
       }
       upload={attachmentPicker.upload}
       testID="Composer"
@@ -663,6 +672,21 @@ export function Composer({
       )}
       {!renderAbove && setup}
       {queuedMessages}
+      {editing && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 }}>
+          <Text style={[styles.muted, { flex: 1 }]}>
+            {task.queue?.some((message) => message.id === editing.message.id)
+              ? 'Edit queued message'
+              : 'This message already started or was removed. Your edit is kept in the composer.'}
+          </Text>
+          <Action
+            secondary
+            label="Cancel edit"
+            disabled={busy || attaching || dictation.active}
+            onPress={cancelEdit}
+          />
+        </View>
+      )}
       <Glass
         style={{
           borderRadius: 26,
@@ -676,9 +700,10 @@ export function Composer({
         <MessageAttachments
           taskId={task.id}
           files={actions.draftAttachments}
+          remove={editing ? actions.removeEditAttachment : undefined}
           removable
           edit={attachmentPicker.edit}
-          disabled={busy || attaching}
+          disabled={(!!editing && !snapshot?.fullTurnSettingsSupported) || busy || attaching}
           onBusy={setAttaching}
         />
         {focused && (
@@ -687,7 +712,9 @@ export function Composer({
             text={draft.text}
             caret={caret}
             resources={taskResources(
-              task,
+              turnSettings?.harness
+                ? { ...task, agentId: '', agentOverrides: undefined, harness: turnSettings.harness }
+                : task,
               {
                 agents: snapshot?.workspace.agents ?? [],
                 repositories: snapshot?.workspace.repositories ?? [],
@@ -696,7 +723,7 @@ export function Composer({
             )}
             onChange={draft.update}
             onCommand={
-              task.messages.length || task.queue?.length || task.turns?.length
+              !editing && (task.messages.length || task.queue?.length || task.turns?.length)
                 ? runCommand
                 : undefined
             }
@@ -723,22 +750,25 @@ export function Composer({
               }}
             >
               <ComposerField
+                focusKey={editing?.message.id}
                 key={draft.key}
                 onFocus={focus}
                 onBlur={blur}
                 onSelectionChange={select}
                 placeholder={
-                  dictation.isRecording
-                    ? 'Listening…'
-                    : task.archivedAt
-                      ? 'Restore this archived thread to continue'
-                      : task.archived
-                        ? 'Send a message to reopen this thread…'
-                        : firstMessage
-                          ? 'What would you like to work on?'
-                          : task.status === 'running'
-                            ? 'Add a follow-up…'
-                            : 'Ask a follow-up…'
+                  editing
+                    ? 'Edit queued message…'
+                    : dictation.isRecording
+                      ? 'Listening…'
+                      : task.archivedAt
+                        ? 'Restore this archived thread to continue'
+                        : task.archived
+                          ? 'Send a message to reopen this thread…'
+                          : firstMessage
+                            ? 'What would you like to work on?'
+                            : task.status === 'running'
+                              ? 'Add a follow-up…'
+                              : 'Ask a follow-up…'
                 }
                 value={draft.text}
                 revision={draft.revision}
@@ -780,7 +810,14 @@ export function Composer({
               variant="plain"
               icon="add"
               label="Attach photos or files"
-              disabled={!connected || busy || attaching || dictation.active || !!task.archivedAt}
+              disabled={
+                (!!editing && !snapshot?.fullTurnSettingsSupported) ||
+                !connected ||
+                busy ||
+                attaching ||
+                dictation.active ||
+                !!task.archivedAt
+              }
               onPress={attachmentPicker.pick}
             />
             <View
@@ -795,13 +832,22 @@ export function Composer({
             >
               {turnModelOpen && agent && (
                 <Sheet title="Agent & model" onClose={() => setTurnModelOpen(false)}>
-                  <TurnModelControls
-                    task={task}
-                    agent={agent}
-                    value={turnSettings}
-                    onChange={setTurnSettings}
-                    disabled={busy || !!task.archived}
-                  />
+                  {snapshot?.fullTurnSettingsSupported ? (
+                    <HarnessSettings
+                      inline
+                      task={task}
+                      onClose={() => setTurnModelOpen(false)}
+                      turn={{ value: turnSettings, onChange: setTurnSettings }}
+                    />
+                  ) : (
+                    <TurnModelControls
+                      task={task}
+                      agent={agent}
+                      value={turnSettings}
+                      onChange={setTurnSettings}
+                      disabled={busy || !!task.archived}
+                    />
+                  )}
                 </Sheet>
               )}
               {showOptions && !dictation.active && (
@@ -813,10 +859,14 @@ export function Composer({
                   }}
                   accessibilityState={{
                     disabled:
-                      busy || (task.status === 'running' && !nextTurnControls) || !!task.archived,
+                      busy ||
+                      ((!!editing || task.status === 'running') && !nextTurnControls) ||
+                      !!task.archived,
                   }}
                   disabled={
-                    busy || (task.status === 'running' && !nextTurnControls) || task.archived
+                    busy ||
+                    ((!!editing || task.status === 'running') && !nextTurnControls) ||
+                    task.archived
                   }
                   onPress={() => {
                     if (dictation.active) dictation.stop()
@@ -834,7 +884,7 @@ export function Composer({
                     opacity:
                       pressed ||
                       busy ||
-                      (task.status === 'running' && !nextTurnControls) ||
+                      ((!!editing || task.status === 'running') && !nextTurnControls) ||
                       task.archived
                         ? 0.5
                         : 1,
@@ -900,7 +950,7 @@ export function Composer({
               }
             />
             {!showFollowupActions && sideQuestionAction}
-            {showFollowupActions && (
+            {!editing && showFollowupActions && (
               <View
                 style={{
                   flexDirection: 'row',
@@ -934,12 +984,13 @@ export function Composer({
             )}
             <IconButton
               variant="filled"
-              icon={task.status === 'running' ? 'stop' : 'send'}
-              label={task.status === 'running' ? 'Stop' : 'Send'}
+              icon={editing ? 'send' : task.status === 'running' ? 'stop' : 'send'}
+              label={editing ? 'Save changes' : task.status === 'running' ? 'Stop' : 'Send'}
               disabled={
-                machineMoving || (task.status === 'running' ? !connected || stopping : !canSend)
+                machineMoving ||
+                (!editing && task.status === 'running' ? !connected || stopping : !canSend)
               }
-              onPress={task.status === 'running' ? stop : () => send()}
+              onPress={!editing && task.status === 'running' ? stop : () => send()}
             />
           </View>
         </View>

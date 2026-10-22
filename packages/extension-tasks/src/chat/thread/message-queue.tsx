@@ -1,6 +1,5 @@
-import { turnSettingsLabel, type TurnSettings, type PendingMessage } from '@dovo/protocol'
-import { resolveTaskAgent } from '@dovo/studio-core'
-import { TurnModelControls } from '../composer/turn-model-controls'
+import { turnSettingsLabel, type PendingMessage } from '@dovo/protocol'
+import { useQueueEdit } from '../composer/queue-edit'
 import type { DragEvent } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { ArrowUp, ArrowDown, CornerUpRight, GripVertical, Pencil, X } from 'lucide-react'
@@ -18,29 +17,16 @@ export function MessageQueue({
   task,
   pending,
   embedded = false,
-  onEditingChange,
 }: {
   task: Task
   embedded?: boolean
-  onEditingChange?: (editing: boolean) => void
   pending?: readonly PendingMessage[] | null
 }) {
-  const { request, connected, workspace, snapshot } = useWorkspace(),
+  const { request, connected } = useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
-  const [editing, setEditing] = useApplicationState<{
-    id: string
-    text: string
-    expectedText: string
-    turnSettings: TurnSettings | null
-    expectedTurnSettings: TurnSettings | null
-  } | null>(null)
-  const changeEditing = (value: typeof editing) => {
-    setEditing(value)
-    onEditingChange?.(!!value)
-  }
+  const editor = useQueueEdit()
   const queue = task.queue ?? []
-  const agent = resolveTaskAgent(task, workspace.agents)
   const [dragging, setDragging] = useApplicationState<{ taskId: string; messageId: string } | null>(
     null,
   )
@@ -65,13 +51,7 @@ export function MessageQueue({
   const act = async (
     action: string,
     messageId?: string,
-    edit?: {
-      text?: string
-      expectedText?: string
-      beforeMessageId?: string | null
-      turnSettings?: TurnSettings | null
-      expectedTurnSettings?: TurnSettings | null
-    },
+    edit?: { beforeMessageId?: string | null },
   ) => {
     setBusy(true)
     setError('')
@@ -83,30 +63,17 @@ export function MessageQueue({
           action,
           runId: action === 'steer' ? task.activeRunId : undefined,
           messageId,
-          ...(edit
-            ? {
-                text: edit.text,
-                expectedText: edit.expectedText,
-                ...(snapshot?.queuedTurnSettingsSupported
-                  ? {
-                      turnSettings: edit.turnSettings,
-                      expectedTurnSettings: edit.expectedTurnSettings,
-                    }
-                  : {}),
-                beforeMessageId: edit.beforeMessageId,
-              }
-            : {}),
+          beforeMessageId: edit?.beforeMessageId,
         },
         responses.ok,
       )
-      if (action === 'edit') changeEditing(null)
     } catch (e) {
       setError(String(e))
     } finally {
       setBusy(false)
     }
   }
-  if (!queue.length && !editing) return null
+  if (!queue.length) return null
   return (
     <div
       className={
@@ -244,17 +211,13 @@ export function MessageQueue({
                 label={`Edit queued message ${index + 1}`}
                 className="size-6"
                 disabled={
-                  !connected || busy || pending?.some((item) => item.message.id === message.id)
+                  !connected ||
+                  busy ||
+                  !editor ||
+                  !!editor.editingId ||
+                  pending?.some((item) => item.message.id === message.id)
                 }
-                onClick={() =>
-                  changeEditing({
-                    id: message.id,
-                    text: message.text,
-                    expectedText: message.text,
-                    turnSettings: message.turnSettings ?? null,
-                    expectedTurnSettings: message.turnSettings ?? null,
-                  })
-                }
+                onClick={() => editor?.begin(message)}
               >
                 <Pencil size={12} />
               </IconButton>
@@ -303,7 +266,10 @@ export function MessageQueue({
                 label={`Cancel queued message ${index + 1} and return it to the composer`}
                 className="size-6"
                 disabled={
-                  !connected || busy || pending?.some((item) => item.message.id === message.id)
+                  !connected ||
+                  busy ||
+                  !!editor?.editingId ||
+                  pending?.some((item) => item.message.id === message.id)
                 }
                 onClick={() => void act('restore', message.id)}
               >
@@ -312,57 +278,6 @@ export function MessageQueue({
             </QueueItem>
           ))}
         </QueueList>
-        {editing && (
-          <>
-            {!queue.some((message) => message.id === editing.id) && (
-              <p role="status" className="text-muted-foreground">
-                This message already started or was removed. Your edit is kept below.
-              </p>
-            )}
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <textarea
-                aria-label="Edit queued message"
-                autoFocus
-                className="min-h-20 w-full rounded-md border bg-background p-2 text-sm"
-                value={editing.text}
-                onChange={(event) => changeEditing({ ...editing, text: event.target.value })}
-                disabled={busy}
-              />
-              {agent && snapshot?.queuedTurnSettingsSupported && (
-                <TurnModelControls
-                  inline
-                  agent={agent}
-                  value={editing.turnSettings}
-                  onChange={(turnSettings) => setEditing({ ...editing, turnSettings })}
-                  disabled={busy}
-                />
-              )}
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  disabled={
-                    !connected ||
-                    busy ||
-                    !queue.some((message) => message.id === editing.id) ||
-                    (!editing.text.trim() &&
-                      !queue.find((message) => message.id === editing.id)?.attachments?.length)
-                  }
-                  onClick={() => void act('edit', editing.id, editing)}
-                >
-                  Save
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => changeEditing(null)}
-                >
-                  Cancel edit
-                </Button>
-              </div>
-            </div>
-          </>
-        )}
         <Button
           variant="ghost"
           size="sm"

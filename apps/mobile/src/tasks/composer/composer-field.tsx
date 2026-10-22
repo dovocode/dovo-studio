@@ -1,4 +1,4 @@
-import { type ComponentRef, memo, useCallback, useLayoutEffect, useRef } from 'react'
+import { type ComponentRef, memo, useCallback, useLayoutEffect, useRef, useEffect } from 'react'
 import { Platform, type TextInput, type TextInputProps } from 'react-native'
 import { Field } from '../../ui/controls/field'
 import { useTheme } from '../../ui/theme'
@@ -6,6 +6,7 @@ import type { DraftSelection } from './dictation-draft'
 
 /** Streaming updates and caret notifications must not update the native text view's props. */
 export const ComposerField = memo(function ComposerField({
+  focusKey,
   showOptions,
   trailingControlCount,
   onSelectionChange,
@@ -17,6 +18,7 @@ export const ComposerField = memo(function ComposerField({
   TextInputProps,
   'value' | 'onChangeText' | 'onFocus' | 'onBlur' | 'editable' | 'placeholder'
 > & {
+  focusKey?: string
   showOptions: boolean
   trailingControlCount: number
   revision: string
@@ -25,6 +27,9 @@ export const ComposerField = memo(function ComposerField({
   const { styles } = useTheme()
 
   const input = useRef<ComponentRef<typeof TextInput>>(null)
+  useEffect(() => {
+    if (focusKey) input.current?.focus()
+  }, [focusKey])
   const initial = useRef(value)
   const nativeText = useRef(value)
   const appliedRevision = useRef(revision)

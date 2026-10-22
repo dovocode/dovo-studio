@@ -43,7 +43,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../../runtime/connection/provider',
       importer: actions,
-      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{queuedTurnSettingsSupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]}]}},pendingMessages:()=>[],call:()=>{},readEffect:window.request,callEffect:window.request});`,
+      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer.lan',token:'device-token'}},snapshot:{queuedTurnSettingsSupported:true,fullTurnSettingsSupported:true,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],call:()=>{},readEffect:window.request,callEffect:window.request});`,
     },
     {
       path: '../../../runtime/preferences/app-preferences',
@@ -58,7 +58,8 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../composer/attachment-picker',
       importer: actions,
-      contents: 'export const useAttachmentPicker=()=>({busy:false,pick(){},upload(){}});',
+      contents:
+        'export const useAttachmentPicker=(_id,editing)=>{window.uploadEdit=file=>editing?.uploaded(file);return {busy:false,pick(){},upload(){}}};',
     },
     {
       path: '../../composer/use-composer-dictation',
@@ -181,6 +182,87 @@ try {
     window.finish()
   })
   await page.waitForFunction(() => !window.actions.busy && window.actions.turnSettings === null)
+
+  await input.fill('Draft kept while editing')
+  await page.evaluate(() =>
+    window.setTask((task) => ({
+      ...task,
+      archived: false,
+      queuePaused: true,
+      queue: [{ id: 'edit-me', role: 'user', text: 'Queued original' }],
+    })),
+  )
+  await page.evaluate(() => window.actions.beginEdit(window.task.queue[0]))
+  assert.equal(await input.inputValue(), 'Queued original')
+  await input.fill('Queued edit')
+  const beforeSettings = await page.evaluate(() => window.requests.length)
+  await page.evaluate(() =>
+    window.actions.setTurnSettings({
+      provider: 'codex',
+      model: 'large',
+      reasoning: 'high',
+      harness: {
+        provider: 'codex',
+        model: 'large',
+        reasoning: 'high',
+        instructions: 'Review',
+        endpoint: '',
+        permission: 'read-only',
+        sandboxMode: 'read-only',
+        approvalPolicy: 'never',
+        serviceTier: 'priority',
+      },
+    }),
+  )
+  assert.equal(await page.evaluate(() => window.requests.length), beforeSettings)
+  await page.evaluate(() =>
+    window.uploadEdit({
+      id: '10000000-0000-0000-0000-000000000000',
+      name: 'edit.txt',
+      size: 2,
+      mime: 'text/plain',
+    }),
+  )
+  assert.equal(await page.evaluate(() => window.actions.draftAttachments[0].name), 'edit.txt')
+  assert.deepEqual(await page.evaluate(() => window.task.draftAttachments), [])
+  await page.evaluate(() => {
+    window.fail = true
+    window.finish = null
+  })
+  await send.click()
+  await page.waitForFunction(() => window.finish !== null)
+  const edit = await page.evaluate(() => window.requests.at(-1))
+  assert.equal(edit.path, '/api/tasks/queue')
+  assert.equal(edit.input.action, 'edit')
+  assert.equal(edit.input.messageId, 'edit-me')
+  assert.equal(edit.input.expectedText, 'Queued original')
+  assert.equal(edit.input.turnSettings.harness.permission, 'read-only')
+  assert.deepEqual(edit.input.attachmentIds, ['10000000-0000-0000-0000-000000000000'])
+  await page.evaluate(() => {
+    window.finish()
+    window.finish = null
+  })
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await input.inputValue(), 'Queued edit')
+  await send.click()
+  await page.waitForFunction(() => window.finish !== null)
+  await page.evaluate(() => {
+    window.fail = false
+    window.finish()
+    window.finish = null
+  })
+  await page.waitForFunction(() => !window.actions.busy && !window.actions.editing)
+  assert.equal(await input.inputValue(), 'Draft kept while editing')
+  assert.equal(await page.evaluate(() => window.task.queuePaused), true)
+  await page.evaluate(() => window.actions.beginEdit(window.task.queue[0]))
+  await page.waitForFunction(() => window.actions.editing?.text === 'Queued original')
+  await input.fill('Unsaved edit')
+  await page.waitForFunction(() => window.actions.editing?.text === 'Unsaved edit')
+  await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
+  await page.waitForFunction(() => !window.actions.canSend)
+  assert.equal(await input.inputValue(), 'Unsaved edit')
+  await page.evaluate(() => window.actions.cancelEdit())
+  assert.equal(await input.inputValue(), 'Draft kept while editing')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile settled-thread submission: drafting, rejected send, stable retries, attachment-only input and archived-thread guard passed.',

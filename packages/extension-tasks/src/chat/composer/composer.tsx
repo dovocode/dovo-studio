@@ -1,5 +1,12 @@
+import { QueueEditContext } from './queue-edit'
+import { createComposerDraft } from './composer-draft'
 import { TurnModelControls } from './turn-model-controls'
-import { sameTurnSettings, type TurnSettings } from '@dovo/protocol'
+import {
+  sameTurnSettings,
+  applyTurnSettings,
+  type TurnSettings,
+  type Attachment,
+} from '@dovo/protocol'
 import { ComposerDictation } from './composer-dictation'
 import { permissionPolicyUIIssue } from '@dovo/studio-ui'
 import { randomUUID, checkpointCanUndo, taskForkResultSchema, taskSchema } from '@dovo/protocol'
@@ -72,13 +79,25 @@ export function Composer({
 }) {
   const { workspace, setWorkspace, request, connected, connection, flush, snapshot } =
     useWorkspace()
-  const [turnSettings, setTurnSettings] = useApplicationState<TurnSettings | null>(
+  const [draftTurnSettings, setDraftTurnSettings] = useApplicationState<TurnSettings | null>(
     task.draftTurnSettings ?? null,
   )
   useEffect(() => {
-    setTurnSettings(task.draftTurnSettings ?? null)
-  }, [task.draftTurnSettings, setTurnSettings])
+    setDraftTurnSettings(task.draftTurnSettings ?? null)
+  }, [task.draftTurnSettings, setDraftTurnSettings])
+  const [editing, setEditing] = useState<{
+    message: Task['messages'][number]
+    controller: ReturnType<typeof createComposerDraft>
+    settings: TurnSettings | null
+    files: Attachment[]
+  } | null>(null)
+  const turnSettings = editing ? editing.settings : draftTurnSettings
+  const setTurnSettings = setDraftTurnSettings
   const changeTurnSettings = (value: TurnSettings | null) => {
+    if (editing) {
+      setEditing({ ...editing, settings: value })
+      return
+    }
     setTurnSettings(value)
     setWorkspace((w) =>
       updateTask(w, task.id, (current) => ({ ...current, draftTurnSettings: value })),
@@ -95,11 +114,35 @@ export function Composer({
   const sending = submitBusy || machineMoving || asideCreating || dictating
   const sendingRequest = useRef(false)
   const [fileDrag, setFileDrag] = useState(false)
-  const attachments = useAttachments(task)
-  const composerDraft = useComposerDraft(task, temporary)
+  const attachments = useAttachments(
+    task,
+    editing && snapshot?.fullTurnSettingsSupported
+      ? {
+          messageId: editing.message.id,
+          files: editing.files,
+          uploaded: (file, replaceId) =>
+            setEditing((current) =>
+              current?.message.id === editing.message.id
+                ? {
+                    ...current,
+                    files: [...current.files.filter((item) => item.id !== replaceId), file],
+                  }
+                : current,
+            ),
+          remove: (id) =>
+            setEditing((current) =>
+              current
+                ? { ...current, files: current.files.filter((item) => item.id !== id) }
+                : current,
+            ),
+        }
+      : undefined,
+  )
+  const composerDraft = useComposerDraft(task, temporary, editing?.controller)
   const askAside = useCommittedCallback(async () => {
     if (
       !onAside ||
+      !!editing ||
       !connected ||
       sendingRequest.current ||
       asideRequest.current ||
@@ -228,12 +271,20 @@ export function Composer({
       .finally(() => setCommandBusy(false))
   }
   const resources = useMemo(
-    () => taskResources(task, workspace, snapshot?.defaults),
+    () =>
+      taskResources(
+        turnSettings?.harness
+          ? { ...task, agentId: '', agentOverrides: undefined, harness: turnSettings.harness }
+          : task,
+        workspace,
+        snapshot?.defaults,
+      ),
     [
       task.id,
       task.agentId,
       task.agentOverrides,
       task.harness,
+      turnSettings,
       task.repositoryId,
       workspace.agents,
       workspace.repositories,
@@ -275,11 +326,15 @@ export function Composer({
   const firstMessage = task.messages.length === 0 && !task.queue?.length && !task.turns?.length
   const agent = resolveTaskAgent(task, workspace.agents)
   const policyIssue = agent
-    ? permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true)
+    ? permissionPolicyUIIssue(
+        applyTurnSettings(agent, turnSettings ?? undefined),
+        snapshot?.permissionPolicySupported === true,
+      )
     : undefined
   // Settings → General → Follow-ups while a task runs: what Enter does mid-turn.
+  const preferences = useAppPreferences()
   const defaultSteerFirst =
-    useAppPreferences().followUp === 'steer' && task.status === 'running' && !turnSettings
+    !editing && preferences.followUp === 'steer' && task.status === 'running' && !turnSettings
   const other = defaultSteerFirst ? 'queue' : 'steer'
   const [altPressed, setAltPressed] = useState(false)
   useEffect(() => {
@@ -304,7 +359,7 @@ export function Composer({
       document.removeEventListener('visibilitychange', visibility)
     }
   }, [task.status])
-  const alternative = altPressed && task.status === 'running' && !turnSettings
+  const alternative = !editing && altPressed && task.status === 'running' && !turnSettings
   const steerFirst = alternative ? !defaultSteerFirst : defaultSteerFirst
   const submitShortcut = alternative ? 'Alt+Enter' : 'Enter'
   const stop = async () => {
@@ -334,9 +389,80 @@ export function Composer({
       setStopping(false)
     }
   }
+  const beginEdit = (message: Task['messages'][number]) => {
+    if (sending || attachments.busy || editing) return
+    composerDraft.flush()
+    setError('')
+    setEditing({
+      message,
+      controller: createComposerDraft(message.text, () => {}),
+      settings: message.turnSettings ?? null,
+      files: message.attachments ?? [],
+    })
+    requestAnimationFrame(() => input.current?.focus())
+  }
+  const saveEdit = async () => {
+    if (
+      !editing ||
+      sendingRequest.current ||
+      !connected ||
+      attachments.busy ||
+      task.archivedAt ||
+      pendingQuestion ||
+      (!editing.controller.text.trim() && !editing.files.length)
+    )
+      return
+    if (editing.settings?.harness && !snapshot?.fullTurnSettingsSupported) {
+      setError('Update the task computer to use all settings for this turn.')
+      return
+    }
+    if (policyIssue) {
+      setError(policyIssue)
+      return
+    }
+    sendingRequest.current = true
+    setSending(true)
+    setError('')
+    try {
+      await request(
+        '/api/tasks/queue',
+        {
+          id: task.id,
+          action: 'edit',
+          messageId: editing.message.id,
+          text: editing.controller.text,
+          expectedText: editing.message.text,
+          ...(snapshot?.fullTurnSettingsSupported
+            ? {
+                attachmentIds: editing.files.map((file) => file.id),
+                expectedAttachmentIds: editing.message.attachments?.map((file) => file.id) ?? [],
+              }
+            : {}),
+          ...(snapshot?.queuedTurnSettingsSupported
+            ? {
+                turnSettings: editing.settings,
+                expectedTurnSettings: editing.message.turnSettings ?? null,
+              }
+            : {}),
+        },
+        responses.ok,
+      )
+      setEditing(null)
+    } catch (cause) {
+      setError(String(cause))
+    } finally {
+      sendingRequest.current = false
+      setSending(false)
+    }
+  }
   const send = async (mode: 'queue' | 'steer' = 'queue') => {
+    if (editing) return saveEdit()
     if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true) {
       setError('Update the task computer to choose a model for this turn.')
+      return
+    }
+    if (turnSettings?.harness && !snapshot?.fullTurnSettingsSupported) {
+      setError('Update the task computer to use all settings for this turn.')
       return
     }
     if (turnSettings && mode === 'steer') {
@@ -538,7 +664,33 @@ export function Composer({
         </div>
       )}
       {attachments.editor}
-      {queuedMessages}
+      <QueueEditContext.Provider value={{ editingId: editing?.message.id, begin: beginEdit }}>
+        {queuedMessages}
+      </QueueEditContext.Provider>
+      {editing && (
+        <div
+          className="mx-auto flex w-full max-w-[var(--chat-max)] items-center gap-2 px-3 py-2 text-xs"
+          aria-label="Editing queued message"
+        >
+          <span className="flex-1">
+            {task.queue?.some((message) => message.id === editing.message.id)
+              ? 'Edit queued message'
+              : 'This message already started or was removed. Your edit is kept in the composer.'}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={sending || attachments.busy}
+            onClick={() => {
+              setEditing(null)
+              setError('')
+            }}
+          >
+            Cancel edit
+          </Button>
+        </div>
+      )}
       <ComposerSurface
         collapsed={collapsed}
         controls={
@@ -548,17 +700,19 @@ export function Composer({
             </span>
           ) : snapshot?.queuedTurnSettingsSupported &&
             agent &&
-            (task.status === 'running' || !!task.queue?.length || !!turnSettings) ? (
+            (!!editing || task.status === 'running' || !!task.queue?.length || !!turnSettings) ? (
             <TurnModelControls
-              composer
-              repositoryId={task.repositoryId}
+              task={task}
               agent={agent}
               value={turnSettings}
               onChange={changeTurnSettings}
               disabled={sending || !!task.archived}
             />
           ) : (
-            <ComposerHarnessControls task={task} disabled={sending || !!task.archived} />
+            <ComposerHarnessControls
+              task={task}
+              disabled={!!editing || sending || !!task.archived}
+            />
           )
         }
         actions={
@@ -572,7 +726,7 @@ export function Composer({
                 onActive={setDictating}
               />
             )}
-            {onAside && !firstMessage && (
+            {onAside && !firstMessage && !editing && (
               <IconButton
                 label="Ask a side question (⌘/Ctrl+;)"
                 type="button"
@@ -587,12 +741,18 @@ export function Composer({
             )}
             {!pendingQuestion && (
               <AttachmentPicker
-                disabled={!connected || sending || !!task.archivedAt || attachments.busy}
+                disabled={
+                  (!!editing && !snapshot?.fullTurnSettingsSupported) ||
+                  !connected ||
+                  sending ||
+                  !!task.archivedAt ||
+                  attachments.busy
+                }
                 upload={attachments.upload}
               />
             )}
 
-            {!pendingQuestion && (task.status !== 'running' || hasInput) && (
+            {!pendingQuestion && (editing || task.status !== 'running' || hasInput) && (
               <div className="flex shrink-0 items-center" role="group" aria-label="Send message">
                 <ComposerSubmit
                   busy={sending}
@@ -602,24 +762,31 @@ export function Composer({
                       : undefined
                   }
                   title={
-                    steerFirst
-                      ? `Steer agent (${submitShortcut})`
-                      : task.status === 'running'
-                        ? `Queue follow-up (${submitShortcut})`
-                        : 'Send message (Enter)'
+                    editing
+                      ? 'Save changes (Enter)'
+                      : steerFirst
+                        ? `Steer agent (${submitShortcut})`
+                        : task.status === 'running'
+                          ? `Queue follow-up (${submitShortcut})`
+                          : 'Send message (Enter)'
                   }
                   aria-label={
-                    steerFirst
-                      ? 'Steer agent'
-                      : task.status === 'running'
-                        ? 'Queue follow-up'
-                        : connected
-                          ? 'Send to agent'
-                          : 'Save message to task'
+                    editing
+                      ? 'Save changes'
+                      : steerFirst
+                        ? 'Steer agent'
+                        : task.status === 'running'
+                          ? 'Queue follow-up'
+                          : connected
+                            ? 'Send to agent'
+                            : 'Save message to task'
                   }
                   disabled={
+                    (!!editing &&
+                      !task.queue?.some((message) => message.id === editing.message.id)) ||
                     !!policyIssue ||
-                    (!composerDraft.hasText && !attachments.files.length) ||
+                    (!composerDraft.hasText &&
+                      !(editing ? editing.files.length : attachments.files.length)) ||
                     sending ||
                     stopping ||
                     attachments.busy ||
@@ -637,9 +804,11 @@ export function Composer({
                   ) : (
                     <ArrowUp className="size-4" />
                   )}
-                  {task.status === 'running' && (steerFirst ? 'Steer' : 'Queue')}
+                  {editing
+                    ? 'Save changes'
+                    : task.status === 'running' && (steerFirst ? 'Steer' : 'Queue')}
                 </ComposerSubmit>
-                {task.status === 'running' && (
+                {!editing && task.status === 'running' && (
                   <DropdownMenu.Root>
                     <DropdownMenu.Trigger asChild>
                       <Button
@@ -722,7 +891,12 @@ export function Composer({
         onDragOver={(event) => {
           if (!event.dataTransfer.types.includes('Files')) return
           event.preventDefault()
-          const allowed = connected && !sending && !attachments.busy && !task.archivedAt
+          const allowed =
+            connected &&
+            !sending &&
+            !attachments.busy &&
+            !task.archivedAt &&
+            (!editing || !!snapshot?.fullTurnSettingsSupported)
           event.dataTransfer.dropEffect = allowed ? 'copy' : 'none'
           setFileDrag(allowed)
         }}
@@ -738,13 +912,23 @@ export function Composer({
           setFileDrag(false)
           if (!event.dataTransfer.files.length) return
           event.preventDefault()
-          if (connected && !sending && !task.archivedAt)
+          if (
+            connected &&
+            !sending &&
+            !task.archivedAt &&
+            (!editing || snapshot?.fullTurnSettingsSupported)
+          )
             void attachments.upload(Array.from(event.dataTransfer.files))
         }}
         onPaste={(event) => {
           if (!event.clipboardData.files.length) return
           event.preventDefault()
-          if (connected && !sending && !task.archivedAt)
+          if (
+            connected &&
+            !sending &&
+            !task.archivedAt &&
+            (!editing || snapshot?.fullTurnSettingsSupported)
+          )
             void attachments.upload(Array.from(event.clipboardData.files))
         }}
         onSubmit={(e) => {
@@ -764,11 +948,19 @@ export function Composer({
           <MessageAttachments
             compact
             taskId={task.id}
-            files={submitBusy ? [] : attachments.files}
+            files={
+              submitBusy
+                ? []
+                : editing && !snapshot?.fullTurnSettingsSupported
+                  ? editing.files
+                  : attachments.files
+            }
             previews={attachments.previews}
             remove={attachments.remove}
             edit={attachments.edit}
-            disabled={sending || attachments.busy}
+            disabled={
+              (!!editing && !snapshot?.fullTurnSettingsSupported) || sending || attachments.busy
+            }
           />
         </div>
         {!!attachments.uploading.length && (
@@ -799,7 +991,9 @@ export function Composer({
         )}
         <ComposerEditor
           onAlternativeSubmit={
-            task.status === 'running' && !turnSettings ? () => void send(other) : undefined
+            !editing && task.status === 'running' && !turnSettings
+              ? () => void send(other)
+              : undefined
           }
           controller={composerDraft.controller}
           messages={task.messages}
@@ -811,7 +1005,7 @@ export function Composer({
             snapshot?.defaults,
           )}
           onCommand={
-            task.messages.length || task.queue?.length || task.turns?.length
+            !editing && (task.messages.length || task.queue?.length || task.turns?.length)
               ? runCommand
               : undefined
           }
@@ -822,17 +1016,19 @@ export function Composer({
           submitBusy={submitBusy}
           submittedText={submittedText}
           placeholder={
-            task.archivedAt
-              ? 'Restore this archived thread to continue'
-              : task.archived
-                ? 'Send a message to reopen this thread…'
-                : task.status === 'running'
-                  ? steerFirst
-                    ? 'Steer the agent while it works…'
-                    : 'Queue a follow-up while the agent works…'
-                  : firstMessage
-                    ? 'What would you like to build or fix?'
-                    : 'Ask a follow-up or describe a change…'
+            editing
+              ? 'Edit queued message…'
+              : task.archivedAt
+                ? 'Restore this archived thread to continue'
+                : task.archived
+                  ? 'Send a message to reopen this thread…'
+                  : task.status === 'running'
+                    ? steerFirst
+                      ? 'Steer the agent while it works…'
+                      : 'Queue a follow-up while the agent works…'
+                    : firstMessage
+                      ? 'What would you like to build or fix?'
+                      : 'Ask a follow-up or describe a change…'
           }
         />
       </ComposerSurface>

@@ -131,3 +131,117 @@ it('accepts and edits one-turn model choices, rejects invalid harnesses and prev
     await runtime.close()
   }
 })
+
+it('edits all turn settings and attachments while preserving queue position and the ordinary draft', async () => {
+  const ownerToken = 'queue-edit-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { store, tasks, attachments } = runtime.services
+    const task = tasks.create({
+      title: 'Edit in composer',
+      repositoryId: '',
+      agentId: '',
+      objective: '',
+    })
+    const harness = {
+      provider: 'codex' as const,
+      model: 'default',
+      endpoint: '',
+      instructions: '',
+      permission: 'ask' as const,
+    }
+    store.updateTask(task.id, (current) => ({
+      ...current,
+      status: 'running',
+      queuePaused: true,
+      draft: 'Keep my draft',
+      harness,
+    }))
+    tasks.queue.add(task.id, 'first', 'First')
+    tasks.queue.add(task.id, 'edit', 'Original')
+    const ordinary = await attachments.upload({
+      taskId: task.id,
+      id: crypto.randomUUID(),
+      name: 'draft.txt',
+      data: Buffer.from('Draft').toString('base64'),
+    })
+    const file = await attachments.upload({
+      taskId: task.id,
+      queuedMessageId: 'edit',
+      id: crypto.randomUUID(),
+      name: 'queued.txt',
+      data: Buffer.from('Queued').toString('base64'),
+    })
+    await attachments.prune()
+    expect(attachments.read(task.id, file.attachment.id).attachment).toEqual(file.attachment)
+    expect(store.task(task.id).draftAttachments).toEqual([ordinary.attachment])
+    const settings = {
+      provider: 'codex',
+      model: 'large',
+      reasoning: 'high',
+      harness: {
+        ...harness,
+        model: 'large',
+        reasoning: 'high',
+        serviceTier: 'priority',
+        permission: 'read-only',
+        sandboxMode: 'read-only',
+        approvalPolicy: 'never',
+        instructions: 'Review only',
+      },
+    }
+    const edit = {
+      id: task.id,
+      action: 'edit',
+      messageId: 'edit',
+      text: 'Changed',
+      expectedText: 'Original',
+      turnSettings: settings,
+      expectedTurnSettings: null,
+      attachmentIds: [file.attachment.id],
+      expectedAttachmentIds: [],
+    }
+    const request = (input: Record<string, unknown>) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+    expect((await request(edit)).status).toBe(200)
+    const after = store.task(task.id)
+    expect(after.queue?.map((message) => message.id)).toEqual(['first', 'edit'])
+    expect(after.queue?.[1]).toMatchObject({
+      text: 'Changed',
+      turnSettings: settings,
+      attachments: [file.attachment],
+    })
+    expect(after.draft).toBe('Keep my draft')
+    expect(after.draftAttachments).toEqual([ordinary.attachment])
+    expect(after.harness).toEqual(harness)
+    expect(after.queuePaused).toBe(true)
+    expect(
+      (
+        await request({
+          ...edit,
+          text: 'Stale attachment edit',
+          expectedText: 'Changed',
+          expectedTurnSettings: settings,
+        })
+      ).status,
+    ).toBe(409)
+    tasks.queue.take(task.id, 'first-run')
+    tasks.queue.take(task.id, 'edited-run')
+    expect(store.task(task.id).runAttempt?.turnSettings).toEqual(settings)
+    await expect(
+      attachments.upload({
+        taskId: task.id,
+        queuedMessageId: 'edit',
+        id: crypto.randomUUID(),
+        name: 'late.txt',
+        data: '',
+      }),
+    ).rejects.toThrow('already started')
+  } finally {
+    await runtime.close()
+  }
+})

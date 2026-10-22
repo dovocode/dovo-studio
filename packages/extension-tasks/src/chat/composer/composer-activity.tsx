@@ -14,7 +14,6 @@ export function ComposerActivity({
   pending?: readonly PendingMessage[]
 }) {
   const [selected, setSelected] = useState('queue')
-  const [queueEditing, setQueueEditing] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const previousInputs = useRef(new Set<string>())
   const { snapshot, request, connected } = useWorkspace()
@@ -32,7 +31,7 @@ export function ComposerActivity({
   }, [task.id, snapshot?.questions, snapshot?.approvals])
   const id = useId()
   const summary = nativeTodoSummary(task)
-  const hasQueue = !!task.queue?.length || queueEditing
+  const hasQueue = !!task.queue?.length
   const both = hasQueue && !!summary
   const active = hasQueue ? (summary ? selected : 'queue') : 'checklist'
   if (!hasQueue && !summary) return null
@@ -115,7 +114,7 @@ export function ComposerActivity({
           aria-labelledby={both ? `${id}-queue` : undefined}
           hidden={collapsed || active !== 'queue'}
         >
-          <MessageQueue task={task} pending={pending} embedded onEditingChange={setQueueEditing} />
+          <MessageQueue task={task} pending={pending} embedded />
         </div>
       )}
       {summary && (

@@ -10,8 +10,8 @@ const built = await bundleBrowser(
       contents: `
 import {useScreenshotAttachment} from './src/browser/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useState} from 'react';import {useAttachments} from './src/chat/composer/use-attachments';
 window.calls=[];window.rows=[];window.stored={};window.failed=false;window.revision=1;
-window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(window.failed)throw Error('Upload rejected');const attachment={id:input.id,name:input.name,mime:'image/png',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:++window.revision}};
-function App(){const [snapshot,setSnapshot]=useState({revision:1,workspace:{tasks:[{id:'task',draftAttachments:[]}]}});window.snapshot=snapshot;window.publish=()=>setSnapshot({revision:window.revision,workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}});const a=useAttachments(snapshot.workspace.tasks[0]);const screenshots=useScreenshotAttachment("task");window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.upload=a.upload;window.edit=a.edit;window.files=a.files;window.working=a.busy;return <>{a.editor}{screenshots.editor}<textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{a.error}</div>{a.files.map(f=><button key={f.id} disabled={a.busy} onClick={()=>void a.edit(f.id)}>{f.name}</button>)}</>};createRoot(document.getElementById('app')).render(<App/>);`,
+window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(window.failed)throw Error('Upload rejected');const attachment={id:input.id,name:input.name,mime:'image/png',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};if(!input.queuedMessageId)window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:++window.revision}};
+function App(){const [snapshot,setSnapshot]=useState({revision:1,workspace:{tasks:[{id:'task',draftAttachments:[]}]}});window.snapshot=snapshot;window.publish=()=>setSnapshot({revision:window.revision,workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}});const [editing,setEditing]=useState(null);window.beginEdit=()=>setEditing({messageId:'queued',files:window.files.slice(0,1)});window.cancelEdit=()=>setEditing(null);window.editing=editing;const a=useAttachments(snapshot.workspace.tasks[0],editing?{...editing,uploaded:(file,replaceId)=>setEditing(current=>({...current,files:[...current.files.filter(item=>item.id!==replaceId),file]})),remove:id=>setEditing(current=>({...current,files:current.files.filter(file=>file.id!==id)}))}:undefined);window.remove=a.remove;const screenshots=useScreenshotAttachment("task");window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.upload=a.upload;window.edit=a.edit;window.files=a.files;window.working=a.busy;return <>{a.editor}{screenshots.editor}<textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{a.error}</div>{a.files.map(f=><button key={f.id} disabled={a.busy} onClick={()=>void a.edit(f.id)}>{f.name}</button>)}</>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -161,6 +161,31 @@ try {
     }),
     true,
   )
+  await page.evaluate(() => window.publish())
+  const ordinaryFiles = await page.evaluate(() => window.rows.map((file) => file.id))
+  await page.evaluate(() => window.beginEdit())
+  await page.waitForFunction(() => !!window.editing)
+  await page.evaluate(async () =>
+    window.upload([new File(['queued'], 'edit.txt', { type: 'text/plain' })]),
+  )
+  const queuedUpload = await page.evaluate(() => window.calls.at(-1))
+  assert.equal(queuedUpload.input.queuedMessageId, 'queued')
+  assert.deepEqual(await page.evaluate(() => window.rows.map((file) => file.id)), ordinaryFiles)
+  assert.equal(
+    await page.evaluate(() =>
+      window.files.some((file) => file.id === window.calls.at(-1).input.id),
+    ),
+    true,
+  )
+  await page.evaluate(() => window.remove(window.calls.at(-1).input.id))
+  assert.equal(
+    await page.evaluate(() =>
+      window.files.some((file) => file.id === window.calls.at(-1).input.id),
+    ),
+    false,
+  )
+  await page.evaluate(() => window.cancelEdit())
+  assert.deepEqual(await page.evaluate(() => window.files.map((file) => file.id)), ordinaryFiles)
   assert.deepEqual(errors, [])
   console.log(
     'Image attachments: real desktop editor uploads, cropped replacement before snapshot acknowledgement, cancel, failed replacement, screenshot edit/attach/cancel, input validation and draft preservation passed.',

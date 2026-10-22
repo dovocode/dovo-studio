@@ -130,9 +130,9 @@ function App(){
   const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;const [text,setText]=useState('Continue the review');const [connected,setConnected]=useState(true);
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
   const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
-  const draft={text,ready:true,key:'draft',revision:text,update:setText};
+  const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
   window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
-  window.conversation={send:mode=>window.calls.push({mode:mode??'queue'}),stop:()=>window.calls.push({mode:'stop'}),actions:{turnSettings,setTurnSettings,agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!text,canSend:connected&&!!text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
+  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
   return <Composer task={task} renderAbove={setup=> <>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -219,13 +219,11 @@ try {
   assert.equal(await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(), '')
   await page.getByRole('button', { name: /1 queued messages/ }).click()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
-  await page
-    .getByRole('textbox', { name: 'Edit queued message', exact: true })
-    .fill('Verify before shipping')
-  await page.getByRole('combobox', { name: 'Turn model', exact: true }).selectOption('fast-model')
-  await page
-    .getByRole('combobox', { name: 'Turn reasoning level', exact: true })
-    .selectOption('low')
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Verify before shipping')
+  await page.getByRole('button', { name: 'Agent & model', exact: true }).click()
+  await page.getByRole('button', { name: 'Fast model', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).selectOption('low')
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'edit')
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.expectedText), 'Check the tests')
@@ -235,7 +233,6 @@ try {
     reasoning: 'low',
   })
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.expectedTurnSettings), null)
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Explain this checkout')
   await page.getByRole('button', { name: 'Ask a side question', exact: true }).click()
   await page.waitForFunction(() =>
@@ -376,19 +373,14 @@ try {
   await page.getByTestId('Queued messages').waitFor()
   await page.getByTestId('Queued messages').click()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
-  await page
-    .getByRole('textbox', { name: 'Edit queued message', exact: true })
-    .fill('Keep native queue edit')
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Keep native queue edit')
   await page.evaluate(() =>
     window.setInputs({
       questions: [{ id: 'foreign', taskId: 'other', prompt: {} }],
       approvals: [],
     }),
   )
-  assert.equal(
-    await page.getByRole('dialog', { name: 'Queued messages', exact: true }).isVisible(),
-    true,
-  )
+  assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
   await page.evaluate(() =>
     window.setInputs({
       questions: [{ id: 'question', taskId: 'task', prompt: { blocking: false } }],
@@ -399,7 +391,7 @@ try {
   assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
   await expand.click()
   assert.equal(
-    await page.getByRole('textbox', { name: 'Edit queued message', exact: true }).inputValue(),
+    await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
     'Keep native queue edit',
   )
   await page.evaluate(() =>
@@ -408,10 +400,7 @@ try {
       approvals: [],
     }),
   )
-  assert.equal(
-    await page.getByRole('dialog', { name: 'Queued messages', exact: true }).isVisible(),
-    true,
-  )
+  assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
   await page.evaluate(() =>
     window.setInputs({
       questions: [{ id: 'question', taskId: 'task', prompt: { blocking: false } }],
@@ -422,12 +411,12 @@ try {
   await page.evaluate(() => window.setInputs({ questions: [], approvals: [] }))
   await expand.click()
   await page.evaluate(() => window.setTask({ queue: [] }))
-  await page.getByRole('tab', { name: 'Queue · 0', exact: true }).waitFor()
+  await page.getByText('Native progress step', { exact: true }).waitFor()
   assert.equal(
-    await page.getByRole('textbox', { name: 'Edit queued message', exact: true }).inputValue(),
+    await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
     'Keep native queue edit',
   )
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
   await page.getByText('Native progress step', { exact: true }).waitFor()
   assert.equal(await page.getByRole('tab').count(), 0)
   await collapse.click()
@@ -494,7 +483,7 @@ try {
   await page.getByRole('tab', { name: 'Queue · 1', exact: true }).click()
   await page.getByTestId('Queued messages').click()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
-  const queueEdit = page.getByRole('textbox', { name: 'Edit queued message', exact: true })
+  const queueEdit = page.getByRole('textbox', { name: 'Message', exact: true })
   await queueEdit.fill('Keep edit after clearing checklist')
   await page.getByRole('tab', { name: /Checklist · 0\/1/ }).click()
   await clear.click()

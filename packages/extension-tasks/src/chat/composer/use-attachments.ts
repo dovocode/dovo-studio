@@ -11,14 +11,23 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
   type Task,
+  type Attachment,
 } from '@dovo/studio-core'
 import { useWorkspace } from '@dovo/studio-core'
-export function useAttachments(task: Pick<Task, 'id' | 'draftAttachments'>) {
+export function useAttachments(
+  task: Pick<Task, 'id' | 'draftAttachments'>,
+  editing?: {
+    messageId: string
+    files: Attachment[]
+    uploaded: (file: Attachment, replaceId?: string) => void
+    remove: (id: string) => void
+  },
+) {
   const { request, snapshot, connected } = useWorkspace()
   const imageEditor = useImageEditor()
   const lock = useRef(false)
   const urls = useRef(new Set<string>())
-  const [uploads, setUploads] = useState<LocalAttachment[]>([])
+  const [uploads, setUploads] = useState<(LocalAttachment & { scope?: string })[]>([])
   useEffect(
     () => () => {
       for (const url of urls.current) URL.revokeObjectURL(url)
@@ -29,13 +38,20 @@ export function useAttachments(task: Pick<Task, 'id' | 'draftAttachments'>) {
   const [working, setWorking] = useApplicationState(false),
     [error, setError] = useApplicationState(''),
     [pending, setPending] = useApplicationState<number | null>(null)
-  const savedFiles =
-    (snapshot?.workspace.tasks.find((t) => t.id === task.id) ?? task).draftAttachments ?? []
+  const savedFiles = editing
+    ? editing.files
+    : ((snapshot?.workspace.tasks.find((t) => t.id === task.id) ?? task).draftAttachments ?? [])
   useEffect(() => {
     if (!connected || (pending !== null && snapshot && snapshot.revision >= pending))
       setPending(null)
   }, [snapshot, connected, pending])
-  const files = draftAttachments(savedFiles, uploads, snapshot?.revision)
+  const files = editing
+    ? editing.files
+    : draftAttachments(
+        savedFiles,
+        uploads.filter((item) => item.scope === undefined),
+        snapshot?.revision,
+      )
   const previews = new Map(
     uploads.flatMap((item) => (item.url ? [[item.attachment.id, item.url] as const] : [])),
   )
@@ -118,7 +134,12 @@ export function useAttachments(task: Pick<Task, 'id' | 'draftAttachments'>) {
       })
       setUploads((current) => [
         ...current,
-        ...batch.map(({ attachment, url }) => ({ attachment, url, replaces: replaceId })),
+        ...batch.map(({ attachment, url }) => ({
+          attachment,
+          url,
+          replaces: replaceId,
+          scope: editing?.messageId,
+        })),
       ])
       await Promise.all(
         batch.map(async ({ file, attachment, url }) => {
@@ -136,6 +157,7 @@ export function useAttachments(task: Pick<Task, 'id' | 'draftAttachments'>) {
               replaceId ? '/api/attachments/replace' : '/api/attachments/upload',
               {
                 taskId: task.id,
+                queuedMessageId: editing?.messageId,
                 id: attachment.id,
                 name: file.name,
                 data,
@@ -143,6 +165,7 @@ export function useAttachments(task: Pick<Task, 'id' | 'draftAttachments'>) {
               },
               attachmentUploadResultSchema,
             )
+            editing?.uploaded(result.attachment, replaceId)
             setUploads((current) =>
               current.map((item) =>
                 item.attachment.id === attachment.id
@@ -170,6 +193,10 @@ export function useAttachments(task: Pick<Task, 'id' | 'draftAttachments'>) {
     }
   }
   const remove = async (id: string) => {
+    if (editing) {
+      editing.remove(id)
+      return
+    }
     if (lock.current) return
     lock.current = true
     setWorking(true)

@@ -306,46 +306,61 @@ export const taskFeedbackSchema = refine(
   (v) => v.end >= v.start,
   'Invalid line range',
 )
-/** A one-turn model choice, bound to the current harness. Empty strings use provider defaults. */
+// Keep nested message/sync declarations bounded while retaining the full harness codec.
+const turnHarnessSchema: Schema.Codec<
+  TaskHarness,
+  Schema.Codec.Encoded<typeof taskHarnessSchema>
+> = taskHarnessSchema
+/** One-turn settings, bound to the thread's provider and ACP installation. */
 export const turnSettingsSchema = strictStruct({
   provider: providerSchema,
   acpInstallationId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   model: maxValue(Schema.String, 500),
   reasoning: maxValue(Schema.String, 200),
+  harness: Schema.optional(turnHarnessSchema),
 })
 export type TurnSettings = Schema.Schema.Type<typeof turnSettingsSchema>
-export function sameTurnSettings(a?: TurnSettings | null, b?: TurnSettings | null) {
-  return !a || !b
-    ? !a && !b
-    : a.provider === b.provider &&
-        a.acpInstallationId === b.acpInstallationId &&
-        a.model === b.model &&
-        a.reasoning === b.reasoning
+/** Stable across object key ordering and JSON persistence of optional fields. */
+export function turnSettingsKey(settings?: TurnSettings | null) {
+  return JSON.stringify(settings ?? null, (_key, value: unknown) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+      : value,
+  )
 }
-export function agentTurnSettings(agent: TaskHarness): TurnSettings {
+export function sameTurnSettings(a?: TurnSettings | null, b?: TurnSettings | null) {
+  return !a || !b ? !a && !b : turnSettingsKey(a) === turnSettingsKey(b)
+}
+export function agentTurnSettings(agent: TaskHarness, full = false): TurnSettings {
   return {
     provider: agent.provider,
     ...(agent.acpInstallationId ? { acpInstallationId: agent.acpInstallationId } : {}),
     model: agent.model,
     reasoning: agent.reasoning ?? '',
+    ...(full ? { harness: Schema.decodeUnknownSync(taskHarnessSchema)(agent) } : {}),
   }
 }
 export function turnSettingsMatchHarness(settings: TurnSettings, agent: TaskHarness) {
   return (
-    settings.provider === agent.provider && settings.acpInstallationId === agent.acpInstallationId
+    settings.provider === agent.provider &&
+    settings.acpInstallationId === agent.acpInstallationId &&
+    (!settings.harness ||
+      (settings.harness.provider === settings.provider &&
+        settings.harness.acpInstallationId === settings.acpInstallationId))
   )
 }
 export function applyTurnSettings<T extends TaskHarness>(agent: T, settings?: TurnSettings): T {
-  return settings
-    ? {
-        ...agent,
-        model: settings.model,
-        reasoning: settings.reasoning,
-        ...(settings.model !== agent.model
-          ? { serviceTier: undefined, cyberAccessProgram: undefined }
-          : {}),
-      }
-    : agent
+  if (!settings) return agent
+  const selected = { ...agent }
+  if (settings.harness) {
+    // A full snapshot replaces optional fields too; clearing a setting must not inherit it again.
+    for (const key of Object.keys(taskHarnessSchema.fields))
+      Reflect.set(selected, key, Reflect.get(settings.harness, key))
+  } else if (settings.model !== agent.model) {
+    selected.serviceTier = undefined
+    selected.cyberAccessProgram = undefined
+  }
+  return { ...selected, model: settings.model, reasoning: settings.reasoning }
 }
 export function turnSettingsLabel(settings: TurnSettings) {
   return `${settings.model || 'Provider default'} · ${settings.reasoning || 'Default reasoning'}`
