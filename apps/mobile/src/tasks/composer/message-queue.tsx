@@ -14,13 +14,25 @@ import { IconButton } from '../../ui/controls/icon-button'
 import { useTheme } from '../../ui/theme'
 import { useTaskConversation } from '../conversation/state/provider'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
-export function MessageQueue({ task, embedded = false }: { task: Task; embedded?: boolean }) {
+export function MessageQueue({
+  task,
+  embedded = false,
+  onOpenChange,
+}: {
+  task: Task
+  embedded?: boolean
+  onOpenChange?: (open: boolean) => void
+}) {
   const { colors, styles } = useTheme()
 
   const { connected, callEffect, snapshot } = useRuntime(),
     { act, busy, error } = useAction()
   const { actions } = useTaskConversation()
   const [open, setOpen] = useApplicationState(false)
+  const changeOpen = (value: boolean) => {
+    setOpen(value)
+    onOpenChange?.(value)
+  }
   const [editing, setEditing] = useApplicationState<{
     id: string
     text: string
@@ -86,7 +98,7 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
         )
         actions.draft.update([actions.draft.text, message.text].filter(Boolean).join('\n\n'))
         actions.setTurnSettings(message.turnSettings ?? null)
-        setOpen(false)
+        changeOpen(false)
       }),
     )
   if (!queue.length && !open) return null
@@ -116,7 +128,7 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
           accessibilityLabel={`${queue.length} queued messages, ${task.queuePaused ? 'paused' : 'after this turn'}`}
           onPress={() => {
             if (actions.dictation.active) actions.dictation.stop()
-            setOpen(true)
+            changeOpen(true)
           }}
           style={({ pressed }) => ({
             minHeight: 44,
@@ -153,7 +165,7 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
         </Pressable>
       )}
       {open && (
-        <Sheet title="Queued messages" onClose={() => setOpen(false)} busy={busy}>
+        <Sheet title="Queued messages" onClose={() => changeOpen(false)} busy={busy}>
           {!!queue.length && (
             <Action
               secondary

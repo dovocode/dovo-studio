@@ -12,9 +12,10 @@ export function ComposerActivity({
   pending?: readonly PendingMessage[]
 }) {
   const [selected, setSelected] = useState('queue')
+  const [queueEditing, setQueueEditing] = useState(false)
   const id = useId()
   const summary = nativeTodoSummary(task)
-  const hasQueue = !!task.queue?.length
+  const hasQueue = !!task.queue?.length || queueEditing
   const both = hasQueue && !!summary
   const active = hasQueue ? (summary ? selected : 'queue') : 'checklist'
   if (!hasQueue && !summary) return null
@@ -81,7 +82,7 @@ export function ComposerActivity({
           aria-labelledby={both ? `${id}-queue` : undefined}
           hidden={active !== 'queue'}
         >
-          <MessageQueue task={task} pending={pending} embedded />
+          <MessageQueue task={task} pending={pending} embedded onEditingChange={setQueueEditing} />
         </div>
       )}
       {summary && (

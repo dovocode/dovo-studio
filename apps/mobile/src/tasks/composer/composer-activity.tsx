@@ -12,9 +12,10 @@ export function ComposerActivity({ task }: { task: Task }) {
   const { colors, styles } = useTheme()
   const { actions } = useTaskConversation()
   const [selected, setSelected] = useState('queue')
+  const [queueOpen, setQueueOpen] = useState(false)
   const summary = nativeTodoSummary(task)
   const queue = pendingQueue(task, actions.pendingMessages)
-  const hasQueue = !!queue.length
+  const hasQueue = !!queue.length || queueOpen
   const both = hasQueue && !!summary
   const active = hasQueue ? (summary ? selected : 'queue') : 'checklist'
   if (!hasQueue && !summary) return null
@@ -80,7 +81,7 @@ export function ComposerActivity({ task }: { task: Task }) {
       </View>
       {hasQueue && (
         <View style={{ display: active === 'queue' ? 'flex' : 'none' }}>
-          <MessageQueue task={task} embedded />
+          <MessageQueue task={task} embedded onOpenChange={setQueueOpen} />
         </View>
       )}
       {summary && (

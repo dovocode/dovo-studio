@@ -366,11 +366,22 @@ try {
   assert.equal(await page.getByTestId('Queued messages').isVisible(), false)
   await queueTab.click()
   await page.getByTestId('Queued messages').waitFor()
+  await page.getByTestId('Queued messages').click()
+  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'Edit queued message', exact: true })
+    .fill('Keep native queue edit')
   await page.evaluate(() => window.setTask({ queue: [] }))
+  await page.getByRole('tab', { name: 'Queue · 0', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Edit queued message', exact: true }).inputValue(),
+    'Keep native queue edit',
+  )
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByText('Native progress step', { exact: true }).waitFor()
   assert.equal(await page.getByRole('tab').count(), 0)
   await page.evaluate(() => window.setTask({ nativeTodos: [] }))
-  assert.equal(await page.getByLabel('Composer activity', { exact: true }).count(), 0)
+  await page.getByLabel('Composer activity', { exact: true }).waitFor({ state: 'detached' })
   assert.deepEqual(errors, [])
   console.log(
     'Mobile composer: compact/queue/input order, inline 44pt actions at 320px, steer and fork dispatch, queue editing, immediate side-chat sending, failure recovery and offline guards passed with native control adapters.',

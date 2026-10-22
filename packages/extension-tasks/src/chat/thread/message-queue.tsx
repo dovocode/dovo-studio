@@ -18,9 +18,11 @@ export function MessageQueue({
   task,
   pending,
   embedded = false,
+  onEditingChange,
 }: {
   task: Task
   embedded?: boolean
+  onEditingChange?: (editing: boolean) => void
   pending?: readonly PendingMessage[] | null
 }) {
   const { request, connected, workspace, snapshot } = useWorkspace(),
@@ -33,6 +35,10 @@ export function MessageQueue({
     turnSettings: TurnSettings | null
     expectedTurnSettings: TurnSettings | null
   } | null>(null)
+  const changeEditing = (value: typeof editing) => {
+    setEditing(value)
+    onEditingChange?.(!!value)
+  }
   const queue = task.queue ?? []
   const agent = resolveTaskAgent(task, workspace.agents)
   const [dragging, setDragging] = useApplicationState<{ taskId: string; messageId: string } | null>(
@@ -93,7 +99,7 @@ export function MessageQueue({
         },
         responses.ok,
       )
-      if (action === 'edit') setEditing(null)
+      if (action === 'edit') changeEditing(null)
     } catch (e) {
       setError(String(e))
     } finally {
@@ -241,7 +247,7 @@ export function MessageQueue({
                   !connected || busy || pending?.some((item) => item.message.id === message.id)
                 }
                 onClick={() =>
-                  setEditing({
+                  changeEditing({
                     id: message.id,
                     text: message.text,
                     expectedText: message.text,
@@ -319,7 +325,7 @@ export function MessageQueue({
                 autoFocus
                 className="min-h-20 w-full rounded-md border bg-background p-2 text-sm"
                 value={editing.text}
-                onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+                onChange={(event) => changeEditing({ ...editing, text: event.target.value })}
                 disabled={busy}
               />
               {agent && snapshot?.queuedTurnSettingsSupported && (
@@ -345,7 +351,12 @@ export function MessageQueue({
                 >
                   Save
                 </Button>
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(null)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => changeEditing(null)}
+                >
                   Cancel edit
                 </Button>
               </div>

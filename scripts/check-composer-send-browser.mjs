@@ -648,10 +648,18 @@ try {
   assert.equal(await queuedEdit.inputValue(), 'Unsaved queue edit')
   assert.equal(await queueTab.evaluate((el) => el === document.activeElement), true)
   await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
+  await page.getByRole('tab', { name: 'Queue · 0', exact: true }).waitFor()
+  assert.equal(await queuedEdit.inputValue(), 'Unsaved queue edit')
+  await page
+    .getByText('This message already started or was removed. Your edit is kept below.', {
+      exact: true,
+    })
+    .waitFor()
+  await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
   await page.getByRole('list', { name: 'Checklist items' }).waitFor()
   assert.equal(await page.getByRole('tab').count(), 0)
   await page.evaluate(() => window.setTask((task) => ({ ...task, nativeTodos: [] })))
-  assert.equal(await page.locator('[aria-label="Composer activity"]').count(), 0)
+  await page.locator('[aria-label="Composer activity"]').waitFor({ state: 'detached' })
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch and immediate side-chat sending via icon and shortcut passed.',
