@@ -114,6 +114,7 @@ const initialSnapshot = decode(snapshotSchema, {
   revision: 1,
   owner: true,
   queuedTurnSettingsSupported: true,
+  fullTurnSettingsSupported: true,
   permissionPolicySupported: true,
   defaults: {
     harness: { ...defaultTaskHarness('codex'), model: 'gpt-6.1-sol', reasoning: 'high' },
@@ -185,6 +186,10 @@ export function ComposerFixtureProvider({ children }: { children: ReactNode }) {
         if (action === 'edit' && typeof editedText !== 'string')
           throw new Error('Editing a queued message requires replacement text.')
         const replacementText = typeof editedText === 'string' ? editedText : undefined
+        const attachmentIds =
+          payload.attachmentIds === undefined
+            ? undefined
+            : Schema.decodeUnknownSync(Schema.Array(Schema.String))(payload.attachmentIds)
         if (action === 'steer') {
           setRequests((current) => [...current, recordRequest(path, input, 'preview unsupported')])
           throw new Error('Steering queued messages is not available in this local preview.')
@@ -210,10 +215,14 @@ export function ComposerFixtureProvider({ children }: { children: ReactNode }) {
             if (index < queue.length - 1)
               [queue[index + 1], queue[index]] = [queue[index], queue[index + 1]]
           } else if (action === 'edit')
-            queue[index] = {
+            queue[index] = decode(queuedMessageSchema, {
               ...queue[index],
               text: replacementText ?? queue[index].text,
-            }
+              turnSettings: payload.turnSettings ?? undefined,
+              attachments: attachmentIds
+                ? queue[index].attachments?.filter((file) => attachmentIds.includes(file.id))
+                : queue[index].attachments,
+            })
           else if (action === 'restore')
             return {
               ...current,

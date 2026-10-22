@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import type { Task } from '@dovo/studio-core'
 import { ChatMessage } from '../../../packages/extension-tasks/src/chat/thread/chat-message'
 import { MessageQueue } from '../../../packages/extension-tasks/src/chat/thread/message-queue'
+import { Composer } from '../../../packages/extension-tasks/src/chat/composer/composer'
 import { recentTools } from '../../../packages/protocol/src/automation/activity'
 import { Button } from '../../../packages/studio-ui/src/components/ui/button'
 import { useWorkspace } from '@dovo/studio-core'
@@ -82,7 +83,11 @@ function QueueExample() {
           ))}
         </div>
       </header>
-      <MessageQueue task={task} pending={pending} />
+      <Composer
+        task={task}
+        onPending={() => undefined}
+        queuedMessages={<MessageQueue task={task} pending={pending} />}
+      />
       <p className="mt-4 text-xs text-muted-foreground">
         Try editing a message, moving the other item, pausing the queue, or selecting steer to see
         the preview-only failure.
@@ -111,7 +116,7 @@ function QueueStory() {
 export const EditableQueuedFollowUps: StoryObj = {
   render: () => <QueueStory />,
   parameters: story(
-    'Mounts the production MessageQueue with synthetic task data and an in-memory workspace adapter. Edit and reorder confirmed items, pause or resume the queue, and switch a queued delivery through sending/saved/failed states. Steering is explicitly unsupported and visible in both the component error and request log; reset restores the initial queue.',
+    'Mounts the production MessageQueue inside its Composer with synthetic task data and an in-memory workspace adapter. Edit confirmed items in the main composer, save or cancel changes, reorder items, pause or resume the queue, and switch a queued delivery through sending/saved/failed states. Steering is explicitly unsupported and visible in both the component error and request log; reset restores the initial queue.',
   ),
 }
 
@@ -193,11 +198,11 @@ function ConversationExample() {
         connected={connected}
         request={request}
       />
-      <MessageQueue task={task} pending={pending} />
-      <div className="rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-        Composer preview omitted here; the follow-up queue is interactive above. Attachment preview
-        is served from synthetic in-memory bytes.
-      </div>
+      <Composer
+        task={task}
+        onPending={() => undefined}
+        queuedMessages={<MessageQueue task={task} pending={pending} />}
+      />
       <PreviewRequestLog />
     </main>
   )

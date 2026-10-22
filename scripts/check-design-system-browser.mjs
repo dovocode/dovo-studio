@@ -496,12 +496,24 @@ try {
   await openStory('dovo-patterns-task-conversation--editable-queued-follow-ups')
   await page.getByRole('button', { name: 'Confirmed', exact: true }).click()
   await page.locator('summary').filter({ hasText: '2 queued' }).click()
+  const queueComposer = page.getByRole('textbox', { name: 'Message task', exact: true })
+  await queueComposer.fill('Keep my ordinary draft')
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  assert.equal(
+    await queueComposer.inputValue(),
+    'Keep the existing blue accent, but soften the background.',
+  )
+  await queueComposer.fill('Cancelled edit')
+  await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
+  assert.equal(await queueComposer.inputValue(), 'Keep my ordinary draft')
   await page
-    .getByRole('textbox', { name: 'Edit queued message', exact: true })
-    .fill('Edited local follow-up')
-  await page.getByRole('button', { name: 'Save', exact: true }).click()
+    .getByTitle('Keep the existing blue accent, but soften the background.', { exact: true })
+    .waitFor()
+  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  await queueComposer.fill('Edited local follow-up')
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.getByTitle('Edited local follow-up', { exact: true }).waitFor()
+  assert.equal(await queueComposer.inputValue(), 'Keep my ordinary draft')
   await page.getByRole('button', { name: 'Move queued message 2 up', exact: true }).click()
   await page.getByRole('button', { name: 'Pause queue', exact: true }).click()
   await page.getByRole('button', { name: 'Resume queue', exact: true }).click()
