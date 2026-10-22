@@ -192,9 +192,12 @@ try {
       queue: [{ id: 'edit-me', role: 'user', text: 'Queued original' }],
     })),
   )
+  await page.waitForFunction(() => window.task.queue?.[0]?.id === 'edit-me')
   await page.evaluate(() => window.actions.beginEdit(window.task.queue[0]))
+  await page.waitForFunction(() => window.actions.editing?.text === 'Queued original')
   assert.equal(await input.inputValue(), 'Queued original')
   await input.fill('Queued edit')
+  await page.waitForFunction(() => window.actions.editing?.text === 'Queued edit')
   const beforeSettings = await page.evaluate(() => window.requests.length)
   await page.evaluate(() =>
     window.actions.setTurnSettings({
@@ -214,6 +217,7 @@ try {
       },
     }),
   )
+  await page.waitForFunction(() => window.actions.turnSettings?.harness?.serviceTier === 'priority')
   assert.equal(await page.evaluate(() => window.requests.length), beforeSettings)
   await page.evaluate(() =>
     window.uploadEdit({
@@ -223,6 +227,7 @@ try {
       mime: 'text/plain',
     }),
   )
+  await page.waitForFunction(() => window.actions.draftAttachments?.[0]?.name === 'edit.txt')
   assert.equal(await page.evaluate(() => window.actions.draftAttachments[0].name), 'edit.txt')
   assert.deepEqual(await page.evaluate(() => window.task.draftAttachments), [])
   await page.evaluate(() => {
@@ -262,6 +267,7 @@ try {
   await page.waitForFunction(() => !window.actions.canSend)
   assert.equal(await input.inputValue(), 'Unsaved edit')
   await page.evaluate(() => window.actions.cancelEdit())
+  await page.waitForFunction(() => !window.actions.editing)
   assert.equal(await input.inputValue(), 'Draft kept while editing')
   assert.deepEqual(errors, [])
   console.log(
