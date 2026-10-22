@@ -1,5 +1,5 @@
+import { createRuntimeClient, taskFileShareSchema, taskImageReadSchema } from '@dovo/protocol'
 import { useEffect, useState } from 'react'
-import { taskFileShareSchema, taskImageReadSchema } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 
@@ -39,7 +39,7 @@ export function ProjectImagePreview({
         return uri
       }
       const { url } = await request('/api/tasks/files/share', { taskId, path }, taskFileShareSchema)
-      return new URL(`${url}?content=1`, connection.address).toString()
+      return createRuntimeClient(connection).url(`${url}?content=1`)
     }
     void load().then(
       (uri) => {

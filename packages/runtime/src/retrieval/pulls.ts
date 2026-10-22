@@ -15,7 +15,7 @@ import {
 } from '@dovo/protocol'
 
 const number = pullSummarySchema.fields.number
-export const pullOperationSchema = Schema.Union([
+const pullOperationSchema = Schema.Union([
   mutableStruct({
     kind: Schema.Literal('list'),
     state: Schema.Literals(['open', 'closed', 'all']),
@@ -31,7 +31,7 @@ export const pullOperationSchema = Schema.Union([
   mutableStruct({ kind: Schema.Literal('act'), input: pullActionSchema }),
 ])
 export type PullOperation = typeof pullOperationSchema.Type
-export const pullPeerScopeSchema = mutableStruct({
+const pullPeerScopeSchema = mutableStruct({
   provider: forgeProviderSchema,
   instance: refine(
     maxValue(urlSchema({ protocol: /^https?$/ }), 2048),

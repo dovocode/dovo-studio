@@ -4,7 +4,7 @@ import { Schema } from 'effect'
 import { withCatalogRpc } from './rpc.js'
 import { vibeConfig, vibeInitialize, vibeServerInfo } from '../providers/vibe/vibe-protocol.js'
 
-export function inspectVibe<T>(
+function inspectVibe<T>(
   agent: AgentDiscovery,
   inspect: (rpc: MessageConnection, info: typeof vibeServerInfo.Type.serverInfo) => Promise<T>,
 ) {

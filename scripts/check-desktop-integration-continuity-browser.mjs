@@ -107,7 +107,7 @@ const stubs = [
     contents: 'export const WorkForm=()=>null;',
   },
   {
-    path: './pipeline-detail',
+    path: './pipeline-state',
     importer: root + 'packages/extension-scm/src/work/',
     contents: 'export const PipelineState=()=>null;',
   },

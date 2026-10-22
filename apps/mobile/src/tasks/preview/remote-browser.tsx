@@ -1,16 +1,19 @@
 import { useScreenshotAttachment } from './screenshot-attachment'
 import { Text } from '../../ui/content/text'
-import { runtimeTransportAddress } from '@dovo/protocol'
+import {
+  createRuntimeClient,
+  mutableStruct,
+  decodeResult,
+  remoteBrowserTicketSchema,
+  responses,
+} from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { mutableStruct } from '@dovo/protocol'
-import { decodeResult } from '@dovo/protocol'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { AppState, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Schema, Effect } from 'effect'
-import { remoteBrowserTicketSchema, responses } from '@dovo/protocol'
 import { remoteBrowserHtml } from '@dovo/protocol/browser-viewer'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../../ui/theme'
@@ -97,15 +100,13 @@ export function RemoteBrowser({
             AppState.currentState === 'background'
           )
             return
-          const target = new URL(
+          const target = createRuntimeClient(connection).socketUrl(
             deviceId ? '/ws/simulator' : '/ws/browser',
-            runtimeTransportAddress(connection),
+            result.ticket,
           )
-          target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:'
-          target.searchParams.set('ticket', result.ticket)
           post({
             type: 'connect',
-            url: target.href,
+            url: target,
             device: result.device,
           })
           post({

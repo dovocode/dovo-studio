@@ -23,7 +23,7 @@ it('keeps HTTP runtimes on ws, forwards only active calls and cancels them on di
   const call = vi.fn<(value: { requestId: string; name: string; arguments: unknown }) => void>()
   const cancel = vi.fn<(requestId: string) => void>()
   const bridge = startMcpAppTools({
-    address: 'http://100.64.0.2:4000',
+    socketUrl: (ticket) => `ws://100.64.0.2:4000/ws/mcp-app?ticket=${ticket}`,
     ticket: async () => 'single-use',
     call,
     cancel,
@@ -63,7 +63,7 @@ it('resolves its transport address after ticket acquisition selects an alternate
   vi.stubGlobal('WebSocket', Socket)
   let address = 'http://old-lan.local'
   const bridge = startMcpAppTools({
-    address: () => address,
+    socketUrl: (ticket) => `${address.replace('http:', 'ws:')}/ws/mcp-app?ticket=${ticket}`,
     ticket: async () => {
       address = 'http://vpn.local'
       return 'alternate-ticket'

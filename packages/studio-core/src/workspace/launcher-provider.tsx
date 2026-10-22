@@ -1,9 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Effect } from 'effect'
-import { runClientEffect } from '@dovo/client-runtime'
 import {
+  createRuntimeClient,
   decodeResult,
-  runtimeRequestEffect,
   sameRuntimeConnection,
   snapshotSchema,
   type RuntimeRegistry,
@@ -11,6 +8,9 @@ import {
   type RuntimeProfile,
   type RuntimeReadCache,
 } from '@dovo/protocol'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Effect } from 'effect'
+import { runClientEffect } from '@dovo/client-runtime'
 import { type WorkspaceContextValue } from './context'
 import { WorkspaceValueProvider } from './selector'
 import { createWorkspace } from './seed'
@@ -73,36 +73,33 @@ export function LauncherWorkspaceProvider({
           )
         if (!valid())
           return Effect.fail(new Error('This computer connection changed. Reopen quick task.'))
-        return runtimeRequestEffect(
-          profile.connection,
-          profile.connection.address,
-          path,
-          input,
-          schema,
-          method,
-        ).pipe(
-          Effect.flatMap((result) => {
-            if (!valid())
-              return Effect.fail(new Error('This computer connection changed. Reopen quick task.'))
-            if (path === '/api/snapshot') {
-              const decoded = decodeResult(snapshotSchema, result)
-              if (decoded.success)
-                setEntries((before) => ({
-                  ...before,
-                  [profile.id]: {
-                    profile,
-                    snapshot: decoded.data,
-                    connected: true,
-                    lastSeen: new Date().toISOString(),
-                    error: null,
-                    pulls: null,
-                    pullError: null,
-                  },
-                }))
-            }
-            return Effect.succeed(result)
-          }),
-        )
+        return createRuntimeClient(profile.connection)
+          .requestEffect(path, input, schema, { method })
+          .pipe(
+            Effect.flatMap((result) => {
+              if (!valid())
+                return Effect.fail(
+                  new Error('This computer connection changed. Reopen quick task.'),
+                )
+              if (path === '/api/snapshot') {
+                const decoded = decodeResult(snapshotSchema, result)
+                if (decoded.success)
+                  setEntries((before) => ({
+                    ...before,
+                    [profile.id]: {
+                      profile,
+                      snapshot: decoded.data,
+                      connected: true,
+                      lastSeen: new Date().toISOString(),
+                      error: null,
+                      pulls: null,
+                      pullError: null,
+                    },
+                  }))
+              }
+              return Effect.succeed(result)
+            }),
+          )
       }),
     [],
   )

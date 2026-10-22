@@ -17,7 +17,7 @@ const mocks = {
   './use-work-sources': `export const useWorkSources=(mode,query,kind,key,state,filters)=>{window.lastQuery={state,filters};const source=window.source;const items=window.issues.filter(item=>(state==='all'||state==='open'&&item.state!=='Released'||state==='closed'&&item.state==='Released'||item.state===state)&&(!filters?.priority||item.priority===filters.priority)&&(!filters?.label||item.labels.includes(filters.label))&&(!filters?.assignee||filters.assignee==='all'||filters.assignee==='unassigned'&&!item.assignees.length||filters.assignee==='mine'&&item.assignees.includes('me')));return {sources:[source],pages:[{source,reader:source,items,options:{issues:true},next:'30'}],busy:false,refresh:()=>{},more:async()=>{window.moreCount++}}};`,
   './work-sources': `export const workRemoteKey=source=>source.jira?JSON.stringify(['jira',new URL(source.jira.site).origin,source.jira.project]):source.key;export const matchesWorkSource=(source,key)=>!key||source.key===key||workRemoteKey(source)===key;export const jiraSourceKey=(a,b)=>a+b;export const useIssueSources=()=>[window.source];`,
   '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,
-  './pipeline-detail': `export const PipelineState=()=>null;`,
+  './pipeline-state': `export const PipelineState=()=>null;`,
   './content': `export const WorkContent=({initialSelected,onBack})=><div><h2>Preview {initialSelected}</h2><button onClick={onBack}>Close preview</button></div>;`,
   './work-form': `export const WorkForm=()=>null;`,
   '../connections/source-picker': `export const SourcePicker=()=>null;`,

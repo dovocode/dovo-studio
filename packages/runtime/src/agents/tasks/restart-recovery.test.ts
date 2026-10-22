@@ -777,11 +777,10 @@ it.each([false, true])(
       ),
     )
     expect(run).toHaveBeenCalledTimes(resumeInterrupted ? 1 : 0)
-    expect(restarted.services.store.task(task.id).restartRecovery).toEqual(
-      resumeInterrupted
-        ? undefined
-        : expect.objectContaining({ automatic: false, resumeRequested: false }),
-    )
+    const recovery = restarted.services.store.task(task.id).restartRecovery
+    expect(
+      recovery && { automatic: recovery.automatic, resumeRequested: recovery.resumeRequested },
+    ).toEqual(resumeInterrupted ? undefined : { automatic: false, resumeRequested: false })
     expect(restarted.services.preferences.get().autoContinueAfterRestart).toBe(!resumeInterrupted)
   },
 )

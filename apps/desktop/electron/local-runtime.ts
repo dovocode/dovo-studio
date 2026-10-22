@@ -1,6 +1,6 @@
+import { createRuntimeClient, RUNTIME_PROTOCOL_VERSION, mutableStruct } from '@dovo/protocol'
 import { readListenAddress, writeListenAddress } from '@dovo/api/listen-address'
 import { desktopRuntimeDirectory } from './runtime-data-directory.js'
-import { runtimeRequest, RUNTIME_PROTOCOL_VERSION, mutableStruct } from '@dovo/protocol'
 import { homedir, uptime } from 'node:os'
 import { ensureBackgroundRuntime, stopBackgroundRuntimeForUpdate } from './background-runtime.js'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -75,7 +75,7 @@ const existingRuntime = (requireCompatible = true) =>
     if (!saved) return undefined
     return yield* Effect.tryPromise({
       try: async (signal) => {
-        const response = await fetch(saved.address + '/api/snapshot', {
+        const response = await fetch(saved.address + '/api/snapshot?scope=overview', {
           headers: {
             Authorization: `Bearer ${saved.token}`,
           },
@@ -578,9 +578,7 @@ const externalStatusSchema = mutableStruct({
 export async function localRuntimeNetwork(directory: string, address: string) {
   const local = await startLocalRuntime(directory)
   if (local.address !== address) return { local: false, host: '', port: 0, canChange: false }
-  const status = await runtimeRequest(
-    local,
-    local.address,
+  const status = await createRuntimeClient(local).request(
     '/api/runtime/network/read',
     {},
     externalStatusSchema,
@@ -607,17 +605,15 @@ export function pauseLocalRuntime() {
         if (connection) {
           const state = yield* Effect.tryPromise({
             try: () =>
-              runtimeRequest(
-                connection,
-                connection.address,
-                '/api/snapshot',
+              createRuntimeClient(connection).request(
+                '/api/snapshot?scope=overview',
                 undefined,
                 mutableStruct({
                   workspace: mutableStruct({
                     tasks: Schema.Array(mutableStruct({ status: Schema.String })),
                   }),
                 }),
-                'GET',
+                { method: 'GET' },
               ),
             catch: failure,
           }).pipe(
@@ -662,16 +658,12 @@ export async function setLocalRuntimeNetwork(
       'This listener is managed outside the desktop app. Change DOVO_HOST and DOVO_PORT through its supervisor.',
     )
   const local = await startLocalRuntime(directory)
-  const previous = await runtimeRequest(
-    local,
-    local.address,
+  const previous = await createRuntimeClient(local).request(
     '/api/runtime/network/read',
     {},
     externalStatusSchema,
   )
-  const next = await runtimeRequest(
-    local,
-    local.address,
+  const next = await createRuntimeClient(local).request(
     '/api/runtime/network/save',
     { enabled, host: '0.0.0.0', port: port ?? previous.port },
     externalStatusSchema,
@@ -687,9 +679,7 @@ export async function setLocalRuntimeNetwork(
     })
   } catch (cause) {
     try {
-      await runtimeRequest(
-        local,
-        local.address,
+      await createRuntimeClient(local).request(
         '/api/runtime/network/save',
         { enabled: previous.enabled, host: previous.host, port: previous.port },
         externalStatusSchema,

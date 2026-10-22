@@ -7,7 +7,7 @@ import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
 import { isDeepStrictEqual } from 'node:util'
 import type { WorkspaceStore } from '../../storage/workspace.js'
-import { RuntimeServices } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { HttpError, runtimeOperation } from '../../errors.js'
 import { body } from '../support/body.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)

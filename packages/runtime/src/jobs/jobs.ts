@@ -204,7 +204,9 @@ export class Jobs {
         (run) =>
           run.id !== except &&
           run.automationId === automationId &&
-          (['running', 'waiting'].includes(run.status) || this.active.has(run.id)),
+          (['running', 'waiting'].includes(run.status) ||
+            this.active.has(run.id) ||
+            run.taskIds.some((id) => this.tasks.hasWorkingFamily(id))),
       )
     )
       throw new HttpError(409, 'This automation already has an active run')
@@ -276,9 +278,7 @@ export class Jobs {
     if (
       runSteps(reconciled).some(
         (step) =>
-          step.status !== 'completed' &&
-          step.taskId &&
-          this.store.get().tasks.find((task) => task.id === step.taskId)?.status === 'running',
+          step.status !== 'completed' && step.taskId && this.tasks.hasWorkingFamily(step.taskId),
       )
     )
       throw new HttpError(409, 'This step is still running in its task. Wait for it to finish.')
@@ -344,22 +344,26 @@ export class Jobs {
     if (!['running', 'waiting'].includes(run.status))
       throw new HttpError(409, 'This run has already finished')
     this.finish(id, 'cancelled')
-    this.stopTask(run)
+    return this.stopTask(run)
   }
-  private stopTask(run: StoredRun) {
+  private async stopTask(run: StoredRun) {
     const taskId = runSteps(run).find((step) => step.nodeId === run.currentNodeId)?.taskId
     if (!taskId || !this.tasks.hasWorkingFamily(taskId)) return
     try {
       const task = this.store.taskSummary(taskId)
       if (task.activeRunId) this.tasks.cancel(taskId, task.activeRunId)
       else {
-        this.tasks.stopAgents(taskId, taskFamilyRunToken(this.store.get().tasks, taskId))
-        this.store.updateTask(taskId, (task) => ({
-          ...task,
-          status: 'cancelled',
-          queuePaused: true,
-          error: 'Automation stopped while delegated work was unfinished',
-        }))
+        // Catch only synchronous stale-state races; native shutdown rejections must propagate.
+        return this.tasks
+          .stopAgents(taskId, taskFamilyRunToken(this.store.get().tasks, taskId))
+          .then(() => {
+            this.store.updateTask(taskId, (task) => ({
+              ...task,
+              status: 'cancelled',
+              queuePaused: true,
+              error: 'Automation stopped while delegated work was unfinished',
+            }))
+          })
       }
     } catch (error) {
       if (!(error instanceof HttpError && error.status === 409)) throw error
@@ -518,11 +522,13 @@ export class Jobs {
             const execution = yield* this.tasks.startEffect(task.id)
             const current = this.runs.get(id)
             if (!current || current.status !== 'running' || this.stopping) {
-              this.stopTask({
-                ...run,
-                steps: runSteps(this.runs.get(id) ?? run),
-                currentNodeId: node.id,
-              })
+              yield* Effect.promise(() =>
+                this.stopTask({
+                  ...run,
+                  steps: runSteps(this.runs.get(id) ?? run),
+                  currentNodeId: node.id,
+                }),
+              )
               yield* Effect.exit(execution.completion)
               return
             }
@@ -576,7 +582,7 @@ export class Jobs {
                 'Runtime stopped during execution. Retry to resume unfinished steps.',
                 true,
               ),
-            ).pipe(Effect.ensuring(Effect.sync(() => this.stopTask(run)))),
+            ).pipe(Effect.ensuring(Effect.promise(() => this.stopTask(run)))),
           ),
       )
       yield* Effect.forEach(this.active.values(), (fiber) => Fiber.await(fiber), {

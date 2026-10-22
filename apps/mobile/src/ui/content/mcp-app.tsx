@@ -1,4 +1,12 @@
-import { runtimeTransportAddress } from '@dovo/protocol'
+import {
+  createRuntimeClient,
+  mcpAppDownloads,
+  responses,
+  mcpAppResponseSchema,
+  mcpAppRpcResponseSchema,
+  type McpAppReference,
+  type McpApp,
+} from '@dovo/protocol'
 import { startMcpAppTools } from '@dovo/client-runtime'
 import { SafeModal } from '../layout/safe-modal'
 import { File, Paths } from 'expo-file-system'
@@ -8,14 +16,6 @@ import { Alert, View } from 'react-native'
 import { Action } from '../controls/action'
 import * as Crypto from 'expo-crypto'
 import WebView from 'react-native-webview'
-import {
-  mcpAppDownloads,
-  responses,
-  mcpAppResponseSchema,
-  mcpAppRpcResponseSchema,
-  type McpAppReference,
-  type McpApp,
-} from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from './text'
 import { useOpenAppLink } from './open-link'
@@ -71,7 +71,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     const sendTool = (value: unknown) =>
       view.current?.injectJavaScript(`window.dovoMcpAppTool(${JSON.stringify(value)});true;`)
     const current = startMcpAppTools({
-      address: () => runtimeTransportAddress(connection),
+      socketUrl: (ticket) => createRuntimeClient(connection).socketUrl('/ws/mcp-app', ticket),
       ticket: async () =>
         (
           await call(
@@ -221,8 +221,8 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
               for (const item of files) {
                 const file = new File(Paths.cache, `${Crypto.randomUUID()}-${item.name}`)
                 try {
-                  if (item.text !== undefined) file.write(item.text)
-                  else file.write(item.blob ?? '', { encoding: 'base64' })
+                  if (item.text !== undefined) await file.write(item.text)
+                  else await file.write(item.blob ?? '', { encoding: 'base64' })
                   await Sharing.shareAsync(file.uri, { mimeType: item.mime })
                 } finally {
                   if (file.exists) file.delete()

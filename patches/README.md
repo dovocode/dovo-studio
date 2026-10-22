@@ -31,9 +31,6 @@ without checking the applied patch and its fixture.
 - **@mcp-ui/legacy:** keep the alias on client 5.17.3. Client 7 removed the legacy HTML/Remote DOM
   renderer; modern MCP apps already use `@modelcontextprotocol/ext-apps`. Verify both formats with
   `pnpm test:mcp-apps:browser`.
-- **web-tree-sitter:** keep 0.25.10 because 0.27 removed support for the legacy WASM dynamic-linking
-  metadata used by `tree-sitter-wasms`. Upgrade together with compatible grammar binaries, then run
-  the review ordering and source-analysis tests.
 - **iOS scenes:** use Expo 58's `ExpoAppSceneDelegate` for native startup and lifecycle forwarding.
   Dovo's scene plugin only seeds the cold-start quick-action URL before React starts. Run
   `expo prebuild --no-install --platform ios` to verify generated projects.

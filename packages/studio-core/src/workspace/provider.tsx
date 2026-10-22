@@ -1,24 +1,53 @@
-import type { WorkspacePatchResult } from '@dovo/protocol'
-import { runtimeComputerName, runtimeHasCustomName } from '@dovo/protocol'
 import {
+  createRuntimeClient,
+  runtimeComputerName,
+  runtimeHasCustomName,
   mergeSharedSettings,
   pendingSharedSettings,
   sharedSettingsSyncSchema,
-} from '@dovo/protocol'
-import { writeRuntimeSnapshotCache } from '@dovo/protocol'
-import { RuntimeMutations } from '@dovo/protocol'
-import { browserMutationStorage } from './read-cache'
-import { runtimeSnapshotPath } from '@dovo/protocol'
-import {
+  writeRuntimeSnapshotCache,
+  RuntimeMutations,
+  runtimeSnapshotPath,
   learnRuntimeRoutes,
   retryRuntimeSync,
   startRuntimeSync,
   runtimeSyncOnline,
+  retainWorkspace,
+  pendingAgentPresets,
+  recoverRuntimePairings,
+  mutableStruct,
+  decode,
+  decodeResult,
+  saveRuntimePairing,
+  cancelRuntimePairing,
+  type PairingProof,
+  connectionSchema,
+  snapshotSchema,
+  runtimeSnapshotCacheSchema,
+  responses,
+  runtimeProfile,
+  upsertRuntime,
+  removeRuntime,
+  loadRuntimeOverviewEffect,
+  loadFleetPullOverviewsEffect,
+  pullOverviewScope,
+  clearRuntimeRequestCache,
+  getRuntimeSnapshotTag,
+  retainRuntimeSnapshot,
+  sameRuntimeConnection,
+  retainOverviewSnapshot,
+  shouldPublishOverview,
+  type RuntimeConnection,
+  type RuntimeSnapshot,
+  type RuntimeProfile,
+  type RuntimeRegistry,
+  type RuntimeOverview,
+  type RuntimeReadCache,
+  type WorkspacePatchResult,
 } from '@dovo/protocol'
-import { retainWorkspace } from '@dovo/protocol'
+import { browserMutationStorage } from './read-cache'
 import { recentSnapshot } from '../runtime/recent-snapshot'
 import { useAppPreferences, updateAppPreferences, readAppPreferences } from '../preferences'
-import { pendingAgentPresets } from '@dovo/protocol'
 import {
   type WorkspaceRequest,
   type WorkspaceRequestEffect,
@@ -45,38 +74,6 @@ import {
 } from 'react'
 import { Effect, Result, Schema, Semaphore } from 'effect'
 import { startPolling, runClientEffect, clientTaskScope } from '@dovo/client-runtime'
-import {
-  recoverRuntimePairings,
-  mutableStruct,
-  decode,
-  decodeResult,
-  saveRuntimePairing,
-  cancelRuntimePairing,
-  type PairingProof,
-  connectionSchema,
-  snapshotSchema,
-  runtimeSnapshotCacheSchema,
-  responses,
-  runtimeProfile,
-  upsertRuntime,
-  removeRuntime,
-  loadRuntimeOverviewEffect,
-  loadFleetPullOverviewsEffect,
-  pullOverviewScope,
-  runtimeRequestEffect,
-  clearRuntimeRequestCache,
-  getRuntimeSnapshotTag,
-  retainRuntimeSnapshot,
-  sameRuntimeConnection,
-  retainOverviewSnapshot,
-  shouldPublishOverview,
-  type RuntimeConnection,
-  type RuntimeSnapshot,
-  type RuntimeProfile,
-  type RuntimeRegistry,
-  type RuntimeOverview,
-  type RuntimeReadCache,
-} from '@dovo/protocol'
 import { createWorkspace } from './seed'
 import { decodeWorkspace, encodeWorkspace, storageKey } from './persistence'
 import {
@@ -87,7 +84,7 @@ import {
   subscribeRuntimeRegistry,
 } from './runtime-registry'
 import type { Workspace } from './schema'
-import { runtimeRequest } from '../runtime/client'
+
 import { WorkspaceSynchronization, type WorkspaceOutbox } from '../runtime/synchronization'
 import { workspacePatches } from '../runtime/patches'
 import {
@@ -725,13 +722,11 @@ export function WorkspaceProvider({
                 : null
             const value =
               cached ??
-              (yield* runtimeRequestEffect(
-                profile.connection,
-                profile.connection.address,
+              (yield* createRuntimeClient(profile.connection).requestEffect(
                 runtimeSnapshotPath(profile.connection),
                 undefined,
                 snapshotSchema,
-                'GET',
+                { method: 'GET' },
               ))
             if (attempt !== connecting.current)
               return yield* Effect.fail(new Error('Another runtime connection was selected'))
@@ -971,15 +966,12 @@ export function WorkspaceProvider({
         // Owner credentials (the local desktop runtime) are refused by design and ignored.
         if (profile)
           await runClientEffect(
-            runtimeRequestEffect(
-              profile.connection,
-              profile.connection.address,
-              '/api/devices/revoke-self',
-              {},
-              responses.ok,
-              'POST',
-              4000,
-            ).pipe(Effect.ignore),
+            createRuntimeClient(profile.connection)
+              .requestEffect('/api/devices/revoke-self', {}, responses.ok, {
+                method: 'POST',
+                timeoutMs: 4000,
+              })
+              .pipe(Effect.ignore),
           )
       } finally {
         changingConnection.current = false
@@ -1057,13 +1049,11 @@ export function WorkspaceProvider({
     if (!target || target !== connectionRef.current) throw new Error('Runtime connection changed')
     const attempt = ++connecting.current
     const checkpoint = synchronization.checkpoint()
-    const value = await runtimeRequest(
-      target,
-      target.address,
+    const value = await createRuntimeClient(target).request(
       runtimeSnapshotPath(target),
       undefined,
       snapshotSchema,
-      'GET',
+      { method: 'GET' },
     )
     if (target !== connectionRef.current || attempt !== connecting.current)
       throw new Error('Runtime connection changed')
@@ -1188,13 +1178,11 @@ export function WorkspaceProvider({
       if (!target || !profile || synchronization.isSending())
         throw new Error('Wait for sync to finish, then review the conflict.')
       const checkpoint = synchronization.checkpoint()
-      const value = await runtimeRequest(
-        target,
-        target.address,
+      const value = await createRuntimeClient(target).request(
         runtimeSnapshotPath(target),
         undefined,
         snapshotSchema,
-        'GET',
+        { method: 'GET' },
       )
       if (
         target !== connectionRef.current ||
@@ -1516,13 +1504,11 @@ export function WorkspaceProvider({
         if (firstLocalConnection) {
           const localConnection = firstLocalConnection
           yield* Effect.gen(function* () {
-            const initial = yield* runtimeRequestEffect(
-              localConnection,
-              localConnection.address,
+            const initial = yield* createRuntimeClient(localConnection).requestEffect(
               runtimeSnapshotPath(localConnection),
               undefined,
               snapshotSchema,
-              'GET',
+              { method: 'GET' },
             )
             if (
               initial.owner &&
@@ -1530,13 +1516,9 @@ export function WorkspaceProvider({
               !initial.workspace.repositories.some((repo) => repo.kind !== 'scratch') &&
               !initial.workspace.tasks.length
             )
-              yield* runtimeRequestEffect(
-                localConnection,
-                localConnection.address,
-                '/api/workspace/import',
-                initialWorkspace,
-                responses.ok,
-              ).pipe(Effect.uninterruptible)
+              yield* createRuntimeClient(localConnection)
+                .requestEffect('/api/workspace/import', initialWorkspace, responses.ok)
+                .pipe(Effect.uninterruptible)
           }).pipe(Effect.catch((error) => Effect.sync(() => setSyncError(error.message))))
         }
         if (!outbox)
@@ -1634,10 +1616,6 @@ export function WorkspaceProvider({
         const previous = overviewsRef.current[id]
         if (previous) updateOverview({ ...previous, connected: false, error: message })
       },
-      onStatus: (syncStatus) => {
-        const previous = overviewsRef.current[id]
-        if (!stopped && previous) updateOverview({ ...previous, syncStatus })
-      },
       active: () => inputPreview || document.visibilityState === 'visible',
       onWake: () => wakeFallback(),
       onSnapshot: (value) => {
@@ -1681,14 +1659,17 @@ export function WorkspaceProvider({
         // times the last successful read, between 10 and 60 seconds.
         const startedAt = Date.now()
         const response = yield* Effect.result(
-          runtimeRequestEffect(
-            connection,
-            connection.address,
+          createRuntimeClient(connection).requestEffect(
             runtimeSnapshotPath(connection),
             undefined,
             snapshotSchema,
-            'GET',
-            Math.min(60000, Math.max(10000, (snapshotDurations.current.get(id) ?? 0) * 3)),
+            {
+              method: 'GET',
+              timeoutMs: Math.min(
+                60000,
+                Math.max(10000, (snapshotDurations.current.get(id) ?? 0) * 3),
+              ),
+            },
           ),
         )
         if (Result.isSuccess(response)) {

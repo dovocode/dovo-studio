@@ -1,5 +1,10 @@
 import { useScreenshotAttachment } from './screenshot-attachment'
-import { runtimeTransportAddress } from '@dovo/protocol'
+import {
+  createRuntimeClient,
+  decodeResult,
+  remoteBrowserMessageSchema,
+  type RemoteBrowserMessage,
+} from '@dovo/protocol'
 import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 import {
   useWorkspace,
@@ -8,7 +13,6 @@ import {
   responses,
   readAppPreferences,
 } from '@dovo/studio-core'
-import { decodeResult, remoteBrowserMessageSchema, type RemoteBrowserMessage } from '@dovo/protocol'
 export function RemoteBrowser({
   taskId,
   active = true,
@@ -73,14 +77,12 @@ export function RemoteBrowser({
       if (generation !== version.current) return
       if (tabId && (result.tabId !== tabId || result.profileId !== profileId))
         throw new Error('Update the connected runtime to use remote browser tabs.')
-      const target = new URL(
+      const target = createRuntimeClient(connection).socketUrl(
         deviceId ? '/ws/simulator' : '/ws/browser',
-        runtimeTransportAddress(connection),
+        result.ticket,
       )
-      target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:'
-      target.searchParams.set('ticket', result.ticket)
       if (tabId) post({ type: 'visibility', visible: visibility.current })
-      post({ type: 'connect', url: target.href, device: result.device })
+      post({ type: 'connect', url: target, device: result.device })
     } catch (error) {
       if (generation === version.current)
         post({ type: 'error', message: error instanceof Error ? error.message : String(error) })

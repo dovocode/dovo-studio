@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import { MobileAccountContext } from './account-context'
-export { MobileAccountContext, useMobileAccount } from './account-context'
+export { useMobileAccount } from './account-context'
 import { Linking } from 'react-native'
 import * as SecureStore from 'expo-secure-store'
 import { useRuntime } from './provider'

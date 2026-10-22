@@ -35,8 +35,7 @@ import {
   copyFile,
   realpath,
 } from 'node:fs/promises'
-import { join, dirname, basename, posix } from 'node:path'
-import type { ReviewModule } from '../reviews/order.js'
+import { join, dirname, basename } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { Schema } from 'effect'
 import { commandsSchema, REPOSITORY_CLONE_TIMEOUT_MS, type CommandSettings } from '@dovo/protocol'
@@ -1086,152 +1085,6 @@ export class GitService {
       return { files, omitted: [] }
     })
   }
-  /** Bounded, read-only sources for AST review ordering. Missing local PR commits need no fetch. */
-  async reviewGoModules(
-    cwd: string,
-    files: { path: string; previousPath?: string }[],
-    before?: string,
-    after?: string,
-    mergeBase = false,
-  ): Promise<ReviewModule[]> {
-    const names = new Set<string>()
-    for (const file of files.slice(0, 100)) {
-      for (const path of [file.path, file.previousPath]) {
-        if (!path?.endsWith('.go') || posix.isAbsolute(path) || path.split('/').includes('..'))
-          continue
-        let directory = posix.dirname(path)
-        while (names.size < 100) {
-          names.add(posix.join(directory, 'go.mod'))
-          if (directory === '.') break
-          directory = posix.dirname(directory)
-        }
-      }
-    }
-    if (!names.size) return []
-    if (mergeBase && before && after) {
-      try {
-        before = (await this.command(cwd, ['merge-base', before, after])).trim()
-      } catch {
-        return []
-      }
-    }
-    const read = async (ref?: string) => {
-      const contents = new Map<string, string>()
-      let remaining = 128 * 1024
-      if (ref !== undefined) {
-        if (!/^[a-f0-9]{40,64}$/i.test(ref)) return contents
-        let tree: Awaited<ReturnType<GitService['treeFiles']>>
-        try {
-          tree = await this.treeFiles(cwd, ref, [...names])
-        } catch {
-          return contents
-        }
-        await this.withBlobs(cwd, async (blobs) => {
-          for (const [path, entry] of tree) {
-            if (
-              entry.size > 32 * 1024 ||
-              entry.size > remaining ||
-              !['100644', '100755'].includes(entry.mode)
-            )
-              continue
-            contents.set(path, await blobs.text(entry.hash, entry.size))
-            remaining -= entry.size
-          }
-        })
-      } else {
-        for (const path of names) {
-          const filename = join(cwd, path)
-          try {
-            const info = await lstat(filename)
-            if (!info.isFile() || info.size > 32 * 1024 || info.size > remaining) continue
-            contents.set(path, await readFile(filename, 'utf8'))
-            remaining -= info.size
-          } catch (error) {
-            if (
-              !(
-                error instanceof Error &&
-                'code' in error &&
-                ['ENOENT', 'ENOTDIR'].includes(String(error.code))
-              )
-            )
-              throw error
-          }
-        }
-      }
-      return contents
-    }
-    const oldRead = read(before)
-    const [old, current] = await Promise.all([oldRead, before === after ? oldRead : read(after)])
-    return [...names]
-      .filter((path) => old.has(path) || current.has(path))
-      .map((path) => ({ path, before: old.get(path), after: current.get(path) }))
-  }
-  /** Complete immutable code sources, bounded independently from module metadata. */
-  async reviewSources(
-    cwd: string,
-    base: string,
-    head: string,
-    files: { path: string; previousPath?: string }[],
-  ) {
-    if (!/^[a-f0-9]{40,64}$/i.test(base) || !/^[a-f0-9]{40,64}$/i.test(head)) return []
-    const candidates = files.filter((file) => reviewLanguage(file.path)).slice(0, 100)
-    if (!candidates.length) return []
-    let trees: Awaited<ReturnType<GitService['treeFiles']>>[]
-    try {
-      const mergeBase = (await this.command(cwd, ['merge-base', base, head])).trim()
-      trees = await Promise.all([
-        this.treeFiles(
-          cwd,
-          mergeBase,
-          candidates.map((file) => file.previousPath ?? file.path),
-        ),
-        this.treeFiles(
-          cwd,
-          head,
-          candidates.map((file) => file.path),
-        ),
-      ])
-    } catch {
-      return [] // PR commits can be absent from this checkout; the viewer labels its folder fallback.
-    }
-    let remaining = 1024 * 1024
-    const selected = candidates.filter((file) => {
-      const sides = [trees[0].get(file.previousPath ?? file.path), trees[1].get(file.path)]
-      if (
-        sides.some(
-          (side) =>
-            side && (side.size > 256 * 1024 || side.mode === '120000' || side.mode === '160000'),
-        )
-      )
-        return false
-      const size = sides.reduce((sum, side) => sum + (side?.size ?? 0), 0)
-      if (size > remaining) return false
-      remaining -= size
-      return true
-    })
-    const sources: { path: string; previousPath?: string; before: string; after: string }[] = []
-    return this.withBlobs(cwd, async (blobs) => {
-      for (const file of selected) {
-        const contents: string[] = []
-        for (const side of [
-          trees[0].get(file.previousPath ?? file.path),
-          trees[1].get(file.path),
-        ]) {
-          const text = side ? await blobs.text(side.hash, side.size) : ''
-          if (text.includes('\0') || text.includes('\ufffd')) break
-          contents.push(text)
-        }
-        if (contents.length === 2)
-          sources.push({
-            path: file.path,
-            previousPath: file.previousPath,
-            before: contents[0],
-            after: contents[1],
-          })
-      }
-      return sources
-    })
-  }
   private async withBlobs<T>(cwd: string, read: (blobs: GitBlobReader) => Promise<T>): Promise<T> {
     const args = [this.settings().git, 'cat-file', '--batch']
     let started = false
@@ -1641,4 +1494,3 @@ export class GitService {
     )
   }
 }
-import { reviewLanguage } from '../reviews/languages.js'

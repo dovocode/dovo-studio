@@ -9,11 +9,17 @@ export function SettingsPage({
   description,
   children,
   local = false,
+  headerActions,
+  toolbar,
+  wide = false,
 }: {
   title: string
   description: string
   children: ReactNode
   local?: boolean
+  headerActions?: ReactNode
+  toolbar?: ReactNode
+  wide?: boolean
 }) {
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -23,14 +29,16 @@ export function SettingsPage({
             This device · saved automatically
           </span>
         )}
+        {headerActions}
       </PageHeader>
+      {toolbar}
       <div
         role="region"
         aria-label={`${title} settings`}
         tabIndex={0}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-6"
       >
-        <div className="mx-auto max-w-3xl space-y-4">{children}</div>
+        <div className={`mx-auto ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-4`}>{children}</div>
       </div>
     </section>
   )

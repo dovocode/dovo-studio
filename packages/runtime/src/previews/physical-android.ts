@@ -3,7 +3,7 @@ import { promisify } from 'node:util'
 import sharp from 'sharp'
 import type { PreviewDevice } from '@dovo/protocol'
 import type { NativeSimulator } from './simulator-native.js'
-import { androidTool } from './devices.js'
+import { androidTool } from './android-tool.js'
 import { androidScreenSize, androidKeys, nativePreparation } from './simulator-native.js'
 import { HttpError } from '../errors.js'
 

@@ -1,17 +1,16 @@
-import { createHash } from 'node:crypto'
-import type Database from 'better-sqlite3'
-import { Schema } from 'effect'
 import {
+  createRuntimeClient,
   decode,
   mutableStruct,
-  runtimeRequestEffect,
   RuntimeRequestError,
   type RuntimeConnection,
   type RuntimeIcon,
 } from '@dovo/protocol'
+import { createHash } from 'node:crypto'
+import type Database from 'better-sqlite3'
+import { Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { retrievalContext } from './context.js'
-import { retrievalLocal } from './context.js'
+import { retrievalContext, retrievalLocal, type RetrievalHook } from './context.js'
 import { HttpError } from '../errors.js'
 import { pullOperationWrites, type PullOperation, type PullPeerScope } from './pulls.js'
 import {
@@ -44,20 +43,15 @@ export type RetrievalTransport = <T, I>(
 ) => Promise<T>
 const transport: RetrievalTransport = (peer, path, input, schema, timeout) =>
   runClientEffect(
-    runtimeRequestEffect(
-      peer.connection,
-      peer.connection.address,
-      path,
-      input,
-      schema,
-      'POST',
-      timeout,
-    ),
+    createRuntimeClient(peer.connection).requestEffect(path, input, schema, {
+      method: 'POST',
+      timeoutMs: timeout,
+    }),
   )
 
 /** One deterministic preferred executor per connected fleet. Remote execution is always local-only,
  * so partial peer views cannot create forwarding loops. PR operations retain one persistent owner. */
-export class SharedRetrieval {
+export class SharedRetrieval implements RetrievalHook {
   onInvalidate?: () => void
   private subscriptions = new Map<string, { request: RetrievalRequest; until: number }>()
   private timer?: ReturnType<typeof setInterval>

@@ -4,7 +4,6 @@ import {
   scopedSettingsResultSchema,
   taskBehaviorOrigin,
   type Repository,
-  type ScopedSettingsValue,
   type SettingsScope,
   type TaskBehavior,
 } from '@dovo/protocol'
@@ -67,7 +66,7 @@ export function TaskBehaviorSettings({
   repository?: Repository
 }) {
   const { request, connected, snapshot } = useWorkspace()
-  const [loaded, setLoaded] = useState<Awaited<ReturnType<typeof load>> | null>(null)
+  const [loaded, setLoaded] = useState<typeof scopedSettingsResultSchema.Type | null>(null)
   const [draft, setDraft] = useState<TaskBehavior>({})
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -77,13 +76,6 @@ export function TaskBehaviorSettings({
   const dirty =
     !!loaded && JSON.stringify(draft) !== JSON.stringify(loaded.value.taskBehavior ?? {})
   useSettingsDraft(dirty, busy)
-  function load() {
-    return request(
-      '/api/agents/settings/read',
-      { scope, repositoryId: repository?.id },
-      scopedSettingsResultSchema,
-    )
-  }
   useEffect(() => {
     let active = true
     setLoaded(null)
@@ -137,21 +129,14 @@ export function TaskBehaviorSettings({
     setBusy(true)
     setError('')
     try {
-      const latest = await load()
-      if (
-        JSON.stringify(latest.value.taskBehavior ?? {}) !==
-        JSON.stringify(loaded.value.taskBehavior ?? {})
-      )
-        throw new Error('Lifecycle settings changed on another device. Reload before saving.')
-      const after: ScopedSettingsValue = { ...latest.value, taskBehavior: draft }
       const value = await request(
         '/api/agents/settings/save',
         {
           scope,
           repositoryId: repository?.id,
           projectKey: loaded.projectKey,
-          before: latest.value,
-          after,
+          before: loaded.value,
+          after: { ...loaded.value, taskBehavior: draft },
         },
         scopedSettingsResultSchema,
       )

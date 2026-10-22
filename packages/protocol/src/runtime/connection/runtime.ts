@@ -143,6 +143,7 @@ export const snapshotSchema = mutableStruct({
   threadBehaviorSupported: Schema.optional(Schema.Boolean),
   queuedTurnSettingsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),
+  projectWorktreeTransfersSupported: Schema.optional(Schema.Boolean),
   projectTransfers: Schema.optional(mutableArray(projectTransferSchema)),
   taskBehaviorSupported: Schema.optional(Schema.Boolean),
   /** Present on scoped replicas; only these threads contain authoritative history. */

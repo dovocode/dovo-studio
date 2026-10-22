@@ -1,11 +1,5 @@
-import { reducedMotion } from '@dovo/studio-core'
-import { useConversationHistory } from './use-conversation-history'
-import { ChatMessage } from './chat-message'
-import { TaskEmptyState } from '../../task-creation/task-empty-state'
-import type { LinkTarget } from '@dovo/studio-core/links'
-import { DeferredTurn } from './deferred-turn'
-import { TurnWindow, TurnWindowContext } from './turn-window'
 import {
+  createRuntimeClient,
   threadPullLink,
   unassignedConversationTools,
   conversationMessageTurns,
@@ -14,9 +8,15 @@ import {
   conversationPageSchema,
   taskTranscript,
   readConversationHistory,
-  runtimeRequest,
   responses,
 } from '@dovo/protocol'
+import { reducedMotion } from '@dovo/studio-core'
+import { useConversationHistory } from './use-conversation-history'
+import { ChatMessage } from './chat-message'
+import { TaskEmptyState } from '../../task-creation/task-empty-state'
+import type { LinkTarget } from '@dovo/studio-core/links'
+import { DeferredTurn } from './deferred-turn'
+import { TurnWindow, TurnWindowContext } from './turn-window'
 import { TurnWork } from './turn-work'
 import { PullLinkActions } from './pull-link-actions'
 import { ThreadLinkMenu } from './thread-link-menu'
@@ -118,15 +118,11 @@ export function ChatThread({
         task,
         (before, signal) => {
           if (!connection || !connected) throw new Error('Reconnect to copy the full conversation.')
-          return runtimeRequest(
-            connection,
-            connection.address,
+          return createRuntimeClient(connection).request(
             '/api/tasks/history',
             { id: task.id, before },
             conversationPageSchema,
-            'POST',
-            undefined,
-            signal,
+            { method: 'POST', signal },
           )
         },
         operation.signal,

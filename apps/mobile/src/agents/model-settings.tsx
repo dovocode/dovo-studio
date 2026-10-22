@@ -107,8 +107,8 @@ export function ModelSettings({
           value={scope}
           onChange={setScope}
           items={[
-            { id: 'server', name: 'This server' },
-            { id: 'global', name: 'Global · Connected servers' },
+            { id: 'server', name: 'This machine' },
+            { id: 'global', name: 'All machines' },
           ]}
         />
       )}

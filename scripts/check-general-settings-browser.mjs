@@ -127,7 +127,7 @@ createRoot(document.getElementById('app')).render(<SettingsTargetProvider><Toolt
         b.onResolve({ filter: /.*/ }, ({ path, kind, importer }) => {
           if (
             kind === 'dynamic-import' &&
-            /\/(studio-shell\/src\/app-extension|extension-(agents|runtime|scm|tasks)\/src\/index)\.ts$/.test(
+            /\/(studio-shell\/src\/app-extension|extension-(agents|runtime|scm|tasks)\/src\/index|extension-runtime\/src\/settings-views)\.ts$/.test(
               importer,
             )
           )
@@ -289,34 +289,23 @@ try {
     }
   }
   const search = page.getByRole('textbox', { name: 'Search settings', exact: true })
-  const agentsCategory = settingsSidebar.getByRole('button', {
+  const agentsCategory = settingsSidebar.getByRole('heading', {
     name: 'Agents & tools',
     exact: true,
   })
-  assert.equal(await agentsCategory.getAttribute('aria-expanded'), 'false')
+  await agentsCategory.waitFor()
   assert.equal(
-    await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).count(),
+    await settingsSidebar.getByRole('button', { name: 'Agents & tools', exact: true }).count(),
     0,
+    'Settings groups stay expanded without toggle state',
   )
-  await agentsCategory.focus()
-  await page.keyboard.press('Enter')
-  assert.equal(await agentsCategory.getAttribute('aria-expanded'), 'true')
-  await page.keyboard.press('Enter')
+  await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).waitFor()
   await search.fill('memory')
   await settingsSidebar.getByRole('button', { name: 'Memory', exact: true }).waitFor()
   await search.press('Escape')
-  assert.equal(
-    await agentsCategory.getAttribute('aria-expanded'),
-    'false',
-    'Search keeps the prior category state',
-  )
+  await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).waitFor()
   await page.evaluate(() => window.changeView('agents'))
   await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).waitFor()
-  assert.equal(
-    await agentsCategory.getAttribute('aria-expanded'),
-    'true',
-    'External navigation opens the active category',
-  )
   await page.evaluate(() => window.changeView('general'))
   for (const [category, titles] of [
     ['This app', ['General', 'Conversation', 'Browser']],
@@ -325,8 +314,6 @@ try {
     ['Computers', ['Devices & runtime', 'Device previews']],
     ['History', ['Activity & message history', 'Archived tasks']],
   ]) {
-    const toggle = settingsSidebar.getByRole('button', { name: category, exact: true })
-    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
     const group = settingsSidebar
       .getByRole('heading', { name: category, exact: true })
       .locator('..')
@@ -355,7 +342,7 @@ try {
   await page.getByRole('button', { name: 'Clear settings search', exact: true }).click()
   await page.getByRole('button', { name: 'General', exact: true }).click()
   assert.equal(await page.getByLabel('Inherited settings target').count(), 0)
-  await page.getByRole('button', { name: 'Organize tasks & projects', exact: false }).click()
+  await settingsSidebar.getByRole('button', { name: 'Task list & projects', exact: true }).click()
   await page.getByRole('heading', { name: 'Task list & projects', exact: true, level: 1 }).waitFor()
   await choose('Project order', 'Last user message')
   await page.getByRole('textbox', { name: 'Add project starts in', exact: true }).fill('~/Code')
@@ -379,7 +366,7 @@ try {
     false,
   )
   await page.getByRole('button', { name: 'General', exact: true }).click()
-  await page.getByRole('button', { name: 'Set up your agents', exact: false }).click()
+  await settingsSidebar.getByRole('button', { name: 'Agents', exact: true }).click()
   await page.getByRole('heading', { name: 'Agents', exact: true, level: 1 }).waitFor()
   await settingsSidebar.getByLabel('Inherited settings target').waitFor()
   assert.equal(
@@ -420,7 +407,7 @@ try {
   assert.equal(writes.at(-1).after.taskBehavior.archiveAfterSettledDays, 12)
   assert.deepEqual(writes.at(-1).after.resources, { skills: [], mcpServers: [] })
   await choose('Settings project', 'Dovo')
-  await choose('Settings computer', 'MacBook Pro')
+  await choose('Settings machine', 'MacBook Pro')
   await settingsSidebar
     .getByLabel('Inherited settings target')
     .getByText('Dovo · MacBook Pro', { exact: true })
@@ -446,12 +433,10 @@ try {
   )
   await choose('Working directory', 'New worktree')
   page.once('dialog', (dialog) => dialog.dismiss())
-  await page.getByRole('button', { name: 'Edit Global settings', exact: true }).click()
+  await choose('Settings machine', 'All machines')
   assert.equal(
-    await page
-      .getByRole('button', { name: 'Edit Project on computer settings', exact: true })
-      .getAttribute('aria-pressed'),
-    'true',
+    await page.getByRole('button', { name: 'Settings machine', exact: true }).innerText(),
+    'MacBook Pro',
   )
   assert.equal(
     await page.getByRole('combobox', { name: 'Working directory', exact: true }).innerText(),
@@ -799,7 +784,7 @@ try {
     await page.screenshot({ path: process.env.DOVO_GENERAL_SCREENSHOT, fullPage: true })
   assert.deepEqual(errors, [])
   console.log(
-    'Settings: grouped navigation, category/control search, storage labels, all app pages, persisted preferences, notification permissions, local/remote profiles, update states, scoped agents/lifecycle, navigation and narrow layouts passed.',
+    'Settings: permanently expanded navigation, shared page frames, category/control search, storage labels, all app pages, persisted preferences, notification permissions, local/remote profiles, update states, scoped agents/lifecycle, navigation and narrow layouts passed.',
   )
 } finally {
   await browser.close()

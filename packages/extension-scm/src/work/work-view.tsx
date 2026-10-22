@@ -34,7 +34,7 @@ import {
   workRemoteKey,
   type WorkSource,
 } from './work-sources'
-import { PipelineState } from './pipeline-detail'
+import { PipelineState } from './pipeline-state'
 import { WorkContent } from './content'
 import { WorkForm } from './work-form'
 import { SourcePicker } from '../connections/source-picker'

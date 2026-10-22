@@ -5,15 +5,6 @@ const runtime = await startRuntime({
   databasePath: ':memory:', ownerToken: 'packaging-smoke-token-at-least-32-characters', port: 0,
 });
 try {
-  // The parser entry point and Wasm grammars must ship beside the runtime. Folder
-  // fallback would hide a packaging mistake, so require real Swift dependency links.
-  const parser = await import(new URL('./scm/reviews/order.js', import.meta.resolve('@dovo/runtime')));
-  const groups = await parser.relatedFileGroups([
-    { path: 'Sources/App/View.swift', after: 'struct View { let user: User }' },
-    { path: 'Sources/App/User.swift', after: 'struct User { let id: Int }' },
-  ]);
-  if (groups.length !== 1 || groups[0].basis !== 'ast' || groups[0].paths[0] !== 'Sources/App/User.swift')
-    throw new Error('Packaged Swift review parser did not resolve dependencies');
   // Multi-file artifacts bundle locally through the packaged esbuild executable.
   const { compileArtifactBundle } = await import(new URL('./artifacts/artifact-bundle.js', import.meta.resolve('@dovo/runtime')));
   const preview = await compileArtifactBundle([

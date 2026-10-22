@@ -1,7 +1,17 @@
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
 import { isPeerAddress, peerTransportAddress, resolvePeerTransport, peerAddress } from './peer.js'
 
-type Selection = { selected?: string; checkedAt: number; retryAt?: number }
+type RouteProbe = {
+  controller: AbortController
+  result: Promise<string>
+  readers: number
+}
+type Selection = {
+  selected?: string
+  checkedAt: number
+  retryAt?: number
+  probe?: RouteProbe
+}
 type RoutePurpose = 'http' | 'stream'
 let version = 0
 const listeners = new Set<() => void>()
@@ -16,15 +26,13 @@ export function subscribeRuntimeRoutes(listener: () => void) {
     listeners.delete(listener)
   }
 }
-const routes = new Map<
-  string,
-  Selection & {
-    runtimeId: string
-    addresses: string[]
-    stream?: Selection
-    streamCooldowns?: Map<string, number>
-  }
->()
+type RuntimeRoutes = Selection & {
+  runtimeId: string
+  addresses: string[]
+  stream?: Selection
+  streamCooldowns?: Map<string, number>
+}
+const routes = new Map<string, RuntimeRoutes>()
 const key = (connection: RuntimeConnection) =>
   JSON.stringify([new URL(connection.address).origin, connection.token, connection.internet])
 function origin(address: string) {
@@ -93,11 +101,21 @@ export function runtimePeerAddress(connection: RuntimeConnection, purpose: Route
 export function invalidateRuntimeRoute(
   connection: RuntimeConnection,
   purpose: RoutePurpose = 'http',
+  expectedAddress?: string,
 ) {
+  if (
+    expectedAddress !== undefined &&
+    runtimeTransportAddress(connection, purpose) !== expectedAddress
+  )
+    return
   if (internetRoutes.delete(key(connection) + purpose)) publish()
   const saved = routes.get(key(connection))
   const selection = purpose === 'stream' ? saved?.stream : saved
-  if (selection) selection.checkedAt = -Infinity
+  if (selection) {
+    selection.checkedAt = -Infinity
+    selection.probe?.controller.abort(new Error('Runtime route was invalidated'))
+    selection.probe = undefined
+  }
 }
 /** Upgrade failures must not displace a working HTTP route. Give a blocked proxy thirty
  * seconds to recover, while the stream can use another verified address of the same runtime. */
@@ -108,6 +126,8 @@ export function failRuntimeStreamingRoute(connection: RuntimeConnection, address
   const candidate = origin(address)
   const cooldowns = (saved.streamCooldowns ??= new Map())
   cooldowns.set(candidate, Date.now() + 30000)
+  saved.stream?.probe?.controller.abort(new Error('Runtime stream route failed'))
+  if (saved.stream) saved.stream.probe = undefined
   if (saved.stream?.selected === candidate) {
     saved.stream.selected = undefined
     saved.stream.checkedAt = 0
@@ -147,6 +167,44 @@ async function resolveDirectRoute(
     now < (selection.retryAt ?? Infinity)
   )
     return selection.selected
+  // Share only route discovery, never requests or mutations. Each reader retains its
+  // own cancellation; the last departing reader closes all remaining probes.
+  let probe = selection.probe
+  if (!probe) {
+    const controller = new AbortController()
+    probe = {
+      controller,
+      readers: 0,
+      result: probeDirectRoutes(connection, saved, selection, controller.signal, purpose),
+    }
+    selection.probe = probe
+  }
+  probe.readers++
+  const waiting = AbortSignal.any([signal, probe.controller.signal])
+  let onAbort: () => void = () => {}
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(waiting.reason)
+    if (waiting.aborted) onAbort()
+    else waiting.addEventListener('abort', onAbort, { once: true })
+  })
+  try {
+    return await Promise.race([probe.result, cancelled])
+  } finally {
+    waiting.removeEventListener('abort', onAbort)
+    if (--probe.readers === 0 && selection.probe === probe) {
+      selection.probe = undefined
+      probe.controller.abort()
+    }
+  }
+}
+
+async function probeDirectRoutes(
+  connection: RuntimeConnection,
+  saved: RuntimeRoutes,
+  selection: Selection,
+  signal: AbortSignal,
+  purpose: RoutePurpose,
+) {
   const candidates = [...new Set([connection.address, ...saved.addresses])].slice(0, 17)
   // Probe in parallel within one deadline: several stale interfaces must not consume
   // the entire caller timeout before a healthy VPN address is considered.
@@ -247,11 +305,4 @@ export async function resolveRuntimeEndpoint(
   })
   if (saved?.peerAddress !== internet.address || saved.address !== address) publish()
   return { address, token: internet.token }
-}
-export async function resolveRuntimeRoute(
-  connection: RuntimeConnection,
-  signal: AbortSignal,
-  purpose: RoutePurpose = 'http',
-) {
-  return (await resolveRuntimeEndpoint(connection, signal, purpose)).address
 }

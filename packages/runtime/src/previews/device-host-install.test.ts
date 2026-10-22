@@ -19,6 +19,7 @@ vi.mock('node:child_process', async (importOriginal) => {
 })
 import { installNative, DeviceHostUploads } from './device-host-install'
 import * as discovery from './devices'
+import * as sdk from './android-tool'
 afterEach(() => {
   vi.restoreAllMocks()
   commands.run.mockReset()
@@ -38,7 +39,7 @@ it('installs Android APKs with known adb arguments and cleans owned staging afte
       },
     ],
   })
-  vi.spyOn(discovery, 'androidTool').mockResolvedValue('adb')
+  vi.spyOn(sdk, 'androidTool').mockResolvedValue('adb')
   commands.run.mockResolvedValue({ stdout: 'Success', stderr: '' })
   const uploads = new DeviceHostUploads()
   try {
@@ -148,7 +149,7 @@ it('aborts destination native installs when the hub is disabled or their device 
       },
     ],
   })
-  vi.spyOn(discovery, 'androidTool').mockResolvedValue('adb')
+  vi.spyOn(sdk, 'androidTool').mockResolvedValue('adb')
   const uploads = new DeviceHostUploads()
   commands.run.mockImplementation(async (_file, _args, options) => {
     if (

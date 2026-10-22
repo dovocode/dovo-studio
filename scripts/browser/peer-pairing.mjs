@@ -44,7 +44,7 @@ export async function checkPeerPairing(browser, root) {
     [
       {
         path: '@dovo/protocol',
-        contents: `export * from '${protocol}';import {Effect} from 'effect';export const runtimeRequest=(...args)=>window.request(...args);export const runtimeRequestEffect=(...args)=>Effect.tryPromise(()=>window.request(...args));`,
+        contents: `export * from '${protocol}';import {Effect} from 'effect';export const createRuntimeClient=connection=>({requestEffect:(path,input)=>Effect.tryPromise(()=>window.request(connection,connection.address,path,input))});export const runtimeRequest=(...args)=>window.request(...args);export const runtimeRequestEffect=(...args)=>Effect.tryPromise(()=>window.request(...args));`,
       },
       {
         path: '@dovo/studio-core',

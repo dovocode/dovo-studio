@@ -66,9 +66,10 @@ An empty list clears it. It supports up to 100 entries and does not mark the thr
 native plan updates, successful Claude `TodoWrite` and task-tool updates, Muse native todos,
 OpenCode todo snapshots, ACP/Grok plans and successful Mistral Vibe todo results feed the same
 checklist. Prefer the provider's native tools where available; do not maintain a parallel list with
-the fallback tool. Parent checklists exclude native child progress. Desktop and mobile show the
-current progress and active item; expanded lists scroll within a bounded area so the composer stays
-reachable.
+the fallback tool. Parent checklists exclude native child progress. Desktop and mobile attach the
+checklist to the composer. When queued messages and a checklist both exist, **Queue** and
+**Checklist** tabs share that bar. Switching tabs preserves unsaved queue edits. Lists scroll within
+a bounded area so the composer stays reachable.
 
 When the thread stops with work left, both clients label the list **Unfinished** and stop its
 running indicator without marking items complete. Unfinished lists survive provider-session

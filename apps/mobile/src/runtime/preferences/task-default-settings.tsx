@@ -17,7 +17,6 @@ import {
   settingsScopeLabels,
   type SettingsScope,
   type TaskBehavior,
-  type ScopedSettingsValue,
   type SavedPrompt,
 } from '@dovo/protocol'
 import { useEffect } from 'react'
@@ -31,7 +30,6 @@ import {
   defaultTaskHarness,
   projectTaskDefaultsSchema,
   providerSchema,
-  runtimeDefaultsSchema,
   defaultWorktreeFromOrigin,
   agentConnectionValue,
   changeAgentConnection,
@@ -39,7 +37,6 @@ import {
   taskHarnessSchema,
   type ProjectTaskDefaults,
   type Repository,
-  type RuntimeDefaults,
 } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { useRuntime } from '../connection/provider'
@@ -103,23 +100,18 @@ function TaskDefaultSettingsForm({
 
   const { connected, call, snapshot, overviews } = useRuntime()
   const { busy, error, act } = useAction()
-  const [setup, setSetup] = useApplicationState<{
-    defaults: RuntimeDefaults
-    inherited: ProjectTaskDefaults
-  } | null>(null)
+  const [settings, setSettings] = useApplicationState<
+    typeof scopedSettingsResultSchema.Type | null
+  >(null)
   const [localScope, setScope] = useApplicationState<SettingsScope>(
     repository ? 'environment-project' : 'environment',
   )
   const scope = selectedScope ?? localScope
-  const [projectKey, setProjectKey] = useApplicationState<string | undefined>(undefined)
-  const [inheritedPrompts, setInheritedPrompts] = useApplicationState<SavedPrompt[]>([])
-  const [scopeValue, setScopeValue] = useApplicationState<ScopedSettingsValue>({})
   const [prompts, setPrompts] = useApplicationState<SavedPrompt[]>([])
   const [loadedScope, setLoadedScope] = useApplicationState('')
 
   const [legacyBehavior, setLegacyBehavior] = useApplicationState<TaskBehavior>({})
   const [behavior, setBehavior] = useApplicationState<TaskBehavior>({})
-  const [inheritedBehavior, setInheritedBehavior] = useApplicationState<TaskBehavior>({})
   const [draft, setDraft] = useApplicationState<ProjectTaskDefaults>({})
   const [loadError, setLoadError] = useApplicationState('')
   const [showSetupCommand, setShowSetupCommand] = useApplicationState(false)
@@ -127,7 +119,7 @@ function TaskDefaultSettingsForm({
   const [retry, setRetry] = useApplicationState(0)
   useEffect(() => {
     let active = true
-    setSetup(null)
+    setSettings(null)
     setLoadError('')
     setSaved(false)
     if (!connected) return
@@ -151,19 +143,12 @@ function TaskDefaultSettingsForm({
     )
       .then((value) => {
         if (active) {
-          setSetup({
-            defaults: decode(runtimeDefaultsSchema, value.inherited.taskDefaults ?? {}),
-            inherited: value.inherited.taskDefaults ?? {},
-          })
-          setScopeValue(value.value)
-          setProjectKey(value.projectKey)
-          setInheritedPrompts(value.inherited.prompts ?? [])
+          setSettings(value)
           setPrompts(value.value.prompts ?? [])
           setLoadedScope(`${scope}:${repository?.id ?? ''}`)
           setDraft(value.value.taskDefaults ?? {})
           setShowSetupCommand(!!value.value.taskDefaults?.setupCommand)
           setBehavior(value.value.taskBehavior ?? {})
-          setInheritedBehavior(value.inherited.taskBehavior ?? {})
         }
       })
       .catch((error: unknown) => {
@@ -180,7 +165,10 @@ function TaskDefaultSettingsForm({
   }
   const harness = draft.harness
   const policySupported = snapshot?.permissionPolicySupported === true
-  const inherited = setup?.defaults
+  const inherited = settings?.inherited.taskDefaults
+  const inheritedBehavior = settings?.inherited.taskBehavior ?? {}
+  const inheritedPrompts = settings?.inherited.prompts ?? []
+  const scopeValue = settings?.value ?? {}
   const inheritedHarness = inherited?.harness ?? defaultTaskHarness('codex')
   const effectiveHarness = harness ?? inheritedHarness
   const defaultPolicy = resolveDefaultPermissionPolicy(effectiveHarness, inherited, draft)
@@ -191,7 +179,7 @@ function TaskDefaultSettingsForm({
     permissionPolicyUIIssue(defaultPolicy, policySupported) ||
     (harness && permissionPolicyUIIssue(harness, policySupported))
   const disabled =
-    !connected || busy || !setup || loadedScope !== `${scope}:${repository?.id ?? ''}`
+    !connected || busy || !settings || loadedScope !== `${scope}:${repository?.id ?? ''}`
   const origins = taskDefaultOrigins(snapshot?.defaults, repository, scope, draft)
   const source = (key: keyof ProjectTaskDefaults) => {
     const origin = origins.find((entry) => entry.key === key)
@@ -204,7 +192,7 @@ function TaskDefaultSettingsForm({
             repository,
             scope,
             value: draft[key],
-            inheritedValue: setup?.inherited[key],
+            inheritedValue: inherited?.[key],
           }}
           label={origin.label}
           disabled={
@@ -227,7 +215,7 @@ function TaskDefaultSettingsForm({
     settingsScopes[settingsScopes.indexOf(scope) + 1],
   )
   const dirty =
-    !!setup &&
+    !!settings &&
     JSON.stringify({ draft, prompts, behavior }) !==
       JSON.stringify({
         draft: scopeValue.taskDefaults ?? {},
@@ -250,7 +238,7 @@ function TaskDefaultSettingsForm({
               This computer is offline. Reconnect to load and save defaults.
             </Text>
           )}
-          {connected && !setup && !loadError && (
+          {connected && !settings && !loadError && (
             <Text accessibilityLiveRegion="polite" style={styles.muted}>
               Loading task defaults…
             </Text>
@@ -347,7 +335,7 @@ function TaskDefaultSettingsForm({
             items={[
               {
                 id: 'inherit',
-                name: `Inherit (${providerDisplayName(setup?.defaults.harness.provider ?? 'codex')})`,
+                name: `Inherit (${providerDisplayName(inherited?.harness?.provider ?? 'codex')})`,
               },
               { id: 'custom', name: 'Override at this scope' },
               ...configurations.map(({ agent }) => ({
@@ -366,7 +354,7 @@ function TaskDefaultSettingsForm({
                     ? undefined
                     : agent
                       ? decode(taskHarnessSchema.mapFields(Struct.omit(['resources'])), agent)
-                      : (setup?.defaults.harness ?? defaultTaskHarness('codex')),
+                      : (inherited?.harness ?? defaultTaskHarness('codex')),
                 ...(agent
                   ? {
                       permission: agent.permission,
@@ -391,7 +379,7 @@ function TaskDefaultSettingsForm({
             items={[
               {
                 id: 'inherit',
-                name: `Inherit (${accessLabel(setup?.defaults.permission ?? 'full-access')})`,
+                name: `Inherit (${accessLabel(inherited?.permission ?? 'full-access')})`,
               },
               ...selectableAccessModes(draft.permission).map((mode) => ({
                 id: mode.id,
@@ -513,7 +501,7 @@ function TaskDefaultSettingsForm({
                 items={[
                   {
                     id: 'inherit',
-                    name: `Inherit (${setup?.defaults.execution === 'worktree' ? 'Worktree' : 'Local checkout'})`,
+                    name: `Inherit (${inherited?.execution === 'worktree' ? 'Worktree' : 'Local checkout'})`,
                   },
                   { id: 'main', name: 'Local checkout' },
                   { id: 'worktree', name: 'New worktree' },
@@ -534,7 +522,7 @@ function TaskDefaultSettingsForm({
                     disabled={disabled}
                     value={
                       draft.worktreeFromOrigin ??
-                      setup?.defaults.worktreeFromOrigin ??
+                      inherited?.worktreeFromOrigin ??
                       defaultWorktreeFromOrigin
                     }
                     onValueChange={(worktreeFromOrigin) => change({ ...draft, worktreeFromOrigin })}
@@ -593,7 +581,7 @@ function TaskDefaultSettingsForm({
                         ? undefined
                         : value === 'disabled'
                           ? ''
-                          : (setup?.defaults.setupCommand ?? ''),
+                          : (inherited?.setupCommand ?? ''),
                   })
                 }}
               />
@@ -856,7 +844,7 @@ function TaskDefaultSettingsForm({
         disabled={disabled || !dirty || !!policyIssue}
         onPress={() =>
           act(async () => {
-            if (!setup || disabled || policyIssue) return
+            if (!settings || disabled || policyIssue) return
             const value = decode(projectTaskDefaultsSchema, draft)
             const result = await call(
               '/api/agents/settings/save',
@@ -864,7 +852,7 @@ function TaskDefaultSettingsForm({
                 scope,
                 repositoryId: repository?.id,
                 before: scopeValue,
-                projectKey,
+                projectKey: settings.projectKey,
                 after: {
                   ...scopeValue,
                   taskDefaults: value,
@@ -878,13 +866,7 @@ function TaskDefaultSettingsForm({
               },
               scopedSettingsResultSchema,
             )
-            setSetup({
-              defaults: decode(runtimeDefaultsSchema, result.inherited.taskDefaults ?? {}),
-              inherited: result.inherited.taskDefaults ?? {},
-            })
-            setInheritedBehavior(result.inherited.taskBehavior ?? {})
-            setInheritedPrompts(result.inherited.prompts ?? [])
-            setScopeValue(result.value)
+            setSettings(result)
             setDraft(result.value.taskDefaults ?? {})
             setBehavior(result.value.taskBehavior ?? {})
             setPrompts(result.value.prompts ?? [])

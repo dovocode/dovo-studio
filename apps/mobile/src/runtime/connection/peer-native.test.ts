@@ -8,6 +8,9 @@ const native = vi.hoisted(() => ({
   signals: [] as Signal[],
   servers: [] as Listener[],
   delayBinding: false,
+  failReadyChannel: false,
+  failSignal: false,
+  accept: undefined as ((socket: { destroy: () => void }) => void) | undefined,
 }))
 vi.mock('expo-crypto', () => ({ getRandomBytesAsync: async () => new Uint8Array(32).fill(1) }))
 vi.mock('react-native-webrtc', () => ({
@@ -19,7 +22,8 @@ vi.mock('react-native-webrtc', () => ({
 }))
 vi.mock('react-native-tcp-socket', () => ({
   default: {
-    createServer: () => {
+    createServer: (_options: unknown, accept: (socket: { destroy: () => void }) => void) => {
+      native.accept = accept
       const listener = new Listener()
       native.servers.push(listener)
       return listener
@@ -39,7 +43,10 @@ class Peer {
   onicegatheringstatechange: (() => void) | null = null
   localDescription = { sdp: 'v=0\r\na=fingerprint:sha-256 AA:BB\r\n' }
   ready = new Channel()
-  createDataChannel = () => this.ready
+  createDataChannel = vi.fn<() => Channel>(() => {
+    if (native.failReadyChannel) throw new Error('Native channel creation failed')
+    return this.ready
+  })
   setConfiguration = vi.fn<() => void>()
   getStats = vi.fn<() => Promise<Map<string, unknown>>>(async () => new Map())
   setLocalDescription = vi.fn<() => Promise<void>>(async () => {})
@@ -62,6 +69,7 @@ class Signal {
   // Native close notifications can be delayed or absent while connecting.
   close = vi.fn<() => void>()
   constructor() {
+    if (native.failSignal) throw new Error('Native signaling creation failed')
     native.signals.push(this)
   }
   message(value: unknown) {
@@ -85,6 +93,9 @@ beforeEach(() => {
   native.signals.length = 0
   native.servers.length = 0
   native.delayBinding = false
+  native.failReadyChannel = false
+  native.failSignal = false
+  native.accept = undefined
   vi.stubGlobal('WebSocket', Signal)
 })
 afterEach(() => {
@@ -289,3 +300,75 @@ it('keeps traffic open when native stats fail and ignores a report that arrives 
   expect(f.onRouteChanged).not.toHaveBeenCalled()
   expect(vi.getTimerCount()).toBe(0)
 })
+
+it('discards route statistics from before ICE recovery and immediately reads the recovered pair', async () => {
+  const f = await start()
+  f.pc.getStats.mockResolvedValue(stats('host', 'relay'))
+  await offer(f)
+  await answer(f)
+  const tunnel = await f.result
+  expect(tunnel.route()).toBe('relay')
+  let finish: (value: Map<string, unknown>) => void = () => {}
+  f.pc.getStats.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  await vi.advanceTimersByTimeAsync(5000)
+  f.pc.state('disconnected')
+  f.pc.state('connected')
+  // The old direct-pair report arrives only after a different relay pair recovered.
+  finish(stats('host', 'host'))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(tunnel.route()).toBe('relay')
+  expect(f.pc.getStats).toHaveBeenCalledTimes(3)
+  expect(f.onRouteChanged).toHaveBeenCalledTimes(3)
+  tunnel.close()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('closes the accepted socket and tunnel if native data-channel creation fails', async () => {
+  const f = await start()
+  await offer(f)
+  await answer(f)
+  const tunnel = await f.result
+  f.pc.createDataChannel.mockImplementationOnce(() => {
+    throw new Error('Native peer already closed')
+  })
+  const socket = { destroy: vi.fn<() => void>() }
+  expect(native.accept).toBeTypeOf('function')
+  expect(() => native.accept?.(socket)).not.toThrow()
+  expect(socket.destroy).toHaveBeenCalledOnce()
+  expect(tunnel.alive()).toBe(false)
+  expect(f.pc.close).toHaveBeenCalledOnce()
+  expect(f.onClosed).toHaveBeenCalledOnce()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it.each([
+  {
+    stage: 'readiness channel',
+    failReadyChannel: true,
+    failSignal: false,
+    message: 'Native channel creation failed',
+  },
+  {
+    stage: 'signaling socket',
+    failReadyChannel: false,
+    failSignal: true,
+    message: 'Native signaling creation failed',
+  },
+])(
+  'releases the native peer when its $stage cannot be created',
+  async ({ failReadyChannel, failSignal, message }) => {
+    native.failReadyChannel = failReadyChannel
+    native.failSignal = failSignal
+    const f = await start()
+    await expect(f.result).rejects.toThrow(message)
+    expect(f.pc.close).toHaveBeenCalledOnce()
+    expect(native.signals).toHaveLength(0)
+    expect(native.servers).toHaveLength(0)
+    expect(vi.getTimerCount()).toBe(0)
+  },
+)

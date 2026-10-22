@@ -75,17 +75,17 @@ try {
       }
     }
     const scopeNames = {
-      global: 'Global',
-      environment: 'Computer',
+      global: 'All machines & projects',
+      environment: 'Machine',
       project: 'Project',
-      'environment-project': 'Project on computer',
+      'environment-project': 'Project on machine',
     }
     const chooseScope = (value) => choose(scopes, value, scopeNames[value])
     if (mobile) {
       assert.equal(await scopes.locator('option').count(), 4)
       assert.equal(await scopes.inputValue(), 'environment-project')
     } else {
-      assert.equal(await scopes.textContent(), 'Project on computer')
+      assert.equal(await scopes.textContent(), 'Project on machine')
       await scopes.click()
       assert.equal(await page.getByRole('option').count(), 4)
       await page.keyboard.press('Escape')
@@ -225,7 +225,7 @@ try {
     await page.evaluate(() => window.releaseProject())
     assert.equal(
       mobile ? await scopes.inputValue() : await scopes.textContent(),
-      mobile ? 'global' : 'Global',
+      mobile ? 'global' : 'All machines & projects',
     )
     assert.equal(
       await page.getByLabel('Setup command', { exact: true }).inputValue(),

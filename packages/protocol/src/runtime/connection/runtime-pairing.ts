@@ -1,3 +1,4 @@
+import { createRuntimeClient } from '../../shared/runtime-client.js'
 import { Effect, Result } from 'effect'
 import { runtimeRequestEffect, RuntimeRequestError } from '../../shared/client.js'
 import { responses, snapshotSchema, type RuntimeConnection } from './runtime.js'
@@ -36,14 +37,11 @@ const confirmed = (registry: RuntimeRegistry, entry: PendingRuntimePairing) =>
     entry.profile,
   )
 const confirm = (entry: PendingRuntimePairing) =>
-  runtimeRequestEffect(
-    entry.profile.connection,
-    entry.profile.connection.address,
+  createRuntimeClient(entry.profile.connection).requestEffect(
     '/api/pair/confirm',
     entry.proof,
     responses.ok,
-    'POST',
-    5000,
+    { method: 'POST', timeoutMs: 5000 },
   )
 
 /** Caller owns the registry lock. Retain the old profile until confirmation AND durable commit.
@@ -129,15 +127,12 @@ export function recoverRuntimePairings(
       const expired = Date.parse(entry.proof.expiresAt) <= Date.now()
       const result = yield* Effect.result(
         expired
-          ? runtimeRequestEffect(
-              entry.profile.connection,
-              entry.profile.connection.address,
-              '/api/snapshot',
-              undefined,
-              snapshotSchema,
-              'GET',
-              5000,
-            ).pipe(Effect.asVoid)
+          ? createRuntimeClient(entry.profile.connection)
+              .requestEffect('/api/snapshot?scope=overview', undefined, snapshotSchema, {
+                method: 'GET',
+                timeoutMs: 5000,
+              })
+              .pipe(Effect.asVoid)
           : confirm(entry).pipe(Effect.asVoid),
       )
       if (Result.isSuccess(result)) {
@@ -171,20 +166,16 @@ export function cancelRuntimePairing(
         if (!(error instanceof RuntimeRequestError) || error.status !== 404)
           return Effect.fail(error)
         if (!entry) return Effect.void // No credential was ever staged by this client.
-        return runtimeRequestEffect(
-          entry.profile.connection,
-          address,
-          '/api/devices/revoke-self',
-          {},
-          responses.ok,
-        ).pipe(
-          Effect.asVoid,
-          Effect.catch((failure) =>
-            failure instanceof RuntimeRequestError && failure.status === 401
-              ? Effect.void
-              : Effect.fail(failure),
-          ),
-        )
+        return createRuntimeClient(entry.profile.connection)
+          .requestEffect('/api/devices/revoke-self', {}, responses.ok)
+          .pipe(
+            Effect.asVoid,
+            Effect.catch((failure) =>
+              failure instanceof RuntimeRequestError && failure.status === 401
+                ? Effect.void
+                : Effect.fail(failure),
+            ),
+          )
       }),
     )
     const next = removePending(registry, proof.id, address)

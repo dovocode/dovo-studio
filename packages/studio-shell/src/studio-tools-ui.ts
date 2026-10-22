@@ -1,7 +1,7 @@
 import type { StudioUICommand } from '@dovo/protocol'
 
 /** DOM-only operations; no page scripts, runtime credentials or native APIs are exposed. */
-export function studioUISnapshot(document: Document) {
+function studioUISnapshot(document: Document) {
   const controls = [
     ...document.querySelectorAll(
       'button,a,input,textarea,select,[role="button"],[role="tab"],[contenteditable="true"]',

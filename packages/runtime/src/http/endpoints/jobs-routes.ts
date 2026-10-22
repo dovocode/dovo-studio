@@ -3,7 +3,7 @@ import { mutableStruct } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
-import { RuntimeServices } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
 import { newSecret, hashSecret } from '../../auth/devices.js'
@@ -50,14 +50,8 @@ export function jobsRoute(request: IncomingMessage, path: string, owner: () => v
         })
       }
       if (method === 'POST' && path === '/api/jobs/cancel') {
-        s.jobs.cancel(
-          decode(
-            mutableStruct({
-              id: idSchema,
-            }),
-            yield* serviceResult(body(request)),
-          ).id,
-        )
+        const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        yield* serviceResult(s.jobs.cancel(id))
         return yield* serviceResult({
           ok: true,
         })

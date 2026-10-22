@@ -11,7 +11,6 @@ import { startRuntime } from '../index'
 import { retainChangedFiles } from '../scm/git/retain-changes'
 import { runtimeIntegration } from '../testing/integration'
 
-// HTTP reviews run real parser subprocesses with their own 15-second deadline.
 vi.setConfig(runtimeIntegration)
 
 function taggedDetail(detail: PullDetail) {
@@ -54,6 +53,18 @@ it('rejects working-file ABA writes and preserves unrelated viewed versions thro
     files: [files[0], ...task.files],
   }))
   expect((await request(context, mobile, { ...reviewed.files[0], viewed: true })).status).toBe(409)
+})
+it('reads working and saved review progress without inspecting checkout sources', async () => {
+  const { runtime, read, request } = await setup()
+  const checkout = vi.spyOn(runtime.services.checkouts, 'reviewDirectory')
+  const git = vi.spyOn(runtime.services.git, 'command')
+  const context: ReviewContext = { kind: 'task', taskId: 'task', source: 'working' }
+  const progress = await read(context)
+  expect(progress.groups).toEqual([])
+  await request(context, undefined, { ...progress.files[0], viewed: true })
+  await read({ ...context, source: 'turn', turnId: 'turn' })
+  expect(checkout).not.toHaveBeenCalled()
+  expect(git).not.toHaveBeenCalled()
 })
 async function setup() {
   const owner = 'file-review-test-owner-token-at-least-32-characters'
@@ -129,7 +140,7 @@ it('authenticates paired clients, shares granular working/history marks and reje
   const context: ReviewContext = { kind: 'task', taskId: 'task', source: 'working' }
   expect((await request(context, '')).status).toBe(401)
   const initial = await read(context)
-  expect(initial.groups[0]).toMatchObject({ basis: 'ast', paths: ['types.ts', 'app.ts'] })
+  expect(initial.groups).toEqual([])
   expect((await request(context, undefined, { ...initial.files[0], viewed: true })).status).toBe(
     200,
   )
@@ -154,7 +165,6 @@ it('authenticates paired clients, shares granular working/history marks and reje
 it('retains unchanged PR progress across pushes, resets changed patches and isolates repository identities', async () => {
   const { runtime, request, read, mobile } = await setup()
   vi.spyOn(runtime.services.pulls, 'identity').mockResolvedValue('account/repo')
-  vi.spyOn(runtime.services.git, 'reviewSources').mockResolvedValue([])
   let detail = taggedDetail(
     decode(pullDetailSchema, {
       pull: {
@@ -203,6 +213,35 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
   vi.spyOn(runtime.services.pulls, 'section').mockImplementation(async () => detail)
   const context: ReviewContext = { kind: 'pull', repositoryId: 'repo', number: 1 }
   const initial = await read(context)
+  expect(initial.groups).toEqual([])
+  const model = vi.spyOn(runtime.services.titles, 'organizeReview').mockResolvedValue(
+    JSON.stringify({
+      groups: [
+        {
+          label: 'Feature',
+          summary: 'Update both files',
+          impact: 'Check callers',
+          paths: ['a.ts', 'b.ts'],
+        },
+      ],
+    }),
+  )
+  const organized = await fetch(`http://127.0.0.1:${runtime.port}/api/review/organize`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${mobile}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      context,
+      files: initial.files.map(({ path, fingerprint }) => ({ path, fingerprint })),
+    }),
+  })
+  expect(organized.status).toBe(200)
+  expect(JSON.parse(model.mock.calls[0][0])).toEqual({
+    changes: detail.files.map((file) => ({
+      path: file.path,
+      evidence: file.patch,
+      incomplete: false,
+    })),
+  })
   for (const file of initial.files)
     expect((await request(context, mobile, { ...file, viewed: true })).status).toBe(200)
   vi.spyOn(runtime.services.pulls, 'feedback').mockImplementation(async () => ({
@@ -256,114 +295,6 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
   )
   expect((await read(context)).files[0].viewed).toBe(false)
 })
-it('retries unavailable PR sources after the cache interval and isolates local checkout identity', async () => {
-  const { runtime, read } = await setup()
-  vi.spyOn(runtime.services.pulls, 'identity').mockResolvedValue('account/repo')
-  const detail = taggedDetail(
-    decode(pullDetailSchema, {
-      pull: {
-        number: 1,
-        title: 'PR',
-        url: 'https://github.com/a/repo/pull/1',
-        repositoryUrl: 'https://github.com/a/repo',
-        state: 'open',
-        draft: false,
-        author: 'dev',
-        updatedAt: '',
-        head: 'fix',
-        base: 'main',
-        labels: [],
-        headSha: 'a'.repeat(40),
-        baseSha: 'b'.repeat(40),
-        body: '',
-        additions: 2,
-        deletions: 2,
-        changedFiles: 2,
-        mergeable: true,
-        reviewers: [],
-        assignees: [],
-      },
-      files: ['caller.ts', 'model.ts'].map((path) => ({
-        path,
-        status: 'modified',
-        additions: 1,
-        deletions: 1,
-        patch: '@@ -1 +1 @@\n-old\n+new',
-      })),
-      comments: [],
-      checks: [],
-      warnings: [],
-    }),
-  )
-  vi.spyOn(runtime.services.pulls, 'section').mockResolvedValue(detail)
-  const sources = vi.spyOn(runtime.services.git, 'reviewSources').mockResolvedValue([])
-  let now = Date.now()
-  vi.spyOn(Date, 'now').mockImplementation(() => now)
-  const context: ReviewContext = { kind: 'pull', repositoryId: 'repo', number: 1 }
-  expect((await read(context)).groups.every((group) => group.basis === 'folder')).toBe(true)
-  await read(context)
-  expect(sources).toHaveBeenCalledOnce()
-  sources.mockResolvedValue([
-    {
-      path: 'caller.ts',
-      before: "import {User} from './model'",
-      after: "import {User} from './model'; const user = new User()",
-    },
-    { path: 'model.ts', before: 'export class User {}', after: 'export class User {id = 1}' },
-  ])
-  now += 20_001
-  expect((await read(context)).groups).toEqual([
-    { label: 'model.ts', paths: ['model.ts', 'caller.ts'], basis: 'ast' },
-  ])
-  now += 20_001
-  await read(context)
-  expect(sources).toHaveBeenCalledTimes(2)
-  runtime.services.store.update((workspace) => ({
-    ...workspace,
-    repositories: workspace.repositories.map((repo) => ({ ...repo, path: '/other-checkout' })),
-  }))
-  await read(context)
-  expect(sources).toHaveBeenCalledTimes(3)
-})
-it('isolates identical working sources whose Go module identities differ between tasks', async () => {
-  const { runtime, read } = await setup()
-  const files = [
-    {
-      path: 'api/view.go',
-      before: 'package api\n',
-      after: 'package api\nimport "example.com/first/model"\nvar user model.User\n',
-      viewed: false,
-    },
-    {
-      path: 'model/user.go',
-      before: 'package model\n',
-      after: 'package model\ntype User struct{}\n',
-      viewed: false,
-    },
-  ]
-  runtime.services.store.update((workspace) => ({
-    ...workspace,
-    tasks: [
-      { ...workspace.tasks[0], files },
-      { ...runtime.services.store.task(workspace.tasks[0].id), id: 'second', files },
-    ],
-  }))
-  vi.spyOn(runtime.services.checkouts, 'reviewDirectory').mockImplementation(
-    async (id) => `/checkout/${id}`,
-  )
-  vi.spyOn(runtime.services.git, 'reviewGoModules').mockImplementation(async (cwd) => [
-    {
-      path: 'go.mod',
-      before: '',
-      after: `module example.com/${cwd.endsWith('/task') ? 'first' : 'second'}`,
-    },
-  ])
-  const first = await read({ kind: 'task', taskId: 'task', source: 'working' })
-  expect(first.groups[0]).toMatchObject({ basis: 'ast', paths: ['model/user.go', 'api/view.go'] })
-  const second = await read({ kind: 'task', taskId: 'second', source: 'working' })
-  expect(second.groups.every((group) => group.basis === 'folder')).toBe(true)
-})
-
 it('organizes authenticated current diffs and rejects invalid output and stale analysis without altering viewed marks', async () => {
   const { runtime, read, request, desktop } = await setup()
   const context: ReviewContext = { kind: 'task', taskId: 'task', source: 'working' }
@@ -403,11 +334,22 @@ it('organizes authenticated current diffs and rejects invalid output and stale a
   const result = decode(reviewProgressSchema, await response.json())
   expect(result.groups[0]).toMatchObject({ ...output.groups[0], basis: 'feature' })
   expect(result.files[0].viewed).toBe(true)
-  expect(model).toHaveBeenCalledWith(
-    expect.stringContaining('dependencies'),
-    expect.objectContaining(selection),
-  )
-  expect((await read(context)).groups[0].basis).toBe('ast')
+  const evidence = JSON.parse(model.mock.calls[0][0])
+  expect(Object.keys(evidence)).toEqual(['changes'])
+  expect(evidence.changes).toEqual([
+    expect.objectContaining({
+      path: 'types.ts',
+      evidence: expect.stringContaining('+export const n = 2'),
+      incomplete: false,
+    }),
+    expect.objectContaining({
+      path: 'app.ts',
+      evidence: expect.stringContaining('+import {n}'),
+      incomplete: false,
+    }),
+  ])
+  expect(model).toHaveBeenCalledWith(expect.any(String), expect.objectContaining(selection))
+  expect((await read(context)).groups).toEqual([])
   const titles = runtime.services.titles.save({
     harness: { provider: 'codex', endpoint: 'title-harness' },
     model: 'title-model',

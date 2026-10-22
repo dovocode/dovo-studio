@@ -1,9 +1,18 @@
 import { PairingScanner } from './pairing-scanner'
 import { PeerRelayChoice } from './peer-relay-choice'
 import { preparePeerConnection, forgetPeerConnection } from './peer-transport'
-import { peerConfigSchema, peerAddress, type PeerConfig } from '@dovo/protocol'
-import type { PairingInvitation } from '@dovo/protocol'
-import { PAIRING_PROTOCOL_VERSION } from '@dovo/protocol'
+import {
+  peerConfigSchema,
+  peerAddress,
+  type PeerConfig,
+  PAIRING_PROTOCOL_VERSION,
+  createRuntimeClient,
+  pairingAddress,
+  runtimeRequest,
+  runtimeRequestEffect,
+  responses,
+  type PairingInvitation,
+} from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../state/native-effect'
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
@@ -11,7 +20,6 @@ import { useApplicationState } from '../state/application-state'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { ActivityIndicator, AppState, Keyboard, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { pairingAddress, runtimeRequest, runtimeRequestEffect, responses } from '@dovo/protocol'
 import { useRuntime } from './provider'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
@@ -106,9 +114,7 @@ export function PairComputer({
         // Replace the two-minute QR capability with a per-device capability, issued
         // over the authenticated encrypted tunnel and revoked with this pairing.
         const enabled = peer
-          ? yield* runtimeRequestEffect(
-              { address, token, peer },
-              address,
+          ? yield* createRuntimeClient({ address, token, peer }).requestEffect(
               '/api/runtime/peer/enable',
               {},
               peerConfigSchema,

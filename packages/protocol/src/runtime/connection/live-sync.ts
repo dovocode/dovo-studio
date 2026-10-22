@@ -1,3 +1,4 @@
+import { createRuntimeClient } from '../../shared/runtime-client.js'
 import { desktopRuntimeSyncBridge } from './desktop-sync.js'
 import {
   failRuntimeStreamingRoute,
@@ -5,7 +6,7 @@ import {
   runtimeTransportAddress,
 } from './routes.js'
 import { decode } from '../../shared/schema.js'
-import { runtimeRequest, setRuntimeSnapshotTag } from '../../shared/client.js'
+import { setRuntimeSnapshotTag } from '../../shared/client.js'
 import {
   applySnapshotDelta,
   applyActivityDelta,
@@ -386,16 +387,11 @@ export function startRuntimeSync(
     try {
       const query = new URLSearchParams({ format: '4', history: 'paged', subscriptions: 'live' })
       for (const id of value.tasks.keys()) query.append('task', id)
-      const ticket = await runtimeRequest(
-        connection,
-        connection.address,
+      const ticket = await createRuntimeClient(connection).request(
         `/api/sync/ticket?${query}`,
         {},
         syncTicketSchema,
-        'POST',
-        5000,
-        request.signal,
-        { route: 'stream' },
+        { method: 'POST', timeoutMs: 5000, signal: request.signal, route: 'stream' },
       )
       if (
         stopped ||
@@ -406,12 +402,12 @@ export function startRuntimeSync(
         return
       taskUpdates = ticket.format === 5
       const route = runtimeTransportAddress(connection, 'stream')
-      const address = new URL('/ws/sync', route)
-      address.protocol = address.protocol === 'https:' ? 'wss:' : 'ws:'
-      address.searchParams.set('ticket', ticket.ticket)
+      const address = createRuntimeClient(connection).socketUrl('/ws/sync', ticket.ticket, {
+        route: 'stream',
+      })
       let current: WebSocket
       try {
-        current = new WebSocket(address.href)
+        current = new WebSocket(address)
       } catch (error) {
         failRuntimeStreamingRoute(connection, route)
         throw error

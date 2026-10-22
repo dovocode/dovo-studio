@@ -150,7 +150,7 @@ export function OrganizeReview({
                 disabled={disabled || review.organizing}
                 onClick={review.clearGroups}
               >
-                Use dependency groups
+                Reset to folders
               </Button>
             )}
           </div>

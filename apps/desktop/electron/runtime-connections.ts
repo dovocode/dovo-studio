@@ -1,9 +1,9 @@
 import {
+  createRuntimeClient,
   startRuntimeSync,
   watchRuntimeTask,
   watchRuntimeActivity,
   runtimeSnapshotPath,
-  runtimeRequest,
   snapshotSchema,
   getRuntimeSnapshotTag,
   snapshotDelta,
@@ -49,16 +49,11 @@ export class RuntimeConnections {
       path: string,
       signal: AbortSignal,
     ) => Promise<RuntimeSnapshot> = (connection, path, signal) =>
-      runtimeRequest(
-        connection,
-        connection.address,
-        path,
-        undefined,
-        snapshotSchema,
-        'GET',
-        30000,
+      createRuntimeClient(connection).request(path, undefined, snapshotSchema, {
+        method: 'GET',
+        timeoutMs: 30000,
         signal,
-      ),
+      }),
     private recover?: (connection: RuntimeConnection) => Promise<RuntimeConnection | null>,
   ) {}
   subscribe(id: string, input: DesktopSyncSubscription, publish: Subscriber['publish']) {
@@ -108,7 +103,7 @@ export class RuntimeConnections {
           owner.status = status
           if (status !== 'live') owner.reachable = false
           this.broadcast(owner, { type: 'status', status, online: status === 'live' })
-          if (status !== 'live') this.poll(owner)
+          this.poll(owner)
         },
         onWake: () => this.poll(owner),
       })
@@ -215,12 +210,9 @@ export class RuntimeConnections {
       }
   }
   private poll(pool: Pool) {
-    if (pool.stopped || pool.request) return
+    if (pool.stopped) return
     clearTimeout(pool.timer)
-    if (pool.live?.online()) {
-      pool.timer = setTimeout(() => this.poll(pool), 1000)
-      return
-    }
+    if (pool.request || pool.live?.online()) return
     const controller = new AbortController()
     pool.request = controller
     const tasks = JSON.stringify([...pool.tasks.keys()].sort())
@@ -269,7 +261,7 @@ export class RuntimeConnections {
       })
       .finally(() => {
         pool.request = undefined
-        if (!pool.stopped)
+        if (!pool.stopped && !pool.live?.online())
           pool.timer = setTimeout(
             () => this.poll(pool),
             tasks !== JSON.stringify([...pool.tasks.keys()].sort()) ? 0 : failed ? 10000 : 1000,

@@ -15,9 +15,18 @@ export const projectTransferSshSchema = mutableStruct({
   identityFile: deviceHostSchema.fields.identityFile,
   runtimePort: deviceHostSchema.fields.sshPort,
 })
+const transferThreadSchema = mutableStruct({
+  title: text(200),
+  prompt: maxValue(Schema.String, 100000),
+})
+export const projectTransferSourceSchema = mutableStruct({
+  repositoryId: text(),
+  worktreePath: Schema.optional(text(4096)),
+})
 export const projectTransferStartSchema = mutableStruct({
   id: text(80),
-  repositoryId: text(),
+  ...projectTransferSourceSchema.fields,
+  thread: Schema.optional(transferThreadSchema),
   targetId: text(),
   ignoredFiles: maxValue(mutableArray(text(4096)), 10000),
   ssh: Schema.optional(projectTransferSshSchema),
@@ -49,6 +58,9 @@ export const projectTransferSchema = mutableStruct({
   error: Schema.optional(Schema.String),
   path: Schema.optional(Schema.String),
   targetRepositoryId: Schema.optional(Schema.String),
+  targetTaskId: Schema.optional(Schema.String),
+  threadStartError: Schema.optional(Schema.String),
+  worktreePath: Schema.optional(Schema.String),
   skippedLinks: Schema.optional(integer),
 })
 export type ProjectTransfer = typeof projectTransferSchema.Type
@@ -67,6 +79,7 @@ export const projectTransferManifestSchema = mutableStruct({
   runtimeId: text(),
   name: text(),
   entries: maxValue(mutableArray(projectTransferEntrySchema), 100000),
+  thread: Schema.optional(transferThreadSchema),
   git: Schema.optional(
     mutableStruct({
       head: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40,64}$/))),
@@ -86,6 +99,8 @@ export const projectTransferChunkSchema = mutableStruct({
   ),
 })
 export const projectTransferResultSchema = mutableStruct({
+  taskId: Schema.optional(Schema.String),
+  threadStartError: Schema.optional(Schema.String),
   repositoryId: Schema.String,
   path: Schema.String,
 })

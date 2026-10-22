@@ -11,10 +11,12 @@ import {
   projectTransferSchema,
   projectTransferStartSchema,
   projectTransferTargetsSchema,
+  worktreeChoicesSchema,
   type ProjectTransfer,
   type Repository,
 } from '@dovo/protocol'
 import { randomUUID } from 'expo-crypto'
+import { useNavigation } from '../../shell/navigation'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from '../../ui/content/text'
 import {
@@ -26,6 +28,7 @@ import { Switch } from '../../ui/controls/switch'
 import { useTheme } from '../../ui/theme'
 
 export function ProjectTransferSettings({ repository }: { repository: Repository }) {
+  const { navigate } = useNavigation()
   const runtime = useRuntime(),
     { styles, colors } = useTheme()
   const [open, setOpen] = useState(false),
@@ -34,6 +37,10 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
   const [inspection, setInspection] = useState<typeof projectTransferInspectionSchema.Type | null>(
     null,
   )
+  const [worktreePath, setWorktreePath] = useState('')
+  const [worktrees, setWorktrees] = useState<typeof worktreeChoicesSchema.Type.worktrees>([])
+  const [createThread, setCreateThread] = useState(false)
+  const [prompt, setPrompt] = useState('')
   const [targets, setTargets] = useState<typeof projectTransferTargetsSchema.Type>([])
   const [targetId, setTargetId] = useState(''),
     [transport, setTransport] = useState('p2p')
@@ -77,8 +84,9 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
       setRuntimePort(url.protocol === 'https:' ? '5235' : url.port || '80')
     }
   }
-  const load = () =>
+  const load = (sourcePath = worktreePath) =>
     act(async () => {
+      setInspection(null)
       const peers = projectTransferPeers(
         runtime.profiles,
         runtime.overviews,
@@ -89,14 +97,22 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
         { sessionId: 'project-transfer', peers },
         Schema.Struct({ ok: Schema.Boolean }),
       )
-      const [machines, files] = await Promise.all([
+      const [machines, files, choices] = await Promise.all([
         runtime.read('/api/scm/project-transfer/targets', {}, projectTransferTargetsSchema),
         runtime.read(
           '/api/scm/project-transfer/inspect',
-          { repositoryId: repository.id },
+          { repositoryId: repository.id, worktreePath: sourcePath || undefined },
           projectTransferInspectionSchema,
         ),
+        !repository.kind && runtime.snapshot?.projectWorktreeTransfersSupported
+          ? runtime.read(
+              '/api/scm/worktrees/choices',
+              { repositoryId: repository.id },
+              worktreeChoicesSchema,
+            )
+          : Promise.resolve({ worktrees: [] }),
       ])
+      setWorktrees(choices.worktrees)
       setTargets(machines)
       setInspection(files)
       setIgnored((previous) =>
@@ -136,6 +152,18 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
       const parsed = decodeResult(projectTransferStartSchema, {
         id: randomUUID(),
         repositoryId: repository.id,
+        worktreePath: worktreePath || undefined,
+        thread: createThread
+          ? {
+              title:
+                prompt.trim().slice(0, 200) ||
+                `${repository.name} on ${targets.find((target) => target.id === targetId)?.name ?? 'another computer'}`.slice(
+                  0,
+                  200,
+                ),
+              prompt,
+            }
+          : undefined,
         targetId,
         ignoredFiles: ignored,
         ...(transport === 'ssh'
@@ -199,6 +227,33 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
               />
             </View>
           )}
+          {job.targetTaskId && (
+            <>
+              <Text style={styles.text}>Thread created on {job.targetName}.</Text>
+              <Action
+                secondary
+                label={`Open thread on ${job.targetName}`}
+                disabled={busy}
+                onPress={() =>
+                  void act(async () => {
+                    const target = runtime.overviews.find(
+                      (entry) =>
+                        (entry.profile.connection.runtimeId ?? entry.snapshot?.runtimeId) ===
+                        job.targetId,
+                    )
+                    if (!target)
+                      throw new Error('Pair the destination computer to open this thread')
+                    navigate('tasks', job.targetTaskId, target.profile.id)
+                  })
+                }
+              />
+            </>
+          )}
+          {job.threadStartError && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              Files copied and thread saved. Could not start agent: {job.threadStartError}
+            </Text>
+          )}
           {job.path && (
             <Text selectable style={styles.muted}>
               {job.path}
@@ -231,6 +286,54 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
             Copy files and local Git history. The source project and chats stay here. A new folder
             is created under ~/.dovo/projects on the destination.
           </Text>
+          {!!worktrees.length && (
+            <Choice
+              label="Source checkout"
+              value={worktreePath}
+              items={[
+                { id: '', name: 'Project checkout' },
+                ...worktrees.map((entry) => ({
+                  id: entry.path,
+                  name: `${entry.branch || 'Detached HEAD'}${entry.dirty ? ' · Local changes' : ''} · ${entry.path}`,
+                })),
+              ]}
+              disabled={busy || active}
+              onChange={(path) => {
+                setWorktreePath(path)
+                setIgnored([])
+                setLocalJob(null)
+                void load(path)
+              }}
+            />
+          )}
+          {!!runtime.snapshot?.projectWorktreeTransfersSupported && (
+            <View style={{ gap: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[styles.text, { flex: 1 }]}>Create a thread on destination</Text>
+                <Switch
+                  accessibilityLabel="Create a thread on destination"
+                  value={createThread}
+                  disabled={busy || active}
+                  onValueChange={setCreateThread}
+                />
+              </View>
+              {createThread && (
+                <>
+                  <Field
+                    label="First message (optional)"
+                    value={prompt}
+                    onChangeText={setPrompt}
+                    multiline
+                    editable={!busy && !active}
+                  />
+                  <Text style={styles.muted}>
+                    Leave empty for a draft. A message starts the agent using the destination’s
+                    settings in the copied checkout.
+                  </Text>
+                </>
+              )}
+            </View>
+          )}
           <Choice
             label="Destination computer"
             value={targetId}
@@ -357,7 +460,15 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
           {!active && (
             <>
               <Action
-                label={busy ? 'Preparing…' : 'Copy project'}
+                label={
+                  busy
+                    ? 'Preparing…'
+                    : createThread
+                      ? 'Copy and create thread'
+                      : worktreePath
+                        ? 'Copy worktree'
+                        : 'Copy project'
+                }
                 disabled={busy || !inspection || !targetId || !runtime.connected}
                 onPress={() => void start()}
               />

@@ -51,7 +51,7 @@ vi.mock('node:child_process', async (original) => ({
     [Symbol.for('nodejs.util.promisify.custom')]: mocked.execute,
   }),
 }))
-vi.mock('./devices.js', () => ({ androidTool: mocked.androidTool }))
+vi.mock('./android-tool.js', () => ({ androidTool: mocked.androidTool }))
 vi.mock('./emulator-auth.js', () => ({ emulatorKey: mocked.emulatorKey }))
 vi.mock('./simulator-rpc.js', () => ({
   SimulatorRpc: class {

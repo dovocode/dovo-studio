@@ -8,10 +8,11 @@ const mobile = root + 'apps/mobile/'
 const controls = `
 import {useImperativeHandle} from 'react';
 const flat=style=>Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));
-export const View=({children,style,testID})=><div data-testid={testID} style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;
+export const View=({children,style,testID,accessibilityRole,accessibilityLabel})=><div role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;
+export const ScrollView=View;
 export const Text=({children,style})=><span style={flat(style)}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
-export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID})=><button aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole})=><button role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
 export const Keyboard={dismiss(){}};export const Linking={openSettings:async()=>{}};
@@ -28,6 +29,9 @@ export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#9
 const stubs = [
   { path: 'react-native', contents: controls },
   ...[
+    '../../../ui/content/text',
+    '../../../ui/controls/icon',
+    '../../../ui/theme',
     '../../ui/content/text',
     '../../ui/controls/icon',
     '../../ui/controls/icon-button',
@@ -118,7 +122,7 @@ const built = await bundleBrowser(
       contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
 import {defaultTaskHarness} from '@dovo/protocol';
-import {Composer} from './src/tasks/composer/composer';import {MessageQueue} from './src/tasks/composer/message-queue';
+import {Composer} from './src/tasks/composer/composer';import {ComposerActivity} from './src/tasks/composer/composer-activity';
 window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
 function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
@@ -128,7 +132,7 @@ function App(){
   const draft={text,ready:true,key:'draft',revision:text,update:setText};
   window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
   window.conversation={send:mode=>window.calls.push({mode:mode??'queue'}),stop:()=>window.calls.push({mode:'stop'}),actions:{turnSettings,setTurnSettings,agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!text,canSend:connected&&!!text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
-  return <Composer task={task} renderAbove={setup=> <>{setup}<div>Conversation</div></>} queuedMessages={<MessageQueue task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
+  return <Composer task={task} renderAbove={setup=> <>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
     },
@@ -346,6 +350,27 @@ try {
     await page.getByRole('button', { name: 'Checkout & branch', exact: true }).count(),
     0,
   )
+  await page.evaluate(() =>
+    window.setTask({
+      status: 'running',
+      messages: [{ id: 'first', role: 'user', text: 'Started' }],
+      queue: [{ id: 'tabs', role: 'user', text: 'Queued follow-up' }],
+      nativeTodos: [{ text: 'Native progress step', status: 'in-progress' }],
+    }),
+  )
+  const queueTab = page.getByRole('tab', { name: 'Queue · 1', exact: true })
+  const checklistTab = page.getByRole('tab', { name: /Checklist · 0\/1/ })
+  await checklistTab.click()
+  await page.getByText('Native progress step', { exact: true }).waitFor()
+  assert.equal(await queueTab.getAttribute('aria-selected'), 'false')
+  assert.equal(await page.getByTestId('Queued messages').isVisible(), false)
+  await queueTab.click()
+  await page.getByTestId('Queued messages').waitFor()
+  await page.evaluate(() => window.setTask({ queue: [] }))
+  await page.getByText('Native progress step', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('tab').count(), 0)
+  await page.evaluate(() => window.setTask({ nativeTodos: [] }))
+  assert.equal(await page.getByLabel('Composer activity', { exact: true }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
     'Mobile composer: compact/queue/input order, inline 44pt actions at 320px, steer and fork dispatch, queue editing, immediate side-chat sending, failure recovery and offline guards passed with native control adapters.',

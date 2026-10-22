@@ -148,7 +148,7 @@ export function MobileOrganizeReview({
           {review.featureGroups && (
             <Action
               secondary
-              label="Use dependency groups"
+              label="Reset to folders"
               disabled={disabled || review.organizing}
               onPress={() => {
                 review.clearGroups()

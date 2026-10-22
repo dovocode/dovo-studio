@@ -351,10 +351,10 @@ try {
 
   const fallback = await browser.newPage({ viewport: { width: 375, height: 812 } })
   await fallback.addInitScript(() => {
-    const original = HTMLCanvasElement.prototype.getContext
+    const original = Reflect.get(HTMLCanvasElement.prototype, 'getContext')
+    if (typeof original !== 'function') throw new Error('Canvas getContext is unavailable')
     HTMLCanvasElement.prototype.getContext = function (type, ...args) {
-      if (type === 'webgl') return null
-      return original.call(this, type, ...args)
+      return type === 'webgl' ? null : Reflect.apply(original, this, [type, ...args])
     }
   })
   await fallback.emulateMedia({ reducedMotion: 'reduce' })

@@ -14,7 +14,7 @@ import { IconButton } from '../../ui/controls/icon-button'
 import { useTheme } from '../../ui/theme'
 import { useTaskConversation } from '../conversation/state/provider'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
-export function MessageQueue({ task }: { task: Task }) {
+export function MessageQueue({ task, embedded = false }: { task: Task; embedded?: boolean }) {
   const { colors, styles } = useTheme()
 
   const { connected, callEffect, snapshot } = useRuntime(),
@@ -92,18 +92,22 @@ export function MessageQueue({ task }: { task: Task }) {
   if (!queue.length && !open) return null
   return (
     <View
-      style={{
-        marginHorizontal: 12,
-        marginBottom: -16,
-        paddingBottom: 16,
-        paddingHorizontal: 10,
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
-        borderWidth: 1,
-        borderBottomWidth: 0,
-        borderColor: colors.border,
-        backgroundColor: colors.surface,
-      }}
+      style={
+        embedded
+          ? { paddingHorizontal: 10 }
+          : {
+              marginHorizontal: 12,
+              marginBottom: -16,
+              paddingBottom: 16,
+              paddingHorizontal: 10,
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              borderWidth: 1,
+              borderBottomWidth: 0,
+              borderColor: colors.border,
+              backgroundColor: colors.surface,
+            }
+      }
     >
       {!!queue.length && (
         <Pressable

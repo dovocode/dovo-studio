@@ -9,16 +9,17 @@ const built = await bundleBrowser(
       contents: `
 import React,{useState} from 'react';import {internetPublicKey,sealInternet,peerAddress} from '${root}/packages/protocol/src/index.ts';import {createRoot} from 'react-dom/client';
 import {AccountPanel as Desktop} from '${root}/packages/extension-runtime/src/account-panel';
+import {PairingClient} from '${root}/packages/extension-runtime/src/pairing-client';
 import {MobileAccountProvider} from '${root}/apps/mobile/src/runtime/connection/account-provider';
 import {AccountPanel as Mobile} from '${root}/apps/mobile/src/runtime/connection/account-panel';
 window.internetRequests=[];window.connects=[];window.boxSecret=new Uint8Array(32).fill(7);window.internetStatus={enabled:false,connected:false,error:''};window.syncSession=async session=>{window.session=session};window.runtimeRequest=async(path,body)=>{window.internetRequests.push({path,body});window.internetStatus={enabled:body.enabled,connected:body.enabled,error:''};window.hosted(body.enabled);return window.internetStatus};window.saved=null;window.calls=[];window.ready=false;window.unavailable=false;
-window.sources=[{name:'Mac Studio',profile:{id:'local',name:'Mac Studio',connection:{address:'http://127.0.0.1:51464',token:'runtime-token-never-upload',runtimeId:'mac'}},snapshot:{runtimeId:'mac',runtimeAddresses:['http://lan:51464','http://vpn:51464']},connected:true}];
+window.sources=[{name:'Mac Studio',profile:{id:'local',name:'Mac Studio',connection:{address:'http://127.0.0.1:51464',token:'runtime-token-never-upload',runtimeId:'mac'}},snapshot:{runtimeId:'mac',releaseVersion:'0.0.9',releaseDistribution:'archive',releaseCanUpdate:true,runtimeHost:'mac',desktopApp:{version:'0.0.9',canUpdate:true},workspace:{tasks:[]},runs:[],runtimeAddresses:['http://lan:51464','http://vpn:51464']},connected:true}];
 window.overviews=window.sources;
 window.storage={read:async()=>window.saved,write:async token=>{window.saved=token}};
 window.open=async url=>{window.browserOpened=url};window.host={accountStorage:window.storage,openExternalLink:window.open};
 let servers=[{id:'server',name:'My Server',address:'http://server.internal:51464'}];window.hosted=enabled=>{servers=servers.filter(s=>s.id!=='internet');if(enabled)servers.push({id:'internet',name:'Internet Computer',address:'',internet:{publicKey:internetPublicKey(window.boxSecret),online:true}})};
-window.fetch=async(url,init)=>{const path=new URL(url).pathname;window.calls.push({path,method:init.method,body:init.body?JSON.parse(init.body):null});if(path==='/v1/internet/connections'){if(init.method==='POST'){const input=JSON.parse(init.body);window.connectionRequest={id:'encrypted-request',publicKey:input.publicKey};return Response.json({id:'encrypted-request'})}const peer={origin:'https://connect.dovo.studio',secret:'f'.repeat(64)};return Response.json({publicKey:internetPublicKey(window.boxSecret),box:sealInternet({requestId:'encrypted-request',runtimeId:'internet',connection:{address:peerAddress(peer),token:'internet-private-token-stays-on-device',peer,runtimeId:'internet'}},window.connectionRequest.publicKey,window.boxSecret,new Uint8Array(24).fill(8))})}if(window.unavailable)return Response.json({error:'unavailable'},{status:503});if(path==='/v1/login'&&init.method==='POST')return Response.json({token:'a'.repeat(43),code:'ABCD1234',url:'https://connect.dovo.studio/auth/start?id=test',expiresAt:Date.now()+300000});if(path==='/v1/login')return Response.json({ready:window.ready});if(path==='/v1/servers'&&init.method==='GET')return Response.json({user:{id:'person',name:'Dominic'},servers});if(init.method==='PUT')servers=servers.filter(server=>server.id!==JSON.parse(init.body).id).concat(JSON.parse(init.body));if(init.method==='DELETE'&&path.startsWith('/v1/servers/'))servers=servers.filter(server=>server.id!==decodeURIComponent(path.split('/').at(-1)));return Response.json({ok:true})};
-function App(){const [address,setAddress]=useState('');return <><MobileAccountProvider><window.Panel onPair={setAddress}/></MobileAccountProvider><input aria-label='Pairing address' value={address} readOnly/><p>Pairing code required</p></>}
+window.fetch=async(url,init={})=>{const path=new URL(url).pathname;window.calls.push({path,method:init.method,body:init.body?JSON.parse(init.body):null});if(new URL(url).hostname==='api.github.com')return Response.json(path.endsWith('/latest')?{tag_name:'v0.0.10',html_url:'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.10'}:[]);if(path.endsWith('/status'))return Response.json({status:'idle'});if(path==='/v1/internet/connections'){if(init.method==='POST'){const input=JSON.parse(init.body);window.connectionRequest={id:'encrypted-request',publicKey:input.publicKey};return Response.json({id:'encrypted-request'})}const peer={origin:'https://connect.dovo.studio',secret:'f'.repeat(64)};return Response.json({publicKey:internetPublicKey(window.boxSecret),box:sealInternet({requestId:'encrypted-request',runtimeId:'internet',connection:{address:peerAddress(peer),token:'internet-private-token-stays-on-device',peer,runtimeId:'internet'}},window.connectionRequest.publicKey,window.boxSecret,new Uint8Array(24).fill(8))})}if(window.unavailable)return Response.json({error:'unavailable'},{status:503});if(path==='/v1/login'&&init.method==='POST')return Response.json({token:'a'.repeat(43),code:'ABCD1234',url:'https://connect.dovo.studio/auth/start?id=test',expiresAt:Date.now()+300000});if(path==='/v1/login')return Response.json({ready:window.ready});if(path==='/v1/servers'&&init.method==='GET')return Response.json({user:{id:'person',name:'Dominic'},servers});if(init.method==='PUT')servers=servers.filter(server=>server.id!==JSON.parse(init.body).id).concat(JSON.parse(init.body));if(init.method==='DELETE'&&path.startsWith('/v1/servers/'))servers=servers.filter(server=>server.id!==decodeURIComponent(path.split('/').at(-1)));return Response.json({ok:true})};
+function App(){const [address,setAddress]=useState('');return <><MobileAccountProvider><window.Panel onPair={setAddress}/>{window.Panel===Desktop&&<PairingClient onManage={profile=>window.managed=profile.id}/>}</MobileAccountProvider><input aria-label='Pairing address' value={address} readOnly/><p>Pairing code required</p></>}
 const app=createRoot(document.getElementById('app'));window.show=kind=>{window.Panel=kind==='desktop'?Desktop:Mobile;app.render(<App key={kind}/>)};window.show('desktop');
 `,
       loader: 'tsx',
@@ -32,17 +33,22 @@ const app=createRoot(document.getElementById('app'));window.show=kind=>{window.P
     alias: {
       react: root + '/packages/studio-ui/node_modules/react',
       '@dovo/protocol': root + '/packages/protocol/src/index.ts',
+      '@dovo/client-runtime': root + '/packages/client-runtime/src/index.ts',
     },
     nodePaths: [root + '/packages/studio-ui/node_modules'],
   },
   [
     {
       path: '@dovo/studio-core',
-      contents: `export {useAccount} from '${root}/packages/studio-core/src/use-account';export const useStudioHost=()=>window.host;export const useRuntimeSources=()=>window.sources;export const useWorkspace=()=>({snapshot:{owner:true,internet:window.internetStatus},connected:true,request:window.runtimeRequest,activeRuntimeId:'local',runtimeRegistry:{profiles:window.sources.map(s=>s.profile)},refreshRuntime:async()=>{}});`,
+      contents: `export {useAccount} from '${root}/packages/studio-core/src/use-account';export const useStudioHost=()=>window.host;export const useRuntimeSources=()=>window.sources;export {responses,runtimeRequest,runtimeRequestEffect} from '@dovo/protocol';export {startPolling} from '@dovo/client-runtime';export const useWorkspace=()=>({runtimes:window.sources,mutationStatus:()=>({pending:0}),snapshot:{owner:true,internet:window.internetStatus},connected:true,request:window.runtimeRequest,activeRuntimeId:'local',runtimeRegistry:{profiles:window.sources.map(s=>s.profile)},refreshRuntime:async()=>{}});`,
+    },
+    {
+      path: '@dovo/studio-core/state',
+      contents: "export {useState as useApplicationState} from 'react';",
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export const ChoicePicker=({children,value,onValueChange,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Button=({children,onClick,disabled})=><button disabled={disabled} onClick={onClick}>{children}</button>;`,
+      contents: `export * from '${root}/packages/studio-ui/src/components/ui/dialog.tsx';export * from '${root}/packages/studio-ui/src/components/ui/input.tsx';export * from '${root}/packages/studio-ui/src/components/form-field.tsx';export {cn} from '${root}/packages/studio-ui/src/lib/utils.ts';export const MessageResponse=({children})=>children;export const ChoicePicker=({children,value,onValueChange,...props})=><select {...props} value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;`,
     },
     {
       path: 'react-native',
@@ -106,6 +112,39 @@ try {
     )
     await page.evaluate(() => (window.ready = true))
     await page.getByText('Signed in as Dominic', { exact: true }).waitFor()
+    if (kind === 'desktop') {
+      assert.equal(await page.getByText('My Server', { exact: true }).isVisible(), false)
+      assert.equal(
+        await page.getByText('Mac Studio', { exact: true }).filter({ visible: true }).count(),
+        1,
+      )
+      assert.equal(
+        await page.getByRole('heading', { name: 'Computer updates', exact: true }).count(),
+        0,
+      )
+      assert.equal(
+        await page.evaluate(() => window.calls.some((call) => call.path.includes('/releases'))),
+        false,
+      )
+      await page.getByRole('button', { name: 'Computer updates', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'Computer updates', exact: true })
+      await dialog.getByRole('button', { name: 'Update all (2)', exact: true }).waitFor()
+      assert.equal(
+        await dialog
+          .getByRole('checkbox', { name: 'Select Mac Studio for update', exact: true })
+          .count(),
+        2,
+      )
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+      await dialog.waitFor({ state: 'detached' })
+      assert.equal(
+        await page.getByText('Mac Studio', { exact: true }).filter({ visible: true }).count(),
+        1,
+      )
+      await page.getByRole('button', { name: 'Manage Mac Studio', exact: true }).click()
+      assert.equal(await page.evaluate(() => window.managed), 'local')
+      await page.getByText('Manage linked computers', { exact: true }).click()
+    }
     const pair = page.getByRole('button', {
       name: kind === 'desktop' ? 'Pair computer' : 'Pair My Server',
       exact: true,
@@ -119,7 +158,9 @@ try {
       await page.evaluate(() => window.calls.some((call) => call.path.includes('/api/pair'))),
       false,
     )
-    await page.getByLabel('Address for Mac Studio').selectOption('http://vpn:51464')
+    await page
+      .getByLabel('Address for Mac Studio', { exact: true })
+      .selectOption('http://vpn:51464')
     await page.getByRole('button', { name: 'Link Mac Studio to account', exact: true }).click()
     await page.getByText('Already paired', { exact: true }).waitFor()
     assert.equal(
@@ -128,6 +169,14 @@ try {
       ),
       'http://vpn:51464',
     )
+    if (kind === 'desktop') {
+      await page.getByText('Manage linked computers', { exact: true }).click()
+      assert.equal(
+        await page.getByText('Mac Studio', { exact: true }).filter({ visible: true }).count(),
+        1,
+      )
+      await page.getByText('Manage linked computers', { exact: true }).click()
+    }
     await page
       .getByRole('button', {
         name: kind === 'desktop' ? 'Unlink' : 'Unlink Mac Studio',
@@ -202,7 +251,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Desktop/mobile optional accounts: browser confirmation, secure storage adapters, private metadata linking, discovery into pairing, encrypted account internet setup without pairing, owner checkbox, no plaintext runtime credentials in Connect requests, sign-out, and confirmed account deletion with cancellation passed.',
+    'Desktop computer list, deferred update dialog, collapsed account directory; desktop/mobile optional accounts: browser confirmation, secure storage adapters, private metadata linking, discovery into pairing, encrypted account internet setup without pairing, owner checkbox, no plaintext runtime credentials in Connect requests, sign-out, and confirmed account deletion with cancellation passed.',
   )
 } finally {
   await browser.close()

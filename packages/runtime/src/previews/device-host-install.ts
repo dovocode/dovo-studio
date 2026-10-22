@@ -6,7 +6,8 @@ import { join, resolve, relative, isAbsolute, extname, basename } from 'node:pat
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { HttpError } from '../errors.js'
-import { androidTool, previewDevices } from './devices.js'
+import { previewDevices } from './devices.js'
+import { androidTool } from './android-tool.js'
 const exec = promisify(execFile)
 /** Reject symlinks inside .app bundles as well as paths escaping the permitted task checkout. */
 export async function validateArtifact(path: string, allowedRoot: string) {

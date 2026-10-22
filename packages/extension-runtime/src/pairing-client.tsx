@@ -192,6 +192,7 @@ export function PairingClient({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ComputerUpdates />
           <LinuxSetupGuide onConnect={openNewConnection} />
           <Button size="sm" variant="outline" onClick={openNewConnection}>
             <Plus size={14} className="mr-1.5" />
@@ -229,7 +230,6 @@ export function PairingClient({
           </div>
         </div>
       )}
-      <ComputerUpdates />
       <div className="divide-y">
         {runtimes.map((entry) => {
           return (

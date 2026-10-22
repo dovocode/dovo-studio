@@ -15,8 +15,14 @@ entry = [
   "apps/desktop/electron/{main,preload}.ts",
   # Expo config plugins are referenced by path from app.config.ts, not imported.
   "apps/mobile/plugins/*.ts",
-  # Composite GitHub Actions run this directly (.github/actions/setup-build).
-  "scripts/ci/*.mjs",
+  # Esbuild selects these entrypoints/aliases by path in build-hosted-catalog.mjs.
+  "apps/design-system/src/hosted-screens-website-{entry,image,link}.tsx",
+  # Native Storybook and Expo Router discover their configuration and routes by path.
+  "apps/mobile/.rnstorybook/preview.tsx",
+  "apps/mobile/.rnstorybook/stories/screens-routes/**/*.tsx",
+  "apps/mobile/.rnstorybook/stories/screens-shell-routes/**/*.tsx",
+  # build-image-editor.mjs imports this inside its generated esbuild entry source.
+  "packages/client-runtime/src/images/image-editor-runtime.ts",
   # Documented brand tooling (assets/brand/README.md).
   "scripts/generate-app-icons.mjs",
   # Documented/child-process tools are executable roots, rather than importable APIs.
@@ -32,7 +38,12 @@ entry = [
 ignoreUnresolvedImports = ["../../../assets/icons/*.png", "../../apps/desktop/build/Dovo.icon"]
 # Security floor pins kept on purpose; the lockfile already resolves at or above them, so
 # Fallow sees no rewritten version.
-ignoreDependencyOverrides = [{ package = "linkify-it" }, { package = "uuid" }]
+ignoreDependencyOverrides = [
+  { package = "linkify-it" },
+  { package = "uuid" },
+  # pnpm represents this alias as h3 in the dependency graph; frozen install validates it.
+  { package = "h3-v2", source = "pnpm-workspace.yaml" },
+]
 ignorePatterns = [
   "**/dist/**",
   "**/dist-electron/**",
@@ -59,17 +70,23 @@ ignoreDependencies = [
   "expo-symbols",
   # Runtime PDF assets use import.meta.resolve (including the worker filename).
   "pdfjs-dist",
-  # Review parsers select a WASM filename dynamically via require.resolve.
-  "tree-sitter-wasms",
   # Theme catalog fixture uses createRequire(studio-core/package.json), where fflate
   # is declared; the script intentionally does not need a root dependency.
   "fflate",
+  # Verification scripts use createRequire with the owning workspace's package.json.
+  # These are declared there; they are not root package dependencies.
+  "@storybook/addon-a11y",
+  "react",
+  "react-dom",
+  "react-native-enriched-markdown",
+  "sharp",
 ]
 
 [[framework]]
 name = "dovo-verification"
 detection = { type = "fileExists", pattern = "scripts/verify-*.{cjs,mjs}" }
 entryPoints = [
+  "scripts/*.test.mjs",
   "scripts/verify-*.{cjs,mjs}",
   "scripts/packaging/verify-*.mjs",
   # Browser and benchmark checks are run as executables (package.json scripts or by hand).
@@ -79,6 +96,13 @@ entryPoints = [
   "scripts/fixtures/*.cjs",
 ]
 entryPointRole = "test"
+
+[[framework]]
+name = "dovo-ci"
+detection = { type = "fileExists", pattern = ".github/actions/setup-build/action.yml" }
+# CI packaging/upload helpers do not ship in the application runtime.
+entryPoints = ["scripts/ci/*.mjs"]
+entryPointRole = "support"
 
 [[framework]]
 name = "dovo-extension-views"
@@ -106,6 +130,16 @@ usedExports = [
   ] },
   { pattern = "packages/studio-shell/src/app-settings/*.tsx", exports = [
     "default",
+  ] },
+  # These named exports are mounted by generated browser-check entry sources.
+  { pattern = "packages/extension-agents/src/resources/view.tsx", exports = [
+    "HookSettings",
+  ] },
+  { pattern = "packages/extension-runtime/src/remote-desktop-view.tsx", exports = [
+    "RemoteDesktopViewer",
+  ] },
+  { pattern = "apps/mobile/src/tasks/creation/task-launcher-controls.tsx", exports = [
+    "TaskLauncherControls",
   ] },
 ]
 

@@ -1,3 +1,4 @@
+import { createRuntimeClient } from '../../shared/runtime-client.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import {
@@ -8,7 +9,7 @@ import {
 import { runtimeSnapshotPath } from './live-sync.js'
 import { Effect, Schema, Semaphore } from 'effect'
 import { decode, decodeResult, mutableArray, mutableStruct } from '../../shared/schema.js'
-import { runtimeRequestEffect, RuntimeRequestError } from '../../shared/client.js'
+import { RuntimeRequestError } from '../../shared/client.js'
 import {
   snapshotSchema,
   patchSchema,
@@ -206,9 +207,7 @@ export class RuntimeMutations {
     return Effect.gen(function* () {
       if (state.supported !== undefined && !(refresh && !state.supported)) return state.supported
       const result = yield* Effect.result(
-        runtimeRequestEffect(
-          connection,
-          connection.address,
+        createRuntimeClient(connection).requestEffect(
           '/api/mutations/status',
           undefined,
           mutableStruct({
@@ -216,7 +215,7 @@ export class RuntimeMutations {
             acknowledgements: Schema.optional(Schema.Boolean),
             workspaceMutations: Schema.optional(Schema.Literal(1)),
           }),
-          'GET',
+          { method: 'GET' },
         ),
       )
       if (result._tag === 'Failure') {
@@ -341,13 +340,11 @@ export class RuntimeMutations {
     mayApply: boolean,
   ) {
     return Effect.gen({ self: this }, function* () {
-      const snapshot = yield* runtimeRequestEffect(
-        connection,
-        connection.address,
+      const snapshot = yield* createRuntimeClient(connection).requestEffect(
         runtimeSnapshotPath(connection),
         undefined,
         snapshotSchema,
-        'GET',
+        { method: 'GET' },
       )
       const patch = decode(patchSchema, input)
       const entity = snapshot.workspace[patch.collection].find((item) => item.id === patch.id)
@@ -427,13 +424,11 @@ export class RuntimeMutations {
       )
       const local = localResult._tag === 'Success' ? localResult.success : []
       const remote = yield* Effect.result(
-        runtimeRequestEffect(
-          connection,
-          connection.address,
+        createRuntimeClient(connection).requestEffect(
           '/api/workspace/recovered-edits',
           undefined,
           workspaceRecoveriesSchema,
-          'GET',
+          { method: 'GET' },
         ),
       )
       if (
@@ -463,30 +458,20 @@ export class RuntimeMutations {
       : this.sendRaw(connection, item)
   }
   private sendRaw(connection: RuntimeConnection, item: MutationOutbox[number]) {
-    return runtimeRequestEffect(
-      connection,
-      connection.address,
-      item.path,
-      item.input,
-      Schema.Unknown,
-      item.method,
-      undefined,
-      { mutationId: item.id },
-    )
+    return createRuntimeClient(connection).requestEffect(item.path, item.input, Schema.Unknown, {
+      method: item.method,
+      mutationId: item.id,
+    })
   }
   private acknowledge(connection: RuntimeConnection, state: State, id: string) {
     if (!state.acknowledgements) return Effect.void
     // Only after durable journal removal. Lost acknowledgements retain the full receipt safely.
-    return runtimeRequestEffect(
-      connection,
-      connection.address,
-      '/api/mutations/acknowledge',
-      { ids: [id] },
-      Schema.Unknown,
-    ).pipe(
-      Effect.asVoid,
-      Effect.catch(() => Effect.void),
-    )
+    return createRuntimeClient(connection)
+      .requestEffect('/api/mutations/acknowledge', { ids: [id] }, Schema.Unknown)
+      .pipe(
+        Effect.asVoid,
+        Effect.catch(() => Effect.void),
+      )
   }
   private drain(
     connection: RuntimeConnection,
@@ -632,7 +617,7 @@ export class RuntimeMutations {
         Effect.map((value) => decode(schema, value)),
       )
     if (!recoverableMutation(path, method))
-      return runtimeRequestEffect(connection, connection.address, path, input, schema, method)
+      return createRuntimeClient(connection).requestEffect(path, input, schema, { method })
     const state = this.state(connection)
     return state.lock
       .withPermits(1)(
@@ -683,14 +668,9 @@ export class RuntimeMutations {
                 // normally; previously saved commands still require receipt support.
                 if (created && state.pending.length === 1 && path !== '/api/workspace') {
                   sent = true
-                  return yield* runtimeRequestEffect(
-                    connection,
-                    connection.address,
-                    path,
-                    input,
-                    schema,
+                  return yield* createRuntimeClient(connection).requestEffect(path, input, schema, {
                     method,
-                  )
+                  })
                 }
                 return yield* Effect.fail(
                   new RuntimeRequestError({

@@ -1,4 +1,4 @@
-import { runtimeTransportAddress } from '@dovo/protocol'
+import { createRuntimeClient } from '@dovo/protocol'
 import { terminalInputFrames } from '@dovo/studio-core'
 import {
   startReconnecting,
@@ -87,9 +87,7 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
       async (signal, connected) => {
         const { ticket } = await request('/api/terminals/ticket', { id }, responses.ticket)
         if (signal.aborted) return
-        const url = new URL('/ws/terminal', runtimeTransportAddress(connection))
-        url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-        url.searchParams.set('ticket', ticket)
+        const url = createRuntimeClient(connection).socketUrl('/ws/terminal', ticket)
         await new Promise<void>((resolve, reject) => {
           const current = new WebSocket(url)
           current.binaryType = 'arraybuffer'

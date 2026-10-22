@@ -38,10 +38,10 @@ async function writeRecoveryEntry(
   if (file.exists) return
   directory.create({ intermediates: true, idempotent: true })
   const temporary = new File(directory, name + '.tmp')
-  temporary.write(JSON.stringify(edit))
+  await temporary.write(JSON.stringify(edit))
   await temporary.move(file, { overwrite: true })
 }
-const recoveryOperation = <A>(run: () => Promise<A>) =>
+const storageOperation = <A>(run: () => Promise<A>) =>
   Effect.runPromise(
     writer
       .withPermits(1)(
@@ -54,7 +54,7 @@ const recoveryOperation = <A>(run: () => Promise<A>) =>
   )
 export const mobileMutationStorage: MutationStorage = {
   workspaceRecoveries(connection) {
-    return recoveryOperation(async () => {
+    return storageOperation(async () => {
       const directory = await recoveryEntries(connection)
       if (!directory.exists) return []
       const files = directory
@@ -65,9 +65,7 @@ export const mobileMutationStorage: MutationStorage = {
     })
   },
   recoverWorkspaceEdit(connection, edit) {
-    return recoveryOperation(async () =>
-      writeRecoveryEntry(await recoveryEntries(connection), edit),
-    )
+    return storageOperation(async () => writeRecoveryEntry(await recoveryEntries(connection), edit))
   },
   id: randomUUID,
   async read(connection) {
@@ -75,44 +73,26 @@ export const mobileMutationStorage: MutationStorage = {
     return file.exists ? decode(mutationOutboxSchema, JSON.parse(await file.text())) : []
   },
   clear(connection) {
-    return Effect.runPromise(
-      writer
-        .withPermits(1)(
-          Effect.tryPromise({
-            try: async () => {
-              const { file } = await fileFor(connection)
-              if (file.exists) file.delete()
-            },
-            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-          }),
-        )
-        .pipe(Effect.uninterruptible),
-    )
+    return storageOperation(async () => {
+      const { file } = await fileFor(connection)
+      if (file.exists) file.delete()
+    })
   },
   update(connection, change) {
-    return Effect.runPromise(
-      writer
-        .withPermits(1)(
-          Effect.tryPromise({
-            try: async () => {
-              const { directory, file } = await fileFor(connection)
-              const pending = change(
-                file.exists ? decode(mutationOutboxSchema, JSON.parse(await file.text())) : [],
-              )
-              if (!pending.length) {
-                if (file.exists) file.delete()
-                return pending
-              }
-              directory.create({ intermediates: true, idempotent: true })
-              const temporary = new File(directory, `${file.name}.tmp`)
-              temporary.write(JSON.stringify(pending))
-              await temporary.move(file, { overwrite: true })
-              return pending
-            },
-            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-          }),
-        )
-        .pipe(Effect.uninterruptible),
-    )
+    return storageOperation(async () => {
+      const { directory, file } = await fileFor(connection)
+      const pending = change(
+        file.exists ? decode(mutationOutboxSchema, JSON.parse(await file.text())) : [],
+      )
+      if (!pending.length) {
+        if (file.exists) file.delete()
+        return pending
+      }
+      directory.create({ intermediates: true, idempotent: true })
+      const temporary = new File(directory, `${file.name}.tmp`)
+      await temporary.write(JSON.stringify(pending))
+      await temporary.move(file, { overwrite: true })
+      return pending
+    })
   },
 }

@@ -22,6 +22,11 @@ try {
     const importer = root + path
     const stubs = mobile
       ? [
+          {
+            path: '../../shell/navigation',
+            importer,
+            contents: `export const useNavigation=()=>({navigate:(...args)=>window.opened=args});`,
+          },
           { path: 'react-native', contents: native },
           ...[
             '../../ui/content/text',
@@ -40,7 +45,10 @@ try {
           },
         ]
       : [
-          { path: '@dovo/studio-core', contents: 'export const useWorkspace=()=>window.store;' },
+          {
+            path: '@dovo/studio-core',
+            contents: `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>window.opened=target});`,
+          },
           {
             path: '@dovo/studio-ui',
             contents: `export {Button} from './packages/studio-ui/src/components/ui/button';export {Input} from './packages/studio-ui/src/components/ui/input';export {FormField} from './packages/studio-ui/src/components/form-field';`,
@@ -60,13 +68,14 @@ window.calls=[];window.refreshes=0;let current=null;
 function App(){const [job,setJob]=useState(null),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true);window.setSupported=setSupported;window.setConnected=setConnected;
 window.setJob=changes=>setJob(old=>{current={...old,...changes,updatedAt:(old?.updatedAt??0)+100};return current});
 const request=async(path,input)=>{window.calls.push({path,input});
+if(path.endsWith('/choices'))return {worktrees:[{path:'/worktrees/feature',branch:'feature',dirty:true}]};
 if(path.endsWith('/targets'))return [{id:'machine-b',name:'Desktop'}];
 if(path.endsWith('/inspect'))return {files:3,bytes:1500,skippedLinks:1,ignoredFiles:[{path:'.env.local',bytes:12},{path:'private.key',bytes:7}]};
 if(path.endsWith('/start')){if(window.fail)throw new Error('Destination is offline');current={...input,targetName:'Desktop',state:'copying',transport:input.ssh?'ssh':'p2p',bytes:100,totalBytes:1000,updatedAt:Date.now()};setJob(current);return current}
 if(path.endsWith('/retry')){window.setJob({state:'preparing',error:undefined});return {...current,state:'preparing'}}
 if(path.endsWith('/cancel')){window.setJob({state:'cancelled'});return {ok:true}}
 return {ok:true};};
-window.store={connected,request,read:request,call:request,snapshot:{runtimeId:'machine-a',projectTransfersSupported:supported,projectTransfers:job?[job]:[]},runtimeRegistry:{profiles:[profile]},profiles:[profile],runtimes:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],overviews:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],refreshRuntime:async()=>{window.refreshes++}};
+window.store={connected,request,read:request,call:request,snapshot:{runtimeId:'machine-a',projectTransfersSupported:supported,projectWorktreeTransfersSupported:supported,projectTransfers:job?[job]:[]},runtimeRegistry:{profiles:[profile]},profiles:[profile],runtimes:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],overviews:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],switchRuntime:async id=>{window.switched=id},refreshRuntime:async()=>{window.refreshes++}};
 return <ProjectTransferSettings repository={repo}/>;}
 createRoot(document.getElementById('app')).render(<App/>);`,
         },
@@ -167,6 +176,53 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       .getByText('Update this computer to copy projects to another computer.', { exact: true })
       .waitFor()
     assert.deepEqual(errors, [])
+    await page.evaluate(() => {
+      window.setSupported(true)
+      window.setJob({ state: 'cancelled' })
+      window.setConnected(true)
+    })
+    await page.getByLabel('Project copy connection').selectOption('p2p')
+    await page.getByLabel('Source checkout').selectOption('/worktrees/feature')
+    const thread = page.getByRole('checkbox', {
+      name: 'Create a thread on destination',
+      exact: true,
+    })
+    await thread.check()
+    await page
+      .getByRole('textbox', { name: 'First message (optional)', exact: true })
+      .fill('Continue reviewing these changes')
+    await page.getByRole('button', { name: 'Copy and create thread', exact: true }).click()
+    const worktreeStart = await page.evaluate(
+      () => window.calls.filter((call) => call.path.endsWith('/start')).at(-1).input,
+    )
+    assert.equal(worktreeStart.worktreePath, '/worktrees/feature')
+    assert.deepEqual(worktreeStart.ignoredFiles, [])
+    assert.equal(worktreeStart.thread.prompt, 'Continue reviewing these changes')
+    assert.equal(worktreeStart.thread.title, 'Continue reviewing these changes')
+    assert(
+      await page.evaluate(() =>
+        window.calls.some(
+          (call) =>
+            call.path.endsWith('/inspect') && call.input.worktreePath === '/worktrees/feature',
+        ),
+      ),
+    )
+    await page.evaluate(() =>
+      window.setJob({
+        state: 'completed',
+        targetTaskId: 'copied-thread',
+        threadStartError: 'Agent not installed',
+      }),
+    )
+    await page.getByText('Thread created on Desktop.', { exact: true }).waitFor()
+    await page.getByRole('alert').filter({ hasText: 'Agent not installed' }).waitFor()
+    await page.getByRole('button', { name: 'Open thread on Desktop', exact: true }).click()
+    assert.deepEqual(
+      await page.evaluate(() => window.opened),
+      mobile
+        ? ['tasks', 'copied-thread', 'destination']
+        : { viewId: 'tasks', entityId: 'copied-thread' },
+    )
     await page.close()
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'} project copy: P2P, SSH validation, private files, progress, cancellation, saved retry and offline/capability checks pass.`,

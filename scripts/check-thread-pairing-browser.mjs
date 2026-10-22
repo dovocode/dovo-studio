@@ -25,7 +25,7 @@ async function bundle(mobile) {
     './account-panel': 'export const AccountPanel=()=>null;',
     './runtime-icon-settings': 'export const RuntimeIconSettings=()=>null;',
     './runtime-diagnostics': 'export const RuntimeDiagnosticsPanel=()=>null;',
-    './index': 'export const runtimeExtension={views:[]};',
+    './settings-views': 'export const runtimeSettings=[];',
     './windows-runtime': 'export const WindowsRuntimeSettings=()=>null;',
     './device-manager': 'export const DeviceManager=()=>null;',
     './pairing-client': `export const PairingClient=({discovered})=>discovered?<div>Pairing credentials required {window.store.runtimeRegistry.profiles.map(p=><span key={p.id}>{p.name}</span>)}</div>:null;`,

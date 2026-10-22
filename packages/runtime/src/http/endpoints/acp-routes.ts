@@ -3,7 +3,8 @@ import { Effect, Schema } from 'effect'
 import { homedir } from 'node:os'
 import type { IncomingMessage } from 'node:http'
 import { decode, minValue, maxValue, mutableStruct, resolveTaskAgent } from '@dovo/protocol'
-import { RuntimeServices, type Services } from '../../services.js'
+import type { Services } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { HttpError } from '../../errors.js'
 import {
   inspectAcp,

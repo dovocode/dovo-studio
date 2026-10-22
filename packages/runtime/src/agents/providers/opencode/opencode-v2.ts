@@ -4,56 +4,21 @@ import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 import { createHash } from 'node:crypto'
 import { waitForMcpConnection } from './mcp-readiness.js'
 import { OpenCode } from '@opencode/client'
-import { opencodeHeaders } from './opencode-server.js'
+import { opencodeHeaders, opencodeAddress } from './opencode-server.js'
 import { decode, isImageAttachment, questionPromptSchema } from '@dovo/protocol'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { OpenCodeClientCache } from './client-cache.js'
 
-const addressOf = (address: string) => (address || 'http://127.0.0.1:4096').replace(/\/$/, '')
 const clients = new OpenCodeClientCache<ReturnType<typeof OpenCode.make>>()
 const client = (address: string, env?: Record<string, string>, active = false) => {
-  const baseUrl = addressOf(address)
+  const baseUrl = opencodeAddress(address)
   const authorization = opencodeHeaders(env)
   const key = JSON.stringify([baseUrl, authorization])
   const create = () => OpenCode.make({ baseUrl, headers: authorization })
   return active
     ? clients.acquire(key, create)
     : { value: clients.get(key, create), release: () => {} }
-}
-
-/** A V1 server has no /api/info route. Authentication errors must not silently select V1. */
-export async function isOpencodeV2(
-  address: string,
-  env?: Record<string, string>,
-): Promise<boolean> {
-  const response = await fetch(`${addressOf(address)}/api/info`, {
-    headers: opencodeHeaders(env),
-    signal: AbortSignal.timeout(5000),
-    redirect: 'error',
-  }).catch((cause: unknown) => {
-    const url = new URL(addressOf(address))
-    throw new Error(
-      `Cannot connect to OpenCode at ${url.origin}. Check that opencode serve is running there, or clear the server URL so Dovo starts it automatically.`,
-      { cause },
-    )
-  })
-  if (response.status === 404) return false
-  // V1 serves its browser SPA for unknown routes, including /api/info.
-  if (response.ok && response.headers.get('content-type')?.includes('text/html')) return false
-  if (response.status === 401 || response.status === 403)
-    throw new Error(
-      'OpenCode rejected authentication. Set OPENCODE_SERVER_PASSWORD and optionally OPENCODE_SERVER_USERNAME in the agent environment or runtime host environment.',
-    )
-  if (!response.ok) throw new Error(`OpenCode server info failed (${response.status})`)
-  const info: unknown = await response.json()
-  return (
-    typeof info === 'object' &&
-    info !== null &&
-    'version' in info &&
-    typeof info.version === 'string' &&
-    /^2\./.test(info.version)
-  )
 }
 
 function modelOf(run: AgentRun) {

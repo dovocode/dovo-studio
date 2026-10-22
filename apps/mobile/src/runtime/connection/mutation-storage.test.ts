@@ -1,10 +1,12 @@
 import { beforeEach, expect, it, vi } from 'vite-plus/test'
-import type { WorkspaceRecovery } from '@dovo/protocol'
+import type { MutationOutbox, WorkspaceRecovery } from '@dovo/protocol'
 const fs = vi.hoisted(() => ({
   files: new Map<string, string>(),
   directories: new Set<string>(),
   writes: [] as string[],
   failMove: false,
+  failWrite: false,
+  writeGate: undefined as Promise<void> | undefined,
 }))
 vi.mock('expo-file-system', () => {
   const uri = (parts: unknown[]) =>
@@ -42,8 +44,10 @@ vi.mock('expo-file-system', () => {
       if (value === undefined) throw new Error('Missing file')
       return value
     }
-    write(value: string) {
+    async write(value: string) {
       fs.writes.push(this.uri)
+      await fs.writeGate
+      if (fs.failWrite) throw new Error('Write interrupted')
       fs.files.set(this.uri, value)
     }
     async move(target: File) {
@@ -85,6 +89,8 @@ beforeEach(() => {
   fs.directories.clear()
   fs.writes = []
   fs.failMove = false
+  fs.failWrite = false
+  fs.writeGate = undefined
 })
 it('migrates legacy recoveries once and appends independent records without rewriting existing edits', async () => {
   const legacy = await legacyPath()
@@ -120,4 +126,60 @@ it('preserves a corrupt legacy document instead of replacing it with a new recov
     mobileMutationStorage.recoverWorkspaceEdit!(connection, edit('new')),
   ).rejects.toThrow(SyntaxError)
   expect(fs.files.get(legacy)).toBe('corrupt')
+})
+
+it('waits for asynchronous mutation writes before committing and allows clearing only after commit', async () => {
+  let finish: () => void = () => {}
+  fs.writeGate = new Promise((resolve) => {
+    finish = resolve
+  })
+  const mutation = {
+    id: 'queued-message',
+    path: '/api/tasks/message',
+    method: 'POST',
+    input: { messageId: 'message' },
+  } satisfies MutationOutbox[number]
+  const pending = mobileMutationStorage.update(connection, () => [mutation])
+  await vi.waitFor(() => expect(fs.writes).toHaveLength(1))
+  expect(await mobileMutationStorage.read(connection)).toEqual([])
+  const cleared = mobileMutationStorage.clear(connection)
+  finish()
+  expect(await pending).toEqual([mutation])
+  await cleared
+  expect(await mobileMutationStorage.read(connection)).toEqual([])
+})
+
+it('preserves the committed outbox on write failure and recovers on the next update', async () => {
+  const mutation = {
+    id: 'queued-message',
+    path: '/api/tasks/message',
+    method: 'POST',
+    input: { messageId: 'message' },
+  } satisfies MutationOutbox[number]
+  await mobileMutationStorage.update(connection, () => [mutation])
+  fs.failWrite = true
+  await expect(
+    mobileMutationStorage.update(connection, () => [{ ...mutation, id: 'new' }]),
+  ).rejects.toThrow('Write interrupted')
+  expect(await mobileMutationStorage.read(connection)).toEqual([mutation])
+  fs.failWrite = false
+  expect(
+    await mobileMutationStorage.update(connection, (pending) => [
+      ...pending,
+      { ...mutation, id: 'new' },
+    ]),
+  ).toHaveLength(2)
+})
+
+it('retains legacy recoveries if an asynchronous migration write fails', async () => {
+  const legacy = await legacyPath()
+  fs.files.set(legacy, JSON.stringify({ edits: [edit('old')] }))
+  fs.failWrite = true
+  await expect(mobileMutationStorage.workspaceRecoveries!(connection)).rejects.toThrow(
+    'Write interrupted',
+  )
+  expect(fs.files.has(legacy)).toBe(true)
+  fs.failWrite = false
+  expect(await mobileMutationStorage.workspaceRecoveries!(connection)).toEqual([edit('old')])
+  expect(fs.files.has(legacy)).toBe(false)
 })

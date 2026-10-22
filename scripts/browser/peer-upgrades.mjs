@@ -53,7 +53,7 @@ export async function checkPeerUpgrades(browser, root) {
     [
       {
         path: '@dovo/protocol',
-        contents: `export * from '${root}/packages/protocol/src/index.ts';import {Effect} from 'effect';export const runtimeRequest=(connection,address,path,input)=>window.dispatch(path,input);export const runtimeRequestEffect=(...args)=>Effect.tryPromise({try:()=>window.dispatch(args[2],args[3]),catch:error=>error});`,
+        contents: `export * from '${root}/packages/protocol/src/index.ts';import {Effect} from 'effect';export const createRuntimeClient=()=>({request:(path,input)=>window.dispatch(path,input),requestEffect:(path,input)=>Effect.tryPromise({try:()=>window.dispatch(path,input),catch:error=>error})});`,
       },
       {
         path: '@dovo/studio-core',

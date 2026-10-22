@@ -12,7 +12,7 @@ import {
   type PendingMessage,
   type ArtifactReference,
 } from '@dovo/protocol'
-import { MessageQueue } from '../chat/thread/message-queue'
+import { ComposerActivity } from '../chat/composer/composer-activity'
 import { TaskQuestions } from '../chat/thread/task-questions'
 import { RunControls } from '../chat/actions/run-controls'
 import {
@@ -28,7 +28,6 @@ import { TaskEmptyState } from '../task-creation/task-empty-state'
 import { PreparationProgress } from '../chat/thread/preparation-progress'
 import { ReviewCommentsTray } from '../chat/thread/review-comments-tray'
 import { PlanApproval } from '../chat/thread/plan-approval'
-import { NativeTodos } from '../chat/thread/native-todos'
 import { ReviewFindings } from '../chat/thread/review-findings'
 import { useTaskViewed } from '../chat/thread/use-task-viewed'
 import { Button } from '@dovo/studio-ui'
@@ -287,7 +286,6 @@ export function TaskConversation({
       <TaskQuestions taskId={task.id} />
       <RunControls task={task} />
       <PlanApproval task={task} />
-      <NativeTodos task={task} />
       {onCodeReview && <CodeReviewCard task={task} onOpen={onCodeReview} visible={visible} />}
       <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />
       <ReviewCommentsTray task={task} className="px-5 pb-2" />
@@ -298,7 +296,9 @@ export function TaskConversation({
           task={task}
           temporary={temporary}
           workspaceControls={workspaceControls}
-          queuedMessages={<MessageQueue task={queueTask} pending={visiblePending} />}
+          queuedMessages={
+            <ComposerActivity key={task.id} task={queueTask} pending={visiblePending} />
+          }
           onPending={onPending}
           onAside={onAside}
           composerInsert={pendingTemplate ?? composerInsert}

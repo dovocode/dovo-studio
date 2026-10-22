@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Schema } from 'effect'
 import { decode, mutableStruct, type PreviewDevice } from '@dovo/protocol'
-import { androidTool } from './devices.js'
+import { androidTool } from './android-tool.js'
 import { HttpError } from '../errors.js'
 import { appleDeviceCommand } from './apple-device-command.js'
 const exec = promisify(execFile)

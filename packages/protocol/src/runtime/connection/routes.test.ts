@@ -2,14 +2,19 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Schema } from 'effect'
 import {
   learnRuntimeRoutes,
-  resolveRuntimeRoute,
+  resolveRuntimeEndpoint,
   runtimeTransportAddress,
   invalidateRuntimeRoute,
   failRuntimeStreamingRoute,
 } from './routes.js'
 import { runtimeRequest } from '../../shared/client.js'
+import { createRuntimeClient } from '../../shared/runtime-client.js'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from './runtime.js'
+
+// These assertions cover route addresses; endpoint credential behavior is checked separately.
+const resolveAddress = async (...args: Parameters<typeof resolveRuntimeEndpoint>) =>
+  (await resolveRuntimeEndpoint(...args)).address
 
 const token = 'paired-route-test-token-long-enough'
 const snapshot = decode(snapshotSchema, {
@@ -55,12 +60,11 @@ it('verifies alternate identity without credentials and keeps the logical connec
       return Response.json({ ok: true })
     }),
   )
-  await runtimeRequest(
-    connection,
-    connection.address,
-    '/api/tasks/run',
-    { id: 'task' },
-    Schema.Struct({ ok: Schema.Boolean }),
+  const client = createRuntimeClient(connection)
+  expect(client.url('/file')).toBe('http://unreachable.local/file')
+  await client.request('/api/tasks/run', { id: 'task' }, Schema.Struct({ ok: Schema.Boolean }))
+  expect(client.socketUrl('/ws/terminal', 'ticket')).toBe(
+    'ws://vpn.local/ws/terminal?ticket=ticket',
   )
   expect(
     calls
@@ -109,7 +113,7 @@ it('never sends a mutation to a different runtime and never replays an uncertain
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({ service: 'dovo-runtime', runtimeId: 'wrong-runtime' })),
   )
-  await expect(resolveRuntimeRoute(connection, new AbortController().signal)).rejects.toThrow(
+  await expect(resolveAddress(connection, new AbortController().signal)).rejects.toThrow(
     'No verified address',
   )
 })
@@ -130,12 +134,10 @@ it('rechecks preferred routes after expiry and isolates different pairing creden
       return Response.json({ service: 'dovo-runtime', runtimeId: 'paired-runtime' })
     }),
   )
-  expect(await resolveRuntimeRoute(connection, new AbortController().signal)).toBe(
-    'http://wrong.local',
-  )
+  expect(await resolveAddress(connection, new AbortController().signal)).toBe('http://wrong.local')
   restored = true
   clock.mockReturnValue(61001)
-  expect(await resolveRuntimeRoute(connection, new AbortController().signal)).toBe(
+  expect(await resolveAddress(connection, new AbortController().signal)).toBe(
     'http://preferred-restored.local',
   )
   expect(runtimeTransportAddress({ ...connection, token: 'different-pairing-token' })).toBe(
@@ -146,10 +148,7 @@ it('keeps old runtimes on their configured HTTP route', async () => {
   const fetcher = vi.fn<typeof fetch>()
   vi.stubGlobal('fetch', fetcher)
   expect(
-    await resolveRuntimeRoute(
-      { address: 'http://legacy.local', token },
-      new AbortController().signal,
-    ),
+    await resolveAddress({ address: 'http://legacy.local', token }, new AbortController().signal),
   ).toBe('http://legacy.local')
   expect(fetcher).not.toHaveBeenCalled()
 })
@@ -171,7 +170,7 @@ it('probes stale interfaces concurrently and retains selection when snapshots ar
     return Response.json({ service: 'dovo-runtime', runtimeId: 'paired-runtime' })
   })
   vi.stubGlobal('fetch', fetcher)
-  const pending = resolveRuntimeRoute(connection, new AbortController().signal)
+  const pending = resolveAddress(connection, new AbortController().signal)
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3))
   learnRuntimeRoutes(connection, snapshot)
   for (const expire of stalled) expire()
@@ -198,7 +197,7 @@ it('uses saved route metadata in a fresh client session without sending tokens t
       })
     }),
   )
-  expect(await resolveRuntimeRoute(connection, new AbortController().signal)).toBe(
+  expect(await resolveAddress(connection, new AbortController().signal)).toBe(
     'http://restored-vpn.local',
   )
 })
@@ -228,7 +227,7 @@ it('returns a verified preferred route without waiting for stale lower-priority 
     }),
   )
   let selected: string | undefined
-  const pending = resolveRuntimeRoute(connection, new AbortController().signal).then((address) => {
+  const pending = resolveAddress(connection, new AbortController().signal).then((address) => {
     selected = address
     return address
   })
@@ -254,17 +253,17 @@ it('keeps streaming cooldowns independent of HTTP selection and rechecks the pre
       ),
   )
   const signal = new AbortController().signal
-  expect(await resolveRuntimeRoute(connection, signal)).toBe(connection.address)
-  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe(connection.address)
+  expect(await resolveAddress(connection, signal)).toBe(connection.address)
+  expect(await resolveAddress(connection, signal, 'stream')).toBe(connection.address)
   failRuntimeStreamingRoute(connection, connection.address)
-  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe('http://streaming-vpn.local')
+  expect(await resolveAddress(connection, signal, 'stream')).toBe('http://streaming-vpn.local')
   expect(runtimeTransportAddress(connection)).toBe(connection.address)
   expect(runtimeTransportAddress(connection, 'stream')).toBe('http://streaming-vpn.local')
-  expect(await resolveRuntimeRoute(connection, signal)).toBe(connection.address)
+  expect(await resolveAddress(connection, signal)).toBe(connection.address)
   clock.mockReturnValue(129999)
-  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe('http://streaming-vpn.local')
+  expect(await resolveAddress(connection, signal, 'stream')).toBe('http://streaming-vpn.local')
   clock.mockReturnValue(130000)
-  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe(connection.address)
+  expect(await resolveAddress(connection, signal, 'stream')).toBe(connection.address)
 })
 
 it('does not retain a selection from cancelled probes, even if a descriptor arrives late', async () => {
@@ -284,9 +283,7 @@ it('does not retain a selection from cancelled probes, even if a descriptor arri
     ),
   )
   const controller = new AbortController()
-  const pending = resolveRuntimeRoute(connection, controller.signal).catch(
-    (error: unknown) => error,
-  )
+  const pending = resolveAddress(connection, controller.signal).catch((error: unknown) => error)
   controller.abort(new Error('Changed runtime'))
   finish?.(Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId }))
   expect(await pending).toMatchObject({ message: 'Changed runtime' })
@@ -297,7 +294,7 @@ it('does not retain a selection from cancelled probes, even if a descriptor arri
       Response.json({ service: 'dovo-runtime', runtimeId: 'different-runtime' }),
     )
   vi.stubGlobal('fetch', fetcher)
-  await expect(resolveRuntimeRoute(connection, new AbortController().signal)).rejects.toThrow(
+  await expect(resolveAddress(connection, new AbortController().signal)).rejects.toThrow(
     'No verified address',
   )
   expect(fetcher).toHaveBeenCalledOnce()
@@ -320,18 +317,14 @@ it('bounds exhaustion of all streaming routes without blocking HTTP or permanent
       ),
   )
   const signal = new AbortController().signal
-  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe(connection.address)
+  expect(await resolveAddress(connection, signal, 'stream')).toBe(connection.address)
   failRuntimeStreamingRoute(connection, connection.address)
-  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe(
-    connection.alternateAddresses[0],
-  )
+  expect(await resolveAddress(connection, signal, 'stream')).toBe(connection.alternateAddresses[0])
   failRuntimeStreamingRoute(connection, connection.alternateAddresses[0]!)
-  await expect(resolveRuntimeRoute(connection, signal, 'stream')).rejects.toThrow(
-    'No verified address',
-  )
-  expect(await resolveRuntimeRoute(connection, signal)).toBe(connection.address)
+  await expect(resolveAddress(connection, signal, 'stream')).rejects.toThrow('No verified address')
+  expect(await resolveAddress(connection, signal)).toBe(connection.address)
   clock.mockReturnValue(130000)
-  expect(await resolveRuntimeRoute(connection, signal, 'stream')).toBe(connection.address)
+  expect(await resolveAddress(connection, signal, 'stream')).toBe(connection.address)
 })
 
 it('rejects changed saved runtime identity before trusting an already warm route', async () => {
@@ -342,9 +335,7 @@ it('rejects changed saved runtime identity before trusting an already warm route
       Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId }),
     )
   vi.stubGlobal('fetch', fetcher)
-  expect(await resolveRuntimeRoute(connection, new AbortController().signal)).toBe(
-    connection.address,
-  )
+  expect(await resolveAddress(connection, new AbortController().signal)).toBe(connection.address)
   fetcher.mockClear()
   await expect(
     runtimeRequest(
@@ -359,4 +350,137 @@ it('rejects changed saved runtime identity before trusting an already warm route
     message: expect.stringContaining('different runtime'),
   })
   expect(fetcher).not.toHaveBeenCalled()
+})
+
+it('shares one discovery across twenty readers without cancelling other readers', async () => {
+  const connection = {
+    address: 'http://shared-probes.local',
+    token,
+    runtimeId: 'paired-runtime',
+    alternateAddresses: ['http://shared-probes-vpn.local'],
+  }
+  const pending: Array<{ signal: AbortSignal | null | undefined; finish: () => void }> = []
+  const fetcher = vi.fn<typeof fetch>(
+    (_input, options) =>
+      new Promise<Response>((resolve) => {
+        pending.push({
+          signal: options?.signal,
+          finish: () =>
+            resolve(
+              Response.json({
+                service: 'dovo-runtime',
+                runtimeId: connection.runtimeId,
+              }),
+            ),
+        })
+      }),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const cancelled = new AbortController()
+  const first = resolveAddress(connection, cancelled.signal).catch((error: unknown) => error)
+  const others = Array.from({ length: 19 }, () =>
+    resolveAddress(connection, new AbortController().signal),
+  )
+  expect(fetcher).toHaveBeenCalledTimes(2)
+  cancelled.abort(new Error('Screen closed'))
+  await expect(first).resolves.toMatchObject({ message: 'Screen closed' })
+  expect(pending.every(({ signal }) => !signal?.aborted)).toBe(true)
+  for (const probe of pending) probe.finish()
+  expect(await Promise.all(others)).toEqual(Array(19).fill(connection.address))
+  expect(pending.every(({ signal }) => signal?.aborted)).toBe(true)
+  expect(await resolveAddress(connection, new AbortController().signal)).toBe(connection.address)
+  expect(fetcher).toHaveBeenCalledTimes(2)
+})
+
+it('aborts abandoned probes and ignores their late results before a fresh resolution', async () => {
+  const connection = {
+    address: 'http://abandoned-probes.local',
+    token,
+    runtimeId: 'paired-runtime',
+  }
+  const pending: Array<{ signal: AbortSignal | null | undefined; finish: () => void }> = []
+  const fetcher = vi.fn<typeof fetch>(
+    (_input, options) =>
+      new Promise<Response>((resolve) => {
+        pending.push({
+          signal: options?.signal,
+          finish: () =>
+            resolve(
+              Response.json({
+                service: 'dovo-runtime',
+                runtimeId: connection.runtimeId,
+              }),
+            ),
+        })
+      }),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new AbortController()
+  const first = resolveAddress(connection, controller.signal).catch((error: unknown) => error)
+  controller.abort(new Error('No readers'))
+  await expect(first).resolves.toMatchObject({ message: 'No readers' })
+  expect(pending[0]?.signal?.aborted).toBe(true)
+  const second = resolveAddress(connection, new AbortController().signal)
+  expect(fetcher).toHaveBeenCalledTimes(2)
+  pending[0]?.finish()
+  await Promise.resolve()
+  pending[1]?.finish()
+  expect(await second).toBe(connection.address)
+})
+
+it('keeps pairing credentials and HTTP/stream discoveries isolated', async () => {
+  const connection = { address: 'http://probe-isolation.local', token, runtimeId: 'paired-runtime' }
+  const finishes: Array<() => void> = []
+  const fetcher = vi.fn<typeof fetch>(
+    () =>
+      new Promise<Response>((resolve) => {
+        finishes.push(() =>
+          resolve(Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId })),
+        )
+      }),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const signal = new AbortController().signal
+  const pending = [
+    resolveAddress(connection, signal),
+    resolveAddress(connection, signal, 'stream'),
+    resolveAddress({ ...connection, token: 'other-device' }, signal),
+  ]
+  expect(fetcher).toHaveBeenCalledTimes(3)
+  for (const finish of finishes) finish()
+  expect(await Promise.all(pending)).toEqual(Array(3).fill(connection.address))
+})
+
+it('invalidates in-flight discovery and never lets a late result overwrite its replacement', async () => {
+  const connection = {
+    address: 'http://invalidate-probes.local',
+    token,
+    runtimeId: 'paired-runtime',
+    alternateAddresses: ['http://invalidate-probes-vpn.local'],
+  }
+  const finishes: Array<(runtimeId: string) => void> = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishes.push((runtimeId) =>
+            resolve(Response.json({ service: 'dovo-runtime', runtimeId })),
+          )
+        }),
+    ),
+  )
+  const signal = new AbortController().signal
+  const stale = resolveAddress(connection, signal).catch((error: unknown) => error)
+  invalidateRuntimeRoute(connection)
+  await expect(stale).resolves.toMatchObject({ message: 'Runtime route was invalidated' })
+  const fresh = resolveAddress(connection, signal)
+  finishes[2]?.('wrong-runtime')
+  finishes[3]?.(connection.runtimeId)
+  expect(await fresh).toBe(connection.alternateAddresses[0])
+  finishes[0]?.(connection.runtimeId)
+  finishes[1]?.(connection.runtimeId)
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(runtimeTransportAddress(connection)).toBe(connection.alternateAddresses[0])
 })

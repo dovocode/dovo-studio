@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AccountPanel } from './account-panel'
 import { RuntimeIconSettings } from './runtime-icon-settings'
-import { runtimeExtension } from './index'
+import { runtimeSettings } from './settings-views'
 import { RuntimeDiagnosticsPanel } from './runtime-diagnostics'
 import { PageHeader } from '@dovo/studio-ui'
 import { Schema } from 'effect'
@@ -165,12 +165,7 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
                       Open a page to change settings saved on this computer.
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {runtimeExtension.views
-                        .filter(
-                          (view) =>
-                            view.id !== 'runtime' &&
-                            (view.settingsScope === 'computer' || view.id === 'task-defaults'),
-                        )
+                      {[...runtimeSettings]
                         .sort((a, b) => a.order - b.order)
                         .map(({ id: viewId, title: label }) => (
                           <Button

@@ -1,12 +1,13 @@
 import { isDeepStrictEqual } from 'node:util'
 import { randomUUID } from 'node:crypto'
-import { Effect } from 'effect'
+import { Effect, Struct } from 'effect'
 import type { IncomingMessage } from 'node:http'
 import {
   decode,
   catalogSkillSource,
   scopedSettingsReadSchema,
   scopedSettingsSaveSchema,
+  scopedSettingsValueSchema,
   sharedSettingsSyncSchema,
   initializeScopedSettings,
   settingsAtScope,
@@ -20,7 +21,7 @@ import {
   type SharedSettingsEntry,
   type ScopedSettingsValue,
 } from '@dovo/protocol'
-import { RuntimeServices } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { HttpError } from '../../errors.js'
 import { validateDefaultHarness } from '../../storage/runtime-defaults.js'
 import { body } from '../support/body.js'
@@ -193,19 +194,26 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
       const save = decode(scopedSettingsSaveSchema, raw)
       if (input.scope === 'project' && save.projectKey !== sharedProjectKey(repository))
         throw new HttpError(409, 'The project remote changed. Reload settings before saving.')
-      const comparable = (document: ScopedSettingsValue) =>
-        includeAgents ? { agents: document.agents ?? [] } : { ...document, agents: undefined }
+      const visible = decode(scopedSettingsValueSchema, s.store.publicValue(value))
+      const groups = includeAgents
+        ? (['agents'] as const)
+        : Struct.keys(scopedSettingsValueSchema.fields).filter((key) => key !== 'agents')
+      const edited = groups.filter((key) => !isDeepStrictEqual(save.before[key], save.after[key]))
+      // Independent pages can save concurrently. Only the categories being changed must match.
       if (
-        !isDeepStrictEqual(
-          JSON.parse(JSON.stringify(s.store.publicValue(comparable(value)))),
-          JSON.parse(JSON.stringify(comparable(save.before))),
+        (edited.length ? edited : groups).some(
+          (key) => !isDeepStrictEqual(visible[key], save.before[key]),
         )
       )
         throw new HttpError(409, 'Settings changed on another device. Reload before saving.')
-      let after = decode(scopedSettingsSaveSchema.fields.after, s.store.restoreSecrets(save.after))
-      after = includeAgents
-        ? { ...stored, agents: after.agents ?? [] }
-        : { ...after, agents: stored.agents }
+      if (!edited.length)
+        return s.store.publicValue({ value, inherited, projectKey: sharedProjectKey(repository) })
+      const restored = decode(scopedSettingsValueSchema, s.store.restoreSecrets(save.after))
+      if (includeAgents) restored.agents ??= []
+      let after = edited.reduce<ScopedSettingsValue>(
+        (result, key) => ({ ...result, [key]: restored[key] }),
+        stored,
+      )
       validatePrompts(after)
       if (input.scope === 'global' || input.scope === 'project') {
         after = prepareShared(after)

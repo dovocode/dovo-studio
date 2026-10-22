@@ -1,3 +1,4 @@
+import { androidTool } from './android-tool.js'
 import { appleDeviceCommand } from './apple-device-command.js'
 import { deviceApps, launchDeviceApp, manageDeviceApp } from './device-app-actions.js'
 import { deviceControls } from './device-controls.js'
@@ -5,7 +6,7 @@ import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
-import { hostname, homedir, tmpdir } from 'node:os'
+import { hostname, tmpdir } from 'node:os'
 import { join, resolve, delimiter, isAbsolute } from 'node:path'
 import { constants } from 'node:fs'
 import { emulatorEndpoint } from './simulator-native.js'
@@ -165,39 +166,6 @@ export function parsePhysicalAndroidDevices(raw: string): PreviewDevice[] {
       },
     ]
   })
-}
-export async function androidTool(tool: 'adb' | 'emulator') {
-  const defaultRoot = join(
-    homedir(),
-    process.platform === 'darwin' ? 'Library/Android/sdk' : 'Android/Sdk',
-  )
-  const root =
-    process.env.ANDROID_HOME ||
-    process.env.ANDROID_SDK_ROOT ||
-    (process.platform === 'win32'
-      ? join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'Android', 'Sdk')
-      : join(homedir(), process.platform === 'darwin' ? 'Library/Android/sdk' : 'Android/Sdk'))
-  const path = join(
-    root,
-    tool === 'adb' ? 'platform-tools' : 'emulator',
-    process.platform === 'win32' ? `${tool}.exe` : tool,
-  )
-  try {
-    await access(path)
-    return path
-  } catch {
-    const fallback = join(
-      defaultRoot,
-      tool === 'adb' ? 'platform-tools' : 'emulator',
-      process.platform === 'win32' ? `${tool}.exe` : tool,
-    )
-    try {
-      await access(fallback)
-      return fallback
-    } catch {
-      return tool
-    }
-  }
 }
 async function executableAvailable(name: string) {
   const paths =

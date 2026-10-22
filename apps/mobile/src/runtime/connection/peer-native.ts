@@ -36,8 +36,15 @@ export async function openPeerTunnel(
   ).join('')
   if (abort?.aborted) throw new Error('Internet connection was closed')
   const pc = new RTCPeerConnection({ iceServers: PEER_STUN_URLS.map((urls) => ({ urls })) })
-  const ready = pc.createDataChannel('dovo-ready-v1', { ordered: true })
-  const signal = new WebSocket(peerSocketUrl(config))
+  let ready: ReturnType<RTCPeerConnection['createDataChannel']>
+  let signal: WebSocket
+  try {
+    ready = pc.createDataChannel('dovo-ready-v1', { ordered: true })
+    signal = new WebSocket(peerSocketUrl(config))
+  } catch (error) {
+    pc.close()
+    throw error
+  }
   const pipes = new Set<ReturnType<typeof createPeerPipe>>()
   let stopped = false,
     connected = false
@@ -49,6 +56,7 @@ export async function openPeerTunnel(
   let statsTimer: ReturnType<typeof setTimeout> | undefined
   let route: PeerRoute | undefined
   let readingStats = false
+  let routeRevision = 0
   const setRoute = (value: PeerRoute | undefined) => {
     if (stopped || route === value) return
     route = value
@@ -58,17 +66,21 @@ export async function openPeerTunnel(
     if (stopped || readingStats || pc.connectionState !== 'connected') return
     clearTimeout(statsTimer)
     readingStats = true
+    const revision = routeRevision
     try {
       const value = selectedPeerRoute(await pc.getStats())
-      if (pc.connectionState === 'connected') setRoute(value)
+      if (revision === routeRevision && pc.connectionState === 'connected') setRoute(value)
     } catch {
       // Diagnostics are optional: show an unknown route rather than guess or close traffic.
-      setRoute(undefined)
+      if (revision === routeRevision) setRoute(undefined)
     } finally {
       readingStats = false
       // Native WebRTC has no selected-pair-change event. Track ICE changes while active.
-      if (!stopped && pc.connectionState === 'connected')
-        statsTimer = setTimeout(() => void refreshRoute(), 5000)
+      if (!stopped && pc.connectionState === 'connected') {
+        // A report started before ICE recovery cannot describe its new selected pair.
+        if (revision !== routeRevision) void refreshRoute()
+        else statsTimer = setTimeout(() => void refreshRoute(), 5000)
+      }
     }
   }
   let finishGathering: (() => void) | undefined
@@ -117,6 +129,7 @@ export async function openPeerTunnel(
     }
     pc.onconnectionstatechange = () => {
       if (stopped) return
+      routeRevision++
       if (pc.connectionState === 'disconnected') {
         clearTimeout(statsTimer)
         setRoute(undefined)
@@ -261,7 +274,16 @@ export async function openPeerTunnel(
           socket.destroy()
           return
         }
-        const channel = pc.createDataChannel('dovo-tcp-v1', { ordered: true })
+        let channel: ReturnType<RTCPeerConnection['createDataChannel']>
+        try {
+          channel = pc.createDataChannel('dovo-tcp-v1', { ordered: true })
+        } catch (error) {
+          // Native teardown can precede its JS state event. Fail the tunnel so the
+          // request layer can recover, instead of throwing out of the socket callback.
+          socket.destroy()
+          close(error)
+          return
+        }
         channel.binaryType = 'arraybuffer'
         const pipe = createPeerPipe({
           stream: {

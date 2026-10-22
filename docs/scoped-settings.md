@@ -3,29 +3,28 @@
 Task defaults, lifecycle policies and agent launch settings, MCP servers, managed skills, hooks and
 saved prompts inherit in this order:
 
-1. **Global** — shared with connected paired environments.
-2. **Computer** — overrides for one computer/runtime.
+1. **All machines & projects** — shared with connected paired environments.
+2. **Machine** — overrides for one computer/runtime.
 3. **Project** — shared for checkouts with the same canonical Git remote identity.
-4. **Project on computer** — overrides for one checkout on one environment.
+4. **Project on machine** — overrides for one checkout on one environment.
 
 The **Task defaults**, **Agents** and **MCP, skills & hooks** pages share a project/computer target
 selector on desktop and mobile. An **Editing** summary names the project/computer being configured,
 explains where changes apply, and labels shared defaults versus settings saved on a computer. On
-desktop, the bar below the page title holds the project and computer choices and the four levels in
-order. Project defaults override Computer defaults; Project on computer is the most specific level.
-It stays visible while the page scrolls, and the settings navigation repeats the current target so
-it is visible from every page. Choose **All projects** or a project, then **All computers · shared**
-or one computer. These choices select one of the four levels above; shared settings synchronize
-defaults rather than bulk-editing each computer’s overrides. The target stays selected between these
-pages. A project missing from the selected computer cannot be edited until another target is chosen.
-Local folders are offered only with a specific computer.
+desktop, the bar below the page title holds the project and machine choices. Project defaults
+override machine defaults; Project on machine is the most specific level. It stays visible while the
+page scrolls, and the settings navigation repeats the current target so it is visible from every
+page. Choose **All projects** or a project, then **All machines** or one computer. These choices
+select one of the four levels above; shared settings synchronize defaults rather than bulk-editing
+each computer’s overrides. The target stays selected between these pages. A project missing from the
+selected computer cannot be edited until another target is chosen. Local folders are offered only
+with a specific computer.
 
 Each page in the settings navigation shows where it saves: a layers mark for pages that inherit
 through the four levels, a monitor mark for pages saved on one computer, and no mark for device
-preferences, which ignore the target. Mobile uses the same bar above its scoped pages, with **Change
-scope** revealing the project and computer choices. Its compact summary stays visible while the
-scoped page scrolls; expanded choices scroll with the content. The Settings list shows the current
-target with matching marks on its rows.
+preferences, which ignore the target. Mobile keeps both choices visible above its scoped pages. Its
+compact summary stays visible while the scoped page scrolls; the choices scroll with the content.
+The Settings list shows the current target with matching marks on its rows.
 
 Task defaults and lifecycle settings also have a **View inheritance** control. It shows values at
 each scope, grouped by computer, with the winning value checked. Matching projects use their
@@ -127,6 +126,7 @@ resolve the selected project's effective configurations and copy the chosen laun
 thread. Favorites and provider checks belong to the connected environment. Installations are shown
 when editing a computer for all projects. Titles & dictation has a dedicated computer-specific page.
 
-Named configurations and default/tool settings compare and save independently, preserving concurrent
-changes to the other category. Conflicting edits to configurations still require a reload. Older
+Settings saves compare only changed categories (task defaults, lifecycle, prompts, tools, icons or
+named configurations), preserving concurrent changes to other categories. Conflicting edits within
+the same category require a reload. Unchanged saves do not generate new shared revisions. Older
 runtimes display an update notice instead of accepting unsupported named configuration writes.

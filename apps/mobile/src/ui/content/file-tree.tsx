@@ -74,7 +74,7 @@ export function MobileFileTree({
     const sections: { title: string; summary?: string; impact?: string; data: Row[] }[] = []
     if (related)
       for (const group of groups) {
-        if (group.basis === 'folder') continue
+        if (group.basis !== 'feature') continue
         const members = group.paths.flatMap((path) => {
           const file = remaining.get(path)
           if (!file) return []
@@ -90,7 +90,7 @@ export function MobileFileTree({
         })
         if (members.length)
           sections.push({
-            title: `${group.basis === 'feature' ? 'Feature' : 'Related'} · ${group.label}`,
+            title: `Feature · ${group.label}`,
             summary: group.summary,
             impact: group.impact,
             data: members,

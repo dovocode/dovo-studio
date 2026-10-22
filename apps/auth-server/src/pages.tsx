@@ -3,12 +3,6 @@ import { Button, Input, Badge, Card } from '@dovo/web-ui'
 import { renderHtml } from '@dovo/web-ui/server'
 import { webUiStyles } from '@dovo/web-ui/styles'
 
-export const escape = (value: string) =>
-  value.replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-  )
-
 export const styles = `${hostedStyles}
 ${webUiStyles}
 header,main,footer{max-width:1040px;margin:auto;padding:24px}

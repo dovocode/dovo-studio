@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Bot, ChevronRight, ListTodo, MessagesSquare, PanelsTopLeft } from 'lucide-react'
 import { taskLauncherShortcuts } from '@dovo/protocol'
 import {
   formatDateTime,
@@ -39,52 +38,6 @@ export default function GeneralSettings() {
       title="General"
       description="Navigation, date and time, and everyday app behavior on this device."
     >
-      <div className="grid gap-2 sm:grid-cols-2">
-        {(
-          [
-            {
-              id: 'task-list-settings',
-              title: 'Organize tasks & projects',
-              description: 'Grouping, sorting, project picker and confirmations',
-              icon: PanelsTopLeft,
-            },
-            {
-              id: 'conversation-settings',
-              title: 'Customize conversations',
-              description: 'Writing, reading responses and speech',
-              icon: MessagesSquare,
-            },
-            {
-              id: 'agents',
-              title: 'Set up your agents',
-              description: 'Providers, models and reusable profiles',
-              icon: Bot,
-            },
-            {
-              id: 'task-defaults',
-              title: 'Choose task defaults',
-              description: 'Global, computer and project settings',
-              icon: ListTodo,
-            },
-          ] as const
-        ).map(({ id, title, description, icon: Icon }) => (
-          <button
-            type="button"
-            key={id}
-            onClick={() => host.navigate({ viewId: id })}
-            className="flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Icon className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium">{title}</span>
-              <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                {description}
-              </span>
-            </span>
-            <ChevronRight className="size-3.5 text-muted-foreground" />
-          </button>
-        ))}
-      </div>
       <SettingsGroup title="Navigation & shortcuts">
         {taskLauncher && (
           <SettingRow

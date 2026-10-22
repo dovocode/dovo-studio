@@ -26,7 +26,7 @@ import {
   SCRATCH_PROJECT_ID,
 } from '@dovo/protocol'
 import type { Services } from '../services.js'
-import { RuntimeServices } from '../services.js'
+import { RuntimeServices } from '../runtime-services.js'
 import type { RunPolicy } from '../auth/run-credentials.js'
 import { HttpError } from '../errors.js'
 import { patchWorkspace } from '../http/endpoints/workspace-patch.js'
@@ -416,7 +416,7 @@ export async function studioTool(
         throw new HttpError(409, 'Cannot control the automation running this agent')
       validateFlow(s, run.flow, policy)
       if (command.action === 'cancel') {
-        s.jobs.cancel(command.id)
+        await s.jobs.cancel(command.id)
         return { ok: true }
       }
       return { id: s.jobs.retry(command.id) }

@@ -10,6 +10,7 @@ import {
   Button,
   MessageResponse,
   Dialog,
+  DialogTrigger,
   DialogContent,
   DialogTitle,
   DialogDescription,
@@ -28,13 +29,23 @@ export function ComputerUpdates() {
     }),
   )
   const state = useSyncExternalStore(manager.subscribe, manager.getSnapshot)
+  const [open, setOpen] = useState(false)
+  const updating =
+    state.busy.length > 0 ||
+    Object.values(state.statuses).some((status) =>
+      ['queued', 'downloading', 'installing', 'downloaded'].includes(status.status),
+    )
   useEffect(() => {
-    void manager.check()
+    if (open) void manager.check()
+  }, [manager, open])
+  useEffect(() => {
+    // Keep tracking an initiated update when the dialog closes, including automatic restarts.
+    if (!open && !updating) return
     const timer = setInterval(() => void manager.poll(), 3000)
     return () => {
       clearInterval(timer)
     }
-  }, [manager])
+  }, [manager, open, updating])
   const [confirmAll, setConfirmAll] = useState(false)
   const [resumeInterrupted, setResumeInterrupted] = useState(false)
   const eligible = (entry: RuntimeUpgradeEntry) => {
@@ -67,210 +78,223 @@ export function ComputerUpdates() {
     )
     .map((entry) => entry.profile.id)
   return (
-    <section className="space-y-3 rounded-lg border bg-card/40 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-medium">Computer updates</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Update every eligible computer at once, or select a batch. Update all installs and
-            restarts desktops automatically.
-          </p>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={state.checking}
-          onClick={() => void manager.check()}
-        >
-          {state.checking ? 'Checking…' : 'Check updates'}
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" disabled={!targets.length}>
+          Computer updates
         </Button>
-      </div>
-      {state.error && (
-        <p role="alert" className="text-xs text-destructive">
-          {state.error}
-        </p>
-      )}
-      <div className="divide-y">
-        {targets.map((entry) => {
-          const id = entry.profile.id,
-            update = runtimeUpdate(entry.snapshot, state.releases)
-          const desktop = entry.snapshot?.releaseDistribution === 'desktop'
-          const blocked = runtimeUpgradeBlocked(entry),
-            status = state.statuses[id]
-          const downloading = status?.status === 'downloading'
-          const running = ['queued', 'downloading', 'installing'].includes(status?.status ?? '')
-          const downloaded = desktop && status?.status === 'downloaded'
-          return (
-            <div key={id} className="flex gap-3 py-3">
-              <input
-                type="checkbox"
-                className="mt-1 shrink-0"
-                aria-label={`Select ${entry.profile.name} for update`}
-                checked={state.selected.includes(id)}
-                disabled={
-                  !!state.busy.length ||
-                  (!eligible(entry) && !downloaded && !state.selected.includes(id))
-                }
-                onChange={() => manager.toggle(id)}
-              />
-              <div className="min-w-0 flex-1 space-y-1">
-                <p className="text-sm font-medium">
-                  {entry.profile.name}{' '}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    · {desktop ? 'Desktop' : 'Server'}
-                  </span>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {update.installed ?? 'Version unknown'}
-                  {update.available
-                    ? ` → ${update.latest?.version}`
-                    : update.installed && state.releases
-                      ? ' · Up to date'
-                      : ''}
-                </p>
-                {update.available && (
-                  <details className="text-xs">
-                    <summary className="cursor-pointer text-primary">What’s new</summary>
-                    <div className="my-2 max-h-40 overflow-y-auto">
-                      <MessageResponse baseURL={update.latest?.url}>
-                        {update.latest?.notes || 'Release notes are unavailable.'}
-                      </MessageResponse>
-                    </div>
-                  </details>
-                )}
-                {blocked && <p className="text-xs text-muted-foreground">{blocked}</p>}
-                {running && (
-                  <div role="status" aria-live="polite" className="text-xs text-muted-foreground">
-                    {downloading
-                      ? `Downloading ${Math.round(status?.progress ?? 0)}%${status?.total ? ` · ${((status.transferred ?? 0) / 1048576).toFixed(1)} / ${(status.total / 1048576).toFixed(1)} MB` : ''}`
-                      : status?.status === 'installing'
-                        ? 'Installing and reconnecting…'
-                        : 'Preparing update…'}
-                    {downloading && (
-                      <progress
-                        className="mt-1 block h-1.5 w-full"
-                        max={100}
-                        value={status?.progress ?? 0}
-                      />
-                    )}
-                  </div>
-                )}
-                {downloaded && (
-                  <p role="status" className="text-xs text-primary">
-                    Version {status?.version} downloaded. Restart when you’re ready.
-                  </p>
-                )}
-                {status?.status === 'complete' && (
-                  <p role="status" className="text-xs text-status-success">
-                    Update complete
-                  </p>
-                )}
-                {status?.error && (
-                  <p role="alert" className="text-xs text-destructive">
-                    {status.error}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {eligible(entry) && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!!state.busy.length}
-                      onClick={() => void manager.start([id])}
-                    >
-                      {desktop ? 'Download update' : 'Update server'}
-                    </Button>
-                  )}
-                  {downloaded && (
-                    <Button
-                      size="sm"
-                      disabled={!!state.busy.length || !!blocked}
-                      onClick={() => void manager.restart([id])}
-                    >
-                      Restart and install
-                    </Button>
-                  )}
-                  {update.latest && blocked && (
-                    <a
-                      className="text-xs text-primary underline"
-                      href={update.latest.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      View release
-                    </a>
-                  )}
-                </div>
-              </div>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <section className="space-y-3 rounded-lg border bg-card/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <DialogTitle>Computer updates</DialogTitle>
+              <DialogDescription>
+                Update every eligible computer at once, or select a batch. Update all installs and
+                restarts desktops automatically.
+              </DialogDescription>
             </div>
-          )
-        })}
-      </div>
-      <Dialog open={confirmAll} onOpenChange={setConfirmAll}>
-        <DialogContent className="max-w-md">
-          <DialogTitle>Update all computers</DialogTitle>
-          <DialogDescription>
-            Servers install and restart automatically. Desktops download, install and restart.
-            Running desktop threads are interrupted. Leave the box off to resume manually, or enable
-            it to resume automatically after this restart.
-          </DialogDescription>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={resumeInterrupted}
-              onChange={(event) => setResumeInterrupted(event.target.checked)}
-            />
-            Resume interrupted threads after restart
-          </label>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setConfirmAll(false)}>
-              Cancel
-            </Button>
             <Button
-              disabled={!all.length || !!state.busy.length}
-              onClick={() => {
-                setConfirmAll(false)
-                void manager.start(all, { restartDesktops: true, resumeInterrupted })
-              }}
+              size="sm"
+              variant="outline"
+              disabled={state.checking}
+              onClick={() => void manager.check()}
             >
-              Update and restart ({all.length})
+              {state.checking ? 'Checking…' : 'Check updates'}
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          disabled={!all.length || state.checking || !!state.busy.length}
-          onClick={() => {
-            setResumeInterrupted(false)
-            setConfirmAll(true)
-          }}
-        >
-          Update all ({all.length})
-        </Button>
-        <Button
-          size="sm"
-          disabled={!selected.length || !!state.busy.length}
-          onClick={() => void manager.start(selected)}
-        >
-          {state.busy.length ? 'Starting updates…' : `Update selected (${selected.length})`}
-        </Button>
-        {!!ready.length && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!!state.busy.length}
-            onClick={() => void manager.restart(ready)}
-          >
-            Restart selected desktops ({ready.length})
-          </Button>
-        )}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Servers install and restart after downloading. Desktop updates include their bundled server.
-        Other installs show host upgrade guidance.
-      </p>
-    </section>
+          {state.error && (
+            <p role="alert" className="text-xs text-destructive">
+              {state.error}
+            </p>
+          )}
+          <div className="divide-y">
+            {targets.map((entry) => {
+              const id = entry.profile.id,
+                update = runtimeUpdate(entry.snapshot, state.releases)
+              const desktop = entry.snapshot?.releaseDistribution === 'desktop'
+              const blocked = runtimeUpgradeBlocked(entry),
+                status = state.statuses[id]
+              const downloading = status?.status === 'downloading'
+              const running = ['queued', 'downloading', 'installing'].includes(status?.status ?? '')
+              const downloaded = desktop && status?.status === 'downloaded'
+              return (
+                <div key={id} className="flex gap-3 py-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 shrink-0"
+                    aria-label={`Select ${entry.profile.name} for update`}
+                    checked={state.selected.includes(id)}
+                    disabled={
+                      !!state.busy.length ||
+                      (!eligible(entry) && !downloaded && !state.selected.includes(id))
+                    }
+                    onChange={() => manager.toggle(id)}
+                  />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="text-sm font-medium">
+                      {entry.profile.name}{' '}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        · {desktop ? 'Desktop' : 'Server'}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {update.installed ?? 'Version unknown'}
+                      {update.available
+                        ? ` → ${update.latest?.version}`
+                        : update.installed && state.releases
+                          ? ' · Up to date'
+                          : ''}
+                    </p>
+                    {update.available && (
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-primary">What’s new</summary>
+                        <div className="my-2 max-h-40 overflow-y-auto">
+                          <MessageResponse baseURL={update.latest?.url}>
+                            {update.latest?.notes || 'Release notes are unavailable.'}
+                          </MessageResponse>
+                        </div>
+                      </details>
+                    )}
+                    {blocked && <p className="text-xs text-muted-foreground">{blocked}</p>}
+                    {running && (
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        className="text-xs text-muted-foreground"
+                      >
+                        {downloading
+                          ? `Downloading ${Math.round(status?.progress ?? 0)}%${status?.total ? ` · ${((status.transferred ?? 0) / 1048576).toFixed(1)} / ${(status.total / 1048576).toFixed(1)} MB` : ''}`
+                          : status?.status === 'installing'
+                            ? 'Installing and reconnecting…'
+                            : 'Preparing update…'}
+                        {downloading && (
+                          <progress
+                            className="mt-1 block h-1.5 w-full"
+                            max={100}
+                            value={status?.progress ?? 0}
+                          />
+                        )}
+                      </div>
+                    )}
+                    {downloaded && (
+                      <p role="status" className="text-xs text-primary">
+                        Version {status?.version} downloaded. Restart when you’re ready.
+                      </p>
+                    )}
+                    {status?.status === 'complete' && (
+                      <p role="status" className="text-xs text-status-success">
+                        Update complete
+                      </p>
+                    )}
+                    {status?.error && (
+                      <p role="alert" className="text-xs text-destructive">
+                        {status.error}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {eligible(entry) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!!state.busy.length}
+                          onClick={() => void manager.start([id])}
+                        >
+                          {desktop ? 'Download update' : 'Update server'}
+                        </Button>
+                      )}
+                      {downloaded && (
+                        <Button
+                          size="sm"
+                          disabled={!!state.busy.length || !!blocked}
+                          onClick={() => void manager.restart([id])}
+                        >
+                          Restart and install
+                        </Button>
+                      )}
+                      {update.latest && blocked && (
+                        <a
+                          className="text-xs text-primary underline"
+                          href={update.latest.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          View release
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <Dialog open={confirmAll} onOpenChange={setConfirmAll}>
+            <DialogContent className="max-w-md">
+              <DialogTitle>Update all computers</DialogTitle>
+              <DialogDescription>
+                Servers install and restart automatically. Desktops download, install and restart.
+                Running desktop threads are interrupted. Leave the box off to resume manually, or
+                enable it to resume automatically after this restart.
+              </DialogDescription>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={resumeInterrupted}
+                  onChange={(event) => setResumeInterrupted(event.target.checked)}
+                />
+                Resume interrupted threads after restart
+              </label>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setConfirmAll(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  disabled={!all.length || !!state.busy.length}
+                  onClick={() => {
+                    setConfirmAll(false)
+                    void manager.start(all, { restartDesktops: true, resumeInterrupted })
+                  }}
+                >
+                  Update and restart ({all.length})
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              disabled={!all.length || state.checking || !!state.busy.length}
+              onClick={() => {
+                setResumeInterrupted(false)
+                setConfirmAll(true)
+              }}
+            >
+              Update all ({all.length})
+            </Button>
+            <Button
+              size="sm"
+              disabled={!selected.length || !!state.busy.length}
+              onClick={() => void manager.start(selected)}
+            >
+              {state.busy.length ? 'Starting updates…' : `Update selected (${selected.length})`}
+            </Button>
+            {!!ready.length && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!!state.busy.length}
+                onClick={() => void manager.restart(ready)}
+              >
+                Restart selected desktops ({ready.length})
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Servers install and restart after downloading. Desktop updates include their bundled
+            server. Other installs show host upgrade guidance.
+          </p>
+        </section>
+      </DialogContent>
+    </Dialog>
   )
 }

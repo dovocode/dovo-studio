@@ -64,7 +64,7 @@ import {
   pullActionSchema,
   pullCreateSchema,
 } from '@dovo/protocol'
-import { RuntimeServices } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)

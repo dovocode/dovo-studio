@@ -51,7 +51,7 @@ it('retains unchanged text PR patches across pushes, but resets unavailable patc
     pullFileFingerprint({ ...text, patch: undefined }, { ...pull, headSha: 'next' }),
   )
 })
-it('never shows viewed state for a different visible revision and orders dependency groups consistently', () => {
+it('never shows viewed state for a different visible revision and ignores legacy dependency grouping', () => {
   const progress = {
     files: [{ path: file.path, fingerprint: 'old', viewed: true, version: 1 }],
     groups: [{ label: 'app', paths: ['types.ts', 'app.ts'], basis: 'ast' as const }],
@@ -61,7 +61,7 @@ it('never shows viewed state for a different visible revision and orders depende
     orderReviewFiles([{ path: 'app.ts' }, { path: 'types.ts' }], progress.groups, true).map(
       (file) => file.path,
     ),
-  ).toEqual(['types.ts', 'app.ts'])
+  ).toEqual(['app.ts', 'types.ts'])
 })
 
 it('requires feature groups to partition changed paths exactly once and preserves review order', async () => {

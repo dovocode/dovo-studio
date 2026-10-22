@@ -1,7 +1,5 @@
-import { runtimeTransportAddress } from '@dovo/protocol'
-import { startMcpAppTools } from '@dovo/studio-core'
-import { memo, useEffect, useRef, useState } from 'react'
 import {
+  createRuntimeClient,
   randomUUID,
   responses,
   mcpAppDownloads,
@@ -10,6 +8,8 @@ import {
   type McpAppReference,
   type McpApp,
 } from '@dovo/protocol'
+import { startMcpAppTools } from '@dovo/studio-core'
+import { memo, useEffect, useRef, useState } from 'react'
 import { useWorkspace, useResolvedTheme, useStudioHost } from '@dovo/studio-core'
 import html from '../../../studio-ui/mcp-apps/host.json'
 const object = (value: unknown): Record<string, unknown> =>
@@ -71,7 +71,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     const key = nonce.current
     const sendTool = (value: unknown) => frame.current?.contentWindow?.postMessage(value, '*')
     const current = startMcpAppTools({
-      address: () => runtimeTransportAddress(connection),
+      socketUrl: (ticket) => createRuntimeClient(connection).socketUrl('/ws/mcp-app', ticket),
       ticket: async () =>
         (
           await request(

@@ -4,11 +4,12 @@ import {
   decode,
   mutableStruct,
   projectTransferStartSchema,
+  projectTransferSourceSchema,
   projectTransferManifestSchema,
   projectTransferChunkSchema,
 } from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
-import { RuntimeServices } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { body } from '../support/body.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
 
@@ -28,12 +29,10 @@ export function projectTransferRoute(
       switch (path.slice('/api/scm/project-transfer/'.length)) {
         case 'targets':
           return transfers.targets()
-        case 'inspect':
-          return yield* serviceResult(
-            transfers.inspect(
-              decode(mutableStruct({ repositoryId: Schema.String }), input).repositoryId,
-            ),
-          )
+        case 'inspect': {
+          const source = decode(projectTransferSourceSchema, input)
+          return yield* serviceResult(transfers.inspect(source.repositoryId, source.worktreePath))
+        }
         case 'start':
           return transfers.start(decode(projectTransferStartSchema, input), device, () => {
             s.devices.authenticate(token)

@@ -17,6 +17,8 @@ import { createWriteStream } from 'node:fs'
 import type { ProjectTransferManifest } from '@dovo/protocol'
 import { gitRemoteIdentity } from '@dovo/protocol'
 import type { Services } from '../../services.js'
+import { runClientEffect } from '@dovo/client-runtime'
+import { worktreeChoicesEffect } from '../git/worktrees.js'
 import { HttpError } from '../../errors.js'
 import { exec, processEnvironment } from '../../process.js'
 import { safeFile } from './paths.js'
@@ -74,7 +76,7 @@ export async function hashFile(path: string) {
   for await (const chunk of createReadStream(path)) hash.update(chunk)
   return hash.digest('hex')
 }
-export async function transferGit(s: Services, cwd: string, args: string[], signal?: AbortSignal) {
+async function transferGit(s: Services, cwd: string, args: string[], signal?: AbortSignal) {
   return (
     await exec(s.commands.get().git, args, {
       cwd,
@@ -98,10 +100,20 @@ async function regular(root: string, path: string) {
     throw error
   }
 }
-export async function inspectTransfer(s: Services, repositoryId: string, signal?: AbortSignal) {
+export async function inspectTransfer(
+  s: Services,
+  repositoryId: string,
+  signal?: AbortSignal,
+  worktreePath?: string,
+) {
   const repo = s.store.get().repositories.find((repo) => repo.id === repositoryId)
   if (!repo || repo.kind === 'scratch') throw new HttpError(404, 'Choose a project to copy')
-  const root = await realpath(repo.path)
+  if (worktreePath) {
+    const choices = await runClientEffect(worktreeChoicesEffect(s, repositoryId))
+    if (!choices.worktrees.some((entry) => entry.path === worktreePath))
+      throw new HttpError(409, 'Choose an existing worktree belonging to this project')
+  }
+  const root = await realpath(worktreePath ?? repo.path)
   const files: { path: string; bytes: number; mode: number }[] = [],
     ignoredFiles: { path: string; bytes: number; mode: number }[] = []
   let skippedLinks = 0
@@ -182,8 +194,9 @@ export async function prepareTransfer(
   ignored: string[],
   folder: string,
   signal: AbortSignal,
+  worktreePath?: string,
 ) {
-  const source = await inspectTransfer(s, repositoryId, signal)
+  const source = await inspectTransfer(s, repositoryId, signal, worktreePath)
   const selected = new Set(ignored)
   if (ignored.some((path) => !source.ignoredFiles.some((file) => file.path === path)))
     throw new HttpError(409, 'The ignored files changed. Review the files and try again.')

@@ -256,7 +256,7 @@ export function Sheet({
                       testID="Dismiss keyboard"
                       label="Dismiss keyboard"
                       icon="keyboard"
-                      onPress={Keyboard.dismiss}
+                      onPress={() => Keyboard.dismiss()}
                       modifiers={[labelStyle('iconOnly'), accessibilityLabel('Dismiss keyboard')]}
                     />
                   )}
@@ -300,7 +300,9 @@ export function Sheet({
             >
               {title}
             </Text>
-            {keyboard && <Action label="Dismiss keyboard" secondary onPress={Keyboard.dismiss} />}
+            {keyboard && (
+              <Action label="Dismiss keyboard" secondary onPress={() => Keyboard.dismiss()} />
+            )}
             {headerAction && (
               <IconButton
                 label={headerAction.label}

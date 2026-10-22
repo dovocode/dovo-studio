@@ -1,13 +1,5 @@
-import { Data, Effect, Schema, Semaphore } from 'effect'
-import { runClientEffect } from '@dovo/client-runtime'
 import {
-  workspaceConflicts,
-  sameWorkspaceValue,
-  restoreWorkspaceEntity,
-  type WorkspaceConflict,
-  type WorkspaceEntityRestore,
-} from './workspace-conflicts'
-import {
+  createRuntimeClient,
   decodeResult,
   mutableArray,
   mutableStruct,
@@ -18,7 +10,6 @@ import {
   workspacePatchRejection,
   workspacePatchRejected,
   projectWorkspaceEdits,
-  runtimeRequestEffect,
   RuntimeRequestError,
   WorkspaceStorageError,
   randomUUID,
@@ -26,6 +17,15 @@ import {
   type Workspace,
   type WorkspacePatch,
 } from '@dovo/protocol'
+import { Data, Effect, Schema, Semaphore } from 'effect'
+import { runClientEffect } from '@dovo/client-runtime'
+import {
+  workspaceConflicts,
+  sameWorkspaceValue,
+  restoreWorkspaceEntity,
+  type WorkspaceConflict,
+  type WorkspaceEntityRestore,
+} from './workspace-conflicts'
 
 type Checkpoint = { generation: number; version: number; idle: boolean }
 type Send = (
@@ -91,15 +91,11 @@ const attempt = <A>(run: () => Promise<A> | Effect.Effect<A, unknown>) =>
     ),
   )
 const sendPatch: Send = (connection, patch, id) =>
-  runtimeRequestEffect(
-    connection,
-    connection.address,
+  createRuntimeClient(connection).requestEffect(
     '/api/workspace',
     patch,
     workspacePatchResultSchema,
-    'PATCH',
-    undefined,
-    { mutationId: id },
+    { method: 'PATCH', mutationId: id },
   )
 
 /** Serializes this editor's writes; persistence merges stable patch IDs across tabs. */

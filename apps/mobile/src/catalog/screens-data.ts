@@ -6,7 +6,7 @@ import {
   pullSummarySchema,
 } from '@dovo/protocol'
 const at = '2026-10-21T12:00:00.000Z'
-export const screenPull = decode(pullSummarySchema, {
+const screenPull = decode(pullSummarySchema, {
   provider: 'github',
   number: 42,
   title: 'Unify mobile navigation and settings',
@@ -21,7 +21,7 @@ export const screenPull = decode(pullSummarySchema, {
   checksState: 'FAILURE',
   reviewDecision: 'REVIEW_REQUIRED',
 })
-export const screenPullDetail = decode(pullDetailSchema, {
+const screenPullDetail = decode(pullDetailSchema, {
   destination: 'catalog-destination',
   pull: {
     ...screenPull,
@@ -65,7 +65,7 @@ export const screenPullDetail = decode(pullDetailSchema, {
   ],
   warnings: [],
 })
-export const screenIssue = decode(forgeIssueSchema, {
+const screenIssue = decode(forgeIssueSchema, {
   destination: 'catalog-destination',
   id: '17',
   title: 'Keep native settings readable at larger text sizes',
@@ -92,7 +92,7 @@ export const screenJiraIssue = decode(forgeIssueSchema, {
   updatedAt: at,
   revision: 'catalog-jira-revision',
 })
-export const screenPipeline = decode(forgePipelineSchema, {
+const screenPipeline = decode(forgePipelineSchema, {
   destination: 'catalog-destination',
   id: '17',
   title: 'Native UI checks',

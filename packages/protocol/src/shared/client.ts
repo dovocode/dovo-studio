@@ -8,6 +8,7 @@ import { Data, Effect, Result, Exit, Schedule, Schema } from 'effect'
 import { decodeResult, ValidationError } from './schema.js'
 import type { RuntimeConnection } from '../runtime/connection/runtime.js'
 import { runtimeRequestTimeout } from './request-timeout.js'
+import { runtimeUrl } from './runtime-url.js'
 export { runtimeRequestTimeout } from './request-timeout.js'
 import { snapshotResponseCache } from '../runtime/cache/snapshot-memory-cache.js'
 export { clearRuntimeRequestCache } from '../runtime/cache/snapshot-memory-cache.js'
@@ -87,7 +88,7 @@ const postReadPaths = new Set([
   '/api/scm/branches',
   '/api/scm/branch-changes',
 ])
-type RuntimeRequestOptions = { mutationId?: string; route?: 'http' | 'stream' }
+export type RuntimeRequestOptions = { mutationId?: string; route?: 'http' | 'stream' }
 
 /** A single request; interruption aborts both the fetch and response body read.
  * GET and allowlisted POST reads and ID-deduplicated sends retry within the same deadline;
@@ -104,18 +105,7 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
 ): Effect.Effect<T['Type'], RuntimeRequestError | ValidationError> {
   return Effect.gen(function* () {
     const target = yield* Effect.try({
-      try: () => {
-        const base = new URL(address)
-        const target = new URL(path, base)
-        if (
-          !['http:', 'https:'].includes(base.protocol) ||
-          target.origin !== base.origin ||
-          target.username ||
-          target.password
-        )
-          throw new Error('Runtime requests must stay on their configured origin')
-        return target
-      },
+      try: () => runtimeUrl(address, path),
       catch: (cause) =>
         new RuntimeRequestError({ kind: 'request', message: 'Invalid runtime address.', cause }),
     })
@@ -194,6 +184,13 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
         const transportTarget = new URL(resolved)
         transportTarget.pathname = target.pathname
         transportTarget.search = target.search
+        const connectionError = (cause: unknown, message: string) => {
+          // Cancellation is local to this operation. A late failure must not evict
+          // a healthier route selected by another request in the meantime.
+          if (connection && !controller.signal.aborted)
+            invalidateRuntimeRoute(connection, options?.route, transportTarget.origin)
+          return new RuntimeRequestError({ kind: 'connection', cause, message })
+        }
         const send = (tag?: string) =>
           Effect.tryPromise({
             try: () =>
@@ -210,16 +207,13 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
                 ...(body === undefined ? {} : { body }),
                 signal: controller.signal,
               }),
-            catch: (cause) => {
-              if (connection) invalidateRuntimeRoute(connection, options?.route)
-              return new RuntimeRequestError({
-                kind: 'connection',
+            catch: (cause) =>
+              connectionError(
                 cause,
-                message: isPeerAddress(target.origin)
+                isPeerAddress(target.origin)
                   ? PEER_CONNECTION_ERROR
                   : `Cannot reach ${target.host}. Check that its runtime is running and both devices are on the same Wi-Fi or VPN.`,
-              })
-            },
+              ),
           })
         let response = yield* send(conditional?.tag)
         if (response.status === 304) {
@@ -254,11 +248,7 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
         const text = yield* Effect.tryPromise({
           try: () => response.text(),
           catch: (cause) =>
-            new RuntimeRequestError({
-              kind: 'connection',
-              message: 'Connection lost while reading runtime response.',
-              cause,
-            }),
+            connectionError(cause, 'Connection lost while reading runtime response.'),
         })
         if (!response.ok) {
           // Gateways and a stopping runtime answer with plain text, not a JSON error body.

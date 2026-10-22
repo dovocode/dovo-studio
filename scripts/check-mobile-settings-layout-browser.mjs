@@ -255,7 +255,6 @@ try {
         'Computer status tint must be visible',
       )
 
-      await page.getByRole('button', { name: 'Change scope', exact: true }).click()
       await page
         .getByRole('button', { name: 'View inheritance for worktree setup', exact: true })
         .click()
@@ -387,10 +386,10 @@ try {
       await page.evaluate(() => window.showSheet(false))
       await page.evaluate(() => window.showScoped(true))
       const sticky = page.getByLabel('Settings target', { exact: true })
-      await sticky.getByText('Editing Global defaults', { exact: true }).waitFor()
-      const storage = page.getByText('Shared across paired computers', { exact: true })
+      await sticky.getByText('Editing All projects on all machines', { exact: true }).waitFor()
+      const storage = page.getByText('Shared across paired machines', { exact: true })
       const description = page.getByText(
-        'Defaults for all projects on all computers. More-specific overrides keep their own values.',
+        'Defaults for all projects on all machines. More-specific overrides keep their own values.',
         { exact: true },
       )
       for (const mode of ['dark', 'light']) {
@@ -401,28 +400,24 @@ try {
             (mode === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(242, 242, 247)'),
           mode,
         )
-        assert.equal(await storage.count(), 0, 'Storage details stay in expanded choices')
-        assert.equal(await description.count(), 0, 'Description stays in expanded choices')
-        const collapsed = await sticky.boundingBox()
-        await page.screenshot({
-          path: `${screenshotDirectory}/${platform}-${mode}-scope-collapsed.png`,
-        })
-        await page.getByRole('button', { name: 'Change scope', exact: true }).click()
         await storage.waitFor()
         await description.waitFor()
+        await page.getByLabel('Project', { exact: true }).waitFor()
+        await page.getByLabel('Machine', { exact: true }).waitFor()
         assert.equal(
-          await sticky.getByText('Shared across paired computers', { exact: true }).count(),
+          await page.getByRole('button', { name: 'Change scope', exact: true }).count(),
+          0,
+          'Machine and project choices must always be available',
+        )
+        assert.equal(
+          await sticky.getByText('Shared across paired machines', { exact: true }).count(),
           0,
           'Storage details must not enlarge the sticky header',
         )
-        assert.equal((await sticky.boundingBox()).height, collapsed.height)
         await page.screenshot({
           path: `${screenshotDirectory}/${platform}-${mode}-scope-expanded.png`,
         })
-        await page.getByRole('button', { name: 'Hide scope choices', exact: true }).click()
-        await storage.waitFor({ state: 'detached' })
       }
-      await page.getByRole('button', { name: 'Change scope', exact: true }).click()
       const before = await sticky.boundingBox()
       const scroll = () =>
         sticky.evaluate((element) => {
@@ -441,7 +436,7 @@ try {
         Math.abs((await sticky.boundingBox()).y - scrollTop) <= 1,
         'Only the compact scope summary must stick',
       )
-      const choices = page.getByLabel('Settings inheritance', { exact: true })
+      const choices = page.getByLabel('Settings choices', { exact: true })
       assert.ok((await choices.boundingBox()).y < before.y, 'Expanded choices must scroll away')
       await page.screenshot({ path: '/tmp/dovo-inheritance-mobile-' + platform + '.png' })
       for (const mode of ['dark', 'light']) {
@@ -467,9 +462,9 @@ try {
       'History',
     ])
       await page.getByText(category, { exact: true }).waitFor()
-    // Category pages use the normal stack: index → category → setting, then back.
+    // Pages are immediately available; existing category deep links still work.
     const search = page.getByLabel('Search settings', { exact: true })
-    const category = (name) => page.getByRole('button', { name, exact: true })
+    const row = (name) => page.getByRole('button', { name, exact: true })
     const categories = [
       ['This app', 'app-preferences'],
       ['Agents & tools', 'agent-settings'],
@@ -477,32 +472,32 @@ try {
       ['Computers', 'computer-settings'],
       ['History', 'history-settings'],
     ]
+    for (const name of [
+      'General',
+      'Conversation',
+      'Agents',
+      'Task defaults',
+      'Manage computers',
+      'Archived tasks',
+    ])
+      assert.equal(await row(name).isVisible(), true, `${name} is available on the settings index`)
     for (const [name, route] of categories) {
-      const rect = await category(name).boundingBox()
-      assert.ok(rect.y + rect.height <= 844, `${name} fits in the initial overview`)
-      assert.equal(
-        await category(name).getAttribute('aria-expanded'),
-        null,
-        'Categories are destinations',
-      )
-      await category(name).click()
-      assert.equal(await page.evaluate(() => window.section), route)
+      assert.equal(await row(name).count(), 0, 'Categories are static headings')
+      await page.evaluate((route) => window.navigate('/settings/' + route), route)
       await page.getByRole('heading', { name, exact: true }).waitFor()
       await page.getByRole('button', { name: 'Back', exact: true }).click()
     }
-    await category('This app').click()
-    await category('Conversation').click()
+    await row('Conversation').click()
     await page.getByRole('heading', { name: 'Conversation', exact: true }).waitFor()
     await page.getByRole('button', { name: 'Back', exact: true }).click()
-    await page.getByRole('heading', { name: 'This app', exact: true }).waitFor()
-    await category('Conversation').waitFor()
-    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
+    await row('Conversation').waitFor()
     await search.fill('general memory')
-    await category('Memory').waitFor()
+    await row('Memory').waitFor()
     await page.getByText('Agents & tools', { exact: true }).waitFor()
-    assert.equal(await category('Tasks & projects').count(), 0, 'Memory lives with agent tools')
+    assert.equal(await row('Tasks & projects').count(), 0, 'Memory lives with agent tools')
     await page.getByRole('button', { name: 'Clear search', exact: true }).click()
-    assert.equal(await category('Memory').count(), 0, 'Clearing search restores the compact index')
+    assert.equal(await row('Memory').count(), 1, 'Clearing search keeps every submenu expanded')
     for (const [query, destination, section] of [
       ['24-hour', 'General', 'general'],
       ['siri voice', 'Speech & driving', 'speech'],
@@ -818,15 +813,8 @@ try {
       await page.screenshot({
         path: screenshotDirectory + '/' + platform + '-' + mode + '-settings.png',
       })
-      for (const category of [
-        'This app',
-        'Agents & tools',
-        'Tasks & projects',
-        'Computers',
-        'History',
-      ]) {
-        const heading = page.getByRole('button', { name: category, exact: true })
-        await heading.click()
+      for (const [category, route] of categories) {
+        await page.evaluate((route) => window.navigate('/settings/' + route), route)
         await page.getByRole('heading', { name: category, exact: true }).waitFor()
         await page.screenshot({
           path: `${screenshotDirectory}/${platform}-${mode}-${category.toLowerCase().replaceAll(/[^a-z]+/g, '-')}.png`,
@@ -875,11 +863,8 @@ try {
       window.runtime = { ...window.runtime, profiles: [], overviews: [] }
       window.refreshSettings()
     })
-    await category('Computers').click()
     await page.getByText('Connect a computer', { exact: true }).waitFor()
     assert.equal(await page.getByTestId('Devices & runtime').isDisabled(), false)
-    await page.getByRole('button', { name: 'Back', exact: true }).click()
-    await category('This app').click()
     for (const name of [
       'General',
       'Appearance',
@@ -894,14 +879,9 @@ try {
         false,
         name + ' works without a computer',
       )
-    await page.getByRole('button', { name: 'Back', exact: true }).click()
-    await category('Tasks & projects').click()
-    assert.equal(await category('Task & PR preferences').isDisabled(), false)
-    assert.equal(await category('Task defaults').isDisabled(), true)
-    await page.getByRole('button', { name: 'Back', exact: true }).click()
-    await category('Agents & tools').click()
-    assert.equal(await category('Agents').isDisabled(), true)
-    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    assert.equal(await row('Task & PR preferences').isDisabled(), false)
+    assert.equal(await row('Task defaults').isDisabled(), true)
+    assert.equal(await row('Agents').isDisabled(), true)
     await page.screenshot({ path: '/tmp/dovo-settings-organized-mobile-' + platform + '.png' })
     await page.evaluate(() => {
       window.setFontScale(1)

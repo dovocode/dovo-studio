@@ -10,7 +10,7 @@ import {
   formatDateTime,
 } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
-import { PipelineState } from '../../work/pipeline-detail'
+import { PipelineState } from '../../work/pipeline-state'
 import { WorkContent } from '../../work/content'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const selectedRunCache = createPullStateCache<Pick<ForgePipeline, 'id' | 'url'> | null>(30)

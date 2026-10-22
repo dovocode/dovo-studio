@@ -70,17 +70,17 @@ try {
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
     page.on('dialog', (dialog) => dialog.accept())
-    await page.getByText('Editing Global defaults', { exact: true }).waitFor()
-    if (mobile) {
-      assert.equal(await page.getByLabel('Project', { exact: true }).count(), 0)
-      await page.getByRole('button', { name: 'Change scope', exact: true }).click()
-    }
-    await page.getByText('Shared across paired computers', { exact: true }).waitFor()
+    await page.getByText('Editing All projects on all machines', { exact: true }).waitFor()
+    await page.getByText('Shared across paired machines', { exact: true }).waitFor()
     const projects = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
-    const environments = page.getByLabel(mobile ? 'Computer' : 'Settings computer', {
+    const environments = page.getByLabel(mobile ? 'Machine' : 'Settings machine', {
       exact: true,
     })
     await projects.waitFor()
+    assert.equal(await environments.locator('option').first().textContent(), 'All machines')
+    assert.equal(await projects.locator('option').first().textContent(), 'All projects')
+    assert.equal(await page.getByRole('button', { name: /Edit .* settings/ }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Change scope', exact: true }).count(), 0)
     assert.equal(await page.getByLabel('Settings scope', { exact: true }).count(), 0)
     await projects.selectOption('git:github.com/team/repo')
     await environments.selectOption('linux')
@@ -129,7 +129,7 @@ try {
     const last = await page.evaluate(() => window.writes.at(-1))
     assert.equal(last.scope, 'global')
     assert.equal(last.after.taskDefaults.setupCommand, undefined)
-    // Later levels stay visible from Global; opening one moves the shared target there.
+    // Later overrides stay visible from the shared defaults; opening one moves the shared target there.
     const overridden = page.getByRole('button', {
       name: mobile
         ? '1 override keeps its own value for worktree setup'
@@ -137,24 +137,15 @@ try {
       exact: true,
     })
     await overridden.click()
-    await page.getByText('Computer · Linux', { exact: true }).waitFor()
+    await page.getByText('Machine · Linux', { exact: true }).waitFor()
     await page.getByText('linux setup', { exact: true }).waitFor()
-    await page
-      .getByRole('button', { name: 'Open Computer settings for Linux', exact: true })
-      .click()
-    // The expanded scope choices stay open on mobile while the target moves.
+    await page.getByRole('button', { name: 'Open Machine settings for Linux', exact: true }).click()
     assert.equal(await environments.inputValue(), 'linux')
-    if (mobile) await page.getByText('Editing Computer.', { exact: true }).waitFor()
-    else
-      assert.equal(
-        await page
-          .getByRole('button', { name: 'Edit Computer settings', exact: true })
-          .getAttribute('aria-pressed'),
-        'true',
-      )
+    assert.equal(await projects.inputValue(), '')
+    await page.getByText('Editing Linux defaults', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Save defaults', exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: /overridden at/ }).count(), 0)
-    await page.getByRole('button', { name: 'Edit Global settings', exact: true }).click()
+    await environments.selectOption('')
     await overridden.click()
     await page
       .getByRole('button', { name: 'Reset all later worktree setup overrides', exact: true })

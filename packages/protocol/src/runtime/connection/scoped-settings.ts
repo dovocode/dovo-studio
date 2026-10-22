@@ -118,10 +118,10 @@ export const settingsScopes: readonly SettingsScope[] = [
   'environment-project',
 ]
 export const settingsScopeLabels: Record<SettingsScope, string> = {
-  global: 'Global',
-  environment: 'Computer',
+  global: 'All machines & projects',
+  environment: 'Machine',
   project: 'Project',
-  'environment-project': 'Project on computer',
+  'environment-project': 'Project on machine',
 }
 
 export function settingsScopeSummary(
@@ -133,39 +133,33 @@ export function settingsScopeSummary(
   switch (scope) {
     case 'global':
       return {
-        title: 'Global defaults',
+        title: 'All projects on all machines',
         description:
-          'Defaults for all projects on all computers. More-specific overrides keep their own values.',
-        storage: 'Shared across paired computers',
+          'Defaults for all projects on all machines. More-specific overrides keep their own values.',
+        storage: 'Shared across paired machines',
       }
     case 'environment':
       return {
         title: `${computer} defaults`,
         description:
-          'Defaults for projects on this computer. Project defaults override computer defaults.',
+          'Defaults for projects on this machine. Project defaults override machine defaults.',
         storage: `Saved on ${computer}`,
       }
     case 'project':
       return {
         title: `${project} project defaults`,
         description:
-          'Defaults for this project across computers. Project-on-computer overrides keep their own values.',
-        storage: 'Shared across paired computers',
+          'Defaults for this project across machines. Project-on-machine overrides keep their own values.',
+        storage: 'Shared across paired machines',
       }
     case 'environment-project':
       return {
         title: `${project} on ${computer}`,
         description:
-          'Changes apply only to this project on this computer. This is the most specific level.',
+          'Changes apply only to this project on this machine. This is the most specific level.',
         storage: `Saved on ${computer}`,
       }
   }
-}
-export const settingsScopeDescriptions: Record<SettingsScope, string> = {
-  global: 'All projects on all computers',
-  environment: 'All projects on one computer',
-  project: 'One project across computers',
-  'environment-project': 'One project on one computer',
 }
 export function resolveScopedSettings(
   runtime: RuntimeDefaults | undefined,
@@ -343,43 +337,6 @@ export function settingsProjectChoices(
     }
   }
   return [...projects.values()].sort((a, b) => a.name.localeCompare(b.name))
-}
-
-/** Explicitly move to a level, preserving the current project/computer when they fit. */
-export function settingsTargetAtScope<T extends SettingsTargetSource>(
-  sources: readonly T[],
-  target: SettingsTarget,
-  scope: SettingsScope,
-  activeId?: string | null,
-): SettingsTarget | undefined {
-  if (scope === 'global') return { environmentId: '', projectId: '' }
-  const source =
-    sources.find((entry) => entry.profile.id === target.environmentId) ??
-    sources.find((entry) => entry.profile.id === activeId) ??
-    sources[0]
-  if (scope === 'environment')
-    return source ? { environmentId: source.profile.id, projectId: '' } : undefined
-  if (scope === 'project') {
-    const projects = settingsProjectChoices(sources, '')
-    const project = projects.find((entry) => entry.id === target.projectId) ?? projects[0]
-    return project ? { environmentId: '', projectId: project.id } : undefined
-  }
-  const candidates = [source, ...sources.filter((entry) => entry !== source)].filter(
-    (entry): entry is T => !!entry,
-  )
-  const matching = candidates.find((entry) =>
-    settingsProjectChoices([entry], entry.profile.id).some(
-      (project) => project.id === target.projectId,
-    ),
-  )
-  const computer =
-    matching ?? candidates.find((entry) => settingsProjectChoices([entry], entry.profile.id).length)
-  if (!computer) return undefined
-  const projects = settingsProjectChoices([computer], computer.profile.id)
-  return {
-    environmentId: computer.profile.id,
-    projectId: projects.find((entry) => entry.id === target.projectId)?.id ?? projects[0].id,
-  }
 }
 
 const taskDefaultFields = [

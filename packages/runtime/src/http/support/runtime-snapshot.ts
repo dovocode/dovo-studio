@@ -210,6 +210,7 @@ export function runtimeSnapshot(
       threadBehaviorSupported: true,
       queuedTurnSettingsSupported: true,
       projectTransfersSupported: true,
+      projectWorktreeTransfersSupported: true,
       projectTransfers: s.projectTransfers.list(),
       worktreeDeletionOverrideSupported: true,
       studioTools: enabledStudioTools(preferences),

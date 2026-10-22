@@ -59,7 +59,7 @@ it('attaches to an authenticated existing server and leaves it running when desk
   expect(spawn).not.toHaveBeenCalled()
   expect(signal).not.toHaveBeenCalled()
   expect(request).toHaveBeenCalledWith(
-    connection.address + '/api/snapshot',
+    connection.address + '/api/snapshot?scope=overview',
     expect.objectContaining({
       headers: { Authorization: `Bearer ${connection.token}` },
       redirect: 'error',

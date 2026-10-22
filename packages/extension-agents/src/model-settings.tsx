@@ -20,8 +20,8 @@ import { ModelSettings as Fields } from '@dovo/studio-ui'
 
 type PreferenceScope = 'server' | 'global'
 const preferenceScopes: readonly { id: PreferenceScope; name: string }[] = [
-  { id: 'server', name: 'This computer' },
-  { id: 'global', name: 'All computers' },
+  { id: 'server', name: 'This machine' },
+  { id: 'global', name: 'All machines' },
 ]
 
 export function ModelSettings({

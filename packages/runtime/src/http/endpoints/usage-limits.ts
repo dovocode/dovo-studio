@@ -8,7 +8,8 @@ import {
   type Agent,
 } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
-import { RuntimeServices, type Services } from '../../services.js'
+import type { Services } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { readUsageLimits } from '../../agents/tasks/usage-limits.js'
 import { body } from '../support/body.js'
 import { serviceResult } from '../support/effect.js'

@@ -199,9 +199,9 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
     >
       <ScreenHeader title="MCP, skills & hooks" />
       <Text style={styles.muted}>
-        Global → Computer → Project → Project on computer. Matching names override earlier scopes;
-        agent entries apply last. Shared credentials must reference host environment variables.
-        Changes apply on the next turn.
+        Defaults for all machines and projects → machine → project → project on machine. Matching
+        names override earlier scopes; agent entries apply last. Shared credentials must reference
+        host environment variables. Changes apply on the next turn.
       </Text>
       {!scope ? (
         <Text style={styles.muted}>Add a project or custom agent first.</Text>

@@ -33,7 +33,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { RuntimeDefaults } from './storage/runtime-defaults.js'
 import { RuntimePreferences } from './storage/runtime-preferences.js'
-import { Context } from 'effect'
 import { PushNotifications } from './notifications/push.js'
 import { LiveActivities } from './notifications/live-activities.js'
 import { TitleGeneration } from './agents/tasks/title-generation.js'
@@ -536,7 +535,3 @@ export interface Services {
   browserTickets: SocketTickets
   projectFiles: ProjectFiles
 }
-
-export class RuntimeServices extends Context.Service<RuntimeServices, Services>()(
-  'dovo/RuntimeServices',
-) {}

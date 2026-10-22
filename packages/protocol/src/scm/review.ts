@@ -43,6 +43,7 @@ export const reviewProgressSchema = mutableStruct({
     mutableStruct({
       label: Schema.String,
       paths: mutableArray(Schema.String),
+      // Accept legacy runtime responses; clients only apply feature grouping.
       basis: Schema.Literals(['ast', 'folder', 'feature']),
       summary: Schema.optional(maxValue(Schema.String, 2000)),
       impact: Schema.optional(maxValue(Schema.String, 2000)),
@@ -145,7 +146,12 @@ export function orderReviewFiles<T extends { path: string }>(
   related: boolean,
 ) {
   if (!related) return [...files].sort((a, b) => a.path.localeCompare(b.path))
-  const rank = new Map(groups.flatMap((group) => group.paths).map((path, index) => [path, index]))
+  const rank = new Map(
+    groups
+      .filter((group) => group.basis === 'feature')
+      .flatMap((group) => group.paths)
+      .map((path, index) => [path, index]),
+  )
   return [...files].sort(
     (a, b) =>
       (rank.get(a.path) ?? Infinity) - (rank.get(b.path) ?? Infinity) ||

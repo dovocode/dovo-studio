@@ -1,3 +1,13 @@
+import {
+  createRuntimeClient,
+  taskFileShareSchema,
+  taskImageReadSchema,
+  richMarkdown,
+  localMarkdownPath,
+  markdownFileName,
+  artifactTemplatePrompt,
+  responses,
+} from '@dovo/protocol'
 import { TaskVisualization } from './task-visualization'
 import { useEffect, useMemo, useState, useCallback, type ComponentProps } from 'react'
 import {
@@ -11,15 +21,6 @@ import {
   DialogTitle,
 } from '@dovo/studio-ui'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
-import {
-  taskFileShareSchema,
-  taskImageReadSchema,
-  richMarkdown,
-  localMarkdownPath,
-  markdownFileName,
-  artifactTemplatePrompt,
-  responses,
-} from '@dovo/protocol'
 
 function TaskImage({
   taskId,
@@ -267,15 +268,14 @@ function TaskVideo({
   useEffect(() => {
     if (!local || !connected || !connection) return
     let active = true
-    void request('/api/tasks/files/share', { taskId, path }, taskFileShareSchema).then(
-      (result) => {
+    void request('/api/tasks/files/share', { taskId, path }, taskFileShareSchema)
+      .then((result) => {
         if (active)
-          setSource({ key, url: new URL(result.url + '?content=1', connection.address).toString() })
-      },
-      (cause: unknown) => {
+          setSource({ key, url: createRuntimeClient(connection).url(result.url + '?content=1') })
+      })
+      .catch((cause: unknown) => {
         if (active) setSource({ key, error: String(cause) })
-      },
-    )
+      })
     return () => {
       active = false
     }
@@ -342,15 +342,14 @@ function TaskFileDialog({
   useEffect(() => {
     if (!connected || !connection) return
     let active = true
-    void request('/api/tasks/files/share', { taskId, path }, taskFileShareSchema).then(
-      ({ url }) => {
-        if (active) setResult({ key, url: new URL(url, connection.address).toString() })
-      },
-      (cause: unknown) => {
+    void request('/api/tasks/files/share', { taskId, path }, taskFileShareSchema)
+      .then(({ url }) => {
+        if (active) setResult({ key, url: createRuntimeClient(connection).url(url) })
+      })
+      .catch((cause: unknown) => {
         if (active)
           setResult({ key, error: cause instanceof Error ? cause.message : String(cause) })
-      },
-    )
+      })
     return () => {
       active = false
     }

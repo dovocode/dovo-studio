@@ -34,7 +34,7 @@ export const request=async(path,input)=>{
 
  const current=files.map(file=>{const fingerprint=changedFileFingerprint(file);let row=marks.get(file.path);if(!row||row.fingerprint!==fingerprint){row={path:file.path,fingerprint,viewed:false,version:(row?.version??0)+1};marks.set(file.path,row)}return row});
  if(path.endsWith('/set')){const row=marks.get(input.path);if(!row||row.fingerprint!==input.fingerprint||row.version!==input.version)throw new Error('This file changed. Refresh before marking it again.');marks.set(input.path,{...row,viewed:input.viewed,version:row.version+1})}
- return {files:files.map(file=>marks.get(file.path)),groups:[{label:'types.ts',paths:['types.ts','src/view.tsx','src/view.test.ts'],basis:'ast'}]};
+ return {files:files.map(file=>marks.get(file.path)),groups:[]};
 };
 export const workspace={connected:true,activeRuntimeId:'host',request};export const runtime={connected:true,profile:{id:'host'},read:request,call:(path,...args)=>{if(path.endsWith('/read')||path.endsWith('/organize'))throw new Error('Review reads must not refresh workspace snapshots or persist offline caches');return request(path,...args)}};
 `
@@ -112,6 +112,11 @@ try {
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
   const desktop = page.locator('[data-client="desktop"]'),
     mobile = page.locator('[data-client="mobile"]')
+  assert.equal(
+    await desktop.getByRole('button', { name: 'Related changes', exact: true }).count(),
+    0,
+  )
+  assert.equal(await desktop.getByRole('button', { name: 'Features', exact: true }).count(), 0)
   await desktop.getByRole('checkbox', { name: 'File viewed', exact: true }).check()
   await page.evaluate(() => {
     document.dispatchEvent(new Event('visibilitychange'))
@@ -124,7 +129,8 @@ try {
         .getAttribute('aria-checked') === 'true',
   )
   await desktop.getByRole('button', { name: 'Next unviewed', exact: true }).click()
-  assert.equal(await desktop.locator('[data-diff]').textContent(), 'src/view.tsx')
+  assert.equal(await desktop.locator('[data-diff]').textContent(), 'src/view.test.ts')
+  await desktop.getByRole('button', { name: 'src/view.tsx, unviewed', exact: true }).click()
   await desktop.getByRole('checkbox', { name: 'File viewed', exact: true }).check()
   await page.getByRole('button', { name: 'Reopen desktop' }).click()
   await page.getByRole('button', { name: 'Reopen desktop' }).click()
@@ -141,7 +147,7 @@ try {
         .querySelector('[data-client="desktop"] button[role="checkbox"][aria-label="File viewed"]')
         .getAttribute('aria-checked') === 'false',
   )
-  await desktop.getByRole('button', { name: 'Next file', exact: true }).click()
+  await desktop.getByRole('button', { name: 'Previous file', exact: true }).click()
   await page.waitForFunction(
     () =>
       document
@@ -156,9 +162,15 @@ try {
   await desktop.getByRole('button', { name: 'Cancel edit' }).click()
   await desktop.getByRole('searchbox', { name: 'Search changed files' }).fill('test')
   await page.waitForFunction(
-    () => document.querySelectorAll('[data-client="desktop"] nav button').length === 1,
+    () =>
+      document.querySelectorAll(
+        '[data-client="desktop"] nav button[data-file-tree-row]:not([aria-expanded])',
+      ).length === 1,
   )
-  assert.equal(await desktop.getByRole('navigation').getByRole('button').count(), 1)
+  assert.equal(
+    await desktop.locator('nav button[data-file-tree-row]:not([aria-expanded])').count(),
+    1,
+  )
   await mobile.getByRole('button', { name: 'Browse changed files' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('textbox', { name: 'Search changed files' }).fill('test')
@@ -191,7 +203,7 @@ try {
   await desktop.getByRole('button', { name: 'Organize by feature', exact: true }).click()
   await desktop.getByText('Update the shared props and view', { exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.lastOrganizerSelection), undefined)
-  await desktop.getByRole('button', { name: 'Use dependency groups', exact: true }).click()
+  await desktop.getByRole('button', { name: 'Reset to folders', exact: true }).click()
   await desktop.getByRole('button', { name: 'Review organizer harness', exact: true }).click()
   await page.getByRole('option', { name: 'Claude', exact: true }).click()
   await desktop.getByRole('textbox', { name: 'Organizer model' }).fill('review-model')
@@ -205,7 +217,7 @@ try {
     await desktop.getByRole('checkbox', { name: 'File viewed', exact: true }).isChecked(),
     true,
   )
-  await desktop.getByRole('button', { name: 'Use dependency groups', exact: true }).click()
+  await desktop.getByRole('button', { name: 'Reset to folders', exact: true }).click()
   assert.equal(
     await desktop.getByText('Update the shared props and view', { exact: true }).count(),
     0,
@@ -263,7 +275,7 @@ try {
     .getByRole('button', { name: 'Organize review · Features active', exact: true })
     .click()
   organizer = page.getByRole('dialog', { name: 'Organize review', exact: true })
-  await organizer.getByRole('button', { name: 'Use dependency groups', exact: true }).click()
+  await organizer.getByRole('button', { name: 'Reset to folders', exact: true }).click()
   await mobile.getByRole('button', { name: 'Organize review', exact: true }).click()
   organizer = page.getByRole('dialog', { name: 'Organize review', exact: true })
   await organizer.getByRole('combobox', { name: 'Review organizer harness' }).selectOption('claude')
@@ -291,13 +303,13 @@ try {
   })
   await organizer.getByRole('button', { name: 'Organize by feature', exact: true }).waitFor()
   assert.equal(
-    await organizer.getByRole('button', { name: 'Use dependency groups', exact: true }).count(),
+    await organizer.getByRole('button', { name: 'Reset to folders', exact: true }).count(),
     0,
   )
   await organizer.getByRole('button', { name: 'Close organizer', exact: true }).click()
   assert.deepEqual(errors, [])
   console.log(
-    'Review controls: paired progress, reopen, per-file reset, AST order, search, unviewed filter, draft guard, narrow mobile layout, ephemeral organizer selection/default, feature summaries, reset, errors and stale result guard passed',
+    'Review controls: paired progress, reopen, per-file reset, folder order, search, unviewed filter, draft guard, narrow mobile layout, ephemeral organizer selection/default, feature summaries, reset, errors and stale result guard passed',
   )
 } finally {
   await browser.close()

@@ -17,6 +17,43 @@ export function opencodeHeaders(env: Record<string, string> = {}): Record<string
     : {}
 }
 
+export const opencodeAddress = (address: string) =>
+  (address || 'http://127.0.0.1:4096').replace(/\/$/, '')
+
+/** A V1 server has no /api/info route. Authentication errors must not silently select V1. */
+export async function isOpencodeV2(
+  address: string,
+  env?: Record<string, string>,
+): Promise<boolean> {
+  const response = await fetch(`${opencodeAddress(address)}/api/info`, {
+    headers: opencodeHeaders(env),
+    signal: AbortSignal.timeout(5000),
+    redirect: 'error',
+  }).catch((cause: unknown) => {
+    const url = new URL(opencodeAddress(address))
+    throw new Error(
+      `Cannot connect to OpenCode at ${url.origin}. Check that opencode serve is running there, or clear the server URL so Dovo starts it automatically.`,
+      { cause },
+    )
+  })
+  if (response.status === 404) return false
+  // V1 serves its browser SPA for unknown routes, including /api/info.
+  if (response.ok && response.headers.get('content-type')?.includes('text/html')) return false
+  if (response.status === 401 || response.status === 403)
+    throw new Error(
+      'OpenCode rejected authentication. Set OPENCODE_SERVER_PASSWORD and optionally OPENCODE_SERVER_USERNAME in the agent environment or runtime host environment.',
+    )
+  if (!response.ok) throw new Error(`OpenCode server info failed (${response.status})`)
+  const info: unknown = await response.json()
+  return (
+    typeof info === 'object' &&
+    info !== null &&
+    'version' in info &&
+    typeof info.version === 'string' &&
+    /^2\./.test(info.version)
+  )
+}
+
 type Connection = { endpoint: string; env: Record<string, string> }
 type OwnedServer = { child: ChildProcess; ready: Promise<Connection> }
 /** One local server per launch configuration. Explicit URLs are never launched or stopped. */

@@ -8,7 +8,7 @@ export async function checkRuntimeConnection(
   connection: { address: string; token: string },
   signal: AbortSignal = AbortSignal.timeout(10_000),
 ) {
-  const response = await fetch(`${connection.address}/api/snapshot`, {
+  const response = await fetch(`${connection.address}/api/snapshot?scope=overview`, {
     headers: { Authorization: `Bearer ${connection.token}` },
     redirect: 'error',
     signal,

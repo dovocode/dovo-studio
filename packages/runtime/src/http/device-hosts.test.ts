@@ -5,6 +5,7 @@ import { WebSocket } from 'ws'
 import { startRuntime } from '../index'
 import * as native from '../previews/simulator-native'
 import * as discovery from '../previews/devices'
+import * as sdk from '../previews/android-tool'
 import { DeviceHostClient } from '../previews/device-host-client'
 import * as ssh from '../previews/device-host-ssh'
 const cleanups: Array<() => Promise<void>> = []
@@ -507,7 +508,7 @@ it.skipIf(process.platform === 'win32')(
         },
       ],
     })
-    vi.spyOn(discovery, 'androidTool').mockResolvedValue(adb)
+    vi.spyOn(sdk, 'androidTool').mockResolvedValue(adb)
     const runtime = await startRuntime({
       databasePath: ':memory:',
       ownerToken: 'cancel-owner',

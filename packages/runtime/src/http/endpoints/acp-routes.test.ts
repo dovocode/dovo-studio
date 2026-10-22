@@ -6,7 +6,7 @@ import { Readable } from 'node:stream'
 import type { IncomingMessage } from 'node:http'
 import { Effect, Fiber } from 'effect'
 import { startRuntime } from '../../index.js'
-import { RuntimeServices } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { acpRoute } from './acp-routes.js'
 import * as acp from '../../agents/providers/acp/acp-connection.js'
 

@@ -1,7 +1,8 @@
+import { createRuntimeClient } from '../../shared/runtime-client.js'
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { decode, minValue, refine } from '../../shared/schema.js'
 import { Effect, Result, Schema } from 'effect'
-import { RuntimeRequestError, runtimeRequestEffect } from '../../shared/client.js'
+import { RuntimeRequestError } from '../../shared/client.js'
 import { connectionSchema, snapshotSchema } from './runtime.js'
 import { runtimeSnapshotPath } from './live-sync.js'
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
@@ -132,7 +133,6 @@ export type RuntimeOverview = {
   pullError: string | null
   /** The runtime rejected this device's token: it was revoked or the runtime was reset. */
   unauthorized?: boolean
-  syncStatus?: import('./live-sync.js').RuntimeSyncStatus
 }
 /** Older profiles used the address hostname as their automatic label. Preserve saved overrides. */
 export function runtimeHasCustomName(
@@ -186,14 +186,11 @@ export function loadRuntimeOverviewEffect(
     const result = yield* Effect.result(
       useLiveSnapshot && cached?.connected && cached.snapshot
         ? Effect.succeed(cached.snapshot)
-        : runtimeRequestEffect(
-            profile.connection,
-            profile.connection.address,
+        : createRuntimeClient(profile.connection).requestEffect(
             compact ? '/api/snapshot?scope=overview' : runtimeSnapshotPath(profile.connection),
             undefined,
             snapshotSchema,
-            'GET',
-            10000,
+            { method: 'GET', timeoutMs: 10000 },
           ),
     )
     if (Result.isFailure(result))
@@ -209,7 +206,7 @@ export function loadRuntimeOverviewEffect(
       }
     const snapshot = result.success
     const lastSeen = new Date().toISOString()
-    onSnapshot?.({
+    const overview: RuntimeOverview = {
       profile,
       snapshot,
       connected: true,
@@ -217,16 +214,12 @@ export function loadRuntimeOverviewEffect(
       error: null,
       pulls: cached?.pulls ?? null,
       pullError: cached?.pullError ?? null,
-    })
+    }
+    onSnapshot?.(overview)
     if (options.loadPulls === false)
       return {
-        profile,
-        snapshot,
-        connected: true,
-        lastSeen,
-        error: null,
+        ...overview,
         pulls: cached?.pulls ? { ...cached.pulls, partial: true } : null,
-        pullError: cached?.pullError ?? null,
       }
     return yield* loadRuntimePullOverviewEffect(profile, snapshot, cached)
   })
@@ -292,14 +285,11 @@ function loadRuntimePullOverviewEffect(
       repositories,
       (repository) =>
         Effect.result(
-          runtimeRequestEffect(
-            profile.connection,
-            profile.connection.address,
+          createRuntimeClient(profile.connection).requestEffect(
             '/api/scm/pulls/overview',
             { repositoryId: repository.id, state: 'open', page: 1, refresh: false },
             pullPageSchema,
-            'POST',
-            15000,
+            { method: 'POST', timeoutMs: 15000 },
           ),
         ),
       { concurrency: 3 },
@@ -348,14 +338,6 @@ function loadRuntimePullOverviewEffect(
   })
 }
 
-export function loadRuntimeOverview(
-  profile: RuntimeProfile,
-  previous?: RuntimeOverview,
-  onSnapshot?: (overview: RuntimeOverview) => void,
-  signal?: AbortSignal,
-): Promise<RuntimeOverview> {
-  return Effect.runPromise(loadRuntimeOverviewEffect(profile, previous, onSnapshot), { signal })
-}
 export type RuntimeTask = {
   key: string
   runtimeId: string
@@ -374,6 +356,8 @@ export function aggregateRuntimeTasks(
   const tasks = entries.flatMap((entry) => {
     if (!entry.snapshot) return []
     const { snapshot, profile } = entry
+    const runtimeName = runtimeComputerName(entry)
+    const reachability = runtimeReachability(entry)
     const needsInput = taskFamilyInputIds(
       snapshot.workspace.tasks,
       [...snapshot.approvals, ...snapshot.questions].map((item) => item.taskId),
@@ -393,12 +377,12 @@ export function aggregateRuntimeTasks(
       .map((task) => ({
         key: JSON.stringify([profile.id, task.id]),
         runtimeId: profile.id,
-        runtimeName: runtimeComputerName(entry),
+        runtimeName,
         task,
         projectName: projects.get(task.repositoryId) ?? 'No project',
         needsInput: needsInput.has(task.id),
         online: entry.connected,
-        reachability: runtimeReachability(entry),
+        reachability,
       }))
   })
   const priority = (item: RuntimeTask) =>

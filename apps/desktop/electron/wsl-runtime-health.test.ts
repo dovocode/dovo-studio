@@ -25,7 +25,7 @@ it('waits for Windows forwarding after Linux reports ready and verifies owner/pr
   await waitForWslRuntime(connection, alive)
   expect(fetch).toHaveBeenCalledTimes(3)
   expect(fetch).toHaveBeenLastCalledWith(
-    connection.address + '/api/snapshot',
+    connection.address + '/api/snapshot?scope=overview',
     expect.objectContaining({
       headers: { Authorization: `Bearer ${connection.token}` },
       redirect: 'error',

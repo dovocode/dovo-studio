@@ -37,12 +37,14 @@ export function PreparationProgress({
       progress.setValue(preparation.progress)
       return
     }
-    Animated.timing(progress, {
+    const animation = Animated.timing(progress, {
       toValue: preparation.progress,
       duration: 450,
-      easing: Easing.out(Easing.cubic),
+      easing: Easing.out((value) => Easing.cubic(value)),
       useNativeDriver: false,
-    }).start()
+    })
+    animation.start()
+    return () => animation.stop()
   }, [preparation.progress, reduceMotion, progress])
   useEffect(() => {
     if (reduceMotion || !trackWidth) return
@@ -50,7 +52,7 @@ export function PreparationProgress({
       Animated.timing(sweep, {
         toValue: 1,
         duration: 1600,
-        easing: Easing.inOut(Easing.ease),
+        easing: Easing.inOut((value) => Easing.ease(value)),
         useNativeDriver: true,
       }),
     )

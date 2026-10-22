@@ -13,7 +13,7 @@ it('verifies the listener using the exact owner credentials and compatible proto
   vi.stubGlobal('fetch', request)
   await checkRuntimeConnection(connection)
   expect(request).toHaveBeenCalledWith(
-    connection.address + '/api/snapshot',
+    connection.address + '/api/snapshot?scope=overview',
     expect.objectContaining({
       headers: { Authorization: `Bearer ${connection.token}` },
       redirect: 'error',

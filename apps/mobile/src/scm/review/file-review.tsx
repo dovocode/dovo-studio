@@ -238,17 +238,13 @@ export function MobileFileReview({
             style={[styles.input, { minHeight: 44, color: colors.text }]}
           />
           <View style={[styles.row, { justifyContent: 'space-between' }]}>
-            <Action
-              secondary
-              label={
-                related
-                  ? groups.some((group) => group.basis === 'feature')
-                    ? 'Features'
-                    : 'Related changes'
-                  : 'Folders'
-              }
-              onPress={() => onRelatedChange(!related)}
-            />
+            {groups.some((group) => group.basis === 'feature') && (
+              <Action
+                secondary
+                label={related ? 'Features' : 'Folders'}
+                onPress={() => onRelatedChange(!related)}
+              />
+            )}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Text style={styles.muted}>Unviewed only</Text>
               <Switch

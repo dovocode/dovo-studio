@@ -3,7 +3,6 @@ import { decode, decodeResult } from '../../shared/schema.js'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import {
   aggregateRuntimeTasks,
-  loadRuntimeOverview,
   loadRuntimeOverviewEffect,
   removeRuntime,
   runtimeProfile,
@@ -311,7 +310,7 @@ describe('Runtime dashboard', () => {
       )
     vi.stubGlobal('fetch', fetch)
     const received = vi.fn<(value: RuntimeOverview) => void>()
-    const result = await loadRuntimeOverview(profile, undefined, received)
+    const result = await Effect.runPromise(loadRuntimeOverviewEffect(profile, undefined, received))
     expect(received).toHaveBeenCalledWith(
       expect.objectContaining({
         snapshot,
@@ -340,7 +339,7 @@ describe('Runtime dashboard', () => {
   })
   it('retains last-known data offline without borrowing from other devices or replaced credentials', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Device offline')))
-    expect(await loadRuntimeOverview(profile, overview)).toMatchObject({
+    expect(await Effect.runPromise(loadRuntimeOverviewEffect(profile, overview))).toMatchObject({
       connected: false,
       snapshot,
       lastSeen: overview.lastSeen,
@@ -349,21 +348,23 @@ describe('Runtime dashboard', () => {
         partial: true,
       },
     })
-    expect(await loadRuntimeOverview(other, overview)).toMatchObject({
+    expect(await Effect.runPromise(loadRuntimeOverviewEffect(other, overview))).toMatchObject({
       connected: false,
       snapshot: null,
       pulls: null,
     })
     expect(
-      await loadRuntimeOverview(
-        {
-          ...profile,
-          connection: {
-            ...profile.connection,
-            token: 'new-private-token-1234567',
+      await Effect.runPromise(
+        loadRuntimeOverviewEffect(
+          {
+            ...profile,
+            connection: {
+              ...profile.connection,
+              token: 'new-private-token-1234567',
+            },
           },
-        },
-        overview,
+          overview,
+        ),
       ),
     ).toMatchObject({
       connected: false,
@@ -381,7 +382,7 @@ describe('Runtime dashboard', () => {
           : json({ error: 'GitHub unavailable' }, 502)
       }),
     )
-    expect(await loadRuntimeOverview(profile, overview)).toMatchObject({
+    expect(await Effect.runPromise(loadRuntimeOverviewEffect(profile, overview))).toMatchObject({
       connected: true,
       error: null,
       pulls: {
@@ -420,7 +421,7 @@ describe('Runtime dashboard', () => {
           ),
         ),
     )
-    expect((await loadRuntimeOverview(profile)).pulls).toMatchObject({
+    expect((await Effect.runPromise(loadRuntimeOverviewEffect(profile))).pulls).toMatchObject({
       total: 1,
       needsAttention: 1,
       partial: false,

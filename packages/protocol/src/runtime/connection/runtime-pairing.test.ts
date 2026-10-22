@@ -3,6 +3,7 @@ import { Deferred, Effect } from 'effect'
 import { saveRuntimePairing, recoverRuntimePairings, cancelRuntimePairing } from './runtime-pairing'
 import { runtimeProfile, runtimeRegistrySchema, type RuntimeRegistry } from './runtime-fleet'
 import { decode } from '../../shared/schema'
+import { snapshotSchema } from './runtime'
 import { RuntimeMutations, type MutationOutbox } from './mutations'
 
 const previous = runtimeProfile({
@@ -370,4 +371,41 @@ it('discards stale recovery when the saved credential no longer matches its pred
   expect(saved.profiles).toEqual([newer])
   expect(saved.pendingPairings).toEqual([])
   expect(fetcher).not.toHaveBeenCalled()
+})
+
+it('recovers an expired confirmation from an authenticated overview without downloading history', async () => {
+  const pending = { ...entry(), proof: { ...entry().proof, expiresAt: new Date(0).toISOString() } }
+  const saved = { ...initial(), pendingPairings: [pending] }
+  const snapshot = decode(snapshotSchema, {
+    revision: 1,
+    workspace: {
+      version: 1,
+      runtimeAddress: '',
+      agents: [],
+      repositories: [],
+      tasks: [],
+      automations: [],
+    },
+    approvals: [],
+    questions: [],
+    terminals: [],
+    runs: [],
+    devices: [],
+    pendingDevices: [],
+    owner: false,
+  })
+  const fetcher = vi.fn<typeof fetch>(async (input, options) => {
+    const url = new URL(input instanceof Request ? input.url : input)
+    expect(url.pathname).toBe('/api/snapshot')
+    expect(url.searchParams.get('scope')).toBe('overview')
+    expect(new Headers(options?.headers).get('authorization')).toBe(
+      `Bearer ${candidate.connection.token}`,
+    )
+    return Response.json(snapshot)
+  })
+  vi.stubGlobal('fetch', fetcher)
+  const result = await Effect.runPromise(recoverRuntimePairings(saved, () => Effect.void))
+  expect(result.profiles).toEqual([candidate])
+  expect(result.pendingPairings).toEqual([])
+  expect(fetcher).toHaveBeenCalledOnce()
 })

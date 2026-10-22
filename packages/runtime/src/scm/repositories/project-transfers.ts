@@ -1,10 +1,5 @@
-import { randomUUID, createHash } from 'node:crypto'
-import { mkdir, mkdtemp, open, realpath, rename, rm, stat } from 'node:fs/promises'
-import { dirname, join, basename } from 'node:path'
-import { homedir, tmpdir } from 'node:os'
-import { Schema } from 'effect'
-import type Database from 'better-sqlite3'
 import {
+  createRuntimeClient,
   decode,
   mutableStruct,
   projectTransferActive,
@@ -12,12 +7,17 @@ import {
   projectTransferStartSchema,
   projectTransferManifestSchema,
   projectTransferResultSchema,
-  runtimeRequest,
   type ProjectTransfer,
   type ProjectTransferStart,
   type ProjectTransferManifest,
   type RuntimeConnection,
 } from '@dovo/protocol'
+import { randomUUID, createHash } from 'node:crypto'
+import { mkdir, mkdtemp, open, realpath, rename, rm, stat } from 'node:fs/promises'
+import { dirname, join, basename } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
+import { Schema } from 'effect'
+import type Database from 'better-sqlite3'
 import type { Services } from '../../services.js'
 import { HttpError, errorMessage } from '../../errors.js'
 import { openTunnel, stopSsh } from '../../previews/device-host-ssh.js'
@@ -30,7 +30,10 @@ import {
 } from './project-transfer-files.js'
 
 const okSchema = mutableStruct({ ok: Schema.Literal(true) })
-const statusSchema = mutableStruct({ result: Schema.optional(projectTransferResultSchema) })
+const statusSchema = mutableStruct({
+  result: Schema.optional(projectTransferResultSchema),
+  worktreesSupported: Schema.optional(Schema.Boolean),
+})
 const discardSchema = mutableStruct({
   ok: Schema.Literal(true),
   result: Schema.optional(projectTransferResultSchema),
@@ -157,8 +160,8 @@ export class ProjectTransfers {
       .filter((peer) => peer.connection.runtimeId !== this.services().runtimeId)
       .map((peer) => ({ id: peer.connection.runtimeId ?? peer.id, name: peer.name }))
   }
-  async inspect(repositoryId: string) {
-    const source = await inspectTransfer(this.services(), repositoryId)
+  async inspect(repositoryId: string, worktreePath?: string) {
+    const source = await inspectTransfer(this.services(), repositoryId, undefined, worktreePath)
     return {
       files: source.files.length,
       bytes: source.files.reduce((sum, file) => sum + file.bytes, 0),
@@ -205,6 +208,7 @@ export class ProjectTransfers {
     const job: ProjectTransfer = {
       id: input.id,
       repositoryId: input.repositoryId,
+      worktreePath: input.worktreePath,
       targetId: input.targetId,
       targetName: peer.name,
       state: 'preparing',
@@ -262,16 +266,16 @@ export class ProjectTransfers {
       abort = signal,
     ) => {
       authorize()
-      return runtimeRequest(
-        connection,
-        connection.address,
+      return createRuntimeClient(connection).request(
         `/api/scm/project-transfer/${action}`,
         value,
         schema,
-        'POST',
-        action === 'commit' ? 600000 : 30000,
-        abort,
-        input.ssh ? { route: 'http' } : undefined,
+        {
+          method: 'POST',
+          timeoutMs: action === 'commit' ? 600000 : 30000,
+          signal: abort,
+          ...(input.ssh ? { route: 'http' } : undefined),
+        },
       )
     }
     const complete = (result: Result) =>
@@ -280,6 +284,8 @@ export class ProjectTransfers {
         error: undefined,
         path: result.path,
         targetRepositoryId: result.repositoryId,
+        targetTaskId: result.taskId,
+        threadStartError: result.threadStartError,
         bytes: this.jobs.get(input.id)?.job.totalBytes ?? 0,
       })
     try {
@@ -296,6 +302,11 @@ export class ProjectTransfers {
         connection = { ...peer, address: tunnel.address, alternateAddresses: [] }
       }
       const status = await call('status', { id: input.id }, statusSchema)
+      if ((input.worktreePath || input.thread) && !status.worktreesSupported)
+        throw new HttpError(
+          409,
+          'Update the destination computer to copy worktrees and create threads',
+        )
       if (status.result) {
         complete(status.result)
         return
@@ -307,11 +318,13 @@ export class ProjectTransfers {
         input.ignoredFiles,
         folder,
         signal,
+        input.worktreePath,
       )
       const manifest: ProjectTransferManifest = {
         ...prepared,
         id: input.id,
         runtimeId: peer.runtimeId!,
+        thread: input.thread,
       }
       // Validate locally too, so both ends agree on bounded names, hashes and sizes.
       decode(projectTransferManifestSchema, manifest)
@@ -408,7 +421,7 @@ export class ProjectTransfers {
     return saved
   }
   status(id: string, device: string) {
-    return { result: this.receipt(id, device)?.result }
+    return { result: this.receipt(id, device)?.result, worktreesSupported: true }
   }
   async begin(manifest: ProjectTransferManifest, device: string) {
     if (this.closed) throw new HttpError(503, 'This computer is shutting down')
@@ -589,19 +602,41 @@ export class ProjectTransfers {
         : { path: await realpath(project), branch: '', kind: 'folder' as const }
       authorize()
       const repository = { id: randomUUID(), name: manifest.name, ...checkout }
-      const result = { repositoryId: repository.id, path: repository.path }
+      const result: Result = { repositoryId: repository.id, path: repository.path }
       const saved = { id: manifest.id, device: entry.device, result }
       s.store.transaction(() => {
         s.store.update((workspace) => ({
           ...workspace,
           repositories: [...workspace.repositories, repository],
         }))
+        if (manifest.thread) {
+          const task = s.tasks.create({
+            title: manifest.thread.title,
+            repositoryId: repository.id,
+            agentId: '',
+            execution: 'main',
+            objective: manifest.thread.prompt,
+          })
+          result.taskId = task.id
+        }
         s.db
           .prepare('INSERT OR REPLACE INTO project_transfer_receipts VALUES (?,?)')
           .run(manifest.id, JSON.stringify(saved))
       })
       this.results.set(manifest.id, saved)
       entry.result = result
+      if (result.taskId && manifest.thread?.prompt.trim()) {
+        try {
+          authorize()
+          await s.tasks.start(result.taskId)
+        } catch (error) {
+          // Preserve the copied checkout and durable draft for repair on the destination.
+          result.threadStartError = errorMessage(error)
+          s.db
+            .prepare('INSERT OR REPLACE INTO project_transfer_receipts VALUES (?,?)')
+            .run(manifest.id, JSON.stringify(saved))
+        }
+      }
       return result
     } catch (error) {
       if (project && !entry.result) await rm(project, { recursive: true, force: true })

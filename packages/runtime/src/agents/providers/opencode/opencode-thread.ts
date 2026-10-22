@@ -1,6 +1,5 @@
 import type { Agent, NativeThreadEntry } from '@dovo/protocol'
-import { opencodeHeaders } from './opencode-server.js'
-import { isOpencodeV2 } from './opencode-v2.js'
+import { opencodeHeaders, opencodeAddress, isOpencodeV2 } from './opencode-server.js'
 import { opencodeThreadEntries } from '../../execution/native-thread.js'
 
 export async function readOpencodeThread(
@@ -9,7 +8,7 @@ export async function readOpencodeThread(
   cwd?: string,
 ): Promise<NativeThreadEntry[]> {
   const headers = opencodeHeaders(agent.env)
-  const baseUrl = agent.endpoint || 'http://127.0.0.1:4096'
+  const baseUrl = opencodeAddress(agent.endpoint)
   if (await isOpencodeV2(baseUrl, agent.env)) {
     const { OpenCode } = await import('@opencode/client')
     const api = OpenCode.make({ baseUrl, headers })

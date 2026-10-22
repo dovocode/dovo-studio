@@ -740,3 +740,128 @@ it('persists, syncs and clears the default server without replacing other projec
     await f.close()
   }
 })
+
+it('merges independent settings categories while rejecting conflicting edits to the same category', async () => {
+  const f = await fixture()
+  try {
+    for (const scope of ['global', 'environment', 'project', 'environment-project'] as const) {
+      const previous = await f.read(scope)
+      const save = (after: ScopedSettingsValue) =>
+        f.call('settings/save', {
+          scope,
+          repositoryId: 'project',
+          projectKey: previous.projectKey,
+          before: previous.value,
+          after: { ...previous.value, ...after },
+        })
+      const responses = await Promise.all([
+        save({ taskDefaults: { setupCommand: 'setup' } }),
+        save({ taskBehavior: { quotaResume: true } }),
+        save({ prompts: [{ id: 'review', name: 'review', text: 'Review carefully' }] }),
+      ])
+      expect(responses.map((response) => response.status)).toEqual([200, 200, 200])
+      expect((await f.read(scope)).value).toMatchObject({
+        taskDefaults: { setupCommand: 'setup' },
+        taskBehavior: { quotaResume: true },
+        prompts: [{ text: 'Review carefully' }],
+      })
+      expect((await save({ taskDefaults: { setupCommand: 'stale' } })).status).toBe(409)
+      // Removing a category is still an edit and must preserve other categories.
+      const current = await f.read(scope)
+      expect(
+        (
+          await f.call('settings/save', {
+            scope,
+            repositoryId: 'project',
+            projectKey: current.projectKey,
+            before: current.value,
+            after: { ...current.value, taskDefaults: undefined },
+          })
+        ).status,
+      ).toBe(200)
+      expect((await f.read(scope)).value).toMatchObject({ taskBehavior: { quotaResume: true } })
+      expect((await f.read(scope)).value.taskDefaults).toBeUndefined()
+    }
+  } finally {
+    await f.close()
+  }
+})
+
+it('preserves newer private tools during defaults edits and does not rewrite unchanged shared settings', async () => {
+  const f = await fixture()
+  try {
+    const previous = await f.read('environment')
+    const server = decode(mcpServerSchema, {
+      name: 'private',
+      transport: 'stdio',
+      command: 'tools',
+      enabled: true,
+      envValues: { TOKEN: 'private-token' },
+    })
+    expect(
+      (await f.save('environment', { resources: { mcpServers: [server], skills: [] } })).status,
+    ).toBe(200)
+    const response = await f.call('settings/save', {
+      scope: 'environment',
+      before: previous.value,
+      after: { ...previous.value, taskDefaults: { setupCommand: 'new' } },
+    })
+    expect(response.status).toBe(200)
+    expect(await response.text()).not.toContain('private-token')
+    expect(
+      f.runtime.services.defaults.get().scopedSettings?.environment.resources?.mcpServers[0]
+        .envValues?.TOKEN,
+    ).toBe('private-token')
+    await f.save('global', { taskDefaults: { setupCommand: 'shared' } })
+    const shared = f.runtime.services.defaults.get().scopedSettings?.shared
+    expect((await f.save('global', { taskDefaults: { setupCommand: 'shared' } })).status).toBe(200)
+    expect(f.runtime.services.defaults.get().scopedSettings?.shared).toEqual(shared)
+  } finally {
+    await f.close()
+  }
+})
+
+it('clears profiles when an agent-only save omits agents while retaining independent defaults', async () => {
+  const f = await fixture()
+  try {
+    const read = async () =>
+      decode(
+        scopedSettingsResultSchema,
+        await (
+          await f.call('settings/read', {
+            scope: 'environment',
+            includeAgents: true,
+          })
+        ).json(),
+      )
+    const before = await read()
+    expect(
+      (
+        await f.call('settings/save', {
+          scope: 'environment',
+          includeAgents: true,
+          before: before.value,
+          after: { agents: [{ ...defaultTaskHarness('codex'), id: 'writer', name: 'Writer' }] },
+        })
+      ).status,
+    ).toBe(200)
+    const previous = await read()
+    await f.save('environment', { taskDefaults: { setupCommand: 'keep' } })
+    expect(
+      (
+        await f.call('settings/save', {
+          scope: 'environment',
+          includeAgents: true,
+          before: previous.value,
+          after: {},
+        })
+      ).status,
+    ).toBe(200)
+    expect((await read()).value).toMatchObject({
+      agents: [],
+      taskDefaults: { setupCommand: 'keep' },
+    })
+  } finally {
+    await f.close()
+  }
+})

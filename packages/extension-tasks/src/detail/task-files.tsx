@@ -1,4 +1,4 @@
-import { taskFileShareSchema, markdownMediaKind } from '@dovo/protocol'
+import { createRuntimeClient, taskFileShareSchema, markdownMediaKind } from '@dovo/protocol'
 import { ProjectImagePreview } from './project-image-preview'
 import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -333,7 +333,7 @@ export function TaskFiles({
     void request('/api/tasks/files/share', { taskId: task.id, path: selected }, taskFileShareSchema)
       .then(async ({ url }) => {
         if (!connection) throw new Error('Reconnect to open this file.')
-        const address = new URL(url, connection.address).toString()
+        const address = createRuntimeClient(connection).url(url)
         if (openExternalLink) await openExternalLink(address)
         else if (preview) preview.location.href = address
         else throw new Error('Allow popups to open this file.')

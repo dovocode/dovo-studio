@@ -1,5 +1,5 @@
 import { runClientEffect } from '@dovo/client-runtime'
-import { createTwoFilesPatch, parsePatch } from 'diff'
+import { createTwoFilesPatch } from 'diff'
 import {
   githubPullTarget,
   decode,
@@ -7,7 +7,6 @@ import {
   featureReviewGroups,
   type TitleGenerationSettings,
   changedFileFingerprint,
-  pullFilePatch,
   pullFileFingerprint,
   checkpointFiles,
   type PullDetail,
@@ -18,8 +17,6 @@ import {
 import type { TitleGeneration } from '../../agents/tasks/title-generation.js'
 import type { Services } from '../../services.js'
 import { HttpError } from '../../errors.js'
-import { relatedFileGroups, type ReviewSource, type ReviewModule } from './order.js'
-import { reviewLanguage } from './languages.js'
 
 export const pullReviewScope = (detail: PullDetail) =>
   JSON.stringify(['pull', detail.pull.connectionId ?? '', detail.pull.url])
@@ -31,7 +28,6 @@ export const pullReviewFiles = (detail: PullDetail) =>
 
 export class FileReviews {
   private pending = new Map<string, Promise<unknown>>()
-  private ordering = new Map<string, { groups: ReviewProgress['groups']; retryAt?: number }>()
   constructor(
     private services: Pick<Services, 'store' | 'git' | 'checkouts' | 'pullCache' | 'reviewMarks'>,
   ) {}
@@ -85,12 +81,12 @@ export class FileReviews {
     },
   ): Promise<ReviewProgress> {
     const s = this.services
-    let scope: string, files: { path: string; fingerprint: string }[], sources: ReviewSource[]
+    let scope: string, files: { path: string; fingerprint: string }[]
+    let changes: ChangedFile[] | undefined
     let working: ChangedFile[] | undefined
     let workingVersions: Record<string, number> | undefined
-    let pullSource: { cwd: string; detail: PullDetail } | undefined
-    let moduleSources: (() => Promise<ReviewModule[]>) | undefined
-    let sourceIdentity: string[] = []
+    let pullSource: PullDetail | undefined
+    let localPull = false
     if (context.kind === 'pull') {
       const repo = s.store.get().repositories.find((repo) => repo.id === context.repositoryId)
       const target = !repo ? githubPullTarget(context.repositoryId) : null
@@ -102,55 +98,10 @@ export class FileReviews {
       )
       if (detail.warnings.some((warning) => warning.startsWith('Files:')))
         throw new HttpError(503, 'PR files are unavailable. Refresh the PR to try again.')
-      if (repo) pullSource = { cwd: repo.path, detail }
-      moduleSources = repo
-        ? () =>
-            s.git.reviewGoModules(
-              repo.path,
-              detail.files,
-              detail.pull.baseSha,
-              detail.pull.headSha,
-              true,
-            )
-        : undefined
+      localPull = !!repo
+      pullSource = detail
       scope = pullReviewScope(detail)
       files = pullReviewFiles(detail)
-      // Only whole added/deleted hunks provide reliable source when local Git objects are absent.
-      sources = detail.files.map((file) => {
-        const source: ReviewSource = { path: file.path, previousPath: file.previousPath }
-        if (!file.patch) return source
-        try {
-          const hunks = parsePatch(pullFilePatch(file))[0]?.hunks ?? []
-          const hunk = hunks.length === 1 ? hunks[0] : undefined
-          if (!hunk) return source
-          if (
-            file.status === 'added' &&
-            hunk.oldLines === 0 &&
-            hunk.newStart === 1 &&
-            hunk.newLines === file.additions
-          ) {
-            source.before = ''
-            source.after = hunk.lines
-              .filter((line) => line.startsWith('+'))
-              .map((line) => line.slice(1))
-              .join('\n')
-          } else if (
-            (file.status === 'removed' || file.status === 'deleted') &&
-            hunk.newLines === 0 &&
-            hunk.oldStart === 1 &&
-            hunk.oldLines === file.deletions
-          ) {
-            source.after = ''
-            source.before = hunk.lines
-              .filter((line) => line.startsWith('-'))
-              .map((line) => line.slice(1))
-              .join('\n')
-          }
-        } catch {
-          // Provider-limited or malformed patches stay in the labeled folder fallback.
-        }
-        return source
-      })
     } else {
       const task = s.store.task(context.taskId)
       if (
@@ -165,17 +116,6 @@ export class FileReviews {
         context.source,
         context.turnId ?? '',
       ])
-      let changes: ChangedFile[]
-      const selectedRepository = context.checkoutId
-        ? task.linkedCheckouts?.find((link) => link.id === context.checkoutId)?.repositoryId
-        : task.repositoryId
-      sourceIdentity = [
-        s.store.get().repositories.find((repo) => repo.id === selectedRepository)?.path ?? '',
-        task.execution ?? '',
-        task.existingWorktreePath ?? '',
-        task.checkoutBranch ?? '',
-        task.linkedCheckoutSetup?.find((setup) => setup.id === context.checkoutId)?.directory ?? '',
-      ]
       if (context.source === 'turn') {
         const checkpoint = task.turns?.find((turn) => turn.id === context.turnId)?.checkpoint
         const history = context.checkoutId
@@ -183,23 +123,10 @@ export class FileReviews {
           : checkpoint
         if (!history) throw new HttpError(404, 'Change history not found')
         changes = checkpointFiles(history)
-        sourceIdentity.push(history.before, history.after ?? '')
-        moduleSources = async () => {
-          const repositoryId =
-            'repositoryId' in history
-              ? history.repositoryId
-              : s.checkouts.executionRepository(task.id).id
-          const repository = s.store.get().repositories.find((repo) => repo.id === repositoryId)
-          return repository
-            ? s.git.reviewGoModules(repository.path, changes, history.before, history.after ?? '')
-            : []
-        }
       } else if (context.source === 'branch') {
         const cwd = await s.checkouts.directory(task.id)
         const diff = await s.git.reviewBranchChangesFiles(cwd)
         changes = checkpointFiles(diff)
-        sourceIdentity.push(cwd, diff.before, diff.after)
-        moduleSources = () => s.git.reviewGoModules(cwd, changes, diff.before, diff.after)
       } else if (context.checkoutId) {
         changes = await s.git.changes(
           await s.checkouts.selectedDirectory(task.id, context.checkoutId),
@@ -210,18 +137,9 @@ export class FileReviews {
         workingVersions = current.fileReviewVersions
         changes = working
       }
-      if (context.source === 'working')
-        moduleSources = async () => {
-          const cwd = await s.checkouts.reviewDirectory(task.id, context.checkoutId)
-          return cwd ? s.git.reviewGoModules(cwd, changes) : []
-        }
       files = changes.map((file) => ({
         path: file.path,
         fingerprint: changedFileFingerprint(file),
-      }))
-      sources = changes.map((file) => ({
-        path: file.path,
-        ...(file.preview ? {} : { before: file.before, after: file.after }),
       }))
     }
     // Fresh full PR fetches reconcile in PullCache. A cached read can decorate progress,
@@ -232,7 +150,7 @@ export class FileReviews {
           viewed: working?.[index]?.viewed ?? false,
           version: workingVersions?.[file.path] ?? 0,
         }))
-      : pullSource && s.reviewMarks.hasScope(scope)
+      : localPull && s.reviewMarks.hasScope(scope)
         ? s.reviewMarks.files(scope)
         : s.reviewMarks.reconcile(scope, files)
     if (mark) {
@@ -260,48 +178,7 @@ export class FileReviews {
         states = s.reviewMarks.files(scope)
       }
     }
-    const signature = JSON.stringify([
-      scope,
-      files,
-      pullSource?.detail.pull.baseSha,
-      pullSource?.detail.pull.headSha,
-      pullSource?.cwd,
-      sourceIdentity,
-    ])
-    const cached = this.ordering.get(signature)
-    let groups =
-      cached && (cached.retryAt === undefined || cached.retryAt > Date.now())
-        ? cached.groups
-        : undefined
-    if (!groups) {
-      if (pullSource) {
-        const { cwd, detail } = pullSource
-        const local = await s.git.reviewSources(
-          cwd,
-          detail.pull.baseSha,
-          detail.pull.headSha,
-          detail.files,
-        )
-        const byPath = new Map(local.map((file) => [file.path, file]))
-        sources = sources.map((file) => ({ ...file, ...byPath.get(file.path) }))
-      }
-      const modules = sources.some((file) => file.path.endsWith('.go'))
-        ? ((await moduleSources?.()) ?? [])
-        : []
-      groups = await relatedFileGroups(sources, modules)
-      // Bounded cache; identical scans reuse AST analysis across paired clients.
-      if (this.ordering.size >= 24) this.ordering.delete(this.ordering.keys().next().value ?? '')
-      const incomplete =
-        !!pullSource &&
-        sources.some(
-          (file) =>
-            reviewLanguage(file.path) && (file.before === undefined || file.after === undefined),
-        )
-      this.ordering.set(signature, {
-        groups,
-        ...(incomplete ? { retryAt: Date.now() + 20_000 } : {}),
-      })
-    }
+    let groups: ReviewProgress['groups'] = []
     if (organize) {
       if (JSON.stringify(files) !== JSON.stringify(organize.expected))
         throw new HttpError(409, 'Changes updated. Refresh the diff before organizing it.')
@@ -309,21 +186,21 @@ export class FileReviews {
         throw new HttpError(400, 'Choose a diff with 1–500 files')
       // Bound evidence, retaining every path and explicitly labeling incomplete source.
       const budget = Math.min(12_000, Math.floor(180_000 / files.length))
-      const changes = sources.map((file) => {
-        const patch = pullSource?.detail.files.find((item) => item.path === file.path)?.patch
-        const evidence =
-          patch ??
-          (file.before === undefined || file.after === undefined
-            ? ''
-            : createTwoFilesPatch(file.path, file.path, file.before, file.after))
+      const evidenceByPath = new Map(changes?.map((file) => [file.path, file]))
+      const patches = new Map(pullSource?.files.map((file) => [file.path, file.patch]))
+      const evidence = files.map(({ path }) => {
+        const file = evidenceByPath.get(path)
+        const patch =
+          patches.get(path) ??
+          (file && !file.preview ? createTwoFilesPatch(path, path, file.before, file.after) : '')
         return {
-          path: file.path,
-          evidence: evidence.slice(0, budget),
-          incomplete: !evidence || evidence.length > budget,
+          path,
+          evidence: patch.slice(0, budget),
+          incomplete: !patch || patch.length > budget,
         }
       })
       const output = await organize.titles.organizeReview(
-        JSON.stringify({ changes, dependencies: groups }),
+        JSON.stringify({ changes: evidence }),
         organize.selection,
       )
       try {

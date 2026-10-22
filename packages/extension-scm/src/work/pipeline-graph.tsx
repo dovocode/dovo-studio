@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState, useId } from 'react'
 import { pipelineGraphColumns, pipelineDuration, type ForgePipelineDetail } from '@dovo/protocol'
-import { PipelineState } from './pipeline-detail'
+import { PipelineState } from './pipeline-state'
 
 export function PipelineGraph({
   detail,

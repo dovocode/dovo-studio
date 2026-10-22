@@ -6,33 +6,41 @@ import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 
 /** Shared agent checklist from native progress or the regular task tool, latest state only. */
-export function NativeTodos({ task }: { task: Task }) {
+export function NativeTodos({ task, embedded = false }: { task: Task; embedded?: boolean }) {
   const { colors, styles } = useTheme()
   const [open, setOpen] = useState(false)
   const summary = nativeTodoSummary(task)
   if (!summary) return null
   const todos = task.nativeTodos ?? []
   return (
-    <View style={[styles.card, { marginHorizontal: 16, marginBottom: 6, gap: 8 }]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        accessibilityLabel={`Checklist, ${summary.completed} of ${summary.total} done${summary.unfinished ? ', unfinished' : ''}`}
-        onPress={() => setOpen((value) => !value)}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 }}
-      >
-        <Icon name="checklist" size={15} color={colors.muted} />
-        <Text style={[styles.text, { fontWeight: '600', flexShrink: 1 }]}>
-          Checklist · {summary.completed} of {summary.total} done
-          {summary.unfinished ? ' · Unfinished' : ''}
-        </Text>
-        {!!summary.active && !open && (
-          <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
-            {summary.active}
+    <View
+      style={
+        embedded
+          ? { padding: 10, gap: 8 }
+          : [styles.card, { marginHorizontal: 16, marginBottom: 6, gap: 8 }]
+      }
+    >
+      {!embedded && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          accessibilityLabel={`Checklist, ${summary.completed} of ${summary.total} done${summary.unfinished ? ', unfinished' : ''}`}
+          onPress={() => setOpen((value) => !value)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 }}
+        >
+          <Icon name="checklist" size={15} color={colors.muted} />
+          <Text style={[styles.text, { fontWeight: '600', flexShrink: 1 }]}>
+            Checklist · {summary.completed} of {summary.total} done
+            {summary.unfinished ? ' · Unfinished' : ''}
           </Text>
-        )}
-      </Pressable>
-      {open && (
+          {!!summary.active && !open && (
+            <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
+              {summary.active}
+            </Text>
+          )}
+        </Pressable>
+      )}
+      {(open || embedded) && (
         <ScrollView
           style={{ maxHeight: 180 }}
           contentContainerStyle={{ gap: 8 }}

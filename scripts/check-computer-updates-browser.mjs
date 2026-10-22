@@ -86,6 +86,7 @@ try {
       const errors = []
       page.on('pageerror', (error) => errors.push(error.message))
       await page.setContent('<div id="app"></div>')
+      await page.clock.install()
       await page.evaluate(() => {
         const base = {
           revision: 0,
@@ -125,6 +126,8 @@ try {
         ]
         window.workspace = { runtimes: entries, overviews: entries, refreshRuntime: async () => {} }
         window.commands = []
+        window.statusRequests = []
+        window.hostStatuses = {}
         window.fetch = async (input, init) => {
           const url = new URL(input instanceof Request ? input.url : input.toString())
           if (url.hostname === 'api.github.com')
@@ -137,20 +140,38 @@ try {
                   }
                 : [],
             )
-          if (url.pathname.endsWith('/status')) return Response.json({ status: 'idle' })
-          window.commands.push({ id: url.hostname.split('.')[0], body: JSON.parse(init.body) })
+          const id = url.hostname.split('.')[0]
+          if (url.pathname.endsWith('/status')) {
+            window.statusRequests.push(id)
+            return Response.json(window.hostStatuses[id] ?? { status: 'idle' })
+          }
+          window.commands.push({ id, body: JSON.parse(init.body) })
           return Response.json({ status: 'queued', version: '1.0.1' })
         }
       })
       await page.addScriptTag({ content: built.outputFiles[0].text })
       await page.evaluate((client) => window.show(client), client)
+      if (client === 'desktop') {
+        await page.clock.runFor(6001)
+        assert.deepEqual(await page.evaluate(() => window.statusRequests), [])
+        await page.getByRole('button', { name: 'Computer updates', exact: true }).click()
+      }
       const update = page.getByRole('button', { name: 'Update all (2)', exact: true })
       await update.waitFor({ timeout: 10000 }).catch(async (error) => {
         console.log(client, errors, await page.locator('body').innerText())
         throw error
       })
+      if (client === 'desktop') {
+        const updates = page.getByRole('dialog', { name: 'Computer updates', exact: true })
+        await updates.getByRole('button', { name: 'Close', exact: true }).click()
+        await updates.waitFor({ state: 'detached' })
+        const requests = await page.evaluate(() => window.statusRequests.length)
+        await page.clock.runFor(6001)
+        assert.equal(await page.evaluate(() => window.statusRequests.length), requests)
+        await page.getByRole('button', { name: 'Computer updates', exact: true }).click()
+      }
       await update.click()
-      const dialog = page.getByRole('dialog')
+      const dialog = page.getByRole('dialog', { name: 'Update all computers', exact: true })
       const choice = dialog.getByLabel('Resume interrupted threads after restart')
       assert.equal(await choice.isChecked(), false)
       assert.deepEqual(await page.evaluate(() => window.commands), [])
@@ -167,10 +188,31 @@ try {
         },
         { id: 'server', body: { version: '1.0.1' } },
       ])
+      if (client === 'desktop') {
+        await page.evaluate(() => {
+          window.hostStatuses.desktop = { status: 'downloaded', version: '1.0.1' }
+          window.hostStatuses.server = { status: 'complete', version: '1.0.1' }
+        })
+        const updates = page.getByRole('dialog', { name: 'Computer updates', exact: true })
+        await updates.getByRole('button', { name: 'Close', exact: true }).click()
+        await updates.waitFor({ state: 'detached' })
+        await page.clock.runFor(3001)
+        await page.waitForFunction(() => window.commands.length === 3)
+        assert.deepEqual(await page.evaluate(() => window.commands[2]), {
+          id: 'desktop',
+          body: { version: '1.0.1', restartAfterDownload: false, resumeInterrupted },
+        })
+        await page.getByRole('button', { name: 'Computer updates', exact: true }).click()
+        await page
+          .getByRole('checkbox', { name: 'Select desktop for update', exact: true })
+          .waitFor()
+      }
       assert.deepEqual(errors, [])
       await page.close()
     }
-  console.log('Computer updates desktop/mobile dialog and restart choices passed')
+  console.log(
+    'Computer updates: desktop idle polling, dialog reopen, background automatic restarts, and desktop/mobile consent choices passed',
+  )
 } finally {
   await browser.close()
 }

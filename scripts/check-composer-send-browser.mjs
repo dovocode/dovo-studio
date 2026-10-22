@@ -27,11 +27,11 @@ for (const [path, name] of [
 const built = await build({
   stdin: {
     contents: `
-import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {MessageQueue} from './src/chat/thread/message-queue.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';import {formatCodeReference} from './src/detail/code-reference';
+import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {ComposerActivity} from './src/chat/composer/composer-activity.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';import {formatCodeReference} from './src/detail/code-reference';
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
 const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[],queuedTurnSettingsSupported:true}};return <WorkspaceHarness value={value}><><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<MessageQueue task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+function App(){const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected:true,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{questions:[],queuedTurnSettingsSupported:true}};return <WorkspaceHarness value={value}><><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -318,7 +318,6 @@ try {
       queue: [{ id: 'queued-message', role: 'user', text: 'Original queued input' }],
     })),
   )
-  await page.locator('[aria-label="Queued follow-ups"] summary').click()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   await page
     .getByRole('textbox', { name: 'Edit queued message', exact: true })
@@ -450,7 +449,6 @@ try {
       },
     ])
   })
-  await page.locator('[aria-label="Queued follow-ups"] summary').click()
   await page.getByText('Saved queue item', { exact: true }).waitFor()
   await page.getByText('Sending queue item', { exact: true }).waitFor()
   for (const index of [2, 3]) {
@@ -623,6 +621,37 @@ try {
   await page.waitForFunction(() => document.querySelector('textarea').disabled)
   if (!(await page.locator('button[type=submit]').isDisabled()))
     throw new Error('Archived thread can send without restoration')
+  await page.evaluate(() =>
+    window.setTask((task) => ({
+      ...task,
+      archived: false,
+      archivedAt: undefined,
+      queue: [{ id: 'tabbed', role: 'user', text: 'Keep this queued edit' }],
+      nativeTodos: [
+        { text: 'Verify the composer', status: 'in-progress' },
+        { text: 'Done step', status: 'completed' },
+      ],
+    })),
+  )
+  const queueTab = page.getByRole('tab', { name: 'Queue · 1', exact: true })
+  const checklistTab = page.getByRole('tab', { name: /Checklist · 1\/2/ })
+  await queueTab.waitFor()
+  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  const queuedEdit = page.getByRole('textbox', { name: 'Edit queued message', exact: true })
+  await queuedEdit.fill('Unsaved queue edit')
+  await checklistTab.click()
+  await page.getByRole('list', { name: 'Checklist items' }).waitFor()
+  assert.equal(await queuedEdit.isVisible(), false)
+  assert.equal(await checklistTab.getAttribute('aria-selected'), 'true')
+  await checklistTab.press('ArrowLeft')
+  assert.equal(await queueTab.getAttribute('aria-selected'), 'true')
+  assert.equal(await queuedEdit.inputValue(), 'Unsaved queue edit')
+  assert.equal(await queueTab.evaluate((el) => el === document.activeElement), true)
+  await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
+  await page.getByRole('list', { name: 'Checklist items' }).waitFor()
+  assert.equal(await page.getByRole('tab').count(), 0)
+  await page.evaluate(() => window.setTask((task) => ({ ...task, nativeTodos: [] })))
+  assert.equal(await page.locator('[aria-label="Composer activity"]').count(), 0)
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch and immediate side-chat sending via icon and shortcut passed.',

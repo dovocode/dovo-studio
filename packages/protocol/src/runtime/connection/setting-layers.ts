@@ -33,7 +33,7 @@ export function settingSourceName(
     case 'computer-default':
       return `${computer} preferences`
     case 'global':
-      return 'Global defaults'
+      return 'All projects on all machines'
     case 'environment':
       return `${computer} defaults`
     case 'project':

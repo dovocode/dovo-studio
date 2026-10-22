@@ -159,7 +159,8 @@ function AccountPanelContent({
         </div>
       )}
       {directory && !deletionPending && (
-        <>
+        <details className="space-y-3 border-t pt-3">
+          <summary className="cursor-pointer text-sm font-medium">Manage linked computers</summary>
           {directory.servers.length === 0 && (
             <p className="text-xs text-muted-foreground">
               No computers linked yet. Enable Dovo Connect on a computer or link a separately paired
@@ -257,7 +258,7 @@ function AccountPanelContent({
                 </div>
               )
             })}
-        </>
+        </details>
       )}
     </section>
   )

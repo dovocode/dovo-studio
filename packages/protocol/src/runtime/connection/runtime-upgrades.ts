@@ -1,4 +1,5 @@
-import { runtimeRequest, RuntimeRequestError } from '../../shared/client.js'
+import { createRuntimeClient } from '../../shared/runtime-client.js'
+import { RuntimeRequestError } from '../../shared/client.js'
 import { snapshotSchema, type RuntimeSnapshot } from './runtime.js'
 import type { RuntimeProfile } from './runtime-fleet.js'
 import {
@@ -135,9 +136,7 @@ export function createRuntimeUpgradeManager(options: {
     version?: string,
     resumeInterrupted?: boolean,
   ) =>
-    runtimeRequest(
-      entry.profile.connection,
-      entry.profile.connection.address,
+    createRuntimeClient(entry.profile.connection).request(
       `/api/runtime/${entry.target === 'desktop' ? 'desktop-update' : 'update'}/${path}`,
       version
         ? {
@@ -148,8 +147,7 @@ export function createRuntimeUpgradeManager(options: {
           }
         : undefined,
       serverUpdateStatusSchema,
-      version ? 'POST' : 'GET',
-      5000,
+      { method: version ? 'POST' : 'GET', timeoutMs: 5000 },
     )
   const poll = async () => {
     if (polling) return
@@ -176,14 +174,11 @@ export function createRuntimeUpgradeManager(options: {
                 previous?.status === 'installing' ||
                 (previous?.status === 'error' && previous.version)
               ) {
-                const received = await runtimeRequest(
-                  entry.profile.connection,
-                  entry.profile.connection.address,
-                  '/api/snapshot?overview=1',
+                const received = await createRuntimeClient(entry.profile.connection).request(
+                  '/api/snapshot?scope=overview',
                   undefined,
                   snapshotSchema,
-                  'GET',
-                  5000,
+                  { method: 'GET', timeoutMs: 5000 },
                 )
                 const snapshot = entry.target === 'desktop' ? desktopSnapshot(received) : received
                 if (generations.get(entry.profile.id) !== generation) return

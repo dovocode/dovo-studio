@@ -1,4 +1,4 @@
-import { PageHeader } from './page-header'
+import { SettingsPage } from './settings-layout'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -60,9 +60,11 @@ export function HostSettingsPage({
     }
   }
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title={title} description={description}>
-        {source && (
+    <SettingsPage
+      title={title}
+      description={description}
+      headerActions={
+        source && (
           <div className="flex w-80 min-w-0 max-w-full items-center gap-2">
             <span
               className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
@@ -89,42 +91,39 @@ export function HostSettingsPage({
               </ChoicePicker>
             )}
           </div>
-        )}
-      </PageHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
-        <div className="mx-auto max-w-3xl space-y-4">
-          {localSettings}
-          {!source ? (
-            <p className="text-xs text-muted-foreground">
-              Connect a computer in Devices & runtime to change these settings.
-            </p>
-          ) : (
-            <WorkspaceScope key={source.scope} profile={source.profile}>
-              {!source.connected && (
-                <div className="space-y-3">
-                  <p role="status" className="text-xs text-muted-foreground">
-                    {source.name} is offline. Reconnect it to view or change these settings.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={refreshing}
-                    onClick={() => void retry()}
-                  >
-                    {refreshing ? 'Connecting…' : 'Retry connection'}
-                  </Button>
-                  {error && (
-                    <p role="alert" className="text-xs text-destructive">
-                      {error}
-                    </p>
-                  )}
-                </div>
+        )
+      }
+    >
+      {localSettings}
+      {!source ? (
+        <p className="text-xs text-muted-foreground">
+          Connect a computer in Devices & runtime to change these settings.
+        </p>
+      ) : (
+        <WorkspaceScope key={source.scope} profile={source.profile}>
+          {!source.connected && (
+            <div className="space-y-3">
+              <p role="status" className="text-xs text-muted-foreground">
+                {source.name} is offline. Reconnect it to view or change these settings.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={refreshing}
+                onClick={() => void retry()}
+              >
+                {refreshing ? 'Connecting…' : 'Retry connection'}
+              </Button>
+              {error && (
+                <p role="alert" className="text-xs text-destructive">
+                  {error}
+                </p>
               )}
-              {source.connected && children}
-            </WorkspaceScope>
+            </div>
           )}
-        </div>
-      </div>
-    </section>
+          {source.connected && children}
+        </WorkspaceScope>
+      )}
+    </SettingsPage>
   )
 }

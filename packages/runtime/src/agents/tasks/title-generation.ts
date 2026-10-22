@@ -778,7 +778,7 @@ const oneShotModes: Record<
     usedTools: 'The selector model tried to use tools. Choose another title model.',
   },
   review: {
-    instructions: `Organize changed files into coherent feature groups for a human code review. Return only JSON: {"groups":[{"label":"Feature name","summary":"What changed and why","impact":"Linked callers, contracts, tests and risks to inspect; distinguish observed links from possible impact","paths":["exact changed path"]}]}. Include each supplied changed path exactly once. Order groups by a useful review sequence and dependencies before callers within groups. Use supplied dependency groups as evidence. Do not claim tests passed or invent files or behavior. Explain missing or truncated evidence. ${noToolsNote}`,
+    instructions: `Organize changed files into coherent feature groups for a human code review. Return only JSON: {"groups":[{"label":"Feature name","summary":"What changed and why","impact":"Linked callers, contracts, tests and risks to inspect; distinguish observed links from possible impact","paths":["exact changed path"]}]}. Include each supplied changed path exactly once. Order groups by a useful review sequence and dependencies before callers within groups. Infer relationships only from the supplied diff evidence. Do not claim tests passed or invent files or behavior. Explain missing or truncated evidence. ${noToolsNote}`,
     prompt: (text) => `Organize these JSON-encoded changes for review:\n${text}`,
     timeout: 120_000,
     limit: 60_000,

@@ -1,15 +1,15 @@
-import { createHash } from 'node:crypto'
-import { Schema } from 'effect'
-import { runClientEffect } from '@dovo/client-runtime'
 import {
+  createRuntimeClient,
   decode,
   studioPeerRegistrationSchema,
-  runtimeRequestEffect,
   RuntimeRequestError,
   noStudioTools,
   studioThreadsCommandSchema,
   type ThreadWatchSummary,
 } from '@dovo/protocol'
+import { createHash } from 'node:crypto'
+import { Schema } from 'effect'
+import { runClientEffect } from '@dovo/client-runtime'
 import type { Services } from '../services.js'
 import { HttpError } from '../errors.js'
 import { requireStudioPart, studioReadAction, studioTool, type StudioPolicy } from './tools.js'
@@ -183,16 +183,13 @@ export async function routedStudioTool(
     .digest('hex')
   try {
     const result = await runClientEffect(
-      runtimeRequestEffect(
-        peer.connection,
-        peer.connection.address,
+      createRuntimeClient(peer.connection).requestEffect(
         part === 'threads' && (input.action === 'create' || input.allowPermissionIncrease === true)
           ? '/api/studio/forward-v2'
           : '/api/studio/forward',
         { taskId: `paired:${scope}`, part, command, policy: forwardedPolicy },
         Schema.Unknown,
-        'POST',
-        durableSnapshot ? 10000 : 120000,
+        { method: 'POST', timeoutMs: durableSnapshot ? 10000 : 120000 },
       ),
       signal,
     )

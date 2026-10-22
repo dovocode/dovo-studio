@@ -1,5 +1,48 @@
-import { mergeAccountInternetConnection } from '@dovo/protocol'
-import type { WorkspacePatchResult, Task } from '@dovo/protocol'
+import {
+  createRuntimeClient,
+  mergeAccountInternetConnection,
+  isPeerAddress,
+  type PeerConfig,
+  type PeerRelayProvider,
+  runtimeHasCustomName,
+  mergeSharedSettings,
+  pendingSharedSettings,
+  sharedSettingsSyncSchema,
+  writeRuntimeSnapshotCache,
+  RuntimeMutations,
+  runtimeSnapshotPath,
+  learnRuntimeRoutes,
+  retryRuntimeSync,
+  startRuntimeSync,
+  pendingAgentPresets,
+  decode,
+  saveRuntimePairing,
+  cancelRuntimePairing,
+  recoverRuntimePairings,
+  type PairingProof,
+  snapshotSchema,
+  runtimeSnapshotCacheSchema,
+  responses,
+  clearRuntimeRequestCache,
+  getRuntimeSnapshotTag,
+  runtimeRegistrySchema,
+  runtimeProfile,
+  upsertRuntime,
+  removeRuntime,
+  loadRuntimeOverviewEffect,
+  loadFleetPullOverviewsEffect,
+  pullOverviewScope,
+  isUnauthorizedRuntimeError,
+  sameRuntimeConnection,
+  type RuntimeConnection,
+  type RuntimeRegistry,
+  type RuntimeProfile,
+  type RuntimeOverview,
+  type RuntimeReadCache,
+  type WorkspacePatchResult,
+  type Task,
+  type Repository,
+} from '@dovo/protocol'
 import {
   setPeerConnectionsActive,
   setPeerConnectionNetwork,
@@ -10,25 +53,12 @@ import {
   replacePeerConnection,
   preparePeerConnection,
 } from './peer-transport'
-import { isPeerAddress, type PeerConfig, type PeerRelayProvider } from '@dovo/protocol'
-import type { Repository } from '@dovo/protocol'
-import {
-  runtimeHasCustomName,
-  mergeSharedSettings,
-  pendingSharedSettings,
-  sharedSettingsSyncSchema,
-} from '@dovo/protocol'
-import { writeRuntimeSnapshotCache } from '@dovo/protocol'
-import { RuntimeMutations } from '@dovo/protocol'
 import { mobileMutationStorage } from './mutation-storage'
-import { runtimeSnapshotPath } from '@dovo/protocol'
-import { learnRuntimeRoutes, retryRuntimeSync, startRuntimeSync } from '@dovo/protocol'
 import {
   useMobilePreferences,
   updateMobilePreferences,
   readMobilePreferences,
 } from '../preferences/app-preferences'
-import { pendingAgentPresets } from '@dovo/protocol'
 import {
   optimisticTaskEffect,
   optimisticTaskConfirmed,
@@ -38,7 +68,6 @@ import {
 } from '../state/optimistic-tasks'
 import { nativeEffect, mobileWorkflow } from '../state/native-effect'
 import { useApplicationState } from '../state/application-state'
-import { decode } from '@dovo/protocol'
 import {
   createContext,
   useCallback,
@@ -57,32 +86,6 @@ import { AppState } from 'react-native'
 import * as Network from 'expo-network'
 import * as SecureStore from 'expo-secure-store'
 import { Data, Effect, Schema, Semaphore } from 'effect'
-import {
-  saveRuntimePairing,
-  cancelRuntimePairing,
-  recoverRuntimePairings,
-  type PairingProof,
-  snapshotSchema,
-  runtimeSnapshotCacheSchema,
-  runtimeRequestEffect,
-  responses,
-  clearRuntimeRequestCache,
-  getRuntimeSnapshotTag,
-  runtimeRegistrySchema,
-  runtimeProfile,
-  upsertRuntime,
-  removeRuntime,
-  loadRuntimeOverviewEffect,
-  loadFleetPullOverviewsEffect,
-  pullOverviewScope,
-  isUnauthorizedRuntimeError,
-  sameRuntimeConnection,
-  type RuntimeConnection,
-  type RuntimeRegistry,
-  type RuntimeProfile,
-  type RuntimeOverview,
-  type RuntimeReadCache,
-} from '@dovo/protocol'
 import { mobileReadCache } from './read-cache'
 import {
   clientScopeKey,
@@ -517,54 +520,51 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         const workspaceCheckpoint = mutations.workspaceRefreshCheckpoint(profile.connection)
         const version = (sequence.current.get(profile.id) ?? 0) + 1
         sequence.current.set(profile.id, version)
-        return runtimeRequestEffect(
-          profile.connection,
-          profile.connection.address,
-          runtimeSnapshotPath(profile.connection),
-          undefined,
-          snapshotSchema,
-          'GET',
-          10000,
-        ).pipe(
-          Effect.tap((snapshot) =>
-            Effect.sync(() => {
-              if (
-                sequence.current.get(profile.id) === version &&
-                mutations.acceptsWorkspaceSnapshot(profile.connection, snapshot) &&
-                !(
-                  entryRef.current[profile.id]?.snapshot?.runtimeInstanceId ===
-                    snapshot.runtimeInstanceId &&
-                  (entryRef.current[profile.id]?.snapshot?.revision ?? -1) > snapshot.revision
-                )
-              ) {
-                mutations.workspaceRefreshed(profile.connection, workspaceCheckpoint, snapshot)
-                updateEntry(profile, (previous) => ({
-                  ...previous,
-                  snapshot,
-                  connected: true,
-                  lastSeen: new Date().toISOString(),
-                  error: null,
-                  unauthorized: false,
-                }))
-              }
-            }),
-          ),
-          Effect.tapError((error) =>
-            Effect.sync(() => {
-              if (sequence.current.get(profile.id) === version)
-                updateEntry(profile, (previous) => ({
-                  ...previous,
-                  connected: false,
-                  error: error.message,
-                  unauthorized: isUnauthorizedRuntimeError(error),
-                }))
-            }),
-          ),
-          Effect.tap(() =>
-            mutations.recoverEffect(profile.connection).pipe(Effect.catch(() => Effect.void)),
-          ),
-          Effect.asVoid,
-        )
+        return createRuntimeClient(profile.connection)
+          .requestEffect(runtimeSnapshotPath(profile.connection), undefined, snapshotSchema, {
+            method: 'GET',
+            timeoutMs: 10000,
+          })
+          .pipe(
+            Effect.tap((snapshot) =>
+              Effect.sync(() => {
+                if (
+                  sequence.current.get(profile.id) === version &&
+                  mutations.acceptsWorkspaceSnapshot(profile.connection, snapshot) &&
+                  !(
+                    entryRef.current[profile.id]?.snapshot?.runtimeInstanceId ===
+                      snapshot.runtimeInstanceId &&
+                    (entryRef.current[profile.id]?.snapshot?.revision ?? -1) > snapshot.revision
+                  )
+                ) {
+                  mutations.workspaceRefreshed(profile.connection, workspaceCheckpoint, snapshot)
+                  updateEntry(profile, (previous) => ({
+                    ...previous,
+                    snapshot,
+                    connected: true,
+                    lastSeen: new Date().toISOString(),
+                    error: null,
+                    unauthorized: false,
+                  }))
+                }
+              }),
+            ),
+            Effect.tapError((error) =>
+              Effect.sync(() => {
+                if (sequence.current.get(profile.id) === version)
+                  updateEntry(profile, (previous) => ({
+                    ...previous,
+                    connected: false,
+                    error: error.message,
+                    unauthorized: isUnauthorizedRuntimeError(error),
+                  }))
+              }),
+            ),
+            Effect.tap(() =>
+              mutations.recoverEffect(profile.connection).pipe(Effect.catch(() => Effect.void)),
+            ),
+            Effect.asVoid,
+          )
       }),
     [updateEntry, mutations],
   )
@@ -731,13 +731,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           )
         if (proof || value.accountSession) {
           // Verify identity and learn routes without downloading the computer's history.
-          const snapshot = yield* runtimeRequestEffect(
-            value,
-            value.address,
+          const snapshot = yield* createRuntimeClient(value).requestEffect(
             '/api/snapshot?scope=overview',
             undefined,
             snapshotSchema,
-            'GET',
+            { method: 'GET' },
           )
           value = learnRuntimeRoutes(value, snapshot)
         }
@@ -874,15 +872,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         // After the local removal is durable, retire this phone's credential on the computer so
         // forgotten phones don't linger as trusted devices. Offline or owner hosts just skip it.
         if (profile)
-          yield* runtimeRequestEffect(
-            profile.connection,
-            profile.connection.address,
-            '/api/devices/revoke-self',
-            {},
-            responses.ok,
-            'POST',
-            4000,
-          ).pipe(Effect.ignore)
+          yield* createRuntimeClient(profile.connection)
+            .requestEffect('/api/devices/revoke-self', {}, responses.ok, {
+              method: 'POST',
+              timeoutMs: 4000,
+            })
+            .pipe(Effect.ignore)
         if (profile) {
           forgetPeerConnection(profile.connection.address)
           if (profile.connection.internet) forgetPeerConnection(profile.connection.internet.address)
@@ -933,14 +928,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         let committed = false
         yield* mobileWorkflow(function* () {
           // Prove the new path works with the existing token before replacing the saved route.
-          const snapshot = yield* runtimeRequestEffect(
-            connection,
-            address,
+          const snapshot = yield* createRuntimeClient(connection).requestEffect(
             '/api/snapshot?scope=overview',
             undefined,
             snapshotSchema,
-            'GET',
-            30000,
+            { method: 'GET', timeoutMs: 30000 },
           )
           const verified = learnRuntimeRoutes(connection, snapshot)
           yield* beforeReplace(previous)
@@ -1197,9 +1189,6 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     let stopped = false
     let wakeFallback = () => {}
     const live = startRuntimeSync(profile.connection, {
-      onStatus: (syncStatus) => {
-        if (!stopped) updateEntry(profile, (previous) => ({ ...previous, syncStatus }))
-      },
       onWake: () => wakeFallback(),
       onSnapshot: (snapshot) => {
         if (

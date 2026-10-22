@@ -133,7 +133,7 @@ export function ReviewFiles({
     }[] = []
     if (related)
       for (const group of groups) {
-        if (group.basis === 'folder') continue
+        if (group.basis !== 'feature') continue
         const members = group.paths.flatMap((path) => {
           const file = remaining.get(path)
           if (!file) return []
@@ -172,18 +172,16 @@ export function ReviewFiles({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-pressed={related}
-            onClick={() => onRelatedChange(!related)}
-          >
-            {related
-              ? groups.some((group) => group.basis === 'feature')
-                ? 'Features'
-                : 'Related changes'
-              : 'Folders'}
-          </Button>
+          {groups.some((group) => group.basis === 'feature') && (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-pressed={related}
+              onClick={() => onRelatedChange(!related)}
+            >
+              {related ? 'Features' : 'Folders'}
+            </Button>
+          )}
           <label className="flex min-h-8 items-center gap-2">
             <Checkbox
               checked={unviewed}
@@ -210,11 +208,7 @@ export function ReviewFiles({
           >
             <summary
               className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-2 text-xs font-medium"
-              title={
-                section.basis === 'feature'
-                  ? 'Model-proposed feature group; verify against its diffs'
-                  : 'Dependencies first, followed by files that import them'
-              }
+              title="Model-proposed feature group; verify against its diffs"
             >
               <ChevronRight
                 aria-hidden

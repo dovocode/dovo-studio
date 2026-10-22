@@ -30,7 +30,7 @@ const targetSchema = Schema.Struct({
   startError: Schema.optional(Schema.String),
 })
 
-export function ownedTarget(s: Services, parentId: string, id: string) {
+function ownedTarget(s: Services, parentId: string, id: string) {
   return s.threadWatch
     .list(parentId)
     .find((watch) => watch.delegated && targetedChildId(watch) === id)

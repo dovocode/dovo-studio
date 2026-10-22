@@ -284,3 +284,9 @@ export * from './runtime/connection/account-internet-connection.js'
 export * from './runtime/connection/custom-turn.js'
 export * from './conversation/artifact-sharing.js'
 export * from './conversation/artifact-feeds.js'
+
+export {
+  createRuntimeClient,
+  type RuntimeClient,
+  type RuntimeClientRequestOptions,
+} from './shared/runtime-client.js'

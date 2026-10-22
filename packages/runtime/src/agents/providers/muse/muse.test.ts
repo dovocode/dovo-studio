@@ -410,8 +410,12 @@ it.each(['approval-scoped', 'approval-always', 'subagent-approval'] as const)(
     }
     expect(transcript.frames.every((entry) => entry.direction === 'out')).toBe(true)
     const methods = transcript.frames.map((entry) => entry.frame.method)
-    expect(methods).toContain('approval/requested')
-    if (transcript.expectSubagent) expect(methods).toContain('item/started')
+    expect(methods).toEqual(
+      expect.arrayContaining([
+        'approval/requested',
+        ...(transcript.expectSubagent ? ['item/started'] : []),
+      ]),
+    )
     const f = await fixture()
     const approve = vi.fn<AgentRun['approve']>(async () => transcript.decision)
     const nativeApprove = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
@@ -437,19 +441,14 @@ it.each(['approval-scoped', 'approval-always', 'subagent-approval'] as const)(
         const decide = (await f.messages()).find((frame) => frame.method === 'approval/decide')
         expect(decide?.params).toMatchObject({ choiceId: transcript.expectChoiceId })
       })
-      if (transcript.expectSubagent) {
-        expect(nativeApprove).toHaveBeenCalled()
-        expect(nativeEvents.length).toBeGreaterThan(0)
-      } else {
-        expect(approve).toHaveBeenCalledWith(
-          'Muse shell command: pwd',
-          'pwd',
-          undefined,
-          expect.objectContaining({ session: true, always: true }),
-        )
-      }
+      expect(nativeApprove.mock.calls.length > 0).toBe(!!transcript.expectSubagent)
+      expect(nativeEvents.length > 0).toBe(!!transcript.expectSubagent)
+      const options = expect.objectContaining({ session: true, always: true })
+      expect(approve.mock.calls).toEqual(
+        transcript.expectSubagent ? [] : [['Muse shell command: pwd', 'pwd', undefined, options]],
+      )
     } finally {
-      if (transcript.expectSubagent) await f.adapter.dispose?.()
+      await f.adapter.dispose?.()
     }
   },
 )

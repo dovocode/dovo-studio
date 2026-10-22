@@ -1,15 +1,15 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, screen } from 'electron'
 import {
+  createRuntimeClient,
   decode,
   inputPreviewSyncSchema,
   inputPreviewAnswerSchema,
   inputPreviewKey,
-  runtimeRequest,
-  snapshotSchema,
+  RuntimeRequestError,
   responses,
   type InputPreviewItem,
   type InputPreview,
 } from '@dovo/protocol'
+import { app, BrowserWindow, ipcMain, nativeTheme, screen } from 'electron'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { defaultWindowColors, readWindowColors } from './window-colors.js'
 
@@ -162,31 +162,10 @@ export function registerInputPreview(rendererPath: string, preload: string) {
     if (submitting.has(input.key)) throw new Error('This answer is already being submitted')
     submitting.add(input.key)
     try {
-      const snapshot = await runtimeRequest(
-        item.connection,
-        item.connection.address,
-        '/api/snapshot?overview=1',
-        undefined,
-        snapshotSchema,
-        'GET',
-      )
-      const pending = item.request.kind === 'question' ? snapshot.questions : snapshot.approvals
-      if (
-        !pending.some(
-          (request) =>
-            request.id === item.request.value.id && request.taskId === item.request.value.taskId,
-        )
-      ) {
-        dismissed.add(input.key)
-        reconcile()
-        throw new Error('This request was answered or canceled elsewhere')
-      }
       const question = item.request.kind === 'question'
       if (question ? typeof input.answer === 'boolean' : typeof input.answer !== 'boolean')
         throw new Error('Invalid response for this request')
-      await runtimeRequest(
-        item.connection,
-        item.connection.address,
+      await createRuntimeClient(item.connection).request(
         question ? '/api/tasks/answer' : '/api/approvals',
         question
           ? { id: item.request.value.id, answers: input.answer }
@@ -195,6 +174,13 @@ export function registerInputPreview(rendererPath: string, preload: string) {
       )
       dismissed.add(input.key)
       reconcile()
+    } catch (error) {
+      // The server validates pending state atomically; a snapshot first adds latency and races.
+      if (error instanceof RuntimeRequestError && (error.status === 404 || error.status === 409)) {
+        dismissed.add(input.key)
+        reconcile()
+      }
+      throw error
     } finally {
       submitting.delete(input.key)
     }

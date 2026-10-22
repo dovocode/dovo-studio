@@ -1,27 +1,33 @@
-import { CodeReviewCard } from '../../scm/review/code-review-card'
-import { TaskProjectSheet } from './task-project-sheet'
-import { TaskLinkedPullSheet } from './task-linked-pull-sheet'
-import { TaskThreadBehavior } from './task-thread-behavior'
-import { chooseSnoozeDuration } from './use-task-lifecycle'
-import { generatedTitleSchema, taskPullLinks, workspacePatchResultSchema } from '@dovo/protocol'
-import { checkpointFileCount, projectDisplayName, runtimeComputerName } from '@dovo/protocol'
-import { conversationPageSchema, readConversationHistory, runtimeRequest } from '@dovo/protocol'
 import {
+  createRuntimeClient,
+  generatedTitleSchema,
+  taskPullLinks,
+  workspacePatchResultSchema,
+  checkpointFileCount,
+  projectDisplayName,
+  runtimeComputerName,
+  conversationPageSchema,
+  readConversationHistory,
   cachedThread,
   cachedRuntimeThread,
   runtimeSnapshotCacheSchema,
   watchRuntimeTask,
-} from '@dovo/protocol'
-import {
   canChangeTaskCheckout,
   REVIEW_PROMPT,
   responses,
   taskPreparation,
   taskTranscript,
   taskBudgetUsage,
+  mutableStruct,
+  type Task,
+  type Subagent,
 } from '@dovo/protocol'
+import { CodeReviewCard } from '../../scm/review/code-review-card'
+import { TaskProjectSheet } from './task-project-sheet'
+import { TaskLinkedPullSheet } from './task-linked-pull-sheet'
+import { TaskThreadBehavior } from './task-thread-behavior'
+import { chooseSnoozeDuration } from './use-task-lifecycle'
 import { Effect, Schema } from 'effect'
-import { mutableStruct } from '@dovo/protocol'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
 import { useAction } from '../../ui/controls/use-action'
 import {
@@ -32,13 +38,12 @@ import {
 import { useApplicationState } from '../../runtime/state/application-state'
 import { TaskAgents } from './task-agents'
 import { NativeAgentThread } from './native-agent-thread'
-import type { Subagent } from '@dovo/protocol'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BrowserPane, DevicesPane } from '../preview/browser-pane'
 import { Conversation } from '../conversation/view'
 import { ConversationProvider } from '../conversation/state/provider'
 import { useNavigation } from '../../shell/navigation'
-import { MessageQueue } from '../composer/message-queue'
+import { ComposerActivity } from '../composer/composer-activity'
 import { TaskQuestions } from './task-questions'
 import { LinkedProjects } from './linked-projects'
 import { RenameThread } from './rename-thread'
@@ -62,7 +67,6 @@ import {
   type ReactNode,
 } from 'react'
 import { Text } from '../../ui/content/text'
-import { type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { Sheet } from '../../ui/layout/sheet'
@@ -77,7 +81,6 @@ import { copyText } from '../../ui/content/clipboard'
 import { PreparationProgress } from '../conversation/components/preparation-progress'
 import { ReviewComments } from '../conversation/components/review-comments'
 import { PlanApproval } from '../conversation/components/plan-approval'
-import { NativeTodos } from '../conversation/components/native-todos'
 import { SideQuestion } from '../conversation/components/side-question'
 import { ProjectInstructions } from './project-instructions'
 import { ProjectApprovalRules } from './project-approval-rules'
@@ -355,15 +358,11 @@ function TaskDetailContent({
                   (before, signal) => {
                     if (!profile || !connected)
                       throw new Error('Reconnect to copy the full conversation.')
-                    return runtimeRequest(
-                      profile.connection,
-                      profile.connection.address,
+                    return createRuntimeClient(profile.connection).request(
                       '/api/tasks/history',
                       { id: task.id, before },
                       conversationPageSchema,
-                      'POST',
-                      undefined,
-                      signal,
+                      { method: 'POST', signal },
                     )
                   },
                   operation.signal,
@@ -943,7 +942,7 @@ function TaskDetailContent({
             }}
           >
             <Composer
-              queuedMessages={<MessageQueue task={task} />}
+              queuedMessages={<ComposerActivity task={task} />}
               renderAbove={(setup) => (
                 <Conversation onBrowse={startup?.onBrowse} setup={setup}>
                   {preparation ? (
@@ -1069,7 +1068,6 @@ function TaskDetailContent({
                     </View>
                   )}
                   <PlanApproval task={task} />
-                  <NativeTodos task={task} />
                   <CodeReviewCard
                     task={task}
                     onOpen={(finding) => {

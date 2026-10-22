@@ -1,7 +1,7 @@
 import { Effect, Schema } from 'effect'
 import { decode, mutableStruct, usagePriceSchema, resolveTaskAgent } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
-import { RuntimeServices } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { body } from '../support/body.js'
 import { serviceResult } from '../support/effect.js'
 import { errorMessage } from '../../errors.js'

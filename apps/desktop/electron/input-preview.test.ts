@@ -114,24 +114,6 @@ const item = decode(inputPreviewItemSchema, {
     },
   },
 })
-const snapshot = {
-  revision: 0,
-  owner: false,
-  approvals: [],
-  questions: [item.request.value],
-  terminals: [],
-  runs: [],
-  devices: [],
-  pendingDevices: [],
-  workspace: {
-    version: 1,
-    runtimeAddress: '',
-    agents: [],
-    repositories: [],
-    tasks: [],
-    automations: [],
-  },
-}
 function event(index: number) {
   return { sender: f.windows[index].webContents } as unknown as Electron.IpcMainInvokeEvent
 }
@@ -166,7 +148,7 @@ it('submits to the originating remote runtime once and advances to the next requ
     vi.fn<typeof fetch>(async (input) => {
       const url = input instanceof Request ? input.url : input.toString()
       calls.push(url)
-      return Response.json(url.includes('/api/snapshot') ? snapshot : { ok: true })
+      return Response.json({ ok: true })
     }),
   )
   const { invoke, sync } = await fixture()
@@ -179,19 +161,13 @@ it('submits to the originating remote runtime once and advances to the next requ
   const response = invoke('answer', value)
   await expect(invoke('answer', value)).rejects.toThrow('already being submitted')
   await response
-  expect(calls).toEqual([
-    'http://remote.local/api/snapshot?overview=1',
-    'http://remote.local/api/tasks/answer',
-  ])
+  expect(calls).toEqual(['http://remote.local/api/tasks/answer'])
   expect(await invoke('current')).toMatchObject({ request: { value: { id: 'q2' } } })
 })
 it('answers in a non-activating macOS panel without opening the main window', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async (input) => {
-      const url = input instanceof Request ? input.url : input.toString()
-      return Response.json(url.includes('/api/snapshot') ? snapshot : { ok: true })
-    }),
+    vi.fn<typeof fetch>(async () => Response.json({ ok: true })),
   )
   const { invoke } = await fixture()
   expect(f.windows[1].options?.type).toBe(process.platform === 'darwin' ? 'panel' : undefined)
@@ -207,8 +183,10 @@ it('opens the full window only through Open thread', async () => {
   expect(f.windows[0].visible).toBe(true)
   expect(f.windows[0].focused).toBe(true)
 })
-it('refuses a stale request answered on another device before making a mutation', async () => {
-  const fetcher = vi.fn<typeof fetch>(async () => Response.json({ ...snapshot, questions: [] }))
+it('dismisses stale requests rejected by the originating runtime without a snapshot preflight', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () =>
+    Response.json({ error: 'This question was answered elsewhere' }, { status: 409 }),
+  )
   vi.stubGlobal('fetch', fetcher)
   const { invoke } = await fixture()
   await expect(
@@ -228,5 +206,56 @@ it('disables disconnected answers and respects dismissal and the preference', as
   expect(f.windows[1].visible).toBe(false)
   await sync([])
   await sync([item], false)
+  expect(f.windows[1].visible).toBe(false)
+})
+
+it('keeps failed answers visible and permits retry with the same request ID after a lost response', async () => {
+  const calls: unknown[] = []
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    if (typeof init?.body !== 'string') throw new Error('Expected a JSON answer body')
+    calls.push(JSON.parse(init.body))
+    if (calls.length === 1) throw new Error('Response lost')
+    return Response.json({ ok: true })
+  })
+  vi.stubGlobal('fetch', fetcher)
+  const { invoke } = await fixture()
+  const answer = { key: inputPreviewKey(item), answer: { choice: ['yes'] } }
+  await expect(invoke('answer', answer)).rejects.toThrow('Cannot reach remote.local')
+  expect(f.windows[1].visible).toBe(true)
+  await invoke('answer', answer)
+  expect(calls).toHaveLength(2)
+  expect(calls[1]).toEqual(calls[0])
+  expect(f.windows[1].visible).toBe(false)
+})
+
+it('sends approvals directly and preserves server-side expiry and policy checks', async () => {
+  const { invoke, sync } = await fixture()
+  const approval = {
+    ...item,
+    request: {
+      kind: 'approval' as const,
+      value: {
+        id: 'a1',
+        taskId: 'task',
+        title: 'Allow tool',
+        detail: 'Tool details',
+        createdAt: '',
+        rememberRule: null,
+      },
+    },
+  }
+  await sync([approval])
+  const fetcher = vi.fn<typeof fetch>(async () =>
+    Response.json({ error: 'Approval expired' }, { status: 404 }),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  await expect(invoke('answer', { key: inputPreviewKey(approval), answer: true })).rejects.toThrow(
+    'Approval expired',
+  )
+  expect(fetcher).toHaveBeenCalledOnce()
+  const [url] = fetcher.mock.calls[0]
+  expect(url instanceof Request ? url.url : typeof url === 'string' ? url : url.href).toBe(
+    'http://remote.local/api/approvals',
+  )
   expect(f.windows[1].visible).toBe(false)
 })

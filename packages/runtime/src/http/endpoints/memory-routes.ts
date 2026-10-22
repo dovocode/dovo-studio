@@ -11,7 +11,7 @@ import {
   memoryScopeSchema,
   memoryWriteSchema,
 } from '@dovo/protocol'
-import { RuntimeServices } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
 import { routeProgram, serviceResult } from '../support/effect.js'

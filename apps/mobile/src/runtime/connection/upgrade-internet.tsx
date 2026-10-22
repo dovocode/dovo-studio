@@ -1,15 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
-import { AppState, View } from 'react-native'
-import { Effect } from 'effect'
-import { startPolling } from '@dovo/client-runtime'
 import {
+  createRuntimeClient,
   responses,
-  runtimeRequest,
-  runtimeRequestEffect,
   type RuntimeProfile,
   type RuntimeConnection,
   type PeerRelayProvider,
 } from '@dovo/protocol'
+import { useEffect, useRef, useState } from 'react'
+import { AppState, View } from 'react-native'
+import { Effect } from 'effect'
+import { startPolling } from '@dovo/client-runtime'
 import { mobileWorkflow } from '../state/native-effect'
 import { useRuntime } from './provider'
 import { PeerRelayChoice } from './peer-relay-choice'
@@ -51,15 +50,11 @@ export function UpgradeInternet({
       if (stopped) return
       if (phase.current === 'saving') {
         phase.current = 'cancelled'
-        void runtimeRequest(
-          connection,
-          connection.address,
-          '/api/runtime/peer/upgrade/cancel',
-          { id: pending.id },
-          responses.ok,
-        ).catch(() =>
-          console.warn('Could not cancel the internet request; it will expire automatically.'),
-        )
+        void createRuntimeClient(connection)
+          .request('/api/runtime/peer/upgrade/cancel', { id: pending.id }, responses.ok)
+          .catch(() =>
+            console.warn('Could not cancel the internet request; it will expire automatically.'),
+          )
       }
       setMessage(error.message)
       setPending(null)
@@ -70,9 +65,7 @@ export function UpgradeInternet({
         if (stopped || AppState.currentState !== 'active' || phase.current !== 'waiting') return
         if (Date.parse(pending.expiresAt) <= Date.now())
           return yield* Effect.fail(new Error('Request expired. Request internet access again.'))
-        const result = yield* runtimeRequestEffect(
-          connection,
-          connection.address,
+        const result = yield* createRuntimeClient(connection).requestEffect(
           '/api/runtime/peer/upgrade/claim',
           { id: pending.id },
           responses.peerUpgrade,
@@ -98,15 +91,11 @@ export function UpgradeInternet({
       if (phase.current !== 'done' && phase.current !== 'saving') {
         phase.current = 'cancelled'
         // Best effort on disposal: the server also expires every unanswered request.
-        void runtimeRequest(
-          connection,
-          connection.address,
-          '/api/runtime/peer/upgrade/cancel',
-          { id: pending.id },
-          responses.ok,
-        ).catch(() =>
-          console.warn('Could not cancel the internet request; it will expire automatically.'),
-        )
+        void createRuntimeClient(connection)
+          .request('/api/runtime/peer/upgrade/cancel', { id: pending.id }, responses.ok)
+          .catch(() =>
+            console.warn('Could not cancel the internet request; it will expire automatically.'),
+          )
       }
     }
   }, [pending, profile.id])
@@ -134,9 +123,7 @@ export function UpgradeInternet({
                   phase.current = 'cancelled'
                   setPending(null)
                   setMessage('Request cancelled. Your existing connection still works.')
-                  await runtimeRequest(
-                    pending.connection,
-                    pending.connection.address,
+                  await createRuntimeClient(pending.connection).request(
                     '/api/runtime/peer/upgrade/cancel',
                     { id: pending.id },
                     responses.ok,
@@ -154,9 +141,7 @@ export function UpgradeInternet({
             act(async () => {
               setMessage('')
               const connection = profile.connection
-              const request = await runtimeRequest(
-                connection,
-                connection.address,
+              const request = await createRuntimeClient(connection).request(
                 '/api/runtime/peer/upgrade/request',
                 relay ? { relay } : {},
                 responses.peerUpgrade,

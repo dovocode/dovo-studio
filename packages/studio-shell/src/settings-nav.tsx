@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import {
   useSettingsTarget,
   type SettingsSection,
@@ -27,7 +26,6 @@ import {
   Bot,
   ChartNoAxesCombined,
   ChevronRight,
-  ChevronDown,
   Command,
   GitBranch,
   GitPullRequest,
@@ -100,6 +98,13 @@ const storage: Record<SettingsStorage, { icon: typeof Search; label: string }> =
 
 const mixedPages = new Set(['browser-settings', 'pull-request-monitoring-settings'])
 
+function pageStorage(view?: StudioView) {
+  if (view?.id === 'usage') return { icon: ChartNoAxesCombined, label: 'Across computers' }
+  if (view && mixedPages.has(view.id))
+    return { icon: MonitorSmartphone, label: 'This device + computer' }
+  return view?.settingsScope ? storage[view.settingsScope] : null
+}
+
 /** Grouped desktop settings navigation, with searchable categories and storage labels. */
 export function SettingsNav({
   views,
@@ -111,13 +116,6 @@ export function SettingsNav({
   onSelect: (viewId: string) => void
 }) {
   const [query, setQuery] = useApplicationState('')
-  const activeSection = views.find((view) => view.id === activeId)?.settingsSection ?? 'more'
-  const [expanded, setExpanded] = useApplicationState<string[]>([activeSection])
-  useEffect(() => {
-    setExpanded((current) =>
-      current.includes(activeSection) ? current : [...current, activeSection],
-    )
-  }, [activeId, activeSection, setExpanded])
   const { target, scope, source, repository } = useSettingsTarget()
   const select = (id: string) => {
     if (id !== activeId) onSelect(id)
@@ -140,18 +138,11 @@ export function SettingsNav({
     repository,
     target.projectId ? 'Unavailable project' : 'All projects',
   )
-  const computer = target.environmentId ? (source?.name ?? 'Unavailable computer') : 'All computers'
+  const computer = target.environmentId ? (source?.name ?? 'Unavailable computer') : 'All machines'
   const activeView = views.find((view) => view.id === activeId)
   const inherited = activeView?.settingsScope === 'inherited'
   const mixed = mixedPages.has(activeId)
-  const scopeLabel =
-    activeId === 'usage'
-      ? 'Across computers'
-      : mixed
-        ? 'This device + computer'
-        : activeView?.settingsScope
-          ? storage[activeView.settingsScope].label
-          : 'History on paired computers'
+  const scopeLabel = pageStorage(activeView)?.label ?? 'History on paired computers'
   const [sidebarVisible] = useLeftSidebar()
   return (
     <nav
@@ -224,59 +215,18 @@ export function SettingsNav({
         {headings.map(([section, label]) => {
           const items = matches.filter((view) => sectionFor(view) === section)
           if (!items.length) return null
-          const open = !!needle || expanded.includes(section)
           return (
             <div key={section} className="hidden text-sm md:block">
-              <h2>
-                <button
-                  type="button"
-                  aria-expanded={open}
-                  aria-controls={`settings-category-${section}`}
-                  onClick={() => {
-                    if (needle) {
-                      setQuery('')
-                      setExpanded((current) =>
-                        current.includes(section) ? current : [...current, section],
-                      )
-                    } else {
-                      setExpanded((current) =>
-                        current.includes(section)
-                          ? current.filter((id) => id !== section)
-                          : [...current, section],
-                      )
-                    }
-                  }}
-                  className="flex min-h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] font-semibold text-foreground/90 hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {open ? (
-                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="min-w-0 flex-1 break-words">{label}</span>
-                </button>
+              <h2 className="flex min-h-8 items-center px-2 text-[0.8125rem] font-semibold text-foreground/90">
+                {label}
               </h2>
-              <div
-                id={`settings-category-${section}`}
-                hidden={!open}
-                className="ml-3 space-y-0.5 border-l border-border/70 pl-1"
-              >
+              <div className="ml-3 space-y-0.5 border-l border-border/70 pl-1">
                 {items.map((view) => {
                   const Icon = icons[view.id] ?? Settings2
                   const active = activeId === view.id
-                  const Storage = mixedPages.has(view.id)
-                    ? MonitorSmartphone
-                    : view.settingsScope
-                      ? storage[view.settingsScope].icon
-                      : null
-                  const label =
-                    view.id === 'usage'
-                      ? 'Across computers'
-                      : mixedPages.has(view.id)
-                        ? 'This device + computer'
-                        : view.settingsScope
-                          ? storage[view.settingsScope].label
-                          : null
+                  const placement = pageStorage(view)
+                  const Storage = placement?.icon
+                  const label = placement?.label
                   return (
                     <button
                       key={view.id}

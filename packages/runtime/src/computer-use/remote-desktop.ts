@@ -27,7 +27,7 @@ export interface DesktopDriver {
   call(name: Tool, args: Record<string, unknown>): Promise<CallToolResult>
   close(): Promise<void>
 }
-export async function connectDesktopDriver(command: string): Promise<DesktopDriver> {
+async function connectDesktopDriver(command: string): Promise<DesktopDriver> {
   const path = await detectCua(command)
   if (!path)
     throw new HttpError(409, 'Set up Cua Driver in Computer use settings on this computer first.')

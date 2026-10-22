@@ -11,7 +11,7 @@ const mocks = {
   './use-work-sources': `export const useWorkSources=()=>({sources:window.sources,pages:[{source:window.sources[0],reader:window.reader,items:[window.issue],options:{provider:'github',issues:true,pipelineActions:[]}}],busy:false,refresh:()=>{},more:async()=>{}});`,
   './jira-toolbar': `export const JiraToolbar=()=>null;`,
   './jira-issue-list': `export const jiraIssueRowKey=(source,id)=>JSON.stringify([source.key,id]);export const JiraIssueList=()=>null;`,
-  './pipeline-detail': `export const PipelineState=()=>null;`,
+  './pipeline-state': `export const PipelineState=()=>null;`,
   './content': `export const WorkContent=({initialSelected,repositoryName,onBack})=><div><h2>{repositoryName} · {initialSelected}</h2><button onClick={onBack}>Back to issues</button></div>;`,
   './work-form': `import {useState} from 'react';export const WorkForm=({onClose,repositoryId})=>{const[text,setText]=useState('');return <section role="dialog"><p>Creating on {repositoryId}</p><textarea aria-label="Issue draft" value={text} onChange={e=>setText(e.target.value)}/><button onClick={onClose}>Close form</button></section>};`,
   '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,

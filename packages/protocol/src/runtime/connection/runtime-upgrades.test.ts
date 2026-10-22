@@ -46,6 +46,7 @@ afterEach(() => {
 function fixture(entries: RuntimeUpgradeEntry[]) {
   const commands: { id: string; path: string }[] = []
   const bodies: unknown[] = []
+  const snapshots: string[] = []
   const states = new Map<string, { status: string; version?: string }>()
   const failures = new Set<string>()
   const lostReplies = new Set<string>()
@@ -66,8 +67,13 @@ function fixture(entries: RuntimeUpgradeEntry[]) {
         )
       const id =
         url.hostname.split('.')[0] + (url.pathname.includes('/desktop-update/') ? ':desktop' : '')
-      if (url.pathname.startsWith('/api/snapshot'))
+      if (url.pathname.startsWith('/api/snapshot')) {
+        snapshots.push(url.href)
+        // Keep recovery bounded: only compact snapshots are served by this fixture.
+        if (url.searchParams.get('scope') !== 'overview')
+          return Response.json({ error: 'Full history is unavailable' }, { status: 400 })
         return Response.json(entries.find((value) => value.profile.id === id)?.snapshot)
+      }
       if (url.pathname.endsWith('/status'))
         return Response.json(states.get(id) ?? { status: 'idle' })
       commands.push({ id, path: url.pathname })
@@ -88,6 +94,7 @@ function fixture(entries: RuntimeUpgradeEntry[]) {
     manager: createRuntimeUpgradeManager({ entries: () => entries, refreshed }),
     commands,
     bodies,
+    snapshots,
     states,
     failures,
     lostReplies,
@@ -179,6 +186,7 @@ it('keeps polling an offline updating server and completes after its new version
     version: '1.0.1',
   })
   expect(f.refreshed).toHaveBeenCalledOnce()
+  expect(f.snapshots).toEqual(['http://server.local/api/snapshot?scope=overview'])
 })
 
 it('expires restart progress even if the fleet stays offline', async () => {

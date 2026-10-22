@@ -86,9 +86,8 @@ try {
     page.on('dialog', (dialog) => dialog.accept())
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
-    if (mobile) await page.getByRole('button', { name: 'Change scope', exact: true }).click()
     const project = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
-    const environment = page.getByLabel(mobile ? 'Computer' : 'Settings computer', {
+    const environment = page.getByLabel(mobile ? 'Machine' : 'Settings machine', {
       exact: true,
     })
     await (

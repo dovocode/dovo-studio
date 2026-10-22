@@ -33,7 +33,6 @@ import {
   type ProjectTaskDefaults,
   type Repository,
   type SavedPrompt,
-  type ScopedSettingsValue,
   type SettingsScope,
 } from '@dovo/protocol'
 import { useSettingsDraft, useWorkspace } from '@dovo/studio-core'
@@ -216,24 +215,15 @@ function TaskDefaultSettingsForm({
     setSaved(false)
     try {
       const value = decode(projectTaskDefaultsSchema, draft)
-      const latest = await request(
-        '/api/agents/settings/read',
-        { scope, repositoryId: repository?.id },
-        scopedSettingsResultSchema,
-      )
-      const edited = (value: ScopedSettingsValue) =>
-        JSON.stringify({ taskDefaults: value.taskDefaults, prompts: value.prompts })
-      if (edited(latest.value) !== edited(settings.value))
-        throw new Error('Task defaults changed on another device. Reload before saving.')
       const result = await request(
         '/api/agents/settings/save',
         {
           scope,
           repositoryId: repository?.id,
           projectKey: settings.projectKey,
-          before: latest.value,
+          before: settings.value,
           after: {
-            ...latest.value,
+            ...settings.value,
             taskDefaults: value,
             prompts: prompts.map((prompt) => ({
               ...prompt,

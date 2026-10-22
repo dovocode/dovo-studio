@@ -14,7 +14,7 @@ import {
 } from './peer.js'
 import { decode, ValidationError } from '../../shared/schema.js'
 import { pairingInvitationUrl, parsePairingInvitation } from '../../auth/pairing-invitation.js'
-import { learnRuntimeRoutes, resolveRuntimeRoute, runtimeTransportAddress } from './routes.js'
+import { learnRuntimeRoutes, resolveRuntimeEndpoint, runtimeTransportAddress } from './routes.js'
 import { snapshotSchema } from './runtime.js'
 
 const config = { origin: 'https://connect.dovo.studio', secret: 'a'.repeat(64) }
@@ -164,7 +164,7 @@ it('keeps peer routes on the encrypted tunnel even when snapshots advertise LAN 
   })
   const learned = learnRuntimeRoutes(connection, snapshot)
   expect(learned.alternateAddresses).toEqual([])
-  expect(await resolveRuntimeRoute(learned, new AbortController().signal)).toBe(
+  expect((await resolveRuntimeEndpoint(learned, new AbortController().signal)).address).toBe(
     'http://127.0.0.1:12345',
   )
   expect(runtimeTransportAddress(learned, 'stream')).toBe('http://127.0.0.1:12345')

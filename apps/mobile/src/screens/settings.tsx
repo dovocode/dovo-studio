@@ -40,9 +40,6 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
     {
       title: 'This app',
       path: '/settings/app-preferences',
-      section: 'Personal',
-      summary: 'Appearance, chat & alerts',
-      icon: 'settings',
       items: [
         {
           title: 'Appearance',
@@ -117,9 +114,6 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
     {
       title: 'Agents & tools',
       path: '/settings/agent-settings',
-      section: 'Workspace',
-      summary: 'Models, tools & memory',
-      icon: 'agents',
       items: [
         {
           title: 'Agents',
@@ -161,9 +155,6 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
     {
       title: 'Tasks & projects',
       path: '/settings/task-settings',
-      section: 'Workspace',
-      summary: 'Defaults, workflow & files',
-      icon: 'projects',
       items: [
         {
           title: 'Task & PR preferences',
@@ -242,11 +233,6 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
     {
       title: 'Computers',
       path: '/settings/computer-settings',
-      section: 'Connections & history',
-      summary: profiles.length
-        ? 'Connections & device previews'
-        : 'Connect your first computer to get started',
-      icon: 'device',
       footer: profiles.length
         ? undefined
         : 'Pair a computer to configure agents and project defaults.',
@@ -288,9 +274,6 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
     {
       title: 'History',
       path: '/settings/history-settings',
-      section: 'Connections & history',
-      summary: 'Archives & activity storage',
-      icon: 'history',
       items: [
         {
           title: 'Activity retention',
@@ -362,67 +345,33 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             />
           </View>
         )}
-        {!category && !needle
-          ? ['Personal', 'Workspace', 'Connections & history'].map((section) => (
-              <SettingsGroup key={section} title={section}>
-                {groups
-                  .filter((group) => group.section === section)
-                  .map((group) => (
-                    <SettingsRow
-                      key={group.path}
-                      title={group.title}
-                      subtitle={group.summary}
-                      icon={group.icon}
-                      tint={colors.accent}
-                      value={group.title === 'Computers' ? `${online} online` : undefined}
-                      onPress={() => router.push(group.path)}
-                    />
-                  ))}
-              </SettingsGroup>
-            ))
-          : matches.map((group) => (
-              <View key={group.path} style={{ gap: 20 }}>
-                {needle && !category && (
-                  <Text
-                    accessibilityRole="header"
-                    style={[
-                      styles.muted,
-                      { paddingHorizontal: 12, fontSize: 13, fontWeight: '600' },
-                    ]}
-                  >
-                    {group.title}
-                  </Text>
-                )}
-                {Array.from(new Set(group.items.map((item) => item.group))).map((title) => (
-                  <SettingsGroup key={title} title={title}>
-                    {group.items
-                      .filter((item) => item.group === title)
-                      .map((item) => (
-                        <SettingsRow
-                          key={item.path}
-                          title={item.title}
-                          subtitle={item.subtitle}
-                          value={
-                            item.path === '/settings/devices'
-                              ? `${online} online`
-                              : item.path === '/settings/archived'
-                                ? String(archived)
-                                : undefined
-                          }
-                          icon={item.icon}
-                          testID={'testID' in item ? item.testID : undefined}
-                          tint={'tint' in item ? item.tint : undefined}
-                          disabled={!profiles.length && !('local' in item && item.local)}
-                          onPress={() => router.push(item.path)}
-                        />
-                      ))}
-                  </SettingsGroup>
-                ))}
-                {'footer' in group && group.footer && (
-                  <Text style={[styles.muted, { paddingHorizontal: 12 }]}>{group.footer}</Text>
-                )}
-              </View>
+        {matches.map((group) => (
+          <SettingsGroup
+            key={group.path}
+            title={category ? undefined : group.title}
+            footer={'footer' in group ? group.footer : undefined}
+          >
+            {group.items.map((item) => (
+              <SettingsRow
+                key={item.path}
+                title={item.title}
+                subtitle={item.subtitle}
+                value={
+                  item.path === '/settings/devices'
+                    ? `${online} online`
+                    : item.path === '/settings/archived'
+                      ? String(archived)
+                      : undefined
+                }
+                icon={item.icon}
+                testID={'testID' in item ? item.testID : undefined}
+                tint={'tint' in item ? item.tint : undefined}
+                disabled={!profiles.length && !('local' in item && item.local)}
+                onPress={() => router.push(item.path)}
+              />
             ))}
+          </SettingsGroup>
+        ))}
         {needle && <Action secondary label="Clear search" onPress={() => setQuery('')} />}
         {!matches.length && (
           <Text accessibilityRole="alert" style={styles.muted}>

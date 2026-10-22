@@ -78,18 +78,20 @@ test('explains explicit false, disabled setup and provider resets without treati
 
 test('names the actual source and distinguishes shared defaults from computer storage', () => {
   const context = { project: 'Studio', computer: 'Mac Studio' }
+  expect(settingSourceName('global', context)).toBe('All projects on all machines')
+  expect(settingsScopeSummary('global', context).title).toBe('All projects on all machines')
   expect(settingSourceName('project', context)).toBe('Studio project defaults')
   expect(settingSourceName('environment-project', context)).toBe('Studio on Mac Studio')
   expect(settingSourceName('computer-default', context)).toBe('Mac Studio preferences')
-  expect(settingsScopeSummary('project', context).storage).toBe('Shared across paired computers')
+  expect(settingsScopeSummary('project', context).storage).toBe('Shared across paired machines')
   expect(settingsScopeSummary('environment-project', context)).toEqual({
     title: 'Studio on Mac Studio',
     description:
-      'Changes apply only to this project on this computer. This is the most specific level.',
+      'Changes apply only to this project on this machine. This is the most specific level.',
     storage: 'Saved on Mac Studio',
   })
   expect(settingsScopeSummary('environment', context).description).toContain(
-    'Project defaults override computer defaults',
+    'Project defaults override machine defaults',
   )
 })
 

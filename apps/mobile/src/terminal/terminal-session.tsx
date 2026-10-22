@@ -1,14 +1,11 @@
-import { runtimeTransportAddress } from '@dovo/protocol'
+import { createRuntimeClient, mutableStruct, decode, responses } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/state/application-state'
-import { mutableStruct } from '@dovo/protocol'
-import { decode } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
 import { startReconnecting } from '@dovo/client-runtime'
 import { AppState, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import { WebView } from 'react-native-webview'
 import { Schema } from 'effect'
-import { responses } from '@dovo/protocol'
 import terminalHtml from '../../assets/terminal.json'
 import { useRuntime } from '../runtime/connection/provider'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
@@ -52,9 +49,7 @@ export function TerminalSession({ id }: { id: string }) {
         setStatus('Connecting terminal…')
         const { ticket } = await call('/api/terminals/ticket', { id }, responses.ticket)
         if (signal.aborted) return
-        const url = new URL('/ws/terminal', runtimeTransportAddress(connection))
-        url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-        url.searchParams.set('ticket', ticket)
+        const url = createRuntimeClient(connection).socketUrl('/ws/terminal', ticket)
         const attempt = ++sequence.current
         await new Promise<void>((resolve, reject) => {
           const cleanup = () => {

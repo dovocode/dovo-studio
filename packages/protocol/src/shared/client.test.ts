@@ -1,10 +1,9 @@
 /// <reference types="node" />
-import { ValidationError } from './schema.js'
-import { mutableStruct } from './schema.js'
-import { decodeResult } from './schema.js'
+import { ValidationError, mutableStruct, decodeResult } from './schema.js'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Schema } from 'effect'
 import { runtimeRequest, clearRuntimeRequestCache, getRuntimeSnapshotTag } from './client.js'
+import { resolveRuntimeEndpoint } from '../runtime/connection/routes.js'
 import { REPOSITORY_CLONE_TIMEOUT_MS } from '../scm/repositories/repositories.js'
 import { cleanedDictationSchema, cleanupDictationSchema } from '../tasks/title-generation.js'
 afterEach(() => {
@@ -1063,4 +1062,146 @@ it('preserves same-origin paths containing a double slash when selecting a trans
   expect(target).toBeInstanceOf(URL)
   expect(target instanceof URL && target.origin).toBe(connection.address)
   expect(target instanceof URL && target.pathname).toBe('//other-host/api/test')
+})
+
+it('keeps a verified route warm when a caller cancels a request', async () => {
+  const connection = {
+    address: 'http://cancel-keeps-route.local',
+    token: 'cancel-token',
+    runtimeId: 'cancel-runtime',
+  }
+  const fetcher = vi.fn<typeof fetch>((input, options) => {
+    const url = new URL(input instanceof Request ? input.url : input)
+    if (url.pathname === '/health')
+      return Promise.resolve(
+        Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId }),
+      )
+    return new Promise<Response>((_resolve, reject) =>
+      options?.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+        once: true,
+      }),
+    )
+  })
+  vi.stubGlobal('fetch', fetcher)
+  await resolveRuntimeEndpoint(connection, new AbortController().signal)
+  const controller = new AbortController()
+  const pending = runtimeRequest(
+    connection,
+    connection.address,
+    '/api/snapshot',
+    undefined,
+    dataSchema,
+    'GET',
+    undefined,
+    controller.signal,
+  ).catch((error: unknown) => error)
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2))
+  controller.abort()
+  await pending
+  await resolveRuntimeEndpoint(connection, new AbortController().signal)
+  expect(fetcher).toHaveBeenCalledTimes(2)
+})
+
+it.each([
+  { method: 'GET', outcome: { revision: 2 }, requests: 2 },
+  { method: 'POST', outcome: { kind: 'connection' }, requests: 1 },
+])(
+  'invalidates a route after a dropped $method response body without replaying mutations',
+  async ({ method, outcome, requests }) => {
+    const connection = {
+      address: `http://body-failure-${method.toLowerCase()}.local`,
+      token: 'body-failure-token',
+      runtimeId: 'body-failure-runtime',
+      alternateAddresses: ['http://body-recovery.local'],
+    }
+    let failed = false
+    const payloads: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (input) => {
+        const url = new URL(input instanceof Request ? input.url : input)
+        if (url.pathname === '/health') {
+          if (url.origin === connection.address && failed) throw new Error('Host disappeared')
+          return Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId })
+        }
+        payloads.push(url.origin)
+        if (url.origin === connection.address) {
+          failed = true
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error('Body connection lost'))
+              },
+            }),
+          )
+        }
+        return Response.json({ revision: 2 })
+      }),
+    )
+    const pending = runtimeRequest(
+      connection,
+      connection.address,
+      '/api/test',
+      undefined,
+      dataSchema,
+      method,
+    )
+    expect(await pending.catch((error: unknown) => error)).toMatchObject(outcome)
+    expect(payloads).toEqual([connection.address, 'http://body-recovery.local'].slice(0, requests))
+    expect(await resolveRuntimeEndpoint(connection, new AbortController().signal)).toMatchObject({
+      address: 'http://body-recovery.local',
+    })
+  },
+)
+
+it('does not evict a recovered route when an earlier request fails late', async () => {
+  const connection = {
+    address: 'http://late-failure.local',
+    token: 'late-token',
+    runtimeId: 'late-runtime',
+    alternateAddresses: ['http://late-recovery.local'],
+  }
+  let primary = true
+  let fail: (error: Error) => void = () => {}
+  const health: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : input)
+      if (url.pathname === '/health') {
+        health.push(url.origin)
+        return Response.json({
+          service: 'dovo-runtime',
+          runtimeId:
+            primary || url.origin !== connection.address ? connection.runtimeId : 'wrong-runtime',
+        })
+      }
+      return new Promise<Response>((_resolve, reject) => {
+        fail = reject
+      })
+    }),
+  )
+  const pending = runtimeRequest(
+    connection,
+    connection.address,
+    '/api/tasks/run',
+    {},
+    dataSchema,
+  ).catch((error: unknown) => error)
+  await vi.waitFor(() => expect(health).toHaveLength(2))
+  // Ensure the mutation has reached its transport before replacing its selected route.
+  await vi.waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3))
+  primary = false
+  const { invalidateRuntimeRoute } = await import('../runtime/connection/routes.js')
+  invalidateRuntimeRoute(connection)
+  expect(await resolveRuntimeEndpoint(connection, new AbortController().signal)).toMatchObject({
+    address: 'http://late-recovery.local',
+  })
+  const probes = health.length
+  fail(new Error('Old connection lost'))
+  await expect(pending).resolves.toMatchObject({ kind: 'connection' })
+  expect(await resolveRuntimeEndpoint(connection, new AbortController().signal)).toMatchObject({
+    address: 'http://late-recovery.local',
+  })
+  expect(health).toHaveLength(probes)
 })

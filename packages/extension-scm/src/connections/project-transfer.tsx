@@ -9,23 +9,29 @@ import {
   projectTransferSchema,
   projectTransferInspectionSchema,
   projectTransferTargetsSchema,
+  worktreeChoicesSchema,
   projectTransferActive,
   projectTransferLabel,
   projectTransferPeers,
   type ProjectTransfer,
   type Repository,
 } from '@dovo/protocol'
-import { useWorkspace } from '@dovo/studio-core'
+import { useWorkspace, useStudioHost } from '@dovo/studio-core'
 import { Button, Input, FormField } from '@dovo/studio-ui'
 
 export function ProjectTransferSettings({ repository }: { repository: Repository }) {
   const store = useWorkspace()
+  const host = useStudioHost()
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const [inspection, setInspection] = useState<typeof projectTransferInspectionSchema.Type | null>(
     null,
   )
+  const [worktreePath, setWorktreePath] = useState('')
+  const [worktrees, setWorktrees] = useState<typeof worktreeChoicesSchema.Type.worktrees>([])
+  const [createThread, setCreateThread] = useState(false)
+  const [prompt, setPrompt] = useState('')
   const [targets, setTargets] = useState<typeof projectTransferTargetsSchema.Type>([])
   const [targetId, setTargetId] = useState(''),
     [transport, setTransport] = useState('p2p')
@@ -68,8 +74,9 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
       setRuntimePort(url.protocol === 'https:' ? '5235' : url.port || '80')
     }
   }
-  const load = () =>
+  const load = (sourcePath = worktreePath) =>
     act(async () => {
+      setInspection(null)
       const peers = projectTransferPeers(
         store.runtimeRegistry.profiles,
         store.runtimes,
@@ -80,14 +87,22 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
         { sessionId: 'project-transfer', peers },
         Schema.Struct({ ok: Schema.Boolean }),
       )
-      const [machines, files] = await Promise.all([
+      const [machines, files, choices] = await Promise.all([
         store.request('/api/scm/project-transfer/targets', {}, projectTransferTargetsSchema),
         store.request(
           '/api/scm/project-transfer/inspect',
-          { repositoryId: repository.id },
+          { repositoryId: repository.id, worktreePath: sourcePath || undefined },
           projectTransferInspectionSchema,
         ),
+        !repository.kind && store.snapshot?.projectWorktreeTransfersSupported
+          ? store.request(
+              '/api/scm/worktrees/choices',
+              { repositoryId: repository.id },
+              worktreeChoicesSchema,
+            )
+          : Promise.resolve({ worktrees: [] }),
       ])
+      setWorktrees(choices.worktrees)
       setTargets(machines)
       setInspection(files)
       setIgnored((previous) =>
@@ -129,6 +144,18 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
       const parsed = decodeResult(projectTransferStartSchema, {
         id: randomUUID(),
         repositoryId: repository.id,
+        worktreePath: worktreePath || undefined,
+        thread: createThread
+          ? {
+              title:
+                prompt.trim().slice(0, 200) ||
+                `${repository.name} on ${targets.find((target) => target.id === targetId)?.name ?? 'another computer'}`.slice(
+                  0,
+                  200,
+                ),
+              prompt,
+            }
+          : undefined,
         targetId,
         ignoredFiles: ignored,
         ...(transport === 'ssh'
@@ -191,6 +218,36 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
               max={job.totalBytes || 1}
             />
           )}
+          {job.targetTaskId && (
+            <>
+              <p>Thread created on {job.targetName}.</p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  void act(async () => {
+                    const target = store.runtimes.find(
+                      (entry) =>
+                        (entry.profile.connection.runtimeId ?? entry.snapshot?.runtimeId) ===
+                        job.targetId,
+                    )
+                    if (!target)
+                      throw new Error('Pair the destination computer to open this thread')
+                    await store.switchRuntime(target.profile.id)
+                    host.navigate({ viewId: 'tasks', entityId: job.targetTaskId })
+                  })
+                }
+              >
+                Open thread on {job.targetName}
+              </Button>
+            </>
+          )}
+          {job.threadStartError && (
+            <p role="alert" className="text-destructive">
+              Files copied and thread saved. Could not start agent: {job.threadStartError}
+            </p>
+          )}
           {job.path && <p className="break-all text-muted-foreground">{job.path}</p>}
           {!!job.skippedLinks && (
             <p className="text-muted-foreground">{job.skippedLinks} symbolic links skipped.</p>
@@ -221,6 +278,53 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
             disabled={busy || active || !store.connected}
             className="space-y-3 disabled:opacity-60"
           >
+            {!!worktrees.length && (
+              <FormField label="Source checkout">
+                <select
+                  aria-label="Source checkout"
+                  className="h-8 w-full rounded-md border bg-background px-2 text-xs"
+                  value={worktreePath}
+                  onChange={(event) => {
+                    const path = event.target.value
+                    setWorktreePath(path)
+                    setIgnored([])
+                    setLocalJob(null)
+                    void load(path)
+                  }}
+                >
+                  <option value="">Project checkout</option>
+                  {worktrees.map((entry) => (
+                    <option key={entry.path} value={entry.path}>
+                      {entry.branch || 'Detached HEAD'}
+                      {entry.dirty ? ' · Local changes' : ''} · {entry.path}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            )}
+            {!!store.snapshot?.projectWorktreeTransfersSupported && (
+              <div className="space-y-2 text-xs">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={createThread}
+                    onChange={(event) => setCreateThread(event.target.checked)}
+                  />
+                  Create a thread on destination
+                </label>
+                {createThread && (
+                  <>
+                    <FormField label="First message (optional)">
+                      <Input value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+                    </FormField>
+                    <p className="text-muted-foreground">
+                      Leave empty for a draft. A message starts the agent using the destination’s
+                      settings in the copied checkout.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
             <FormField label="Destination computer">
               <select
                 aria-label="Destination computer"
@@ -343,7 +447,13 @@ export function ProjectTransferSettings({ repository }: { repository: Repository
                 disabled={busy || !inspection || !targetId || !store.connected}
                 onClick={() => void start()}
               >
-                {busy ? 'Preparing…' : 'Copy project'}
+                {busy
+                  ? 'Preparing…'
+                  : createThread
+                    ? 'Copy and create thread'
+                    : worktreePath
+                      ? 'Copy worktree'
+                      : 'Copy project'}
               </Button>
               {job?.state === 'failed' && (
                 <Button

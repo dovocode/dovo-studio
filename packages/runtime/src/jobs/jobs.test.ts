@@ -4,7 +4,8 @@ import type { GitService } from '../scm/git/git.js'
 import { TitleGeneration } from '../agents/tasks/title-generation'
 import { runtimeIntegration, waitForRuntime as waitForJob } from '../testing/integration'
 import { defaultGithubTrigger, defaultTaskHarness } from '@dovo/protocol'
-import { decode } from '@dovo/protocol'
+import { decode, taskFamilyRunToken } from '@dovo/protocol'
+import { HttpError } from '../errors.js'
 import type { AgentRun, AgentAdapter } from '../agents/execution/types'
 import { beforeEach, afterEach, expect, it, vi } from 'vite-plus/test'
 import { join } from 'node:path'
@@ -252,7 +253,7 @@ it('isolates broken schedules and resets due times when trigger modes change', a
   expect(s.jobs.list()[0].automationId).toBe(valid.id)
   expect(errors).toHaveBeenCalledTimes(1)
   const id = s.jobs.list()[0].id
-  s.jobs.cancel(id)
+  await s.jobs.cancel(id)
   expect(s.jobs.list()[0].waitingNodeId).toBeUndefined()
   expect(() => s.jobs.cancel(id)).toThrow('already finished')
   const changeTrigger = (trigger: 'manual' | 'schedule') =>
@@ -313,7 +314,7 @@ it('does not advance a cancelled task into a review gate', async () => {
   await waitForJob(() =>
     expect(s.store.get().tasks.some((task) => task.status === 'running')).toBe(true),
   )
-  s.jobs.cancel(id)
+  await s.jobs.cancel(id)
   await waitForJob(() =>
     expect(s.store.get().tasks.find((task) => task.origin === 'flow')?.status).toBe('cancelled'),
   )
@@ -489,7 +490,7 @@ it('cancels during checkout preparation and retries the same unfinished task', a
   const id = s.jobs.start('flow')
   await waitForJob(() => expect(s.store.get().tasks[0]?.runPhase).toBe('preparing'))
   const taskId = s.jobs.list()[0].taskIds[0]
-  s.jobs.cancel(id)
+  await s.jobs.cancel(id)
   expect(() => s.jobs.retry(id)).toThrow('Wait for the current step to stop')
   release()
   await waitForJob(() => expect(s.store.task(taskId).status).toBe('cancelled'))
@@ -754,7 +755,7 @@ it('prunes finished runs and delivery receipts past the retention window', async
   })
   const id = runtime.services.jobs.start('flow', 'delivery-old')
   await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
-  runtime.services.jobs.cancel(id)
+  await runtime.services.jobs.cancel(id)
   const db = runtime.services.db
   expect(runtime.services.jobs.prune(Date.now(), 30)).toBe(0)
   const later = Date.now() + 31 * 86_400_000
@@ -873,7 +874,7 @@ it('runs polled GitHub events through task instructions and review gates without
   expect(report).not.toHaveBeenCalled()
 })
 
-it.each(['complete', 'cancel'] as const)(
+it.each(['complete', 'cancel', 'stop-failed'] as const)(
   'keeps an automation step owned while asynchronous children work (%s)',
   async (outcome) => {
     const f = await fixture()
@@ -930,8 +931,46 @@ it.each(['complete', 'cancel'] as const)(
         expect(runtime.services.store.task(childId).status).toBe('running')
       })
       expect(runtime.services.jobs.list()[0].status).toBe('running')
+      let confirmStop = () => {}
+      let failStop = (_error: Error) => {}
+      const gate = new Promise<void>((resolve, reject) => {
+        confirmStop = resolve
+        failStop = reject
+      })
+      const stop = runtime.services.tasks.stopAgents.bind(runtime.services.tasks)
+      if (outcome !== 'complete')
+        vi.spyOn(runtime.services.tasks, 'stopAgents').mockImplementationOnce((...args) =>
+          gate.then(() => stop(...args)),
+        )
+      const stopping =
+        outcome === 'complete' ? Promise.resolve() : runtime.services.jobs.cancel(jobId)
+      expect(stopping).toBeInstanceOf(Promise)
+      expect(runtime.services.store.task(rootId).status).toBe('review')
+      await waitForJob(() =>
+        expect(() => runtime.services.jobs.retry(jobId)).toThrow(
+          outcome === 'complete'
+            ? 'Wait for the current step to stop'
+            : 'This step is still running in its task',
+        ),
+      )
+      expect(() => runtime.services.jobs.requireIdle('flow')).toThrow(
+        'This automation already has an active run',
+      )
+      const failure = new HttpError(409, 'Provider did not confirm shutdown')
       if (outcome === 'complete') release()
-      else runtime.services.jobs.cancel(jobId)
+      else if (outcome === 'stop-failed') failStop(failure)
+      else confirmStop()
+      expect(
+        await stopping.then(
+          () => null,
+          (error: unknown) => error,
+        ),
+      ).toBe(outcome === 'stop-failed' ? failure : null)
+      expect(runtime.services.store.task(rootId).status).toBe(
+        outcome === 'cancel' ? 'cancelled' : 'review',
+      )
+      if (outcome === 'stop-failed')
+        await stop(rootId, taskFamilyRunToken(runtime.services.store.get().tasks, rootId))
       await waitForJob(() =>
         expect(runtime.services.jobs.list()[0].status).toBe(
           outcome === 'complete' ? 'waiting' : 'cancelled',
@@ -942,7 +981,7 @@ it.each(['complete', 'cancel'] as const)(
       )
       expect(rootTurns).toBe(outcome === 'complete' ? 2 : 1)
       expect(runtime.services.store.task(rootId).status).toBe(
-        outcome === 'complete' ? 'review' : 'cancelled',
+        outcome === 'cancel' ? 'cancelled' : 'review',
       )
       expect(runtime.services.store.task(childId).delegation?.completion).toBe(
         outcome === 'complete' ? 'queued' : 'disposed',

@@ -102,6 +102,103 @@ async function setup(git = false, persistentTarget = false) {
   }
   return { root, source, target, repository, path, input, result }
 }
+it('copies the selected worktree with its index and dirty files, creating one destination thread', async () => {
+  const { root, source, target, repository, path, input, result } = await setup(true)
+  const worktree = join(root, 'feature-worktree')
+  await exec('git', ['worktree', 'add', '-b', 'feature-copy', worktree], { cwd: path })
+  await writeFile(join(worktree, 'readme.txt'), 'Staged worktree text')
+  await exec('git', ['add', 'readme.txt'], { cwd: worktree })
+  await writeFile(join(worktree, 'readme.txt'), 'Working worktree text')
+  await writeFile(join(worktree, 'untracked.txt'), 'Local file')
+  await writeFile(join(worktree, '.env.local'), 'STAYS=private')
+  input.worktreePath = worktree
+  input.thread = { title: 'Continue on destination', prompt: '' }
+  const inspection = await source.post('inspect', {
+    repositoryId: repository.id,
+    worktreePath: worktree,
+  })
+  expect(inspection.status).toBe(200)
+  expect(
+    decode(projectTransferInspectionSchema, await inspection.json()).ignoredFiles.map(
+      (file) => file.path,
+    ),
+  ).toContain('.env.local')
+  expect((await source.post('start', input)).status).toBe(200)
+  const copied = await result()
+  expect(await readFile(join(copied.path, 'readme.txt'), 'utf8')).toBe('Working worktree text')
+  expect((await exec('git', ['show', ':readme.txt'], { cwd: copied.path })).stdout).toBe(
+    'Staged worktree text',
+  )
+  expect(
+    (await exec('git', ['branch', '--show-current'], { cwd: copied.path })).stdout.trim(),
+  ).toBe('feature-copy')
+  expect(await readFile(join(copied.path, 'untracked.txt'), 'utf8')).toBe('Local file')
+  expect(await readdir(copied.path)).not.toContain('.env.local')
+  expect(await readFile(join(path, 'readme.txt'), 'utf8')).toBe('Source project')
+  const task = target.services.store.task(target.services.store.get().tasks[0]!.id)
+  expect(task).toMatchObject({
+    title: input.thread.title,
+    repositoryId: copied.id,
+    execution: 'main',
+    status: 'draft',
+    messages: [],
+  })
+  expect(source.services.projectTransfers.list()[0]?.targetTaskId).toBe(task?.id)
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  const receipt = await target.post('commit', { id: input.id })
+  expect(await receipt.json()).toMatchObject({ taskId: task?.id, repositoryId: copied.id })
+  expect(target.services.store.get().tasks).toHaveLength(1)
+})
+it('rejects a worktree path outside the selected project', async () => {
+  const { root, source, repository, path, input } = await setup(true)
+  const other = join(root, 'other')
+  await mkdir(other)
+  const inspect = await source.post('inspect', { repositoryId: repository.id, worktreePath: other })
+  expect(inspect.status).toBe(409)
+  input.worktreePath = path
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  expect(source.services.projectTransfers.list()[0]?.error).toContain('belonging to this project')
+})
+it('requires destination support before transferring files for a new thread', async () => {
+  const { source, target, input } = await setup()
+  input.thread = { title: 'New thread', prompt: '' }
+  const original = target.services.projectTransfers.status.bind(target.services.projectTransfers)
+  vi.spyOn(target.services.projectTransfers, 'status').mockImplementation((...args) => ({
+    ...original(...args),
+    worktreesSupported: false,
+  }))
+  const begin = vi.spyOn(target.services.projectTransfers, 'begin')
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  expect(source.services.projectTransfers.list()[0]?.error).toContain('Update the destination')
+  expect(begin).not.toHaveBeenCalled()
+  expect(target.services.store.get().repositories).toEqual([])
+  expect(target.services.store.get().tasks).toEqual([])
+})
+it('starts the requested prompt in the copied checkout and preserves a draft if startup fails', async () => {
+  const { source, target, input, result } = await setup()
+  input.thread = { title: 'Fix the tests', prompt: 'Check the transferred changes' }
+  const start = vi
+    .spyOn(target.services.tasks, 'start')
+    .mockRejectedValue(new Error('Agent not installed'))
+  expect((await source.post('start', input)).status).toBe(200)
+  const copied = await result()
+  const task = target.services.store.task(target.services.store.get().tasks[0]!.id)
+  expect(task).toMatchObject({ repositoryId: copied.id, execution: 'main', status: 'draft' })
+  expect(task?.messages[0]?.text).toBe(input.thread.prompt)
+  expect(start).toHaveBeenCalledExactlyOnceWith(task?.id)
+  expect(source.services.projectTransfers.list()[0]).toMatchObject({
+    targetTaskId: task?.id,
+    threadStartError: 'Agent not installed',
+  })
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  expect(start).toHaveBeenCalledTimes(1)
+})
 it('copies a plain workspace directly, with binary chunks, empty files, ignored selection and no chats', async () => {
   const { source, target, path, input, result } = await setup()
   const binary = Buffer.alloc(700000)
@@ -181,6 +278,10 @@ it('preserves unpushed commits, branches, tags, staged edits, dirty files and de
 })
 it('deduplicates starts and reconciles a lost commit response without registering twice', async () => {
   const { source, target, input, result } = await setup()
+  input.thread = { title: 'Transferred thread', prompt: 'Continue here' }
+  const start = vi
+    .spyOn(target.services.tasks, 'start')
+    .mockResolvedValue({ done: Promise.resolve() })
   const original = globalThis.fetch
   let lost = false
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
@@ -201,6 +302,8 @@ it('deduplicates starts and reconciles a lost commit response without registerin
   expect(second.status).toBe(200)
   await result()
   expect(lost).toBe(true)
+  expect(target.services.store.get().tasks).toHaveLength(1)
+  expect(start).toHaveBeenCalledTimes(1)
   expect(target.services.store.get().repositories).toHaveLength(1)
   expect((await source.post('retry', { id: input.id })).status).toBe(200)
   expect(target.services.store.get().repositories).toHaveLength(1)

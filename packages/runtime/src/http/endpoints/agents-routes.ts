@@ -48,7 +48,7 @@ import {
 } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
-import { RuntimeServices } from '../../services.js'
+import { RuntimeServices } from '../../runtime-services.js'
 import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
 import { nativeThreadReadSchema } from '@dovo/protocol'

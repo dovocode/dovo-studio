@@ -14,7 +14,7 @@ import {
   launchDeviceApp,
   manageDeviceApp,
 } from './device-app-actions'
-import * as devices from './devices'
+import * as devices from './android-tool'
 afterEach(() => {
   vi.restoreAllMocks()
   commands.run.mockReset()
