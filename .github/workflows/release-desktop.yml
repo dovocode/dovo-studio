@@ -135,20 +135,20 @@ jobs:
       - run: pnpm run package:prepare-runtime
         env:
           DOVO_PREPARED_RUNTIME: ${{ runner.temp }}/dovo-prepared-runtime
-      - name: Build signed update artifacts into a draft release
+      - name: Build signed Mac update artifacts
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
           CSC_NAME: ${{ secrets.MAC_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          GITHUB_REF_NAME: ${{ needs.draft.outputs.tag }}
         run: |
           # Signing scans the bundled Node runtime and its dependency tree concurrently.
           ulimit -n 65536
-          pnpm run package:platform -- --publish
+          # Build update metadata locally. electron-builder only searches the first page of
+          # releases and can create a duplicate draft when it misses the existing one.
+          pnpm run package:platform
       - uses: actions/upload-artifact@v7
         with:
           compression-level: 0
@@ -162,11 +162,18 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "release/mac-arm64/$APP_NAME.app"
           spctl --assess --type execute --verbose=2 "release/mac-arm64/$APP_NAME.app"
           xcrun stapler validate "release/mac-arm64/$APP_NAME.app"
-      - name: Upload mise desktop archive
+      - name: Upload verified Mac release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.draft.outputs.tag }}
-        run: gh release upload "$TAG" release/*-mise-*.tar.gz --clobber
+        run: |
+          gh release upload "$TAG" \
+            release/*.dmg \
+            release/*.zip \
+            release/*.blockmap \
+            release/*-mac.yml \
+            release/*-mise-*.tar.gz \
+            --clobber
   platform:
     needs: draft
     if: ${{ needs.draft.outputs.build == 'true' }}
