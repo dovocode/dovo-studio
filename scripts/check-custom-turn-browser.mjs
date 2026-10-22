@@ -87,6 +87,10 @@ try {
   for (const kind of ['desktop', 'mobile']) {
     await page.evaluate((kind) => window.reset(kind), kind)
     await page.getByText(/Supplied by Company/).waitFor()
+    if (kind === 'desktop') {
+      assert.equal(await page.getByLabel('TURN URLs', { exact: true }).isVisible(), false)
+      await page.getByText('Custom TURN server', { exact: true }).click()
+    }
     await page.getByLabel(/^TURN URLs/).fill('turn:relay.example.com')
     await page.getByLabel('TURN username', { exact: true }).fill('relay-user')
     await page.getByLabel('TURN password', { exact: true }).fill('private-password')
@@ -132,6 +136,7 @@ try {
       window.target = 'Server C'
       window.render()
     })
+    if (kind === 'desktop') await page.getByText('Custom TURN server', { exact: true }).click()
     assert.equal(await page.getByLabel('TURN password', { exact: true }).inputValue(), '')
     await page.evaluate(() => {
       window.connected = false

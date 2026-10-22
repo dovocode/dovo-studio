@@ -117,6 +117,16 @@ try {
     0,
   )
   assert.equal(await desktop.getByRole('button', { name: 'Features', exact: true }).count(), 0)
+  await desktop.getByRole('button', { name: 'Tests 1', exact: true }).click()
+  assert.equal(
+    await desktop.getByRole('button', { name: 'src/view.test.ts, unviewed', exact: true }).count(),
+    1,
+  )
+  assert.equal(
+    await desktop.getByRole('button', { name: 'src/view.tsx, unviewed', exact: true }).count(),
+    0,
+  )
+  await desktop.getByRole('button', { name: 'All 3', exact: true }).click()
   await desktop.getByRole('checkbox', { name: 'File viewed', exact: true }).check()
   await page.evaluate(() => {
     document.dispatchEvent(new Event('visibilitychange'))

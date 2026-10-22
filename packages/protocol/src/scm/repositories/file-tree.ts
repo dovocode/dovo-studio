@@ -1,5 +1,7 @@
+import type { FileKind } from '../pulls/file-breakdown.js'
 export type FileTreeEntry = {
   path: string
+  changeKind?: FileKind
   viewed?: boolean
   label?: string
   additions?: number

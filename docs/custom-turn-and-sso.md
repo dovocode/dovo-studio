@@ -13,9 +13,10 @@ account-free access. HTTP LAN/VPN connections, including Tailscale and NetBird, 
 2. Open the computer's settings: desktop **Devices & runtime**, or mobile **Computers → computer**.
    Use the local owner or a separately paired human client. Account-derived access and agent
    credentials cannot change relay settings.
-3. In **TURN relay**, enter one or more standard TURN URLs, a username and password. Choose **Use
-   custom TURN**, check the target computer, then confirm. Credentials are saved in that computer's
-   private runtime database, separate from snapshots and ordinary settings responses.
+3. In **TURN relay**, expand **Custom TURN server** on desktop, then enter one or more standard TURN
+   URLs, a username and password. Choose **Use custom TURN**, check the target computer, then
+   confirm. Credentials are saved in that computer's private runtime database, separate from
+   snapshots and ordinary settings responses.
 4. On each internet connection, select **Computer / organization relay** under **Relay fallback**.
    Existing **Dovo relay fallback** connections also receive the computer's explicitly configured
    policy automatically. **Direct only** keeps relays disabled. LAN/VPN pairings need internet

@@ -1,3 +1,4 @@
+import { sshAddressSchema } from './ssh-address.js'
 import { remoteDesktopSessionSchema } from '../remote-desktop.js'
 import { peerConfigSchema, peerRelayIdentitySchema, peerRelayProviderSchema } from './peer.js'
 import { projectTransferSchema } from '../../scm/repositories/project-transfer.js'
@@ -158,6 +159,7 @@ export const snapshotSchema = mutableStruct({
   protocolVersion: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isInt()))),
   runtimeHost: Schema.optional(Schema.String),
   runtimeIcon: Schema.optional(runtimeIconSchema),
+  sshAddress: Schema.optional(sshAddressSchema),
   releaseVersion: Schema.optional(Schema.String),
   releaseDistribution: Schema.optional(Schema.Literals(['desktop', 'archive', 'source'])),
   releaseCanUpdate: Schema.optional(Schema.Boolean),
@@ -413,6 +415,7 @@ export const responses = {
 }
 
 export const runtimePreferencesSchema = mutableStruct({
+  sshAddress: sshAddressSchema.pipe(Schema.withDecodingDefaultType(Effect.sync(() => ''))),
   /** Share provider reads with paired computers; server/desktop preference is automatic. */
   enableSharedRetrieval: Schema.optional(Schema.Boolean),
   preferredRetrievalHost: Schema.optional(

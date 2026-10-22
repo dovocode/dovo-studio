@@ -83,10 +83,12 @@ const built = await build({
     let initial={id:'thread',title:'Fix reconnection',repositoryId:'repo',agentId:'',status:'done',createdAt:'2026-10-14',messages:[],files:[{path:'connection.ts',before:'old connection\\nremove timeout\\n',after:'new connection\\nrestore session\\nhandle network switch\\n'}],draft:'',example:false,execution:'worktree',checkoutBranch:'fix/reconnection',turns:[],linkedPullRequests:[{number:7,url:'https://github.com/test/project/pull/7',repositoryUrl:'https://github.com/test/project',title:'Fix iOS reconnection across Wi-Fi switches'},{number:9,url:'https://github.com/test/project/pull/9',repositoryUrl:'https://github.com/test/project',title:'Preserve the runtime session'}],pullStatus:{number:7,url:'https://github.com/test/project/pull/7',state:'open',checks:'passed',checkedAt:''}};
     function App(){
       const [task,setTask]=useState(initial),[panel,setPanel]=useState(false),[surface,setSurface]=useState('chat'),[hideSidebar,setHideSidebar]=useState(false),[toolsWidth,setToolsWidth]=useState(0);window.generalProject=()=>{repo.kind='scratch';repo.name='No project';setPanel(true)};window.hideSidebar=setHideSidebar;window.setToolsWidth=setToolsWidth;
+      window.setToolContent=(subagents,artifacts,watches=[])=>{window.savedArtifacts=artifacts;setTask(task=>({...task,subagents,threadWatches:watches,status:task.status==='done'?'waiting':'done'}))};
       window.switchThread=()=>setTask(task=>({...task,id:task.id==='other-thread'?'thread':'other-thread',title:task.id==='other-thread'?'Fix reconnection':'Another thread'}));window.setPullState=(state,draft=false)=>setTask(task=>({...task,pullStatus:{...task.pullStatus,state,draft,checks:'failed'}}));
       window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));
       const request=async(path,input)=>{
         window.calls.push({path,input});
+        if(path==='/api/artifacts/list')return {artifacts:window.savedArtifacts??[],links:[]};
         if(path==='/api/scm/action-state')return {dirty:true,ahead:0,behind:0,tracking:true,canPush:true};
         if(path==='/api/tasks/waiting')return {dependencies:window.stopped?[]:[{kind:'pipeline',repositoryId:'repo',target:'8',label:'Pipeline run 8',project:'Project',url:'https://github.com/test/project/actions/runs/8',status:'in_progress',checkedAt:''}],related:[{label:'PR #7',project:'Project',url:'https://github.com/test/project/pull/7'}]};
         if(path==='/api/workspace'){const updates=Object.fromEntries(Object.entries(input.changes).map(([key,change])=>[key,change.after??undefined]));setTask(t=>({...t,...updates}));return {revision:2,outcome:'applied'};}
@@ -105,7 +107,7 @@ const built = await build({
         {!panel&&<TaskWaitingPanel taskId={task.id}/>}
         </div>
         {!window.mobile&&<aside data-tools-sidebar style={{width:toolsWidth,flexShrink:0}}/>}
-        {!window.mobile&&<TaskTools surface={surface} onSelect={setSurface} hasDiff={false} hasLinkedPulls={!!task.linkedPullRequests?.length}/>}
+        {!window.mobile&&<TaskTools task={task} artifactsEnabled surface={surface} onSelect={setSurface} hasDiff={false} hasLinkedPulls={!!task.linkedPullRequests?.length}/>}
         {surface==='linked-pulls'&&<TaskLinkedPullPanel task={task} onPullLink={url=>{window.selectedPull=url;return true}} onClose={()=>setSurface('chat')}/>}
         </div></div></Popover.Root></div></div></SidebarHeaderLayout>;
     }
@@ -166,6 +168,37 @@ try {
       window.mobile = mobile
     }, mobile)
     await page.addScriptTag({ content: built.outputFiles[0].text })
+    if (!mobile) {
+      const tools = page.getByRole('navigation', { name: 'Thread tools' })
+      await page.waitForFunction(() =>
+        window.calls.some((call) => call.path === '/api/artifacts/list'),
+      )
+      assert.equal(await tools.getByRole('button', { name: 'Agents', exact: true }).count(), 0)
+      assert.equal(await tools.getByRole('button', { name: 'Artifacts', exact: true }).count(), 0)
+      await page.evaluate(() =>
+        window.setToolContent(
+          [{ id: 'native', name: 'Reviewer', provider: 'codex', status: 'completed' }],
+          [{ id: 'saved' }],
+        ),
+      )
+      await tools.getByRole('button', { name: 'Agents', exact: true }).waitFor()
+      await tools.getByRole('button', { name: 'Artifacts', exact: true }).waitFor()
+      await page.evaluate(() =>
+        window.setToolContent(
+          [],
+          [],
+          [{ relation: 'spawned', runtimeId: 'remote', threadId: 'child', status: 'watching' }],
+        ),
+      )
+      await tools
+        .getByRole('button', { name: 'Artifacts', exact: true })
+        .waitFor({ state: 'detached' })
+      assert.equal(await tools.getByRole('button', { name: 'Agents', exact: true }).count(), 1)
+      await page.evaluate(() => window.setToolContent([], []))
+      await tools
+        .getByRole('button', { name: 'Agents', exact: true })
+        .waitFor({ state: 'detached' })
+    }
     assert.equal(await page.locator('.studio-titlebar').count(), 1)
     if (!mobile) {
       const brand = await page.locator('.studio-titlebar').boundingBox()

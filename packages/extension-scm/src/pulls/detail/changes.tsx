@@ -2,10 +2,11 @@ import {
   pullFileFingerprint,
   reviewFileState,
   orderReviewFiles,
-  changedFileBreakdown,
+  pullFileKind,
+  type FileKind,
 } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
-import { OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
+import { ChangeTypeFilters, OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppPreferences, whitespaceOnlyPatch } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -52,10 +53,16 @@ export function PullChanges({
     JSON.stringify([...fingerprints]),
     active,
   )
+  const [kind, setKind] = useState<FileKind>()
   const [related, setRelated] = useApplicationState(true)
   const files = useMemo(
-    () => orderReviewFiles(visibleFiles, review.progress?.groups ?? [], related),
-    [visibleFiles, review.progress?.groups, related],
+    () =>
+      orderReviewFiles(
+        visibleFiles.filter((file) => !kind || pullFileKind(file) === kind),
+        review.progress?.groups ?? [],
+        related,
+      ),
+    [visibleFiles, review.progress?.groups, related, kind],
   )
   const viewed = useMemo(
     () =>
@@ -134,7 +141,7 @@ export function PullChanges({
     }
   }, [initialFragment, detail.comments, files, active])
   const selectedFile = files.find((file) => file.path === selected) ?? files[0]
-  if (!files.length)
+  if (!detail.files.length)
     return <p className="p-4 text-xs text-muted-foreground">No changed files returned.</p>
   return (
     <section aria-label="Code changes" className="min-w-0">
@@ -154,13 +161,17 @@ export function PullChanges({
           {treeOpen ? 'Hide files' : 'Show files'}
         </Button>
       </div>
-      <p
+      <div
         aria-label="Changed file breakdown"
         title="Based on file paths and generated-file attributes."
-        className="text-xs text-muted-foreground tabular-nums"
       >
-        {changedFileBreakdown(detail.files, detail.pull.changedFiles)}
-      </p>
+        <ChangeTypeFilters
+          files={detail.files}
+          total={detail.pull.changedFiles}
+          value={kind}
+          onChange={setKind}
+        />
+      </div>
       <OrganizeReview review={review} onOrganized={() => setRelated(true)} />
       <div
         aria-label="Pinned file review controls"
@@ -190,6 +201,7 @@ export function PullChanges({
       </div>
       <div className="flex min-w-0 flex-col-reverse gap-3 @4xl:flex-row">
         <div className="min-w-0 flex-1 space-y-4 py-3">
+          {!files.length && <p className="p-4 text-xs text-muted-foreground">No matching files.</p>}
           {files.map((file) => {
             const comments = file.previousPath
               ? detail.comments.filter(
@@ -321,8 +333,10 @@ export function PullChanges({
         {treeOpen && (
           <aside className="flex max-h-[min(65vh,calc(100cqh-2rem))] min-h-0 shrink-0 flex-col overflow-hidden border-b p-2 @4xl:sticky @4xl:top-2 @4xl:w-64 @4xl:self-start @4xl:border-b-0 @4xl:border-l">
             <ReviewFiles
+              showTypeFilters={false}
               files={files.map((file) => ({
                 path: file.path,
+                changeKind: pullFileKind(file),
                 viewed: viewed.has(file.path),
                 additions: file.additions ?? 0,
                 deletions: file.deletions ?? 0,

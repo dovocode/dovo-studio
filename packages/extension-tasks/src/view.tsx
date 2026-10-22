@@ -1300,6 +1300,7 @@ export default function TasksView({ entityId, threadParent }: StudioViewProps) {
           </ResizableSidebar>
           {!compact && !temporary && (
             <TaskTools
+              task={task}
               surface={surface}
               onSelect={(next) => selectSurface(next === surface ? 'chat' : next)}
               hasDiff={hasDiff}

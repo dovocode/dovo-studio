@@ -3,6 +3,7 @@ import { Schema } from 'effect'
 import { CopyPlus, ChevronDown } from 'lucide-react'
 import {
   randomUUID,
+  parseSshAddress,
   decodeResult,
   validationMessages,
   projectTransferStartSchema,
@@ -78,9 +79,20 @@ export function ProjectTransferSettings({
     const target = store.runtimes.find(
       (entry) => (entry.profile.connection.runtimeId ?? entry.snapshot?.runtimeId) === id,
     )
+    setIdentityFile('')
+    setSshHost('')
+    setSshUser('')
+    setSshPort('22')
+    setRuntimePort('')
     if (target) {
       const url = new URL(target.profile.connection.address)
       setSshHost(url.hostname)
+      if (target.snapshot?.sshAddress) {
+        const ssh = parseSshAddress(target.snapshot.sshAddress)
+        setSshHost(ssh.sshHost)
+        setSshUser(ssh.sshUser)
+        setSshPort(String(ssh.sshPort))
+      }
       setRuntimePort(url.protocol === 'https:' ? '5235' : url.port || '80')
     }
   }
@@ -93,7 +105,7 @@ export function ProjectTransferSettings({
         if (!store.snapshot?.projectWorktreeTransfersSupported)
           throw new Error('Update this computer to copy worktrees to another computer.')
         if (sourceTask.existingWorktreePath) sourcePath = sourceTask.existingWorktreePath
-        else {
+        else if (sourceTask.execution === 'worktree' && sourceTask.checkoutBranch) {
           const list = await store.request('/api/scm/worktrees/read', {}, worktreeListSchema)
           const source = list.worktrees.find(
             (item) =>
@@ -541,7 +553,11 @@ export function ProjectTransferDialog({
     >
       <DialogContent className="max-h-[85dvh] overflow-y-auto">
         <DialogTitle>
-          {sourceTask ? 'Copy worktree to another machine' : 'Add to another machine'}
+          {sourceTask
+            ? sourceTask.execution === 'worktree'
+              ? 'Copy worktree to another machine'
+              : 'Copy project checkout to another machine'
+            : 'Add to another machine'}
         </DialogTitle>
         <ProjectTransferSettings repository={repository} sourceTask={sourceTask} initiallyOpen />
       </DialogContent>

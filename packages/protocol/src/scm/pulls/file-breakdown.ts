@@ -3,7 +3,7 @@ import type { TaskTurn } from '../../workspace.js'
 import { checkpointFiles } from '../repositories/file-previews.js'
 
 type File = Pick<PullDetail['files'][number], 'path' | 'attributes'>
-type FileKind = 'normal' | 'mocks' | 'tests' | 'docs' | 'generated'
+export type FileKind = 'normal' | 'mocks' | 'tests' | 'docs' | 'generated'
 const lockfiles = new Set([
   'bun.lock',
   'bun.lockb',

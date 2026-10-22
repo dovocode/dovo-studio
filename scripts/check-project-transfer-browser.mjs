@@ -82,7 +82,7 @@ if(path.endsWith('/start')){if(window.fail)throw new Error('Destination is offli
 if(path.endsWith('/retry')){window.setJob({state:'preparing',error:undefined});return {...current,state:'preparing'}}
 if(path.endsWith('/cancel')){window.setJob({state:'cancelled'});return {ok:true}}
 return {ok:true};};
-window.store={connected,request,read:request,call:request,snapshot:{runtimeId:'machine-a',projectTransfersSupported:supported,projectWorktreeTransfersSupported:supported,projectTransfers:job?[job]:[]},runtimeRegistry:{profiles:[profile]},profiles:[profile],runtimes:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],overviews:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],switchRuntime:async id=>{window.switched=id},refreshRuntime:async()=>{window.refreshes++}};
+window.store={connected,request,read:request,call:request,snapshot:{runtimeId:'machine-a',projectTransfersSupported:supported,projectWorktreeTransfersSupported:supported,projectTransfers:job?[job]:[]},runtimeRegistry:{profiles:[profile]},profiles:[profile],runtimes:[{profile,connected:true,snapshot:{runtimeId:'machine-b',sshAddress:window.savedSsh??''}}],overviews:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],switchRuntime:async id=>{window.switched=id},refreshRuntime:async()=>{window.refreshes++}};
 return source ? <ProjectTransferDialog key={source.id} repository={repo} sourceTask={source} onClose={()=>setSource(null)}/> : <ProjectTransferSettings repository={repo}/>;}
 createRoot(document.getElementById('app')).render(<App/>);`,
         },
@@ -290,6 +290,36 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         document.querySelector('[aria-label="Source checkout"]')?.value === '/worktrees/feature',
     )
     await page.getByRole('button', { name: 'Copy and create thread', exact: true }).waitFor()
+    if (!mobile) {
+      await page.evaluate(() => {
+        window.savedSsh = 'ssh://shared-user@shared-host:2222'
+        window.setSource({ id: 'main-thread', repositoryId: 'project', execution: 'main' })
+      })
+      await page
+        .getByRole('dialog')
+        .getByText('Copy project checkout to another machine', { exact: true })
+        .waitFor()
+      await page.getByRole('button', { name: 'Copy and create thread', exact: true }).waitFor()
+      await page.getByLabel('Project copy connection').selectOption('ssh')
+      assert.equal(
+        await page.getByRole('textbox', { name: 'SSH user', exact: true }).inputValue(),
+        'shared-user',
+      )
+      assert.equal(
+        await page.getByRole('textbox', { name: 'SSH host', exact: true }).inputValue(),
+        'shared-host',
+      )
+      assert.equal(
+        await page.getByRole('textbox', { name: 'SSH port', exact: true }).inputValue(),
+        '2222',
+      )
+      await page.getByRole('button', { name: 'Copy and create thread', exact: true }).click()
+      const input = await page.evaluate(
+        () => window.calls.filter((call) => call.path.endsWith('/start')).at(-1).input,
+      )
+      assert.equal(input.worktreePath, undefined)
+      assert.equal(input.ssh.sshHost, 'shared-host')
+    }
     await page.close()
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'} project copy: P2P, SSH validation, private files, progress, cancellation, saved retry and offline/capability checks pass.`,

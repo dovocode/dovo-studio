@@ -9,16 +9,17 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
+import {ComputerSshSettings} from './packages/extension-runtime/src/computer-ssh-settings.tsx';
 import {RuntimeIconSettings as DesktopSettings} from './packages/extension-runtime/src/runtime-icon-settings.tsx';
 import {RuntimeIconSettings as MobileSettings} from './apps/mobile/src/runtime/connection/runtime-icon-settings.tsx';
 import {RuntimeIcon} from '@dovo/studio-ui/runtime-icon';
-window.saves=[];window.icon='desktop';window.connected=true;window.supported=true;
+window.saves=[];window.icon='desktop';window.sshAddress='';window.connected=true;window.supported=true;
 function App(){const [,refresh]=useState(0);window.refresh=()=>refresh(value=>value+1);
-const snapshot=window.supported?{runtimeIcon:window.icon}:{};const source={profile:{id:'remote-computer'},connected:window.connected,snapshot};
-const save=async(profile,path,input)=>{window.saves.push({id:profile.id,path,input});if(window.fail)throw Error('Runtime unavailable');window.icon=input.runtimeIcon;return {runtimeIcon:window.icon}};
+const snapshot=window.supported?{runtimeIcon:window.icon,sshAddress:window.sshAddress}:{};const source={profile:{id:'remote-computer'},connected:window.connected,snapshot};
+const save=async(profile,path,input)=>{window.saves.push({id:profile.id,path,input});if(window.fail)throw Error('Runtime unavailable');if('runtimeIcon' in input)window.icon=input.runtimeIcon;if('sshAddress' in input)window.sshAddress=input.sshAddress;return {runtimeIcon:window.icon,sshAddress:window.sshAddress}};
 window.workspace={readRuntime:save,refreshRuntime:async()=>window.refresh()};
 window.runtime={connected:window.connected,snapshot,callEffect:(path,input)=>Effect.tryPromise({try:async()=>{await save(source.profile,path,input);window.refresh()},catch:error=>error})};
-return <><section data-client="desktop"><DesktopSettings source={source}/></section><section data-client="mobile"><MobileSettings/></section><RuntimeIcon icon={snapshot.runtimeIcon}/></>}
+return <><section data-client="desktop"><DesktopSettings source={source}/></section><section data-client="mobile"><MobileSettings/></section><RuntimeIcon icon={snapshot.runtimeIcon}/><ComputerSshSettings source={source}/></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -41,7 +42,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '@dovo/studio-ui',
       contents:
-        'export const Button=({children,...props})=><button {...props}>{children}</button>;',
+        'export const Button=({children,...props})=><button {...props}>{children}</button>;export const Input=props=><input {...props}/>;',
     },
     {
       path: './provider',
@@ -114,6 +115,23 @@ try {
     ),
     true,
   )
+  const ssh = page.getByRole('form', { name: 'Computer SSH address' })
+  await ssh.getByLabel('SSH address', { exact: true }).fill('ssh://dev:secret@host')
+  await ssh.getByRole('button', { name: 'Save SSH address' }).click()
+  await ssh.getByRole('alert').waitFor()
+  assert.equal(
+    await page.evaluate(() => window.saves.some((save) => 'sshAddress' in save.input)),
+    false,
+  )
+  await ssh.getByLabel('SSH address', { exact: true }).fill('ssh://dev@host:2222')
+  await ssh.getByRole('button', { name: 'Save SSH address' }).click()
+  await page.waitForFunction(() => window.sshAddress === 'ssh://dev@host:2222')
+  assert.deepEqual(await page.evaluate(() => window.saves.at(-1).input), {
+    sshAddress: 'ssh://dev@host:2222',
+  })
+  await ssh.getByLabel('SSH address', { exact: true }).fill('')
+  await ssh.getByRole('button', { name: 'Save SSH address' }).click()
+  await page.waitForFunction(() => window.sshAddress === '')
   await page.evaluate(() => {
     window.fail = true
   })

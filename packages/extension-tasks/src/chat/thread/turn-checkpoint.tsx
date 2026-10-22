@@ -1,6 +1,6 @@
 import { whitespaceOnlyFile } from '@dovo/studio-core'
 import { SavedFilePreview } from '../../files/saved-file-preview'
-import { checkpointFiles, changedFileBreakdown, filePreviewLabel } from '@dovo/protocol'
+import { checkpointFiles, pullFileKind, type FileKind, filePreviewLabel } from '@dovo/protocol'
 import { fileStats, DiffAmounts } from '../../files/presentation'
 import { responses, useWorkspace, useAppPreferences } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -13,6 +13,7 @@ import { useTurnDisclosure } from './turn-window'
 import type { ChangedFile, TaskTurn } from '@dovo/studio-core'
 import {
   Button,
+  ChangeTypeFilters,
   ChoicePicker,
   Dialog,
   DialogContent,
@@ -152,6 +153,7 @@ export function TurnCheckpoint({
   const showFiles = expanded ?? !collapseChangedFiles
   const [open, setOpen] = useApplicationState(false)
   const [selected, setSelected] = useApplicationState('')
+  const [kind, setKind] = useApplicationState<FileKind | undefined>(undefined)
   const [restoring, setRestoring] = useApplicationState(false)
   const [restoreError, setRestoreError] = useApplicationState('')
   const { request, connected } = useWorkspace()
@@ -164,16 +166,21 @@ export function TurnCheckpoint({
         : [],
     [turn.checkpoint, hideWhitespaceChanges],
   )
+  const filtered = useMemo(
+    () => files.filter((file) => !kind || pullFileKind(file) === kind),
+    [files, kind],
+  )
   const stats = useMemo(() => files.filter((file) => !file.preview).map(fileStats), [files])
   const treeFiles = useMemo(() => {
     const amounts = new Map(stats.map((stat) => [stat.path, stat]))
-    return files.map((file) => ({
+    return filtered.map((file) => ({
+      changeKind: pullFileKind(file),
       path: file.path,
       additions: amounts.get(file.path)?.additions,
       deletions: amounts.get(file.path)?.deletions,
       label: file.preview ? filePreviewLabel(file) : undefined,
     }))
-  }, [files, stats])
+  }, [filtered, stats])
   const totals = stats.reduce(
     (sum, file) => ({
       additions: sum.additions + file.additions,
@@ -184,7 +191,7 @@ export function TurnCheckpoint({
   const checkpoint = turn.checkpoint
   if (!checkpoint) return null
   const undone = !!checkpoint.undone
-  const file = files.find((entry) => entry.path === selected) ?? files[0]
+  const file = filtered.find((entry) => entry.path === selected) ?? filtered[0]
   const count = files.length
   // Show checkpoint controls only once the turn has a result to inspect.
   if ((!checkpoint.after && !checkpoint.error) || (!count && checkpoint.after && !checkpoint.error))
@@ -228,9 +235,16 @@ export function TurnCheckpoint({
         </span>
       </div>
       {!!count && (
-        <p aria-label="Changed file breakdown" className="mt-1 tabular-nums">
-          {changedFileBreakdown(files)}
-        </p>
+        <div aria-label="Changed file breakdown" className="mt-1">
+          <ChangeTypeFilters
+            files={files}
+            value={kind}
+            onChange={(value) => {
+              setKind(value)
+              setExpanded(true)
+            }}
+          />
+        </div>
       )}
       {showFiles && (
         <div className="mt-2 border-t border-border/40 pt-2">
@@ -256,6 +270,7 @@ export function TurnCheckpoint({
               starting snapshot.
             </DialogDescription>
           </div>
+          <ChangeTypeFilters files={files} value={kind} onChange={setKind} />
           {checkpoint.error && (
             <p role="alert" className="text-xs text-destructive">
               {checkpoint.error}
@@ -300,7 +315,7 @@ export function TurnCheckpoint({
                 value={file.path}
                 onValueChange={setSelected}
               >
-                {files.map((entry) => (
+                {filtered.map((entry) => (
                   <option key={entry.path} value={entry.path}>
                     {entry.path}
                   </option>

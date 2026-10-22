@@ -45,7 +45,7 @@ function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;con
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export * from '${ui}/components/ui/button.tsx';export * from '${ui}/components/ui/dialog.tsx';export {ChoicePicker} from '${ui}/choice-picker.tsx';export {ErrorBoundary} from '${ui}/components/error-boundary.tsx';export {FileBrowserTree} from '${ui}/file-tree.tsx';`,
+      contents: `export * from '${ui}/components/ui/button.tsx';export * from '${ui}/components/ui/dialog.tsx';export {ChoicePicker} from '${ui}/choice-picker.tsx';export {ErrorBoundary} from '${ui}/components/error-boundary.tsx';export {FileBrowserTree} from '${ui}/file-tree.tsx';export {ChangeTypeFilters} from '${ui}/review/change-types.tsx';`,
     },
     {
       path: '@dovo/studio-ui/code-themes',
@@ -92,7 +92,7 @@ try {
   await page.screenshot({ path: '/tmp/dovo-compact-attachments.png' })
   await page
     .getByLabel('Changed file breakdown', { exact: true })
-    .filter({ hasText: /^Code 4$/ })
+    .filter({ hasText: /All 4Code 4/ })
     .waitFor()
   await page.getByRole('button', { name: 'Open diff', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Turn checkpoint · 4 files' })
@@ -183,7 +183,26 @@ try {
     })),
   )
   const breakdown = page.getByLabel('Changed file breakdown', { exact: true })
-  await breakdown.filter({ hasText: 'Code 4 · Tests 1 · Mocks 1 · Docs 1 · Generated 1' }).waitFor()
+  await breakdown.filter({ hasText: /All 8Code 4Tests 1Mocks 1Docs 1Generated 1/ }).waitFor()
+  await breakdown.getByRole('button', { name: 'Tests 1', exact: true }).click()
+  assert.equal(
+    await page
+      .locator(
+        '[data-file-tree-row][aria-current], button[data-file-tree-row]:not([aria-expanded])',
+      )
+      .count(),
+    1,
+  )
+  await breakdown.getByRole('button', { name: 'All 8', exact: true }).click()
+  const categoryColors = await breakdown
+    .getByRole('button')
+    .evaluateAll((buttons) =>
+      buttons
+        .filter((button) => /^(Code|Tests|Mocks|Docs) /.test(button.textContent))
+        .map((button) => getComputedStyle(button).color),
+    )
+  assert.equal(new Set(categoryColors).size, 4)
+  await page.screenshot({ path: '/tmp/dovo-change-type-filters.png' })
   const disclosure = page.getByRole('button', { name: /8 changed files/ })
   await disclosure.click()
   assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')

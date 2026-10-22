@@ -1,6 +1,7 @@
 import { useDeferredValue, useMemo, useState } from 'react'
-import type { ReviewGroup, FileTreeEntry } from '@dovo/protocol'
+import { pullFileKind, type FileKind, type ReviewGroup, type FileTreeEntry } from '@dovo/protocol'
 import { ChevronRight, Layers, Search, X } from 'lucide-react'
+import { ChangeTypeFilters } from './change-types'
 import { FileBrowserTree } from '../file-tree'
 import { Button } from '../components/ui/button'
 import { Checkbox } from '../components/ui/checkbox'
@@ -103,6 +104,7 @@ export function ReviewFiles({
   selected,
   onSelect,
   disabled = false,
+  showTypeFilters = true,
 }: {
   files: ReviewListFile[]
   groups: ReviewGroup[]
@@ -111,16 +113,25 @@ export function ReviewFiles({
   selected: string
   onSelect: (path: string) => void
   disabled?: boolean
+  showTypeFilters?: boolean
 }) {
   const [query, setQuery] = useState(''),
     [unviewed, setUnviewed] = useState(false)
+  const [kind, setKind] = useState<FileKind>()
+  const categorized = useMemo(
+    () => files.map((file) => ({ ...file, changeKind: file.changeKind ?? pullFileKind(file) })),
+    [files],
+  )
   const filter = useDeferredValue(query.trim().toLowerCase())
   const filtered = useMemo(
     () =>
-      files.filter(
-        (file) => (!unviewed || !file.viewed) && file.path.toLowerCase().includes(filter),
+      categorized.filter(
+        (file) =>
+          (!kind || file.changeKind === kind) &&
+          (!unviewed || !file.viewed) &&
+          file.path.toLowerCase().includes(filter),
       ),
-    [files, filter, unviewed],
+    [categorized, filter, unviewed, kind],
   )
   const grouped = useMemo(() => {
     const remaining = new Map(filtered.map((file) => [file.path, file]))
@@ -147,6 +158,7 @@ export function ReviewFiles({
   return (
     <>
       <div className="shrink-0 space-y-2 border-b bg-sidebar/40 p-2">
+        {showTypeFilters && <ChangeTypeFilters files={files} value={kind} onChange={setKind} />}
         <div className="relative">
           <Search
             aria-hidden
@@ -197,7 +209,7 @@ export function ReviewFiles({
       >
         {!filtered.length && (
           <p className="p-2 text-xs text-muted-foreground">
-            {unviewed && !filter ? 'All files viewed.' : 'No matching files.'}
+            {unviewed && !filter && !kind ? 'All files viewed.' : 'No matching files.'}
           </p>
         )}
         {grouped.sections.map((section) => (

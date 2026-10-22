@@ -383,18 +383,16 @@ export function TaskContextMenu({
               </>
             )}
             <Menu.Separator className={separatorClass} />
-            {repository &&
-              !repository.kind &&
-              task.execution === 'worktree' &&
-              (task.checkoutBranch || task.existingWorktreePath) && (
-                <Menu.Item
-                  className={itemClass}
-                  disabled={!canEdit}
-                  onSelect={() => setDialog('transfer')}
-                >
-                  <Copy /> Copy worktree to another machine…
-                </Menu.Item>
-              )}
+            {repository && repository.kind !== 'scratch' && (
+              <Menu.Item
+                className={itemClass}
+                disabled={!canEdit}
+                onSelect={() => setDialog('transfer')}
+              >
+                <Copy /> {task.execution === 'worktree' ? 'Copy worktree' : 'Copy project checkout'}{' '}
+                to another machine…
+              </Menu.Item>
+            )}
             <Menu.Sub>
               <Menu.SubTrigger className={itemClass}>
                 <Plus /> New thread <ChevronRight className="ml-auto" />

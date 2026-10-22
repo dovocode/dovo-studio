@@ -13,6 +13,7 @@ import {
   FolderOpen,
   Settings2,
 } from 'lucide-react'
+import { ChangeTypeIndicator } from './review/change-types'
 import { cn } from './lib/utils'
 
 const icons = {
@@ -161,7 +162,11 @@ export function FileBrowserTree({
           )}
         >
           <span className="w-3 shrink-0" aria-hidden />
-          <FileTypeIcon path={node.path} />
+          {node.changeKind ? (
+            <ChangeTypeIndicator kind={node.changeKind} />
+          ) : (
+            <FileTypeIcon path={node.path} />
+          )}
           <span className="min-w-0 flex-1">
             <span className="block truncate">{node.name}</span>
             {flat && node.path.includes('/') && (

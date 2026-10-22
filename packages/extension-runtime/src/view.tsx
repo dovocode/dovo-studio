@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AccountPanel } from './account-panel'
+import { ComputerSshSettings } from './computer-ssh-settings'
 import { RuntimeIconSettings } from './runtime-icon-settings'
 import { runtimeSettings } from './settings-views'
 import { RuntimeDiagnosticsPanel } from './runtime-diagnostics'
@@ -155,6 +156,7 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
             {source ? (
               <>
                 <RuntimeIconSettings source={source} />
+                <ComputerSshSettings key={source.profile.id} source={source} />
                 <WorkspaceScope profile={managing}>
                   <DeviceManager key={managing.id} />
                   {source.snapshot?.owner && <RuntimeDiagnosticsPanel />}

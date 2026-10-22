@@ -5,8 +5,14 @@ another computer**, select a paired destination, and choose **Dovo P2P** or **SS
 computers need an updated Dovo runtime. From the composer’s machine picker, a selected project also
 has **Add to another machine**. For a thread with a worktree, choose **Copy worktree to another
 machine** from the thread menu; that checkout is preselected and destination thread creation is
-enabled. The source sends files directly to the destination; the phone or desktop UI does not relay
-them.
+enabled. Studio also offers **Copy project checkout to another machine** for threads using the
+project folder, including threads on another paired computer. The source sends files directly to the
+destination; the phone or desktop UI does not relay them.
+
+In Studio’s **Devices & runtime**, manage a computer and save its **SSH address** as
+`ssh://user@host:port`. The address is stored on that computer, shared with paired clients, and
+pre-fills Studio’s copy dialog when you select it as the destination. Clear the field and save to
+remove it. Passwords and SSH key paths are not shared.
 
 SSH uses the source computer's OpenSSH client, configured keys or an optional key path, and an
 already trusted host key. Enter the destination's SSH host/user and the local HTTP port of its Dovo
@@ -36,3 +42,7 @@ copied workspace and its thread. Existing destination projects are never overwri
 Cancel remain available in the source project settings, even after closing and reopening them. A
 failed copy can retry its saved configuration; after a restart it is marked interrupted and can be
 retried. Completed copies are recorded so a lost response or retry does not create another project.
+
+Updated destinations accept batches of up to 128 chunks and 256 KiB of file data per request,
+reducing round trips for checkouts with many small files. Older destinations retain the individual
+chunk transfer path. Both paths verify file hashes before registering the copied project.

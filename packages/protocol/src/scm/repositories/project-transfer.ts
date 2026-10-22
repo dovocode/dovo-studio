@@ -98,6 +98,25 @@ export const projectTransferChunkSchema = mutableStruct({
     350000,
   ),
 })
+/** Keep batches below the existing request limit, including base64 and metadata. */
+export const projectTransferBatchSchema = mutableStruct({
+  id: Schema.String,
+  chunks: mutableArray(
+    mutableStruct({
+      index: integer,
+      offset: integer,
+      data: projectTransferChunkSchema.fields.data,
+    }),
+  ).pipe(
+    Schema.check(Schema.isMinLength(1)),
+    Schema.check(Schema.isMaxLength(128)),
+    Schema.check(
+      Schema.makeFilter(
+        (chunks) => chunks.reduce((sum, chunk) => sum + chunk.data.length, 0) <= 350000,
+      ),
+    ),
+  ),
+})
 export const projectTransferResultSchema = mutableStruct({
   taskId: Schema.optional(Schema.String),
   threadStartError: Schema.optional(Schema.String),

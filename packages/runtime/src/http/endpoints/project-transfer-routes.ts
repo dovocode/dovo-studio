@@ -7,6 +7,7 @@ import {
   projectTransferSourceSchema,
   projectTransferManifestSchema,
   projectTransferChunkSchema,
+  projectTransferBatchSchema,
 } from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
 import { RuntimeServices } from '../../runtime-services.js'
@@ -50,6 +51,12 @@ export function projectTransferRoute(
         case 'chunk':
           return yield* serviceResult(
             transfers.chunk(decode(projectTransferChunkSchema, input), device),
+          )
+        case 'batch':
+          return yield* serviceResult(
+            transfers.batch(decode(projectTransferBatchSchema, input), device, () => {
+              s.devices.authenticate(token)
+            }),
           )
         case 'commit':
           return yield* serviceResult(

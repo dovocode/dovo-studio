@@ -28,7 +28,18 @@ it('shares validated icons with paired devices and invalidates their cached snap
     expect(updated.headers.get('etag')).not.toBe(tag)
     expect(decode(snapshotSchema, await updated.json()).runtimeIcon).toBe('server')
     expect(decode(snapshotSchema, await (await snapshot(phone)).json()).runtimeIcon).toBe('server')
+    expect((await save({ sshAddress: 'ssh://dominic@buildbox:2222' })).status).toBe(200)
+    expect(decode(snapshotSchema, await (await snapshot(phone)).json()).sshAddress).toBe(
+      'ssh://dominic@buildbox:2222',
+    )
+    expect(decode(snapshotSchema, await (await snapshot(owner)).json()).sshAddress).toBe(
+      'ssh://dominic@buildbox:2222',
+    )
+    expect((await save({ sshAddress: 'ssh://dominic:secret@buildbox' })).status).toBe(400)
     expect((await save({ autoArchiveDays: 7 })).status).toBe(200)
+    expect(runtime.services.preferences.get().sshAddress).toBe('ssh://dominic@buildbox:2222')
+    expect((await save({ sshAddress: '' })).status).toBe(200)
+    expect(decode(snapshotSchema, await (await snapshot(phone)).json()).sshAddress).toBe('')
     for (const runtimeIcon of ['unknown', '', null, 1])
       expect((await save({ runtimeIcon })).status).toBe(400)
     expect(runtime.services.preferences.get().runtimeIcon).toBe('server')

@@ -189,6 +189,7 @@ export function runtimeSnapshot(
       lastCrash: readLastCrash(s.db.name),
       runtimeHost: hostname(),
       runtimeIcon: preferences.runtimeIcon,
+      sshAddress: preferences.sshAddress,
       releaseVersion: process.env.DOVO_RELEASE_VERSION || undefined,
       desktopApp: desktopAppUpdateInfo(),
       releaseDistribution:

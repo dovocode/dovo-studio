@@ -10,7 +10,7 @@ const controls =
   ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog']
     .map((name) => `export * from '${uiDir}/components/ui/${name}.tsx';`)
     .join('') +
-  `export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export const OrganizeReview=()=>null;export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
+  `export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export const OrganizeReview=()=>null;export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
 const mocks = {
   '@dovo/studio-ui': controls,
   '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo',importedCodeThemes:[]});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[]});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
@@ -593,10 +593,21 @@ try {
   })
   await page
     .getByLabel('Changed file breakdown', { exact: true })
-    .filter({ hasText: 'Code 11 · Docs 1' })
+    .filter({ hasText: /All 12Code 11Docs 1/ })
     .waitFor()
   const reviewControls = page.getByLabel('Pinned file review controls', { exact: true })
   await reviewControls.getByText('src/review-5.ts', { exact: true }).waitFor()
+  const types = page.getByLabel('Changed file breakdown', { exact: true })
+  await types.getByRole('button', { name: 'Docs 1', exact: true }).click()
+  assert.equal(
+    await page
+      .getByRole('region', { name: 'Code changes', exact: true })
+      .locator('article')
+      .count(),
+    1,
+  )
+  await types.getByRole('button', { name: 'All 12', exact: true }).click()
+
   await detail
     .getByRole('navigation', { name: 'Changed files', exact: true })
     .getByRole('button')

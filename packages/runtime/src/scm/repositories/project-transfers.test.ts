@@ -102,6 +102,43 @@ async function setup(git = false, persistentTarget = false) {
   }
   return { root, source, target, repository, path, input, result }
 }
+it.each([true, false])(
+  'copies many files with batch support %s, preserving source bytes',
+  async (batchesSupported) => {
+    const { source, target, path, input, result } = await setup()
+    const originalStatus = target.services.projectTransfers.status.bind(
+      target.services.projectTransfers,
+    )
+    vi.spyOn(target.services.projectTransfers, 'status').mockImplementation((...args) => ({
+      ...originalStatus(...args),
+      batchesSupported,
+    }))
+    const batch = vi.spyOn(target.services.projectTransfers, 'batch')
+    const files = Array.from({ length: 300 }, (_, i) => ({
+      name: `file-${i}.txt`,
+      contents: i % 7 ? `contents-${i}` : '',
+    }))
+    await Promise.all(files.map((file) => writeFile(join(path, file.name), file.contents)))
+    await writeFile(join(path, 'binary'), Buffer.alloc(300000, 123))
+    expect((await source.post('start', input)).status).toBe(200)
+    const copied = await result()
+    await Promise.all(
+      files.map(async (file) => {
+        expect(await readFile(join(copied.path, file.name), 'utf8')).toBe(file.contents)
+        expect(await readFile(join(path, file.name), 'utf8')).toBe(file.contents)
+      }),
+    )
+    expect(await readFile(join(copied.path, 'binary'))).toEqual(Buffer.alloc(300000, 123))
+    expect(batch.mock.calls.length).toBeGreaterThanOrEqual(batchesSupported ? 2 : 0)
+    expect(batch.mock.calls.length).toBeLessThanOrEqual(batchesSupported ? 5 : 0)
+    for (const [input] of batch.mock.calls) {
+      expect(input.chunks.length).toBeLessThanOrEqual(128)
+      expect(
+        input.chunks.reduce((sum, chunk) => sum + Buffer.from(chunk.data, 'base64').length, 0),
+      ).toBeLessThanOrEqual(256 * 1024)
+    }
+  },
+)
 it('copies the selected worktree with its index and dirty files, creating one destination thread', async () => {
   const { root, source, target, repository, path, input, result } = await setup(true)
   const worktree = join(root, 'feature-worktree')

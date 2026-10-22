@@ -68,7 +68,8 @@ function RelaySettingsContent() {
           Use a separately paired device with an updated runtime to change relay settings.
         </p>
       ) : (
-        <>
+        <details className="space-y-2">
+          <summary className="cursor-pointer text-xs font-medium">Custom TURN server</summary>
           <label className="block text-xs">
             TURN URLs (one per line or comma separated)
             <Textarea
@@ -129,7 +130,7 @@ function RelaySettingsContent() {
               )}
             </>
           )}
-        </>
+        </details>
       )}
       {!!error && (
         <p role="alert" className="text-xs text-destructive">

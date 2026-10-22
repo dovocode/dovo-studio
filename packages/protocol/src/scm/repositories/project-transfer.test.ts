@@ -1,7 +1,11 @@
 import { expect, it } from 'vite-plus/test'
-import { decodeResult } from '../../shared/schema.js'
+import { decode, decodeResult } from '../../shared/schema.js'
 import { runtimeProfile } from '../../runtime/connection/runtime-fleet.js'
-import { projectTransferPeers, projectTransferStartSchema } from './project-transfer.js'
+import {
+  projectTransferBatchSchema,
+  projectTransferPeers,
+  projectTransferStartSchema,
+} from './project-transfer.js'
 
 it('keeps the local destination usable and deduplicates a computer paired at multiple addresses', () => {
   const connection = {
@@ -45,4 +49,20 @@ it('validates SSH options without accepting shell options, passwords or invalid 
       decodeResult(projectTransferStartSchema, { ...request, ssh: { ...request.ssh, ...changes } })
         .success,
     ).toBe(false)
+})
+
+it('bounds batch count and combined payload before receiving files', () => {
+  const chunk = { index: 0, offset: 0, data: 'YQ==' }
+  expect(() => decode(projectTransferBatchSchema, { id: 'copy', chunks: [chunk] })).not.toThrow(
+    Error,
+  )
+  for (const chunks of [
+    [],
+    Array.from({ length: 129 }, () => chunk),
+    [
+      { ...chunk, data: 'A'.repeat(200000) },
+      { ...chunk, data: 'A'.repeat(200000) },
+    ],
+  ])
+    expect(() => decode(projectTransferBatchSchema, { id: 'copy', chunks })).toThrow(Error)
 })

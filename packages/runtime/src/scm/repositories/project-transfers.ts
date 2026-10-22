@@ -5,6 +5,7 @@ import {
   projectTransferActive,
   projectTransferSchema,
   projectTransferStartSchema,
+  projectTransferBatchSchema,
   projectTransferManifestSchema,
   projectTransferResultSchema,
   type ProjectTransfer,
@@ -33,6 +34,7 @@ const okSchema = mutableStruct({ ok: Schema.Literal(true) })
 const statusSchema = mutableStruct({
   result: Schema.optional(projectTransferResultSchema),
   worktreesSupported: Schema.optional(Schema.Boolean),
+  batchesSupported: Schema.optional(Schema.Boolean),
 })
 const discardSchema = mutableStruct({
   ok: Schema.Literal(true),
@@ -338,6 +340,20 @@ export class ProjectTransfers {
       await call('begin', manifest, okSchema)
       let bytes = 0,
         published = 0
+      let batch: typeof projectTransferBatchSchema.Type.chunks = []
+      let batchBytes = 0
+      const flush = async () => {
+        if (!batch.length) return
+        signal.throwIfAborted()
+        await call('batch', { id: input.id, chunks: batch }, okSchema)
+        bytes += batchBytes
+        batch = []
+        batchBytes = 0
+        if (Date.now() - published >= 250 || bytes === totalBytes) {
+          this.update(input.id, { bytes })
+          published = Date.now()
+        }
+      }
       for (const [index, entry] of manifest.entries.entries()) {
         const handle = await open(join(folder, String(index)), 'r')
         try {
@@ -345,18 +361,25 @@ export class ProjectTransfers {
           // Empty files still need an authenticated create/verify operation.
           do {
             signal.throwIfAborted()
-            const size = Math.min(256 * 1024, entry.bytes - offset)
+            if (status.batchesSupported && (batch.length === 128 || batchBytes === 256 * 1024))
+              await flush()
+            const size = Math.min(
+              256 * 1024 - (status.batchesSupported ? batchBytes : 0),
+              entry.bytes - offset,
+            )
             const buffer = Buffer.alloc(size)
             const read = await handle.read(buffer, 0, size, offset)
             if (read.bytesRead !== size)
               throw new HttpError(409, 'Prepared file changed during transfer')
-            await call(
-              'chunk',
-              { id: input.id, index, offset, data: buffer.toString('base64') },
-              okSchema,
-            )
+            const chunk = { index, offset, data: buffer.toString('base64') }
+            if (status.batchesSupported) {
+              batch.push(chunk)
+              batchBytes += size
+            } else {
+              await call('chunk', { id: input.id, ...chunk }, okSchema)
+              bytes += size
+            }
             offset += size
-            bytes += size
             if (Date.now() - published >= 250 || bytes === totalBytes) {
               this.update(input.id, { bytes })
               published = Date.now()
@@ -366,6 +389,7 @@ export class ProjectTransfers {
           await handle.close()
         }
       }
+      await flush()
       this.update(input.id, { state: 'registering' })
       const result = await call('commit', { id: input.id }, projectTransferResultSchema)
       complete(result)
@@ -421,7 +445,11 @@ export class ProjectTransfers {
     return saved
   }
   status(id: string, device: string) {
-    return { result: this.receipt(id, device)?.result, worktreesSupported: true }
+    return {
+      result: this.receipt(id, device)?.result,
+      worktreesSupported: true,
+      batchesSupported: true,
+    }
   }
   async begin(manifest: ProjectTransferManifest, device: string) {
     if (this.closed) throw new HttpError(503, 'This computer is shutting down')
@@ -535,6 +563,17 @@ export class ProjectTransfers {
       }
     })()
     return entry.writing
+  }
+  async batch(
+    input: typeof projectTransferBatchSchema.Type,
+    device: string,
+    authorize: () => void,
+  ) {
+    for (const chunk of input.chunks) {
+      authorize()
+      await this.chunk({ id: input.id, ...chunk }, device)
+    }
+    return { ok: true as const }
   }
   async commit(id: string, device: string, authorize: () => void) {
     const saved = this.receipt(id, device)
