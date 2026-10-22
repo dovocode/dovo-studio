@@ -23,6 +23,7 @@ export const useStudioHost=()=>({appInfo:{version:'0.0.7',channel:window.headerS
 const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;
 export const WorkspaceScope=({profile,children})=>{const source=window.sources.find(source=>source.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,...source,snapshot:source.snapshot,workspace:source.snapshot.workspace}}>{children}</Scope.Provider>};`
 const ui = `
+export * as Popover from '@radix-ui/react-popover';
 export * from '${root}/packages/studio-ui/src/sidebar-header.tsx';
 export * from '${root}/packages/studio-ui/src/components/ui/dialog.tsx';
 export * from '${root}/packages/studio-ui/src/components/ui/tooltip.tsx';
@@ -266,6 +267,28 @@ try {
     element.scrollTop = 0
   })
   await page.setViewportSize({ width: 1280, height: 900 })
+  // Scope indicators stay available on unselected navigation entries and never navigate.
+  const defaultScope = settingsSidebar.getByRole('button', {
+    name: 'Settings scope for Task defaults',
+    exact: true,
+  })
+  await defaultScope.scrollIntoViewIfNeeded()
+  assert.equal(await defaultScope.innerText(), '')
+  await defaultScope.click()
+  await page
+    .getByRole('dialog')
+    .getByText('Task defaults · Computer & project', { exact: true })
+    .waitFor()
+  await page.getByRole('heading', { name: 'General', exact: true, level: 1 }).waitFor()
+  await page.getByRole('dialog').getByText('All projects · All machines', { exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  const deviceScope = settingsSidebar.getByRole('button', {
+    name: 'Settings scope for General',
+    exact: true,
+  })
+  await deviceScope.click()
+  await page.getByRole('dialog').getByText('General · This device', { exact: true }).waitFor()
+  await page.keyboard.press('Escape')
   await screenshot('general-dark')
   await page.evaluate(async () => {
     document.documentElement.dataset.theme = 'light'

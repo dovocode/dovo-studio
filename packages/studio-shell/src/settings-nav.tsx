@@ -9,6 +9,8 @@ import { projectDisplayName, settingsScopeLabels } from '@dovo/protocol'
 import {
   useLeftSidebar,
   SidebarHeader,
+  Button,
+  Popover,
   Input,
   Select,
   SelectContent,
@@ -105,7 +107,21 @@ function pageStorage(view?: StudioView) {
   return view?.settingsScope ? storage[view.settingsScope] : null
 }
 
-/** Grouped desktop settings navigation, with searchable categories and storage labels. */
+function storageDescription(view?: StudioView) {
+  if (view?.id === 'usage')
+    return 'Usage and account limits come from paired computers. Choose a computer on this page to filter them.'
+  if (!view?.settingsScope)
+    return 'Browse archived tasks from paired computers and restore them when needed.'
+  if (view.settingsScope === 'inherited')
+    return 'Choose where defaults apply at the top of the page.'
+  if (mixedPages.has(view.id))
+    return 'App preferences stay on this device. Computer settings use the computer selected on this page.'
+  return view.settingsScope === 'device'
+    ? 'Saved automatically on this device.'
+    : 'Each page shows the computer it uses. Changes are shared with its paired devices.'
+}
+
+/** Grouped desktop settings navigation, with searchable categories and storage indicators. */
 export function SettingsNav({
   views,
   activeId,
@@ -141,7 +157,6 @@ export function SettingsNav({
   const computer = target.environmentId ? (source?.name ?? 'Unavailable computer') : 'All machines'
   const activeView = views.find((view) => view.id === activeId)
   const inherited = activeView?.settingsScope === 'inherited'
-  const mixed = mixedPages.has(activeId)
   const scopeLabel = pageStorage(activeView)?.label ?? 'History on paired computers'
   const [sidebarVisible] = useLeftSidebar()
   return (
@@ -228,42 +243,76 @@ export function SettingsNav({
                   const Storage = placement?.icon
                   const label = placement?.label
                   return (
-                    <button
+                    <div
                       key={view.id}
-                      type="button"
-                      aria-current={active ? 'page' : undefined}
-                      aria-label={view.title}
-                      title={label ? `${view.title} · ${label}` : view.title}
-                      onClick={() => select(view.id)}
-                      className={`group flex min-h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] transition-colors ${
+                      className={`group flex min-h-8 w-full items-center gap-1 rounded-lg pr-1 text-[0.8125rem] transition-colors ${
                         active
                           ? 'bg-accent/70 font-medium text-foreground'
                           : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
                       }`}
                     >
-                      <Icon
-                        size={16}
-                        strokeWidth={1.7}
-                        aria-hidden="true"
-                        className={`shrink-0 ${active ? 'text-primary' : 'text-muted-foreground/70'}`}
-                      />
-                      <span className="min-w-0 flex-1 py-1 leading-snug">
-                        <span className="block break-words">{view.title}</span>
-                        {active && Storage && label && (
-                          <span className="mt-0.5 flex min-w-0 items-center gap-1 break-words text-[11px] font-normal text-muted-foreground">
-                            <Storage size={10} aria-hidden="true" className="shrink-0" />
-                            {label}
-                          </span>
-                        )}
-                      </span>
-                      {active && (
-                        <ChevronRight
-                          size={13}
+                      <button
+                        type="button"
+                        aria-current={active ? 'page' : undefined}
+                        aria-label={view.title}
+                        onClick={() => select(view.id)}
+                        className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-lg py-1 pl-2 text-left"
+                      >
+                        <Icon
+                          size={16}
+                          strokeWidth={1.7}
                           aria-hidden="true"
-                          className="text-muted-foreground"
+                          className={`shrink-0 ${active ? 'text-primary' : 'text-muted-foreground/70'}`}
                         />
+                        <span className="min-w-0 flex-1 break-words leading-snug">
+                          {view.title}
+                        </span>
+                        {active && (
+                          <ChevronRight
+                            size={13}
+                            aria-hidden="true"
+                            className="shrink-0 text-muted-foreground"
+                          />
+                        )}
+                      </button>
+                      {Storage && label && (
+                        <Popover.Root>
+                          <Popover.Trigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="size-7 shrink-0 p-0 text-muted-foreground"
+                              aria-label={`Settings scope for ${view.title}`}
+                              title={label}
+                            >
+                              <Storage size={13} aria-hidden="true" />
+                            </Button>
+                          </Popover.Trigger>
+                          <Popover.Portal>
+                            <Popover.Content
+                              side="right"
+                              align="start"
+                              sideOffset={8}
+                              className="z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-lg"
+                            >
+                              <p className="font-semibold">
+                                {view.title} · {label}
+                              </p>
+                              {view.settingsScope === 'inherited' && (
+                                <>
+                                  <p>Current scope: {settingsScopeLabels[scope]}</p>
+                                  <p className="break-words font-medium [overflow-wrap:anywhere]">
+                                    {project} · {computer}
+                                  </p>
+                                </>
+                              )}
+                              <p className="text-muted-foreground">{storageDescription(view)}</p>
+                            </Popover.Content>
+                          </Popover.Portal>
+                        </Popover.Root>
                       )}
-                    </button>
+                    </div>
                   )
                 })}
               </div>
@@ -288,19 +337,7 @@ export function SettingsNav({
             {project} · {computer}
           </p>
         )}
-        <p>
-          {activeId === 'usage'
-            ? 'Usage and account limits come from paired computers. Choose a computer on this page to filter them.'
-            : !activeView?.settingsScope
-              ? 'Browse archived tasks from paired computers and restore them when needed.'
-              : inherited
-                ? 'Choose where defaults apply at the top of the page.'
-                : mixed
-                  ? 'App preferences stay on this device. Computer settings use the computer selected on this page.'
-                  : activeView?.settingsScope === 'device'
-                    ? 'Saved automatically on this device.'
-                    : 'Each page shows the computer it uses. Changes are shared with its paired devices.'}
-        </p>
+        <p>{storageDescription(activeView)}</p>
       </aside>
     </nav>
   )
