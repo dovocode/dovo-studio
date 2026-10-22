@@ -12,7 +12,7 @@ const mocks = {
   // outside this route/composer continuity fixture.
   '../../runtime/connection/pair-computer': `export const PairComputer=()=>null;`,
   // Worktree transfer has its own browser suite; this fixture covers thread continuity.
-  '../../scm/connections/project-transfer': `export const ProjectTransferDialog=()=>null;`,
+  '../../scm/connections/project-transfer': `export const ProjectTransferDialog=({repository,sourceTask,onClose})=><section aria-label="Copy checkout"><span>{repository.id}|{sourceTask.id}</span><button onClick={onClose}>Close copy checkout</button></section>;`,
   'expo-router': `
     import {createContext,useContext,useEffect} from 'react';
     export const RouteContext=createContext({});
@@ -233,7 +233,7 @@ const built = await build({
         window.publish=(runtimeId,task,detailed=true)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],detailTaskIds:detailed?[task.id]:[],workspace:{...s[runtimeId].workspace,tasks:[task]}}}));
         window.online=setOnline;
         window.selectRuntime=setActiveId;
-        window.makeGit=runtimeId=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],workspace:{...s[runtimeId].workspace,repositories:s[runtimeId].workspace.repositories.map(repo=>({...repo,id:window.created.repositoryId,kind:undefined}))}}}));
+        window.makeGit=(runtimeId,kind)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],workspace:{...s[runtimeId].workspace,repositories:s[runtimeId].workspace.repositories.map(repo=>({...repo,id:window.created.repositoryId,kind}))}}}));
         const overviews=profiles.map(profile=>({profile,connected:online,snapshot:snapshots[profile.id]}));
         const request=(runtimeId,path,input)=>Effect.tryPromise({try:async()=>{
           if(path==='/api/tasks/waiting')return {dependencies:window.watchedItems??[]};
@@ -372,6 +372,16 @@ try {
   assert.equal(threadActions[0], 'Rename thread')
   assert.equal(threadActions[1], 'Pin thread')
   assert.ok(threadActions.includes('Settle thread'))
+  assert.equal(
+    await page.evaluate(() =>
+      window.headerActions.some(
+        (action) =>
+          action.label.startsWith('Copy project checkout') ||
+          action.label.startsWith('Copy worktree'),
+      ),
+    ),
+    false,
+  )
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
   await page.getByRole('button', { name: 'Project information', exact: true }).click()
   await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).waitFor()
@@ -460,6 +470,25 @@ try {
       files: [{ path: 'changed.ts', before: 'old', after: 'new', viewed: false }],
     })
   })
+  // The real thread header exposes checkout copying for Git and plain-folder threads.
+  await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
+  for (const kind of [undefined, 'folder']) {
+    await page.evaluate((kind) => window.makeGit('b', kind), kind)
+    const copyCheckout = page.getByRole('button', {
+      name: 'Copy project checkout to another machine',
+      exact: true,
+    })
+    await copyCheckout.waitFor()
+    await copyCheckout.click()
+    assert.equal(
+      await page.getByLabel('Copy checkout').innerText(),
+      await page.evaluate(
+        () => window.created.repositoryId + '|' + window.created.id + 'Close copy checkout',
+      ),
+    )
+    await page.getByRole('button', { name: 'Close copy checkout', exact: true }).click()
+  }
+  await page.evaluate(() => window.makeGit('b'))
   await input.fill('Keep my chat draft')
   await input.evaluate((element) => {
     window.diffInput = element

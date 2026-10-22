@@ -15,7 +15,7 @@ export function ChangeTypeIndicator({ kind }: { kind: FileKind }) {
       role="img"
       aria-label={category.label}
       title={category.label}
-      className={cn('size-2 shrink-0 rounded-full bg-current', category.color)}
+      className={cn('size-1.5 shrink-0 rounded-full bg-current', category.color)}
     />
   )
 }
@@ -65,7 +65,7 @@ export function ChangeTypeFilters({
               value === kind ? 'bg-accent border-border' : 'border-transparent',
             )}
           >
-            <span aria-hidden className="size-2 rounded-full bg-current" />
+            <span aria-hidden className="size-1.5 rounded-full bg-current" />
             {label} {counts.get(kind) ?? 0}
           </button>
         ))}

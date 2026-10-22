@@ -77,7 +77,7 @@ const request=async(path,input)=>{window.calls.push({path,input});
 if(path==='/api/scm/worktrees/read')return {root:'/worktrees',worktrees:window.missingWorktree?[]:[{path:'/worktrees/feature',repositoryId:'project',branch:'feature',taskId:'owner',threadIds:['owner','reused'],prunable:false}]};
 if(path.endsWith('/choices'))return {worktrees:[{path:'/worktrees/feature',branch:'feature',dirty:true}]};
 if(path.endsWith('/targets'))return [{id:'machine-b',name:'Desktop'}];
-if(path.endsWith('/inspect'))return {files:3,bytes:1500,skippedLinks:1,ignoredFiles:[{path:'.env.local',bytes:12},{path:'private.key',bytes:7}]};
+if(path.endsWith('/inspect')){if(window.failInspect)throw new Error('Inspection failed');return {files:3,bytes:1500,skippedLinks:1,ignoredFilesTruncated:window.truncated,ignoredFiles:[{path:'.env.local',bytes:12},{path:'private.key',bytes:7}]};}
 if(path.endsWith('/start')){if(window.fail)throw new Error('Destination is offline');current={...input,targetName:'Desktop',state:'copying',transport:input.ssh?'ssh':'p2p',bytes:100,totalBytes:1000,updatedAt:Date.now()};setJob(current);return current}
 if(path.endsWith('/retry')){window.setJob({state:'preparing',error:undefined});return {...current,state:'preparing'}}
 if(path.endsWith('/cancel')){window.setJob({state:'cancelled'});return {ok:true}}
@@ -105,6 +105,9 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     page.on('pageerror', (error) => errors.push(error.message))
     await page.setContent('<body style="background:#202020;color:#eee"><div id="app"></div></body>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.evaluate(() => {
+      window.failInspect = true
+    })
     await page
       .getByRole('button', {
         name: mobile ? 'Add to another computer' : 'Configure project copy',
@@ -112,6 +115,18 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       })
       .click()
     const copy = page.getByRole('button', { name: 'Copy project', exact: true })
+    await page.getByRole('alert').filter({ hasText: 'Inspection failed' }).waitFor()
+    // A file-inspection error must not hide otherwise valid destination computers.
+    assert.equal(await page.getByLabel('Destination computer').inputValue(), 'machine-b')
+    assert.equal(await copy.isDisabled(), true)
+    await page.evaluate(() => {
+      window.failInspect = false
+      window.truncated = true
+    })
+    await page
+      .getByRole('button', { name: mobile ? 'Refresh copy options' : 'Refresh', exact: true })
+      .click()
+    await page.getByText(/Only the first 10,000 ignored or private files are listed/).waitFor()
     await page.waitForFunction(() =>
       [...document.querySelectorAll('button')].some(
         (button) => button.textContent === 'Copy project' && !button.disabled,
@@ -290,11 +305,43 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         document.querySelector('[aria-label="Source checkout"]')?.value === '/worktrees/feature',
     )
     await page.getByRole('button', { name: 'Copy and create thread', exact: true }).waitFor()
+    // Project-folder threads must open the copy flow without looking up a worktree.
+    await page.evaluate(() => {
+      window.calls = []
+      window.setSource({ id: 'main-copy', repositoryId: 'project', execution: 'main' })
+    })
+    await page
+      .getByRole('dialog', mobile ? { name: 'Copy project checkout to another machine' } : {})
+      .waitFor()
+    const copyThread = page.getByRole('button', { name: 'Copy and create thread', exact: true })
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('button')].some(
+        (button) => button.textContent === 'Copy and create thread' && !button.disabled,
+      ),
+    )
+    assert.equal(await page.getByLabel('Destination computer').inputValue(), 'machine-b')
+    assert.equal(
+      await page.evaluate(() =>
+        window.calls.some((call) => call.path === '/api/scm/worktrees/read'),
+      ),
+      false,
+    )
+    await copyThread.click()
+    const mainCopy = await page.evaluate(
+      () => window.calls.find((call) => call.path.endsWith('/start')).input,
+    )
+    assert.equal(mainCopy.worktreePath, undefined)
+    assert.equal(mainCopy.targetId, 'machine-b')
+    assert.ok(mainCopy.thread)
+    await page.getByRole('button', { name: 'Cancel copy', exact: true }).click()
+    await page.getByText('Copy cancelled', { exact: true }).waitFor()
     if (!mobile) {
       await page.evaluate(() => {
+        window.calls = []
         window.savedSsh = 'ssh://shared-user@shared-host:2222'
         window.setSource({ id: 'main-thread', repositoryId: 'project', execution: 'main' })
       })
+      await page.waitForFunction(() => window.calls.some((call) => call.path.endsWith('/inspect')))
       await page
         .getByRole('dialog')
         .getByText('Copy project checkout to another machine', { exact: true })
@@ -320,6 +367,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       assert.equal(input.worktreePath, undefined)
       assert.equal(input.ssh.sshHost, 'shared-host')
     }
+    assert.deepEqual(errors, [])
     await page.close()
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'} project copy: P2P, SSH validation, private files, progress, cancellation, saved retry and offline/capability checks pass.`,

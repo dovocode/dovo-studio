@@ -104,7 +104,7 @@ export function ProjectTransferSettings({
         if (!runtime.snapshot?.projectWorktreeTransfersSupported)
           throw new Error('Update this computer to copy worktrees to another computer.')
         if (sourceTask.existingWorktreePath) sourcePath = sourceTask.existingWorktreePath
-        else {
+        else if (sourceTask.execution === 'worktree' && sourceTask.checkoutBranch) {
           const list = await runtime.call('/api/scm/worktrees/read', {}, worktreeListSchema)
           const source = list.worktrees.find(
             (item) =>
@@ -129,8 +129,13 @@ export function ProjectTransferSettings({
         { sessionId: 'project-transfer', peers },
         Schema.Struct({ ok: Schema.Boolean }),
       )
-      const [machines, files, choices] = await Promise.all([
-        runtime.read('/api/scm/project-transfer/targets', {}, projectTransferTargetsSchema),
+      const [, files, choices] = await Promise.all([
+        runtime
+          .read('/api/scm/project-transfer/targets', {}, projectTransferTargetsSchema)
+          .then((machines) => {
+            setTargets(machines)
+            if (!machines.some((machine) => machine.id === targetId)) choose(machines[0]?.id ?? '')
+          }),
         runtime.read(
           '/api/scm/project-transfer/inspect',
           { repositoryId: repository.id, worktreePath: sourcePath || undefined },
@@ -145,12 +150,10 @@ export function ProjectTransferSettings({
           : Promise.resolve({ worktrees: [] }),
       ])
       setWorktrees(choices.worktrees)
-      setTargets(machines)
       setInspection(files)
       setIgnored((previous) =>
         previous.filter((path) => files.ignoredFiles.some((file) => file.path === path)),
       )
-      if (!machines.some((machine) => machine.id === targetId)) choose(machines[0]?.id ?? '')
     })
   useEffect(() => {
     if (!initialLoad.current) return
@@ -457,6 +460,12 @@ export function ProjectTransferSettings({
                   {inspection.skippedLinks} symbolic links will be skipped.
                 </Text>
               )}
+              {inspection.ignoredFilesTruncated && (
+                <Text style={styles.muted}>
+                  Only the first 10,000 ignored or private files are listed. Unselected files stay
+                  on this computer.
+                </Text>
+              )}
               {!!inspection.ignoredFiles.length && (
                 <Action
                   secondary
@@ -548,7 +557,13 @@ export function ProjectTransferDialog({
 }) {
   return (
     <Sheet
-      title={sourceTask ? 'Copy worktree to another machine' : 'Add to another machine'}
+      title={
+        sourceTask
+          ? sourceTask.execution === 'worktree'
+            ? 'Copy worktree to another machine'
+            : 'Copy project checkout to another machine'
+          : 'Add to another machine'
+      }
       onClose={onClose}
     >
       <ProjectTransferSettings repository={repository} sourceTask={sourceTask} initiallyOpen />

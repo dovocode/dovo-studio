@@ -186,6 +186,34 @@ it('copies the selected worktree with its index and dirty files, creating one de
   expect(await receipt.json()).toMatchObject({ taskId: task?.id, repositoryId: copied.id })
   expect(target.services.store.get().tasks).toHaveLength(1)
 })
+it('copies source files when ignored files exceed the optional selection limit', async () => {
+  const { source, path, input, result } = await setup(true)
+  await writeFile(join(path, '.gitignore'), 'local-cache/\n.expo/\n')
+  await mkdir(join(path, 'local-cache'))
+  await mkdir(join(path, '.expo'))
+  await writeFile(join(path, '.expo', 'generated'), 'Generated output')
+  for (let offset = 0; offset < 10001; offset += 100) {
+    await Promise.all(
+      Array.from({ length: Math.min(100, 10001 - offset) }, (_, index) =>
+        writeFile(join(path, 'local-cache', `${offset + index}.txt`), 'Optional local file'),
+      ),
+    )
+  }
+  const response = await source.post('inspect', { repositoryId: input.repositoryId })
+  expect(response.status).toBe(200)
+  const inspection = decode(projectTransferInspectionSchema, await response.json())
+  expect(inspection.ignoredFilesTruncated).toBe(true)
+  expect(inspection.ignoredFiles).toHaveLength(10000)
+  expect(inspection.ignoredFiles.some((file) => file.path.startsWith('.expo/'))).toBe(false)
+  const selected = inspection.ignoredFiles[0]!.path
+  input.ignoredFiles = [selected]
+  expect((await source.post('start', input)).status).toBe(200)
+  const copied = await result()
+  expect(await readFile(join(copied.path, 'readme.txt'), 'utf8')).toBe('Source project')
+  expect(await readFile(join(copied.path, selected), 'utf8')).toBe('Optional local file')
+  expect(await readdir(join(copied.path, 'local-cache'))).toHaveLength(1)
+  expect(await readdir(join(path, 'local-cache'))).toHaveLength(10001)
+})
 it('rejects a worktree path outside the selected project', async () => {
   const { root, source, repository, path, input } = await setup(true)
   const other = join(root, 'other')

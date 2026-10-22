@@ -130,8 +130,13 @@ export function ProjectTransferSettings({
         { sessionId: 'project-transfer', peers },
         Schema.Struct({ ok: Schema.Boolean }),
       )
-      const [machines, files, choices] = await Promise.all([
-        store.request('/api/scm/project-transfer/targets', {}, projectTransferTargetsSchema),
+      const [, files, choices] = await Promise.all([
+        store
+          .request('/api/scm/project-transfer/targets', {}, projectTransferTargetsSchema)
+          .then((machines) => {
+            setTargets(machines)
+            if (!machines.some((machine) => machine.id === targetId)) choose(machines[0]?.id ?? '')
+          }),
         store.request(
           '/api/scm/project-transfer/inspect',
           { repositoryId: repository.id, worktreePath: sourcePath || undefined },
@@ -146,12 +151,10 @@ export function ProjectTransferSettings({
           : Promise.resolve({ worktrees: [] }),
       ])
       setWorktrees(choices.worktrees)
-      setTargets(machines)
       setInspection(files)
       setIgnored((previous) =>
         previous.filter((path) => files.ignoredFiles.some((file) => file.path === path)),
       )
-      if (!machines.some((machine) => machine.id === targetId)) choose(machines[0]?.id ?? '')
     })
   useEffect(() => {
     if (!initialLoad.current) return
@@ -454,6 +457,12 @@ export function ProjectTransferSettings({
                 {!!inspection.skippedLinks && (
                   <p className="text-muted-foreground">
                     {inspection.skippedLinks} symbolic links will be skipped.
+                  </p>
+                )}
+                {inspection.ignoredFilesTruncated && (
+                  <p className="text-muted-foreground">
+                    Only the first 10,000 ignored or private files are listed. Unselected files stay
+                    on this computer.
                   </p>
                 )}
                 {!!inspection.ignoredFiles.length && (

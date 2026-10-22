@@ -404,6 +404,7 @@ function TaskDetailContent({
     if (handoff.error) Alert.alert('Could not move the task', handoff.error)
   }, [handoff.error])
   const inWorktree = task.execution === 'worktree'
+  const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const moveActions: HeaderAction[] =
     !snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.kind &&
     !canChangeTaskCheckout(task) &&
@@ -441,12 +442,12 @@ function TaskDetailContent({
         ]
       : []
   const transferActions: HeaderAction[] =
-    inWorktree &&
-    (task.checkoutBranch || task.existingWorktreePath) &&
-    !snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.kind
+    repository && repository.kind !== 'scratch'
       ? [
           {
-            label: 'Copy worktree to another machine',
+            label: inWorktree
+              ? 'Copy worktree to another machine'
+              : 'Copy project checkout to another machine',
             group: 'Project',
             icon: 'copy',
             overflow: true,
@@ -472,7 +473,6 @@ function TaskDetailContent({
   const needsInput =
     snapshot?.questions.some((q) => q.taskId === task.id) ||
     snapshot?.approvals.some((a) => a.taskId === task.id)
-  const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const latestTurn = task.turns?.at(-1)
   const runtimeHost = runtimeComputerName({
     profile,

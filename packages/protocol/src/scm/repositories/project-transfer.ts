@@ -37,6 +37,7 @@ export const projectTransferInspectionSchema = mutableStruct({
   bytes: integer,
   skippedLinks: integer,
   ignoredFiles: mutableArray(mutableStruct({ path: text(4096), bytes: integer })),
+  ignoredFilesTruncated: Schema.optional(Schema.Boolean),
 })
 export const projectTransferSchema = mutableStruct({
   id: Schema.String,

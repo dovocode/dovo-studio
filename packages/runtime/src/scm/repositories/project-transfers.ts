@@ -168,6 +168,7 @@ export class ProjectTransfers {
       files: source.files.length,
       bytes: source.files.reduce((sum, file) => sum + file.bytes, 0),
       ignoredFiles: source.ignoredFiles.map(({ path, bytes }) => ({ path, bytes })),
+      ignoredFilesTruncated: source.ignoredFilesTruncated,
       skippedLinks: source.skippedLinks,
     }
   }

@@ -35,6 +35,12 @@ const generated = new Set([
   'venv',
   '__pycache__',
   'coverage',
+  '.expo',
+  '.gradle',
+  'Pods',
+  'dist-electron',
+  '.output',
+  'storybook-static',
 ])
 const privateFile = (path: string) =>
   /(?:^|\/)(?:\.env(?:\..*)?|\.envrc|\.dev\.vars|.*\.(?:pem|key|p12|pfx))$/.test(path)
@@ -117,9 +123,14 @@ export async function inspectTransfer(
   const files: { path: string; bytes: number; mode: number }[] = [],
     ignoredFiles: { path: string; bytes: number; mode: number }[] = []
   let skippedLinks = 0
+  let ignoredFilesTruncated = false
   const git = !repo.kind || (await s.git.isRepository(root))
   const add = async (path: string, ignored = false) => {
     signal?.throwIfAborted()
+    if (ignored && ignoredFiles.length >= 10000) {
+      ignoredFilesTruncated = true
+      return
+    }
     const info = await regular(root, path)
     if (info) (ignored ? ignoredFiles : files).push(info)
     else {
@@ -164,12 +175,22 @@ export async function inspectTransfer(
     const visitIgnored = async (path: string) => {
       signal?.throwIfAborted()
       if (path.split('/').some((part) => generated.has(part))) return
+      if (ignoredFiles.length >= 10000) {
+        ignoredFilesTruncated = true
+        return
+      }
       const entry = await lstat(join(root, path))
       if (entry.isDirectory()) {
-        for (const name of await readdir(join(root, path))) await visitIgnored(`${path}/${name}`)
+        for (const name of await readdir(join(root, path))) {
+          await visitIgnored(`${path}/${name}`)
+          if (ignoredFilesTruncated) break
+        }
       } else await add(path, true)
     }
-    for (const path of ignored) await visitIgnored(path.replace(/\/$/, ''))
+    for (const path of ignored) {
+      await visitIgnored(path.replace(/\/$/, ''))
+      if (ignoredFilesTruncated) break
+    }
   } else {
     const walk = async (directory: string) => {
       for (const entry of await readdir(join(root, directory), { withFileTypes: true })) {
@@ -183,9 +204,7 @@ export async function inspectTransfer(
     }
     await walk('')
   }
-  if (ignoredFiles.length > 10000)
-    throw new HttpError(413, 'Too many ignored files. Remove generated files before copying.')
-  return { repo, root, git, files, ignoredFiles, skippedLinks }
+  return { repo, root, git, files, ignoredFiles, ignoredFilesTruncated, skippedLinks }
 }
 
 export async function prepareTransfer(
