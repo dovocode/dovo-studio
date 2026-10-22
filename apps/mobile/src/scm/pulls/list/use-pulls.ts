@@ -52,10 +52,7 @@ export function usePulls(repositoryId: string, state: string) {
   const available = collectionSources(overviews)
   const requested = available.find((source) => source.key === repositoryId)
   const remote = requested && pullRepositoryKey(requested.repository, requested.key)
-  const allSources = available.filter(
-    (source) =>
-      !repositoryId || (remote && pullRepositoryKey(source.repository, source.key) === remote),
-  )
+  const allSources = available.filter((source) => !repositoryId || source.key === repositoryId)
   const identified = useSourceIdentities(
     allSources,
     projectContentIdentity,
@@ -71,7 +68,7 @@ export function usePulls(repositoryId: string, state: string) {
       readers.origins.delete(remote)
     }
   }
-  // A project filter chooses the origin; replicas provide only its remote reads.
+  // A project filter pins both reads and account discovery to that source.
   if (requested && remote && !readers.owners.has(remote)) {
     readers.owners.set(remote, requested.key)
     readers.origins.set(remote, requested.key)
@@ -91,6 +88,7 @@ export function usePulls(repositoryId: string, state: string) {
       previous: readers.owners,
       previousReaderIdentities: readers.readerIdentities,
       requireSameReader: true,
+      allowHandoff: false,
       sharedPreference: identified.every((source) => !!source.serverId),
       preferredRuntimeId: activeId,
     },
@@ -442,6 +440,7 @@ export function usePulls(repositoryId: string, state: string) {
                   name: entry.repository.name,
                   connected: entry.connected,
                   readConnected: entry.reader.connected,
+                  stale: page.stale || !entry.reader.connected,
                 },
               ]
             : []

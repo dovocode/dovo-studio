@@ -101,6 +101,9 @@ try {
     .waitFor()
   assert.equal(await page.locator('[data-diff]').count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Comment on line', exact: true }).count(), 0)
+  await page
+    .getByText('3 normal files · 0 mocks · 0 tests · 1 generated', { exact: true })
+    .waitFor()
   const files = page.getByRole('combobox', { name: 'Changed file' })
   for (const path of ['generated.ts', 'vendor.ts']) {
     await files.selectOption(path)

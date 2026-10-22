@@ -211,6 +211,26 @@ it('only hands a retained view to a verified reader of the same account', () => 
   expect(assignRemoteSources([unknown], { requireSameReader: true }).selected).toEqual([unknown])
 })
 
+it('keeps an explicitly selected PR source through disconnection and discovery changes', () => {
+  const remote = 'github.com/team/app'
+  const original = { ...source('original'), readerIdentity: 'work', serverId: 'laptop' }
+  const replica = { ...source('replica'), readerIdentity: 'work', serverId: 'server' }
+  const options = {
+    previous: new Map([[remote, original.key]]),
+    previousReaderIdentities: new Map([[remote, 'work']]),
+    requireSameReader: true,
+    sharedPreference: true,
+    allowHandoff: false,
+  }
+  expect(assignRemoteSources([original, replica], options).selected).toEqual([original])
+  const offline = { ...original, connected: false }
+  expect(assignRemoteSources([replica, offline], options).selected).toEqual([offline])
+  expect(assignRemoteSources([replica], options).selected).toEqual([])
+  expect(
+    assignRemoteSources([{ ...original, readerIdentity: 'personal' }, replica], options).selected,
+  ).toEqual([])
+})
+
 it('chooses the same preferred server across clients, addresses, active runtimes and previous owners', () => {
   const candidates = [
     {
@@ -274,4 +294,20 @@ it('chooses the same preferred server across clients, addresses, active runtimes
       previousReaderIdentities: new Map([['github.com/team/app', 'work']]),
     }).selected.every((candidate) => !candidate.connected),
   ).toBe(true)
+})
+
+it('prefers the active project machine over fleet placement when automatic handoff is disabled', () => {
+  const candidates = ['a-server', 'z-selected'].map((id) => ({
+    ...source(id),
+    runtimeId: id,
+    serverId: id,
+    readerIdentity: 'work',
+  }))
+  const result = assignRemoteSources(candidates, {
+    allowHandoff: false,
+    sharedPreference: true,
+    preferredRuntimeId: 'z-selected',
+    requireSameReader: true,
+  })
+  expect(result.selected.map((item) => item.key)).toEqual(['z-selected'])
 })

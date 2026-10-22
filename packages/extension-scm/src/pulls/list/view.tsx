@@ -703,6 +703,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               ])}
               repositoryId={selectedSource.repository.id}
               number={selected.number}
+              connectionId={pullTarget?.connectionId}
               initialTab={
                 pullTarget?.tab ??
                 (detailTarget && (detailTarget.tab !== 'overview' || detailTarget.fragment)
@@ -721,6 +722,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       runtimeId: selectedSource.runtimeId,
                       repositoryId: selectedSource.repository.id,
                       number: selected.number,
+                      connectionId: pullTarget?.connectionId,
                       url: selectedNavigation ?? undefined,
                       tab,
                       fragment: detailTarget?.fragment,

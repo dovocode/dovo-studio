@@ -59,15 +59,7 @@ export function usePulls(state: string, repositoryId = '') {
   const allSources = useRepositorySources()
   const origin = allSources.find((source) => source.key === repositoryId)
   const eligible = useMemo(
-    () =>
-      allSources.filter(
-        (source) =>
-          !repositoryId ||
-          source.key === repositoryId ||
-          (origin &&
-            pullRepositoryKey(origin.repository, origin.key) ===
-              pullRepositoryKey(source.repository, source.key)),
-      ),
+    () => allSources.filter((source) => !repositoryId || source.key === repositoryId),
     [allSources, repositoryId],
   )
   const {
@@ -75,7 +67,7 @@ export function usePulls(state: string, repositoryId = '') {
     origins,
     destinations,
     unavailable,
-  } = useSourceReaders(eligible, `pulls:${repositoryId}`, undefined, true, origin)
+  } = useSourceReaders(eligible, `pulls:${repositoryId}`, undefined, true, origin, false)
   const sources: PullSource[] = useMemo(
     () =>
       readers.flatMap((reader) => {
@@ -280,7 +272,14 @@ export function usePulls(state: string, repositoryId = '') {
   const selectedPages = sources.flatMap((source) => {
     const page = stored[source.key]
     return page && page.source.scope === source.scope && lastState.current === remoteState
-      ? [{ ...page, source, reader: source.reader }]
+      ? [
+          {
+            ...page,
+            source,
+            reader: source.reader,
+            stale: page.stale || !source.reader.connected,
+          },
+        ]
       : []
   })
   const pages = [
@@ -297,7 +296,7 @@ export function usePulls(state: string, repositoryId = '') {
         source: { ...page.source, connected: false },
         reader: { ...page.reader, connected: false },
         error:
-          'The original reader is unavailable. A different or unverified account cannot take over. Choose a project source explicitly to continue.',
+          'The selected PR account is unavailable or changed. Choose a project source explicitly to continue; no other machine will take over.',
       })),
   ]
   return {

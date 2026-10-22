@@ -237,8 +237,17 @@ function usePullSection(
     enabled,
     ready: !!(state.scope === cacheKey && state.detail),
     readConnected,
-    detail: state.scope === cacheKey ? state.detail : null,
-    error: state.error,
+    detail:
+      state.scope === cacheKey && state.detail
+        ? readConnected
+          ? state.detail
+          : { ...state.detail, stale: true }
+        : null,
+    error:
+      state.error ||
+      (origin?.connected && !reader
+        ? 'The selected PR account is unavailable or changed. Choose its source explicitly; no other machine will take over.'
+        : ''),
     setError,
     busy: state.busy,
     refreshing: state.refreshing,
@@ -262,6 +271,8 @@ export function usePullDetail(
     origin,
     sources,
     JSON.stringify([repositoryId, number, connectionId]),
+    undefined,
+    false,
   )
   const target = { origin, ...selected }
   const tab = options.tab ?? 'overview'

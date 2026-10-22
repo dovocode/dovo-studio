@@ -334,7 +334,7 @@ export function PullRequestPreferences() {
       </SettingsGroup>
       <SettingsGroup
         title="Shared GitHub and Jira retrieval"
-        description="Paired computers share provider traffic. PR reads and actions stay on one computer per account. Provider credentials stay on their computer."
+        description="Paired computers share provider traffic. PRs use this machine's configured accounts unless you choose a preferred retrieval computer. Provider credentials stay on their computer."
       >
         <SettingRow label="Share retrieval with paired computers">
           <Toggle
@@ -346,7 +346,7 @@ export function PullRequestPreferences() {
         </SettingRow>
         <SettingRow
           label="Preferred retrieval computer"
-          description="PRs keep their selected computer until you change it. If it is offline, saved PRs remain visible and actions wait for reconnection."
+          description="Automatic keeps PRs on this machine. An explicitly selected computer must have the same account and repository access. If it is offline, saved PRs remain visible and actions wait for reconnection."
         >
           <Select
             value={value?.preferredRetrievalHost || 'auto'}

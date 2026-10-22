@@ -193,6 +193,7 @@ export function useSourceReaders<T extends Source>(
     source.repository ? pullRepositoryKey(source.repository, source.key) : source.key,
   enabled = true,
   origin?: T,
+  allowHandoff = true,
 ) {
   const { activeRuntimeId } = useWorkspace()
   const identityRevision = useSyncExternalStore(subscribe, () => revision)
@@ -264,6 +265,7 @@ export function useSourceReaders<T extends Source>(
       previous: previous.owners,
       previousReaderIdentities: previous.identities,
       requireSameReader: true,
+      allowHandoff,
       sharedPreference: enriched.every((source) => !!source.serverId),
       preferredRuntimeId: activeRuntimeId,
       remote,
@@ -311,7 +313,7 @@ export function useSourceReaders<T extends Source>(
       destinations,
       unavailable: new Set([...owners.keys()].filter((key) => !selectedRemotes.has(key))),
     }
-  }, [allSources, namespace, identityRevision, enabled])
+  }, [allSources, namespace, identityRevision, enabled, allowHandoff])
 }
 
 /** Reading may use a same-account alternate; cached data and all mutations keep
@@ -322,13 +324,19 @@ export function useDetailReader<T extends Source>(
   entity: string,
   remote: (source: T) => string = (source) =>
     source.repository ? pullRepositoryKey(source.repository, source.key) : source.key,
+  allowHandoff = true,
 ) {
   const group = useMemo(
-    () => (origin ? allSources.filter((source) => remote(source) === remote(origin)) : []),
-    [origin, allSources],
+    () =>
+      origin
+        ? allowHandoff
+          ? allSources.filter((source) => remote(source) === remote(origin))
+          : [origin]
+        : [],
+    [origin, allSources, allowHandoff],
   )
   const namespace = `detail:${origin?.scope ?? entity}:${entity}`
-  const selected = useSourceReaders(group, namespace, remote, !!origin, origin)
+  const selected = useSourceReaders(group, namespace, remote, !!origin, origin, allowHandoff)
   return useMemo(() => {
     if (!origin) return { reader: undefined, destination: undefined }
     const reader = selected.sources[0]

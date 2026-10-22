@@ -6,6 +6,7 @@ import {
   forgeConnectionsSchema,
   type ForgeConnection,
   runtimeComputerName,
+  pullChangesSnapshot,
 } from '@dovo/protocol'
 import { CreatePull } from '../list/create-pull'
 import { pullHeadBranch, pullStackLabel } from '@dovo/protocol'
@@ -144,6 +145,11 @@ export function PullDetail({
     acceptCurrentAccount,
     readConnected,
   } = usePullDetail(repositoryId, number, account, { tab })
+  const previousChanges = useRef<typeof detail>(null)
+  const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges.current)
+  useEffect(() => {
+    if (sections.changes.ready) previousChanges.current = detail
+  }, [detail, sections.changes.ready])
   const onPosted = () => {
     invalidate()
     invalidatePullList(readCache, repositoryId)
@@ -163,16 +169,20 @@ export function PullDetail({
     initialTab === 'changes' || tab === 'changes',
   )
   const anchored = useRef(false)
+  const routedFragment = useRef('')
   useEffect(() => {
     if (initialTab) setTab(initialTab)
     setFragment(initialFragment)
     anchored.current = false
+    routedFragment.current = ''
   }, [initialTab, initialFragment])
   const destination = detail ? pullDestination(detail, tab, fragment) : undefined
   useEffect(() => {
-    if (destination && destination.tab !== tab) setTab(destination.tab)
-    if (destination?.tab === 'changes') setChangesOpened(true)
-  }, [destination?.tab, tab])
+    if (!destination?.comment || routedFragment.current === fragment) return
+    routedFragment.current = fragment
+    if (destination.tab !== tab) setTab(destination.tab)
+    if (destination.tab === 'changes') setChangesOpened(true)
+  }, [destination?.comment, destination?.tab, fragment, tab])
   const scrollToAnchor = (node: ComponentRef<typeof View>) => {
     if (!content.current || anchored.current) return
     node.measureLayout(content.current, (_x, y) => {
@@ -198,6 +208,7 @@ export function PullDetail({
       forgePullTarget(detail.pull.url, bindings)?.url === target.url
     ) {
       anchored.current = false
+      routedFragment.current = ''
       setFragment(target.fragment)
       setTab(target.tab)
       if (target.tab === 'changes') setChangesOpened(true)
@@ -668,20 +679,25 @@ export function PullDetail({
               >
                 <PullSectionStatus label="Files" section={sections.changes} />
                 <PullSectionStatus label="Code discussion" section={sections.discussion} />
-                {changesOpened && sections.changes.ready && (
+                {!sections.changes.ready && changesDetail && (
+                  <Text style={styles.muted} accessibilityRole="text">
+                    Updating files · showing the previous revision read-only.
+                  </Text>
+                )}
+                {changesOpened && changesDetail && (
                   <PullChanges
-                    active={tab === 'changes'}
+                    active={tab === 'changes' && sections.changes.ready}
                     key={`${repositoryId}:${detail.pull.number}`}
                     repositoryId={repositoryId}
-                    detail={detail}
+                    detail={changesDetail}
                     viewportHeight={bodyHeight}
                     initialPath={destination?.path}
                     fragment={fragment}
                     onAnchor={tab === 'changes' ? scrollToAnchor : undefined}
                     onOpen={open}
-                    onAction={actionDisabled ? undefined : openAction}
+                    onAction={actionDisabled || !sections.changes.ready ? undefined : openAction}
                     onLineComment={
-                      actionDisabled
+                      actionDisabled || !sections.changes.ready
                         ? undefined
                         : (path) => {
                             lineOrigin.current = detail

@@ -290,3 +290,5 @@ export {
   type RuntimeClient,
   type RuntimeClientRequestOptions,
 } from './shared/runtime-client.js'
+
+export * from './scm/pulls/file-breakdown.js'

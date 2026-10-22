@@ -89,6 +89,35 @@ function authentication() {
     throw Error('Unexpected provider operation: ' + request.path)
   })
 }
+it('does not ask a paired server with a different account to execute default PR reads', async () => {
+  const transport = authentication()
+  transport.mockImplementation(async (request, credential) => {
+    if (request.path === 'user')
+      return JSON.stringify({
+        id: credential === 'server-provider-secret' ? 8 : 7,
+        login: 'dominic',
+      })
+    throw Error('Unexpected provider operation: ' + request.path)
+  })
+  const list = vi.spyOn(PullRequests.prototype, 'list').mockResolvedValue(page)
+  const laptop = await host('laptop', 'laptop'),
+    server = await host('server', 'server')
+  await pair(laptop, server)
+  laptop.services.preferences.save({ preferredRetrievalHost: '' })
+  const peer = vi.spyOn(server.services.pulls, 'servePeer')
+  const input = { repositoryId: 'repo', state: 'open', page: 1, refresh: true }
+  expect((await laptop.post('/api/scm/pulls/overview', input)).status).toBe(200)
+  expect(peer).not.toHaveBeenCalled()
+  expect(list).toHaveBeenCalledTimes(1)
+  laptop.services.preferences.save({ preferredRetrievalHost: server.services.runtimeId })
+  vi.spyOn(server.services.git, 'githubCredential').mockResolvedValue({
+    host: 'github.com',
+    token: 'server-provider-secret',
+  })
+  expect((await laptop.post('/api/scm/pulls/overview', input)).status).toBe(409)
+  expect(peer).toHaveBeenCalledTimes(1)
+  expect(list).toHaveBeenCalledTimes(1)
+})
 it('uses authenticated P2P for lists and actions, one owner cache across gateways, and invalidates after writes', async () => {
   authentication()
   const list = vi.spyOn(PullRequests.prototype, 'list').mockResolvedValue(page)

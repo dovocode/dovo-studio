@@ -114,6 +114,8 @@ export function assignRemoteSources<
     /** Verified identity of the previously selected reader, indexed by remote key. */
     previousReaderIdentities?: ReadonlyMap<string, string>
     requireSameReader?: boolean
+    /** Keep the selected source even while offline. Delegation is configured on its runtime. */
+    allowHandoff?: boolean
     /** All clients rank the persisted server IDs identically, independent of active runtime. */
     sharedPreference?: boolean
     preferredRuntimeId?: string | null
@@ -143,7 +145,11 @@ export function assignRemoteSources<
     const previousSource = candidates.find((candidate) => candidate.key === previous)
     const previousIdentity =
       options.previousReaderIdentities?.get(key) ?? previousSource?.readerIdentity
-    if (options.sharedPreference) {
+    if (previous && options.allowHandoff === false) {
+      owners.set(key, previous)
+      continue
+    }
+    if (options.sharedPreference && options.allowHandoff !== false) {
       const eligible = online.filter(
         (candidate) =>
           !options.requireSameReader ||

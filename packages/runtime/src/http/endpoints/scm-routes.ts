@@ -239,6 +239,11 @@ export function scmRoute(request: IncomingMessage, path: string) {
             ),
           )
         if (input.repositoryId && !repo) throw new HttpError(404, 'Repository not found')
+        if (repo && input.connectionId && input.connectionId !== repo.forge?.connectionId)
+          throw new HttpError(
+            409,
+            'This PR account does not match the project source. Choose its configured account or open the PR URL with another account.',
+          )
         return decode(
           forgeSourceIdentitySchema,
           yield* serviceResult(
@@ -421,6 +426,16 @@ export function scmRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         const repo = s.store.get().repositories.find((r) => r.id === input.repositoryId)
+        if (
+          path.startsWith('/api/scm/pulls/') &&
+          repo &&
+          input.connectionId &&
+          input.connectionId !== repo.forge?.connectionId
+        )
+          throw new HttpError(
+            409,
+            'This PR account does not match the project source. Choose its configured account or open the PR URL with another account.',
+          )
         if (!repo && forgePullTarget(input.repositoryId)) {
           const target = forgePullTarget(input.repositoryId)
           if (!target) throw new HttpError(400, 'Invalid PR target')

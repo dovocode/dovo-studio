@@ -12,6 +12,22 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 const sha = 'a'.repeat(40)
+it('rejects a mismatched explicit project account before reading provider data or identity', async () => {
+  const f = await setup()
+  for (const path of ['source/identity', 'pulls/detail', 'pulls/action']) {
+    const response = await f.call(path, {
+      repositoryId: 'repo',
+      connectionId: 'other-account',
+      number: 7,
+      section: 'overview',
+      action: 'close',
+      headSha: sha,
+    })
+    expect(response.status).toBe(409)
+  }
+  expect(f.reads).toEqual([])
+  expect(f.writes).toEqual([])
+})
 async function setup(provider: 'forgejo' | 'github' = 'forgejo') {
   const f = await fixture()
   cleanup.push(f.cleanup)

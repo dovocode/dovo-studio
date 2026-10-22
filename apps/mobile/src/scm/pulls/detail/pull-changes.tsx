@@ -6,7 +6,12 @@ import {
   useDetailDraft,
 } from '../../../runtime/state/detail-drafts'
 
-import { pullFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
+import {
+  pullFileFingerprint,
+  reviewFileState,
+  orderReviewFiles,
+  pullFileBreakdown,
+} from '@dovo/protocol'
 import { useFileReview } from '../../review/use-file-review'
 import { MobileOrganizeReview } from '../../review/organize-review'
 import { MobileFileReview } from '../../review/file-review'
@@ -141,6 +146,12 @@ export function PullChanges({
         gap: 4,
       }}
     >
+      <Text
+        accessibilityLabel="Changed file breakdown"
+        style={[styles.muted, { paddingHorizontal: 12 }]}
+      >
+        {pullFileBreakdown(detail.files, detail.pull.changedFiles)}
+      </Text>
       <View
         testID="PR file controls"
         onLayout={({ nativeEvent }) => setControlsHeight(nativeEvent.layout.height)}

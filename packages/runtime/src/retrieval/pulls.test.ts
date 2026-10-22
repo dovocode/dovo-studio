@@ -70,6 +70,7 @@ function fleet() {
     return {
       node,
       settings,
+      db,
       restart: () => {
         const restored = create()
         nodes.set(id, restored)
@@ -113,10 +114,22 @@ it('keeps all repositories, details and writes on the preferred peer and shares 
   expect(f.upstream).toHaveBeenCalledTimes(4)
   expect(local).not.toHaveBeenCalled()
 })
-it('retains its owner through outages and restarts, without running reads or writes on another host', async () => {
+it('uses the selected machine by default even when a paired server is available', async () => {
   const f = fleet()
   f.add('server', 'server')
   const laptop = f.add('laptop', 'laptop')
+  laptop.db
+    .prepare('INSERT INTO pull_owners VALUES(?,?)')
+    .run(JSON.stringify([scope.provider, scope.instance, scope.readerIdentity]), 'server')
+  const local = vi.fn<() => Promise<string>>(async () => 'local')
+  expect(await laptop.node.pull(scope, list, Schema.String, local)).toBe('local')
+  expect(await laptop.node.pull(scope, action, Schema.String, local)).toBe('local')
+  expect(f.upstream).not.toHaveBeenCalled()
+})
+it('retains an explicitly preferred owner through outages and restarts, without replaying elsewhere', async () => {
+  const f = fleet()
+  f.add('server', 'server')
+  const laptop = f.add('laptop', 'laptop', { preferredHost: 'server' })
   const local = vi.fn<() => Promise<string>>(async () => 'local')
   await laptop.node.pull(scope, list, Schema.String, local)
   f.nodes.delete('server')
@@ -135,14 +148,12 @@ it('retains its owner through outages and restarts, without running reads or wri
   f.advance(16000)
   expect(await restored.pull(scope, list, Schema.String, local)).toBe('server')
 })
-it('only moves an existing owner on an explicit preference change, including choosing this computer', async () => {
+it('returns to the selected machine when an explicit preference is cleared, including after restart', async () => {
   const f = fleet()
   f.add('server', 'server')
-  const laptop = f.add('laptop', 'laptop')
+  const laptop = f.add('laptop', 'laptop', { preferredHost: 'server' })
   const local = vi.fn<() => Promise<string>>(async () => 'local')
   await laptop.node.pull(scope, list, Schema.String, local)
-  laptop.settings.preferredHost = 'laptop'
-  expect(await laptop.node.pull(scope, list, Schema.String, local)).toBe('local')
   laptop.settings.preferredHost = ''
   f.advance(16000)
   expect(await laptop.restart().pull(scope, list, Schema.String, local)).toBe('local')

@@ -425,8 +425,9 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                 onValueChange={(enableSharedRetrieval) => save({ enableSharedRetrieval })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                PR reads and actions stay on one computer per account. If it is offline, saved PRs
-                remain visible and actions wait for reconnection. Credentials stay on their
+                PRs use this machine's configured accounts by default. A preferred retrieval
+                computer must have the same account and repository access. If it is offline, saved
+                PRs remain visible and actions wait for reconnection. Credentials stay on their
                 computer.
               </Text>
               <Choice

@@ -1,4 +1,5 @@
 import { AuthorAvatar } from '../author-avatar'
+import { pullChangesSnapshot } from '@dovo/protocol'
 import { PullSectionStatus } from './section-status'
 import { PullStack } from './stack'
 import { CreatePull } from '../list/create'
@@ -52,7 +53,7 @@ export function PullDetail(props: PullDetailProps) {
   const { activeRuntimeId } = useWorkspace()
   return (
     <PullDetailSelection
-      key={JSON.stringify([activeRuntimeId, props.repositoryId, props.number])}
+      key={JSON.stringify([activeRuntimeId, props.repositoryId, props.number, props.connectionId])}
       {...props}
     />
   )
@@ -99,6 +100,11 @@ function PullDetailContent({
     connectionId,
     { tab, discussionInOverview: true },
   )
+  const previousChanges = useRef<typeof detail>(null)
+  const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges.current)
+  useEffect(() => {
+    if (sections.changes.ready) previousChanges.current = detail
+  }, [detail, sections.changes.ready])
 
   const content = useRef<HTMLDivElement>(null)
   const scrollPositions = useRef(
@@ -666,11 +672,16 @@ function PullDetailContent({
             >
               <PullSectionStatus label="Files" section={sections.changes} />
               <PullSectionStatus label="Code discussion" section={sections.discussion} />
-              {changesOpened && sections.changes.ready && (
+              {!sections.changes.ready && changesDetail && (
+                <p role="status" className="mb-3 text-xs text-muted-foreground">
+                  Updating files · showing the previous revision read-only.
+                </p>
+              )}
+              {changesOpened && changesDetail && (
                 <PullChanges
-                  active={tab === 'changes'}
+                  active={tab === 'changes' && sections.changes.ready}
                   key={`${repositoryId}:${detail.pull.connectionId ?? ''}:${detail.pull.url}`}
-                  detail={detail}
+                  detail={changesDetail}
                   embedded={embedded}
                   initialFragment={initialFragment}
                   repositoryId={repositoryId}

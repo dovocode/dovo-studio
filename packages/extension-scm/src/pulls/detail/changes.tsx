@@ -1,4 +1,9 @@
-import { pullFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
+import {
+  pullFileFingerprint,
+  reviewFileState,
+  orderReviewFiles,
+  pullFileBreakdown,
+} from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
 import { OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -108,8 +113,13 @@ export function PullChanges({
     setSelected(path)
     cards.current.get(path)?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }
+  const anchoredFragment = useRef('')
   useEffect(() => {
-    if (!initialFragment) return
+    if (!initialFragment) {
+      anchoredFragment.current = ''
+      return
+    }
+    if (!active || anchoredFragment.current === initialFragment) return
     const comment = detail.comments.find(
       (comment) =>
         comment.kind === 'inline' &&
@@ -118,8 +128,11 @@ export function PullChanges({
     const file = files.find(
       (file) => file.path === comment?.path || file.previousPath === comment?.path,
     )
-    if (file) selectFile(file.path)
-  }, [initialFragment, detail.comments, files])
+    if (file) {
+      anchoredFragment.current = initialFragment
+      selectFile(file.path)
+    }
+  }, [initialFragment, detail.comments, files, active])
   const selectedFile = files.find((file) => file.path === selected) ?? files[0]
   if (!files.length)
     return <p className="p-4 text-xs text-muted-foreground">No changed files returned.</p>
@@ -141,6 +154,13 @@ export function PullChanges({
           {treeOpen ? 'Hide files' : 'Show files'}
         </Button>
       </div>
+      <p
+        aria-label="Changed file breakdown"
+        title="Based on file paths and generated-file attributes."
+        className="text-xs text-muted-foreground tabular-nums"
+      >
+        {pullFileBreakdown(detail.files, detail.pull.changedFiles)}
+      </p>
       <OrganizeReview review={review} onOrganized={() => setRelated(true)} />
       <div
         aria-label="Pinned file review controls"
@@ -235,7 +255,7 @@ export function PullChanges({
                       file={file}
                       draft={drafts.get(file.path)}
                       onDraft={(update) => updateDraft(file.path, update)}
-                      commentDisabled={!connected}
+                      commentDisabled={!connected || !!detail.stale || !active}
                       headSha={detail.pull.headSha}
                       expectedDestination={detail.destination ?? detail.pull.destination}
                       split={split}
@@ -246,7 +266,7 @@ export function PullChanges({
                       }
                       allowInlineRange={detail.capabilities?.inlineRange ?? true}
                       onComment={
-                        connected
+                        connected && !detail.stale && active
                           ? async (body, range, destination, baseline) => {
                               if (destination === 'github') {
                                 if (baseline.headSha !== detail.pull.headSha)

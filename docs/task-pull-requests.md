@@ -89,9 +89,24 @@ response. Checks and review details load when a PR is opened. Desktop and mobile
 one automatically; additional pages load on demand through **Load more**. Account/source
 verification remains separate from list data reads, with successful verification shared for the same
 captured credential for up to ten minutes and rechecked on explicit refresh or credential changes.
-PR clients rank persistent server IDs consistently to prefer the same reader across devices;
-verified same-account failover remains available. List caches refresh only on demand, without an
-independent server background timer. Thread-owned watches remain active on their own runtimes.
+PR views retain the selected project's machine and account while connected, offline and across
+refreshes. They never borrow another machine's account automatically. An explicit **Preferred
+retrieval computer** delegates provider operations to a paired executor with the same verified
+account and repository access; clearing it restores local execution. List caches refresh only on
+demand, without an independent server background timer. Thread-owned watches remain active on their
+own runtimes.
+
+## Reviewing changed files
+
+The Files/Changes view shows a compact count of normal files, mocks and tests, plus docs and
+generated files when present. Counts use the PR's returned file list, independently of hidden
+whitespace changes or review ordering. Common path and filename conventions separate mocks, fixtures
+and snapshots from executable tests; generated-file attributes take precedence. This is a review aid
+and does not parse source code or infer test coverage.
+
+Refreshes keep the selected file. While a new revision's files load, the previous diff remains
+visible and read-only for the same verified PR and account. Comments and viewed changes wait for the
+current revision; a different PR or account never inherits the old diff.
 
 ## Stacked pull requests
 

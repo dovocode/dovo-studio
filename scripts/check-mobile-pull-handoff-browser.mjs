@@ -34,9 +34,15 @@ const boundaries = new Map([
   ],
   [mobile + 'scm/pulls/list/create-pull', 'export const CreatePull=()=>null;'],
   [mobile + 'scm/pulls/detail/pull-comments', 'export const PullComments=()=>null;'],
-  [mobile + 'scm/pulls/detail/pull-changes', 'export const PullChanges=()=>null;'],
+  [
+    mobile + 'scm/pulls/detail/pull-changes',
+    `import {useState,useEffect} from 'react';export function PullChanges({detail,active}){const [selected,setSelected]=useState('changed.ts');useEffect(()=>{window.changesMounts=(window.changesMounts??0)+1},[]);return <section aria-label="Files probe" data-active={active}><output>{selected}</output><button onClick={()=>setSelected('second.ts')}>Select second file</button><span>{detail.stale?'read-only':'current'}</span></section>}`,
+  ],
   [mobile + 'scm/pulls/detail/line-comment', 'export const LineComment=()=>null;'],
-  [mobile + 'scm/pulls/detail/pull-tabs', 'export const PullTabs=()=>null;'],
+  [
+    mobile + 'scm/pulls/detail/pull-tabs',
+    `export const PullTabs=({items,onChange,value})=><nav>{items.map(item=><button key={item.id} aria-pressed={value===item.id} onClick={()=>onChange(item.id)}>{item.name}</button>)}</nav>;`,
+  ],
   [
     mobile + 'scm/pulls/detail/pull-status',
     'export const PullStatus=()=>null;export const Signal=()=>null;',
@@ -71,7 +77,7 @@ const data=new Map();const caches=new Map();const cache=profile=>{if(!caches.has
 const request=(profile,path,input,schema)=>Effect.tryPromise({try:async()=>{
 const id=profile.id;window.calls.push({owner:id,path,input});
 if(window.offline&&id==='origin')throw Error('Origin offline');
-if(path.endsWith('/identity')){if(id==='legacy'||(id==='origin'&&window.failOriginIdentity))throw new RuntimeRequestError({kind:'response',status:501,message:'Endpoint not found'});return decode(schema,{readerIdentity:id==='mismatch'||id==='wrong-host'||(id==='matching'&&window.changedAccount)?'other-verified-account':'github-host-account',destination:'destination-'+id})}
+if(path.endsWith('/identity')){if(id==='legacy'||(id==='origin'&&window.failOriginIdentity))throw new RuntimeRequestError({kind:'response',status:501,message:'Endpoint not found'});return decode(schema,{readerIdentity:id==='mismatch'||id==='wrong-host'||(id==='origin'&&window.changedAccount)?'other-verified-account':'github-host-account',destination:'destination-'+id})}
 if(window.dispatchRace===id&&input.expectedDestination!=='destination-'+id+'-rebound')throw Error('Destination changed');
 if(input.expectedDestination!=='destination-'+id&&!(id==='origin'&&window.failOriginIdentity))throw Error('Missing destination guard');
 if(input.repositoryId!=='repo-'+id)throw Error('Wrong repository id');
@@ -82,6 +88,7 @@ if(path.endsWith('/detail')){
  if(window.blockedSections?.includes(input.section))await new Promise(resolve=>(window.releaseSections??={})[input.section]=resolve);
  const value=detail(id);
  if(input.section==='overview'&&window.pushed)value.pull.headSha='c'.repeat(40);
+ if(window.linkedComment&&input.section==='discussion')value.comments=[{id:'linked',kind:'comment',body:'Linked feedback',url:value.pull.url+'#linked',author:'reviewer',date:''}];
  if(input.section==='changes') { value.pull.headSha=(window.pushed?'c':'a').repeat(40); value.files=[{path:'changed.ts',status:'added',additions:1,deletions:0,patch:'@@ -0,0 +1 @@\\n+new code'}]; }
  return value;
 }
@@ -93,7 +100,7 @@ function List(){const value=usePulls(window.listFilter??JSON.stringify(['origin'
 function App(){const [binding,setBinding]=useState(false);window.rebind=()=>{window.reboundOrigin=true;setBinding(true)};const [offline,setOffline]=useState(false),[matching,setMatching]=useState(true),[mounted,setMounted]=useState(true),[version,setVersion]=useState(0),[detailShown,setDetailShown]=useState(!window.initialListOnly);window.setDetailShown=setDetailShown;window.offline=offline;window.setOffline=setOffline;window.setMatching=setMatching;window.setMounted=setMounted;window.remount=()=>setVersion(value=>value+1);
 const overviews=profiles.map(profile=>({profile,snapshot:snapshot(profile.id),connected:profile.id==='origin'?!offline:profile.id==='matching'?matching:true}));
 const value={profile:profiles[0],connection:profiles[0].connection,snapshot:overviews[0].snapshot,profiles,overviews,activeId:'origin',connected:!offline,readRuntimeEffect:request,readEffect:(...args)=>request(profiles[0],...args),readCache:cache(profiles[0]),cacheForRuntime:cache,callEffect:(path,input)=>Effect.sync(()=>window.writes.push({owner:'origin',path,input}))};
-return <RuntimeContext value={value}><NavigationContext value={{focused:true}}>{mounted&&<div key={version}>{detailShown&&<><PullDetail repositoryId="repo-origin" number={7} connectionId={window.explicitConnection??'local-origin'} onBack={()=>{}}/><Observe/></>}<List/></div>}</NavigationContext></RuntimeContext>}
+return <RuntimeContext value={value}><NavigationContext value={{focused:true}}>{mounted&&<div key={version}>{detailShown&&<><PullDetail initialFragment={window.linkedComment?'#linked':''} repositoryId="repo-origin" number={7} connectionId={window.explicitConnection??'local-origin'} onBack={()=>{}}/><Observe/></>}<List/></div>}</NavigationContext></RuntimeContext>}
 createRoot(document.getElementById('app')).render(<RegistryProvider><App/></RegistryProvider>);
 `,
     },
@@ -149,277 +156,81 @@ try {
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.waitForFunction(() => window.reader?.detail && window.list?.pages[0]?.pulls.length)
-  await page.evaluate(() => {
-    window.count++
-    window.setOffline(true)
-  })
-  await page.waitForFunction(
-    () =>
-      window.reader?.detail?.pull.title.startsWith('PR from matching') &&
-      window.list?.pages[0]?.pulls[0]?.title.startsWith('PR from matching'),
-  )
-  assert.equal(
-    await page.getByRole('button', { name: 'Refresh PR', exact: true }).isEnabled(),
-    true,
-  )
-  assert.equal(
-    await page.getByRole('button', { name: 'Start task', exact: true }).isEnabled(),
-    false,
-  )
-  assert.equal(await page.getByRole('button', { name: 'Comment', exact: true }).isEnabled(), false)
-  await page
-    .getByText('Reading from another runtime · actions require the original runtime.', {
-      exact: true,
-    })
-    .waitFor()
-  assert.equal(await page.getByRole('button', { name: 'More PRs', exact: true }).isEnabled(), true)
+  const noPeerReads = async (target) =>
+    assert.deepEqual(
+      await target.evaluate(() =>
+        window.calls.filter((call) => call.owner !== 'origin' && !call.path.endsWith('/identity')),
+      ),
+      [],
+      'PR requests must stay on the selected machine, even with a same-account peer available',
+    )
+  await noPeerReads(page)
   await page.getByRole('button', { name: 'More PRs', exact: true }).click()
   await page.waitForFunction(() => window.list.pages[0]?.pulls.some((pull) => pull.number === 8))
-  assert.equal(await page.evaluate(() => window.list.pages[0].readConnected), true)
-  assert.equal(await page.evaluate(() => window.list.pages[0].runtimeId), 'origin')
   const pagination = await page.evaluate(() =>
-    window.calls.find(
-      (call) =>
-        call.path.endsWith('/overview') && call.owner === 'matching' && call.input.page === 2,
-    ),
+    window.calls.find((call) => call.owner === 'origin' && call.input.page === 2),
   )
-  assert.equal(pagination.input.repositoryId, 'repo-matching')
   assert.equal(pagination.input.expectedReaderIdentity, 'github-host-account')
-  assert.equal(pagination.input.expectedDestination, 'destination-matching')
-  const retained = await page.evaluate(() => ({
-    detail: window.reader.detail,
-    page: window.list.pages[0],
-    writes: window.cacheWrites,
-    calls: window.calls,
-  }))
-  assert.equal(retained.detail.destination, 'destination-origin')
-  assert.equal(retained.detail.pull.destination, 'destination-origin')
-  assert.equal(retained.detail.pull.connectionId, 'local-origin')
-  assert.equal(retained.page.runtimeId, 'origin')
-  assert.equal(retained.page.repositoryId, 'repo-origin')
-  assert.equal(retained.page.connected, false)
-  assert.equal(retained.page.pulls[0].destination, 'destination-origin')
-  assert.ok(retained.writes.every((write) => write.owner === 'origin'))
-  const routed = retained.calls.filter(
-    (call) => call.owner === 'matching' && !call.path.endsWith('/identity'),
-  )
-  assert.ok(routed.some((call) => call.path.endsWith('/overview')))
-  assert.ok(routed.some((call) => call.path.endsWith('/detail')))
-  for (const call of routed) {
-    assert.equal(call.input.repositoryId, 'repo-matching')
-    assert.equal(call.input.expectedReaderIdentity, 'github-host-account')
-    assert.equal(call.input.expectedDestination, 'destination-matching')
-    assert.equal(call.input.connectionId, undefined)
-  }
-  await page.evaluate(() => window.count++)
-  await page.getByRole('button', { name: 'Refresh PR', exact: true }).click()
-  await page.waitForFunction(() =>
-    document.querySelector('header').textContent.includes('PR from matching 2'),
-  )
-  await page.evaluate(() => {
-    window.setMounted(false)
-  })
+  assert.equal(pagination.input.expectedDestination, 'destination-origin')
+  await page.evaluate(() => window.setOffline(true))
+  await page.waitForFunction(() => !window.reader.readConnected && !window.list.connected)
+  assert.equal(await page.evaluate(() => window.reader.detail.stale), true)
+  assert.equal(await page.evaluate(() => window.list.pages[0].stale), true)
+  for (const name of ['Refresh PR', 'Start task', 'Comment', 'More PRs'])
+    assert.equal(await page.getByRole('button', { name, exact: true }).isEnabled(), false)
+  await page.evaluate(() => window.setMounted(false))
   await page.waitForFunction(() => !document.querySelector('header'))
   await page.evaluate(() => window.setMounted(true))
+  await page.waitForFunction(() => window.reader?.detail && window.list?.pages[0]?.pulls.length)
+  assert.equal(await page.evaluate(() => window.reader.detail.pull.title), 'PR from origin 0')
+  assert.equal(await page.evaluate(() => window.reader.detail.stale), true)
+  await noPeerReads(page)
+  await page.evaluate(() => {
+    window.count++
+    window.setOffline(false)
+  })
   await page.waitForFunction(
-    () =>
-      window.reader?.readConnected &&
-      window.reader.detail?.pull.title.startsWith('PR from matching'),
+    () => window.reader.detail?.pull.title === 'PR from origin 1' && !window.reader.detail.stale,
   )
-  assert.equal(await page.evaluate(() => window.list.pages[0].runtimeId), 'origin')
-  await page.evaluate(() => window.setMatching(false))
-  await page.waitForFunction(() => !window.reader.readConnected && !window.list.connected)
-  assert.equal(
-    await page.getByRole('button', { name: 'Refresh PR', exact: true }).isEnabled(),
-    false,
-  )
-  assert.equal(await page.getByRole('button', { name: 'Comment', exact: true }).isEnabled(), false)
-  const rejected = await page.evaluate(() =>
-    window.calls.filter(
-      (call) =>
-        ['mismatch', 'legacy', 'wrong-repository', 'wrong-host'].includes(call.owner) &&
-        !call.path.endsWith('/identity'),
-    ),
-  )
-  assert.deepEqual(rejected, [])
-  // A candidate changing account between selection and dispatch must fail before reading.
-  await page.evaluate(() => window.setMatching(true))
-  await page.waitForFunction(() => window.reader.readConnected)
-  const before = await page.evaluate(
-    () =>
-      window.calls.filter((call) => call.owner === 'matching' && call.path.endsWith('/detail'))
-        .length,
-  )
-  await page.evaluate(() => (window.changedAccount = true))
-  await page.getByRole('button', { name: 'Refresh PR', exact: true }).click()
-  await page.getByRole('alert').filter({ hasText: 'different account' }).first().waitFor()
-  assert.equal(
-    await page.evaluate(
-      () =>
-        window.calls.filter((call) => call.owner === 'matching' && call.path.endsWith('/detail'))
-          .length,
-    ),
-    before,
-  )
-  await page.evaluate(() => window.setOffline(false))
-  await page.waitForFunction(() => window.reader.detail?.pull.title.startsWith('PR from origin'))
-  assert.equal(await page.getByRole('button', { name: 'Comment', exact: true }).isEnabled(), true)
-  assert.deepEqual(await page.evaluate(() => window.writes), [])
-  // A verified list can authorize a detail first opened after the origin disconnects.
+  await noPeerReads(page)
+  // An offline list does not authorize an alternate machine for a detail opened for the first time.
   const firstOpenPage = await browser.newPage()
-  firstOpenPage.setDefaultTimeout(7000)
-  firstOpenPage.on('pageerror', (error) => errors.push(error.message))
   await firstOpenPage.setContent('<div id="app"></div>')
   await firstOpenPage.evaluate(() => (window.initialListOnly = true))
   await firstOpenPage.addScriptTag({ content: built.outputFiles[0].text })
   await firstOpenPage.waitForFunction(() => window.list?.pages[0]?.pulls.length)
-  await firstOpenPage.evaluate(() => window.setOffline(true))
-  await firstOpenPage.waitForFunction(() =>
-    window.list?.pages[0]?.pulls[0]?.title.startsWith('PR from matching'),
-  )
-  await firstOpenPage.evaluate(() => window.setDetailShown(true))
-  await firstOpenPage.waitForFunction(() =>
-    window.reader?.detail?.pull.title.startsWith('PR from matching'),
-  )
-  assert.equal(
-    await firstOpenPage.evaluate(() => window.reader.detail.destination),
-    'destination-origin',
-  )
-  assert.equal(
-    await firstOpenPage.evaluate(() => window.reader.detail.pull.connectionId),
-    'local-origin',
-  )
-  assert.equal(
-    await firstOpenPage.getByRole('button', { name: 'Refresh PR', exact: true }).isEnabled(),
-    true,
-  )
-  assert.equal(
-    await firstOpenPage.getByRole('button', { name: 'Comment', exact: true }).isEnabled(),
-    false,
-  )
-  const firstOpenReads = await firstOpenPage.evaluate(
-    () => window.calls.filter((call) => call.path.endsWith('/detail')).length,
-  )
-  await firstOpenPage.evaluate(() => window.setDetailShown(false))
-  await firstOpenPage.waitForFunction(() => !document.querySelector('header'))
   await firstOpenPage.evaluate(() => {
-    window.explicitConnection = 'another-origin-account'
+    window.setOffline(true)
     window.setDetailShown(true)
   })
-  await firstOpenPage.getByRole('button', { name: 'Refresh details', exact: true }).waitFor()
-  assert.equal(
-    await firstOpenPage.getByRole('button', { name: 'Refresh details', exact: true }).isEnabled(),
-    false,
+  await firstOpenPage.waitForFunction(() => window.reader && !window.reader.readConnected)
+  assert.equal(await firstOpenPage.evaluate(() => window.reader.detail), null)
+  await noPeerReads(firstOpenPage)
+  await firstOpenPage.close()
+  // Changing credentials on the selected machine cannot silently switch an open PR to a new account.
+  const reads = await page.evaluate(
+    () => window.calls.filter((call) => call.path.endsWith('/detail')).length,
   )
-  assert.equal(await firstOpenPage.evaluate(() => window.reader.readConnected), false)
-  assert.equal(
-    await firstOpenPage.evaluate(
-      () => window.calls.filter((call) => call.path.endsWith('/detail')).length,
-    ),
-    firstOpenReads,
-  )
-  const legacyPage = await browser.newPage()
-  legacyPage.setDefaultTimeout(7000)
-  legacyPage.on('pageerror', (error) => errors.push(error.message))
-  await legacyPage.setContent('<div id="app"></div>')
-  await legacyPage.evaluate(() => (window.initialLegacy = true))
-  await legacyPage.addScriptTag({ content: built.outputFiles[0].text })
-  await legacyPage.waitForFunction(
-    () => window.reader?.detail && window.list?.pages[0]?.pulls.length,
-  )
-  await legacyPage.evaluate(() => window.setOffline(true))
-  await legacyPage.waitForFunction(() => !window.reader.readConnected && !window.list.connected)
-  assert.equal(
-    await legacyPage.getByRole('button', { name: 'Refresh PR', exact: true }).isEnabled(),
-    false,
-  )
-  assert.deepEqual(
-    await legacyPage.evaluate(() =>
-      window.calls.filter((call) => call.owner !== 'origin' && !call.path.endsWith('/identity')),
-    ),
-    [],
-  )
-  assert.equal(
-    await legacyPage.evaluate(() => window.reader.detail.pull.destination),
-    'destination-origin',
-  )
-  const rebound = await browser.newPage()
-  rebound.setDefaultTimeout(7000)
-  rebound.on('pageerror', (error) => errors.push(error.message))
-  await rebound.setContent('<div id="app"></div>')
-  await rebound.evaluate(() => {
-    window.initialListOnly = true
-    window.listFilter = ''
+  await page.evaluate(() => {
+    window.changedAccount = true
+    window.reader.refresh()
   })
-  await rebound.addScriptTag({ content: built.outputFiles[0].text })
-  await rebound.waitForFunction(() =>
-    window.list?.pages.some((p) => p.runtimeId === 'origin' && p.pulls.length),
-  )
-  await rebound.evaluate(() => window.setOffline(true))
-  await rebound.waitForFunction(() =>
-    window.list.pages.some(
-      (p) => p.runtimeId === 'origin' && p.pulls[0]?.title.startsWith('PR from matching'),
-    ),
-  )
-  await rebound.evaluate(() => {
-    window.cacheWrites = []
-    window.rebind()
-  })
-  await rebound.waitForFunction(
-    () =>
-      window.list.pages.some((p) => p.runtimeId === 'matching' && p.pulls.length) &&
-      !window.list.busy,
-  )
-  const reboundPages = await rebound.evaluate(() => window.list.pages)
+  await page.waitForFunction(() => !!window.reader.error && !window.reader.busy)
   assert.equal(
-    new Set(reboundPages.map((p) => p.sourceKey)).size,
-    reboundPages.length,
-    'No origin key owns two remotes after rebind',
+    await page.evaluate(() => window.calls.filter((call) => call.path.endsWith('/detail')).length),
+    reads,
   )
-  const originalRemote = reboundPages.find((p) => p.runtimeId === 'matching')
-  assert.equal(originalRemote.repositoryId, 'repo-matching')
-  assert.equal(originalRemote.pulls[0].destination, 'destination-matching')
-  assert.equal(
-    originalRemote.sourceKey,
-    JSON.stringify(['matching', 'repo-matching']),
-    'Row navigation uses the current matching source',
-  )
-  assert.equal(
-    reboundPages.some((p) => p.runtimeId === 'origin' && p.pulls.length),
-    false,
-    'Rebound origin must not display the old remote under its new cache/navigation identity',
-  )
-  assert.equal(
-    await rebound.evaluate(() =>
-      window.cacheWrites.some((w) => w.owner === 'origin' && w.value.pulls?.length),
-    ),
-    false,
-  )
-  await rebound.close()
-  const race = await browser.newPage()
-  race.setDefaultTimeout(7000)
-  race.on('pageerror', (error) => errors.push(error.message))
-  await race.setContent('<div id="app"></div>')
-  await race.evaluate(() => (window.initialListOnly = true))
-  await race.addScriptTag({ content: built.outputFiles[0].text })
-  await race.waitForFunction(() => window.list?.pages[0]?.pulls.length && !window.list.busy)
-  await race.evaluate(() => window.setOffline(true))
-  await race.waitForFunction(
-    () => window.list.pages[0]?.pulls[0]?.title.startsWith('PR from matching') && !window.list.busy,
-  )
-  await race.evaluate(() => {
-    window.cacheWrites = []
-    window.dispatchRace = 'matching'
-  })
-  await race.getByRole('button', { name: 'More PRs', exact: true }).click()
-  await race.waitForFunction(() => window.list.pages[0]?.error?.includes('Destination changed'))
-  assert.equal(await race.evaluate(() => window.list.pages[0].pulls.length), 1)
-  assert.deepEqual(
-    await race.evaluate(() => window.cacheWrites),
-    [],
-    'Rejected pagination cannot publish data into the origin cache',
-  )
-  await race.close()
+  await noPeerReads(page)
+  // A legacy runtime is readable locally, but cannot authorize an alternate.
+  const legacy = await browser.newPage()
+  await legacy.setContent('<div id="app"></div>')
+  await legacy.evaluate(() => (window.initialLegacy = true))
+  await legacy.addScriptTag({ content: built.outputFiles[0].text })
+  await legacy.waitForFunction(() => window.reader?.detail && window.list?.pages[0]?.pulls.length)
+  await legacy.evaluate(() => window.setOffline(true))
+  await legacy.waitForFunction(() => !window.reader.readConnected)
+  await noPeerReads(legacy)
+  await legacy.close()
   const sectionsPage = await browser.newPage()
   sectionsPage.on('pageerror', (error) => errors.push(error.message))
   await sectionsPage.setContent('<div id="app"></div>')
@@ -489,33 +300,77 @@ try {
   await cachePage.waitForFunction(
     () => window.list?.pages[0]?.pulls[0]?.number === 608 && !window.list.busy,
   )
-  await cachePage.evaluate(() => window.setOffline(true))
-  await cachePage.waitForFunction(
-    () => window.list?.pages[0]?.pulls[0]?.number === 614 && !window.list.busy,
-  )
   await cachePage.evaluate(() => {
-    window.setOffline(false)
-    window.setMatching(false)
+    window.simulatedPages.origin = { number: 614, cachedAt: '2026-10-20T11:45:00Z', stale: false }
+    window.list.refresh()
   })
   await cachePage.waitForFunction(
-    () =>
-      window.list?.pages[0]?.connected &&
-      !window.list.busy &&
-      window.list.pages[0].error?.includes('newer saved PR data'),
+    () => window.list.pages[0]?.pulls[0]?.number === 614 && !window.list.busy,
+  )
+  await cachePage.evaluate(() => {
+    window.simulatedPages.origin = { number: 608, cachedAt: '2026-10-19T08:39:00Z', stale: true }
+    window.list.refresh()
+  })
+  await cachePage.waitForFunction(
+    () => !window.list.busy && window.list.pages[0].error?.includes('newer saved PR data'),
   )
   assert.equal(await cachePage.evaluate(() => window.list.pages[0].pulls[0].number), 614)
-  assert.equal(
-    await cachePage.evaluate(() => window.list.pages[0].cachedAt),
-    '2026-10-20T11:45:00Z',
-  )
+  await noPeerReads(cachePage)
   const lastSaved = await cachePage.evaluate(
     () => window.cacheWrites.filter((write) => JSON.parse(write.key)[0] === 'pulls').at(-1).value,
   )
   assert.equal(lastSaved.pulls[0].number, 614)
   await cachePage.close()
+  // The mobile detail keeps its mounted file view and selection while a pushed diff loads.
+  const layout = await browser.newPage()
+  layout.on('pageerror', (error) => errors.push(error.message))
+  await layout.setContent('<div id="app"></div>')
+  await layout.addScriptTag({ content: built.outputFiles[0].text })
+  await layout.getByRole('button', { name: 'Files', exact: true }).click()
+  await layout.getByRole('button', { name: 'Select second file', exact: true }).click()
+  await layout.evaluate(() => {
+    window.blockedSections = ['changes']
+    window.pushed = true
+  })
+  await layout.getByRole('button', { name: 'Refresh PR', exact: true }).click()
+  await layout
+    .getByText('Updating files · showing the previous revision read-only.', { exact: true })
+    .waitFor()
+  const files = layout.getByRole('region', { name: 'Files probe' })
+  assert.equal(await files.getAttribute('data-active'), 'false')
+  await files.getByText('second.ts', { exact: true }).waitFor()
+  assert.equal(await layout.evaluate(() => window.changesMounts), 1)
+  await layout.evaluate(() => {
+    window.blockedSections = []
+    window.releaseSections.changes()
+  })
+  await layout
+    .getByText('Updating files · showing the previous revision read-only.', { exact: true })
+    .waitFor({ state: 'hidden' })
+  await files.getByText('second.ts', { exact: true }).waitFor()
+  assert.equal(await layout.evaluate(() => window.changesMounts), 1)
+  await layout.close()
+  // A linked comment must not force Activity back open after the user selects Overview.
+  const linked = await browser.newPage()
+  linked.on('pageerror', (error) => errors.push(error.message))
+  await linked.setContent('<div id="app"></div>')
+  await linked.evaluate(() => (window.linkedComment = true))
+  await linked.addScriptTag({ content: built.outputFiles[0].text })
+  await linked.getByRole('button', { name: 'Activity', exact: true }).click()
+  await linked.getByRole('button', { name: 'Overview', exact: true }).click()
+  await linked.getByRole('button', { name: 'Refresh PR', exact: true }).click()
+  await linked.getByText('PR from origin 0', { exact: true }).last().waitFor()
+  // The visible overview metadata proves that the refreshed linked comment did not redirect the tab.
+  assert.equal(
+    await linked
+      .getByRole('button', { name: 'Overview', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  )
+  await linked.close()
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile PR handoff passed: filtered list and actual detail UI use same-repository verified reader; refresh enabled with writes disabled; original cache/destinations/connection retained; remote rebind invalidates origin association; rejected pagination cannot publish caches; remount and reconnect; mismatched, unverified, other-repository/host and changed-account readers rejected. Native presentation and runtime transport mocked; no provider writes.',
+    'Mobile PR selected-source checks passed: same-account peers never take over; offline/remount/reconnect, account replacement, legacy reads, guarded pagination, newer cache retention, independent sections, pushed-diff selection and linked-tab stability. Native presentation and transport mocked; no provider writes.',
   )
 } finally {
   await browser.close()

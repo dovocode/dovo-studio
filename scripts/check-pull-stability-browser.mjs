@@ -32,7 +32,7 @@ const built = await build({
 const pull={number:7,title:'Improve pull request reviews',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'dominic',updatedAt:'2026-10-04',head:'feature',base:'main',labels:['feature'],checksState:'SUCCESS',reviewDecision:'REVIEW_REQUIRED',additions:24,deletions:8,commentCount:3,viewerIsAuthor:true,viewerIsAssigned:true,viewerIsInvolved:true,viewerReviewRequested:true};
 window.pulls=[pull,{...pull,number:8,url:'https://github.com/team/project/pull/8',title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,url:'https://github.com/team/project/pull/9',title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
 window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project'}};
-window.detail={pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
+window.detail={destination:'verified-project-account',pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
 window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};const cachedReads=window.savedReads=new Map();window.store.readCache={
 read:async key=>cachedReads.get(key)??null,
 write:async(key,value)=>cachedReads.set(key,{value:structuredClone(value),cachedAt:'2026-10-14'}),
@@ -52,7 +52,7 @@ window.store.request = async (path, input, ...rest) => {
   if (path.endsWith('/set')) { const file = files.find(file => file.path === input.path); if (!file || file.fingerprint !== input.fingerprint || file.version !== input.version) throw new Error('File changed'); Object.assign(file,{viewed:input.viewed,version:file.version+1}); }
   return {files:files.map(file=>({...file})), groups:[{label:'src',basis:'folder',paths:files.map(file=>file.path)}]};
 };
-window.showProbe();`,
+window.showAnchored=()=>rootView.render(<main className="studio dark flex flex-col" style={{height:'100vh'}}><PullDetail key="anchored" repositoryId="repo" number={7} initialTab="changes" initialFragment="#anchor" onBack={()=>{}} onChanged={()=>{}}/></main>);window.showProbe();`,
   },
   bundle: true,
   write: false,
@@ -565,6 +565,134 @@ try {
   )
   console.log(JSON.stringify({ prFiles: 120, peakMountedDiffs: peakDiffs }))
   await bounded(content)
+  // A linked comment is an initial destination, not a command to jump back on every poll.
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.evaluate(() => {
+    window.savedReads.clear()
+    window.detail.files = Array.from({ length: 12 }, (_, i) => ({
+      path: 'src/review-' + i + '.ts',
+      status: 'modified',
+      additions: 1,
+      deletions: 0,
+      patch: '@@ -1 +1,2 @@\n old\n+new',
+    }))
+    delete window.detail.refreshError
+    window.detail.warnings = []
+    window.detail.comments = [
+      {
+        id: 'anchor',
+        kind: 'inline',
+        path: 'src/review-5.ts',
+        body: 'Linked feedback',
+        author: 'reviewer',
+        url: window.detail.pull.url + '#anchor',
+        date: '2026-10-04',
+      },
+    ]
+    window.showAnchored()
+  })
+  await page
+    .getByLabel('Changed file breakdown', { exact: true })
+    .filter({ hasText: '12 normal files · 0 mocks · 0 tests' })
+    .waitFor()
+  const reviewControls = page.getByLabel('Pinned file review controls', { exact: true })
+  await reviewControls.getByText('src/review-5.ts', { exact: true }).waitFor()
+  await detail
+    .getByRole('navigation', { name: 'Changed files', exact: true })
+    .getByRole('button')
+    .filter({ hasText: 'review-11.ts' })
+    .click()
+  await reviewControls.getByText('src/review-11.ts', { exact: true }).waitFor()
+  await detail
+    .locator('article')
+    .filter({ hasText: 'src/review-11.ts' })
+    .locator('diffs-container')
+    .waitFor()
+  await page.waitForFunction(() => {
+    const node = document.querySelector('[aria-label="Pull request content"]')
+    const h = node.scrollHeight
+    const last = window.lastExtent
+    window.lastExtent = h
+    return last === h
+  })
+  await page.evaluate(() => {
+    window.scrollCalls = 0
+    HTMLElement.prototype.scrollIntoView = function (...args) {
+      window.scrollCalls++
+      return Element.prototype.scrollIntoView.apply(this, args)
+    }
+    window.beforeRefresh = window.detailReads
+  })
+  await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
+  await page.waitForFunction(
+    () =>
+      window.detailReads > window.beforeRefresh &&
+      !document.querySelector('button[aria-label="Refresh details"]').disabled,
+  )
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(
+    await page.evaluate(() => window.scrollCalls),
+    0,
+    'Refreshing an anchored PR scrolled back to its original linked file',
+  )
+  await reviewControls.getByText('src/review-11.ts', { exact: true }).waitFor()
+  // A push must retain the mounted file list and its position while the new diff is pending.
+  await page.evaluate(() => {
+    window.priorFile = [...document.querySelectorAll('article')].find(
+      (element) => element.querySelector('span')?.textContent.trim() === 'src/review-11.ts',
+    )
+    window.priorScroll = document.querySelector('[aria-label="Pull request content"]').scrollTop
+    window.blockedSections = ['changes']
+    window.detail.pull.headSha = 'd'.repeat(40)
+  })
+  await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
+  await page
+    .getByText('Updating files · showing the previous revision read-only.', { exact: true })
+    .waitFor()
+  await reviewControls.getByText('src/review-11.ts', { exact: true }).waitFor()
+  assert.ok(
+    await page.evaluate(() => !!window.priorFile),
+    'The selected file was not mounted before the push',
+  )
+  assert.equal(
+    await page.evaluate(
+      () =>
+        [...document.querySelectorAll('article')].find(
+          (element) => element.querySelector('span')?.textContent.trim() === 'src/review-11.ts',
+        ) === window.priorFile,
+    ),
+    true,
+  )
+  assert.equal(
+    await reviewControls.getByRole('checkbox', { name: 'File viewed' }).isDisabled(),
+    true,
+  )
+  assert.ok(
+    Math.abs(
+      (await content.evaluate((element) => element.scrollTop)) -
+        (await page.evaluate(() => window.priorScroll)),
+    ) < 120,
+    'A push collapsed the review scroll position: ' +
+      JSON.stringify(
+        await content.evaluate((element) => ({
+          now: element.scrollTop,
+          height: element.scrollHeight,
+          prior: window.priorScroll,
+        })),
+      ),
+  )
+  await page.evaluate(() => window.releaseSection('changes'))
+  await page
+    .getByText('Updating files · showing the previous revision read-only.', { exact: true })
+    .waitFor({ state: 'hidden' })
+  await reviewControls.getByText('src/review-11.ts', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.scrollCalls),
+    0,
+    'A push replayed the original comment anchor',
+  )
   if (process.env.DOVO_SCREENSHOT_DIR) {
     const directory = process.env.DOVO_SCREENSHOT_DIR
     await mkdir(directory, { recursive: true })

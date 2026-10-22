@@ -7,7 +7,7 @@ import {
 import { useEffect, useRef } from 'react'
 import { Effect } from 'effect'
 import { startPolling, runClientEffect } from '@dovo/client-runtime'
-import { usePullReader } from './use-pull-reader'
+import { useSourceReader } from '../../source-reader'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { pullDetailSchema, type PullDetailSection, type PullDetail as Detail } from '@dovo/protocol'
@@ -15,7 +15,7 @@ import { AppState } from 'react-native'
 import { useNavigation } from '../../../shell/navigation'
 
 function usePullSection(
-  reader: ReturnType<typeof usePullReader>,
+  reader: ReturnType<typeof useSourceReader>,
   repositoryId: string,
   number: number,
   connectionId: string | undefined,
@@ -25,7 +25,8 @@ function usePullSection(
 ) {
   const { focused } = useNavigation()
   const { connected, snapshot, readCache } = useRuntime()
-  const { readDetail: request, readConnected, routed, acceptCurrentAccount: acceptReader } = reader
+  const { readEffect: request, acceptCurrentAccount: acceptReader } = reader
+  const readConnected = connected
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === repositoryId)
   const cacheKey = JSON.stringify([
     'pulls',
@@ -96,19 +97,11 @@ function usePullSection(
       const refresh = force
       force = false
       setState((current) => ({ ...current, busy: true, refreshing: refresh }))
-      yield* request(refresh, section, revision).pipe(
-        Effect.map((value) =>
-          routed
-            ? {
-                ...value,
-                pull: {
-                  ...value.pull,
-                  connectionId:
-                    value.pull.connectionId ?? stateRef.current.detail?.pull.connectionId,
-                },
-              }
-            : value,
-        ),
+      yield* request(
+        '/api/scm/pulls/detail',
+        { repositoryId, number, connectionId, refresh, section, revision },
+        pullDetailSchema,
+      ).pipe(
         Effect.map((value) => retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value)),
         Effect.tap((value) =>
           Effect.sync(() => {
@@ -190,7 +183,12 @@ function usePullSection(
     enabled,
     ready: !!(state.scope === cacheKey && state.detail),
     readConnected,
-    detail: state.scope === cacheKey ? state.detail : null,
+    detail:
+      state.scope === cacheKey && state.detail
+        ? readConnected
+          ? state.detail
+          : { ...state.detail, stale: true }
+        : null,
     error: state.error,
     setError,
     busy: state.busy,
@@ -230,8 +228,7 @@ export function usePullDetail(
   connectionId?: string,
   options: { tab?: string; discussionInOverview?: boolean } = {},
 ) {
-  const { focused } = useNavigation()
-  const reader = usePullReader(repositoryId, number, connectionId, focused)
+  const reader = useSourceReader(repositoryId, undefined, connectionId)
   const tab = options.tab ?? 'overview'
   const overview = usePullSection(reader, repositoryId, number, connectionId, 'overview', true)
   const revision = overview.detail ? pullRevision(overview.detail) : undefined

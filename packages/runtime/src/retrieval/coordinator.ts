@@ -50,7 +50,7 @@ const transport: RetrievalTransport = (peer, path, input, schema, timeout) =>
   )
 
 /** One deterministic preferred executor per connected fleet. Remote execution is always local-only,
- * so partial peer views cannot create forwarding loops. PR operations retain one persistent owner. */
+ * so partial peer views cannot create forwarding loops. PR delegation requires an explicit preference. */
 export class SharedRetrieval implements RetrievalHook {
   onInvalidate?: () => void
   private subscriptions = new Map<string, { request: RetrievalRequest; until: number }>()
@@ -188,8 +188,8 @@ export class SharedRetrieval implements RetrievalHook {
     }
     return this.hosts.value
   }
-  /** PR reads and writes share an owner for the whole account, not an executor per request.
-   * An outage must not create another cache or execute an ambiguous write somewhere else. */
+  /** PRs use this computer's configured account unless an executor is explicitly chosen.
+   * A paired computer's availability says nothing about its provider permissions. */
   async pull<T, I>(
     scope: PullPeerScope,
     operation: PullOperation,
@@ -199,30 +199,9 @@ export class SharedRetrieval implements RetrievalHook {
     if (retrievalContext()?.local) return load()
     if (this.local().enabled === false) return retrievalLocal(load)
     const self = this.local()
-    const key = JSON.stringify([scope.provider, scope.instance, scope.readerIdentity])
-    const saved = decode(
-      Schema.UndefinedOr(Schema.String),
-      this.db.prepare('SELECT host FROM pull_owners WHERE scope=?').pluck().get(key),
-    )
-    let owner = self.preferredHost || saved
-    if (!owner) {
-      const hosts = [
-        self,
-        ...(await this.candidates()).filter(
-          (host) => host.enabled !== false && host.pullCommunication,
-        ),
-      ]
-      owner = hosts.sort(
-        (a, b) => hostPriority(a.role) - hostPriority(b.role) || a.id.localeCompare(b.id),
-      )[0]!.id
-      // Another concurrent request may have selected an owner while discovery was running.
-      this.db.prepare('INSERT OR IGNORE INTO pull_owners VALUES(?,?)').run(key, owner)
-      owner = decode(
-        Schema.String,
-        this.db.prepare('SELECT host FROM pull_owners WHERE scope=?').pluck().get(key),
-      )
-    } else if (owner !== saved)
-      this.db.prepare('INSERT OR REPLACE INTO pull_owners VALUES(?,?)').run(key, owner)
+    // Ignore legacy automatic assignments: they could pin PRs to a machine without
+    // the selected account or a token with access to this repository.
+    const owner = self.preferredHost || self.id
     if (owner === self.id) return this.servePull(scope, operation, schema, load)
     let peer = this.peers().find(
       (candidate) => (candidate.connection.runtimeId ?? candidate.id) === owner,

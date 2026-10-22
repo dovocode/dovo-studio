@@ -227,6 +227,23 @@ export function combinePullSections(
   }
 }
 
+/** Keep the review layout while a new revision loads, without mixing accounts or revisions. */
+export function pullChangesSnapshot(
+  current: PullDetail | null,
+  ready: boolean,
+  previous: PullDetail | null,
+): PullDetail | null {
+  if (ready) return current
+  if (
+    !current?.destination ||
+    previous?.destination !== current.destination ||
+    previous.pull.url !== current.pull.url ||
+    previous.pull.connectionId !== current.pull.connectionId
+  )
+    return null
+  return { ...previous, stale: true }
+}
+
 export const pullTaskInputSchema = refine(
   mutableStruct({
     ...forgeDestinationGuardFields,

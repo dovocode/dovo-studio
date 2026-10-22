@@ -33,7 +33,7 @@ export function PullRouteScreen() {
     >
       {number ? (
         <PullDetail
-          key={JSON.stringify([params.runtimeId, params.repositoryId, number])}
+          key={JSON.stringify([params.runtimeId, params.repositoryId, number, params.connectionId])}
           repositoryId={params.repositoryId}
           number={number}
           connectionId={params.connectionId}

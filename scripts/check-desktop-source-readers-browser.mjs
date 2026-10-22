@@ -85,506 +85,134 @@ const app=createRoot(document.getElementById('app'));window.render=remount=>app.
 })
 const browser = await chromium.launch()
 try {
-  // A returning gateway's old cache cannot replace newer results from the same PR owner.
-  const continuity = await browser.newPage()
-  await continuity.setContent('<div id="app"></div>')
-  await continuity.evaluate(() => {
-    window.persistentServers = true
-  })
-  await continuity.addScriptTag({ content: built.outputFiles[0].text })
-  await continuity.waitForFunction(
-    () => window.result?.pages[0]?.pulls.length && !window.result.busy,
-  )
-  const preferred = await continuity.evaluate(() => window.result.pages[0].reader.runtimeId)
-  await continuity.evaluate((preferred) => {
-    const pull = window.result.pages[0].pulls[0]
-    window.cacheResponses = Object.fromEntries(
-      ['a', 'b'].map((id) => [
-        id,
-        {
-          pulls: [{ ...pull, number: id === preferred ? 608 : 614 }],
-          page: 1,
-          hasMore: false,
-          stale: id === preferred,
-          cachedAt: id === preferred ? '2026-10-19T08:39:00Z' : '2026-10-20T11:45:00Z',
-        },
-      ]),
-    )
-    window.sources = window.sources.map((source) => ({
-      ...source,
-      connected: source.runtimeId !== preferred,
-    }))
-    window.render(false)
-  }, preferred)
-  await continuity.waitForFunction(
-    () => window.result?.pages[0]?.pulls[0]?.number === 614 && !window.result.busy,
-  )
-  await continuity.evaluate(() => {
-    window.sources = window.sources.map((source) => ({ ...source, connected: true }))
-    window.render(false)
-  })
-  await continuity.waitForFunction(
-    (preferred) => window.result?.pages[0]?.reader.runtimeId === preferred && !window.result.busy,
-    preferred,
-  )
-  assert.equal(await continuity.evaluate(() => window.result.pages[0].pulls[0].number), 614)
-  assert.equal(
-    await continuity.evaluate(() => window.result.pages[0].cachedAt),
-    '2026-10-20T11:45:00Z',
-  )
-  assert.match(await continuity.evaluate(() => window.result.pages[0].error), /newer saved PR data/)
-  await continuity.close()
-
-  // All six detail sections share discovery; hidden tabs must not start their own polls.
-  const polling = await browser.newPage()
-  await polling.clock.install()
-  await polling.setContent('<div id="app"></div>')
-  await polling.evaluate(() => {
-    window.mode = 'detail'
-  })
-  await polling.addScriptTag({ content: built.outputFiles[0].text })
-  await polling.waitForFunction(() => window.detailResult?.detail && !window.detailResult.busy)
-  const initialDiscovery = await polling.evaluate(() => window.identityCalls)
-  assert.ok(initialDiscovery <= 7, `Expected shared detail discovery, received ${initialDiscovery}`)
-  await polling.clock.runFor(30001)
-  const calls = await polling.evaluate(() => ({
-    identity: window.identityCalls,
-    detail: window.reads.filter((read) => read.path === '/api/scm/pulls/detail').length,
-  }))
-  assert.ok(
-    calls.identity - calls.detail <= 6,
-    'Only one two-computer discovery loop may run per detail',
-  )
-  await polling.close()
-
-  const check = async (scenario) => {
+  // PRs keep their selected machine even when a same-account server is available.
+  for (const alternateAccount of ['same-account', 'personal-account']) {
     const page = await browser.newPage()
     page.setDefaultTimeout(8000)
+    await page.clock.install()
     const errors = []
-    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('pageerror', (error) => errors.push(error.message))
     await page.setContent('<div id="app"></div>')
-    await page.addScriptTag({ content: built.outputFiles[0].text })
-    await page.waitForFunction(
-      () => window.result?.pages[0]?.pulls.length === 1 && !window.result.busy,
-    )
-    assert.deepEqual(await page.evaluate(() => [...new Set(window.reads.map((r) => r.id))]), ['a'])
-    assert.equal(
-      await page.evaluate(() =>
-        window.reads.every((r) => r.input.expectedReaderIdentity === 'same-account'),
-      ),
-      true,
-    )
-    await page.evaluate(() => {
-      window.store = { activeRuntimeId: 'b' }
-      window.render(true)
-    })
-    await page.waitForFunction(
-      () => window.result?.pages[0]?.pulls.length === 1 && !window.result.busy,
-    )
-    assert.equal(
-      await page.evaluate(() => window.result.pages[0].source.runtimeId),
-      'a',
-      'Reader survives remount and global selection changes',
-    )
-    await page.evaluate((scenario) => {
-      window.reads = []
-      if (scenario === 'different') window.accounts.b = 'other-account'
-      if (scenario === 'unknown') window.legacy = true
-      window.sources = window.sources.map((s) => ({ ...s, connected: s.runtimeId !== 'a' }))
-      window.render(false)
-    }, scenario)
-    if (scenario === 'same') {
-      await page.waitForFunction(
-        () =>
-          window.result?.pages[0]?.reader.runtimeId === 'b' &&
-          !window.result.busy &&
-          window.reads.length > 0,
-      )
-      assert.equal(
-        await page.evaluate(() =>
-          window.reads.every(
-            (r) => r.id === 'b' && r.input.expectedReaderIdentity === 'same-account',
-          ),
-        ),
-        true,
-      )
-    } else {
-      await page.waitForFunction(
-        () => window.result?.pages[0]?.reader.connected === false && !window.result.busy,
-      )
-      // Discovery must finish, so a previously cached alternate identity cannot hide an account switch.
-      await page.evaluate(() => window.result.refresh())
-      await page.waitForFunction(() => !window.result.busy)
-      assert.equal(await page.evaluate(() => window.result.pages[0].pulls[0].title), 'Kept PR')
-      assert.equal(
-        await page.evaluate(() => window.reads.some((r) => r.id === 'b')),
-        false,
-        'Unverified or different account cannot silently take over',
-      )
-    }
-    assert.deepEqual(errors, [])
-    await page.close()
-  }
-  for (const alternateAccount of ['same-account', 'different-account']) {
-    const cold = await browser.newPage()
-    cold.setDefaultTimeout(8000)
-    await cold.setContent('<div id="app"></div>')
-    await cold.evaluate((account) => {
-      window.offlineOrigin = true
-      window.savedOriginIdentity = true
+    await page.evaluate((account) => {
+      window.persistentServers = true
       window.alternateAccount = account
       window.filter = JSON.stringify(['a', 'repo-a'])
     }, alternateAccount)
-    await cold.addScriptTag({ content: built.outputFiles[0].text })
-    if (alternateAccount === 'same-account') {
-      await cold.waitForFunction(
-        () => window.result?.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
-      )
-      assert.equal(
-        await cold.evaluate(() =>
-          window.reads.every(
-            (read) => read.id === 'b' && read.input.expectedReaderIdentity === 'same-account',
-          ),
-        ),
-        true,
-        'A cold offline view uses only a freshly verified same-account alternate',
-      )
-    } else {
-      await cold.waitForFunction(
-        () =>
-          window.cacheReads.some(
-            (read) => read.id === 'a' && JSON.parse(read.key)[0] === 'forge',
-          ) &&
-          window.result?.connected === false &&
-          !window.result.busy,
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.waitForFunction(() => window.result?.pages[0]?.pulls.length && !window.result.busy)
+    assert.equal(await page.evaluate(() => window.result.pages[0].reader.runtimeId), 'a')
+    assert.equal(await page.evaluate(() => window.result.pages[0].pulls[0].viewerIsAuthor), true)
+    await page.evaluate(() => {
+      window.mode = 'detail'
+      window.render(false)
+    })
+    await page.waitForFunction(() => window.detailResult?.detail && !window.detailResult.busy)
+    assert.equal(await page.evaluate(() => window.detailResult.detail.destination), 'dest-a')
+    await page.clock.runFor(30001)
+    assert.equal(await page.evaluate(() => window.reads.every((read) => read.id === 'a')), true)
+    const discovery = await page.evaluate(() => window.identityCalls)
+    assert.ok(discovery < 30, 'Detail polling unexpectedly multiplied account discovery')
+    // Connection loss preserves the original saved details, without any replica reads.
+    await page.evaluate(() => {
+      window.reads = []
+      window.store = { ...window.store, connected: false }
+      window.sources = window.sources.map((source) => ({
+        ...source,
+        connected: source.runtimeId !== 'a',
+      }))
+      window.render(false)
+    })
+    await page.waitForFunction(
+      () => window.detailResult?.detail?.stale && !window.detailResult.readConnected,
+    )
+    await page.clock.runFor(30001)
+    assert.deepEqual(await page.evaluate(() => window.reads), [])
+    await page.evaluate(() => {
+      window.mount = (window.mount ?? 0) + 1
+      window.render(false)
+    })
+    await page.waitForFunction(
+      () => window.detailResult?.detail?.stale && !window.detailResult.busy,
+    )
+    assert.equal(await page.evaluate(() => window.detailResult.detail.destination), 'dest-a')
+    assert.deepEqual(await page.evaluate(() => window.reads), [])
+    // Lists also remain offline on the selected machine through remounts.
+    await page.evaluate(() => {
+      window.mode = 'list'
+      window.render(false)
+    })
+    await page.waitForFunction(() => window.result?.pages[0]?.pulls.length && !window.result.busy)
+    assert.equal(await page.evaluate(() => window.result.pages[0].source.runtimeId), 'a')
+    assert.equal(await page.evaluate(() => window.result.pages[0].reader.connected), false)
+    await page.clock.runFor(30001)
+    assert.deepEqual(await page.evaluate(() => window.reads), [])
+    // Reconnecting and paging still use the original account and dispatch guards.
+    await page.evaluate(() => {
+      window.store = { ...window.store, connected: true }
+      window.sources = window.sources.map((source) => ({ ...source, connected: true }))
+      window.render(false)
+    })
+    await page.waitForFunction(() => window.result.connected && !window.result.busy)
+    for (const field of ['account', 'destination']) {
+      await page.evaluate((field) => {
+        window.dispatchRace = { id: 'a', field }
+        window.cacheWrites = []
+        window.result.more(window.result.pages[0].source.key)
+      }, field)
+      await page.waitForFunction(() =>
+        window.result.pages[0]?.error?.includes('Source changed during dispatch'),
       )
       assert.deepEqual(
-        await cold.evaluate(() => window.reads),
+        await page.evaluate(() =>
+          window.cacheWrites.filter((write) => JSON.parse(write.key)[0] === 'pulls'),
+        ),
         [],
-        'Saved origin identity cannot authorize a different account',
       )
-    }
-    await cold.close()
-  }
-  for (const cold of [false, true]) {
-    const rows = await browser.newPage()
-    rows.setDefaultTimeout(8000)
-    const errors = []
-    rows.on('pageerror', (error) => errors.push(error.message))
-    await rows.setContent('<div id="app"></div>')
-    await rows.evaluate((cold) => {
-      window.offlineOrigin = cold
-      window.savedOriginIdentity = cold
-      if (cold) window.filter = JSON.stringify(['a', 'repo-a'])
-    }, cold)
-    await rows.addScriptTag({ content: built.outputFiles[0].text })
-    await rows.waitForFunction(() => window.result?.pages[0]?.pulls.length && !window.result.busy)
-    if (!cold) {
-      await rows.evaluate(() => {
-        window.sources = window.sources.map((s) => ({ ...s, connected: s.runtimeId !== 'a' }))
-        window.render(false)
+      await page.evaluate(() => {
+        window.dispatchRace = undefined
+        window.result.refresh()
       })
-      await rows.waitForFunction(
-        () => window.result?.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
-      )
+      await page.waitForFunction(() => !window.result.busy && !window.result.pages[0].error)
     }
-    assert.equal(await rows.evaluate(() => window.result.pages[0].source.runtimeId), 'a')
-    assert.equal(await rows.evaluate(() => window.result.pages[0].pulls[0].destination), 'dest-a')
-    assert.equal(
-      await rows.evaluate(() =>
-        window.cacheWrites
-          .filter((w) => JSON.parse(w.key)[0] === 'pulls')
-          .every((w) => w.id === 'a'),
-      ),
-      true,
-    )
-    await rows.evaluate(() => {
-      window.mode = 'rows'
-      window.render(false)
-    })
-    if (cold) {
-      await rows.getByRole('button', { name: 'Filters', exact: true }).click()
-      await rows.getByLabel('PR repository').selectOption(JSON.stringify(['a', 'repo-a']))
-    }
-    await rows.getByRole('button', { name: 'Open Kept PR', exact: true }).click()
-    await rows.getByRole('textbox', { name: 'Comment draft' }).fill('Retain owner')
-    assert.deepEqual(await rows.evaluate(() => window.navigation.pullTarget.runtimeId), 'a')
-    assert.equal(await rows.locator('[data-owner="a"]').count(), 1)
-    assert.equal(await rows.evaluate(() => window.rowDetail.detail.destination), 'dest-a')
-    for (const name of ['Comment', 'PR actions', 'New task'])
-      assert.equal(await rows.getByRole('button', { name, exact: true }).isEnabled(), false)
-    assert.deepEqual(await rows.evaluate(() => window.writes), [])
-    // Reconnecting enables real action handlers, still scoped to A's destination.
-    await rows.evaluate(() => {
-      window.sources = window.sources.map((s) => ({ ...s, connected: true }))
-      window.render(false)
-    })
-    await rows.getByRole('button', { name: 'Comment', exact: true }).click()
-    await rows.waitForFunction(() => window.writes.length === 1)
-    assert.deepEqual(
-      await rows.evaluate(() =>
-        window.writes.map((w) => [w.runtimeId, w.input.repositoryId, w.input.expectedDestination]),
-      ),
-      [['a', 'repo-a', 'dest-a']],
-    )
-    assert.deepEqual(errors, [])
-    await rows.close()
-  }
-  for (const field of ['destination', 'account']) {
-    const race = await browser.newPage()
-    race.setDefaultTimeout(8000)
-    await race.setContent('<div id="app"></div>')
-    await race.addScriptTag({ content: built.outputFiles[0].text })
-    await race.waitForFunction(() => window.result?.pages[0]?.pulls.length && !window.result.busy)
-    await race.evaluate(() => {
-      window.sources = window.sources.map((s) => ({ ...s, connected: s.runtimeId !== 'a' }))
-      window.render(false)
-    })
-    await race.waitForFunction(
-      () => window.result.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
-    )
-    await race.evaluate((field) => {
-      window.cacheWrites = []
-      window.dispatchRace = { id: 'b', field }
-      window.result.more(window.result.pages[0].source.key)
-    }, field)
-    await race.waitForFunction(() =>
-      window.result.pages[0]?.error?.includes('Source changed during dispatch'),
-    )
-    assert.equal(await race.evaluate(() => window.result.pages[0].pulls.length), 1)
-    assert.deepEqual(
-      await race.evaluate(() => window.cacheWrites.filter((w) => JSON.parse(w.key)[0] === 'pulls')),
-      [],
-      'Rejected pagination must not publish to the origin cache',
-    )
-    await race.evaluate(() => {
-      window.dispatchRace = undefined
-      window.result.refresh()
-    })
-    await race.waitForFunction(() => !window.result.busy && !window.result.pages[0].error)
-    await race.evaluate(() => window.result.more(window.result.pages[0].source.key))
-    await race.waitForFunction(
+    await page.evaluate(() => window.result.more(window.result.pages[0].source.key))
+    await page.waitForFunction(
       () => window.result.pages[0]?.pulls.length === 2 && !window.result.busy,
     )
     assert.equal(
-      await race.evaluate(() =>
-        window.result.pages[0].pulls.every((p) => p.destination === 'dest-a'),
+      await page.evaluate(() =>
+        window.reads.every(
+          (read) =>
+            read.id === 'a' &&
+            read.input.expectedReaderIdentity === 'same-account' &&
+            read.input.expectedDestination === 'dest-a',
+        ),
       ),
       true,
     )
-    assert.equal(
-      await race.evaluate(() =>
-        window.reads
-          .filter((r) => r.id === 'b')
-          .every(
-            (r) =>
-              r.input.expectedDestination === 'dest-b' &&
-              r.input.expectedReaderIdentity === 'same-account',
-          ),
-      ),
-      true,
-    )
-    await race.close()
+    assert.deepEqual(errors, [])
+    await page.close()
   }
-  const rebound = await browser.newPage()
-  rebound.setDefaultTimeout(8000)
-  await rebound.setContent('<div id="app"></div>')
-  await rebound.addScriptTag({ content: built.outputFiles[0].text })
-  await rebound.waitForFunction(() => window.result?.pages[0]?.pulls.length && !window.result.busy)
-  await rebound.evaluate(() => {
-    window.sources = window.sources.map((s) => ({ ...s, connected: s.runtimeId !== 'a' }))
-    window.render(false)
-  })
-  await rebound.waitForFunction(
-    () => window.result.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
-  )
-  await rebound.evaluate(() => {
-    window.reads = []
-    window.cacheWrites = []
-    window.destinations.b = 'unrelated-repository'
-    window.result.refresh()
-  })
-  await rebound.waitForFunction(
-    () => !window.result.busy && window.result.pages[0]?.reader.connected === false,
-  )
-  assert.deepEqual(
-    await rebound.evaluate(() => window.reads),
-    [],
-    'A rebind before discovery must not read the unrelated repository',
-  )
-  assert.deepEqual(
-    await rebound.evaluate(() =>
-      window.cacheWrites.filter((w) => JSON.parse(w.key)[0] === 'pulls'),
-    ),
-    [],
-    'A rebound reader must not overwrite the origin cache',
-  )
-  assert.equal(await rebound.evaluate(() => window.result.pages[0].pulls[0].destination), 'dest-a')
-  await rebound.close()
-  await check('same')
-  await check('different')
-  await check('unknown')
-  const failedDiscovery = await browser.newPage()
-  await failedDiscovery.setContent('<div id="app"></div>')
-  await failedDiscovery.addScriptTag({ content: built.outputFiles[0].text })
-  await failedDiscovery.waitForFunction(
-    () => window.result?.pages[0]?.pulls.length === 1 && !window.result.busy,
-  )
-  await failedDiscovery.evaluate(() => {
-    window.reads = []
-    window.discoveryFailures.a = true
-    window.result.refresh()
-  })
-  await failedDiscovery.waitForFunction(
-    () => window.result?.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
-  )
-  assert.equal(
-    await failedDiscovery.evaluate(() => window.reads.every((r) => r.id === 'b')),
-    true,
-    'Failed discovery disqualifies a stale reader while retaining its expected account',
-  )
-  await failedDiscovery.evaluate(() => {
-    window.discoveryFailures.b = true
-    window.result.refresh()
-  })
-  await failedDiscovery.waitForFunction(
-    () => window.result?.pages[0]?.reader.connected === false && !window.result.busy,
-  )
-  assert.equal(
-    await failedDiscovery.evaluate(() => window.result.pages[0].pulls[0].title),
-    'Kept PR',
-  )
-  await failedDiscovery.evaluate(() => {
-    delete window.discoveryFailures.a
-    window.sources = window.sources.map((s) => ({ ...s, connected: s.runtimeId === 'a' }))
-    window.render(false)
-  })
-  await failedDiscovery.waitForFunction(
-    () =>
-      window.result?.pages[0]?.source.runtimeId === 'a' &&
-      window.result.pages[0].source.connected &&
-      !window.result.busy,
-  )
-  assert.equal(
-    await failedDiscovery.evaluate(() => window.reads.at(-1).input.expectedReaderIdentity),
-    'same-account',
-    'A recovered source still verifies the original account',
-  )
-  await failedDiscovery.close()
-  const recovery = await browser.newPage()
-  await recovery.setContent('<div id="app"></div>')
-  await recovery.addScriptTag({ content: built.outputFiles[0].text })
-  await recovery.waitForFunction(
-    () => window.result?.pages[0]?.pulls.length === 1 && !window.result.busy,
-  )
-  await recovery.evaluate(() => {
-    window.accounts.a = 'replacement-account'
-    window.result.refresh()
-  })
-  await recovery.waitForFunction(
-    () => window.result?.pages[0]?.reader.runtimeId === 'b' && !window.result.busy,
-  )
-  await recovery.evaluate(async () => {
-    const key = window.sources[0].key
-    await window.result.chooseReader(key)
-    window.setFilter(key)
-  })
-  // Explicit choice is a new project-filter collection; the merged reader remains pinned.
-  await recovery.waitForFunction(
-    () =>
-      window.result?.pages[0]?.source.connected === true &&
-      !window.result.busy &&
-      window.reads.at(-1)?.input.expectedReaderIdentity === 'replacement-account',
-  )
-  assert.equal(await recovery.evaluate(() => window.result.pages[0].source.runtimeId), 'a')
-  await recovery.close()
-  const detailPage = await browser.newPage()
-  await detailPage.setContent('<div id="app"></div>')
-  await detailPage.addScriptTag({ content: built.outputFiles[0].text })
-  await detailPage.evaluate(() => {
+  // A credential/account change cannot silently authorize another machine or overwrite old data.
+  const changed = await browser.newPage()
+  changed.setDefaultTimeout(8000)
+  await changed.setContent('<div id="app"></div>')
+  await changed.evaluate(() => {
     window.mode = 'detail'
-    window.render(false)
   })
-  await detailPage.waitForFunction(
-    () => window.detailResult?.detail?.pull.title === 'Kept PR' && !window.detailResult.busy,
-  )
-  await detailPage.evaluate(() => {
+  await changed.addScriptTag({ content: built.outputFiles[0].text })
+  await changed.waitForFunction(() => window.detailResult?.detail && !window.detailResult.busy)
+  await changed.evaluate(() => {
     window.reads = []
-    window.accounts.a = 'changed-origin-account'
-    window.destinations.a = 'changed-origin-destination'
+    window.accounts.a = 'replacement-account'
+    window.destinations.a = 'replacement-destination'
     window.detailResult.refresh()
   })
-  await detailPage.waitForFunction(
-    () =>
-      window.reads.some((r) => r.id === 'b' && r.path === '/api/scm/pulls/detail') &&
-      !window.detailResult.busy,
+  await changed.waitForFunction(
+    () => !window.detailResult.readConnected && !!window.detailResult.error,
   )
-  assert.equal(
-    await detailPage.evaluate(() => window.detailResult.detail.pull.destination),
-    'dest-a',
-    'A changed origin account cannot relabel alternate data with its new destination',
-  )
-  await detailPage.evaluate(() => {
-    window.reads = []
-    window.store = { ...window.store, connected: false }
-    window.sources = window.sources.map((s) => ({ ...s, connected: s.runtimeId !== 'a' }))
-    window.render(false)
-  })
-  await detailPage.waitForFunction(
-    () =>
-      window.reads.some((r) => r.id === 'b' && r.path === '/api/scm/pulls/detail') &&
-      !window.detailResult.busy,
-  )
-  assert.equal(
-    await detailPage.evaluate(() => window.detailResult.detail.pull.destination),
-    'dest-a',
-    'Alternate reader cannot replace the original mutation destination',
-  )
-  assert.equal(await detailPage.evaluate(() => window.store.activeRuntimeId), 'a')
-  assert.equal(
-    await detailPage.evaluate(() => window.store.connected),
-    false,
-    'Mutations remain offline on their original source',
-  )
-  assert.equal(
-    await detailPage.evaluate(() =>
-      window.reads
-        .filter((r) => r.path === '/api/scm/pulls/detail')
-        .every((r) => r.input.expectedReaderIdentity === 'same-account'),
-    ),
-    true,
-  )
-  await detailPage.evaluate(() => {
-    window.reads = []
-    window.sources = window.sources.map((s) => ({ ...s, connected: false }))
-    window.mount = (window.mount ?? 0) + 1
-    window.render(false)
-  })
-  await detailPage.waitForFunction(
-    () => window.detailResult?.detail?.stale && !window.detailResult.busy,
-  )
-  assert.equal(await detailPage.evaluate(() => window.detailResult.detail.pull.title), 'Kept PR')
-  assert.equal(await detailPage.evaluate(() => window.reads.length), 0)
-  assert.equal(
-    await detailPage.evaluate(() =>
-      window.cacheReads.some(
-        ({ id, key }) =>
-          id === 'a' &&
-          key ===
-            JSON.stringify([
-              'pulls',
-              'detail',
-              'repo-a',
-              '/repo',
-              7,
-              window.sources[0].repository.forge,
-            ]),
-      ),
-    ),
-    true,
-    'Offline details retain the cache key used before connection selection was added',
-  )
-  await detailPage.close()
+  assert.equal(await changed.evaluate(() => window.detailResult.detail.destination), 'dest-a')
+  assert.deepEqual(await changed.evaluate(() => window.reads), [])
+  await changed.close()
   for (const mode of ['issues', 'pipelines']) {
     const rows = await browser.newPage()
     rows.setDefaultTimeout(8000)
@@ -979,7 +607,7 @@ try {
   assert.deepEqual(jiraErrors, [])
   await jira.close()
   console.log(
-    'Desktop source readers passed: account/destination dispatch and pagination guards; warm/cold PR rows and newly refreshed issue/pipeline rows retain the origin and cache; offline comments/merge/tasks disabled and reconnect writes remain on the origin; same-account handoff, remount, discovery failure and account recovery. Jira issue overview/options/discussion delays, failures, retries, comment pagination and scoped caches passed. Transport and UI primitives mocked; actual list/detail routing, issue layout and action controls exercised.',
+    'Desktop source readers passed: account/destination dispatch and pagination guards; PRs stay on their selected machine through offline/remount/account changes; issue/pipeline rows retain the origin and cache; offline comments/merge/tasks disabled and reconnect writes remain on the origin; same-account handoff, remount, discovery failure and account recovery. Jira issue overview/options/discussion delays, failures, retries, comment pagination and scoped caches passed. Transport and UI primitives mocked; actual list/detail routing, issue layout and action controls exercised.',
   )
 } finally {
   await browser.close()

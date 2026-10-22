@@ -1,5 +1,10 @@
 import { expect, it } from 'vite-plus/test'
-import { combinePullSections, matchingPullSection, type PullDetail } from './pulls'
+import {
+  combinePullSections,
+  matchingPullSection,
+  pullChangesSnapshot,
+  type PullDetail,
+} from './pulls'
 import { pullDetailChecks, pullDetailReviews } from './pull-presentation'
 
 const overview: PullDetail = {
@@ -63,4 +68,24 @@ it.each([
   }
   expect(matchingPullSection(overview, value)).toBe(false)
   expect(combinePullSections(overview, { changes: value })?.files).toEqual([])
+})
+
+it('keeps the previous diff as a read-only display while a matching PR loads its new revision', () => {
+  const previous = {
+    ...overview,
+    files: [{ path: 'a.ts', status: 'added', additions: 1, deletions: 0 }],
+  }
+  const pushed = { ...overview, pull: { ...overview.pull, headSha: 'c'.repeat(40) } }
+  expect(pullChangesSnapshot(pushed, false, previous)).toEqual({ ...previous, stale: true })
+  expect(pullChangesSnapshot(pushed, true, previous)).toBe(pushed)
+  expect(pushed.files).toEqual([])
+})
+it.each([
+  null,
+  { ...overview, destination: undefined },
+  { ...overview, destination: 'another-account' },
+  { ...overview, pull: { ...overview.pull, connectionId: 'another-account' } },
+  { ...overview, pull: { ...overview.pull, url: 'https://github.com/other/project/pull/7' } },
+])('never retains a diff across missing or different PR/account identities', (current) => {
+  expect(pullChangesSnapshot(current, false, overview)).toBeNull()
 })

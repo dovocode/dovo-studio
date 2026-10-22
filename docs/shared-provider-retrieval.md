@@ -12,14 +12,14 @@ runtime restarts, so servers can continue doing the work. Forgetting a computer 
 registration when Studio reconnects; revoking the registering device removes its contribution.
 
 Computer preferences include **Share retrieval with paired computers** and **Preferred retrieval
-computer**. Automatic preference uses the existing computer icon/type: Server and Cloud first,
-Desktop (including CPU/Terminal) second, Laptop last. Equal-priority hosts use runtime ID order, so
-connected machines converge on the same executor. When no computer type is saved, Dovo server
-deployments default to Server, Linux portable chassis default to Laptop, and other hosts default to
-Desktop. A saved type always overrides detection. A preferred computer overrides that order. An
-unavailable, disabled, older or differently authenticated host falls back to the next eligible host
-and eventually local execution for non-PR retrieval. PR communication follows the persistent owner
-policy below.
+computer**. For non-PR retrieval, automatic preference uses the existing computer icon/type: Server
+and Cloud first, Desktop (including CPU/Terminal) second, Laptop last. Equal-priority hosts use
+runtime ID order, so connected machines converge on the same executor. When no computer type is
+saved, Dovo server deployments default to Server, Linux portable chassis default to Laptop, and
+other hosts default to Desktop. A saved type always overrides detection. A preferred computer
+overrides that order. An unavailable, disabled, older or differently authenticated host falls back
+to the next eligible host and eventually local execution for non-PR retrieval. PR communication uses
+the explicit machine policy below.
 
 The requester must have a verified provider identity. Sharing does not grant a different provider
 account access. GitHub and Jira credentials never leave their host. Runtime pairing credentials are
@@ -30,20 +30,18 @@ diagnostics.
 ## PR communication over P2P
 
 PR lists, details, status, discussion, changes, stacks, creation, comments and actions use one
-persistent executor per provider instance and verified account. This applies to every supported
-forge provider. **Preferred retrieval computer** explicitly selects that executor. Automatic mode
-chooses a capable connected server, desktop or laptop on first use, then retains its runtime ID in
-the runtime database across restarts. A returning computer does not reclaim an existing assignment.
-Clearing an explicit preference retains the current PR owner; select another computer to move it.
-Use the same preferred computer on participating runtimes to pin all their PR traffic to that
-server.
-
-Requests use existing authenticated peer connections, including HTTP LAN/VPN addresses. The executor
-re-resolves its own provider credentials and verifies the account before serving even cached
-results. Callers send typed PR operations and repository identity, never credentials, checkout paths
-or commands. The executor runs operations locally, so asymmetric peer lists cannot cause relay
-loops. Local Git operations, worktree annotations, thread creation and notification delivery stay
-local.
+executor chosen explicitly on the originating machine. This applies to every supported forge
+provider. By default, PR requests run on the selected project's machine using its configured
+account. **Preferred retrieval computer** explicitly delegates them to a paired computer with the
+same verified account and repository access. Clearing that preference restores execution on the
+originating machine. Legacy automatic owner assignments are ignored; pairing a server or changing
+computer types never moves PR traffic to it. Use the same preferred computer on participating
+runtimes if you deliberately want to share one executor. Requests use existing authenticated peer
+connections, including HTTP LAN/VPN addresses. The executor re-resolves its own provider credentials
+and verifies the account before serving even cached results. Callers send typed PR operations and
+repository identity, never credentials, checkout paths or commands. The executor runs operations
+locally, so asymmetric peer lists cannot cause relay loops. Local Git operations, worktree
+annotations, thread creation and notification delivery stay local.
 
 The owner shares a bounded 15-second PR response cache across gateways and coalesces concurrent
 reads. Explicit refresh bypasses it. Writes execute once, without fallback or automatic retries, and
@@ -52,10 +50,10 @@ in-flight reads cannot repopulate invalidated cache entries. Cached responses re
 fetch timestamp through gateway caches. Desktop and mobile preserve a newer snapshot when another
 gateway returns an older one.
 
-If the owner disconnects, PR reads retain their saved data with a stale/error indication; refreshes
-and actions do not silently execute on another server. Reconnect the owner or explicitly choose
-another preferred retrieval computer. Older executors must be updated before accepting this PR
-protocol. Disabling shared retrieval intentionally restores local execution on that computer.
+If the selected machine disconnects, PR reads retain their saved data with a stale/error indication;
+refreshes and actions do not silently execute on another server. Reconnect the owner or explicitly
+choose another preferred retrieval computer. Older executors must be updated before accepting this
+PR protocol. Disabling shared retrieval intentionally restores local execution on that computer.
 
 ## Retrieval and freshness
 
