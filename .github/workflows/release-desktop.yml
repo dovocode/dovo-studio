@@ -177,9 +177,6 @@ jobs:
           - runner: windows-2025
             arch: x64
             unpacked: win-unpacked
-          - runner: windows-11-arm
-            arch: arm64
-            unpacked: win-arm64-unpacked
           - runner: ubuntu-24.04
             arch: x64
           - runner: ubuntu-24.04-arm
@@ -280,7 +277,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, arm64]
+        arch: [x64]
     env:
       DOVO_RELEASE_VERSION: ${{ needs.draft.outputs.version }}
       DOVO_RELEASE_CHANNEL: ${{ needs.draft.outputs.channel }}
@@ -424,9 +421,7 @@ jobs:
             "$SERVER-${TAG#v}-linux-x64.tar.gz" \
             "$SERVER-${TAG#v}-linux-arm64.tar.gz" \
             "$SERVER-${TAG#v}-windows-x64.zip" \
-            "$SERVER-${TAG#v}-windows-arm64.zip" \
             "$PREFIX-${TAG#v}-windows-x64.exe" \
-            "$PREFIX-${TAG#v}-windows-arm64.exe" \
             "$PREFIX-${TAG#v}-linux-amd64.deb" \
             "$PREFIX-${TAG#v}-linux-arm64.deb" \
             "$PREFIX-${TAG#v}-linux-x86_64.rpm" \
@@ -434,7 +429,6 @@ jobs:
             "$PREFIX-${TAG#v}-linux-x86_64.AppImage" \
             "$PREFIX-${TAG#v}-linux-arm64.AppImage" \
             "$FEED.yml" \
-            "$FEED-arm64.yml" \
             "$FEED-linux.yml" \
             "$FEED-linux-arm64.yml" \
             "$FEED-mac.yml"; do

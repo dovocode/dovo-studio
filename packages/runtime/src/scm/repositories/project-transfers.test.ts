@@ -20,11 +20,15 @@ import {
   projectTransferInspectionSchema,
   projectTransferSchema,
   projectTransferManifestSchema,
+  projectTransferPlanSchema,
   type ProjectTransferStart,
 } from '@dovo/protocol'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration.js'
 import { addRepository } from './repositories.js'
 import { transferPath, projectTransferRemote } from './project-transfer-files.js'
+import { runClientEffect } from '@dovo/client-runtime'
+import { listWorktreesEffect, worktreeChoicesEffect } from '../git/worktrees.js'
+import { TaskCheckout } from '../tasks/task-checkout.js'
 vi.setConfig(runtimeIntegration)
 const cleanup: Array<() => Promise<void> | void> = []
 afterEach(async () => {
@@ -149,6 +153,7 @@ it('copies the selected worktree with its index and dirty files, creating one de
   await writeFile(join(worktree, 'untracked.txt'), 'Local file')
   await writeFile(join(worktree, '.env.local'), 'STAYS=private')
   input.worktreePath = worktree
+  input.destination = { parentDirectory: root }
   input.thread = { title: 'Continue on destination', prompt: '' }
   const inspection = await source.post('inspect', {
     repositoryId: repository.id,
@@ -160,23 +165,40 @@ it('copies the selected worktree with its index and dirty files, creating one de
       (file) => file.path,
     ),
   ).toContain('.env.local')
+  const plan = await source.post('plan', {
+    repositoryId: repository.id,
+    worktreePath: worktree,
+    targetId: input.targetId,
+  })
+  expect(plan.status).toBe(200)
+  expect(decode(projectTransferPlanSchema, await plan.json()).repositories).toEqual([])
   expect((await source.post('start', input)).status).toBe(200)
   const copied = await result()
-  expect(await readFile(join(copied.path, 'readme.txt'), 'utf8')).toBe('Working worktree text')
-  expect((await exec('git', ['show', ':readme.txt'], { cwd: copied.path })).stdout).toBe(
-    'Staged worktree text',
-  )
+  const copiedPath = source.services.projectTransfers.list()[0]!.path!
+  expect(copiedPath.startsWith(target.services.preferences.worktreesRoot())).toBe(true)
+  expect(copied.path.startsWith(root)).toBe(true)
+  expect(copied.path).not.toBe(copiedPath)
+  expect(await readFile(join(copied.path, 'readme.txt'), 'utf8')).toBe('Source project')
   expect(
     (await exec('git', ['branch', '--show-current'], { cwd: copied.path })).stdout.trim(),
-  ).toBe('feature-copy')
-  expect(await readFile(join(copied.path, 'untracked.txt'), 'utf8')).toBe('Local file')
-  expect(await readdir(copied.path)).not.toContain('.env.local')
+  ).toBe('main')
+  expect(await readFile(join(copiedPath, 'readme.txt'), 'utf8')).toBe('Working worktree text')
+  expect((await exec('git', ['show', ':readme.txt'], { cwd: copiedPath })).stdout).toBe(
+    'Staged worktree text',
+  )
+  expect((await exec('git', ['branch', '--show-current'], { cwd: copiedPath })).stdout.trim()).toBe(
+    'feature-copy',
+  )
+  expect(await readFile(join(copiedPath, 'untracked.txt'), 'utf8')).toBe('Local file')
+  expect(await readdir(copiedPath)).not.toContain('.env.local')
   expect(await readFile(join(path, 'readme.txt'), 'utf8')).toBe('Source project')
   const task = target.services.store.task(target.services.store.get().tasks[0]!.id)
   expect(task).toMatchObject({
     title: input.thread.title,
     repositoryId: copied.id,
-    execution: 'main',
+    execution: 'worktree',
+    existingWorktreePath: copiedPath,
+    checkoutBranch: 'feature-copy',
     status: 'draft',
     messages: [],
   })
@@ -221,6 +243,7 @@ it('rejects a worktree path outside the selected project', async () => {
   const inspect = await source.post('inspect', { repositoryId: repository.id, worktreePath: other })
   expect(inspect.status).toBe(409)
   input.worktreePath = path
+  input.destination = { parentDirectory: root }
   expect((await source.post('start', input)).status).toBe(200)
   await waitForRuntime(() =>
     expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
@@ -553,4 +576,280 @@ it('keeps credential-bearing and executable Git remotes out of the destination c
     expect(projectTransferRemote(remote)).toBeUndefined()
   expect(projectTransferRemote('git@github.com:org/repo.git')).toBe('git@github.com:org/repo.git')
   expect(projectTransferRemote('ssh://git@host:2222/org/repo')).toBe('ssh://git@host:2222/org/repo')
+})
+
+it('reuses a matching destination project and preserves its dirty checkout and colliding branch', async () => {
+  const { root, source, target, repository, path, input, result } = await setup(true)
+  const git = (cwd: string, args: string[]) =>
+    exec('git', args, { cwd }).then((result) => result.stdout.trim())
+  await git(path, ['remote', 'add', 'origin', 'git@github.com:copy/project.git'])
+  const main = join(root, 'destination-main')
+  await exec('git', ['clone', path, main])
+  await git(main, ['remote', 'set-url', 'origin', 'https://github.com/copy/project'])
+  const destination = await addRepository(target.services, {
+    source: 'local',
+    name: 'Existing project',
+    path: main,
+  })
+  const customRoot = join(root, 'custom-worktrees')
+  target.services.preferences.save({ worktreesRoot: customRoot })
+  const feature = join(root, 'source-feature')
+  await git(path, ['worktree', 'add', '-b', 'feature-copy', feature])
+  await writeFile(join(feature, 'committed.txt'), 'Unpushed feature commit')
+  await git(feature, ['add', '.'])
+  await git(feature, ['commit', '-qm', 'Only on source feature'])
+  const head = await git(feature, ['rev-parse', 'HEAD'])
+  await writeFile(join(feature, 'readme.txt'), 'Staged')
+  await git(feature, ['add', '.'])
+  await writeFile(join(feature, 'readme.txt'), 'Dirty')
+  await rm(join(feature, 'committed.txt'))
+  await writeFile(join(feature, 'untracked'), 'Local')
+  await git(main, ['branch', 'feature-copy'])
+  const beforeRefs = await git(main, [
+    'for-each-ref',
+    '--format=%(refname):%(objectname)',
+    'refs/heads/',
+  ])
+  await writeFile(join(main, 'readme.txt'), 'Destination local edit')
+  const beforeStatus = await git(main, ['status', '--porcelain=v1'])
+  const plan = await source.post('plan', {
+    repositoryId: repository.id,
+    worktreePath: feature,
+    targetId: input.targetId,
+  })
+  expect(decode(projectTransferPlanSchema, await plan.json())).toEqual({
+    repositories: [{ id: destination.id, name: destination.name, path: main }],
+    worktreesRoot: customRoot,
+  })
+  input.worktreePath = feature
+  input.destination = { repositoryId: destination.id }
+  input.thread = { title: 'Continue feature', prompt: '' }
+  expect((await source.post('start', input)).status).toBe(200)
+  const copied = await result()
+  expect(copied.id).toBe(destination.id)
+  const copiedPath = source.services.projectTransfers.list()[0]!.path!
+  expect(copiedPath.startsWith(customRoot)).toBe(true)
+  expect(await git(copiedPath, ['rev-parse', 'HEAD'])).toBe(head)
+  expect(await git(copiedPath, ['show', ':readme.txt'])).toBe('Staged')
+  expect(await readFile(join(copiedPath, 'readme.txt'), 'utf8')).toBe('Dirty')
+  expect(await git(copiedPath, ['status', '--porcelain=v1'])).toBe(
+    await git(feature, ['status', '--porcelain=v1']),
+  )
+  expect(await git(main, ['status', '--porcelain=v1'])).toBe(beforeStatus)
+  expect(await readFile(join(main, 'readme.txt'), 'utf8')).toBe('Destination local edit')
+  for (const ref of beforeRefs.split('\n'))
+    expect(
+      await git(main, ['for-each-ref', '--format=%(refname):%(objectname)', 'refs/heads/']),
+    ).toContain(ref)
+  const task = target.services.store.get().tasks[0]!
+  expect(task).toMatchObject({
+    repositoryId: destination.id,
+    execution: 'worktree',
+    existingWorktreePath: copiedPath,
+  })
+  expect(task.checkoutBranch).toMatch(/^dovo\/copy-/)
+  const choices = await runClientEffect(worktreeChoicesEffect(target.services, destination.id))
+  expect(choices.worktrees.some((entry) => entry.path === copiedPath)).toBe(true)
+  const listed = await runClientEffect(listWorktreesEffect(target.services))
+  expect(listed.worktrees.find((entry) => entry.path === copiedPath)).toMatchObject({
+    repositoryId: destination.id,
+    threadIds: [task.id],
+  })
+  const checkouts = new TaskCheckout(target.services.store, target.services.git)
+  expect(await checkouts.directory(task.id)).toBe(copiedPath)
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  expect(target.services.store.get().repositories).toHaveLength(1)
+  expect(target.services.store.get().tasks).toHaveLength(1)
+})
+
+it('requires a project location and linked-worktree support before sending worktree files', async () => {
+  const { root, source, target, path, input } = await setup(true)
+  const feature = join(root, 'feature')
+  await exec('git', ['worktree', 'add', '-b', 'feature', feature], { cwd: path })
+  input.worktreePath = feature
+  const begin = vi.spyOn(target.services.projectTransfers, 'begin')
+  await source.post('start', input)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+  )
+  expect(source.services.projectTransfers.list()[0]?.error).toContain('parent folder')
+  expect(begin).not.toHaveBeenCalled()
+  const original = target.services.projectTransfers.status.bind(target.services.projectTransfers)
+  vi.spyOn(target.services.projectTransfers, 'status').mockImplementation((...args) => ({
+    ...original(...args),
+    linkedWorktreesSupported: false,
+  }))
+  input.id = randomUUID()
+  input.destination = { parentDirectory: root }
+  await source.post('start', input)
+  await waitForRuntime(() =>
+    expect(source.services.projectTransfers.list().find((job) => job.id === input.id)?.state).toBe(
+      'failed',
+    ),
+  )
+  expect(
+    source.services.projectTransfers.list().find((job) => job.id === input.id)?.error,
+  ).toContain('Update the destination')
+  expect(begin).not.toHaveBeenCalled()
+})
+
+it.each([true, false])(
+  'cleans a failed linked checkout (existing project: %s) and retries safely',
+  async (existingProject) => {
+    const { root, source, target, path, input, result } = await setup(true)
+    const main = join(root, 'destination')
+    const projects = join(root, 'projects')
+    await mkdir(projects)
+    let destinationId: string | undefined
+    if (existingProject) {
+      await exec('git', ['clone', path, main])
+      const destination = await addRepository(target.services, {
+        source: 'local',
+        path: main,
+        name: 'Existing',
+      })
+      destinationId = destination.id
+      // The original project is local-only; remove clone's filesystem origin as well.
+      await exec('git', ['remote', 'remove', 'origin'], { cwd: main })
+    }
+    const feature = join(root, 'feature')
+    await exec('git', ['worktree', 'add', '-b', 'feature', feature], { cwd: path })
+    input.worktreePath = feature
+    input.destination = destinationId
+      ? { repositoryId: destinationId }
+      : { parentDirectory: projects }
+    input.thread = { title: 'Transferred', prompt: '' }
+    const create = vi.spyOn(target.services.tasks, 'create').mockImplementationOnce(() => {
+      throw new Error('Unable to save thread')
+    })
+    await source.post('start', input)
+    await waitForRuntime(() =>
+      expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+    )
+    expect(source.services.projectTransfers.list()[0]?.error).toContain('Unable to save thread')
+    const remainingWorktrees = existingProject
+      ? (await exec('git', ['worktree', 'list', '--porcelain'], { cwd: main })).stdout
+          .trim()
+          .split('\n\n')
+      : []
+    expect(remainingWorktrees).toHaveLength(existingProject ? 1 : 0)
+    expect(target.services.store.get().repositories).toHaveLength(existingProject ? 1 : 0)
+    expect(await readdir(projects)).toEqual([])
+    expect(target.services.store.get().tasks).toHaveLength(0)
+    create.mockRestore()
+    await source.post('retry', { id: input.id })
+    await result()
+    expect(target.services.store.get().repositories).toHaveLength(1)
+    expect(target.services.store.get().tasks).toHaveLength(1)
+  },
+)
+
+it('copies detached worktrees and creates the main checkout from its separate detached HEAD', async () => {
+  const { root, source, target, path, input, result } = await setup(true)
+  const feature = join(root, 'detached-feature')
+  await exec('git', ['worktree', 'add', '--detach', feature], { cwd: path })
+  await writeFile(join(path, 'primary-only'), 'New primary commit')
+  await exec('git', ['add', '.'], { cwd: path })
+  await exec('git', ['commit', '-qm', 'Primary changes'], { cwd: path })
+  await exec('git', ['checkout', '--detach'], { cwd: path })
+  await exec('git', ['branch', '-D', 'main'], { cwd: path })
+  input.worktreePath = feature
+  input.destination = { parentDirectory: root }
+  input.thread = { title: 'Detached checkout', prompt: '' }
+  await source.post('start', input)
+  const primary = await result()
+  const copiedPath = source.services.projectTransfers.list()[0]!.path!
+  expect(await readFile(join(primary.path, 'primary-only'), 'utf8')).toBe('New primary commit')
+  expect(await readdir(copiedPath)).not.toContain('primary-only')
+  expect((await exec('git', ['branch', '--show-current'], { cwd: copiedPath })).stdout.trim()).toBe(
+    '',
+  )
+  expect((await exec('git', ['rev-parse', 'HEAD'], { cwd: primary.path })).stdout).toBe(
+    (await exec('git', ['rev-parse', 'HEAD'], { cwd: path })).stdout,
+  )
+  const task = target.services.store.get().tasks[0]!
+  const checkouts = new TaskCheckout(target.services.store, target.services.git)
+  expect(await checkouts.directory(task.id)).toBe(copiedPath)
+})
+
+it('keeps a completed linked checkout and its thread after the destination restarts', async () => {
+  const { root, source, target, path, input, result } = await setup(true, true)
+  const feature = join(root, 'feature')
+  await exec('git', ['worktree', 'add', '-b', 'feature', feature], { cwd: path })
+  input.worktreePath = feature
+  input.destination = { parentDirectory: root }
+  input.thread = { title: 'Continue after restart', prompt: '' }
+  await source.post('start', input)
+  const primary = await result()
+  const receipt = target.services.projectTransfers.status(input.id, 'owner')
+  await target.close()
+  const restarted = await host(join(root, 'target.sqlite'))
+  expect(restarted.services.projectTransfers.status(input.id, 'owner')).toEqual(receipt)
+  expect(await (await restarted.post('commit', { id: input.id })).json()).toEqual(receipt.result)
+  const task = restarted.services.store.get().tasks[0]!
+  expect(
+    await new TaskCheckout(restarted.services.store, restarted.services.git).directory(task.id),
+  ).toBe(receipt.result!.path)
+  const listed = await runClientEffect(listWorktreesEffect(restarted.services))
+  expect(listed.worktrees.find((entry) => entry.path === receipt.result!.path)).toMatchObject({
+    repositoryId: primary.id,
+    threadIds: [task.id],
+  })
+})
+
+it('cleans only the interrupted worktree on restart, including custom worktree locations', async () => {
+  const { root, target, path } = await setup(true, true)
+  const main = join(root, 'existing-project')
+  await exec('git', ['clone', path, main])
+  await addRepository(target.services, { source: 'local', path: main, name: 'Existing' })
+  const worktrees = join(root, 'custom-root')
+  await mkdir(worktrees)
+  const abandoned = await mkdtemp(join(worktrees, 'copy-'))
+  const keep = join(worktrees, 'keep')
+  await exec('git', ['worktree', 'add', '-b', 'abandoned', abandoned], { cwd: main })
+  await exec('git', ['worktree', 'add', '-b', 'keep', keep], { cwd: main })
+  await writeFile(join(main, 'readme.txt'), 'Keep main changes')
+  const id = randomUUID()
+  target.services.db.prepare('INSERT INTO project_transfer_receipts VALUES (?,?)').run(
+    id,
+    JSON.stringify({
+      id,
+      device: 'owner',
+      worktree: { path: abandoned, repositoryPath: main, branch: 'abandoned' },
+    }),
+  )
+  await target.close()
+  const restarted = await host(join(root, 'target.sqlite'))
+  const beginId = randomUUID()
+  expect(
+    (
+      await restarted.post('begin', {
+        id: beginId,
+        runtimeId: restarted.services.runtimeId,
+        name: 'Ready check',
+        entries: [],
+      })
+    ).status,
+  ).toBe(200)
+  await restarted.post('discard', { id: beginId })
+  expect(await readdir(worktrees)).toEqual(['keep'])
+  expect(await readFile(join(main, 'readme.txt'), 'utf8')).toBe('Keep main changes')
+  const branches = (await exec('git', ['branch', '--format=%(refname)'], { cwd: main })).stdout
+  expect(branches).not.toContain('abandoned')
+  expect(branches).toContain('keep')
+  await restarted.close()
+  const again = await host(join(root, 'target.sqlite'))
+  const nextId = randomUUID()
+  expect(
+    (
+      await again.post('begin', {
+        id: nextId,
+        runtimeId: again.services.runtimeId,
+        name: 'Ready again',
+        entries: [],
+      })
+    ).status,
+  ).toBe(200)
+  await again.post('discard', { id: nextId })
+  expect(await readdir(worktrees)).toEqual(['keep'])
 })

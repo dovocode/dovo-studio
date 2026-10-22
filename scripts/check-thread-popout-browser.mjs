@@ -28,6 +28,7 @@ window.fetch=async(url,init={})=>{
  if(path==='/api/scm/worktrees/read')return Response.json({root:'/worktrees',worktrees:[{path:'/worktrees/feature',branch:'feature',repositoryId:'project',repositoryName:'Project',taskId:'thread',threadIds:['thread'],state:'active',dirty:true,prunable:false}]});
  if(path==='/api/scm/worktrees/choices')return Response.json({worktrees:[{path:'/worktrees/feature',branch:'feature',dirty:true}]});
  if(path==='/api/scm/project-transfer/inspect')return Response.json({files:2,bytes:20,skippedLinks:0,ignoredFiles:[]});
+ if(path==='/api/scm/project-transfer/plan')return Response.json({repositories:[{id:'destination-project',name:'Project',path:'/destination/project'}],worktreesRoot:'/destination/worktrees'});
  if(path==='/api/scm/project-transfer/targets')return Response.json([{id:'machine-destination',name:'Destination'}]);
  if(path==='/api/retrieval/peers')return Response.json({ok:true});
  if(path==='/api/mutations/status')return Response.json({version:1});

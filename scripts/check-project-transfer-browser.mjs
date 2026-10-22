@@ -76,6 +76,7 @@ window.setJob=changes=>setJob(old=>{current={...old,...changes,updatedAt:(old?.u
 const request=async(path,input)=>{window.calls.push({path,input});
 if(path==='/api/scm/worktrees/read')return {root:'/worktrees',worktrees:window.missingWorktree?[]:[{path:'/worktrees/feature',repositoryId:'project',branch:'feature',taskId:'owner',threadIds:['owner','reused'],prunable:false}]};
 if(path.endsWith('/choices'))return {worktrees:[{path:'/worktrees/feature',branch:'feature',dirty:true}]};
+if(path.endsWith('/plan')){if(window.planError)throw new Error('Update the destination computer to copy linked worktrees');return {repositories:window.noDestinationProject?[]:[{id:'destination-project',name:'Existing project',path:'/projects/main'}],worktreesRoot:'/custom/worktrees'};}
 if(path.endsWith('/targets'))return [{id:'machine-b',name:'Desktop'}];
 if(path.endsWith('/inspect')){if(window.failInspect)throw new Error('Inspection failed');return {files:3,bytes:1500,skippedLinks:1,ignoredFilesTruncated:window.truncated,ignoredFiles:[{path:'.env.local',bytes:12},{path:'private.key',bytes:7}]};}
 if(path.endsWith('/start')){if(window.fail)throw new Error('Destination is offline');current={...input,targetName:'Desktop',state:'copying',transport:input.ssh?'ssh':'p2p',bytes:100,totalBytes:1000,updatedAt:Date.now()};setJob(current);return current}
@@ -205,6 +206,29 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     })
     await page.getByLabel('Project copy connection').selectOption('p2p')
     await page.getByLabel('Source checkout').selectOption('/worktrees/feature')
+    await page.getByLabel('Destination project', { exact: true }).waitFor()
+    assert.equal(
+      await page.getByLabel('Destination project', { exact: true }).inputValue(),
+      'destination-project',
+    )
+    await page.getByText(/Copied worktree directory: \/custom\/worktrees/).waitFor()
+    // A missing main project requires a destination parent, before any files are sent.
+    await page.evaluate(() => {
+      window.noDestinationProject = true
+    })
+    await page
+      .getByRole('button', { name: mobile ? 'Refresh copy options' : 'Refresh', exact: true })
+      .click()
+    const projectParent = page.getByRole('textbox', {
+      name: 'Project parent folder on destination',
+      exact: true,
+    })
+    await projectParent.waitFor()
+    assert.equal(
+      await page.getByRole('button', { name: 'Copy worktree', exact: true }).isDisabled(),
+      true,
+    )
+    await projectParent.fill('/projects')
     const thread = page.getByRole('checkbox', {
       name: 'Create a thread on destination',
       exact: true,
@@ -218,6 +242,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       () => window.calls.filter((call) => call.path.endsWith('/start')).at(-1).input,
     )
     assert.equal(worktreeStart.worktreePath, '/worktrees/feature')
+    assert.deepEqual(worktreeStart.destination, { parentDirectory: '/projects' })
     assert.deepEqual(worktreeStart.ignoredFiles, [])
     assert.equal(worktreeStart.thread.prompt, 'Continue reviewing these changes')
     assert.equal(worktreeStart.thread.title, 'Continue reviewing these changes')
@@ -248,6 +273,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     // Thread entry resolves the exact owned worktree and starts a fresh destination thread.
     await page.evaluate(() => {
       window.setJob({ state: 'cancelled' })
+      window.noDestinationProject = false
       window.setSource({
         id: 'reused',
         repositoryId: 'project',
@@ -272,6 +298,12 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         () => window.calls.filter((call) => call.path.endsWith('/start')).at(-1).input.worktreePath,
       ),
       '/worktrees/feature',
+    )
+    assert.deepEqual(
+      await page.evaluate(
+        () => window.calls.filter((call) => call.path.endsWith('/start')).at(-1).input.destination,
+      ),
+      { repositoryId: 'destination-project' },
     )
     // Missing worktrees never silently copy the project checkout instead.
     await page.evaluate(() => {

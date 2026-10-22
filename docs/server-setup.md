@@ -623,9 +623,10 @@ equivalent.
 
 ### Windows standalone server
 
-Download `Dovo-Server-<version>-windows-x64.zip` or `windows-arm64.zip` from the release. Extract
-the whole archive to a permanent folder. Node and runtime dependencies are included; you do not need
-a separate Node installation. In PowerShell from that folder:
+Download `Dovo-Server-<version>-windows-x64.zip` from the release (Windows ARM64 builds are
+temporarily disabled). Extract the whole archive to a permanent folder. Node and runtime
+dependencies are included; you do not need a separate Node installation. In PowerShell from that
+folder:
 
 ```powershell
 .\bin\dovo-server.cmd setup --host local --port 51464

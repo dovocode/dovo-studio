@@ -82,7 +82,7 @@ export async function hashFile(path: string) {
   for await (const chunk of createReadStream(path)) hash.update(chunk)
   return hash.digest('hex')
 }
-async function transferGit(s: Services, cwd: string, args: string[], signal?: AbortSignal) {
+export async function transferGit(s: Services, cwd: string, args: string[], signal?: AbortSignal) {
   return (
     await exec(s.commands.get().git, args, {
       cwd,
@@ -92,6 +92,23 @@ async function transferGit(s: Services, cwd: string, args: string[], signal?: Ab
       maxBuffer: 64 * 1024 * 1024,
     })
   ).stdout
+}
+/** Main checkout metadata travels separately from the selected feature checkout. */
+export async function transferProject(s: Services, repositoryId: string, signal?: AbortSignal) {
+  const repo = s.store.get().repositories.find((repo) => repo.id === repositoryId && !repo.kind)
+  if (!repo) throw new HttpError(404, 'Choose a Git project to copy')
+  const baseHead = (
+    await transferGit(s, repo.path, ['rev-parse', '--verify', 'HEAD'], signal)
+  ).trim()
+  const baseBranch =
+    (await transferGit(s, repo.path, ['branch', '--show-current'], signal)).trim() || undefined
+  const rootCommit = (
+    await transferGit(s, repo.path, ['rev-list', '--max-parents=0', 'HEAD'], signal)
+  )
+    .trim()
+    .split('\n')[0]!
+  const identity = await s.git.repositoryIdentity(repo.path, true)
+  return { baseHead, baseBranch, rootCommit, identity }
 }
 async function regular(root: string, path: string) {
   transferPath(path)
@@ -216,6 +233,7 @@ export async function prepareTransfer(
   worktreePath?: string,
 ) {
   const source = await inspectTransfer(s, repositoryId, signal, worktreePath)
+  const project = worktreePath ? await transferProject(s, repositoryId, signal) : undefined
   const selected = new Set(ignored)
   if (ignored.some((path) => !source.ignoredFiles.some((file) => file.path === path)))
     throw new HttpError(409, 'The ignored files changed. Review the files and try again.')
@@ -254,7 +272,15 @@ export async function prepareTransfer(
       await transferGit(
         s,
         source.root,
-        ['bundle', 'create', bundle, 'HEAD', '--branches', '--tags'],
+        [
+          'bundle',
+          'create',
+          bundle,
+          'HEAD',
+          '--branches',
+          '--tags',
+          ...(project ? [project.baseHead] : []),
+        ],
         signal,
       )
       await stage('repository.bundle', bundle, 'bundle', 0o600)
@@ -306,7 +332,7 @@ export async function prepareTransfer(
   }
   if (git && (await transferGit(s, source.root, ['rev-parse', 'HEAD'], signal)).trim() !== git.head)
     throw new HttpError(409, 'The Git branch changed during preparation. Try again.')
-  return { name: source.repo.name, entries, git, skippedLinks: source.skippedLinks }
+  return { name: source.repo.name, entries, git, project, skippedLinks: source.skippedLinks }
 }
 
 export async function installTransfer(
@@ -352,17 +378,29 @@ export async function installTransfer(
         signal,
       )
     await transferGit(s, workspace, ['reset', '--mixed', manifest.git.head], signal)
-    const patch = manifest.entries.findIndex((entry) => entry.kind === 'index')
-    if (patch >= 0)
-      await transferGit(
-        s,
-        workspace,
-        ['apply', '--cached', '--binary', '--', join(folder, String(patch))],
-        signal,
-      )
     if (manifest.git.remote && projectTransferRemote(manifest.git.remote))
       await transferGit(s, workspace, ['remote', 'add', 'origin', manifest.git.remote], signal)
   }
+  await restoreTransfer(s, manifest, folder, workspace, signal)
+  return workspace
+}
+
+/** Restore into an empty, owned checkout. No checkout can introduce symlink ancestors. */
+export async function restoreTransfer(
+  s: Services,
+  manifest: ProjectTransferManifest,
+  folder: string,
+  workspace: string,
+  signal: AbortSignal,
+) {
+  const patch = manifest.entries.findIndex((entry) => entry.kind === 'index')
+  if (manifest.git && patch >= 0)
+    await transferGit(
+      s,
+      workspace,
+      ['apply', '--cached', '--binary', '--', join(folder, String(patch))],
+      signal,
+    )
   for (const [index, entry] of manifest.entries.entries()) {
     signal.throwIfAborted()
     if (entry.kind !== 'file') continue
@@ -374,5 +412,4 @@ export async function installTransfer(
     await copyFile(join(folder, String(index)), target)
     await chmod(target, entry.mode)
   }
-  return workspace
 }

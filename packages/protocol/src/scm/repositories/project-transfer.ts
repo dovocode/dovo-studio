@@ -23,6 +23,23 @@ export const projectTransferSourceSchema = mutableStruct({
   repositoryId: text(),
   worktreePath: Schema.optional(text(4096)),
 })
+export const projectTransferDestinationSchema = Schema.Union([
+  mutableStruct({ repositoryId: text() }),
+  mutableStruct({ parentDirectory: text(4096) }),
+])
+export const projectTransferPlanInputSchema = mutableStruct({
+  ...projectTransferSourceSchema.fields,
+  targetId: text(),
+  ssh: Schema.optional(projectTransferSshSchema),
+})
+export const projectTransferProjectSchema = mutableStruct({
+  identity: Schema.optional(text(4096)),
+  rootCommit: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40,64}$/))),
+})
+export const projectTransferPlanSchema = mutableStruct({
+  repositories: mutableArray(mutableStruct({ id: text(), name: text(), path: text(4096) })),
+  worktreesRoot: text(4096),
+})
 export const projectTransferStartSchema = mutableStruct({
   id: text(80),
   ...projectTransferSourceSchema.fields,
@@ -30,6 +47,7 @@ export const projectTransferStartSchema = mutableStruct({
   targetId: text(),
   ignoredFiles: maxValue(mutableArray(text(4096)), 10000),
   ssh: Schema.optional(projectTransferSshSchema),
+  destination: Schema.optional(projectTransferDestinationSchema),
 })
 export type ProjectTransferStart = typeof projectTransferStartSchema.Type
 export const projectTransferInspectionSchema = mutableStruct({
@@ -81,6 +99,14 @@ export const projectTransferManifestSchema = mutableStruct({
   name: text(),
   entries: maxValue(mutableArray(projectTransferEntrySchema), 100000),
   thread: Schema.optional(transferThreadSchema),
+  worktree: Schema.optional(
+    mutableStruct({
+      ...projectTransferProjectSchema.fields,
+      baseHead: projectTransferProjectSchema.fields.rootCommit,
+      baseBranch: Schema.optional(text(4096)),
+      destination: projectTransferDestinationSchema,
+    }),
+  ),
   git: Schema.optional(
     mutableStruct({
       head: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40,64}$/))),

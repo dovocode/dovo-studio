@@ -22,7 +22,6 @@ const names = [
   `${studioPrefix}-${version}-arm64.zip`,
   `${studioPrefix}-mise-${version}-macos-arm64.tar.gz`,
   `${serverPrefix}-${version}-windows-x64.zip`,
-  `${serverPrefix}-${version}-windows-arm64.zip`,
 ]
 const hashes = new Map()
 for (const name of names)
@@ -99,7 +98,6 @@ await writeFile(
       ['linux-arm64', names[1]],
       ['linux-x64', names[2]],
       ['windows-x64', names[5]],
-      ['windows-arm64', names[6]],
     ]) +
     tool(studioName, [['macos-arm64', names[4]]]),
 )

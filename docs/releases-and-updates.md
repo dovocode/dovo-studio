@@ -28,16 +28,15 @@ release. The Release workflow produces:
 | Platform | Architectures | Artifacts              | Signing                           |
 | -------- | ------------- | ---------------------- | --------------------------------- |
 | macOS    | ARM64         | DMG, ZIP, mise archive | Developer ID signed and notarized |
-| Windows  | x64, ARM64    | NSIS EXE installer     | Azure Artifact Signing            |
+| Windows  | x64           | NSIS EXE installer     | Azure Artifact Signing            |
 | Linux    | x64, ARM64    | DEB, RPM, AppImage     | Unsigned                          |
 
-Standalone server archives support macOS ARM64, Linux x64/ARM64 and Windows x64/ARM64. Each desktop
-build uses its native runner and Node 24, packages its matching SQLite/PTY dependencies, and
-smoke-tests the bundled runtime and terminal. Windows ARM64 has a separate update channel to avoid
-overwriting x64 metadata. AppImage uses architecture-specific Linux update metadata. DEB/RPM users
-install a new package through their package manager; Check for Updates opens the release download
-page. Artifacts are not a promise of compatibility with every historical Debian/Fedora/CentOS
-release.
+Standalone server archives support macOS ARM64, Linux x64/ARM64 and Windows x64. Windows ARM64
+builds are temporarily disabled. Each desktop build uses its native runner and Node 24, packages its
+matching SQLite/PTY dependencies, and smoke-tests the bundled runtime and terminal. AppImage uses
+architecture-specific Linux update metadata. DEB/RPM users install a new package through their
+package manager; Check for Updates opens the release download page. Artifacts are not a promise of
+compatibility with every historical Debian/Fedora/CentOS release.
 
 Linux builds use the same desktop identity for Wayland, X11 and packaged launchers. On first launch,
 an AppImage registers a user-local launcher and persistent Dovo icon under `$XDG_DATA_HOME` (or

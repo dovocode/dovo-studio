@@ -8,10 +8,14 @@ import {
   projectTransferBatchSchema,
   projectTransferManifestSchema,
   projectTransferResultSchema,
+  projectTransferPlanInputSchema,
+  projectTransferPlanSchema,
+  projectTransferProjectSchema,
   type ProjectTransfer,
   type ProjectTransferStart,
   type ProjectTransferManifest,
   type RuntimeConnection,
+  type Repository,
 } from '@dovo/protocol'
 import { randomUUID, createHash } from 'node:crypto'
 import { mkdir, mkdtemp, open, realpath, rename, rm, stat } from 'node:fs/promises'
@@ -28,13 +32,22 @@ import {
   inspectTransfer,
   prepareTransfer,
   transferPath,
+  transferProject,
 } from './project-transfer-files.js'
+import {
+  cleanupTransferredWorktree,
+  installWorktreeTransfer,
+  transferDestinations,
+  validateWorktreeDestination,
+  type TransferOwnership,
+} from './project-transfer-worktrees.js'
 
 const okSchema = mutableStruct({ ok: Schema.Literal(true) })
 const statusSchema = mutableStruct({
   result: Schema.optional(projectTransferResultSchema),
   worktreesSupported: Schema.optional(Schema.Boolean),
   batchesSupported: Schema.optional(Schema.Boolean),
+  linkedWorktreesSupported: Schema.optional(Schema.Boolean),
 })
 const discardSchema = mutableStruct({
   ok: Schema.Literal(true),
@@ -63,6 +76,14 @@ const savedIncomingSchema = mutableStruct({
   id: Schema.String,
   device: Schema.String,
   stagingPath: Schema.optional(Schema.String),
+  worktree: Schema.optional(
+    mutableStruct({
+      path: Schema.String,
+      repositoryPath: Schema.String,
+      project: Schema.optional(Schema.String),
+      branch: Schema.optional(Schema.String),
+    }),
+  ),
   result: Schema.optional(projectTransferResultSchema),
 })
 const rowsSchema = Schema.Array(mutableStruct({ value: Schema.String }))
@@ -127,6 +148,20 @@ export class ProjectTransfers {
         throw error
       })
       for (const receipt of this.results.values()) {
+        if (
+          !receipt.result &&
+          receipt.worktree &&
+          !this.services()
+            .store.get()
+            .tasks.some((task) => task.existingWorktreePath === receipt.worktree?.path)
+        ) {
+          await cleanupTransferredWorktree(this.services(), receipt.worktree, receipt.id)
+          const saved = { id: receipt.id, device: receipt.device }
+          this.results.set(receipt.id, saved)
+          s.db
+            .prepare('INSERT OR REPLACE INTO project_transfer_receipts VALUES (?,?)')
+            .run(receipt.id, JSON.stringify(saved))
+        }
         const path = receipt.stagingPath
         if (
           !receipt.result &&
@@ -170,6 +205,54 @@ export class ProjectTransfers {
       ignoredFiles: source.ignoredFiles.map(({ path, bytes }) => ({ path, bytes })),
       ignoredFilesTruncated: source.ignoredFilesTruncated,
       skippedLinks: source.skippedLinks,
+    }
+  }
+  destination(project: typeof projectTransferProjectSchema.Type) {
+    return transferDestinations(this.services(), project)
+  }
+  async plan(input: typeof projectTransferPlanInputSchema.Type, authorize: () => void) {
+    await this.ready
+    const s = this.services()
+    const peer = s.retrievalPeers
+      .list()
+      .find((peer) => peer.connection.runtimeId === input.targetId)
+    if (!peer || input.targetId === s.runtimeId)
+      throw new HttpError(409, 'Reconnect the destination computer and try again')
+    const project = await transferProject(s, input.repositoryId)
+    let tunnel: Awaited<ReturnType<typeof openTunnel>> | undefined
+    try {
+      authorize()
+      if (input.ssh)
+        tunnel = await openTunnel({
+          id: randomUUID(),
+          name: 'Project destination',
+          ...input.ssh,
+          runtimeAddress: `http://127.0.0.1:${input.ssh.runtimePort}`,
+          agentAccess: false,
+        })
+      const client = createRuntimeClient(
+        tunnel
+          ? { ...peer.connection, address: tunnel.address, alternateAddresses: [] }
+          : peer.connection,
+      )
+      const options = { method: 'POST' as const, ...(input.ssh ? { route: 'http' as const } : {}) }
+      const status = await client.request(
+        '/api/scm/project-transfer/status',
+        { id: randomUUID() },
+        statusSchema,
+        options,
+      )
+      if (!status.linkedWorktreesSupported)
+        throw new HttpError(409, 'Update the destination computer to copy linked worktrees')
+      authorize()
+      return await client.request(
+        '/api/scm/project-transfer/destination',
+        project,
+        projectTransferPlanSchema,
+        options,
+      )
+    } finally {
+      if (tunnel) await stopSsh(tunnel.child)
     }
   }
   private save(job: ProjectTransfer) {
@@ -314,8 +397,15 @@ export class ProjectTransfers {
         complete(status.result)
         return
       }
+      if (input.worktreePath && !status.linkedWorktreesSupported)
+        throw new HttpError(409, 'Update the destination computer to copy linked worktrees')
+      if (input.worktreePath && !input.destination)
+        throw new HttpError(
+          409,
+          'Choose the destination project or its parent folder before copying a worktree',
+        )
       await mkdir(folder, { mode: 0o700 })
-      const { skippedLinks, ...prepared } = await prepareTransfer(
+      const { skippedLinks, project, ...prepared } = await prepareTransfer(
         s,
         input.repositoryId,
         input.ignoredFiles,
@@ -328,6 +418,8 @@ export class ProjectTransfers {
         id: input.id,
         runtimeId: peer.runtimeId!,
         thread: input.thread,
+        worktree:
+          project && input.destination ? { ...project, destination: input.destination } : undefined,
       }
       // Validate locally too, so both ends agree on bounded names, hashes and sizes.
       decode(projectTransferManifestSchema, manifest)
@@ -450,6 +542,7 @@ export class ProjectTransfers {
       result: this.receipt(id, device)?.result,
       worktreesSupported: true,
       batchesSupported: true,
+      linkedWorktreesSupported: true,
     }
   }
   async begin(manifest: ProjectTransferManifest, device: string) {
@@ -494,6 +587,10 @@ export class ProjectTransfers {
       manifest.entries.filter((entry) => entry.kind === 'index').length > 1
     )
       throw new HttpError(400, 'Invalid Git workspace manifest')
+    if (manifest.worktree) {
+      if (!manifest.git) throw new HttpError(400, 'Missing worktree Git history')
+      await validateWorktreeDestination(this.services(), manifest.worktree)
+    }
     const folder = join(this.root, `in-${manifest.id}`)
     // Persist ownership before creating anything, so interrupted staging is cleaned on restart.
     const receipt = { id: manifest.id, device }
@@ -592,6 +689,7 @@ export class ProjectTransfers {
     const s = this.services(),
       { manifest, controller } = entry
     let project: string | undefined
+    let owned: TransferOwnership | undefined
     try {
       for (const [index, file] of manifest.entries.entries()) {
         controller.signal.throwIfAborted()
@@ -603,58 +701,100 @@ export class ProjectTransfers {
         )
           throw new HttpError(409, 'A copied file failed verification. Start the copy again.')
       }
-      const workspace = await installTransfer(s, manifest, entry.folder, controller.signal)
-      const root = this.projectsRoot
-      await mkdir(root, { recursive: true })
-      const parent = await realpath(root)
-      if (await s.git.isRepository(parent))
-        throw new HttpError(409, 'The Dovo projects folder must be outside a Git repository')
-      const slug =
-        manifest.name
-          .normalize('NFKD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '')
-          .slice(0, 60) || 'project'
-      project = await mkdtemp(join(parent, `${slug}-`))
-      const stagingReceipt = { id: manifest.id, device: entry.device, stagingPath: project }
-      this.results.set(manifest.id, stagingReceipt)
-      s.db
-        .prepare('INSERT OR REPLACE INTO project_transfer_receipts VALUES (?,?)')
-        .run(manifest.id, JSON.stringify(stagingReceipt))
-      // Renaming individual top-level entries also works when the runtime data and
-      // managed projects live on different volumes (copy across volumes explicitly).
-      const { cp, readdir } = await import('node:fs/promises')
-      for (const name of await readdir(workspace)) {
-        const source = join(workspace, name),
-          target = join(project, name)
-        try {
-          await rename(source, target)
-        } catch (error) {
-          if (!(error instanceof Error && 'code' in error && error.code === 'EXDEV')) throw error
-          await cp(source, target, { recursive: true, force: false, errorOnExist: true })
+      let linked: Awaited<ReturnType<typeof installWorktreeTransfer>> | undefined
+      let repository: Repository
+      if (manifest.worktree) {
+        linked = await installWorktreeTransfer(
+          s,
+          manifest,
+          entry.folder,
+          controller.signal,
+          (worktree) => {
+            owned = worktree
+            const receipt = { id: manifest.id, device: entry.device, worktree }
+            this.results.set(manifest.id, receipt)
+            s.db
+              .prepare('INSERT OR REPLACE INTO project_transfer_receipts VALUES (?,?)')
+              .run(manifest.id, JSON.stringify(receipt))
+          },
+        )
+        const linkedRepository = linked.repository
+        if ('id' in linkedRepository) {
+          const existing = s.store
+            .get()
+            .repositories.find((repo) => repo.id === linkedRepository.id)
+          if (!existing)
+            throw new HttpError(
+              409,
+              'The destination project was removed during the copy. Refresh copy options and try again.',
+            )
+          repository = existing
+        } else {
+          repository = {
+            id: randomUUID(),
+            name: manifest.name,
+            ...(await s.git.inspect(linkedRepository.path)),
+          }
         }
+      } else {
+        const workspace = await installTransfer(s, manifest, entry.folder, controller.signal)
+        const root = this.projectsRoot
+        await mkdir(root, { recursive: true })
+        const parent = await realpath(root)
+        if (await s.git.isRepository(parent))
+          throw new HttpError(409, 'The Dovo projects folder must be outside a Git repository')
+        const slug =
+          manifest.name
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 60) || 'project'
+        project = await mkdtemp(join(parent, `${slug}-`))
+        const stagingReceipt = { id: manifest.id, device: entry.device, stagingPath: project }
+        this.results.set(manifest.id, stagingReceipt)
+        s.db
+          .prepare('INSERT OR REPLACE INTO project_transfer_receipts VALUES (?,?)')
+          .run(manifest.id, JSON.stringify(stagingReceipt))
+        // Renaming individual top-level entries also works when the runtime data and
+        // managed projects live on different volumes (copy across volumes explicitly).
+        const { cp, readdir } = await import('node:fs/promises')
+        for (const name of await readdir(workspace)) {
+          const source = join(workspace, name),
+            target = join(project, name)
+          try {
+            await rename(source, target)
+          } catch (error) {
+            if (!(error instanceof Error && 'code' in error && error.code === 'EXDEV')) throw error
+            await cp(source, target, { recursive: true, force: false, errorOnExist: true })
+          }
+        }
+        controller.signal.throwIfAborted()
+        const checkout = manifest.git
+          ? await s.git.inspect(project)
+          : { path: await realpath(project), branch: '', kind: 'folder' as const }
+        repository = { id: randomUUID(), name: manifest.name, ...checkout }
       }
       controller.signal.throwIfAborted()
-      const checkout = manifest.git
-        ? await s.git.inspect(project)
-        : { path: await realpath(project), branch: '', kind: 'folder' as const }
       authorize()
-      const repository = { id: randomUUID(), name: manifest.name, ...checkout }
-      const result: Result = { repositoryId: repository.id, path: repository.path }
+      const result: Result = { repositoryId: repository.id, path: linked?.path ?? repository.path }
       const saved = { id: manifest.id, device: entry.device, result }
       s.store.transaction(() => {
+        if (linked) s.store.rememberWorktree(linked.common, linked.path)
         s.store.update((workspace) => ({
           ...workspace,
-          repositories: [...workspace.repositories, repository],
+          repositories: workspace.repositories.some((repo) => repo.id === repository.id)
+            ? workspace.repositories
+            : [...workspace.repositories, repository],
         }))
         if (manifest.thread) {
           const task = s.tasks.create({
             title: manifest.thread.title,
             repositoryId: repository.id,
             agentId: '',
-            execution: 'main',
+            execution: linked ? 'worktree' : 'main',
+            ...(linked ? { existingWorktreePath: linked.path, checkoutBranch: linked.branch } : {}),
             objective: manifest.thread.prompt,
           })
           result.taskId = task.id
@@ -679,7 +819,17 @@ export class ProjectTransfers {
       }
       return result
     } catch (error) {
-      if (project && !entry.result) await rm(project, { recursive: true, force: true })
+      if (!entry.result) {
+        if (owned) {
+          await cleanupTransferredWorktree(s, owned, manifest.id)
+          const receipt = { id: manifest.id, device: entry.device }
+          this.results.set(manifest.id, receipt)
+          s.db
+            .prepare('INSERT OR REPLACE INTO project_transfer_receipts VALUES (?,?)')
+            .run(manifest.id, JSON.stringify(receipt))
+        }
+        if (project) await rm(project, { recursive: true, force: true })
+      }
       throw error
     } finally {
       await rm(entry.folder, { recursive: true, force: true })

@@ -8,6 +8,8 @@ import {
   projectTransferManifestSchema,
   projectTransferChunkSchema,
   projectTransferBatchSchema,
+  projectTransferPlanInputSchema,
+  projectTransferProjectSchema,
 } from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
 import { RuntimeServices } from '../../runtime-services.js'
@@ -38,6 +40,16 @@ export function projectTransferRoute(
           return transfers.start(decode(projectTransferStartSchema, input), device, () => {
             s.devices.authenticate(token)
           })
+        case 'plan':
+          return yield* serviceResult(
+            transfers.plan(decode(projectTransferPlanInputSchema, input), () => {
+              s.devices.authenticate(token)
+            }),
+          )
+        case 'destination':
+          return yield* serviceResult(
+            transfers.destination(decode(projectTransferProjectSchema, input)),
+          )
         case 'cancel':
           return yield* serviceResult(transfers.cancel(decode(idSchema, input).id))
         case 'retry':

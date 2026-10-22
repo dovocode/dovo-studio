@@ -36,12 +36,12 @@ await test('generates matching Homebrew and mise checksums and rejects incomplet
       'Dovo-Studio-1.2.3-arm64.zip',
       'Dovo-Studio-mise-1.2.3-macos-arm64.tar.gz',
       'Dovo-Server-1.2.3-windows-x64.zip',
-      'Dovo-Server-1.2.3-windows-arm64.zip',
     ]
     for (const name of files) await writeFile(join(temporary, name), name)
     execFileSync(process.execPath, [script.pathname, temporary, output, '1.2.3'])
     const formula = await readFile(join(output, 'Formula/dovo-server.rb'), 'utf8')
     const mise = await readFile(join(output, 'mise.toml'), 'utf8')
+    assert.doesNotMatch(mise, /windows-arm64/)
     const sums = await readFile(join(output, 'SHA256SUMS'), 'utf8')
     for (const name of files) {
       const hash = createHash('sha256').update(name).digest('hex')
@@ -73,7 +73,6 @@ await test('generates separate nightly Homebrew and mise definitions', async () 
       `Dovo-Studio-Nightly-${version}-arm64.zip`,
       `Dovo-Studio-Nightly-mise-${version}-macos-arm64.tar.gz`,
       `Dovo-Server-Nightly-${version}-windows-x64.zip`,
-      `Dovo-Server-Nightly-${version}-windows-arm64.zip`,
     ]
     for (const file of files) await writeFile(join(temporary, file), file)
     const output = join(temporary, 'distribution')
@@ -84,6 +83,7 @@ await test('generates separate nightly Homebrew and mise definitions', async () 
     assert.match(formula, /class DovoServerNightly/)
     assert.match(formula, /bin\/dovo-server-nightly/)
     assert.match(cask, /Dovo Studio \(Nightly\)\.app/)
+    assert.doesNotMatch(mise, /windows-arm64/)
     assert.match(mise, /http:dovo-server-nightly/)
     assert.match(mise, /http:dovo-studio-nightly/)
     assert.ok(!formula.includes('Dovo-Server-1.2.3-'))

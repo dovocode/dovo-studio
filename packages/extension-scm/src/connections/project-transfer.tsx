@@ -10,6 +10,8 @@ import {
   projectTransferSchema,
   projectTransferInspectionSchema,
   projectTransferTargetsSchema,
+  projectTransferPlanSchema,
+  projectTransferPlanInputSchema,
   worktreeChoicesSchema,
   worktreeListSchema,
   type Task,
@@ -52,6 +54,16 @@ export function ProjectTransferSettings({
   const [sshPort, setSshPort] = useState('22'),
     [runtimePort, setRuntimePort] = useState('')
   const [identityFile, setIdentityFile] = useState('')
+  const [destinationPlan, setDestinationPlan] = useState<{
+    key: string
+    value: typeof projectTransferPlanSchema.Type
+  } | null>(null)
+  const [destinationError, setDestinationError] = useState<{ key: string; message: string } | null>(
+    null,
+  )
+  const [destinationRepositoryId, setDestinationRepositoryId] = useState('')
+  const [parentDirectory, setParentDirectory] = useState('')
+  const [planRevision, setPlanRevision] = useState(0)
   const [localJob, setLocalJob] = useState<ProjectTransfer | null>(null)
   const latest = store.snapshot?.projectTransfers
     ?.filter((job) => job.repositoryId === repository.id)
@@ -101,6 +113,7 @@ export function ProjectTransferSettings({
   const load = (sourcePath = worktreePath) =>
     act(async () => {
       setInspection(null)
+      setPlanRevision((value) => value + 1)
       if (sourceTask && !sourceResolved.current) {
         if (!store.snapshot?.projectWorktreeTransfersSupported)
           throw new Error('Update this computer to copy worktrees to another computer.')
@@ -173,6 +186,74 @@ export function ProjectTransferSettings({
         .catch((error) => setError(error instanceof Error ? error.message : String(error)))
     }
   }, [job, store.runtimes, store.refreshRuntime])
+  const planInput = {
+    repositoryId: repository.id,
+    worktreePath: worktreePath || undefined,
+    targetId,
+    ssh:
+      transport === 'ssh'
+        ? {
+            sshHost,
+            sshUser,
+            sshPort: Number(sshPort),
+            runtimePort: Number(runtimePort),
+            identityFile: identityFile || undefined,
+          }
+        : undefined,
+  }
+  const planKey = JSON.stringify(planInput)
+  const plan = destinationPlan?.key === planKey ? destinationPlan.value : null
+  const planError = destinationError?.key === planKey ? destinationError.message : ''
+  const destination = plan?.repositories.length
+    ? {
+        repositoryId:
+          destinationRepositoryId ||
+          (plan.repositories.length === 1 ? plan.repositories[0]!.id : ''),
+      }
+    : { parentDirectory: parentDirectory.trim() }
+  const destinationReady =
+    !worktreePath ||
+    (!!plan &&
+      ('repositoryId' in destination ? !!destination.repositoryId : !!destination.parentDirectory))
+  useEffect(() => {
+    if (!open || !worktreePath || !targetId || active) return
+    let cancelled = false
+    setDestinationError(null)
+    setDestinationPlan(null)
+    setDestinationRepositoryId('')
+    setParentDirectory('')
+    const input = decodeResult(projectTransferPlanInputSchema, JSON.parse(planKey))
+    if (!input.success) {
+      setDestinationError({
+        key: planKey,
+        message: 'Complete the connection settings to check the destination project.',
+      })
+      return
+    }
+    const timer = setTimeout(
+      () => {
+        void store
+          .request('/api/scm/project-transfer/plan', input.data, projectTransferPlanSchema)
+          .then(
+            (value) => {
+              if (!cancelled) setDestinationPlan({ key: planKey, value })
+            },
+            (error: unknown) => {
+              if (!cancelled)
+                setDestinationError({
+                  key: planKey,
+                  message: error instanceof Error ? error.message : String(error),
+                })
+            },
+          )
+      },
+      transport === 'ssh' ? 500 : 0,
+    )
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [open, worktreePath, targetId, planKey, active, planRevision])
   if (repository.kind === 'scratch') return null
   if (!store.snapshot?.projectTransfersSupported)
     return (
@@ -192,10 +273,13 @@ export function ProjectTransferSettings({
         )
         return
       }
+      if (!destinationReady)
+        throw new Error('Choose the destination project or its parent folder before copying.')
       const parsed = decodeResult(projectTransferStartSchema, {
         id: randomUUID(),
         repositoryId: repository.id,
         worktreePath: worktreePath || undefined,
+        destination: worktreePath ? destination : undefined,
         thread: createThread
           ? {
               title:
@@ -391,6 +475,67 @@ export function ProjectTransferSettings({
                 ))}
               </select>
             </FormField>
+            {!!worktreePath && (
+              <div className="space-y-2 text-xs">
+                {!plan && !planError && (
+                  <p className="text-muted-foreground">Checking destination project…</p>
+                )}
+                {!!planError && (
+                  <p role="alert" className="text-destructive">
+                    {planError}
+                  </p>
+                )}
+                {plan &&
+                  (plan.repositories.length ? (
+                    <FormField label="Destination project">
+                      <select
+                        aria-label="Destination project"
+                        className="h-8 w-full rounded-md border bg-background px-2 text-xs"
+                        value={
+                          'repositoryId' in destination ? (destination.repositoryId ?? '') : ''
+                        }
+                        onChange={(event) => setDestinationRepositoryId(event.target.value)}
+                      >
+                        <option value="">Choose an existing project</option>
+                        {plan.repositories.map((repo) => (
+                          <option key={repo.id} value={repo.id}>
+                            {repo.name} · {repo.path}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                  ) : (
+                    <>
+                      <p className="text-muted-foreground">
+                        This project is not on the destination yet. Where should its main checkout
+                        go?
+                      </p>
+                      <FormField label="Project parent folder on destination">
+                        <Input
+                          value={parentDirectory}
+                          onChange={(event) => setParentDirectory(event.target.value)}
+                          placeholder="/Users/you/Projects"
+                        />
+                      </FormField>
+                    </>
+                  ))}
+                {plan && (
+                  <p className="break-all text-muted-foreground">
+                    Copied worktree directory: {plan.worktreesRoot}. The main checkout stays
+                    separate.
+                  </p>
+                )}
+                {!!planError && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPlanRevision((value) => value + 1)}
+                  >
+                    Check destination project
+                  </Button>
+                )}
+              </div>
+            )}
             {!targets.length && (
               <p className="text-xs text-muted-foreground">
                 Pair another computer in Settings → Computers, then refresh.
@@ -452,7 +597,10 @@ export function ProjectTransferSettings({
               <div className="space-y-2 text-xs">
                 <p className="text-muted-foreground">
                   {inspection.files} files · {(inspection.bytes / 1048576).toFixed(1)} MB, plus Git
-                  history. New folder under ~/.dovo/projects on the destination.
+                  history.{' '}
+                  {worktreePath
+                    ? 'Linked worktree on the destination.'
+                    : 'New folder under ~/.dovo/projects on the destination.'}
                 </p>
                 {!!inspection.skippedLinks && (
                   <p className="text-muted-foreground">
@@ -501,7 +649,7 @@ export function ProjectTransferSettings({
             <div className="flex gap-2">
               <Button
                 size="sm"
-                disabled={busy || !inspection || !targetId || !store.connected}
+                disabled={busy || !inspection || !targetId || !store.connected || !destinationReady}
                 onClick={() => void start()}
               >
                 {busy

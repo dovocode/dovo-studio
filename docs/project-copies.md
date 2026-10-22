@@ -19,23 +19,34 @@ already trusted host key. Enter the destination's SSH host/user and the local HT
 runtime (usually 5235). HTTP stays inside the encrypted SSH tunnel. The tunnel connects to that
 runtime on the destination's loopback interface; normal Dovo device authentication remains required.
 
-The copy gets a new, unique folder under `~/.dovo/projects` on the destination. It includes the
-project checkout's files, local Git branches/tags and commits, staged changes, uncommitted edits and
-untracked files. A Git remote and a GitHub push are not required. Ignored and private configuration
-files are optional and unchecked by default. Generated untracked folders are excluded. Symbolic
-links are skipped with a visible count; projects with submodules must copy those separately. Git
-repositories need an initial commit. Hooks, Git credentials and chats are not copied.
+A project-checkout copy gets a new, unique folder under `~/.dovo/projects` on the destination. It
+includes the project checkout's files, local Git branches/tags and commits, staged changes,
+uncommitted edits and untracked files. A Git remote and a GitHub push are not required. Ignored and
+private configuration files are optional and unchecked by default. Generated untracked folders are
+excluded. Symbolic links are skipped with a visible count; projects with submodules must copy those
+separately. Git repositories need an initial commit. Hooks, Git credentials and chats are not
+copied.
 
 Select **Source checkout** to copy a registered worktree instead of the project checkout. Only
-worktrees belonging to the selected project are accepted; the copy preserves that worktree’s branch,
-index, local edits and untracked files. Other worktrees are not copied. Changing the source clears
-private-file selections so they can be reviewed for the chosen checkout.
+worktrees belonging to the selected project are accepted. Studio checks for the same project on the
+destination using its Git remote identity (or shared root commit for local-only projects). Choose
+the existing project when several checkouts match. If none matches, enter an existing parent folder
+on the destination: Studio creates a clean main project there from the source project's committed
+HEAD, then creates the copied worktree. Local edits from the source main checkout are not included.
+
+Worktree copies use the destination's configured worktree directory (by default
+`~/.dovo/worktrees`), share Git history with the destination project, and appear in its worktree
+list. The destination's main checkout, branches and tags stay intact. The copy preserves the
+selected worktree's HEAD, index, local edits and untracked files. If its branch already exists on
+the destination, the copy gets a unique branch name. Other worktrees are not copied. Changing the
+source clears private-file selections so they can be reviewed for the chosen checkout.
 
 Enable **Create a thread on destination** for a fresh thread in the copied checkout. Leave the first
 message empty for a draft, or enter a prompt to start the agent using the destination’s settings.
 Existing chat history stays on the source. A failed agent start leaves the copied project and thread
 available on the destination, with the startup error shown at the source. Retrying a completed copy
-does not create another thread or rerun the agent. Both runtimes must support worktree transfers.
+does not create another thread or rerun the agent. Both runtimes must support linked-worktree
+transfers; update older destinations before copying.
 
 The source project and its chats stay intact. Use the destination's project picker to open the
 copied workspace and its thread. Existing destination projects are never overwritten. Progress and

@@ -153,6 +153,63 @@ it.skipIf(process.env.DOVO_TEST_REAL_SSH !== '1')(
       expect(await readFile(join(job!.path!, 'source.bin'))).toEqual(binary)
       expect(target.services.store.get().repositories).toHaveLength(1)
       await source.services.projectTransfers.cancel(id)
+      const gitPath = join(root, 'git-project')
+      await exec('git', ['init', '-b', 'main', gitPath])
+      await exec('git', ['config', 'user.name', 'SSH test'], { cwd: gitPath })
+      await exec('git', ['config', 'user.email', 'ssh@example.test'], { cwd: gitPath })
+      await writeFile(join(gitPath, 'tracked'), 'Committed')
+      await exec('git', ['add', '.'], { cwd: gitPath })
+      await exec('git', ['commit', '-qm', 'Initial'], { cwd: gitPath })
+      const gitRepo = await addRepository(source.services, {
+        source: 'local',
+        name: 'Git project',
+        path: gitPath,
+      })
+      const worktreePath = join(root, 'feature')
+      await exec('git', ['worktree', 'add', '-b', 'feature', worktreePath], { cwd: gitPath })
+      await writeFile(join(worktreePath, 'tracked'), 'Feature local edit')
+      const ssh = {
+        sshHost: '127.0.0.1',
+        sshUser: userInfo().username,
+        sshPort: port,
+        identityFile: key,
+        runtimePort: target.port,
+      }
+      const plan = await source.services.projectTransfers.plan(
+        { repositoryId: gitRepo.id, worktreePath, targetId: target.services.runtimeId, ssh },
+        () => source.services.devices.authenticate(owner),
+      )
+      expect(plan.repositories).toEqual([])
+      const worktreeId = randomUUID()
+      source.services.projectTransfers.start(
+        {
+          id: worktreeId,
+          repositoryId: gitRepo.id,
+          worktreePath,
+          targetId: target.services.runtimeId,
+          ignoredFiles: [],
+          destination: { parentDirectory: root },
+          ssh,
+        },
+        'owner',
+        () => source.services.devices.authenticate(owner),
+      )
+      await vi.waitFor(
+        () =>
+          expect(
+            source.services.projectTransfers.list().find((job) => job.id === worktreeId)?.state,
+          ).toMatch(/completed|failed/),
+        { timeout: 15000 },
+      )
+      const worktreeJob = source.services.projectTransfers
+        .list()
+        .find((job) => job.id === worktreeId)!
+      expect(worktreeJob.error).toBeUndefined()
+      expect(worktreeJob.state).toBe('completed')
+      expect(worktreeJob.path!.startsWith(plan.worktreesRoot)).toBe(true)
+      expect(await readFile(join(worktreeJob.path!, 'tracked'), 'utf8')).toBe('Feature local edit')
+      expect(origins).not.toContain(targetAddress)
+      expect(target.services.store.get().repositories).toHaveLength(2)
       await stopSsh(daemon)
       origins.length = 0
       const failedId = randomUUID()
@@ -181,7 +238,7 @@ it.skipIf(process.env.DOVO_TEST_REAL_SSH !== '1')(
         { timeout: 15000 },
       )
       expect(origins).toEqual([])
-      expect(target.services.store.get().repositories).toHaveLength(1)
+      expect(target.services.store.get().repositories).toHaveLength(2)
     } finally {
       vi.restoreAllMocks()
       await Promise.allSettled(runtimes.map((runtime) => runtime.close()))

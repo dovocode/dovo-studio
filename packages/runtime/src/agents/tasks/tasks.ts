@@ -2463,6 +2463,8 @@ export class Tasks {
       linkedCheckouts?: Task['linkedCheckouts']
       origin?: string
       worktreeIncludeChanges?: Task['worktreeIncludeChanges']
+      existingWorktreePath?: Task['existingWorktreePath']
+      checkoutBranch?: Task['checkoutBranch']
     },
   ) {
     if (input.linkedCheckouts) this.checkouts.linked.validate(input.linkedCheckouts)
