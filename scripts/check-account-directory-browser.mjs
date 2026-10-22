@@ -144,6 +144,12 @@ try {
       await page.getByRole('button', { name: 'Manage Mac Studio', exact: true }).click()
       assert.equal(await page.evaluate(() => window.managed), 'local')
       await page.getByText('Manage linked computers', { exact: true }).click()
+    } else {
+      assert.equal(await page.getByText('My Server', { exact: true }).count(), 0)
+      await page.getByRole('button', { name: 'Manage linked computers', exact: true }).click()
+      await page.getByRole('button', { name: 'Hide linked computers', exact: true }).click()
+      assert.equal(await page.getByText('My Server', { exact: true }).count(), 0)
+      await page.getByRole('button', { name: 'Manage linked computers', exact: true }).click()
     }
     const pair = page.getByRole('button', {
       name: kind === 'desktop' ? 'Pair computer' : 'Pair My Server',
@@ -216,6 +222,8 @@ try {
     assert.equal(await page.evaluate(() => window.saved), null)
     await page.getByRole('button', { name: 'Sign in', exact: true }).click()
     await page.getByText('Signed in as Dominic', { exact: true }).waitFor()
+    if (kind === 'mobile')
+      assert.equal(await page.getByText('My Server', { exact: true }).count(), 0)
     const beforeDeletion = await page.evaluate(
       () => window.calls.filter((call) => call.path === '/v1/account').length,
     )
@@ -251,7 +259,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Desktop computer list, deferred update dialog, collapsed account directory; desktop/mobile optional accounts: browser confirmation, secure storage adapters, private metadata linking, discovery into pairing, encrypted account internet setup without pairing, owner checkbox, no plaintext runtime credentials in Connect requests, sign-out, and confirmed account deletion with cancellation passed.',
+    'Desktop computer list; desktop/mobile collapsed account directories, optional accounts, private metadata linking, pairing discovery, encrypted account setup, sign-out and confirmed account deletion passed.',
   )
 } finally {
   await browser.close()

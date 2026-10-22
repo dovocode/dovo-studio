@@ -14,6 +14,8 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
   const { overviews, connect } = useRuntime()
   const [connecting, setConnecting] = useState<string | null>(null)
   const [connectionError, setConnectionError] = useState('')
+  const [linkedOpen, setLinkedOpen] = useState(false)
+  useEffect(() => setLinkedOpen(false), [directory?.user.id])
   const attempt = useRef<AbortController | null>(null)
   useEffect(() => () => attempt.current?.abort(), [])
   const connectComputer = async (server: AccountServer) => {
@@ -112,105 +114,117 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
       )}
       {directory && !deletionPending && (
         <>
-          {!directory.servers.length && (
-            <Text style={styles.text}>
-              Enable Dovo Connect on your computer to see it here, or link a separately paired
-              computer below.
-            </Text>
-          )}
-          {directory.servers.map((server) => {
-            const paired = overviews.some(
-              (source) =>
-                source.profile.connection.runtimeId === server.id ||
-                source.snapshot?.runtimeId === server.id,
-            )
-            return (
-              <View key={server.id} style={{ gap: 8 }}>
-                <Text style={styles.title}>{server.name}</Text>
+          <Action
+            secondary
+            label={linkedOpen ? 'Hide linked computers' : 'Manage linked computers'}
+            onPress={() => setLinkedOpen((open) => !open)}
+          />
+          {linkedOpen && (
+            <View style={{ gap: 12 }} accessibilityLabel="Linked computers">
+              {!directory.servers.length && (
                 <Text style={styles.text}>
-                  {server.internet
-                    ? server.internet.online
-                      ? 'Dovo Connect · Online'
-                      : 'Dovo Connect · Offline'
-                    : server.address}
+                  Enable Dovo Connect on your computer to see it here, or link a separately paired
+                  computer below.
                 </Text>
-                {server.internet ? (
-                  <Action
-                    label={
-                      connecting === server.id
-                        ? 'Connecting…'
-                        : `${paired ? 'Reconnect' : 'Connect'} ${server.name}`
-                    }
-                    disabled={busy || !!connecting || !server.internet.online}
-                    onPress={() => void connectComputer(server)}
-                  />
-                ) : paired ? (
-                  <Text style={styles.text}>Already paired</Text>
-                ) : (
-                  <Action
-                    label={`Pair ${server.name}`}
-                    disabled={busy}
-                    onPress={() => onPair(server.address)}
-                  />
-                )}
-                <Action
-                  label={
-                    server.internet
-                      ? `Disable Dovo Connect for ${server.name}`
-                      : `Unlink ${server.name}`
-                  }
-                  disabled={busy}
-                  onPress={() => void client.unlink(server.id)}
-                />
-              </View>
-            )
-          })}
-          {overviews
-            .filter(
-              (source) =>
-                source.connected &&
-                source.snapshot?.runtimeId &&
-                !directory.servers.some((server) => server.id === source.snapshot?.runtimeId),
-            )
-            .map((source) => {
-              const id = source.snapshot?.runtimeId,
-                name = runtimeComputerName(source)
-              const addresses = accountServerAddresses(source.profile.connection, source.snapshot)
-              const address = addresses.includes(selected[source.profile.id])
-                ? selected[source.profile.id]
-                : addresses[0]
-              return (
-                <View key={source.profile.id} style={{ gap: 8 }}>
-                  {addresses.length > 1 && (
-                    <Choice
-                      label={`Address for ${name}`}
-                      value={address}
-                      items={addresses.map((value) => ({ id: value, name: value }))}
-                      disabled={busy}
-                      onChange={(value) =>
-                        setSelected((current) => ({ ...current, [source.profile.id]: value }))
-                      }
-                    />
-                  )}
-                  {address ? (
-                    <>
-                      <Text style={styles.text}>{address}</Text>
-                      <Action
-                        label={`Link ${name} to account`}
-                        disabled={busy}
-                        onPress={() => {
-                          if (id) void client.link({ id, name, address })
-                        }}
-                      />
-                    </>
-                  ) : (
+              )}
+              {directory.servers.map((server) => {
+                const paired = overviews.some(
+                  (source) =>
+                    source.profile.connection.runtimeId === server.id ||
+                    source.snapshot?.runtimeId === server.id,
+                )
+                return (
+                  <View key={server.id} style={{ gap: 8 }}>
+                    <Text style={styles.title}>{server.name}</Text>
                     <Text style={styles.text}>
-                      Enable LAN/VPN access on {name} before linking it.
+                      {server.internet
+                        ? server.internet.online
+                          ? 'Dovo Connect · Online'
+                          : 'Dovo Connect · Offline'
+                        : server.address}
                     </Text>
-                  )}
-                </View>
-              )
-            })}
+                    {server.internet ? (
+                      <Action
+                        label={
+                          connecting === server.id
+                            ? 'Connecting…'
+                            : `${paired ? 'Reconnect' : 'Connect'} ${server.name}`
+                        }
+                        disabled={busy || !!connecting || !server.internet.online}
+                        onPress={() => void connectComputer(server)}
+                      />
+                    ) : paired ? (
+                      <Text style={styles.text}>Already paired</Text>
+                    ) : (
+                      <Action
+                        label={`Pair ${server.name}`}
+                        disabled={busy}
+                        onPress={() => onPair(server.address)}
+                      />
+                    )}
+                    <Action
+                      label={
+                        server.internet
+                          ? `Disable Dovo Connect for ${server.name}`
+                          : `Unlink ${server.name}`
+                      }
+                      disabled={busy}
+                      onPress={() => void client.unlink(server.id)}
+                    />
+                  </View>
+                )
+              })}
+              {overviews
+                .filter(
+                  (source) =>
+                    source.connected &&
+                    source.snapshot?.runtimeId &&
+                    !directory.servers.some((server) => server.id === source.snapshot?.runtimeId),
+                )
+                .map((source) => {
+                  const id = source.snapshot?.runtimeId,
+                    name = runtimeComputerName(source)
+                  const addresses = accountServerAddresses(
+                    source.profile.connection,
+                    source.snapshot,
+                  )
+                  const address = addresses.includes(selected[source.profile.id])
+                    ? selected[source.profile.id]
+                    : addresses[0]
+                  return (
+                    <View key={source.profile.id} style={{ gap: 8 }}>
+                      {addresses.length > 1 && (
+                        <Choice
+                          label={`Address for ${name}`}
+                          value={address}
+                          items={addresses.map((value) => ({ id: value, name: value }))}
+                          disabled={busy}
+                          onChange={(value) =>
+                            setSelected((current) => ({ ...current, [source.profile.id]: value }))
+                          }
+                        />
+                      )}
+                      {address ? (
+                        <>
+                          <Text style={styles.text}>{address}</Text>
+                          <Action
+                            label={`Link ${name} to account`}
+                            disabled={busy}
+                            onPress={() => {
+                              if (id) void client.link({ id, name, address })
+                            }}
+                          />
+                        </>
+                      ) : (
+                        <Text style={styles.text}>
+                          Enable LAN/VPN access on {name} before linking it.
+                        </Text>
+                      )}
+                    </View>
+                  )
+                })}
+            </View>
+          )}
         </>
       )}
     </View>

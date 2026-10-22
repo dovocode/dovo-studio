@@ -68,13 +68,14 @@ const built = await bundleBrowser(
     {
       path: './settings-group',
       importer: mobile,
-      contents: 'export const SettingsGroup=({children})=><section>{children}</section>;',
+      contents:
+        'export const SettingsGroup=({children})=><section>{children}</section>;export const SettingsRow=({title,onPress})=><button onClick={onPress}>{title}</button>;',
     },
     {
       path: '../ui/layout/sheet',
       importer: mobile,
       contents:
-        'export const Sheet=({children,title})=><div role="dialog" aria-label={title}>{children}</div>;',
+        'export const Sheet=({children,title,onClose})=><div role="dialog" aria-label={title}><button onClick={onClose}>Close</button>{children}</div>;',
     },
   ],
 )
@@ -151,17 +152,15 @@ try {
       })
       await page.addScriptTag({ content: built.outputFiles[0].text })
       await page.evaluate((client) => window.show(client), client)
-      if (client === 'desktop') {
-        await page.clock.runFor(6001)
-        assert.deepEqual(await page.evaluate(() => window.statusRequests), [])
-        await page.getByRole('button', { name: 'Computer updates', exact: true }).click()
-      }
+      await page.clock.runFor(6001)
+      assert.deepEqual(await page.evaluate(() => window.statusRequests), [])
+      await page.getByRole('button', { name: 'Computer updates', exact: true }).click()
       const update = page.getByRole('button', { name: 'Update all (2)', exact: true })
       await update.waitFor({ timeout: 10000 }).catch(async (error) => {
         console.log(client, errors, await page.locator('body').innerText())
         throw error
       })
-      if (client === 'desktop') {
+      {
         const updates = page.getByRole('dialog', { name: 'Computer updates', exact: true })
         await updates.getByRole('button', { name: 'Close', exact: true }).click()
         await updates.waitFor({ state: 'detached' })
@@ -188,7 +187,7 @@ try {
         },
         { id: 'server', body: { version: '1.0.1' } },
       ])
-      if (client === 'desktop') {
+      {
         await page.evaluate(() => {
           window.hostStatuses.desktop = { status: 'downloaded', version: '1.0.1' }
           window.hostStatuses.server = { status: 'complete', version: '1.0.1' }
@@ -211,7 +210,7 @@ try {
       await page.close()
     }
   console.log(
-    'Computer updates: desktop idle polling, dialog reopen, background automatic restarts, and desktop/mobile consent choices passed',
+    'Computer updates: desktop/mobile idle polling, sheet reopen, background automatic restarts and consent choices passed',
   )
 } finally {
   await browser.close()

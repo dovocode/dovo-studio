@@ -11,6 +11,8 @@ const mocks = {
   // Pairing is covered by check-thread-pairing-browser; keep its native scanner
   // outside this route/composer continuity fixture.
   '../../runtime/connection/pair-computer': `export const PairComputer=()=>null;`,
+  // Worktree transfer has its own browser suite; this fixture covers thread continuity.
+  '../../scm/connections/project-transfer': `export const ProjectTransferDialog=()=>null;`,
   'expo-router': `
     import {createContext,useContext,useEffect} from 'react';
     export const RouteContext=createContext({});
@@ -140,7 +142,7 @@ for (const [path, names] of Object.entries({
   './task-linked-pull-sheet': ['TaskLinkedPullSheet'],
   './task-thread-behavior': ['TaskThreadBehavior'],
   '../preview/browser-pane': ['BrowserPane', 'DevicesPane'],
-  '../composer/message-queue': ['MessageQueue'],
+  '../composer/composer-activity': ['ComposerActivity'],
   './task-questions': ['TaskQuestions'],
   './linked-projects': ['LinkedProjects'],
   './rename-thread': ['RenameThread'],
@@ -150,7 +152,6 @@ for (const [path, names] of Object.entries({
   '../conversation/components/preparation-progress': ['PreparationProgress'],
   '../conversation/components/review-comments': ['ReviewComments'],
   '../conversation/components/plan-approval': ['PlanApproval'],
-  '../conversation/components/native-todos': ['NativeTodos'],
   '../conversation/components/side-question': ['SideQuestion'],
   './project-instructions': ['ProjectInstructions'],
   '../conversation/components/review-findings': ['ReviewFindings'],
