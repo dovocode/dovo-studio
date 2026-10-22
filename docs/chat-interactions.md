@@ -76,8 +76,13 @@ automatically; selecting a tab or expanding the bar reopens them without losing 
 When the thread stops with work left, both clients label the list **Unfinished** and stop its
 running indicator without marking items complete. Unfinished lists survive provider-session
 replacement and are included as progress context on the next turn. The agent reconciles that list
-with the latest request; the list itself never authorizes more work. A new user message clears a
-fully completed list, while pending items remain until the agent explicitly updates the checklist.
+with the latest request; the list itself never authorizes more work. After every turn, the runtime
+automatically removes completed entries, including after failure or Stop and before the next queued
+turn. Pending and in-progress entries retain their order and IDs. An all-completed checklist
+disappears. Expanded checklists also offer **Clear checklist** on desktop and mobile, with a
+confirmation before removing unfinished items. Clearing is saved on the thread, leaves messages and
+the queue intact, and rejects changes made since confirmation. An active agent can publish new
+checklist items after a manual clear.
 
 Codex native image generation and image viewing appear as tool activity with image previews on
 desktop and mobile. Previews stay visible when work is folded. Generated raster data stays on the

@@ -1,6 +1,6 @@
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { TaskEmptyState } from '../creation/task-empty-state'
-import { formatTurnDuration } from '@dovo/protocol'
+import { checkpointFileBreakdown, formatTurnDuration } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
 import { CheckpointFiles } from './components/checkpoint-files'
 import {
@@ -113,6 +113,7 @@ function CheckpointRow({
   const { collapseChangedFiles } = useMobilePreferences()
   const [expanded, setExpanded] = useApplicationState<boolean | null>(null)
   const showFiles = expanded ?? !collapseChangedFiles
+  const breakdown = useMemo(() => checkpointFileBreakdown(turn?.checkpoint), [turn?.checkpoint])
   const totals = useMemo(
     () =>
       (turn?.checkpoint?.files ?? []).map(fileStats).reduce(
@@ -173,6 +174,11 @@ function CheckpointRow({
           <Text style={styles.muted}>Open diff</Text>
         </Pressable>
       </View>
+      {!!breakdown && (
+        <Text accessibilityLabel="Changed file breakdown" style={styles.muted}>
+          {breakdown}
+        </Text>
+      )}
       {showFiles && (
         <CheckpointFiles
           files={turn?.checkpoint?.files ?? []}
@@ -186,6 +192,9 @@ function CheckpointRow({
           <Text style={styles.muted}>
             {link.repositoryName ?? link.repositoryId} · {link.branch ?? 'Linked checkout'} ·{' '}
             {link.files.length} changed files
+          </Text>
+          <Text accessibilityLabel="Linked checkout file breakdown" style={styles.muted}>
+            {checkpointFileBreakdown(link)}
           </Text>
           {showFiles && (
             <CheckpointFiles

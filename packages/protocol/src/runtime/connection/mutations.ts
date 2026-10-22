@@ -34,6 +34,7 @@ const mutations = new Set([
   '/api/tasks/cancel',
   '/api/tasks/lifecycle',
   '/api/tasks/viewed',
+  '/api/tasks/checklist/clear',
   '/api/runtime/preferences/save',
   '/api/agents/defaults/save',
   '/api/agents/settings/save',
@@ -99,7 +100,9 @@ const rejectedPatch = (item: { path: string; method: string }, error: unknown) =
   item.path === '/api/workspace' && item.method === 'PATCH' && workspacePatchRejected(error)
 const settledFailure = (item: { path: string; method: string }, error: unknown) =>
   rejectedPatch(item, error) ||
-  (error instanceof RuntimeRequestError && error.mutationRetired === true)
+  (error instanceof RuntimeRequestError &&
+    (error.mutationRetired === true ||
+      (item.path === '/api/tasks/checklist/clear' && error.mutationRejected === true)))
 const operation = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({
     try: run,

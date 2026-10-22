@@ -1,4 +1,4 @@
-import { turnSettingsSchema } from '@dovo/protocol'
+import { agentTodosSchema, turnSettingsSchema } from '@dovo/protocol'
 import { acknowledgeSubagentFailure } from '../../studio/subagent-failures.js'
 import type { Services } from '../../services.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
@@ -470,6 +470,21 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         return yield* serviceResult({
           ok: true,
         })
+      }
+      if (method === 'POST' && path === '/api/tasks/checklist/clear') {
+        const { id, expectedItems } = decode(
+          strictStruct({ id: idSchema, expectedItems: agentTodosSchema }),
+          yield* serviceResult(body(request)),
+        )
+        const task = s.store.taskSummary(id)
+        if (task.nativeTodos?.length) {
+          if (!isDeepStrictEqual(task.nativeTodos, expectedItems))
+            throw new HttpError(409, 'The checklist changed. Review it before clearing it.', {
+              mutationRejected: true,
+            })
+          s.store.updateTask(id, (current) => ({ ...current, nativeTodos: undefined }))
+        }
+        return { ok: true }
       }
       if (method === 'POST' && path === '/api/tasks/projects/select')
         return yield* s.titles.selectProjectsEffect(yield* serviceResult(body(request)))

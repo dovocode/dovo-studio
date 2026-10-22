@@ -6,9 +6,22 @@ import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 
 /** Shared agent checklist from native progress or the regular task tool, latest state only. */
-export function NativeTodos({ task, embedded = false }: { task: Task; embedded?: boolean }) {
+export function NativeTodos({
+  task,
+  embedded = false,
+  onClear,
+  clearDisabled = false,
+}: {
+  task: Task
+  embedded?: boolean
+  onClear?: (items: NonNullable<Task['nativeTodos']>) => Promise<unknown>
+  clearDisabled?: boolean
+}) {
   const { colors, styles } = useTheme()
   const [open, setOpen] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [error, setError] = useState('')
+  const [confirmation, setConfirmation] = useState<Task['nativeTodos']>()
   const summary = nativeTodoSummary(task)
   if (!summary) return null
   const todos = task.nativeTodos ?? []
@@ -92,6 +105,67 @@ export function NativeTodos({ task, embedded = false }: { task: Task; embedded?:
           {summary.total - summary.completed === 1 ? 'item' : 'items'} left. Continue the thread to
           pick them up.
         </Text>
+      )}
+      {onClear && (open || embedded) && (
+        <View style={{ gap: 8 }}>
+          {confirmation && (
+            <Text style={styles.muted}>
+              Clear all {confirmation.length} checklist items, including unfinished work?
+            </Text>
+          )}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={clearDisabled || clearing}
+              accessibilityState={{ disabled: clearDisabled || clearing, busy: clearing }}
+              style={{
+                minHeight: 44,
+                justifyContent: 'center',
+                paddingHorizontal: 8,
+                opacity: clearDisabled || clearing ? 0.5 : 1,
+              }}
+              onPress={async () => {
+                setError('')
+                if (!confirmation) {
+                  setConfirmation(todos)
+                  return
+                }
+                setClearing(true)
+                try {
+                  await onClear(confirmation)
+                } catch (error) {
+                  setError(error instanceof Error ? error.message : String(error))
+                } finally {
+                  setClearing(false)
+                  setConfirmation(undefined)
+                }
+              }}
+            >
+              <Text style={styles.muted}>
+                {clearing
+                  ? 'Clearing…'
+                  : confirmation
+                    ? 'Confirm clear checklist'
+                    : 'Clear checklist'}
+              </Text>
+            </Pressable>
+            {confirmation && (
+              <Pressable
+                accessibilityRole="button"
+                disabled={clearing}
+                style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }}
+                onPress={() => setConfirmation(undefined)}
+              >
+                <Text style={styles.text}>Cancel</Text>
+              </Pressable>
+            )}
+          </View>
+          {!!error && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          )}
+        </View>
       )}
     </View>
   )

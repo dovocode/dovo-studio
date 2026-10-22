@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useWorkspace } from '@dovo/studio-core'
-import { nativeTodoSummary, type PendingMessage, type Task } from '@dovo/protocol'
+import { nativeTodoSummary, responses, type PendingMessage, type Task } from '@dovo/protocol'
 import { MessageQueue } from '../thread/message-queue'
 import { NativeTodos } from '../thread/native-todos'
 
@@ -17,7 +17,7 @@ export function ComposerActivity({
   const [queueEditing, setQueueEditing] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const previousInputs = useRef(new Set<string>())
-  const { snapshot } = useWorkspace()
+  const { snapshot, request, connected } = useWorkspace()
   useEffect(() => {
     const inputs = [
       ...(snapshot?.questions ?? [])
@@ -125,7 +125,15 @@ export function ComposerActivity({
           aria-labelledby={both ? `${id}-checklist` : undefined}
           hidden={collapsed || active !== 'checklist'}
         >
-          <NativeTodos task={task} embedded />
+          <NativeTodos
+            key={task.id}
+            task={task}
+            embedded
+            clearDisabled={!connected}
+            onClear={(expectedItems) =>
+              request('/api/tasks/checklist/clear', { id: task.id, expectedItems }, responses.ok)
+            }
+          />
         </div>
       )}
     </section>

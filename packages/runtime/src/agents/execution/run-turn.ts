@@ -1520,6 +1520,16 @@ ${
               flush()
               reasoning.finish()
               progress.flush()
+              // Keep the shared checklist focused on work left after every turn,
+              // including failed/stopped turns and turns followed by queued input.
+              const todos = this.store.taskSummary(id).nativeTodos
+              if (todos?.some((todo) => todo.status === 'completed')) {
+                const remaining = todos.filter((todo) => todo.status !== 'completed')
+                this.store.updateTask(id, (task) => ({
+                  ...task,
+                  nativeTodos: remaining.length ? remaining : undefined,
+                }))
+              }
             }),
           ),
         )

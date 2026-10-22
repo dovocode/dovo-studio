@@ -59,14 +59,16 @@ it.each([
     expect(s.store.task(s.task.id).nativeTodos).toEqual(todos)
     expect((await s.send('next', 'New request')).status).toBe(200)
     await waitForRuntime(() => expect(s.store.task(s.task.id).status).toBe('review'))
-    expect(s.store.task(s.task.id).nativeTodos).toEqual(hidden ? undefined : todos)
+    const remaining = hidden ? undefined : todos.filter((todo) => todo.status !== 'completed')
+    await waitForRuntime(() => expect(s.store.task(s.task.id).activeRunId).toBeUndefined())
+    expect(s.store.task(s.task.id).nativeTodos).toEqual(remaining)
     // Retrying a lost response must not clear a checklist published by the new turn.
     seed()
     expect((await s.send('next', 'New request')).status).toBe(200)
     expect(s.store.task(s.task.id).nativeTodos).toEqual(todos)
     await s.tasks.send(s.task.id, 'notification', 'System watch update')
-    await waitForRuntime(() => expect(s.store.task(s.task.id).status).toBe('review'))
-    expect(s.store.task(s.task.id).nativeTodos).toEqual(todos)
+    await waitForRuntime(() => expect(s.store.task(s.task.id).activeRunId).toBeUndefined())
+    expect(s.store.task(s.task.id).nativeTodos).toEqual(remaining)
   },
 )
 

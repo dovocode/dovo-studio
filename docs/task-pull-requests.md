@@ -98,11 +98,15 @@ own runtimes.
 
 ## Reviewing changed files
 
-The Files/Changes view shows a compact count of normal files, mocks and tests, plus docs and
-generated files when present. Counts use the PR's returned file list, independently of hidden
+The Files/Changes view shows compact Code, Tests, Mocks, Docs and Generated counts, hiding
+categories with zero files. Counts use the PR's returned file list, independently of hidden
 whitespace changes or review ordering. Common path and filename conventions separate mocks, fixtures
 and snapshots from executable tests; generated-file attributes take precedence. This is a review aid
 and does not parse source code or infer test coverage.
+
+Turn changed-file overviews use the same categories, including saved paths omitted from the diff.
+Mobile includes linked checkouts in the turn's total; desktop shows counts for each checkout.
+Partial PR file lists show how many files have loaded rather than implying complete counts.
 
 Refreshes keep the selected file. While a new revision's files load, the previous diff remains
 visible and read-only for the same verified PR and account. Comments and viewed changes wait for the

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
-import { nativeTodoSummary, type Task } from '@dovo/protocol'
+import { nativeTodoSummary, responses, type Task } from '@dovo/protocol'
+import { useRuntime } from '../../runtime/connection/provider'
 import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
@@ -12,6 +13,7 @@ import { pendingQueue } from './pending-send'
 export function ComposerActivity({ task }: { task: Task }) {
   const { colors, styles } = useTheme()
   const { actions } = useTaskConversation()
+  const { call, connected } = useRuntime()
   const [selected, setSelected] = useState('queue')
   const [queueOpen, setQueueOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -125,7 +127,15 @@ export function ComposerActivity({ task }: { task: Task }) {
       )}
       {summary && (
         <View style={{ display: !collapsed && active === 'checklist' ? 'flex' : 'none' }}>
-          <NativeTodos task={task} embedded />
+          <NativeTodos
+            key={task.id}
+            task={task}
+            embedded
+            clearDisabled={!connected}
+            onClear={(expectedItems) =>
+              call('/api/tasks/checklist/clear', { id: task.id, expectedItems }, responses.ok)
+            }
+          />
         </View>
       )}
     </View>

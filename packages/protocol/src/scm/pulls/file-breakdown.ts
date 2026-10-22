@@ -1,4 +1,6 @@
 import type { PullDetail } from './pulls.js'
+import type { TaskTurn } from '../../workspace.js'
+import { checkpointFiles } from '../repositories/file-previews.js'
 
 type File = Pick<PullDetail['files'][number], 'path' | 'attributes'>
 type FileKind = 'normal' | 'mocks' | 'tests' | 'docs' | 'generated'
@@ -75,19 +77,48 @@ export function pullFileKind(file: File): FileKind {
   return 'normal'
 }
 
-/** Count the complete PR file list, independently of diff display filters or review ordering. */
-export function pullFileBreakdown(files: readonly File[], total?: number | null) {
+/** Deduplicate paths within each checkout; the same path in another checkout is a different file. */
+function fileGroupBreakdown(groups: readonly (readonly File[])[], total?: number | null) {
   const counts: Record<FileKind, number> = { normal: 0, mocks: 0, tests: 0, docs: 0, generated: 0 }
-  const paths = new Set<string>()
-  for (const file of files) {
-    if (paths.has(file.path)) continue
-    paths.add(file.path)
-    counts[pullFileKind(file)]++
+  let loaded = 0
+  for (const files of groups) {
+    const paths = new Set<string>()
+    for (const file of files) {
+      if (paths.has(file.path)) continue
+      paths.add(file.path)
+      counts[pullFileKind(file)]++
+    }
+    loaded += paths.size
   }
-  return (
-    `${counts.normal} normal file${counts.normal === 1 ? '' : 's'} · ${counts.mocks} mock${counts.mocks === 1 ? '' : 's'} · ${counts.tests} test${counts.tests === 1 ? '' : 's'}` +
-    (counts.docs ? ` · ${counts.docs} docs` : '') +
-    (counts.generated ? ` · ${counts.generated} generated` : '') +
-    (total != null && total > paths.size ? ` (${paths.size} of ${total} files loaded)` : '')
-  )
+  const categories: readonly [FileKind, string][] = [
+    ['normal', 'Code'],
+    ['tests', 'Tests'],
+    ['mocks', 'Mocks'],
+    ['docs', 'Docs'],
+    ['generated', 'Generated'],
+  ]
+  const summary = categories
+    .filter(([kind]) => counts[kind] > 0)
+    .map(([kind, label]) => `${label} ${counts[kind]}`)
+    .join(' · ')
+  return [summary, total != null && total > loaded ? `(${loaded} of ${total} files loaded)` : '']
+    .filter(Boolean)
+    .join(' ')
+}
+
+/** Count the complete file list, independently of PR diff display filters or review ordering. */
+export function changedFileBreakdown(files: readonly File[], total?: number | null) {
+  return fileGroupBreakdown([files], total)
+}
+
+/** Include saved/omitted paths and all linked checkouts in the turn's overview. */
+export function checkpointFileBreakdown(
+  checkpoint: Pick<NonNullable<TaskTurn['checkpoint']>, 'files' | 'omitted' | 'linked'> | undefined,
+) {
+  return checkpoint
+    ? fileGroupBreakdown([
+        checkpointFiles(checkpoint),
+        ...(checkpoint.linked ?? []).map(checkpointFiles),
+      ])
+    : ''
 }

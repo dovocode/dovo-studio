@@ -10,7 +10,7 @@ import {
   pullFileFingerprint,
   reviewFileState,
   orderReviewFiles,
-  pullFileBreakdown,
+  changedFileBreakdown,
 } from '@dovo/protocol'
 import { useFileReview } from '../../review/use-file-review'
 import { MobileOrganizeReview } from '../../review/organize-review'
@@ -150,7 +150,7 @@ export function PullChanges({
         accessibilityLabel="Changed file breakdown"
         style={[styles.muted, { paddingHorizontal: 12 }]}
       >
-        {pullFileBreakdown(detail.files, detail.pull.changedFiles)}
+        {changedFileBreakdown(detail.files, detail.pull.changedFiles)}
       </Text>
       <View
         testID="PR file controls"

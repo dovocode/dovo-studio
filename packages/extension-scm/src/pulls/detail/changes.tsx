@@ -2,7 +2,7 @@ import {
   pullFileFingerprint,
   reviewFileState,
   orderReviewFiles,
-  pullFileBreakdown,
+  changedFileBreakdown,
 } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
 import { OrganizeReview, FileReviewControls, ReviewFiles } from '@dovo/studio-ui'
@@ -159,7 +159,7 @@ export function PullChanges({
         title="Based on file paths and generated-file attributes."
         className="text-xs text-muted-foreground tabular-nums"
       >
-        {pullFileBreakdown(detail.files, detail.pull.changedFiles)}
+        {changedFileBreakdown(detail.files, detail.pull.changedFiles)}
       </p>
       <OrganizeReview review={review} onOrganized={() => setRelated(true)} />
       <div

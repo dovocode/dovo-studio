@@ -21,7 +21,7 @@ window.store={connected:true,request:async(path,input)=>{window.calls.push({path
 const before='export function greeting(name: string) {\\n  return "Hello " + name;\\n}\\n';
 const after='export function greeting(name: string) {\\n  return \\x60Hello, \\x24{name}!\\x60;\\n}\\n';
 const turn={id:'turn',status:'completed',checkpoint:{before:'a'.repeat(40),after:'b'.repeat(40),files:[{path:'src/greeting.ts',before,after,viewed:false},{path:'src/added.ts',before:'',after:'export const added = true;\\n',viewed:false},{path:'src/removed.ts',before:'export const old = true;\\n',after:'',viewed:false},{path:'src/mode.ts',before:'same\\n',after:'same\\n',viewed:false}],omitted:[]}};
-function App(){const [files,setFiles]=useState([image,text]);return <main className="studio dark min-h-screen bg-background p-6 text-foreground"><h1 className="mb-6 text-sm">Turn complete</h1><TurnCheckpoint turn={turn} taskId="task" checkoutId="linked"/><section className="mt-8 rounded-2xl border bg-card p-3" aria-label="Composer fixture"><MessageAttachments compact taskId="task" files={files} previews={new Map([['image','data:image/png;base64,'+window.imageData]])} remove={async id=>setFiles(current=>current.filter(file=>file.id!==id))}/><textarea aria-label="Message task" className="mt-2 w-full bg-transparent" defaultValue="Review these changes"/></section><section className="mt-8" aria-label="Sent message"><MessageAttachments taskId="task" files={[image]}/></section></main>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;const [files,setFiles]=useState([image,text]);return <main className="studio dark min-h-screen bg-background p-6 text-foreground"><h1 className="mb-6 text-sm">Turn complete</h1><TurnCheckpoint turn={current} taskId="task" checkoutId="linked"/><section className="mt-8 rounded-2xl border bg-card p-3" aria-label="Composer fixture"><MessageAttachments compact taskId="task" files={files} previews={new Map([['image','data:image/png;base64,'+window.imageData]])} remove={async id=>setFiles(current=>current.filter(file=>file.id!==id))}/><textarea aria-label="Message task" className="mt-2 w-full bg-transparent" defaultValue="Review these changes"/></section><section className="mt-8" aria-label="Sent message"><MessageAttachments taskId="task" files={[image]}/></section></main>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -90,6 +90,10 @@ try {
     40,
   )
   await page.screenshot({ path: '/tmp/dovo-compact-attachments.png' })
+  await page
+    .getByLabel('Changed file breakdown', { exact: true })
+    .filter({ hasText: /^Code 4$/ })
+    .waitFor()
   await page.getByRole('button', { name: 'Open diff', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Turn checkpoint · 4 files' })
   const rendered = async (text) =>
@@ -160,6 +164,31 @@ try {
     await page.getByRole('textbox', { name: 'Message task' }).inputValue(),
     'Review these changes',
   )
+  await page.evaluate(() =>
+    window.setTurn((turn) => ({
+      ...turn,
+      checkpoint: {
+        ...turn.checkpoint,
+        files: [
+          ...turn.checkpoint.files,
+          ...['src/greeting.test.ts', '__mocks__/client.ts', 'docs/review.md'].map((path) => ({
+            path,
+            before: '',
+            after: 'change',
+            viewed: false,
+          })),
+        ],
+        omitted: ['src/generated/client.ts'],
+      },
+    })),
+  )
+  const breakdown = page.getByLabel('Changed file breakdown', { exact: true })
+  await breakdown.filter({ hasText: 'Code 4 · Tests 1 · Mocks 1 · Docs 1 · Generated 1' }).waitFor()
+  const disclosure = page.getByRole('button', { name: /8 changed files/ })
+  await disclosure.click()
+  assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
+  assert.equal(await breakdown.isVisible(), true)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   assert.deepEqual(errors, [])
   console.log(
     'Checkpoint dialog: real highlighted diffs, layouts, wrapping, file selection, added/deleted/unchanged files, syntax retry and scoped restore; compact attachments: preview, removal and preserved draft passed.',

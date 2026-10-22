@@ -185,16 +185,18 @@ export class MutationReceipts {
           // A gateway/runtime failure may be transient. Preserve uncertainty rather than recording a false rejection.
           const status =
             error instanceof HttpError ? error.status : error instanceof ValidationError ? 400 : 500
-          // Workspace patches validate the full edit before committing. Distinguish a
-          // domain rejection from receipt conflicts and interrupted/unknown outcomes.
+          // Preserve explicit pre-commit rejections through receipt recovery. Workspace
+          // patches also validate the full edit before committing. Receipt conflicts and
+          // interrupted/unknown outcomes must keep their uncertainty.
           const mutationRejected =
-            [400, 403, 404, 409, 422].includes(status) &&
-            typeof request === 'object' &&
-            request !== null &&
-            'path' in request &&
-            request.path === '/api/workspace' &&
-            'method' in request &&
-            request.method === 'PATCH'
+            (error instanceof HttpError && error.mutationRejected === true) ||
+            ([400, 403, 404, 409, 422].includes(status) &&
+              typeof request === 'object' &&
+              request !== null &&
+              'path' in request &&
+              request.path === '/api/workspace' &&
+              'method' in request &&
+              request.method === 'PATCH')
           if (status >= 500) this.failed.add(key)
           if (status < 500)
             this.db.prepare('UPDATE mutation_receipts SET result=? WHERE device_id=? AND id=?').run(

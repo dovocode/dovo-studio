@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { pullFileBreakdown, pullFileKind } from './file-breakdown'
+import { changedFileBreakdown, checkpointFileBreakdown, pullFileKind } from './file-breakdown'
 
 it.each([
   ['src/contest.ts', 'normal'],
@@ -48,12 +48,39 @@ it('honors generated attributes and counts each current path once, including del
     'README.md',
     'pnpm-lock.yaml',
   ].map((path) => ({ path }))
-  expect(pullFileBreakdown(files)).toBe('1 normal file · 1 mock · 1 test · 1 docs · 1 generated')
-  expect(pullFileBreakdown([])).toBe('0 normal files · 0 mocks · 0 tests')
+  expect(changedFileBreakdown(files)).toBe('Code 1 · Tests 1 · Mocks 1 · Docs 1 · Generated 1')
+  expect(changedFileBreakdown([])).toBe('')
 })
 
 it('labels a partial provider response without inventing the missing file categories', () => {
-  expect(pullFileBreakdown([{ path: 'src/api.ts' }], 10)).toBe(
-    '1 normal file · 0 mocks · 0 tests (1 of 10 files loaded)',
+  expect(changedFileBreakdown([{ path: 'src/api.ts' }], 10)).toBe('Code 1 (1 of 10 files loaded)')
+})
+
+it('shows docs-only changes and hides every category with no changed files', () => {
+  expect(changedFileBreakdown([{ path: 'docs/setup.md' }])).toBe('Docs 1')
+  expect(changedFileBreakdown([{ path: 'api.test.ts' }])).toBe('Tests 1')
+  expect(changedFileBreakdown([], 10)).toBe('(0 of 10 files loaded)')
+})
+
+it('includes omitted checkpoint paths and counts shared filenames separately across projects', () => {
+  const file = (path: string) => ({ path, before: '', after: 'change', viewed: false })
+  const checkpoint = {
+    files: ['api.ts', 'tests/api.test.ts', '__mocks__/api.ts'].map(file),
+    omitted: ['README.md', 'api.ts', 'client.generated.ts'],
+    linked: [
+      {
+        checkoutId: 'linked',
+        repositoryId: 'other',
+        directory: '/other',
+        before: 'before',
+        files: ['tests/api.test.ts', 'README.md'].map(file),
+        omitted: [],
+      },
+    ],
+  }
+  expect(checkpointFileBreakdown(checkpoint)).toBe(
+    'Code 1 · Tests 2 · Mocks 1 · Docs 2 · Generated 1',
   )
+  expect(checkpointFileBreakdown({ files: [], omitted: [] })).toBe('')
+  expect(checkpointFileBreakdown(undefined)).toBe('')
 })

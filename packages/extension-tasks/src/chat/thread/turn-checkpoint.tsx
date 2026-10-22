@@ -1,6 +1,6 @@
 import { whitespaceOnlyFile } from '@dovo/studio-core'
 import { SavedFilePreview } from '../../files/saved-file-preview'
-import { checkpointFiles, filePreviewLabel } from '@dovo/protocol'
+import { checkpointFiles, changedFileBreakdown, filePreviewLabel } from '@dovo/protocol'
 import { fileStats, DiffAmounts } from '../../files/presentation'
 import { responses, useWorkspace, useAppPreferences } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -227,6 +227,11 @@ export function TurnCheckpoint({
           )}
         </span>
       </div>
+      {!!count && (
+        <p aria-label="Changed file breakdown" className="mt-1 tabular-nums">
+          {changedFileBreakdown(files)}
+        </p>
+      )}
       {showFiles && (
         <div className="mt-2 border-t border-border/40 pt-2">
           <FileBrowserTree

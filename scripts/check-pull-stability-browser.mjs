@@ -570,7 +570,7 @@ try {
   await page.evaluate(() => {
     window.savedReads.clear()
     window.detail.files = Array.from({ length: 12 }, (_, i) => ({
-      path: 'src/review-' + i + '.ts',
+      path: i === 0 ? 'docs/review.md' : 'src/review-' + i + '.ts',
       status: 'modified',
       additions: 1,
       deletions: 0,
@@ -593,7 +593,7 @@ try {
   })
   await page
     .getByLabel('Changed file breakdown', { exact: true })
-    .filter({ hasText: '12 normal files · 0 mocks · 0 tests' })
+    .filter({ hasText: 'Code 11 · Docs 1' })
     .waitFor()
   const reviewControls = page.getByLabel('Pinned file review controls', { exact: true })
   await reviewControls.getByText('src/review-5.ts', { exact: true }).waitFor()

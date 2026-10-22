@@ -73,7 +73,7 @@ const bundle = await bundleBrowser(
       loader: 'tsx',
       contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {PullChanges} from '${mobile}/scm/pulls/detail/pull-changes.tsx';
 window.diffMounts=0;
-const files=['binary.dat','generated.ts','vendor.ts','normal.ts'].map((path,index)=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new',attributes:{binary:index===0,generated:index===1,vendored:index===2}}));
+const files=['binary.dat','generated.ts','vendor.ts','normal.ts','docs/setup.md'].map((path,index)=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new',attributes:{binary:index===0,generated:index===1,vendored:index===2}}));
 function App(){const [current,setCurrent]=useState(files),[fragment,setFragment]=useState('');window.openLinkedComment=()=>setFragment('#discussion_r7');window.clearGenerated=()=>setCurrent(prior=>prior.map(file=>({...file,attributes:{...file.attributes,generated:false}})));return <PullChanges viewportHeight={640} fragment={fragment} repositoryId="repo" detail={{pull:{number:7,headSha:'a'.repeat(40),baseSha:'b'.repeat(40)},files:current,comments:[{id:'inline',kind:'inline',path:'normal.ts',url:'https://github.com/o/r/pull/7#discussion_r7',body:'Inline feedback'}],capabilities:{actions:['inline-comment']}}} onOpen={()=>{}} onLineComment={()=>{}}/>}createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -101,9 +101,7 @@ try {
     .waitFor()
   assert.equal(await page.locator('[data-diff]').count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Comment on line', exact: true }).count(), 0)
-  await page
-    .getByText('3 normal files · 0 mocks · 0 tests · 1 generated', { exact: true })
-    .waitFor()
+  await page.getByText('Code 3 · Docs 1 · Generated 1', { exact: true }).waitFor()
   const files = page.getByRole('combobox', { name: 'Changed file' })
   for (const path of ['generated.ts', 'vendor.ts']) {
     await files.selectOption(path)

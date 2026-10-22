@@ -131,7 +131,7 @@ function App(){
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
   const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const draft={text,ready:true,key:'draft',revision:text,update:setText};
-  window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
+  window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
   window.conversation={send:mode=>window.calls.push({mode:mode??'queue'}),stop:()=>window.calls.push({mode:'stop'}),actions:{turnSettings,setTurnSettings,agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!text,canSend:connected&&!!text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
   return <Composer task={task} renderAbove={setup=> <>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
@@ -438,8 +438,75 @@ try {
   await expand.waitFor()
   await expand.click()
   await page.getByText('Updated progress step', { exact: true }).waitFor()
-  await page.evaluate(() => window.setTask({ nativeTodos: [] }))
+  const clear = page.getByRole('button', { name: 'Clear checklist', exact: true })
+  const confirmClear = page.getByRole('button', { name: 'Confirm clear checklist', exact: true })
+  const clearRequests = () =>
+    page.evaluate(() =>
+      window.calls.filter((request) => request.path === '/api/tasks/checklist/clear'),
+    )
+  await clear.click()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal((await clearRequests()).length, 0)
+  await page.evaluate(() => window.setConnected(false))
+  await page.getByRole('button', { name: 'Clear checklist', exact: true, disabled: true }).waitFor()
+  assert.equal(await clear.isDisabled(), true)
+  await page.evaluate(() => {
+    window.setConnected(true)
+    window.failClear = true
+  })
+  await clear.click()
+  await confirmClear.click()
+  await page.getByText('Clear failed', { exact: true }).waitFor()
+  assert.equal(await page.getByText('Updated progress step', { exact: true }).isVisible(), true)
+  await page.evaluate(() => {
+    window.failClear = false
+  })
+  await clear.click()
+  await page.evaluate(() =>
+    window.setTask({
+      nativeTodos: [
+        ...window.currentTask.nativeTodos,
+        { text: 'Added during confirmation', status: 'pending' },
+      ],
+    }),
+  )
+  await confirmClear.click()
+  await page.getByText('The checklist changed', { exact: true }).waitFor()
+  await page.getByText('Added during confirmation', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.holdClear = true
+  })
+  await clear.click()
+  await confirmClear.click()
+  await page.getByRole('button', { name: 'Clearing…', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'Clearing…', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => window.finishClear())
   await page.getByLabel('Composer activity', { exact: true }).waitFor({ state: 'detached' })
+  await page.evaluate(() =>
+    window.setTask({
+      queue: [{ id: 'keep-queue', role: 'user', text: 'Preserve queued message' }],
+      nativeTodos: [{ text: 'Clear this step', status: 'pending' }],
+    }),
+  )
+  await page.getByRole('tab', { name: 'Queue · 1', exact: true }).click()
+  await page.getByTestId('Queued messages').click()
+  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  const queueEdit = page.getByRole('textbox', { name: 'Edit queued message', exact: true })
+  await queueEdit.fill('Keep edit after clearing checklist')
+  await page.getByRole('tab', { name: /Checklist · 0\/1/ }).click()
+  await clear.click()
+  await confirmClear.click()
+  await page.evaluate(() => window.finishClear())
+  await queueEdit.waitFor()
+  assert.equal(await queueEdit.inputValue(), 'Keep edit after clearing checklist')
+  assert.equal(await page.getByRole('button', { name: 'Clear checklist', exact: true }).count(), 0)
+  assert.equal(
+    await page.evaluate(() => window.currentTask.queue[0].text),
+    'Preserve queued message',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Mobile composer: compact/queue/input order, inline 44pt actions at 320px, steer and fork dispatch, queue editing, immediate side-chat sending, failure recovery and offline guards passed with native control adapters.',

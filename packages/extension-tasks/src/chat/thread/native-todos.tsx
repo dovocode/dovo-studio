@@ -3,8 +3,21 @@ import { CheckCircle2, Circle, ListChecks, LoaderCircle } from 'lucide-react'
 import { nativeTodoSummary, type Task } from '@dovo/protocol'
 
 /** Shared agent checklist from native progress or the regular task tool, latest state only. */
-export function NativeTodos({ task, embedded = false }: { task: Task; embedded?: boolean }) {
+export function NativeTodos({
+  task,
+  embedded = false,
+  onClear,
+  clearDisabled = false,
+}: {
+  task: Task
+  embedded?: boolean
+  onClear?: (items: NonNullable<Task['nativeTodos']>) => Promise<unknown>
+  clearDisabled?: boolean
+}) {
   const [open, setOpen] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [error, setError] = useState('')
+  const [confirmation, setConfirmation] = useState<Task['nativeTodos']>()
   const summary = nativeTodoSummary(task)
   if (!summary) return null
   const todos = task.nativeTodos ?? []
@@ -82,6 +95,57 @@ export function NativeTodos({ task, embedded = false }: { task: Task; embedded?:
             {summary.total - summary.completed === 1 ? 'item' : 'items'} left. Continue the thread
             to pick them up.
           </p>
+        )}
+        {onClear && (open || embedded) && (
+          <div className="mt-2 space-y-2 text-xs">
+            {confirmation && (
+              <p>Clear all {confirmation.length} checklist items, including unfinished work?</p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={clearDisabled || clearing}
+                className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted disabled:opacity-50"
+                onClick={async () => {
+                  setError('')
+                  if (!confirmation) {
+                    setConfirmation(todos)
+                    return
+                  }
+                  setClearing(true)
+                  try {
+                    await onClear(confirmation)
+                  } catch (error) {
+                    setError(error instanceof Error ? error.message : String(error))
+                  } finally {
+                    setClearing(false)
+                    setConfirmation(undefined)
+                  }
+                }}
+              >
+                {clearing
+                  ? 'Clearing…'
+                  : confirmation
+                    ? 'Confirm clear checklist'
+                    : 'Clear checklist'}
+              </button>
+              {confirmation && (
+                <button
+                  type="button"
+                  disabled={clearing}
+                  className="rounded-md px-2 py-1 hover:bg-muted"
+                  onClick={() => setConfirmation(undefined)}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+            {error && (
+              <p role="alert" className="text-destructive">
+                {error}
+              </p>
+            )}
+          </div>
         )}
       </div>
     </section>

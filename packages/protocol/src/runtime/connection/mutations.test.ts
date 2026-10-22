@@ -43,6 +43,49 @@ function fixture(initial: MutationOutbox = [], changed: () => void = () => {}) {
     recovered: () => recovered,
   }
 }
+it('retires a safely rejected checklist clear so newer progress can be reviewed and cleared', async () => {
+  const f = fixture()
+  let stale = true
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status'))
+        return Response.json({ version: 1, acknowledgements: true })
+      if (urlPath(url).endsWith('/acknowledge')) return Response.json({ ok: true })
+      return stale
+        ? Response.json({ error: 'The checklist changed', mutationRejected: true }, { status: 409 })
+        : Response.json({ ok: true })
+    }),
+  )
+  expect(
+    (
+      await run(
+        f.queue.requestEffect(
+          connection,
+          '/api/tasks/checklist/clear',
+          { id: 'task', expectedItems: [] },
+          ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Failure')
+  expect(f.stored()).toEqual([])
+  expect(f.queue.status(connection).error).toBeNull()
+  stale = false
+  expect(
+    (
+      await run(
+        f.queue.requestEffect(
+          connection,
+          '/api/tasks/checklist/clear',
+          { id: 'task', expectedItems: [{ text: 'New progress', status: 'pending' }] },
+          ok,
+        ),
+      )
+    )._tag,
+  ).toBe('Success')
+  expect(f.stored()).toEqual([])
+})
 it('recovers body interruption and retires receipts only after durable journal removal', async () => {
   const f = fixture()
   let interrupted = true

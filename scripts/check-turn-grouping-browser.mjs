@@ -436,6 +436,68 @@ try {
     await artifactTurn.waitFor()
     assert.equal(await tiles.count(), 2, 'Textless completed turns retain artifact tiles')
     if (mobile) {
+      await page.evaluate(() => {
+        window.setPreferences((value) => ({ ...value, collapseChangedFiles: true }))
+        window.setTask((task) => ({
+          ...task,
+          turns: task.turns.map((turn) => ({
+            ...turn,
+            checkpoint: {
+              before: 'before',
+              after: 'after',
+              files: [
+                'src/index.ts',
+                'tests/index.test.ts',
+                '__mocks__/api.ts',
+                'docs/guide.md',
+              ].map((path) => ({ path, before: '', after: 'change', viewed: false })),
+              omitted: ['pnpm-lock.yaml'],
+              linked: [
+                {
+                  checkoutId: 'linked',
+                  repositoryId: 'other',
+                  repositoryName: 'Other project',
+                  directory: '/other',
+                  before: 'before',
+                  after: 'after',
+                  files: ['src/index.ts', 'docs/guide.md'].map((path) => ({
+                    path,
+                    before: '',
+                    after: 'change',
+                    viewed: false,
+                  })),
+                  omitted: [],
+                },
+              ],
+            },
+          })),
+        }))
+      })
+      await page
+        .getByText('Code 2 · Tests 1 · Mocks 1 · Docs 2 · Generated 1', { exact: true })
+        .waitFor()
+      await page.getByText('Code 1 · Docs 1', { exact: true }).waitFor()
+      assert.equal(
+        await page
+          .getByRole('button', { name: 'Turn changes · 7 files', exact: true })
+          .getAttribute('aria-expanded'),
+        'false',
+      )
+      await page.evaluate(() =>
+        window.setTask((task) => ({
+          ...task,
+          turns: task.turns.map((turn) => ({
+            ...turn,
+            checkpoint: {
+              before: 'before',
+              after: 'after',
+              files: [{ path: 'README.md', before: '', after: 'Docs', viewed: false }],
+              omitted: [],
+            },
+          })),
+        })),
+      )
+      await page.getByText('Docs 1', { exact: true }).waitFor()
       // An empty recent window must still allow older history to load after list layout.
       await page.evaluate(() => {
         window.recentLayouts = 0
