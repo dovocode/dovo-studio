@@ -5,6 +5,7 @@ import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const controls = `
+export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';
 export const Button=({children,onClick})=><button onClick={onClick}>{children}</button>;
 export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;
 export const Text=({children})=><span>{children}</span>;export const View=({children})=><div>{children}</div>;
