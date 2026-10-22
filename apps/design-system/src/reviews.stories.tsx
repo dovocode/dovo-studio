@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState, type ReactNode } from 'react'
 import { useWorkspace, WorkspaceValueProvider } from '@dovo/studio-core'
-import type { CodeFinding, TaskReviewReport } from '../../../packages/protocol/src'
+import type { CodeFinding, FileKind, TaskReviewReport } from '../../../packages/protocol/src'
+import { ChangeTypeFilters } from '../../../packages/studio-ui/src/review/change-types'
 import {
   CodeReviewReport,
   type ReviewTab,
@@ -23,6 +24,30 @@ const meta = {
   },
 } satisfies Meta
 export default meta
+
+const changeFiles = [
+  { path: 'src/app.ts', changeKind: 'normal' },
+  { path: 'src/app.test.ts', changeKind: 'tests' },
+  { path: 'src/__mocks__/api.ts', changeKind: 'mocks' },
+  { path: 'README.md', changeKind: 'docs' },
+  { path: 'generated/client.ts', changeKind: 'generated' },
+] satisfies { path: string; changeKind: FileKind }[]
+
+function ChangeFilterExample({ initial }: { initial?: FileKind }) {
+  const [value, setValue] = useState(initial)
+  return <ChangeTypeFilters files={changeFiles} value={value} onChange={setValue} />
+}
+
+export const ChangeCategories: StoryObj = {
+  render: () => (
+    <section className="grid max-w-2xl gap-4" aria-label="Change type filters">
+      <ChangeFilterExample />
+      {changeFiles.map(({ changeKind }) => (
+        <ChangeFilterExample key={changeKind} initial={changeKind} />
+      ))}
+    </section>
+  ),
+}
 
 function LocalReviewWorkspace({ children }: { children: ReactNode }) {
   const context = useWorkspace()

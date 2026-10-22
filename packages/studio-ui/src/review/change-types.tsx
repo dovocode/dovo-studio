@@ -2,10 +2,10 @@ import { pullFileKind, type FileKind } from '@dovo/protocol'
 import { cn } from '../lib/utils'
 
 const categories: { kind: FileKind; label: string; color: string }[] = [
-  { kind: 'normal', label: 'Code', color: 'text-sky-600 dark:text-sky-400' },
-  { kind: 'tests', label: 'Tests', color: 'text-emerald-600 dark:text-emerald-400' },
+  { kind: 'normal', label: 'Code', color: 'text-sky-700 dark:text-sky-400' },
+  { kind: 'tests', label: 'Tests', color: 'text-emerald-700 dark:text-emerald-400' },
   { kind: 'mocks', label: 'Mocks', color: 'text-violet-600 dark:text-violet-400' },
-  { kind: 'docs', label: 'Docs', color: 'text-amber-700 dark:text-amber-400' },
+  { kind: 'docs', label: 'Docs', color: 'text-amber-800 dark:text-amber-400' },
   { kind: 'generated', label: 'Generated', color: 'text-muted-foreground' },
 ]
 export function ChangeTypeIndicator({ kind }: { kind: FileKind }) {
