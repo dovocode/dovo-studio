@@ -68,7 +68,8 @@ export default function UsageScreen() {
   const { overviews } = useRuntime()
   const [computer, setComputer] = useState('all')
   const [view, setView] = useState<'costs' | 'tokens' | 'limits'>('costs')
-  const { hosts, histories, notices, busy, refresh } = useUsageData(computer)
+  const selectedComputer = overviews.length === 1 ? 'all' : computer
+  const { hosts, histories, notices, busy, refresh } = useUsageData(selectedComputer)
   const [period, setPeriod] = useState<keyof typeof periods>('week')
   const [now, setNow] = useState(Date.now())
   useForegroundInterval(() => setNow(Date.now()), 60000)
@@ -159,18 +160,20 @@ export default function UsageScreen() {
                       setView(value)
                   }}
                 />
-                <Choice
-                  label="Computer"
-                  value={computer}
-                  items={[
-                    { id: 'all', name: 'All computers' },
-                    ...overviews.map((entry) => ({
-                      id: entry.profile.id,
-                      name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
-                    })),
-                  ]}
-                  onChange={setComputer}
-                />
+                {overviews.length > 1 && (
+                  <Choice
+                    label="Computer"
+                    value={computer}
+                    items={[
+                      { id: 'all', name: 'All computers' },
+                      ...overviews.map((entry) => ({
+                        id: entry.profile.id,
+                        name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
+                      })),
+                    ]}
+                    onChange={setComputer}
+                  />
+                )}
               </SettingsGroup>
               <Action
                 label={busy ? 'Refreshing…' : 'Refresh usage'}
@@ -380,7 +383,7 @@ export default function UsageScreen() {
             {view !== 'limits' && (
               <UsagePrices
                 rows={summary.models}
-                computer={computer}
+                computer={selectedComputer}
                 histories={histories}
                 onSaved={refresh}
               />

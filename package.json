@@ -62,7 +62,7 @@
     "test:task-waiting:browser": "node scripts/check-task-waiting-browser.mjs && node scripts/check-task-waiting-sync-browser.mjs",
     "test:desktop-runtime-connections": "node scripts/check-desktop-runtime-connections.mjs",
     "test:thread-popout:browser": "node scripts/check-thread-popout-browser.mjs",
-    "test:thread-folder:browser": "node scripts/check-thread-folder-browser.mjs",
+    "test:thread-folder:browser": "node scripts/check-project-menu-browser.mjs && node scripts/check-thread-folder-browser.mjs",
     "test:startup-checkout:browser": "node scripts/check-startup-checkout-browser.mjs",
     "test:git-primary-action:browser": "node scripts/check-git-primary-action-browser.mjs && node scripts/check-mobile-git-actions-browser.mjs",
     "test:task-lifecycle:browser": "node scripts/check-task-lifecycle-browser.mjs",

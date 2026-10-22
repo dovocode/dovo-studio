@@ -12,6 +12,7 @@ import {
 import { useApplicationState } from '../state/application-state'
 import { RuntimeScope, useRuntime } from '../connection/provider'
 import { SettingsChoice as Choice } from '../../screens/settings-controls'
+import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
@@ -121,23 +122,41 @@ export function ScopedSettings({
         ]}
         onChange={(projectId) => setTarget({ ...target, projectId })}
       />
-      <Choice
-        label="Machine"
-        row
-        value={target.environmentId}
-        items={[
-          { id: '', name: 'All machines' },
-          ...(target.environmentId &&
-          !overviews.some((entry) => entry.profile.id === target.environmentId)
-            ? [{ id: target.environmentId, name: 'Computer unavailable' }]
-            : []),
-          ...overviews.map((entry) => ({
-            id: entry.profile.id,
-            name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
-          })),
-        ]}
-        onChange={(environmentId) => setTarget({ ...target, environmentId })}
-      />
+      {overviews.length > 1 && (
+        <Choice
+          label="Machine"
+          row
+          value={target.environmentId}
+          items={[
+            { id: '', name: 'All machines' },
+            ...(target.environmentId &&
+            !overviews.some((entry) => entry.profile.id === target.environmentId)
+              ? [{ id: target.environmentId, name: 'Computer unavailable' }]
+              : []),
+            ...overviews.map((entry) => ({
+              id: entry.profile.id,
+              name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
+            })),
+          ]}
+          onChange={(environmentId) => setTarget({ ...target, environmentId })}
+        />
+      )}
+      {overviews.length === 1 && (
+        <Action
+          secondary
+          label={target.environmentId ? 'Edit shared defaults' : 'Edit computer overrides'}
+          onPress={() => {
+            const environmentId = target.environmentId ? '' : overviews[0].profile.id
+            const choices = settingsProjectChoices(overviews, environmentId)
+            setTarget({
+              environmentId,
+              projectId: choices.some((project) => project.id === target.projectId)
+                ? target.projectId
+                : '',
+            })
+          }}
+        />
+      )}
     </View>,
     <View key="settings" style={{ gap: 28 }}>
       {!source ? (

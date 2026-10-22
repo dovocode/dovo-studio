@@ -23,21 +23,25 @@ function ComputerSettingsPage({
   const { overviews, activeId } = useRuntime()
   const { runtimeId } = useLocalSearchParams<{ runtimeId?: string }>()
   const [selected, setComputer] = useApplicationState(runtimeId ?? activeId ?? '')
-  const entry = overviews.find((item) => item.profile.id === selected)
+  const entry =
+    overviews.find((item) => item.profile.id === selected) ??
+    (overviews.length === 1 ? overviews[0] : undefined)
   return (
     <SettingsPage>
       <ScreenHeader title={title} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={{ gap: 10 }}>
-          <SettingsChoice
-            label="Computer"
-            value={selected ?? ''}
-            items={overviews.map((item) => ({
-              id: item.profile.id,
-              name: `${runtimeComputerName(item)}${item.connected ? '' : ' · Offline'}`,
-            }))}
-            onChange={setComputer}
-          />
+          {overviews.length > 1 && (
+            <SettingsChoice
+              label="Computer"
+              value={selected ?? ''}
+              items={overviews.map((item) => ({
+                id: item.profile.id,
+                name: `${runtimeComputerName(item)}${item.connected ? '' : ' · Offline'}`,
+              }))}
+              onChange={setComputer}
+            />
+          )}
           <Text style={[styles.muted, { paddingHorizontal: 16 }]}>
             {entry
               ? `Saved on ${runtimeComputerName(entry)}. Changes are shared with its paired devices.`

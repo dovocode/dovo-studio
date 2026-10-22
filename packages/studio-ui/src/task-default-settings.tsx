@@ -280,7 +280,7 @@ function TaskDefaultSettingsForm({
           title="New tasks"
           description="Applies when you create a task. Existing conversations keep their agent and permissions."
         >
-          {repository && scope === 'project' && (
+          {repository && scope === 'project' && runtimes.length > 1 && (
             <SettingRow
               label="Preferred computer"
               description="Prefer this computer for the project. If it is offline, use another online copy."

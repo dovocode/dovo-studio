@@ -106,9 +106,10 @@ export function TaskList({
       ? [temporaryEntry, ...entries]
       : entries
   }, [sources, temporaryEntry])
-  const [environment, setEnvironment, environmentRef] = useApplicationState(
+  const [selectedEnvironment, setEnvironment, environmentRef] = useApplicationState(
     () => readTaskListViewState(host).environment ?? '',
   )
+  const environment = sources.length === 1 ? '' : selectedEnvironment
   const retainThreadTree = useMemo(() => {
     let previous: ReturnType<typeof buildThreadTree<TaskEntry>> | undefined
     return (
@@ -826,7 +827,7 @@ export function TaskList({
           role="group"
           aria-label="Thread filters and organization"
         >
-          {sources.length > 1 || environment ? (
+          {sources.length > 1 || (sources.length === 0 && environment) ? (
             <div className="relative min-w-0 flex-1">
               <Monitor
                 aria-hidden="true"

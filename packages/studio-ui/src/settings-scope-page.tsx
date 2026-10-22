@@ -8,6 +8,7 @@ import {
 } from '@dovo/protocol'
 import { useSettingsTarget, WorkspaceScope } from '@dovo/studio-core'
 import { ChoicePicker } from './choice-picker'
+import { Button } from './components/ui/button'
 import { SettingsPage } from './settings-layout'
 
 /** Retained across scoped settings pages; app-only preferences have no target header. The
@@ -73,25 +74,47 @@ export function SettingsScopePage({
                   </option>
                 ))}
               </ChoicePicker>
-              <span className="text-muted-foreground">on</span>
-              <ChoicePicker
-                aria-label="Settings machine"
-                className="h-8 w-auto min-w-40 max-w-full bg-background/60"
-                value={target.environmentId}
-                onValueChange={(environmentId) => setTarget({ ...target, environmentId })}
-              >
-                <option value="">All machines</option>
-                {target.environmentId &&
-                  !sources.some((entry) => entry.profile.id === target.environmentId) && (
-                    <option value={target.environmentId}>Computer unavailable</option>
-                  )}
-                {sources.map((entry) => (
-                  <option key={entry.profile.id} value={entry.profile.id}>
-                    {entry.name}
-                    {entry.connected ? '' : ' · Offline'}
-                  </option>
-                ))}
-              </ChoicePicker>
+              {sources.length > 1 && (
+                <>
+                  <span className="text-muted-foreground">on</span>
+                  <ChoicePicker
+                    aria-label="Settings machine"
+                    className="h-8 w-auto min-w-40 max-w-full bg-background/60"
+                    value={target.environmentId}
+                    onValueChange={(environmentId) => setTarget({ ...target, environmentId })}
+                  >
+                    <option value="">All machines</option>
+                    {target.environmentId &&
+                      !sources.some((entry) => entry.profile.id === target.environmentId) && (
+                        <option value={target.environmentId}>Computer unavailable</option>
+                      )}
+                    {sources.map((entry) => (
+                      <option key={entry.profile.id} value={entry.profile.id}>
+                        {entry.name}
+                        {entry.connected ? '' : ' · Offline'}
+                      </option>
+                    ))}
+                  </ChoicePicker>
+                </>
+              )}
+              {sources.length === 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const environmentId = target.environmentId ? '' : sources[0].profile.id
+                    const choices = settingsProjectChoices(sources, environmentId)
+                    setTarget({
+                      environmentId,
+                      projectId: choices.some((project) => project.id === target.projectId)
+                        ? target.projectId
+                        : '',
+                    })
+                  }}
+                >
+                  {target.environmentId ? 'Edit shared defaults' : 'Edit computer overrides'}
+                </Button>
+              )}
             </div>
           </div>
         </div>

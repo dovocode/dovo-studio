@@ -215,12 +215,8 @@ try {
   await page.getByRole('button', { name: 'Settings project', exact: true }).click()
   await page.getByRole('option', { name: 'Dovo Studio', exact: true }).click()
   await page.getByText('Editing Dovo Studio project defaults', { exact: true }).waitFor()
-  assert.equal(
-    await page
-      .getByRole('button', { name: 'Settings machine', exact: true })
-      .getAttribute('data-value'),
-    '',
-  )
+  assert.equal(await page.getByRole('button', { name: 'Settings machine', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).waitFor()
   const inactiveSetting = page.getByRole('combobox', {
     name: 'Auto-settle inactive tasks',
     exact: true,

@@ -278,7 +278,7 @@ function TaskDefaultSettingsForm({
               />
             </>
           )}
-          {repository && scope === 'project' && (
+          {repository && scope === 'project' && overviews.length > 1 && (
             <>
               <Choice
                 row

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url))
 const mocks = {
+  './task-list-view-state': `export const readTaskListViewState=()=>({environment:JSON.stringify('removed-computer')});export const saveTaskListViewState=()=>{};`,
   './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
   '@dovo/studio-core/state': `import {useState,useRef} from 'react'; export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref];}`,
   '@dovo/studio-core': `
@@ -80,6 +81,9 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  await page.getByRole('button', { name: 'A', exact: true }).waitFor()
+  if (await page.getByLabel('Filter threads by computer', { exact: true }).count())
+    throw new Error('A single computer hides the picker and ignores the old computer filter')
   await page.getByRole('button', { name: 'A', exact: true }).click()
   await page.getByRole('button', { name: 'B', exact: true }).click({ modifiers: ['Meta'] })
   await page.waitForFunction(

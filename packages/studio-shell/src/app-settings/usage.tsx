@@ -120,7 +120,8 @@ export default function UsageSettings() {
   const { runtimes } = useWorkspace()
   const [computer, setComputer] = useState('all')
   const [view, setView] = useState<'costs' | 'tokens' | 'limits'>('costs')
-  const { hosts, histories, notices, busy, refresh } = useUsageData(computer)
+  const selectedComputer = runtimes.length === 1 ? 'all' : computer
+  const { hosts, histories, notices, busy, refresh } = useUsageData(selectedComputer)
   const [period, setPeriod] = useState<keyof typeof periods>('week')
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -185,20 +186,22 @@ export default function UsageSettings() {
           onChange={setView}
         />
         <div className="flex w-full items-center gap-2 sm:w-auto">
-          <ChoicePicker
-            aria-label="Computer"
-            value={computer}
-            onValueChange={setComputer}
-            className="sm:w-48"
-          >
-            <option value="all">All computers</option>
-            {runtimes.map((entry) => (
-              <option key={entry.profile.id} value={entry.profile.id}>
-                {runtimeComputerName(entry)}
-                {entry.connected ? '' : ' · Offline'}
-              </option>
-            ))}
-          </ChoicePicker>
+          {runtimes.length > 1 && (
+            <ChoicePicker
+              aria-label="Computer"
+              value={computer}
+              onValueChange={setComputer}
+              className="sm:w-48"
+            >
+              <option value="all">All computers</option>
+              {runtimes.map((entry) => (
+                <option key={entry.profile.id} value={entry.profile.id}>
+                  {runtimeComputerName(entry)}
+                  {entry.connected ? '' : ' · Offline'}
+                </option>
+              ))}
+            </ChoicePicker>
+          )}
           <Button
             variant="outline"
             disabled={busy || !hosts.some((entry) => entry.connected)}
@@ -421,7 +424,7 @@ export default function UsageSettings() {
       {view !== 'limits' && (
         <UsagePrices
           rows={summary.models}
-          computer={computer}
+          computer={selectedComputer}
           histories={histories}
           onSaved={refresh}
         />

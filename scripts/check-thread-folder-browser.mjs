@@ -12,7 +12,7 @@ const built = await build({
   stdin: {
     contents: `
 import {useState} from 'react'; import {createRoot} from 'react-dom/client'; import {Context} from '@dovo/studio-core'; import {ComposerProject} from '../extension-tasks/src/chat/composer/composer-project'; import {ProjectSelectionDialog} from '../extension-tasks/src/task-creation/project-selection-dialog';
-function MachineTest(){const [open,setOpen]=useState(false);window.showMachines=()=>setOpen(true);return <ProjectSelectionDialog open={open} onOpenChange={setOpen} noProject={false} busy={false} error="" projectQuery="" onProjectQueryChange={()=>{}} suggestedProject="" onSelect={key=>{window.selection=key}} sources={[{runtimeId:'a',name:'Selected machine',online:true,workspace:{tasks:[],repositories:[{id:'a-folder',name:'Local folder',path:'/local'}]}},{runtimeId:'b',name:'Other machine',online:true,workspace:{tasks:[],repositories:[{id:'b-folder',name:'Remote folder',path:'/remote'}]}}]}/>};
+function MachineTest(){const [open,setOpen]=useState(false);const [single,setSingle]=useState(false);window.showMachines=(single=false)=>{setSingle(single);setOpen(true)};return <ProjectSelectionDialog open={open} onOpenChange={setOpen} noProject={false} busy={false} error="" projectQuery="" onProjectQueryChange={()=>{}} suggestedProject="" onSelect={key=>{window.selection=key}} sources={(single?[{runtimeId:'b',name:'Only machine',online:true,workspace:{tasks:[],repositories:[{id:'b-folder',name:'Remote folder',path:'/remote'}]}}]:[{runtimeId:'a',name:'Selected machine',online:true,workspace:{tasks:[],repositories:[{id:'a-folder',name:'Local folder',path:'/local'}]}},{runtimeId:'b',name:'Other machine',online:true,workspace:{tasks:[],repositories:[{id:'b-folder',name:'Remote folder',path:'/remote'}]}}])}/>};
 function App(){const [workspace,setWorkspace]=useState({repositories:[{id:'chat',kind:'scratch',name:'Temporary',path:'/scratch'},{id:'one',name:'First folder',path:'/one',gitIdentity:'github.com/test/one'},{id:'two',name:'Second folder',path:'/two'},{id:'bad',name:'Broken folder',path:'/bad',gitIdentityError:'Invalid identity'}],tasks:[{id:'task',title:'Draft',createdAt:'2026-10-05T00:00:00Z',draft:'Keep draft',messages:[],files:[],status:'draft',repositoryId:'one',agentId:'old',existingWorktreePath:'/old',worktreeBaseBranch:'old'}]});window.task=workspace.tasks[0];return <Context.Provider value={{workspace,setWorkspace,activeRuntimeId:'a',runtimeRegistry:{profiles:[{id:'a'},{id:'b'}]},otherSources:[{runtimeId:'b',name:'Other machine',online:true,snapshot:null,workspace:{tasks:[],repositories:[{id:'remote',name:'Remote folder',kind:'folder',path:'/remote'},{id:'remote-chat',name:'Temporary',kind:'scratch',path:'/scratch'}]}}],flush:async()=>{},readRuntime:async(profile,path,input)=>{window.requests.push({runtimeId:profile.id,path,input});return input.task??{ok:true}},refreshRuntimes:async()=>{},refreshRuntime:async()=>{},switchRuntime:async id=>{window.switched=id}}}><ComposerProject task={workspace.tasks[0]} disabled={false}/><button onClick={()=>window.showMachines()}>Machines</button><MachineTest/></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: new URL('../packages/studio-ui/', import.meta.url).pathname,
@@ -81,6 +81,12 @@ try {
   assert.equal(await page.getByRole('button', { name: /Remote folder/ }).count(), 0)
   await page.getByLabel('New thread machine').selectOption('b')
   assert.equal(await page.getByRole('button', { name: /Local folder/ }).count(), 0)
+  await page.getByRole('button', { name: /Remote folder/ }).click()
+  assert.equal(await page.evaluate(() => window.selection), JSON.stringify(['b', 'b-folder']))
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => window.showMachines(true))
+  await page.getByRole('dialog', { name: 'New task', exact: true }).waitFor()
+  assert.equal(await page.getByLabel('New thread machine').count(), 0)
   await page.getByRole('button', { name: /Remote folder/ }).click()
   assert.equal(await page.evaluate(() => window.selection), JSON.stringify(['b', 'b-folder']))
   await page.keyboard.press('Escape')

@@ -52,7 +52,8 @@ let preferences={browserViewport:'fill',browserProfiles:[{id:'default',name:'Loc
 export const useAppPreferences=()=>useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>preferences);
 export const updateAppPreferences=changes=>{preferences={...preferences,...changes};for(const notify of listeners)notify()};
 export const useStudioHost=()=>({browser:async()=>{}});
-const runtimes=[{profile:{id:'one',name:'Mac',connection:{address:'http://one',token:'token-one'}},connected:true},{profile:{id:'two',name:'Server',connection:{address:'http://two',token:'token-two'}},connected:true}];
+const allRuntimes=[{profile:{id:'one',name:'Mac',connection:{address:'http://one',token:'token-one'}},connected:true},{profile:{id:'two',name:'Server',connection:{address:'http://two',token:'token-two'}},connected:true}];
+let runtimes=allRuntimes;window.setRuntimeCount=count=>{runtimes=allRuntimes.slice(0,count);updateAppPreferences({})};
 window.calls=[];const profiles={one:[{id:'default',name:'Remote Default'}],two:[{id:'default',name:'Server Default'}]};
 const call=async(id,path,input)=>{window.calls.push({id,path,input});if(path.endsWith('/save'))profiles[id]=input.profiles;return {profiles:profiles[id]}};
 const readRuntime=(profile,path,input)=>call(profile.id,path,input);const request=(path,input)=>call('one',path,input);
@@ -127,6 +128,12 @@ try {
   const calls = await page.evaluate(() => window.calls)
   if (calls.filter((c) => c.path.endsWith('/save')).some((c) => c.id !== 'one') || errors.length)
     throw new Error(JSON.stringify({ calls, errors }))
+  await page.evaluate(() => window.setRuntimeCount(1))
+  await remote.getByRole('textbox', { name: 'Name for Remote Default' }).waitFor()
+  assert.equal(
+    await remote.getByRole('button', { name: 'Computer for browser profiles' }).count(),
+    0,
+  )
   mkdirSync('/tmp/dovo-settings-screenshots/browser-profiles-polished', { recursive: true })
   await page.screenshot({
     path: '/tmp/dovo-settings-screenshots/browser-profiles-polished/settings.png',

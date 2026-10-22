@@ -407,7 +407,8 @@ try {
   assert.equal(writes.at(-1).after.taskBehavior.archiveAfterSettledDays, 12)
   assert.deepEqual(writes.at(-1).after.resources, { skills: [], mcpServers: [] })
   await choose('Settings project', 'Dovo')
-  await choose('Settings machine', 'MacBook Pro')
+  assert.equal(await page.getByRole('button', { name: 'Settings machine', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Edit computer overrides', exact: true }).click()
   await settingsSidebar
     .getByLabel('Inherited settings target')
     .getByText('Dovo · MacBook Pro', { exact: true })
@@ -433,10 +434,10 @@ try {
   )
   await choose('Working directory', 'New worktree')
   page.once('dialog', (dialog) => dialog.dismiss())
-  await choose('Settings machine', 'All machines')
+  await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).click()
   assert.equal(
-    await page.getByRole('button', { name: 'Settings machine', exact: true }).innerText(),
-    'MacBook Pro',
+    await page.getByRole('button', { name: 'Edit shared defaults', exact: true }).count(),
+    1,
   )
   assert.equal(
     await page.getByRole('combobox', { name: 'Working directory', exact: true }).innerText(),

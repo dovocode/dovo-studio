@@ -246,21 +246,23 @@ export default function BrowserSettings() {
         <div className="space-y-3 p-4">
           {runtime ? (
             <>
-              <label className="block space-y-2">
-                <span className="text-xs font-medium">Computer</span>
-                <ChoicePicker
-                  aria-label="Computer for browser profiles"
-                  value={runtime.profile.id}
-                  onValueChange={setRuntimeId}
-                >
-                  {runtimes.map((entry) => (
-                    <option key={entry.profile.id} value={entry.profile.id}>
-                      {runtimeComputerName(entry)}
-                      {entry.connected ? '' : ' · Offline'}
-                    </option>
-                  ))}
-                </ChoicePicker>
-              </label>
+              {runtimes.length > 1 && (
+                <label className="block space-y-2">
+                  <span className="text-xs font-medium">Computer</span>
+                  <ChoicePicker
+                    aria-label="Computer for browser profiles"
+                    value={runtime.profile.id}
+                    onValueChange={setRuntimeId}
+                  >
+                    {runtimes.map((entry) => (
+                      <option key={entry.profile.id} value={entry.profile.id}>
+                        {runtimeComputerName(entry)}
+                        {entry.connected ? '' : ' · Offline'}
+                      </option>
+                    ))}
+                  </ChoicePicker>
+                </label>
+              )}
               <RemoteProfiles
                 key={runtime.profile.id}
                 profile={runtime.profile}

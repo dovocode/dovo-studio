@@ -44,7 +44,8 @@ export function ProjectSelectionDialog({
   useEffect(() => {
     if (!open) setMachine(undefined)
   }, [open])
-  const selectedMachine = machine === undefined ? activeRuntimeId : machine
+  const selectedMachine =
+    sources.length === 1 ? sources[0].runtimeId : machine === undefined ? activeRuntimeId : machine
   const machineSources = sources.filter((source) => source.runtimeId === selectedMachine)
   const projectGroups = useMemo(
     () =>
@@ -111,27 +112,29 @@ export function ProjectSelectionDialog({
             {error}
           </p>
         )}
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <RuntimeIcon icon={machineSources[0]?.snapshot?.runtimeIcon} className="size-4" />
-          <select
-            aria-label="New thread machine"
-            value={selectedMachine ?? ''}
-            disabled={busy}
-            className="min-w-0 flex-1 bg-transparent"
-            onChange={(event) => setMachine(event.target.value || null)}
-          >
-            {sources.map((source) => (
-              <option
-                key={source.runtimeId ?? 'local'}
-                value={source.runtimeId ?? ''}
-                disabled={!source.online}
-              >
-                {source.name}
-                {source.online ? '' : ' · Offline'}
-              </option>
-            ))}
-          </select>
-        </label>
+        {sources.length > 1 && (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <RuntimeIcon icon={machineSources[0]?.snapshot?.runtimeIcon} className="size-4" />
+            <select
+              aria-label="New thread machine"
+              value={selectedMachine ?? ''}
+              disabled={busy}
+              className="min-w-0 flex-1 bg-transparent"
+              onChange={(event) => setMachine(event.target.value || null)}
+            >
+              {sources.map((source) => (
+                <option
+                  key={source.runtimeId ?? 'local'}
+                  value={source.runtimeId ?? ''}
+                  disabled={!source.online}
+                >
+                  {source.name}
+                  {source.online ? '' : ' · Offline'}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {!noProject && (
           <Input
             aria-label="Search folders"

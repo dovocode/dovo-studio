@@ -355,34 +355,49 @@ export function ProjectsMenu({
               ) && <p className="px-2 py-4 text-xs text-muted-foreground">No matching projects.</p>}
             </div>
             <div className="border-t pt-1">
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger asChild>
-                  <Button
-                    variant="ghost"
-                    className="h-9 w-full justify-start gap-2 px-2 text-xs font-normal"
-                  >
-                    <Plus className="size-3.5" />
-                    Add project
-                  </Button>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Portal>
-                  <DropdownMenu.Content className="z-50 rounded-lg border bg-popover p-1 shadow-xl">
-                    {sources.map((source) => (
-                      <DropdownMenu.Item
-                        key={source.runtimeId ?? 'local'}
-                        className={`${itemClass} data-[disabled]:opacity-50`}
-                        disabled={!source.online}
-                        onSelect={() => {
-                          setMenuOpen(false)
-                          void open(source.runtimeId)
-                        }}
-                      >
-                        {source.name}
-                      </DropdownMenu.Item>
-                    ))}
-                  </DropdownMenu.Content>
-                </DropdownMenu.Portal>
-              </DropdownMenu.Root>
+              {sources.length === 1 ? (
+                <Button
+                  variant="ghost"
+                  className="h-9 w-full justify-start gap-2 px-2 text-xs font-normal"
+                  disabled={busy || !sources[0].online}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    void open(sources[0].runtimeId)
+                  }}
+                >
+                  <Plus className="size-3.5" />
+                  Add project
+                </Button>
+              ) : (
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="h-9 w-full justify-start gap-2 px-2 text-xs font-normal"
+                    >
+                      <Plus className="size-3.5" />
+                      Add project
+                    </Button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content className="z-50 rounded-lg border bg-popover p-1 shadow-xl">
+                      {sources.map((source) => (
+                        <DropdownMenu.Item
+                          key={source.runtimeId ?? 'local'}
+                          className={`${itemClass} data-[disabled]:opacity-50`}
+                          disabled={!source.online}
+                          onSelect={() => {
+                            setMenuOpen(false)
+                            void open(source.runtimeId)
+                          }}
+                        >
+                          {source.name}
+                        </DropdownMenu.Item>
+                      ))}
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
+              )}
             </div>
           </Popover.Content>
         </Popover.Portal>

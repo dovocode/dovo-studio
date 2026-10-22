@@ -407,7 +407,7 @@ try {
         assert.equal(
           await page.getByRole('button', { name: 'Change scope', exact: true }).count(),
           0,
-          'Machine and project choices must always be available',
+          'Machine and project choices remain available with multiple computers',
         )
         assert.equal(
           await sticky.getByText('Shared across paired machines', { exact: true }).count(),
