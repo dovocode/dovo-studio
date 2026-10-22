@@ -549,8 +549,9 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     assert.ok(
       (await view.evaluate(() => window.artifactCalls)).every(
         (call) =>
-          call.path === '/api/artifacts/read' &&
-          call.input.revision === (call.input.id === 'interactive' ? 1 : 2),
+          (ui.platform === 'desktop' && call.path === '/api/artifacts/list') ||
+          (call.path === '/api/artifacts/read' &&
+            call.input.revision === (call.input.id === 'interactive' ? 1 : 2)),
       ),
       'Inline previews read the version referenced by the message',
     )
