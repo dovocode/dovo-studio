@@ -184,8 +184,9 @@ try {
     window.sources = window.sources.map((s) => ({ ...s, connected: false }))
   })
   await show('mixed')
-  await page.getByText(/is offline. Reconnect/).waitFor()
-  assert.equal(await page.getByText('Computer body', { exact: true }).count(), 0)
+  await page.getByText(/is offline\. Your unsaved edits are kept here\./).waitFor()
+  assert.equal(await page.getByText('Computer body', { exact: true }).count(), 1)
+  await page.getByRole('button', { name: 'Retry connection', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Device default', exact: true }).click()
   assert.equal(await page.evaluate(() => window.localChanged), true)
   await page.evaluate(() => {

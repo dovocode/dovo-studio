@@ -24,7 +24,7 @@ const built = await bundleBrowser(
   [
     {
       path: '@dovo/studio-core',
-      contents: `export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.studio;`,
+      contents: `export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.studio;export const useSettingsDraft=()=>{};`,
     },
     {
       path: '@dovo/studio-core/state',

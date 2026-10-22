@@ -25,6 +25,7 @@ const mocks = {
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../ui/content/text': `export const Text=({children,accessibilityRole,style})=><span role={accessibilityRole} style={{fontSize:17*(window.fontScale??1),...(Array.isArray(style)?Object.assign({},...style):style)}}>{children}</span>;`,
   '../ui/controls/icon': `export const Icon=()=>null;`,
+  '../ui/theme': `export const useTheme=()=>({styles:{},colors:{}});`,
   '../ui/layout/screen-header': `export const ScreenHeader=({title})=><h1>{title}</h1>;`,
   '../ui/controls/switch': `export const Switch=({value,onValueChange,disabled,accessibilityLabel})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;`,
   './settings-theme': `export const useSettingsTheme=()=>({styles:{},colors:{surface:'#fff',border:'#ddd'}});export const SettingsPage=({children})=>children;export const SettingsSheet=({children,onClose})=><div>{children}<button onClick={onClose}>Close actions</button></div>;`,
@@ -126,7 +127,10 @@ const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
   const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('pageerror', (error) => {
+    errors.push(error.message)
+    console.error(error)
+  })
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: result.outputFiles[0].text })
   const button = (name) => page.getByRole('button', { name, exact: true })
