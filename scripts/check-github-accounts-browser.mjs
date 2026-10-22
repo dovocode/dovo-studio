@@ -11,6 +11,8 @@ try {
     const shared = `export * from '@dovo/protocol';export {cliProfileOptions} from '${root}/packages/client-runtime/src/extensions/cli-profile-options.ts';export {clientScopeKey} from '${root}/packages/client-runtime/src/effects/request-scope.ts';import {Effect} from 'effect';export {clientTaskScope} from '${root}/packages/client-runtime/src/index.ts';export const runClientEffect=Effect.runPromise;export const useWorkspace=()=>window.runtime;`
     const native = `export const useRuntime=()=>window.runtime;export const RuntimeScope=({children})=><div>{children}</div>;`
     const mocks = {
+      'expo-router': `export const router={push:()=>{}};`,
+      '../preferences/settings-target': `export const useSettingsDraft=()=>{};`,
       '@dovo/studio-core': shared,
       '@dovo/client-runtime': shared,
       '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,

@@ -65,6 +65,15 @@ const built = await bundleBrowser(
   },
   [
     {
+      path: 'expo-router',
+      contents: 'export const router={push:()=>{}};',
+    },
+    {
+      path: '../preferences/settings-target',
+      importer: `${native}runtime/connection/`,
+      contents: 'export const useSettingsDraft=()=>{};',
+    },
+    {
       path: 'react-native',
       contents: `
       const css=style=>Object.assign({},...(Array.isArray(style)?style:[style]).flat().filter(Boolean));
@@ -113,7 +122,7 @@ const built = await bundleBrowser(
     {
       path: '@dovo/studio-core',
       contents:
-        "export * from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.store;",
+        "export * from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.store;export const useSettingsDraft=()=>{};",
     },
     {
       path: '@dovo/studio-ui',

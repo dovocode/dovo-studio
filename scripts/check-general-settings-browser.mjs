@@ -482,7 +482,7 @@ try {
   await choose('Auto-resume limited tasks', 'Off')
   await choose('Auto-archive settled tasks', 'On')
   await page
-    .getByRole('spinbutton', { name: 'Days in Settled before archiving', exact: true })
+    .getByRole('textbox', { name: 'Days in Settled before archiving', exact: true })
     .fill('12')
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.getByRole('status').filter({ hasText: 'Changes saved.' }).waitFor()
