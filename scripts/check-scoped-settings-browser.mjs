@@ -64,9 +64,19 @@ try {
     if (mobile) await page.getByRole('button', { name: 'Task defaults', exact: true }).click()
     const scopes = page.getByLabel('Settings scope', { exact: true })
     await scopes.waitFor()
-    // The API's inherited value wins over the stale fleet snapshot when explaining this editor.
+    // The icon stays visible before opening details; the latest API value wins over stale snapshots.
+    const inheritance = page.getByRole('button', {
+      name: 'View inheritance for working directory',
+      exact: true,
+    })
+    await inheritance.waitFor()
+    assert.equal(await inheritance.innerText(), '')
+    assert.equal(await page.getByText('At this level: Local checkout', { exact: true }).count(), 0)
+    await inheritance.click()
     await page.getByText('At this level: Local checkout', { exact: true }).waitFor()
     await page.getByText('Inherited · source snapshot outdated', { exact: true }).waitFor()
+    if (mobile) await page.getByRole('button', { name: 'Hide inheritance', exact: true }).click()
+    else await page.keyboard.press('Escape')
     const choose = async (control, value, name) => {
       if (mobile) await control.selectOption(value)
       else {
@@ -108,12 +118,13 @@ try {
       })
       .last()
       .waitFor()
+    if (!mobile) await page.keyboard.press('Escape')
     await choose(
       page.getByRole('combobox', { name: 'Working directory', exact: true }),
       'main',
       'Local checkout',
     )
-    await page.getByText('At this level: Local checkout', { exact: true }).waitFor()
+    if (mobile) await page.getByText('At this level: Local checkout', { exact: true }).waitFor()
     if (mobile)
       await page
         .getByRole('button', {

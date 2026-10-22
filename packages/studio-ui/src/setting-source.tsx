@@ -80,6 +80,11 @@ export function SettingSource({
   const resetLabel = inheritedLabel
     ? `Use inherited value: ${settingValuePreview(inheritedLabel)}`
     : 'Use inherited value'
+  const sourceLabel = origin.overridden
+    ? `Set here · ${name}`
+    : sourceCurrent
+      ? `Inherited from ${name}`
+      : 'Inherited · source snapshot outdated'
   const Icon = origin.overridden ? SlidersHorizontal : CornerDownRight
   // Origin-only badges render outside the settings pages; only field badges read the fleet.
   const sources = setting
@@ -150,26 +155,11 @@ export function SettingSource({
   }
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
-      {setting && (
-        <p
-          title={valueLabel}
-          className="w-full break-words font-medium text-foreground [overflow-wrap:anywhere]"
-        >
-          At this level: {valueLabel && settingValuePreview(valueLabel)}
-        </p>
-      )}
-      <span
-        className={`inline-flex min-w-0 items-start gap-1.5 rounded-md px-2 py-1 ${origin.overridden ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
-      >
-        <Icon className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
-        <span className="break-words [overflow-wrap:anywhere]">
-          {origin.overridden
-            ? `Set here · ${name}`
-            : sourceCurrent
-              ? `Inherited from ${name}`
-              : 'Inherited · source snapshot outdated'}
+      {!setting && (
+        <span role="img" title={sourceLabel} aria-label={sourceLabel}>
+          <Icon className="size-3.5" aria-hidden="true" />
         </span>
-      </span>
+      )}
       {setting && (
         <Popover.Root>
           <Popover.Trigger asChild>
@@ -177,15 +167,20 @@ export function SettingSource({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-auto min-h-7 min-w-0 max-w-full whitespace-normal px-1.5 text-xs [overflow-wrap:anywhere]"
+              className={`size-7 shrink-0 p-0 ${origin.overridden ? 'text-primary' : 'text-muted-foreground'}`}
+              title={sourceLabel}
               aria-label={`View inheritance for ${label.toLowerCase()}`}
             >
-              <Layers className="size-3" /> View inheritance
+              <Icon className="size-3.5" aria-hidden="true" />
             </Button>
           </Popover.Trigger>
           <Popover.Portal>
             <Popover.Content sideOffset={6} align="start" className={popoverClassName}>
               <p className="mb-1 text-xs font-semibold">{label} · inheritance</p>
+              <p className="mb-1 break-words text-xs [overflow-wrap:anywhere]">{sourceLabel}</p>
+              <p className="mb-3 break-words text-xs font-medium [overflow-wrap:anywhere]">
+                At this level: {valueLabel && settingValuePreview(valueLabel)}
+              </p>
               <p className="mb-3 text-xs text-muted-foreground">
                 Project overrides Computer; Project on computer wins over both. The check marks the
                 effective value for each computer, including later overrides.
@@ -199,6 +194,18 @@ export function SettingSource({
               <p className="mb-3 break-words text-xs [overflow-wrap:anywhere]">
                 Use inherited value: {inheritedLabel}
               </p>
+              {origin.overridden && onReset && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto min-h-7 min-w-0 max-w-full whitespace-normal text-xs [overflow-wrap:anywhere]"
+                  disabled={disabled}
+                  onClick={onReset}
+                >
+                  {resetLabel}
+                </Button>
+              )}
               {runtimes.map((entry) => {
                 const active = entry.profile.id === activeRuntimeId
                 const state = active ? snapshot : entry.snapshot
@@ -268,18 +275,6 @@ export function SettingSource({
                   </section>
                 )
               })}
-              {origin.overridden && onReset && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto min-h-7 min-w-0 max-w-full whitespace-normal text-xs [overflow-wrap:anywhere]"
-                  disabled={disabled}
-                  onClick={onReset}
-                >
-                  {resetLabel}
-                </Button>
-              )}
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>
@@ -291,13 +286,11 @@ export function SettingSource({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-auto min-h-7 min-w-0 max-w-full whitespace-normal px-1.5 text-xs [overflow-wrap:anywhere] text-status-warning"
+              className="size-7 shrink-0 p-0 text-status-warning"
+              title={`${overrides.length} ${overrides.length === 1 ? 'override keeps its own value' : 'overrides keep their own values'}`}
               aria-label={`${label}: overridden at ${overrides.length} later ${overrides.length === 1 ? 'level' : 'levels'}`}
             >
-              <Layers className="size-3 shrink-0" /> {overrides.length}{' '}
-              {overrides.length === 1
-                ? 'override keeps its own value'
-                : 'overrides keep their own values'}
+              <Layers className="size-3.5" aria-hidden="true" />
             </Button>
           </Popover.Trigger>
           <Popover.Portal>
@@ -361,14 +354,13 @@ export function SettingSource({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 min-w-0 max-w-full px-1.5 text-xs text-muted-foreground"
+          className="size-7 shrink-0 p-0 text-muted-foreground"
           disabled={disabled}
           title={inheritedLabel}
           aria-label={`Use inherited ${label.toLowerCase()}: ${inheritedLabel}`}
           onClick={onReset}
         >
-          <Undo2 className="size-3" />
-          <span className="min-w-0 truncate">{resetLabel}</span>
+          <Undo2 className="size-3.5" aria-hidden="true" />
         </Button>
       )}
     </div>

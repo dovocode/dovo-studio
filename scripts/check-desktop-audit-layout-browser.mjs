@@ -232,7 +232,11 @@ try {
     await show('scope')
     for (const width of [320, 390, 976]) {
       await setWidth(width)
-      const source = page.getByText('At this level: pnpm install', { exact: true })
+      const source = page.getByRole('button', {
+        name: 'View inheritance for worktree setup',
+        exact: true,
+      })
+      assert.equal(await source.innerText(), '')
       const reset = page.getByRole('button', { name: /^Use inherited worktree setup:/ })
       await contained(source, page.locator('#fixture'))
       await contained(reset, page.locator('#fixture'))

@@ -86,9 +86,12 @@ export function SettingRow({
   return (
     <div className="flex flex-col items-stretch justify-between gap-2 px-3 py-3 sm:flex-row sm:items-center sm:gap-4">
       <div className="min-w-0 flex-1">
-        <p id={`${id}-label`} className="text-[0.8125rem] font-medium">
-          {label}
-        </p>
+        <div className="flex flex-wrap items-center gap-x-1.5">
+          <p id={`${id}-label`} className="text-[0.8125rem] font-medium">
+            {label}
+          </p>
+          {source}
+        </div>
         {description && (
           <p
             id={`${id}-description`}
@@ -97,7 +100,6 @@ export function SettingRow({
             {description}
           </p>
         )}
-        {source && <div className="mt-2">{source}</div>}
       </div>
       <div
         role="group"

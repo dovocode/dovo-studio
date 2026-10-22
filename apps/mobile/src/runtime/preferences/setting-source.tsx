@@ -15,11 +15,19 @@ import {
   type SettingSourceSetting,
   type SettingOverride,
 } from '@dovo/protocol'
-import { Alert, View } from 'react-native'
+import { Alert, Pressable, View } from 'react-native'
+import { Icon } from '../../ui/controls/icon'
 import { settingsScopeLabels, type SettingsScope } from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
 import { SettingsAction as Action } from '../../screens/settings-controls'
 import { useTheme } from '../../ui/theme'
+
+const sourceButtonStyle = {
+  width: 44,
+  height: 44,
+  alignItems: 'center',
+  justifyContent: 'center',
+} as const
 
 const overrideName = (entry: SettingOverride) =>
   [entry.project, entry.computer].filter(Boolean).join(' on ')
@@ -67,6 +75,11 @@ export function SettingSource({
         computers,
       )
     : undefined
+  const sourceLabel = overridden
+    ? `Set here · ${name}`
+    : sourceCurrent
+      ? `Inherited from ${name}`
+      : 'Inherited · source snapshot outdated'
   // Origin-only badges render outside scoped pages; only field badges read the fleet.
   const sources = setting
     ? overviews.map((entry) => ({
@@ -140,45 +153,60 @@ export function SettingSource({
   return (
     <View
       style={{
-        alignItems: 'stretch',
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        alignItems: 'center',
         gap: 8,
         paddingHorizontal: 4,
       }}
     >
-      {setting && (
-        <Text style={[styles.text, { fontSize: 14, fontWeight: '600' }]}>
-          At this level: {valueLabel && settingValuePreview(valueLabel)}
-        </Text>
-      )}
-      <Text
-        style={[styles.muted, { fontSize: 13, color: overridden ? colors.accent : colors.muted }]}
-      >
-        {overridden
-          ? `Set here · ${name}`
-          : sourceCurrent
-            ? `Inherited from ${name}`
-            : 'Inherited · source snapshot outdated'}
-      </Text>
-      {setting && (
-        <Action
-          secondary
-          label={open ? 'Hide inheritance' : `View inheritance for ${label.toLowerCase()}`}
+      {setting ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            open ? 'Hide inheritance' : `View inheritance for ${label.toLowerCase()}`
+          }
+          accessibilityHint={sourceLabel}
+          accessibilityState={{ expanded: open }}
           onPress={() => setOpen(!open)}
-        />
+          style={({ pressed }) => [sourceButtonStyle, { opacity: pressed ? 0.6 : 1 }]}
+        >
+          <Icon
+            name={overridden ? 'settings' : 'stack'}
+            size={16}
+            color={overridden ? colors.accent : colors.muted}
+          />
+        </Pressable>
+      ) : (
+        <View accessible accessibilityLabel={sourceLabel}>
+          <Icon
+            name={overridden ? 'settings' : 'stack'}
+            size={16}
+            color={overridden ? colors.accent : colors.muted}
+          />
+        </View>
       )}
       {setting && overrides.length > 0 && (
-        <Action
-          secondary
-          label={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
             showOverrides
               ? 'Hide later overrides'
               : `${overrides.length} ${overrides.length === 1 ? 'override keeps its own value' : 'overrides keep their own values'} for ${label.toLowerCase()}`
           }
+          accessibilityState={{ expanded: showOverrides }}
           onPress={() => setShowOverrides(!showOverrides)}
-        />
+          style={({ pressed }) => [sourceButtonStyle, { opacity: pressed ? 0.6 : 1 }]}
+        >
+          <Icon name="stack" size={16} color={colors.warning} />
+        </Pressable>
       )}
       {open && setting && (
         <View style={{ width: '100%', gap: 12 }}>
+          <Text style={styles.muted}>{sourceLabel}</Text>
+          <Text style={[styles.text, { fontSize: 14, fontWeight: '600' }]}>
+            At this level: {valueLabel && settingValuePreview(valueLabel)}
+          </Text>
           <Text style={[styles.muted, { fontSize: 13 }]}>
             Project overrides Computer; Project on computer wins over both. The check marks the
             effective value for each computer, including later overrides.
@@ -298,13 +326,19 @@ export function SettingSource({
         </View>
       )}
       {overridden && onReset && (
-        <Action
-          secondary
-          icon="reopen"
-          label={`Use inherited ${label.toLowerCase()}${inheritedLabel ? `: ${settingValuePreview(inheritedLabel)}` : ''}`}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Use inherited ${label.toLowerCase()}${inheritedLabel ? `: ${settingValuePreview(inheritedLabel)}` : ''}`}
+          accessibilityState={{ disabled }}
           disabled={disabled}
           onPress={onReset}
-        />
+          style={({ pressed }) => [
+            sourceButtonStyle,
+            { opacity: disabled ? 0.4 : pressed ? 0.6 : 1 },
+          ]}
+        >
+          <Icon name="reopen" size={16} color={colors.muted} />
+        </Pressable>
       )}
     </View>
   )
