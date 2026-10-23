@@ -290,7 +290,7 @@ try {
     await page.getByRole('heading', { name: 'Watching', exact: true }).waitFor()
     for (const [state, draft, tone] of [
       ['open', false, 'text-status-success'],
-      ['merged', false, 'text-violet-600'],
+      ['merged', false, 'text-status-done'],
       ['closed', false, 'text-status-error'],
       ['open', true, 'text-muted-foreground'],
     ]) {
