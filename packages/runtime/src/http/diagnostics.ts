@@ -96,6 +96,7 @@ export async function runtimeDiagnostics(
     ready,
     checkedAt: new Date(now).toISOString(),
     warnings,
+    internet: s.peers.diagnostics(),
     roots: {
       database: s.db.name,
       worktrees: s.preferences.worktreesRoot(),

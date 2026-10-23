@@ -354,6 +354,7 @@ it.each([false, true])(
     const configured = applySnapshotDelta(connected, relayDelta.delta)
     expect(configured.relaySettings).toEqual({
       mode: 'custom',
+      connectionMode: 'automatic',
       configured: true,
       urls: ['turns:relay.example.com:5349?transport=tcp'],
     })

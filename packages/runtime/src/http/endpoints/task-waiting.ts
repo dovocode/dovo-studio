@@ -46,12 +46,12 @@ export async function taskWaiting(
         [
           ...pulls.watches.map((watch) => ({
             label: `PR #${watch.number}`,
-            project: project(watch.repositoryId),
+            project: watch.source?.repository ?? project(watch.repositoryId),
             url: watch.url,
           })),
           ...pipelines.watches.map((watch) => ({
             label: `Pipeline run ${watch.runId}`,
-            project: project(watch.repositoryId),
+            project: watch.source?.repository ?? project(watch.repositoryId),
             url: watch.url,
           })),
           ...(task.pullRequest
@@ -110,7 +110,7 @@ export async function taskWaiting(
           repositoryId: watch.repositoryId,
           target: watch.url,
           label: `PR #${watch.number}`,
-          project: project(watch.repositoryId),
+          project: watch.source?.repository ?? project(watch.repositoryId),
           url: watch.url,
           status: 'Waiting for PR feedback',
           pausedReason: pausedReason(settings.enablePullRequestWatching),
@@ -124,7 +124,7 @@ export async function taskWaiting(
           repositoryId: watch.repositoryId,
           target: watch.runId,
           label: `Pipeline run ${watch.runId}`,
-          project: project(watch.repositoryId),
+          project: watch.source?.repository ?? project(watch.repositoryId),
           url: watch.url,
           status: watch.runStatus,
           lastSuccessAt: watch.lastSuccessAt,

@@ -40,8 +40,8 @@ export default function AppearanceScreen() {
             label="Status colors"
             value={colorVision}
             items={[
-              { id: 'default', name: 'Default' },
-              { id: 'blue-orange', name: 'Blue / orange' },
+              { id: 'default', name: 'GitHub colorblind' },
+              { id: 'blue-orange', name: 'GitHub colorblind · higher contrast' },
             ]}
             onChange={(value) => {
               if (value === 'default' || value === 'blue-orange')

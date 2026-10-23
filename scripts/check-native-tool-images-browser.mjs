@@ -15,6 +15,7 @@ export const Text=({children})=><span>{children}</span>;
 export const ActivityIndicator=({accessibilityLabel})=><span>{accessibilityLabel}</span>;
 export const Pressable=({children,onPress,accessibilityLabel})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;
 export const Image=({source,accessibilityLabel,onError})=><img src={source.uri} alt={accessibilityLabel} onError={onError}/>;
+export const IconButton=({label,onPress})=><button aria-label={label} onClick={onPress}>×</button>;
 export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const useAction=()=>({busy:false,error:'',act:fn=>void fn()});
@@ -30,6 +31,7 @@ try {
             '../theme',
             './text',
             '../controls/action',
+            '../controls/icon-button',
             '../controls/use-action',
             '../layout/safe-modal',
           ].map((path) => ({

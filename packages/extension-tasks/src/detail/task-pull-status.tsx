@@ -32,7 +32,7 @@ export function TaskPullStatus({
   const failing = status.state === 'open' && status.checks === 'failed'
   const tone =
     status.state === 'merged'
-      ? 'text-violet-700 dark:text-violet-400'
+      ? 'text-status-done'
       : status.state === 'closed' || failing
         ? 'text-destructive'
         : status.checks === 'passed'

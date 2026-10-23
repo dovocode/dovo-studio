@@ -26,7 +26,7 @@ for (const mode of ['light', 'dark'] as const) {
         expect(contrast(high.border, high[surface])).toBeGreaterThanOrEqual(3)
         for (const colorVision of ['default', 'blue-orange'] as const) {
           const status = statusColors(mode, colorVision)
-          for (const color of [status.success, status.error, status.warning]) {
+          for (const color of [status.success, status.error, status.warning, status.done]) {
             expect(contrast(color, original[surface])).toBeGreaterThanOrEqual(4.5)
             expect(contrast(color, high[surface])).toBeGreaterThanOrEqual(4.5)
           }

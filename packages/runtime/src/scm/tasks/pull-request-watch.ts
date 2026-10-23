@@ -1,3 +1,4 @@
+import { watchSourceSchema, type WatchSource } from './watch-source.js'
 import { permissionPolicyReadOnly } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { createHash, randomUUID } from 'node:crypto'
@@ -17,13 +18,18 @@ import {
 import { z } from 'zod'
 import type { Services } from '../../services.js'
 import { errorMessage, HttpError } from '../../errors.js'
-import { WatchLifecycleCache, watchRepositoryError } from './watch-repository.js'
+import {
+  WatchLifecycleCache,
+  watchRepositoryError,
+  watchAccountRepositoryId,
+} from './watch-repository.js'
 
 export const pullRequestWatchRequestSchema = mutableStruct({
   taskId: maxValue(minValue(Schema.String, 1), 200),
   parentRunId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   action: Schema.Literals(['watch', 'status', 'stop']),
   repositoryId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  connectionId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   url: Schema.optional(maxValue(minValue(Schema.String, 1), 2048)),
 })
 const stateSchema = z.object({
@@ -31,6 +37,7 @@ const stateSchema = z.object({
   taskId: z.string(),
   repositoryId: z.string(),
   primaryRepositoryId: z.string().optional(),
+  source: watchSourceSchema.optional(),
   number: z.number().int().positive(),
   url: z.string(),
   status: z.enum(['watching', 'closed', 'stopped']),
@@ -43,7 +50,10 @@ const stateSchema = z.object({
   error: z.string().optional(),
 })
 type State = z.infer<typeof stateSchema>
-type WatchServices = Pick<Services, 'store' | 'preferences' | 'pullCache' | 'tasks' | 'activity'>
+type WatchServices = Pick<
+  Services,
+  'pulls' | 'store' | 'preferences' | 'pullCache' | 'tasks' | 'activity'
+>
 const failedChecks = (detail: PullDetail) =>
   detail.pull.state !== 'open' ||
   detail.warnings.some((warning) => /^(Checks|Check details):/.test(warning))
@@ -70,6 +80,7 @@ const submittedComment = (comment: PullDetail['comments'][number]) =>
 const watchSummary = (state: State) => ({
   repositoryId: state.repositoryId,
   url: state.url,
+  source: state.source,
   number: state.number,
   status: state.status,
   startedAt: state.startedAt,
@@ -91,6 +102,8 @@ export class PullRequestWatch {
       taskId: string
       repositoryId: string
       primaryRepositoryId: string
+      accountRepositoryId: string
+      source?: WatchSource
       url: string
       token: symbol
     }
@@ -159,7 +172,11 @@ export class PullRequestWatch {
         !task ||
         task.archived ||
         task.archivedAt ||
-        watchRepositoryError(task, registration.repositoryId, registration.primaryRepositoryId)
+        watchRepositoryError(
+          task,
+          registration.accountRepositoryId,
+          registration.primaryRepositoryId,
+        )
       )
         this.registrations.delete(key)
     }
@@ -172,12 +189,17 @@ export class PullRequestWatch {
           this.db.prepare('DELETE FROM task_pull_watches WHERE task_id=?').run(state.taskId)
         } else if (
           state.status === 'watching' &&
-          watchRepositoryError(task, state.repositoryId, state.primaryRepositoryId)
+          watchRepositoryError(task, state.repositoryId, state.primaryRepositoryId, state.source)
         ) {
           this.save({
             ...state,
             status: 'stopped',
-            error: watchRepositoryError(task, state.repositoryId, state.primaryRepositoryId),
+            error: watchRepositoryError(
+              task,
+              state.repositoryId,
+              state.primaryRepositoryId,
+              state.source,
+            ),
           })
         } else if (state.status === 'watching') watching.add(state.taskId)
       }
@@ -219,7 +241,9 @@ export class PullRequestWatch {
     const selected = (state: { repositoryId: string; url: string }) =>
       (!input.repositoryId || state.repositoryId === input.repositoryId) &&
       (!input.url || state.url === input.url)
-    const previous = this.readAll().filter((state) => state.taskId === task.id && selected(state))
+    const previous = this.readAll().filter(
+      (state) => state.taskId === task.id && (input.action === 'watch' || selected(state)),
+    )
     if (input.action === 'status') return { watches: previous.map(watchSummary) }
     if (input.action === 'stop') {
       for (const [key, registration] of this.registrations)
@@ -239,24 +263,71 @@ export class PullRequestWatch {
     const reference =
       references.length === 1 && references[0]?.url === input.url ? references[0] : undefined
     if (!reference) throw new HttpError(400, 'Supply a full PR URL')
-    const repositoryId = input.repositoryId ?? task.repositoryId
-    const accessError = watchRepositoryError(task, repositoryId, task.repositoryId)
+    const accountRepositoryId =
+      input.repositoryId ??
+      watchAccountRepositoryId(
+        task,
+        new Set(
+          this.s.store
+            .get()
+            .repositories.filter((repo) => !repo.kind)
+            .map((repo) => repo.id),
+        ),
+      )
+    const accessError = watchRepositoryError(task, accountRepositoryId, task.repositoryId)
     if (accessError) throw new HttpError(403, accessError)
-    const repository = this.repository(repositoryId)
-    if (repository.kind) throw new HttpError(400, 'Choose a Git project before watching a PR')
-    // Resolve through the thread’s configured forge; never fetch an agent-supplied host.
+    const account = this.s.store.get().repositories.find((repo) => repo.id === accountRepositoryId)
+    if (input.repositoryId && (!account || account.kind))
+      throw new HttpError(400, 'Choose a Git project to supply the forge account')
     const registration = Symbol()
-    const registrationKey = JSON.stringify([task.id, repositoryId])
+    // Reserve before account discovery so Stop/replacement also cancels slow authentication.
+    const repositoryUrl = reference.url.replace(/\/\d+$/, '')
+    const registrationKey = JSON.stringify([task.id, repositoryUrl])
+    let repositoryId =
+      previous.find((state) => state.url.replace(/\/\d+$/, '') === repositoryUrl)?.repositoryId ??
+      accountRepositoryId
+    let source: WatchSource | undefined
     this.registrations.set(registrationKey, {
       taskId: task.id,
       repositoryId,
       primaryRepositoryId: task.repositoryId,
+      accountRepositoryId,
       url: input.url,
       token: registration,
     })
     let detail: PullDetail
     try {
-      detail = await this.s.pullCache.feedback(repository.path, reference.number, true)
+      const resolved = await this.s.pulls.watchSource(
+        input.url,
+        account && !account.kind ? account.id : undefined,
+        input.connectionId,
+      )
+      if (this.registrations.get(registrationKey)?.token !== registration)
+        throw new HttpError(409, 'This PR watch registration was replaced or stopped')
+      repositoryId = resolved.repositoryId
+      source = resolved.source
+      this.registrations.set(registrationKey, {
+        taskId: task.id,
+        repositoryId,
+        primaryRepositoryId: task.repositoryId,
+        accountRepositoryId,
+        url: input.url,
+        token: registration,
+        source,
+      })
+      detail = source
+        ? await this.s.pullCache.feedback(
+            source.url,
+            reference.number,
+            true,
+            false,
+            this.s.pulls.watchReader(source),
+          )
+        : await this.s.pullCache.feedback(
+            this.repository(repositoryId).path,
+            reference.number,
+            true,
+          )
       if (this.registrations.get(registrationKey)?.token !== registration)
         throw new HttpError(409, 'This PR watch registration was replaced or stopped')
     } finally {
@@ -268,7 +339,7 @@ export class PullRequestWatch {
     const latest = this.writable(input.taskId)
     if (
       this.stopped ||
-      watchRepositoryError(latest, repositoryId, task.repositoryId) ||
+      watchRepositoryError(latest, repositoryId, task.repositoryId, source) ||
       latest.example ||
       latest.archived ||
       latest.archivedAt
@@ -292,7 +363,8 @@ export class PullRequestWatch {
     if (
       current?.status === 'watching' &&
       current.url === detail.pull.url &&
-      current.repositoryId === repositoryId
+      current.repositoryId === repositoryId &&
+      current.source?.destination === source?.destination
     )
       return { watches: [watchSummary(current)], failedChecks: failedChecks(detail) }
     const now = new Date().toISOString()
@@ -301,6 +373,7 @@ export class PullRequestWatch {
       taskId: task.id,
       repositoryId,
       primaryRepositoryId: task.repositoryId,
+      source,
       number: reference.number,
       url: detail.pull.url,
       status: 'watching',
@@ -352,24 +425,38 @@ export class PullRequestWatch {
           task,
           state.repositoryId,
           state.primaryRepositoryId,
+          state.source,
         )
         if (accessError) {
           this.save({ ...state, status: 'stopped', error: accessError })
           continue
         }
         try {
-          const repository = this.repository(state.repositoryId)
-          const readKey = JSON.stringify([repository.path, state.number])
+          const cwd = state.source?.url ?? this.repository(state.repositoryId).path
+          const readKey = JSON.stringify([cwd, state.number, state.source])
           let reading = reads.get(readKey)
           if (!reading) {
-            reading = this.s.pullCache.feedback(repository.path, state.number, true, true)
+            reading = state.source
+              ? this.s.pullCache.feedback(
+                  cwd,
+                  state.number,
+                  true,
+                  true,
+                  this.s.pulls.watchReader(state.source),
+                )
+              : this.s.pullCache.feedback(cwd, state.number, true, true)
             reads.set(readKey, reading)
           }
           const detail = await reading
           if (!this.current(state)) continue
           const latest = this.s.store.taskSummary(state.taskId)
           if (
-            watchRepositoryError(latest, state.repositoryId, state.primaryRepositoryId) ||
+            watchRepositoryError(
+              latest,
+              state.repositoryId,
+              state.primaryRepositoryId,
+              state.source,
+            ) ||
             latest.archived ||
             latest.archivedAt ||
             latest.example ||

@@ -333,9 +333,7 @@ export function useDiffOptions() {
           diffIndicators: 'classic',
           // Code themes can have a different light/dark mode from the app.
           unsafeCSS: [
-            colorVision === 'blue-orange'
-              ? `:host { --diffs-addition-color-override: ${statusColors(code.type, colorVision).success}; --diffs-deletion-color-override: ${statusColors(code.type, colorVision).error}; }`
-              : '',
+            `:host { --diffs-addition-color-override: ${statusColors(code.type, colorVision).success}; --diffs-deletion-color-override: ${statusColors(code.type, colorVision).error}; }`,
             highContrast
               ? `:host { --diffs-fg-number-override: ${code.type === 'dark' ? '#cccccc' : '#404040'}; }`
               : '',

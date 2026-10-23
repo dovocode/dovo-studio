@@ -84,7 +84,11 @@ import { scmRoute } from './endpoints/scm-routes.js'
 import { projectTransferRoute } from './endpoints/project-transfer-routes.js'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
-import { peerRelayProviderSchema, customTurnSchema } from '@dovo/protocol'
+import {
+  peerRelayProviderSchema,
+  customTurnSchema,
+  runtimeConnectionModeSchema,
+} from '@dovo/protocol'
 import { workspaceSchema } from '@dovo/protocol'
 import type { Services } from '../services.js'
 import { RuntimeServices } from '../runtime-services.js'
@@ -1272,6 +1276,15 @@ export function route(
           ...(peer ? { peer } : {}),
           addresses: addresses(),
         })
+      }
+      if (method === 'POST' && path === '/api/runtime/connection-mode') {
+        if (agentDeviceAccess || s.peers.internet.contains(device.id))
+          throw new HttpError(403, 'A separately paired human client is required')
+        const input = decode(
+          mutableStruct({ consent: Schema.Literal(true), mode: runtimeConnectionModeSchema }),
+          yield* serviceResult(body(request)),
+        )
+        return s.peers.setConnectionMode(input.mode)
       }
       if (method === 'POST' && path === '/api/runtime/relay') {
         if (agentDeviceAccess || s.peers.internet.contains(device.id))

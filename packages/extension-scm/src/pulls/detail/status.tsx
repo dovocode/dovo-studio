@@ -25,7 +25,7 @@ export function Signal({ signal }: { signal: PullSignal }) {
         : signal.tone === 'warning'
           ? 'text-status-warning'
           : signal.tone === 'accent'
-            ? 'text-violet-700 dark:text-violet-400'
+            ? 'text-status-done'
             : 'text-muted-foreground'
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs ${color}`}>

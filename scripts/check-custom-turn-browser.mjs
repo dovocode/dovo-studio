@@ -12,9 +12,9 @@ import {RelaySettings as Desktop} from '${root}/packages/extension-runtime/src/r
 import {RelaySettings as Mobile} from '${mobile}/relay-settings';
 const app=createRoot(document.getElementById('app'));window.round=0;window.kind='desktop';
 window.scope=()=>({activeRuntimeId:window.target,profile:{id:window.target,name:window.target},runtimeRegistry:{profiles:[{id:window.target,name:window.target}]},snapshot:{relaySetupSupported:true,relaySettings:window.relayStatus},connected:window.connected,request:window.request,call:window.request,refreshRuntime:async()=>window.render(),refresh:async()=>window.render()});
-window.request=async(path,input)=>{window.writes.push({path,input,target:window.target});if(window.fail)throw Error('Relay settings rejected');window.relayStatus=input.config?{mode:'custom',configured:true,urls:input.config.urls}:{mode:'organization',configured:true,urls:[],organization:'Company'};return window.relayStatus};
+window.request=async(path,input)=>{window.writes.push({path,input,target:window.target});if(window.fail)throw Error('Relay settings rejected');if(path==='/api/runtime/connection-mode'){window.relayStatus={...window.relayStatus,connectionMode:input.mode};return window.relayStatus}const connectionMode=window.relayStatus.connectionMode;window.relayStatus=input.config?{mode:'custom',configured:true,urls:input.config.urls}:{mode:'organization',configured:true,urls:[],organization:'Company'};window.relayStatus.connectionMode=connectionMode;return window.relayStatus};
 window.render=()=>flushSync(()=>app.render(window.kind==='desktop'?<Desktop key={window.round}/>:<Mobile key={window.round}/>));
-window.reset=kind=>{window.round++;window.kind=kind;window.target='Server B';window.connected=true;window.fail=false;window.relayStatus={mode:'organization',configured:true,urls:[],organization:'Company'};window.writes=[];window.consent=null;window.render()};window.reset('desktop');
+window.reset=kind=>{window.round++;window.kind=kind;window.target='Server B';window.connected=true;window.fail=false;window.relayStatus={mode:'organization',configured:true,urls:[],organization:'Company',connectionMode:'automatic'};window.writes=[];window.consent=null;window.render()};window.reset('desktop');
 `,
       loader: 'tsx',
       resolveDir: root,
@@ -35,7 +35,7 @@ window.reset=kind=>{window.round++;window.kind=kind;window.target='Server B';win
     {
       path: '@dovo/studio-ui',
       contents:
-        'export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;',
+        'export const ChoicePicker=({value,onValueChange,children,disabled,...props})=><select {...props} value={value} disabled={disabled} onChange={e=>onValueChange(e.target.value)}>{children}</select>;export const Button=({children,onClick,disabled})=><button onClick={onClick} disabled={disabled}>{children}</button>;export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;',
     },
     {
       path: './provider',
@@ -45,8 +45,15 @@ window.reset=kind=>{window.round++;window.kind=kind;window.target='Server B';win
     {
       path: 'react-native',
       contents:
-        "export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;export const Alert={alert:(title,message,buttons)=>{window.consent={title,message};window.confirmMobile=()=>buttons.find(button=>button.text==='Confirm relay settings').onPress()}};",
+        "export const Pressable=({children,accessibilityLabel,accessibilityState,onPress})=><button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} onClick={onPress}>{children}</button>;export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;export const Alert={alert:(title,message,buttons)=>{window.consent={title,message};window.confirmMobile=()=>buttons.find(button=>button.text==='Confirm relay settings').onPress()}};",
     },
+    {
+      path: '../../ui/controls/choice',
+      importer: mobile,
+      contents:
+        'export const Choice=({value,onChange,items,label,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;',
+    },
+    { path: '../../ui/controls/icon', importer: mobile, contents: 'export const Icon=()=>null;' },
     {
       path: '../../ui/controls/field',
       importer: mobile,
@@ -68,7 +75,7 @@ window.reset=kind=>{window.round++;window.kind=kind;window.target='Server B';win
     {
       path: '../../ui/theme',
       importer: mobile,
-      contents: 'export const useTheme=()=>({styles:{}});',
+      contents: 'export const useTheme=()=>({styles:{},colors:{}});',
     },
     {
       path: '../../ui/controls/use-action',
@@ -87,10 +94,15 @@ try {
   for (const kind of ['desktop', 'mobile']) {
     await page.evaluate((kind) => window.reset(kind), kind)
     await page.getByText(/Supplied by Company/).waitFor()
-    if (kind === 'desktop') {
-      assert.equal(await page.getByLabel('TURN URLs', { exact: true }).isVisible(), false)
-      await page.getByText('Custom TURN server', { exact: true }).click()
+    const connectionMode = page.getByLabel('Connection mode', { exact: true })
+    for (const mode of ['webrtc', 'lan', 'automatic']) {
+      await connectionMode.selectOption(mode)
+      await page.getByRole('button', { name: 'Apply connection mode', exact: true }).click()
+      await page.waitForFunction((mode) => window.relayStatus.connectionMode === mode, mode)
     }
+    await page.evaluate(() => (window.writes = []))
+    assert.equal(await page.getByLabel('TURN URLs', { exact: true }).isVisible(), false)
+    await page.getByText('Custom TURN server', { exact: true }).click()
     await page.getByLabel(/^TURN URLs/).fill('turn:relay.example.com')
     await page.getByLabel('TURN username', { exact: true }).fill('relay-user')
     await page.getByLabel('TURN password', { exact: true }).fill('private-password')
@@ -136,7 +148,8 @@ try {
       window.target = 'Server C'
       window.render()
     })
-    if (kind === 'desktop') await page.getByText('Custom TURN server', { exact: true }).click()
+    assert.equal(await page.getByLabel('TURN URLs', { exact: true }).isVisible(), false)
+    await page.getByText('Custom TURN server', { exact: true }).click()
     assert.equal(await page.getByLabel('TURN password', { exact: true }).inputValue(), '')
     await page.evaluate(() => {
       window.connected = false

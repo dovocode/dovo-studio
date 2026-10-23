@@ -288,6 +288,7 @@ export class AccountInternet {
       )
       this.error = ''
       this.removeExcept(new Set(inbox.active))
+      if (this.peers.relay.connectionMode() === 'lan') return
       for (const request of inbox.requests) {
         if (generation !== this.generation) return
         if (

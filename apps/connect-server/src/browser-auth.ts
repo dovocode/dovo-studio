@@ -79,7 +79,7 @@ export function browserAuth(
       )
       store.approve(login, user)
       res.setHeader('Set-Cookie', `${cookieName}=; Max-Age=0; ${cookieFlags}`)
-      html(res, 200, connectSuccess(Boolean(login.artifactsOrigin)))
+      html(res, 200, connectSuccess(login.artifactsOrigin))
       return true
     }
     return false

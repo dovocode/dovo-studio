@@ -280,6 +280,12 @@ it('automatically receives organization policy, preserves manual overrides and s
     body: JSON.stringify({ consent: true, config: null }),
   })
   expect(attempted.status).toBe(403)
+  const modeAttempt = await fetch(accountTunnel.address + '/api/runtime/connection-mode', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + connection.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ consent: true, mode: 'lan' }),
+  })
+  expect(modeAttempt.status).toBe(403)
   const pairedToken = 'separate-paired-human-token'
   f.runtime.services.devices.add('Paired human', pairedToken)
   const localConfig = {

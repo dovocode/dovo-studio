@@ -55,6 +55,10 @@ function App(){const picker=useAttachmentPicker('task');const screenshots=useScr
       contents: `export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole} style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;`,
     },
     {
+      path: 'lucide-react-native',
+      contents: `const icon=name=>({color,size})=><span aria-hidden="true" data-icon={name} style={{color,width:size,height:size}}>◇</span>;export const Pencil=icon('pen'),Highlighter=icon('highlight'),ArrowUpRight=icon('arrow'),Square=icon('rectangle'),Crop=icon('crop'),Undo2=icon('undo'),Redo2=icon('redo'),RotateCcw=icon('reset');`,
+    },
+    {
       path: 'react-native-svg',
       contents: `import {forwardRef,useImperativeHandle,useLayoutEffect,useRef} from 'react';
 export default forwardRef(function Svg({children,pointerEvents,onLayout,accessible,...props},ref){const node=useRef(null);useLayoutEffect(()=>{onLayout?.()},[]);useImperativeHandle(ref,()=>({toDataURL(callback,size){if(window.exportFail){callback('');return}const element=node.current.cloneNode(true);const width=(size?.width??Number(element.getAttribute('width')))*3,height=(size?.height??Number(element.getAttribute('height')))*3;element.removeAttribute('style');element.setAttribute('width',width);element.setAttribute('height',height);const image=new window.Image();image.onload=()=>{const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;canvas.getContext('2d').drawImage(image,0,0);callback(canvas.toDataURL().split(',')[1])};image.src='data:image/svg+xml;base64,'+btoa(new XMLSerializer().serializeToString(element))}}));return <svg xmlns="http://www.w3.org/2000/svg" {...props} ref={node} style={{pointerEvents}}>{children}</svg>});
@@ -118,6 +122,12 @@ try {
   await page.evaluate(() => {
     window.operation = window.edit(window.rows[0].id)
   })
+  for (const label of ['Draw', 'Highlight', 'Arrow', 'Box', 'Crop', 'Undo', 'Redo', 'Reset']) {
+    const button = editor.getByRole('button', { name: label, exact: true })
+    await button.waitFor()
+    assert.equal(await button.locator('[data-icon]').count(), 1)
+    assert.equal(await button.innerText(), '◇')
+  }
   await editor.getByRole('button', { name: 'Crop', exact: true }).click()
   const box = await editor.getByLabel('Image drawing area').boundingBox()
   await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.25)

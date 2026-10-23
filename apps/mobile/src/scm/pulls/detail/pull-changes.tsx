@@ -10,10 +10,12 @@ import {
   pullFileFingerprint,
   reviewFileState,
   orderReviewFiles,
-  changedFileBreakdown,
+  pullFileKind,
+  type FileKind,
 } from '@dovo/protocol'
 import { useFileReview } from '../../review/use-file-review'
 import { MobileOrganizeReview } from '../../review/organize-review'
+import { ChangeTypeFilters } from '../../../ui/content/change-types'
 import { MobileFileReview } from '../../review/file-review'
 import { Pressable, View, useWindowDimensions } from 'react-native'
 import { Text } from '../../../ui/content/text'
@@ -57,6 +59,7 @@ export function PullChanges({
   const { colors, styles } = useTheme()
 
   const { height } = useWindowDimensions()
+  const [kind, setKind] = useState<FileKind | undefined>(undefined)
   const [wrapLines, setWrapLines] = useState(false)
   const [options, setOptions] = useState(false)
   const [feedbackPath, setFeedbackPath] = useState('')
@@ -89,9 +92,12 @@ export function PullChanges({
   const setRelated = (value: boolean) => setField('related', value)
   const setSelected = (value: string) => setField('selected', value)
   useEffect(() => {
-    if (initialPath) setSelected(initialPath)
-  }, [initialPath])
-  const files = useMemo(
+    if (initialPath) {
+      setSelected(initialPath)
+      setKind(undefined)
+    }
+  }, [initialPath, fragment])
+  const allFiles = useMemo(
     () =>
       orderReviewFiles(
         detail.files.map((file) => ({
@@ -105,6 +111,7 @@ export function PullChanges({
       ),
     [detail.files, review.progress, fingerprints, related],
   )
+  const files = allFiles.filter((file) => !kind || pullFileKind(file) === kind)
   const file =
     files.find((file) => file.path === selected || file.previousPath === selected) ?? files[0]
   const comments = detail.comments.filter(
@@ -118,7 +125,23 @@ export function PullChanges({
   useEffect(() => {
     if (linkedComment && file) setFeedbackPath(file.path)
   }, [linkedComment?.id, fragment, file?.path])
-  if (!file) return <Text style={styles.muted}>No changed files returned.</Text>
+  const filters = (
+    <ChangeTypeFilters
+      files={detail.files}
+      value={kind}
+      onChange={setKind}
+      total={detail.pull.changedFiles}
+    />
+  )
+  if (!file)
+    return (
+      <View>
+        {filters}
+        <Text style={styles.muted}>
+          {detail.files.length ? 'No matching files.' : 'No changed files returned.'}
+        </Text>
+      </View>
+    )
   const reason = file.attributes?.generated
     ? 'Generated file'
     : file.attributes?.vendored
@@ -146,21 +169,17 @@ export function PullChanges({
         gap: 4,
       }}
     >
-      <Text
-        accessibilityLabel="Changed file breakdown"
-        style={[styles.muted, { paddingHorizontal: 12 }]}
-      >
-        {changedFileBreakdown(detail.files, detail.pull.changedFiles)}
-      </Text>
       <View
         testID="PR file controls"
         onLayout={({ nativeEvent }) => setControlsHeight(nativeEvent.layout.height)}
         style={{ gap: 4 }}
       >
         <View style={{ paddingHorizontal: 12 }}>
+          {filters}
           <MobileFileReview
             files={files.map((file) => ({
               path: file.path,
+              changeKind: pullFileKind(file),
               viewed: file.viewed,
               additions: file.additions ?? undefined,
               deletions: file.deletions ?? undefined,

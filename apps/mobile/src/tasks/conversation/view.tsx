@@ -1,7 +1,8 @@
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { TaskEmptyState } from '../creation/task-empty-state'
-import { checkpointFileBreakdown, formatTurnDuration } from '@dovo/protocol'
+import { checkpointFiles, formatTurnDuration, type FileKind } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
+import { ChangeTypeFilters } from '../../ui/content/change-types'
 import { CheckpointFiles } from './components/checkpoint-files'
 import {
   formatTime,
@@ -113,7 +114,17 @@ function CheckpointRow({
   const { collapseChangedFiles } = useMobilePreferences()
   const [expanded, setExpanded] = useApplicationState<boolean | null>(null)
   const showFiles = expanded ?? !collapseChangedFiles
-  const breakdown = useMemo(() => checkpointFileBreakdown(turn?.checkpoint), [turn?.checkpoint])
+  const [kind, setKind] = useApplicationState<FileKind | undefined>(undefined)
+  const changedFiles = useMemo(
+    () =>
+      turn?.checkpoint
+        ? [
+            ...checkpointFiles(turn.checkpoint),
+            ...(turn.checkpoint.linked ?? []).flatMap(checkpointFiles),
+          ]
+        : [],
+    [turn?.checkpoint],
+  )
   const totals = useMemo(
     () =>
       (turn?.checkpoint?.files ?? []).map(fileStats).reduce(
@@ -174,13 +185,19 @@ function CheckpointRow({
           <Text style={styles.muted}>Open diff</Text>
         </Pressable>
       </View>
-      {!!breakdown && (
-        <Text accessibilityLabel="Changed file breakdown" style={styles.muted}>
-          {breakdown}
-        </Text>
+      {!!changedFiles.length && (
+        <ChangeTypeFilters
+          files={changedFiles}
+          value={kind}
+          onChange={(next) => {
+            setKind(next)
+            setExpanded(true)
+          }}
+        />
       )}
       {showFiles && (
         <CheckpointFiles
+          kind={kind}
           files={turn?.checkpoint?.files ?? []}
           omitted={turn?.checkpoint?.omitted ?? []}
           onOpen={(path) => openCheckpoint(checkpoint.turnId, path)}
@@ -193,11 +210,9 @@ function CheckpointRow({
             {link.repositoryName ?? link.repositoryId} · {link.branch ?? 'Linked checkout'} ·{' '}
             {link.files.length} changed files
           </Text>
-          <Text accessibilityLabel="Linked checkout file breakdown" style={styles.muted}>
-            {checkpointFileBreakdown(link)}
-          </Text>
           {showFiles && (
             <CheckpointFiles
+              kind={kind}
               files={link.files}
               omitted={link.omitted}
               onOpen={() => openCheckpoint(checkpoint.turnId)}

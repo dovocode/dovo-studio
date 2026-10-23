@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { decode, taskSchema } from '@dovo/protocol'
-import { WatchLifecycleCache } from './watch-repository'
+import { WatchLifecycleCache, watchAccountRepositoryId } from './watch-repository'
 
 const task = () =>
   decode(taskSchema, {
@@ -52,4 +52,34 @@ it('invalidates transaction results after a rollback and editable-link changes',
     read,
   )
   expect(read).toHaveBeenCalledTimes(3)
+})
+
+it('inherits a primary or sole editable linked account and requires selection between linked accounts', () => {
+  const primary = task()
+  const projects = new Set(['repo', 'linked', 'other'])
+  expect(watchAccountRepositoryId(primary, projects)).toBe('repo')
+  const general = {
+    ...primary,
+    repositoryId: 'scratch',
+    linkedCheckouts: [
+      {
+        id: 'ref',
+        repositoryId: 'other',
+        execution: 'main' as const,
+        access: 'read-only' as const,
+      },
+      { id: 'edit', repositoryId: 'linked', execution: 'main' as const, access: 'edit' as const },
+    ],
+  }
+  expect(watchAccountRepositoryId(general, projects)).toBe('linked')
+  expect(() =>
+    watchAccountRepositoryId(
+      {
+        ...general,
+        linkedCheckouts: general.linkedCheckouts.map((link) => ({ ...link, access: 'edit' })),
+      },
+      projects,
+    ),
+  ).toThrow('Specify repositoryId')
+  expect(watchAccountRepositoryId({ ...general, linkedCheckouts: [] }, projects)).toBe('scratch')
 })

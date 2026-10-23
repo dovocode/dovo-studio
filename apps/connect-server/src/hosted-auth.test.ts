@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
+import { randomBytes, randomUUID } from 'node:crypto'
+import { ArtifactStore } from '../../artifact-server/src/store.js'
+import { createArtifactServer } from '../../artifact-server/src/server.js'
 import { createAuth } from '../../auth-server/src/auth.js'
 import { createAuthServer } from '../../auth-server/src/server.js'
 import { ownerMappings } from '../../auth-server/src/owners.js'
@@ -30,7 +33,7 @@ async function fixture() {
   if (!authAddress || typeof authAddress === 'string') throw new Error('Missing auth address')
   const authOrigin = `http://127.0.0.1:${authAddress.port}`
   const clientSecret = 'test-connect-client-secret-at-least-thirty-two-characters'
-  const serviceKey = 'test-service-key-at-least-thirty-two-characters'
+  const serviceKey = randomBytes(32).toString('base64url')
   const identity = await createAuth({
     path: ':memory:',
     origin: authOrigin,
@@ -72,6 +75,7 @@ async function fixture() {
     ...provider,
     store,
     origin,
+    artifacts: { origin: 'https://artifacts.test', key: serviceKey },
   })
   const cookies = new Map<string, string>()
   const request = async (path: string, init: RequestInit = {}) => {
@@ -167,6 +171,9 @@ async function fixture() {
     store,
     identity,
     authOrigin,
+    origin,
+    serviceKey,
+    realFetch,
     provider,
     request,
     login,
@@ -299,4 +306,77 @@ it('checks the auth-page origin and rejects tampered signed login destinations',
   ).toBe(403)
   signIn.searchParams.set('redirect_uri', 'https://attacker.test/callback')
   expect((await f.request(signIn.href)).status).toBe(400)
+})
+
+it('preserves publications, invitations, links and existing grants through Connect identity migration', async () => {
+  const f = await fixture()
+  const artifacts = new ArtifactStore(':memory:')
+  cleanup.push(() => artifacts.db.close())
+  const oldOwner = f.store.createLogin()
+  f.store.approve(oldOwner.login, { id: 'existing-owner', name: 'Previous owner' })
+  const invited = f.store.createLogin()
+  f.store.approve(invited.login, { id: 'existing-recipient', name: 'Recipient' })
+  const publication = artifacts.publish('existing-owner', {
+    sourceId: randomUUID(),
+    revision: 1,
+    title: 'Before migration',
+    format: 'html',
+    content: '<p>Saved report</p>',
+  })
+  artifacts.invite(publication.id, 'existing-owner', 'existing-recipient')
+  const link = artifacts.link(publication.id, 'existing-owner', 3600)
+  const grant = (token: string) => {
+    const result = f.store.artifactGrant(token, 'https://artifacts.test')
+    if (!result) throw new Error('Missing grant')
+    return result.token
+  }
+  const oldGrant = grant(oldOwner.token)
+  const recipientGrant = grant(invited.token)
+  const server = createArtifactServer({
+    store: artifacts,
+    origin: 'https://artifacts.test',
+    connectOrigin: f.origin,
+    serviceKey: f.serviceKey,
+    viewerScript: '',
+  }).server
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  cleanup.push(
+    () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve())
+        server.closeAllConnections()
+      }),
+  )
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing artifact port')
+  const path = `http://127.0.0.1:${address.port}/v1/publications/${publication.id}`
+  const read = (suffix = '', token?: string, share = false) =>
+    f.realFetch(path + suffix, {
+      headers: token ? { Authorization: (share ? 'DovoShare ' : 'Bearer ') + token } : {},
+    })
+  const migrated = await f.login(true)
+  expect(f.store.artifactSession(migrated.token)?.user.id).toBe('existing-owner')
+  expect(f.store.directory(migrated.token)).toBeUndefined()
+  const access = await read('/access', migrated.token)
+  expect(access.status).toBe(200)
+  expect(await access.json()).toMatchObject({
+    invites: [{ userId: 'existing-recipient' }],
+    links: [{ id: link.id }],
+  })
+  expect((await read('', oldGrant)).status).toBe(200)
+  expect((await read('', recipientGrant)).status).toBe(200)
+  expect((await read('', link.token, true)).status).toBe(200)
+  expect((await read('/access', recipientGrant)).status).toBe(404)
+  f.cookies.clear()
+  f.subject(456)
+  const unrelated = await f.login(true)
+  expect((await read('', unrelated.token)).status).toBe(404)
+  expect((await read('/access', unrelated.token)).status).toBe(404)
+  f.store.revoke(oldOwner.token)
+  expect(f.store.artifactSession(oldGrant)).toBeUndefined()
+  expect((await read('', oldGrant)).status).toBe(404)
+  expect((await read('/access', migrated.token)).status).toBe(200)
+  expect((await read('', recipientGrant)).status).toBe(200)
+  expect((await read('', link.token, true)).status).toBe(200)
 })

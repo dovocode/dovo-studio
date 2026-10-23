@@ -51,6 +51,7 @@ const mocks = {
   '../../../ui/controls/icon': `export const Icon=()=>null;`,
   '../../ui/content/pull-request-icon': `export const PullRequestIcon=()=>null;`,
   '../../../ui/content/pull-request-icon': `export const PullRequestIcon=()=>null;`,
+  './text': `export {Text} from 'react-native';`,
   '../content/text': `export {Text} from 'react-native';`,
   '../../ui/content/text': `export {Text} from 'react-native';`,
   '../../../ui/content/text': `export {Text} from 'react-native';`,

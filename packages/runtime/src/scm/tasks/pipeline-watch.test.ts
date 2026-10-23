@@ -280,7 +280,7 @@ it('persists watches and completion receipts across runtime restarts', async () 
 it('requires explicit IDs, validates all registrations before saving, and bounds active runs', async () => {
   const f = await setup()
   await expect(f.s.pipelineWatch.command({ taskId: f.taskId, action: 'watch' })).rejects.toThrow(
-    'Run IDs are required',
+    'Supply either a pipeline URL or run IDs',
   )
   f.read.mockResolvedValue(detail('wrong'))
   await expect(f.watch()).rejects.toThrow('identity changed')

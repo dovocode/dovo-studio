@@ -4,16 +4,18 @@ import { chromium } from 'playwright'
 const resolveDir = new URL('../apps/mobile/', import.meta.url).pathname
 const controls = `
 import {Effect} from 'effect';
-export const View=({children})=><div>{children}</div>;
-export const ScrollView=View;
+const css=style=>Object.assign({},...(Array.isArray(style)?style:[style]).flat().filter(Boolean));
+export const View=({children,style})=><div style={css(style)}>{children}</div>;
+export const ScrollView=({children,contentContainerStyle,maximumZoomScale})=><div data-zoom={maximumZoomScale} style={css(contentContainerStyle)}>{children}</div>;
 export const Text=({children})=><span>{children}</span>;
 export const ActivityIndicator=({accessibilityLabel})=><span>{accessibilityLabel}</span>;
 export const Pressable=({children,onPress,accessibilityLabel})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;
 export const Image=({source,accessibilityLabel,onError})=><img src={source.uri} alt={accessibilityLabel} onError={onError}/>;
+export const IconButton=({label,icon,variant,onPress,size=44})=><button aria-label={label} data-icon={icon} data-variant={variant} onClick={onPress} style={{width:size,height:size,borderRadius:size/2}}>×</button>;
 export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;
-export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
+export const SafeModal=({visible,children})=>visible?<div role="dialog" style={{position:"fixed",inset:0}}>{children}</div>:null;
 export const useAction=()=>({busy:false,error:'',act:fn=>void fn()});
-export const useTheme=()=>({styles:{},colors:{}});
+export const useTheme=()=>({styles:{screen:{position:'relative',width:'100%',height:'100%'}},colors:{}});
 export const taskImageReadSchema={};
 const readEffect=(path,input)=>Effect.tryPromise({try:signal=>window.call(path,input,signal),catch:reason=>reason});
 export const useRuntime=()=>({connected:true,connection:{address:'http://paired-runtime',token:'paired-token'},readEffect,callEffect:()=>{throw Error('Image reads must not refresh the workspace')}});
@@ -41,6 +43,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           '../theme',
           './text',
           '../controls/action',
+          '../controls/icon-button',
           '../controls/use-action',
           '../layout/safe-modal',
         ])
@@ -90,7 +93,23 @@ try {
   )
   await page.getByRole('button', { name: 'Open original & download' }).click()
   assert.equal(await page.evaluate(() => window.originals), 1)
-  await page.getByRole('button', { name: 'Close image' }).click()
+  const close = page.getByRole('button', { name: 'Close image' })
+  assert.equal(await close.textContent(), '×')
+  assert.equal(await close.getAttribute('data-icon'), 'close')
+  assert.equal(await close.getAttribute('data-variant'), 'glass')
+  assert.equal(await close.evaluate((element) => element.closest('[data-zoom]') === null), true)
+  const bounds = await close.boundingBox()
+  assert.equal(bounds.width, 44)
+  assert.equal(bounds.height, 44)
+  assert.equal(bounds.x, 390 - 16 - 44)
+  assert.equal(bounds.y, 12)
+  // Simulate the image content moving/scaling independently of the modal chrome.
+  await page.locator('[data-zoom="4"]').evaluate((element) => {
+    element.style.transformOrigin = 'top left'
+    element.style.transform = 'translate(-120px, -200px) scale(4)'
+  })
+  assert.deepEqual(await close.boundingBox(), bounds)
+  await close.click()
   await page.evaluate(() => window.setPath('slow.png'))
   await page.getByText('Loading Screenshot').waitFor()
   await page.evaluate(() => window.setPath('new.png'))

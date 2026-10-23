@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../../shared/schema.js'
+import { peerDiagnosticsSchema } from './peer-diagnostics.js'
 const backupEntry = mutableStruct({
   path: Schema.String,
   size: Schema.Number,
@@ -13,6 +14,7 @@ export const runtimeDiagnosticsSchema = mutableStruct({
   ready: Schema.Boolean,
   checkedAt: Schema.String,
   warnings: mutableArray(Schema.String),
+  internet: Schema.optional(peerDiagnosticsSchema),
   roots: mutableStruct({
     database: Schema.String,
     worktrees: Schema.String,

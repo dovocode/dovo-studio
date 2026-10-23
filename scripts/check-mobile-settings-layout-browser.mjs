@@ -919,13 +919,13 @@ try {
         .getByRole(platform === 'ios' ? 'menuitem' : 'button', { name: value, exact: true })
         .click()
     }
-    await chooseAppearance('Status colors', 'Blue / orange')
+    await chooseAppearance('Status colors', 'GitHub colorblind · higher contrast')
     await page.waitForFunction(() => window.savedPreferences?.colorVision === 'blue-orange')
     assert.equal(
       await page
         .getByText('Finished', { exact: true })
         .evaluate((el) => getComputedStyle(el).color),
-      'rgb(121, 191, 255)',
+      'rgb(173, 220, 255)',
     )
     await page.getByRole('switch', { name: 'Higher contrast', exact: true }).click()
     await page.waitForFunction(() => window.savedPreferences?.highContrast === true)
@@ -934,7 +934,7 @@ try {
       await page
         .getByText('Finished', { exact: true })
         .evaluate((el) => getComputedStyle(el).color),
-      'rgb(0, 90, 156)',
+      'rgb(2, 59, 149)',
     )
     await page.getByLabel('Reduced motion', { exact: true }).filter({ hasText: 'false' }).waitFor()
     await chooseAppearance('Animations', 'Reduce')

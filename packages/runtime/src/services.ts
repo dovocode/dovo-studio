@@ -273,6 +273,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   pulls.communication = retrieval
   const forgeWork = new ForgeWork(db, store, git, forges, pulls, () => commands.get())
   const pullRequestWatch = new PullRequestWatch(db, {
+    pulls,
     store,
     preferences,
     pullCache,
@@ -284,7 +285,14 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     forgeWork.invalidateShared()
     for (const repo of store.get().repositories) pullCache.invalidate(repo.path)
   }
-  const pipelineWatch = new PipelineWatch(db, { store, preferences, forgeWork, tasks, activity })
+  const pipelineWatch = new PipelineWatch(db, {
+    pulls,
+    store,
+    preferences,
+    forgeWork,
+    tasks,
+    activity,
+  })
   const threadWatch = new ThreadWatch(
     db,
     { store, preferences, tasks },

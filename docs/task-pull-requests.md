@@ -9,23 +9,27 @@ devices.
 
 With the flag enabled, writable harness sessions receive `dovo_task pull_request_watch`:
 
-- `action: "watch", url: "https://github.com/owner/repo/pull/123"` registers the thread’s PR and
-  returns `watches` and any currently `failedChecks`. Add `repositoryId` to select an editable
-  linked project; otherwise registration uses the primary project. A thread can watch one PR per
-  repository. Choosing another PR replaces only that repository’s watch.
+- `action: "watch", url: "https://github.com/owner/repo/pull/123"` watches any accessible PR,
+  including repositories with no checkout or Studio project, and returns `watches` and current
+  `failedChecks`. It inherits the primary Git project’s forge account, or the sole editable linked
+  Git project’s account in General. Add `repositoryId` to choose an editable linked account source.
+  With no Git project, General uses an unambiguous matching runtime account. With multiple matching
+  accounts, `connectionId` chooses a configured runtime account in General without a Git project;
+  linked threads continue using their project’s account. A thread can watch one PR per target
+  repository; choosing another PR replaces only that repository’s watch.
 - `action: "status"` returns all watches and their refresh errors. Optional `repositoryId` or `url`
   selects a particular project or PR.
 - `action: "stop"` stops all watches, or only those selected by `repositoryId` or `url`.
 
-Registration verifies the URL against the project’s configured forge and records existing comments
-as its baseline. Dovo then checks every two minutes, reusing credential-scoped caches and the
-existing GitHub rate limiter. GitHub feedback reads skip diffs, review-thread metadata, repository
-settings and check annotations; other configured forges use their existing detail adapters. New
-conversation comments, edits to previously seen comments, submitted reviews, changed review
-decisions, inline comments and newly failing checks are queued as external feedback in the same
-thread. An idle thread wakes through its normal message queue; an active turn finishes before
-handling that feedback. Long comments are sent as excerpts with links. Large batches drain over
-subsequent polls. Successful or pending checks do not wake the agent.
+Registration verifies the URL against the selected forge account and records existing comments as
+its baseline. Dovo then checks every two minutes, reusing credential-scoped caches and the existing
+GitHub rate limiter. GitHub feedback reads skip diffs, review-thread metadata, repository settings
+and check annotations; other configured forges use their existing detail adapters. New conversation
+comments, edits to previously seen comments, submitted reviews, changed review decisions, inline
+comments and newly failing checks are queued as external feedback in the same thread. An idle thread
+wakes through its normal message queue; an active turn finishes before handling that feedback. Long
+comments are sent as excerpts with links. Large batches drain over subsequent polls. Successful or
+pending checks do not wake the agent.
 
 Watches and delivery cursors survive turns and runtime restarts. Re-registering the same active
 watch preserves its cursor. Queue admission and cursor updates commit together, preventing duplicate
@@ -148,15 +152,22 @@ register replacement runs after subsequent pushes or reruns. Requests not to mon
 precedence, and unrelated runs are excluded. Failed registration must be reported as inactive
 monitoring, rather than described as an installed watch.
 
-Use `action: watch` with `runIds` containing one or more provider run IDs. Add `repositoryId` to
-select an editable linked project; otherwise registration uses the primary project. Dovo uses the
-selected project’s configured forge and account. Run IDs are scoped by repository, so identical IDs
-in different repositories remain independent. Registration adds runs without replacing existing
-watches, accepts at most 20 active runs per thread, and returns current run details.
-Already-finished runs are returned immediately without queuing another message. Re-registering an
-active run preserves its start time and updates its current status; a returned completion ends that
-watch without a duplicate queued notification. Explicit registration of a rerun invalidates older
-in-flight reads. This watches explicit runs only, never a branch or future runs.
+Use `action: watch, url: "https://github.com/owner/repo/actions/runs/123"` for a direct pipeline
+link without a checkout or Studio project. GitHub Actions and GitLab pipeline URLs are supported,
+including configured private hosts. GitHub job links select their parent run. URL watches inherit
+accounts in the same way as PR watches. Their target repository and verified account identity are
+saved without credentials; an account or binding change prevents further target reads until the
+watch is registered again. Waiting shows the external repository name and supports stopping it.
+
+For project-based watches, use `action: watch` with `runIds` containing one or more provider run
+IDs. Add `repositoryId` to select an editable linked project; otherwise registration uses the
+primary project. Dovo uses the selected project’s configured forge and account. Run IDs are scoped
+by repository, so identical IDs in different repositories remain independent. Registration adds runs
+without replacing existing watches, accepts at most 20 active runs per thread, and returns current
+run details. Already-finished runs are returned immediately without queuing another message.
+Re-registering an active run preserves its start time and updates its current status; a returned
+completion ends that watch without a duplicate queued notification. Explicit registration of a rerun
+invalidates older in-flight reads. This watches explicit runs only, never a branch or future runs.
 
 Every two minutes, the runtime checks watched runs using the existing forge adapters and caches.
 When a run fails or finishes with an actionable warning, Dovo queues its result once in the same
@@ -167,12 +178,13 @@ silently. Completion and queue admission commit together. Watches survive turns 
 restarts. Unavailable or stale reads retain progress and expose an error in status. Agents should
 finish their turn after registration instead of keeping a polling loop alive.
 
-Use `action: status` or `action: stop` with optional `repositoryId` and `runIds` to select runs;
-omit both to select all watches. Finished threads with active watches move into **Waiting** on
-desktop/web and mobile. Failed runs revive them; success leaves Waiting only when no active watches
-remain. Paused queues remain paused, and read-only threads are not awakened. Settling or archiving
-removes both PR and pipeline watches; restoring a thread does not resume them. Disabling the feature
-pauses existing watches and rejects calls from older sessions; re-enabling resumes monitoring.
-Changing the thread’s primary project stops its watches. Removing a linked project or changing its
-access to read-only stops only that project’s watches; deleting the thread removes its watch
-records. Provider content is external data and does not override thread instructions.
+Use `action: status` or `action: stop` with an optional pipeline `url`, or the returned watch
+`repositoryId` and `runIds`, to select runs; omit selectors to select all watches. Finished threads
+with active watches move into **Waiting** on desktop/web and mobile. Failed runs revive them;
+success leaves Waiting only when no active watches remain. Paused queues remain paused, and
+read-only threads are not awakened. Settling or archiving removes both PR and pipeline watches;
+restoring a thread does not resume them. Disabling the feature pauses existing watches and rejects
+calls from older sessions; re-enabling resumes monitoring. Changing the thread’s primary project
+stops its watches. Removing a linked project or changing its access to read-only stops only that
+project’s watches; deleting the thread removes its watch records. Provider content is external data
+and does not override thread instructions.

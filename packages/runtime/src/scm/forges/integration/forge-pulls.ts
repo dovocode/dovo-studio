@@ -1,5 +1,11 @@
+import type { WatchSource } from '../../tasks/watch-source.js'
 import { isDeepStrictEqual } from 'node:util'
-import { verifySourceContext, guardSource, type SourceContext } from './source-context.js'
+import {
+  verifySourceContext,
+  guardSource,
+  opaqueIdentity,
+  type SourceContext,
+} from './source-context.js'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import { dirname } from 'node:path'
@@ -213,24 +219,58 @@ export class ForgePullRequests {
     }
   }
   /** Prefer a project binding, or require the caller to choose between unrelated accounts. */
-  urlTarget(url: string, connectionId?: string) {
-    const target = forgePullTarget(url)
-    if (!target) throw new HttpError(400, 'Enter a supported public pull request URL')
+  urlTarget(url: string, connectionId?: string, accountRepositoryId?: string | null) {
+    if (!URL.canParse(url)) throw new HttpError(400, 'Enter a supported pull request URL')
+    const parsed = new URL(url)
+    const repositoryUrl = `${parsed.origin}${parsed.pathname.replace(/\/(?:-\/)?(?:pull|pulls|pull-requests|pullrequest|merge_requests)\/[1-9]\d*(?:\/(?:files|commits|checks|diffs|pipelines))?\/?$/i, '')}`
+    const bindings = this.connections
+      .list()
+      .filter(
+        (connection) =>
+          new URL(
+            connection.provider === 'bitbucket' ? 'https://bitbucket.org' : connection.baseUrl,
+          ).origin === parsed.origin,
+      )
+      .map((connection) => ({
+        provider: connection.provider,
+        identity: gitRemoteIdentity(repositoryUrl) ?? undefined,
+      }))
+    const target = forgePullTarget(url, bindings)
+    if (!target)
+      throw new HttpError(400, 'Enter a supported pull request URL for a configured host')
     const label = forgeLabels[target.provider]
     const host = new URL(target.url).hostname
-    const repository = new URL(target.url).pathname
-      .replace(/\/(?:-\/merge_requests|pull)\/\d+$/, '')
+    const repositoryPath = new URL(target.url).pathname
+      .replace(/\/(?:-\/)?(?:merge_requests|pull|pulls|pull-requests|pullrequest)\/\d+$/i, '')
       .replace(/^\//, '')
     const candidates = this.connections
       .list()
-      .filter((c) => c.provider === target.provider && new URL(c.baseUrl).hostname === host)
+      .filter(
+        (c) =>
+          c.provider === target.provider &&
+          new URL(c.provider === 'bitbucket' ? 'https://bitbucket.org' : c.baseUrl).origin ===
+            new URL(target.url).origin,
+      )
+    const repositoryFor = (connection: (typeof candidates)[number]) => {
+      const base = new URL(
+        connection.provider === 'bitbucket' ? 'https://bitbucket.org' : connection.baseUrl,
+      ).pathname.replace(/^\/|\/$/g, '')
+      const path =
+        base && repositoryPath.startsWith(`${base}/`)
+          ? repositoryPath.slice(base.length + 1)
+          : repositoryPath
+      return connection.provider === 'azure-devops' ? path.replace('/_git/', '/') : path
+    }
     const projects = this.store
       .get()
       .repositories.filter(
         (repo) =>
           repo.forge &&
-          candidates.some((c) => c.id === repo.forge?.connectionId) &&
-          repo.forge.repository.toLowerCase() === repository.toLowerCase(),
+          candidates.some(
+            (c) =>
+              c.id === repo.forge?.connectionId &&
+              repo.forge.repository.toLowerCase() === repositoryFor(c).toLowerCase(),
+          ),
       )
     // A linked PR can belong to a different repository. Retain the thread project's
     // account (including its gh environment) rather than falling back to the home directory.
@@ -251,11 +291,26 @@ export class ForgePullRequests {
             .get()
             .repositories.find((repo) => linkedRepositoryIds.has(repo.id) && !repo.kind)
         : undefined
+    const requestedOrigin = accountRepositoryId
+      ? this.store.get().repositories.find((repo) => repo.id === accountRepositoryId)
+      : undefined
+    if (accountRepositoryId && (!requestedOrigin || requestedOrigin.kind))
+      throw new HttpError(404, 'The source account project is no longer available')
+    if (
+      requestedOrigin?.forge &&
+      !candidates.some((c) => c.id === requestedOrigin.forge?.connectionId)
+    )
+      throw new HttpError(
+        409,
+        'The thread’s forge account does not match this URL’s provider and host',
+      )
+    const linkedOrigin =
+      requestedOrigin ?? (accountRepositoryId === null ? undefined : linkedProject)
     const origin =
-      linkedProject &&
-      (!linkedProject.forge ||
-        candidates.some((candidate) => candidate.id === linkedProject.forge?.connectionId))
-        ? linkedProject
+      linkedOrigin &&
+      (!linkedOrigin.forge ||
+        candidates.some((candidate) => candidate.id === linkedOrigin.forge?.connectionId))
+        ? linkedOrigin
         : undefined
     const bound = origin
       ? [origin.forge?.connectionId]
@@ -265,6 +320,8 @@ export class ForgePullRequests {
       : candidates.filter((c) => (bound.length ? bound.includes(c.id) : true))
     if (connectionId && !choices.length)
       throw new HttpError(400, `Choose a ${label} account configured for this host.`)
+    if (requestedOrigin && !requestedOrigin.forge && target.provider !== 'github' && !connectionId)
+      throw new HttpError(409, 'Bind a matching forge account to the thread’s project first')
     if (choices.length > 1)
       throw new HttpError(
         409,
@@ -276,7 +333,9 @@ export class ForgePullRequests {
         409,
         `Connect a ${label} account on this runtime to open this pull request.`,
       )
+    const repository = selected ? repositoryFor(selected) : repositoryPath
     const project =
+      requestedOrigin ||
       (!connectionId && origin) ||
       projects.find((repo) => repo.forge?.connectionId === selected?.id)
     const cwd = project?.path ?? homedir()
@@ -312,6 +371,16 @@ export class ForgePullRequests {
       )
     }
     return {
+      cwd,
+      sourceContext: prepare,
+      feedback: async (number: number, expectedDestination?: string) => {
+        const scope = await prepare()
+        guardSource(scope, { expectedDestination })
+        return this.tagDetail(
+          await this.operation(cwd, scope, { kind: 'feedback', number }, pullDetailSchema),
+          scope,
+        )
+      },
       identity: async (refresh: boolean) => (await prepare(refresh)).destination,
       sourceIdentity: async (refresh = false) => {
         const { readerIdentity, destination } = await prepare(refresh)
@@ -363,6 +432,76 @@ export class ForgePullRequests {
           mutableStruct({ url: Schema.String }),
         )
       },
+    }
+  }
+  /** Resolve URL watches without creating a local project or changing the CLI login. */
+  async watchSource(
+    url: string,
+    accountRepositoryId?: string,
+    connectionId?: string,
+  ): Promise<{ repositoryId: string; source?: WatchSource }> {
+    const origin = accountRepositoryId
+      ? this.store.get().repositories.find((repo) => repo.id === accountRepositoryId)
+      : undefined
+    if (accountRepositoryId && (!origin || origin.kind))
+      throw new HttpError(404, 'The source account project is no longer available')
+    const originScope = origin ? await this.sourceContext(origin.path) : undefined
+    if (connectionId && originScope && connectionId !== originScope.connection?.id)
+      throw new HttpError(
+        409,
+        'Use the thread’s forge account, or register from a General thread without a project',
+      )
+    const target = this.urlTarget(
+      url,
+      connectionId ?? originScope?.connection?.id,
+      accountRepositoryId ?? null,
+    )
+    const scope = await target.sourceContext()
+    if (
+      originScope &&
+      (originScope.provider !== scope.provider ||
+        originScope.readerIdentity !== scope.readerIdentity)
+    )
+      throw new HttpError(
+        409,
+        'The thread’s forge account does not match this URL’s provider and host',
+      )
+    const local =
+      originScope && originScope.repository.toLowerCase() === scope.repository.toLowerCase()
+    if (local) return { repositoryId: accountRepositoryId! }
+    return {
+      repositoryId: `external:${opaqueIdentity([scope.provider, scope.connection?.baseUrl ?? `https://${scope.host}`, scope.repository.toLowerCase()])}`,
+      source: {
+        url,
+        repository: `${scope.host}/${scope.repository}`,
+        accountRepositoryId,
+        connectionId: scope.connection?.id,
+        readerIdentity: scope.readerIdentity,
+        destination: scope.destination,
+      },
+    }
+  }
+  watchReader(source: WatchSource) {
+    const target = this.urlTarget(
+      source.url,
+      source.connectionId,
+      source.accountRepositoryId ?? null,
+    )
+    const prepare = async () => {
+      const scope = await target.sourceContext()
+      guardSource(scope, {
+        expectedReaderIdentity: source.readerIdentity,
+        expectedDestination: source.destination,
+      })
+      return scope
+    }
+    return {
+      identity: async () => (await prepare()).destination,
+      feedback: async (_cwd: string, number: number) => {
+        await prepare()
+        return target.feedback(number, source.destination)
+      },
+      context: async () => ({ cwd: target.cwd, scope: await prepare() }),
     }
   }
   private async boundRepository(cwd: string) {

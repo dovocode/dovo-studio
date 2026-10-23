@@ -70,6 +70,9 @@ async function setup(persistent = false) {
   })
   s.store.updateTask(task.id, (task) => ({ ...task, queuePaused: true, queue: [] }))
   s.preferences.save({ enablePullRequestWatching: true })
+  vi.spyOn(s.pulls, 'watchSource').mockImplementation(async (_url, id) => ({
+    repositoryId: id ?? 'repo',
+  }))
   const read = vi.spyOn(s.pullCache, 'feedback').mockResolvedValue(detail())
   const watch = (watchUrl = url) =>
     s.pullRequestWatch.command({ taskId: task.id, action: 'watch', url: watchUrl })
@@ -362,7 +365,7 @@ it('pauses disabled/archived/read-only threads, stops on closure or project chan
   expect(f.s.db.prepare('SELECT * FROM task_pull_watches').all()).toEqual([])
 })
 
-it('rejects foreign URLs and incomplete baselines, and cancels in-flight registration/polling', async () => {
+it('rejects mismatched responses and incomplete baselines, and cancels in-flight registration/polling', async () => {
   const f = await setup()
   await expect(f.watch('https://github.com/foreign/project/pull/7')).rejects.toThrow(
     'different project',
@@ -379,6 +382,7 @@ it('rejects foreign URLs and incomplete baselines, and cancels in-flight registr
       }),
   )
   const registering = f.watch()
+  await Promise.resolve()
   await f.s.pullRequestWatch.command({ taskId: f.taskId, action: 'stop' })
   resolveRead(detail())
   await expect(registering).rejects.toMatchObject({ status: 409 })
@@ -540,6 +544,7 @@ it('keeps Waiting for a pipeline after the PR watcher ends, and cancels registra
       }),
   )
   const registration = f.watch()
+  await Promise.resolve()
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: true }))
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, archived: false }))
   complete(detail())
@@ -681,6 +686,7 @@ it('cancels linked registrations on unlink/relink without cancelling unrelated p
   )
   const linked = f.linkedWatch()
   const primary = f.watch()
+  await Promise.resolve()
   await f.s.pullRequestWatch.command({ taskId: f.taskId, action: 'stop', url: f.linkedUrl })
   releaseLinked(detail({ pull: { ...detail().pull, url: f.linkedUrl } }))
   releasePrimary(detail())
@@ -688,6 +694,7 @@ it('cancels linked registrations on unlink/relink without cancelling unrelated p
   await primary
   expect((await f.status()).watches).toHaveLength(1)
   const registration = f.linkedWatch()
+  await Promise.resolve()
   const links = f.s.store.task(f.taskId).linkedCheckouts
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, linkedCheckouts: [] }))
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, linkedCheckouts: links }))

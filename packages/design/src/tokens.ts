@@ -8,7 +8,7 @@ export const dovoColors = {
     popover: '#101010',
     secondary: '#102432',
     'muted-foreground': '#a1a1a1',
-    border: '#282828',
+    border: '#202020',
     primary: '#7cc9ff',
     'primary-foreground': '#080808',
     selection: '#102432',
@@ -27,7 +27,7 @@ export const dovoColors = {
     popover: '#ffffff',
     secondary: '#e7f3ff',
     'muted-foreground': '#666666',
-    border: '#dddddd',
+    border: '#e8e8e8',
     primary: '#0965b5',
     'primary-foreground': '#ffffff',
     selection: '#e7f3ff',
@@ -40,14 +40,36 @@ export const dovoColors = {
   },
 } as const
 
-/** Semantic states are always accompanied by text or icons. */
+/** GitHub / Primer colorblind semantic palette. Keep icons and text alongside color.
+ * https://unpkg.com/@primer/primitives/dist/css/functional/themes/light-colorblind.css
+ * Light text uses Primer's high-contrast colors to stay readable across Studio surfaces.
+ */
 export const semanticColors = {
-  dark: { success: '#8ad5b0', error: '#ff7e97', warning: '#e7c681', onError: '#341520' },
-  light: { success: '#08734f', error: '#ba2549', warning: '#855700', onError: '#ffffff' },
+  dark: {
+    success: '#58a6ff',
+    error: '#f0883e',
+    warning: '#d29922',
+    done: '#b7bdc8',
+    onError: '#241000',
+  },
+  light: {
+    success: '#023b95',
+    error: '#702c00',
+    warning: '#603700',
+    done: '#512598',
+    onError: '#ffffff',
+  },
 } as const
+/** Primer's high-contrast colorblind variant; saved accessibility preferences remain valid. */
 export const colorVisionColors = {
-  dark: { success: '#79bfff', error: '#ffb570', warning: '#ffe08a', onError: '#241000' },
-  light: { success: '#005a9c', error: '#963b00', warning: '#715400', onError: '#ffffff' },
+  dark: {
+    success: '#addcff',
+    error: '#ffb757',
+    warning: '#f0b72f',
+    done: '#d3abff',
+    onError: '#241000',
+  },
+  light: semanticColors.light,
 } as const
 
 export const designTokens = {

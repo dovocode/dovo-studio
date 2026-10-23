@@ -40,3 +40,39 @@ it('preserves manual overrides, hides credentials and fails closed when the orga
     db.close()
   }
 })
+
+it('migrates saved relay settings and persists connection mode without losing custom credentials', () => {
+  const db = new Database(':memory:')
+  try {
+    db.exec(
+      'CREATE TABLE relay_settings(id INTEGER PRIMARY KEY CHECK(id=1),mode TEXT NOT NULL,config TEXT)',
+    )
+    db.prepare('INSERT INTO relay_settings VALUES(1,?,?)').run(
+      'custom',
+      JSON.stringify({
+        urls: ['turn:host:3478?transport=udp'],
+        username: 'user',
+        credential: 'secret',
+      }),
+    )
+    const settings = new RuntimeRelaySettings(db)
+    expect(settings.status().connectionMode).toBe('automatic')
+    for (const mode of ['webrtc', 'lan'] as const) {
+      settings.setConnectionMode(mode)
+      expect(settings.issue()).toBeUndefined()
+      const restarted = new RuntimeRelaySettings(db)
+      expect(restarted.status()).toMatchObject({
+        mode: 'custom',
+        connectionMode: mode,
+        configured: true,
+      })
+      restarted.set()
+      expect(restarted.status().connectionMode).toBe(mode)
+      restarted.set({ urls: ['turn:host'], username: 'user', credential: 'secret' })
+    }
+    settings.setConnectionMode('automatic')
+    expect(settings.issue()?.iceServers[0]?.credential).toBe('secret')
+  } finally {
+    db.close()
+  }
+})

@@ -1,6 +1,7 @@
 @theme inline {
   --font-sans: var(--app-font-family);
   --font-mono: var(--code-font-family);
+  --color-status-done: var(--status-done);
   --color-status-success: var(--status-success);
   --color-status-error: var(--status-error);
   --color-status-warning: var(--status-warning);
@@ -50,6 +51,7 @@
   --selection: var(--dovo-selection);
   --signal: var(--dovo-signal);
   --pink: var(--dovo-pink);
+  --status-done: var(--dovo-status-done);
   --status-success: var(--dovo-status-success);
   --status-error: var(--dovo-status-error);
   --status-warning: var(--dovo-status-warning);
@@ -82,6 +84,7 @@
   --selection: var(--dovo-selection);
   --signal: var(--dovo-signal);
   --pink: var(--dovo-pink);
+  --status-done: var(--dovo-status-done);
   --status-success: var(--dovo-status-success);
   --status-error: var(--dovo-status-error);
   --status-warning: var(--dovo-status-warning);

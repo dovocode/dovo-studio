@@ -20,6 +20,26 @@ export function parseSshAddress(value: string) {
     sshPort: decode(deviceHostSchema.fields.sshPort, Number(url.port || 22)),
   }
 }
+/** Compose the split settings fields using the same validation as saved SSH URLs. */
+export function formatSshAddress({
+  sshHost,
+  sshUser,
+  sshPort,
+}: {
+  sshHost: string
+  sshUser: string
+  sshPort: string
+}) {
+  const host = sshHost.trim()
+  const user = sshUser.trim()
+  if (!host && !user) return ''
+  if (!/^[0-9]+$/.test(sshPort.trim()))
+    throw new Error('SSH port must be a number between 1 and 65535')
+  const port = decode(deviceHostSchema.fields.sshPort, Number(sshPort.trim()))
+  const address = `ssh://${user}@${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${port}`
+  parseSshAddress(address)
+  return address
+}
 export const sshAddressSchema = Schema.String.pipe(
   Schema.check(Schema.isMaxLength(512)),
   Schema.check(

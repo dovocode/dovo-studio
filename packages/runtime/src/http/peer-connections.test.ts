@@ -24,6 +24,8 @@ import {
   openCustomRelay,
   PEER_RELAY_MAX_TTL_MS,
   PEER_DISCONNECT_GRACE_MS,
+  PEER_HEARTBEAT_HELLO,
+  peerDiagnosticsSchema,
   type PeerConfig,
   type PeerRelay,
   type PeerSignal,
@@ -254,9 +256,68 @@ it('allows confirmed paired TURN setup, keeps secrets out of snapshots and refre
     (await call({ consent: true, config: { ...config, credential: 'rotated-password' } })).status,
   ).toBe(200)
   expect((await join(true))?.iceServers[0]?.credential).toBe('rotated-password')
+  runtime.services.peers.setConnectionMode('webrtc')
+  await runtime.services.peers.enable(device)
+  expect(await join(true)).toBeUndefined()
+  runtime.services.peers.setConnectionMode('automatic')
+  await runtime.services.peers.enable(device)
+  expect((await join(true))?.iceServers[0]?.credential).toBe('rotated-password')
   runtime.services.devices.revoke(device)
   expect((await call({ consent: true, config })).status).toBe(401)
 })
+
+it('enforces connection modes for new tunnels, retains pairings and keeps existing LAN and peer sessions usable', async () => {
+  const f = await fixture(true)
+  const { runtime } = f
+  const credential = 'paired-mode-control'
+  const device = runtime.services.devices.add('Mode phone', credential)
+  const original = await runtime.services.peers.enable(device, 'custom')
+  const current = await f.tunnel(original)
+  const call = (input: unknown, token = credential, agent = false) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/runtime/connection-mode`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        ...(agent ? { 'x-dovo-agent-access': '1' } : {}),
+      },
+      body: JSON.stringify(input),
+    })
+  expect((await call({ mode: 'lan' })).status).toBe(400)
+  expect((await call({ consent: true, mode: 'invalid' })).status).toBe(400)
+  expect((await call({ consent: true, mode: 'lan' }, 'invalid')).status).toBe(401)
+  expect((await call({ consent: true, mode: 'lan' }, credential, true)).status).toBe(403)
+  expect((await call({ consent: true, mode: 'lan' })).status).toBe(200)
+  expect(runtime.services.peers.diagnostics().signaling).toMatchObject({
+    online: 0,
+    reconnecting: 0,
+  })
+  expect((await current.request('/api/snapshot', undefined, credential)).status).toBe(200)
+  expect(
+    (
+      await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, {
+        headers: { Authorization: 'Bearer ' + credential },
+      })
+    ).status,
+  ).toBe(200)
+  await expect(runtime.services.peers.enable(device)).rejects.toThrow('LAN / VPN')
+  await expect(
+    runtime.services.peers.invitation(new Date(Date.now() + 60000).toISOString()),
+  ).rejects.toThrow('LAN / VPN')
+  expect((await call({ consent: true, mode: 'webrtc' })).status).toBe(200)
+  const restored = await runtime.services.peers.enable(device)
+  expect(restored).toEqual(original)
+  expect(runtime.services.peers.relay.issue()).toBeUndefined()
+  const direct = await f.tunnel(restored)
+  expect((await direct.request('/api/snapshot', undefined, credential)).status).toBe(200)
+  expect((await call({ consent: true, mode: 'lan' })).status).toBe(200)
+  const restarted = await f.restart()
+  expect(restarted.services.peers.relay.connectionMode()).toBe('lan')
+  expect(restarted.services.peers.diagnostics().signaling.online).toBe(0)
+  await expect(restarted.services.peers.enable(device)).rejects.toThrow('LAN / VPN')
+  restarted.services.peers.setConnectionMode('automatic')
+  expect(await restarted.services.peers.enable(device)).toEqual(original)
+}, 30000)
 
 it('accepts a custom relay choice when upgrading an existing LAN pairing and binds owner approval to it', async () => {
   const { runtime } = await fixture()
@@ -684,6 +745,80 @@ it('closes runtime keep-alive sockets when the peer readiness channel closes', a
   expect(await idle.response).toContain('200 OK')
   tunnel.ready.close()
   expect(await idle.closed).toBe(true)
+}, 30000)
+
+it('reports observed ICE routes and answers negotiated health probes without leaking credentials', async () => {
+  const f = await fixture()
+  const deviceId = f.runtime.services.devices.add('Health phone', 'health-phone-token')
+  const config = await f.runtime.services.peers.enable(deviceId)
+  const tunnel = await f.tunnel(config)
+  let pong = false
+  tunnel.ready.onMessage.subscribe((value) => {
+    if (value === 'pong') pong = true
+    if (value === 'ping') tunnel.ready.send('pong')
+  })
+  tunnel.ready.send(PEER_HEARTBEAT_HELLO)
+  tunnel.ready.send('ping')
+  await expect.poll(() => pong).toBe(true)
+  await expect.poll(() => f.runtime.services.peers.diagnostics().recent[0]?.route).toBe('direct')
+  const diagnostics = decode(peerDiagnosticsSchema, f.runtime.services.peers.diagnostics())
+  expect(diagnostics.active).toBe(1)
+  expect(diagnostics.signaling.online).toBe(1)
+  expect(diagnostics.recent[0]?.localCandidates.host).toBeGreaterThan(0)
+  expect(diagnostics.recent[0]?.remoteCandidates.host).toBeGreaterThan(0)
+  const json = JSON.stringify(diagnostics)
+  expect(json).not.toContain(config.secret)
+  expect(json).not.toContain('health-phone-token')
+  expect(json).not.toContain('a=candidate:')
+  expect(json).not.toContain('a=ice-pwd:')
+  tunnel.ready.close()
+  await expect.poll(() => f.runtime.services.peers.diagnostics().active).toBe(0)
+  expect(f.runtime.services.peers.diagnostics().recent[0]?.error).toBe(
+    'Connection health channel closed.',
+  )
+}, 30000)
+
+it('discards runtime route reports from before ICE recovery and after closure', async () => {
+  const f = await fixture()
+  const deviceId = f.runtime.services.devices.add('Route recovery phone', 'route-recovery-token')
+  const config = await f.runtime.services.peers.enable(deviceId)
+  const tunnel = await f.tunnel(config)
+  const peers = (f.runtime.services.peers as unknown as Internals).rooms.get(
+    peerRoom(config),
+  )!.peers
+  const pc = [...peers.keys()][0]!
+  await expect.poll(() => f.runtime.services.peers.diagnostics().recent[0]?.route).toBe('direct')
+  const stats = await pc.getStats()
+  let finish: (value: typeof stats) => void = () => {}
+  const getStats = vi.spyOn(pc, 'getStats').mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  pc.connectionStateChange.execute('connected')
+  pc.connectionStateChange.execute('disconnected')
+  pc.connectionStateChange.execute('connected')
+  finish(new Map())
+  await expect.poll(() => getStats.mock.calls.length).toBe(2)
+  await expect.poll(() => f.runtime.services.peers.diagnostics().recent[0]?.route).toBe('direct')
+  let reject: (error: Error) => void = () => {}
+  getStats.mockImplementationOnce(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail
+      }),
+  )
+  pc.connectionStateChange.execute('connected')
+  tunnel.ready.close()
+  await expect.poll(() => f.runtime.services.peers.diagnostics().active).toBe(0)
+  reject(new Error('Late stats failure'))
+  await Promise.resolve()
+  expect(f.runtime.services.peers.diagnostics().recent[0]).toMatchObject({
+    state: 'closed',
+    route: 'direct',
+    error: 'Connection health channel closed.',
+  })
 }, 30000)
 /** A hostile broker: it admits the computer, then forwards whatever offers the test chooses
  * and records the computer's answers. */

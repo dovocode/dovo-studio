@@ -781,6 +781,9 @@ it('registers a project-scoped PR watch through MCP and immediately rejects old 
       objective: '',
     })
     const url = 'https://github.com/team/project/pull/7'
+    vi.spyOn(s.pulls, 'watchSource').mockImplementation(async (_url, id) => ({
+      repositoryId: id ?? 'repo',
+    }))
     const read = vi.spyOn(s.pullCache, 'feedback').mockResolvedValue(
       decode(pullDetailSchema, {
         pull: {
@@ -1275,6 +1278,23 @@ it('offers pipeline watches beside PR watches, scopes IDs and enforces runtime o
         (await client.callTool({ name: 'pipeline_watch', arguments: arguments_ })).isError,
       ).toBe(true)
     }
+    const resolveSource = vi
+      .spyOn(s.pulls, 'watchSource')
+      .mockResolvedValue({ repositoryId: 'repo' })
+    const directUrl = 'https://github.com/team/project/actions/runs/9'
+    const direct = await client.callTool({
+      name: 'pipeline_watch',
+      arguments: { action: 'watch', url: directUrl },
+    })
+    expect(direct.isError).not.toBe(true)
+    expect(JSON.parse(decodeToolText(direct))).toMatchObject({
+      watches: [{ runId: '9', url: directUrl }],
+    })
+    expect(resolveSource).toHaveBeenCalledWith(
+      'https://github.com/team/project/pull/1',
+      'repo',
+      undefined,
+    )
     s.preferences.save({ enablePipelineWatching: false })
     expect(
       decodeToolText(

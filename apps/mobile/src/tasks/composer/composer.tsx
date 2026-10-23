@@ -908,7 +908,7 @@ export function Composer({
                       },
                     ]}
                   >
-                    {nextTurnControls ? `Next: ${modelLabel}` : modelLabel}
+                    {modelLabel}
                   </Text>
                   <Icon name="down" size={10} color={colors.muted} />
                 </Pressable>

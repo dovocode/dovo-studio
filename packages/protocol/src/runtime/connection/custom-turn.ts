@@ -39,8 +39,22 @@ export const customTurnSchema = mutableStruct({
   credential: text,
 })
 export type CustomTurn = typeof customTurnSchema.Type
+export const runtimeConnectionModeSchema = Schema.Literals(['automatic', 'webrtc', 'lan'])
+export type RuntimeConnectionMode = typeof runtimeConnectionModeSchema.Type
+export const RUNTIME_CONNECTION_MODES: { id: RuntimeConnectionMode; name: string }[] = [
+  { id: 'automatic', name: 'Automatic · WebRTC/STUN + TURN' },
+  { id: 'webrtc', name: 'WebRTC/STUN · no TURN' },
+  { id: 'lan', name: 'LAN / VPN only' },
+]
+export const runtimeConnectionModeDescription = (mode: RuntimeConnectionMode) =>
+  mode === 'lan'
+    ? 'New connections use a LAN or VPN address. WebRTC, STUN and TURN are disabled.'
+    : mode === 'webrtc'
+      ? 'Connect directly using WebRTC and STUN. TURN relays are disabled; some networks may not connect.'
+      : 'Try direct WebRTC/STUN first, with an authorized TURN relay as fallback.'
 export const relaySettingsSchema = mutableStruct({
   mode: Schema.Literals(['default', 'custom', 'organization']),
+  connectionMode: Schema.optional(runtimeConnectionModeSchema),
   configured: Schema.Boolean,
   urls: mutableArray(Schema.String),
   organization: Schema.optional(Schema.String),

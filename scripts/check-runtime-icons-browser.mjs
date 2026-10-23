@@ -116,20 +116,23 @@ try {
     true,
   )
   const ssh = page.getByRole('form', { name: 'Computer SSH address' })
-  await ssh.getByLabel('SSH address', { exact: true }).fill('ssh://dev:secret@host')
+  await ssh.getByLabel('SSH user', { exact: true }).fill('dev:secret')
+  await ssh.getByLabel('SSH host', { exact: true }).fill('host')
   await ssh.getByRole('button', { name: 'Save SSH address' }).click()
   await ssh.getByRole('alert').waitFor()
   assert.equal(
     await page.evaluate(() => window.saves.some((save) => 'sshAddress' in save.input)),
     false,
   )
-  await ssh.getByLabel('SSH address', { exact: true }).fill('ssh://dev@host:2222')
+  await ssh.getByLabel('SSH user', { exact: true }).fill('dev')
+  await ssh.getByLabel('SSH port', { exact: true }).fill('2222')
   await ssh.getByRole('button', { name: 'Save SSH address' }).click()
   await page.waitForFunction(() => window.sshAddress === 'ssh://dev@host:2222')
   assert.deepEqual(await page.evaluate(() => window.saves.at(-1).input), {
     sshAddress: 'ssh://dev@host:2222',
   })
-  await ssh.getByLabel('SSH address', { exact: true }).fill('')
+  await ssh.getByLabel('SSH user', { exact: true }).fill('')
+  await ssh.getByLabel('SSH host', { exact: true }).fill('')
   await ssh.getByRole('button', { name: 'Save SSH address' }).click()
   await page.waitForFunction(() => window.sshAddress === '')
   await page.evaluate(() => {

@@ -5,7 +5,7 @@ import type { StudioThemeColors, StudioThemeMode } from './themes'
 export function statusColors(
   mode: StudioThemeMode,
   colorVision: 'default' | 'blue-orange' = 'default',
-): { success: string; error: string; warning: string; onError: string } {
+): { success: string; error: string; warning: string; done: string; onError: string } {
   return { ...(colorVision === 'blue-orange' ? colorVisionColors[mode] : semanticColors[mode]) }
 }
 

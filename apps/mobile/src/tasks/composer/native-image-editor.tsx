@@ -8,6 +8,17 @@ import {
   View,
   type GestureResponderEvent,
 } from 'react-native'
+import {
+  Pencil,
+  Highlighter,
+  ArrowUpRight,
+  Square,
+  Crop,
+  Undo2,
+  Redo2,
+  RotateCcw,
+  type LucideIcon,
+} from 'lucide-react-native'
 import Svg, { Image as SvgImage, Path, Rect } from 'react-native-svg'
 import { File, Paths } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
@@ -26,12 +37,12 @@ import {
 } from './image-editor-state'
 import type { AttachmentAsset } from './attachment-picker'
 
-const tools: { tool: ImageTool; label: string }[] = [
-  { tool: 'pen', label: 'Draw' },
-  { tool: 'highlight', label: 'Highlight' },
-  { tool: 'arrow', label: 'Arrow' },
-  { tool: 'rectangle', label: 'Box' },
-  { tool: 'crop', label: 'Crop' },
+const tools: { tool: ImageTool; label: string; icon: LucideIcon }[] = [
+  { tool: 'pen', label: 'Draw', icon: Pencil },
+  { tool: 'highlight', label: 'Highlight', icon: Highlighter },
+  { tool: 'arrow', label: 'Arrow', icon: ArrowUpRight },
+  { tool: 'rectangle', label: 'Box', icon: Square },
+  { tool: 'crop', label: 'Crop', icon: Crop },
 ]
 const swatches = [
   { color: '#ef4444', name: 'Red' },
@@ -206,7 +217,13 @@ export function NativeImageEditor({
       if (mounted.current) setSaving(false)
     }
   }
-  const button = (label: string, onPress: () => void, disabled = false, selected = false) => (
+  const button = (
+    label: string,
+    onPress: () => void,
+    disabled = false,
+    selected = false,
+    Glyph?: LucideIcon,
+  ) => (
     <Pressable
       key={label}
       accessibilityRole="button"
@@ -216,6 +233,8 @@ export function NativeImageEditor({
       onPress={onPress}
       style={({ pressed }) => ({
         minHeight: 44,
+        minWidth: 44,
+        alignItems: 'center',
         paddingHorizontal: 12,
         justifyContent: 'center',
         borderRadius: 12,
@@ -223,11 +242,15 @@ export function NativeImageEditor({
         opacity: disabled ? 0.35 : pressed ? 0.6 : 1,
       })}
     >
-      <Text
-        style={{ color: selected ? colors.accent : colors.text, fontSize: 15, fontWeight: '600' }}
-      >
-        {label}
-      </Text>
+      {Glyph ? (
+        <Glyph size={20} color={selected ? colors.accent : colors.text} accessible={false} />
+      ) : (
+        <Text
+          style={{ color: selected ? colors.accent : colors.text, fontSize: 15, fontWeight: '600' }}
+        >
+          {label}
+        </Text>
+      )}
     </Pressable>
   )
   const selectionBox = selection ? cropBounds(selection.start, selection.end) : null
@@ -252,19 +275,33 @@ export function NativeImageEditor({
         contentContainerStyle={{ paddingHorizontal: 8 }}
       >
         {tools.map((item) =>
-          button(item.label, () => setTool(item.tool), saving, tool === item.tool),
+          button(item.label, () => setTool(item.tool), saving, tool === item.tool, item.icon),
         )}
       </ScrollView>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8 }}>
         <View style={{ flexDirection: 'row' }}>
-          {button('Undo', () => dispatch({ type: 'undo' }), saving || history.index === 0)}
+          {button(
+            'Undo',
+            () => dispatch({ type: 'undo' }),
+            saving || history.index === 0,
+            false,
+            Undo2,
+          )}
           {button(
             'Redo',
             () => dispatch({ type: 'redo' }),
             saving || history.index === history.steps.length - 1,
+            false,
+            Redo2,
           )}
         </View>
-        {button('Reset', () => dispatch({ type: 'reset' }), saving || history.steps.length === 1)}
+        {button(
+          'Reset',
+          () => dispatch({ type: 'reset' }),
+          saving || history.steps.length === 1,
+          false,
+          RotateCcw,
+        )}
       </View>
       {tool !== 'crop' && (
         <View style={{ paddingHorizontal: 8, gap: 4 }}>
@@ -308,7 +345,7 @@ export function NativeImageEditor({
       >
         {tool === 'crop'
           ? 'Drag across the area to keep. Undo to restore.'
-          : 'Draw on the image. Tap Done to attach.'}
+          : `${tools.find((item) => item.tool === tool)?.label} · Draw on the image. Tap Done to attach.`}
       </Text>
       <View style={{ flex: 1, padding: 12 }}>
         <View

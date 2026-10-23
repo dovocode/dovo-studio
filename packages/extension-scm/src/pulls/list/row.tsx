@@ -86,7 +86,7 @@ export function PullRow({
           : GitPullRequest
   const stateColor =
     pull.state === 'merged'
-      ? 'text-violet-700 dark:text-violet-400'
+      ? 'text-status-done'
       : pull.state === 'closed'
         ? 'text-status-error'
         : pull.draft
@@ -165,7 +165,7 @@ export function PullRow({
                       </time>
                       {pull.stack && (
                         <span
-                          className="inline-flex flex-wrap items-center gap-1.5 rounded-md border border-violet-500/20 bg-violet-500/5 px-2 py-1 text-violet-700 dark:text-violet-400"
+                          className="inline-flex flex-wrap items-center gap-1.5 rounded-md border border-status-done/20 bg-status-done/5 px-2 py-1 text-status-done"
                           title={
                             pull.stack.nativeId
                               ? 'Native GitHub stack'
@@ -195,9 +195,7 @@ export function PullRow({
                         </span>
                       )}
                       {pull.state === 'open' && !pull.draft && pull.viewerReviewRequested && (
-                        <span className="text-violet-700 dark:text-violet-400">
-                          Your review requested
-                        </span>
+                        <span className="text-status-done">Your review requested</span>
                       )}
                       <span className="inline-flex items-center gap-2 font-mono tabular-nums">
                         {pull.additions != null && (

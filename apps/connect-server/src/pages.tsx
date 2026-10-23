@@ -3,7 +3,7 @@ import { Button, Card } from '@dovo/web-ui'
 import { renderHtml } from '@dovo/web-ui/server'
 import { webUiStyles } from '@dovo/web-ui/styles'
 
-export const connectPageStyles = `${hostedStyles}\n${webUiStyles}\nmain{width:min(100% - 32px, 560px);margin:0 auto;padding:clamp(24px,6vw,64px) 0}header{margin-bottom:28px}h1{font-size:1.4rem;margin:0}h2{font-size:1.15rem}p{line-height:1.6}form{margin:12px 0}form button{width:100%}code{display:inline-block;padding:12px 16px;font-size:1.25rem;letter-spacing:.12em;overflow-wrap:anywhere}a{overflow-wrap:anywhere}`
+export const connectPageStyles = `${hostedStyles}\n${webUiStyles}\n*{box-sizing:border-box}header{height:64px;display:flex;align-items:center;border-bottom:1px solid var(--line);padding:0 24px}.brand{display:flex;align-items:center;gap:10px;font-size:21px;font-weight:700;letter-spacing:-1px;color:var(--text)!important;text-decoration:none!important}.brand span{font-size:12px;font-weight:500;letter-spacing:0;color:var(--dovo-muted-foreground)}main{width:min(100% - 40px,480px);margin:0 auto;padding:clamp(32px,8vh,80px) 0}h1{font-size:1.5rem;margin:0}h2{font-size:1.35rem;line-height:1.3;margin:0 0 20px}p{font-size:14px;margin:16px 0;line-height:1.65}form{margin:12px 0}form button{width:100%}code{display:block;padding:18px 16px;font-size:1.5rem;letter-spacing:.16em;text-align:center;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)}a{overflow-wrap:anywhere}.consent-note{font-size:12px;border-top:1px solid var(--line);padding-top:16px}`
 
 /** Content is trusted server-rendered markup, never publisher HTML. */
 export function connectPage(content: string) {
@@ -19,10 +19,12 @@ export function connectPage(content: string) {
           <style>{connectPageStyles}</style>
         </head>
         <body>
+          <header>
+            <a className="brand" href="https://dovo.studio">
+              dovo <span>/ Connect</span>
+            </a>
+          </header>
           <main>
-            <header>
-              <h1>Dovo Studio</h1>
-            </header>
             <Card dangerouslySetInnerHTML={{ __html: content }} />
           </main>
         </body>
@@ -47,9 +49,9 @@ export function connectConsent(
       <p>
         <code>{login.code}</code>
       </p>
-      <p>
+      <p className="consent-note">
         {login.artifactsOrigin
-          ? 'This sign-in is limited to hosted artifact sharing. It does not authorize access to your computers.'
+          ? 'Your Dovo account works across Studio and Artifacts. This sign-in is limited to hosted artifact sharing. It does not authorize access to your computers.'
           : 'Signing in grants access to computers where you enable Dovo Connect on this account. LAN / VPN access still requires separate device pairing.'}
       </p>
       <form method="post" action="/auth/authorize">
@@ -71,16 +73,21 @@ export function connectConsent(
     </>,
   )
 }
-export function connectSuccess(artifacts: boolean) {
+export function connectSuccess(artifactsOrigin?: string) {
   return renderHtml(
     <>
       <h2>You are signed in</h2>
       <p>
         Return to{' '}
-        {artifacts
-          ? 'Dovo Artifacts and check sign-in.'
+        {artifactsOrigin
+          ? 'Dovo Artifacts. Your sign-in will finish automatically.'
           : 'Dovo Studio. Your computers will appear there.'}
       </p>
+      {artifactsOrigin && (
+        <Button size="touch" variant="outline" asChild>
+          <a href={artifactsOrigin}>Open Dovo Artifacts</a>
+        </Button>
+      )}
     </>,
   )
 }

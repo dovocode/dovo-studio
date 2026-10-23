@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { EventEmitter } from 'node:events'
-import { PEER_DISCONNECT_GRACE_MS, signPeerSignal, decode, peerSignalSchema } from '@dovo/protocol'
+import {
+  PEER_DISCONNECT_GRACE_MS,
+  PEER_HEARTBEAT_HELLO,
+  PEER_HEARTBEAT_INTERVAL_MS,
+  PEER_HEARTBEAT_TIMEOUT_MS,
+  signPeerSignal,
+  decode,
+  peerSignalSchema,
+  type PeerConfig,
+  type PeerRelay,
+} from '@dovo/protocol'
 import { openPeerTunnel } from './peer-native'
 
 const native = vi.hoisted(() => ({
@@ -35,6 +45,11 @@ class Channel {
   onopen: (() => void) | null = null
   onclose: (() => void) | null = null
   onerror: (() => void) | null = null
+  onmessage: ((event: { data: string }) => void) | null = null
+  send = vi.fn<(value: string) => void>()
+  addEventListener(_type: string, listener: (event: { data: string }) => void) {
+    this.onmessage = listener
+  }
 }
 class Peer {
   connectionState = 'new'
@@ -87,6 +102,17 @@ class Listener extends EventEmitter {
 }
 
 const config = { origin: 'https://connect.dovo.studio', secret: 'a'.repeat(64) }
+const relayCredentials = (): PeerRelay => ({
+  provider: 'dovo',
+  expiresAt: Date.now() + 180000,
+  iceServers: [
+    {
+      urls: ['turn:turn.dovo.studio:3478?transport=udp'],
+      username: 'fixture-user',
+      credential: 'fixture-secret',
+    },
+  ],
+})
 beforeEach(() => {
   vi.useFakeTimers()
   native.peers.length = 0
@@ -102,11 +128,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
 })
-async function start() {
+async function start(selected: PeerConfig = config) {
   const abort = new AbortController()
   const onClosed = vi.fn<() => void>()
   const onRouteChanged = vi.fn<() => void>()
-  const result = openPeerTunnel(config, onClosed, abort.signal, onRouteChanged)
+  const result = openPeerTunnel(selected, onClosed, abort.signal, onRouteChanged)
   void result.catch(() => {})
   await vi.advanceTimersByTimeAsync(0)
   return {
@@ -118,9 +144,9 @@ async function start() {
     signal: native.signals[0]!,
   }
 }
-async function offer(f: Awaited<ReturnType<typeof start>>) {
+async function offer(f: Awaited<ReturnType<typeof start>>, relay?: PeerRelay) {
   f.signal.onopen?.()
-  f.signal.message({ type: 'ready' })
+  f.signal.message({ type: 'ready', ...(relay ? { relay } : {}) })
   await vi.advanceTimersByTimeAsync(0)
 }
 async function answer(f: Awaited<ReturnType<typeof start>>) {
@@ -253,6 +279,88 @@ const stats = (local: string, remote: string) =>
     ['local', { type: 'local-candidate', candidateType: local }],
     ['remote', { type: 'remote-candidate', candidateType: remote }],
   ])
+it('closes a stalled tunnel only after the computer negotiates health checks', async () => {
+  const f = await start()
+  await offer(f)
+  await answer(f)
+  const tunnel = await f.result
+  await vi.advanceTimersByTimeAsync(60000)
+  expect(tunnel.alive()).toBe(true)
+  expect(f.pc.ready.send).not.toHaveBeenCalled()
+  f.pc.ready.onmessage?.({ data: PEER_HEARTBEAT_HELLO })
+  await vi.advanceTimersByTimeAsync(PEER_HEARTBEAT_INTERVAL_MS + PEER_HEARTBEAT_TIMEOUT_MS)
+  expect(tunnel.alive()).toBe(false)
+  expect(f.onClosed).toHaveBeenCalledOnce()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it.each(['direct', 'relay', 'unknown'] as const)(
+  'rechecks the %s route when TURN credentials expire',
+  async (route) => {
+    const relay = relayCredentials()
+    const f = await start({ ...config, relay: 'dovo' })
+    f.pc.getStats.mockResolvedValue(
+      route === 'unknown' ? new Map() : stats('host', route === 'relay' ? 'relay' : 'srflx'),
+    )
+    await offer(f, relay)
+    await answer(f)
+    const tunnel = await f.result
+    await vi.advanceTimersByTimeAsync(120000)
+    expect(tunnel.alive()).toBe(route === 'direct')
+    if (route === 'direct') {
+      // If ICE later switches to an expired relay, request fresh credentials.
+      f.pc.getStats.mockResolvedValue(stats('relay', 'host'))
+      await vi.advanceTimersByTimeAsync(5000)
+    }
+    expect(tunnel.alive()).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
+  },
+)
+it('preserves a direct tunnel through a brief interruption across TURN expiry', async () => {
+  const relay = relayCredentials()
+  const f = await start({ ...config, relay: 'dovo' })
+  f.pc.getStats.mockResolvedValue(stats('host', 'srflx'))
+  await offer(f, relay)
+  await answer(f)
+  const tunnel = await f.result
+  await vi.advanceTimersByTimeAsync(119000)
+  f.pc.state('disconnected')
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(tunnel.alive()).toBe(true)
+  f.pc.state('connected')
+  await vi.advanceTimersByTimeAsync(0)
+  expect(tunnel.route()).toBe('direct')
+  expect(tunnel.alive()).toBe(true)
+  tunnel.close()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('discards a pre-interruption route report at expiry and checks the recovered relay', async () => {
+  const relay = relayCredentials()
+  const f = await start({ ...config, relay: 'dovo' })
+  f.pc.getStats.mockResolvedValue(stats('host', 'srflx'))
+  await offer(f, relay)
+  await answer(f)
+  const tunnel = await f.result
+  await vi.advanceTimersByTimeAsync(119000)
+  let finish: (value: Map<string, unknown>) => void = () => {}
+  f.pc.getStats.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  await vi.advanceTimersByTimeAsync(1000)
+  f.pc.state('disconnected')
+  f.pc.getStats.mockResolvedValue(stats('relay', 'host'))
+  f.pc.state('connected')
+  finish(stats('host', 'srflx'))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(tunnel.alive()).toBe(false)
+  expect(f.onClosed).toHaveBeenCalledOnce()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
 it('tracks the selected route and ICE recovery without retaining a route after closure', async () => {
   const f = await start()
   f.pc.getStats.mockResolvedValue(stats('srflx', 'host'))

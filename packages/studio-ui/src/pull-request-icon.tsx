@@ -3,7 +3,7 @@ import { cn } from './lib/utils'
 
 export function pullRequestIconTone(state?: string, draft?: boolean) {
   return state === 'merged'
-    ? 'text-violet-600 dark:text-violet-400'
+    ? 'text-status-done'
     : state === 'closed'
       ? 'text-status-error'
       : draft || state !== 'open'

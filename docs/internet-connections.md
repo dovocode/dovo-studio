@@ -35,6 +35,20 @@ access and preserves separate pairings. In a source checkout use `pnpm pair inte
 The runtime stores a restricted installation grant, never the full account session. That grant
 expires with the account session (currently 30 days), after which enable Connect again.
 
+## Connection mode
+
+Each computer exposes **Connection mode** in its TURN relay settings on desktop and mobile.
+**Automatic** tries WebRTC/STUN with an authorized TURN fallback. **WebRTC/STUN · no TURN** disables
+relay issuance and relay negotiation. **LAN / VPN only** stops new WebRTC connections; connect using
+an HTTP or optional HTTPS LAN/VPN address instead. No account is needed for LAN/VPN pairing.
+Existing sessions stay open until they reconnect, so changing modes from a phone can finish saving.
+The setting persists on the computer and is shared with paired clients. Pairing credentials and
+custom TURN configuration are retained when changing modes.
+
+Mobile's **Custom TURN server** fields are collapsed by default. Open them to configure a relay. The
+computer's shared SSH address is edited as separate **SSH user**, **SSH host**, and **SSH port**
+fields; it is still shared as an SSH URL for checkout-copy dialogs. SSH keys remain local.
+
 ## Authorization and encryption
 
 Each runtime generates its signing and encryption private keys locally. The local owner or an
@@ -116,6 +130,32 @@ show an unknown route, and offline computers have no active transport label. If 
 different path from HTTP requests, both paths are shown. Private groups explicit LAN and VPN
 connections; it does not infer the presence of a VPN from an IP address.
 
+## Connection health and diagnostics
+
+In desktop **Settings → Devices & runtime → Runtime readiness & recovery**, expand **Internet
+connection diagnostics**. It shows signaling availability and the latest 20 connection attempts,
+including setup stage, observed direct or TURN route, round-trip time, candidate counts and the
+reason a connection closed. Use **Refresh** for a new snapshot. Attempts are kept only in memory
+until the runtime restarts. Diagnostics omit candidate addresses, raw SDP, ICE passwords, pairing
+secrets and relay credentials.
+
+Local candidates describe available interfaces; STUN candidates describe discovered public routes;
+TURN candidates describe available relay allocations. Gathering a TURN candidate does not mean it
+was selected. The route label comes from the selected ICE pair. An unknown route is reported when
+statistics are unavailable rather than assuming direct or relayed traffic.
+
+Updated clients negotiate lightweight health probes over the encrypted data channel. A connected
+tunnel that stops responding is closed within about 25 seconds so the normal connection flow can
+replace it. Older clients remain compatible without probes. Temporary ICE interruptions retain the
+existing 10-second recovery window. iOS inactive transitions such as Control Center and Face ID
+preserve the tunnel; backgrounding closes it, and returning to the foreground or restoring the
+network notifies connection subscribers immediately. Offline requests fail promptly without waiting
+for a new WebRTC setup timeout. Interrupted mutations are not replayed automatically.
+
+The current desktop WebRTC implementation uses only the first STUN endpoint and first TURN endpoint
+from its configuration; Dovo prioritizes TLS TURN, preferring port 443. Multiple advertised URLs are
+not desktop endpoint failover. Diagnose each transport independently with the relay checks below.
+
 ## Operating Connect
 
 The runtime makes an outbound WSS connection to `/v1/peer` at `https://connect.dovo.studio`.
@@ -195,18 +235,20 @@ Per-installation issuance limits avoid treating phones behind one carrier NAT as
 shared secret never leaves the backend. The template rejects private, loopback and multicast peer
 destinations, disables the admin CLI and TCP relay allocations (TURN over TCP/TLS remains enabled),
 and limits allocations/bandwidth. Adjust those limits to the operator budget. Coturn cannot decrypt
-the inner DTLS/SCTP traffic. Credentials last at most ten minutes; clients close the connection
-before expiry and reconnect through fresh authenticated negotiation. Endpoints are pinned to
-`turn.dovo.studio` by default. Self-hosted runtimes can set comma-separated `DOVO_PEER_RELAY_HOSTS`;
-these pins travel in the out-of-band QR and secure phone registry, not broker-supplied metadata.
-Dovo still pays its host/network costs. Approved participants can reuse standard TURN bearer
-credentials until they expire; approvals should therefore be issued only to trusted installations.
-Rate limits, allocation/bandwidth ceilings and the hard shared quota remain necessary. The 100-port
-relay range also bounds concurrent allocations; the higher configured allocation quota does not
-expand that range. Coturn caps an allocation's granted lifetime at ten minutes, but credential
-removal alone does not terminate an existing allocation immediately. The credential refresh window
-can briefly overlap two usernames, so the eight-allocation quota per username permits up to sixteen
-allocations for one installation during that overlap.
+the inner DTLS/SCTP traffic. Credentials last at most ten minutes; clients refresh relayed
+connections before expiry through fresh authenticated negotiation. A verified direct route stays
+connected when unused relay credentials expire. If the selected route switches to an expired relay,
+or cannot be verified at expiry, the tunnel closes to obtain fresh credentials. Endpoints are pinned
+to `turn.dovo.studio` by default. Self-hosted runtimes can set comma-separated
+`DOVO_PEER_RELAY_HOSTS`; these pins travel in the out-of-band QR and secure phone registry, not
+broker-supplied metadata. Dovo still pays its host/network costs. Approved participants can reuse
+standard TURN bearer credentials until they expire; approvals should therefore be issued only to
+trusted installations. Rate limits, allocation/bandwidth ceilings and the hard shared quota remain
+necessary. The 100-port relay range also bounds concurrent allocations; the higher configured
+allocation quota does not expand that range. Coturn caps an allocation's granted lifetime at ten
+minutes, but credential removal alone does not terminate an existing allocation immediately. The
+credential refresh window can briefly overlap two usernames, so the eight-allocation quota per
+username permits up to sixteen allocations for one installation during that overlap.
 
 The default bandwidth limits are 10 Mbps per allocation and 500 Mbps total, separately in each
 direction. Coturn reserves each allocation's bandwidth even while it is idle, so these settings

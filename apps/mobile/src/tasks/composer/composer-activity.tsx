@@ -15,7 +15,6 @@ export function ComposerActivity({ task }: { task: Task }) {
   const { actions } = useTaskConversation()
   const { call, connected } = useRuntime()
   const [selected, setSelected] = useState('queue')
-  const [queueOpen, setQueueOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const previousInputs = useRef(new Set<string>())
   const { snapshot } = actions
@@ -33,7 +32,7 @@ export function ComposerActivity({ task }: { task: Task }) {
   }, [task.id, snapshot?.questions, snapshot?.approvals])
   const summary = nativeTodoSummary(task)
   const queue = pendingQueue(task, actions.pendingMessages)
-  const hasQueue = !!queue.length || queueOpen
+  const hasQueue = !!queue.length
   const both = hasQueue && !!summary
   const active = hasQueue ? (summary ? selected : 'queue') : 'checklist'
   if (!hasQueue && !summary) return null
@@ -55,7 +54,7 @@ export function ComposerActivity({ task }: { task: Task }) {
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}>
         <View
           accessibilityRole={both ? 'tablist' : undefined}
-          style={{ flexDirection: 'row', flex: 1, flexShrink: 1 }}
+          style={{ flexDirection: 'row', minWidth: 0, flexShrink: 1 }}
         >
           {[
             ...(hasQueue ? [{ value: 'queue', label: `Queue · ${queue.length}` }] : []),
@@ -87,9 +86,14 @@ export function ComposerActivity({ task }: { task: Task }) {
                 }}
               >
                 <Text
+                  numberOfLines={1}
                   style={[
                     styles.muted,
-                    { color: active === value ? colors.text : colors.muted, fontSize: 12 },
+                    {
+                      color: active === value ? colors.text : colors.muted,
+                      fontSize: 12,
+                      flexShrink: 1,
+                    },
                   ]}
                 >
                   {label}
@@ -98,6 +102,7 @@ export function ComposerActivity({ task }: { task: Task }) {
             ) : (
               <Text
                 key={value}
+                numberOfLines={1}
                 style={[styles.muted, { padding: 10, fontSize: 12, flexShrink: 1 }]}
               >
                 {label}
@@ -110,19 +115,21 @@ export function ComposerActivity({ task }: { task: Task }) {
           accessibilityLabel={collapsed ? 'Expand composer activity' : 'Collapse composer activity'}
           accessibilityState={{ expanded: !collapsed }}
           onPress={() => setCollapsed((value) => !value)}
-          style={{ width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+          style={({ pressed }) => ({
+            width: 44,
+            minHeight: 44,
+            flexShrink: 0,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: pressed ? 0.6 : 1,
+          })}
         >
-          <Icon name={collapsed ? 'next' : 'down'} size={16} color={colors.muted} />
+          <Icon name={collapsed ? 'next' : 'down'} size={20} color={colors.text} />
         </Pressable>
       </View>
       {hasQueue && (
         <View style={{ display: !collapsed && active === 'queue' ? 'flex' : 'none' }}>
-          <MessageQueue
-            task={task}
-            embedded
-            hidden={collapsed || active !== 'queue'}
-            onOpenChange={setQueueOpen}
-          />
+          <MessageQueue task={task} embedded />
         </View>
       )}
       {summary && (

@@ -50,7 +50,7 @@ export function useAppearance(onWindowColors?: (colors: WindowColors) => unknown
     root.style.setProperty('--accent', colors.selection)
     root.style.setProperty('--ring', colors.primary)
     const status = statusColors(mode, colorVision)
-    for (const name of ['success', 'error', 'warning'] as const)
+    for (const name of ['success', 'error', 'warning', 'done'] as const)
       root.style.setProperty(`--status-${name}`, status[name])
     root.style.setProperty('--destructive', status.error)
     root.style.setProperty('--destructive-foreground', status.onError)

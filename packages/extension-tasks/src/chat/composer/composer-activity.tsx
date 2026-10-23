@@ -44,7 +44,7 @@ export function ComposerActivity({
         <div
           role={both ? 'tablist' : undefined}
           aria-label={both ? 'Queue and checklist' : undefined}
-          className="flex min-w-0 flex-1 items-center gap-1"
+          className="flex min-w-0 items-center gap-1"
         >
           {[
             ...(hasQueue ? [{ value: 'queue', label: `Queue · ${task.queue?.length ?? 0}` }] : []),
@@ -99,12 +99,17 @@ export function ComposerActivity({
         <button
           type="button"
           aria-label={collapsed ? 'Expand composer activity' : 'Collapse composer activity'}
+          title={collapsed ? 'Expand queue and checklist' : 'Collapse queue and checklist'}
           aria-expanded={!collapsed}
-          aria-controls={`${id}-queue-panel ${id}-checklist-panel`}
-          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted"
+          aria-controls={`${id}-${active}-panel`}
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => setCollapsed((value) => !value)}
         >
-          {collapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+          {collapsed ? (
+            <ChevronRight aria-hidden="true" className="size-4" />
+          ) : (
+            <ChevronDown aria-hidden="true" className="size-4" />
+          )}
         </button>
       </div>
       {hasQueue && (

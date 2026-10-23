@@ -56,12 +56,8 @@ export function createMobileTheme(
       ? {
           colors: {
             ...nativeCodeColors(code.theme),
-            ...(accessibility.colorVision === 'blue-orange'
-              ? {
-                  addition: statusColors(code.theme.type, 'blue-orange').success,
-                  deletion: statusColors(code.theme.type, 'blue-orange').error,
-                }
-              : {}),
+            addition: statusColors(code.theme.type, accessibility.colorVision).success,
+            deletion: statusColors(code.theme.type, accessibility.colorVision).error,
           },
           custom: code.custom,
         }

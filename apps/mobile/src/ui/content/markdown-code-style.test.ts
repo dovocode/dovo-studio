@@ -17,6 +17,7 @@ const colors: MobileTheme['colors'] = {
   error: '#ff0000',
   onError: '#000000',
   success: '#00ff00',
+  done: '#b7bdc8',
   warning: '#ffff00',
   syntaxFunction: '#ff00ff',
   syntaxKeyword: '#00ffff',

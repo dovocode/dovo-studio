@@ -100,6 +100,58 @@ export function RuntimeDiagnosticsPanel() {
             Last task scheduler tick: {status.schedulers.tasks.lastSuccess ?? 'None'} · Automation
             tick: {status.schedulers.jobs.lastSuccess ?? 'None'}
           </p>
+          {status.internet && (
+            <details className="space-y-2">
+              <summary className="cursor-pointer font-medium">
+                Internet connection diagnostics
+              </summary>
+              <p>
+                Signaling: {status.internet.signaling.online} /{' '}
+                {status.internet.signaling.configured} online
+                {' · '}
+                {status.internet.signaling.reconnecting} reconnecting
+                {' · '}
+                {status.internet.active} active connections
+              </p>
+              {status.internet.signaling.lastError && (
+                <p className="text-status-warning">{status.internet.signaling.lastError}</p>
+              )}
+              {!status.internet.recent.length && (
+                <p className="text-muted-foreground">
+                  No WebRTC connections observed since this runtime started. Connect a paired phone
+                  over the internet to check its route.
+                </p>
+              )}
+              {status.internet.recent.map((peer, index) => (
+                <div key={`${peer.startedAt}-${index}`} className="space-y-1 rounded border p-2">
+                  <p>
+                    {new Date(peer.startedAt).toLocaleTimeString()} · {peer.state} ·{' '}
+                    {peer.route === 'direct'
+                      ? 'Direct'
+                      : peer.route === 'relay'
+                        ? 'TURN relay'
+                        : 'Route not established'}
+                    {peer.roundTripMs !== null ? ` · ${peer.roundTripMs} ms` : ''}
+                  </p>
+                  <p>
+                    Computer candidates: {peer.localCandidates.host} local ·{' '}
+                    {peer.localCandidates.srflx} STUN · {peer.localCandidates.relay} TURN. Phone
+                    candidates: {peer.remoteCandidates.host} local · {peer.remoteCandidates.srflx}{' '}
+                    STUN · {peer.remoteCandidates.relay} TURN.
+                  </p>
+                  <p>
+                    Relay policy: {peer.relay}. Candidate counts show gathered routes; the selected
+                    route above shows traffic.
+                  </p>
+                  {peer.error && <p className="text-status-warning">{peer.error}</p>}
+                </div>
+              ))}
+              <p className="text-muted-foreground">
+                Keeps the latest 20 connection attempts in memory. Includes no ICE passwords, relay
+                credentials, candidate addresses or raw SDP.
+              </p>
+            </details>
+          )}
           <h3 className="font-medium">Database backups</h3>
           <p className="text-muted-foreground">
             Daily verified backups retain up to {status.backups.maxCount} copies within{' '}

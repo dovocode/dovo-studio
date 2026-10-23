@@ -29,7 +29,7 @@ function PrimaryPullStatus({ task, onOpen }: { task: Task; onOpen?: (url: string
   const failing = status.state === 'open' && status.checks === 'failed'
   const color =
     status.state === 'merged'
-      ? colors.syntaxKeyword
+      ? colors.done
       : status.state === 'closed' || failing
         ? colors.error
         : status.checks === 'passed'

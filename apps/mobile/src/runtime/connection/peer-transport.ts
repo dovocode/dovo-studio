@@ -11,6 +11,7 @@ const tunnels = new Map<string, Tunnel>()
 const pending = new Map<string, Promise<Tunnel>>()
 const attempts = new Map<string, AbortController>()
 let active = true
+let online = true
 let networkType: string | undefined
 let generation = 0
 let version = 0
@@ -55,15 +56,26 @@ export function closePeerConnections() {
   publish()
 }
 export function setPeerConnectionsActive(value: boolean) {
+  const changed = active !== value
   active = value
   if (!active) closePeerConnections()
+  else if (changed) publish()
+}
+export function setPeerConnectionsAppState(state: string | null | undefined) {
+  // iOS becomes inactive for Control Center, Face ID and permission prompts.
+  // Only a real background transition should invalidate the connection.
+  if (state === 'active') setPeerConnectionsActive(true)
+  else if (state === 'background') setPeerConnectionsActive(false)
 }
 export function setPeerConnectionNetwork(state: { type?: string; isConnected?: boolean }) {
   const changed =
     state.type !== undefined && networkType !== undefined && networkType !== state.type
   networkType = state.type ?? networkType
+  const reconnected = !online && state.isConnected === true
+  online = state.isConnected ?? online
   // Old ICE candidates cannot describe the phone's new Wi-Fi/cellular route.
   if (changed || state.isConnected === false) closePeerConnections()
+  else if (reconnected) publish()
 }
 export function forgetPeerConnection(address: string) {
   configs.delete(address)
@@ -75,6 +87,8 @@ export function forgetPeerConnection(address: string) {
 }
 async function ensure(address: string) {
   if (!active) throw new Error('Open Dovo to reconnect directly to your computer.')
+  if (!online)
+    throw new Error('No network connection. Reconnect to Wi-Fi or cellular to reach your computer.')
   // Saved settings own relay consent. A stale request/cache cannot turn it back on.
   const saved = tunnels.get(address)
   if (saved?.alive()) return saved

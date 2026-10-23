@@ -1,7 +1,15 @@
 import { useState } from 'react'
-import { customTurnSchema, decode, responses } from '@dovo/protocol'
+import {
+  customTurnSchema,
+  decode,
+  responses,
+  runtimeConnectionModeSchema,
+  RUNTIME_CONNECTION_MODES,
+  runtimeConnectionModeDescription,
+  type RuntimeConnectionMode,
+} from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
-import { Button, Input, Textarea } from '@dovo/studio-ui'
+import { Button, Input, Textarea, ChoicePicker } from '@dovo/studio-ui'
 
 export function RelaySettings() {
   const { activeRuntimeId } = useWorkspace()
@@ -12,6 +20,7 @@ function RelaySettingsContent() {
     useWorkspace()
   const profile = runtimeRegistry.profiles.find((item) => item.id === activeRuntimeId)
   const status = snapshot?.relaySettings
+  const [modeDraft, setModeDraft] = useState<RuntimeConnectionMode>()
   const [urls, setUrls] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -19,6 +28,24 @@ function RelaySettingsContent() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   if (!profile) return null
+  const mode = modeDraft ?? status?.connectionMode ?? 'automatic'
+  const saveMode = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await request(
+        '/api/runtime/connection-mode',
+        { consent: true, mode },
+        responses.relaySettings,
+      )
+      await refreshRuntime(profile)
+      setModeDraft(undefined)
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not save connection mode')
+    } finally {
+      setBusy(false)
+    }
+  }
   const save = async () => {
     setBusy(true)
     setError('')
@@ -52,13 +79,42 @@ function RelaySettingsContent() {
       aria-label={`TURN relay for ${profile.name}`}
     >
       <h2 className="text-sm font-medium">TURN relay</h2>
+      {status?.connectionMode !== undefined && snapshot?.relaySetupSupported && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium">Connection mode</p>
+          <ChoicePicker
+            aria-label="Connection mode"
+            value={mode}
+            disabled={!connected || busy}
+            onValueChange={(value) => setModeDraft(decode(runtimeConnectionModeSchema, value))}
+          >
+            {RUNTIME_CONNECTION_MODES.map(({ id, name }) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </ChoicePicker>
+          <p className="text-xs text-muted-foreground">
+            {runtimeConnectionModeDescription(mode)} Existing connections stay open until they
+            reconnect.
+          </p>
+          <Button
+            disabled={!connected || busy || mode === status.connectionMode}
+            onClick={() => void saveMode()}
+          >
+            {busy ? 'Saving…' : 'Apply connection mode'}
+          </Button>
+        </div>
+      )}
       <p className="text-xs text-muted-foreground">
         {status?.mode === 'organization'
           ? `Supplied by ${status.organization}${status.configured ? '' : ' · Relay unavailable or sign-in expired'}.`
           : status?.mode === 'custom'
             ? 'Custom TURN server configured.'
             : 'Automatic: use your organization relay when signed in, otherwise Dovo relay when authorized.'}{' '}
-        Direct connections are tried first.
+        {status?.connectionMode && status.connectionMode !== 'automatic'
+          ? 'TURN is disabled by the connection mode.'
+          : 'Direct connections are tried first.'}
       </p>
       {!!status?.urls.length && (
         <p className="break-all text-xs text-muted-foreground">{status.urls.join('\n')}</p>
@@ -118,13 +174,17 @@ function RelaySettingsContent() {
           ) : (
             <>
               <Button
-                disabled={!connected || !urls.trim() || !username || !password}
+                disabled={busy || !connected || !urls.trim() || !username || !password}
                 onClick={() => setConfirm('save')}
               >
                 Use custom TURN
               </Button>
               {status?.mode === 'custom' && (
-                <Button variant="ghost" disabled={!connected} onClick={() => setConfirm('reset')}>
+                <Button
+                  variant="ghost"
+                  disabled={busy || !connected}
+                  onClick={() => setConfirm('reset')}
+                >
                   Use automatic relay
                 </Button>
               )}

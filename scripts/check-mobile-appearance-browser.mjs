@@ -167,7 +167,7 @@ try {
   assert.equal(await page.evaluate(() => window.currentTheme.palette), 'dovo')
   assert.equal(await page.evaluate(() => window.preferences.confirmArchive), true)
   assert.equal(await page.evaluate(() => window.preferences.timeFormat), '24h')
-  assert.equal(await page.getByRole('radio').count(), 14)
+  assert.equal(await page.getByRole('radio').count(), studioThemeIds.length)
   const input = page.getByLabel('Message')
   await input.fill('Draft survives theme changes')
   await input.evaluate((element) => {
@@ -272,7 +272,7 @@ try {
   await page.waitForFunction(() => window.currentTheme.code.colors.background === '#18202d')
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile Appearance: all 14 shared palettes in light/dark, live system changes, explicit override, migration and persistence; theme changes keep draft, editor, focus, caret and pending-send restoration mounted.',
+    'Mobile Appearance: all shared palettes in light/dark, live system changes, explicit override, migration and persistence; theme changes keep draft, editor, focus, caret and pending-send restoration mounted.',
   )
 } finally {
   await browser.close()

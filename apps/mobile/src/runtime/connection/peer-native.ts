@@ -18,6 +18,8 @@ import {
   PEER_CONNECTION_ERROR,
   PEER_DISCONNECT_GRACE_MS,
   createPeerPipe,
+  createPeerHeartbeat,
+  peerCandidateCounts,
   type PeerConfig,
   type PeerRelay,
 } from '@dovo/protocol'
@@ -57,10 +59,17 @@ export async function openPeerTunnel(
   let route: PeerRoute | undefined
   let readingStats = false
   let routeRevision = 0
+  let stage = 'contacting Dovo Connect'
   const setRoute = (value: PeerRoute | undefined) => {
-    if (stopped || route === value) return
+    if (stopped) return
+    if (route === value) return
     route = value
     onRouteChanged()
+  }
+  const checkRoute = (value: PeerRoute | undefined) => {
+    setRoute(value)
+    if (value !== 'direct' && relay && relay.expiresAt <= Date.now() + 60000)
+      close(new Error('Relay credentials expired. Reconnecting with fresh credentials.'))
   }
   const refreshRoute = async () => {
     if (stopped || readingStats || pc.connectionState !== 'connected') return
@@ -69,10 +78,11 @@ export async function openPeerTunnel(
     const revision = routeRevision
     try {
       const value = selectedPeerRoute(await pc.getStats())
-      if (revision === routeRevision && pc.connectionState === 'connected') setRoute(value)
+      if (revision === routeRevision && pc.connectionState === 'connected') checkRoute(value)
     } catch {
-      // Diagnostics are optional: show an unknown route rather than guess or close traffic.
-      if (revision === routeRevision) setRoute(undefined)
+      // Missing statistics leave the route unknown. An expiring relay still requires a fresh,
+      // verified direct pair before we can safely keep the tunnel alive.
+      if (revision === routeRevision && pc.connectionState === 'connected') checkRoute(undefined)
     } finally {
       readingStats = false
       // Native WebRTC has no selected-pair-change event. Track ICE changes while active.
@@ -100,6 +110,7 @@ export async function openPeerTunnel(
     if (expiry) clearTimeout(expiry)
     if (disconnected) clearTimeout(disconnected)
     clearTimeout(statsTimer)
+    heartbeat.stop()
     route = undefined
     finishGathering?.()
     for (const pipe of pipes) pipe.stop()
@@ -121,7 +132,28 @@ export async function openPeerTunnel(
     rejectBinding?.(error)
     rejectBinding = undefined
   }
-  const timeout = setTimeout(close, 30000)
+  const timeout = setTimeout(() => {
+    if (relayUnavailable) {
+      close()
+      return
+    }
+    const candidates = peerCandidateCounts(pc.localDescription?.sdp ?? '')
+    close(
+      new Error(
+        `${PEER_CONNECTION_ERROR} Setup timed out while ${stage}. Gathered candidates: ${candidates.host} local, ${candidates.srflx} STUN, ${candidates.relay} TURN.`,
+      ),
+    )
+  }, 30000)
+  const heartbeat = createPeerHeartbeat({
+    send: (value) => ready.send(value),
+    connected: () => pc.connectionState === 'connected',
+    onTimeout: () =>
+      close(new Error('Internet connection stopped responding. Reconnect to your computer.')),
+  })
+  // Only a computer advertising heartbeat support receives probes; older runtimes stay compatible.
+  ready.addEventListener('message', (event) => {
+    if (!heartbeat.receive(event.data)) close(new Error('Invalid connection health message'))
+  })
   const established = new Promise<void>((resolve) => {
     ready.onopen = () => {
       connected = true
@@ -212,6 +244,7 @@ export async function openPeerTunnel(
         )
           throw new Error('Computer identity could not be verified')
         accepted = true
+        stage = 'establishing the encrypted data connection'
         void pc.setRemoteDescription({ type: 'answer', sdp: answer.sdp }).catch(() => close())
       } catch (error) {
         reject(error)
@@ -229,6 +262,7 @@ export async function openPeerTunnel(
       iceServers: [...PEER_STUN_URLS.map((urls) => ({ urls })), ...(relay?.iceServers ?? [])],
       iceTransportPolicy: 'all',
     })
+    stage = 'gathering STUN and TURN candidates'
     await untilClosed(pc.setLocalDescription())
     await untilClosed(
       new Promise<void>((resolve) => {
@@ -254,6 +288,7 @@ export async function openPeerTunnel(
     const sdp = pc.localDescription?.sdp
     if (!sdp) throw new Error('No local ICE description')
     offerHash = peerDigest(sdp)
+    stage = 'waiting for the computer’s authenticated answer'
     signal.send(
       JSON.stringify(
         signPeerSignal(config, {
@@ -266,6 +301,7 @@ export async function openPeerTunnel(
       ),
     )
     await untilClosed(established)
+    stage = 'opening the local connection listener'
     signal.close()
     server = TcpSocket.createServer(
       { allowHalfOpen: true, pauseOnConnect: true, noDelay: true },
@@ -370,7 +406,15 @@ export async function openPeerTunnel(
     const address = listener.address()
     if (stopped || !address || !('port' in address)) throw new Error(PEER_CONNECTION_ERROR)
     clearTimeout(timeout)
-    if (relay) expiry = setTimeout(close, Math.max(0, relay.expiresAt - Date.now() - 60000))
+    if (relay)
+      expiry = setTimeout(
+        () => {
+          // A direct connection does not depend on TURN credentials. Recheck the selected
+          // pair rather than interrupting working traffic merely because relay was offered.
+          void refreshRoute()
+        },
+        Math.max(0, relay.expiresAt - Date.now() - 60000),
+      )
     return {
       address: `http://127.0.0.1:${address.port}`,
       close,

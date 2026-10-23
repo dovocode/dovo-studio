@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import { decodeResult } from '../../shared/schema.js'
-import { parseSshAddress, sshAddressSchema } from './ssh-address.js'
+import { parseSshAddress, sshAddressSchema, formatSshAddress } from './ssh-address.js'
 
 it.each([
   ['ssh://dominic@buildbox', { sshHost: 'buildbox', sshUser: 'dominic', sshPort: 22 }],
@@ -28,4 +28,24 @@ it.each([
 })
 it('allows clearing the shared address', () => {
   expect(decodeResult(sshAddressSchema, '').success).toBe(true)
+})
+
+it('formats split SSH fields without losing IPv6 hosts or nonstandard ports', () => {
+  expect(formatSshAddress({ sshHost: ' 2001:db8::1 ', sshUser: ' dev ', sshPort: '2222' })).toBe(
+    'ssh://dev@[2001:db8::1]:2222',
+  )
+  expect(
+    parseSshAddress(formatSshAddress({ sshHost: '[2001:db8::1]', sshUser: 'dev', sshPort: '22' })),
+  ).toEqual({ sshHost: '2001:db8::1', sshUser: 'dev', sshPort: 22 })
+  expect(formatSshAddress({ sshHost: '', sshUser: '', sshPort: '22' })).toBe('')
+})
+it.each([
+  { sshHost: 'host', sshUser: '', sshPort: '22' },
+  { sshHost: '', sshUser: 'dev', sshPort: '22' },
+  { sshHost: 'host', sshUser: 'dev:password', sshPort: '22' },
+  { sshHost: 'host', sshUser: 'dev', sshPort: '2e2' },
+  { sshHost: 'host', sshUser: 'dev', sshPort: '65536' },
+  { sshHost: 'host/path', sshUser: 'dev', sshPort: '22' },
+])('rejects invalid split SSH fields %o', (fields) => {
+  expect(() => formatSshAddress(fields)).toThrow(Error)
 })

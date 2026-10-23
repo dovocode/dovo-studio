@@ -394,6 +394,9 @@ it('opens unlinked GitHub PRs using URL targets without adding a project, with c
   const read = vi.fn<UrlTarget['detail']>().mockResolvedValue(detail)
   const act = vi.fn<UrlTarget['act']>().mockResolvedValue({ number: 7, url, status: 'submitted' })
   vi.spyOn(services.pulls, 'urlTarget').mockReturnValue({
+    cwd: '/unused',
+    sourceContext: vi.fn<UrlTarget['sourceContext']>(),
+    feedback: read,
     identity: async () => 'account',
     sourceIdentity: async () => ({ readerIdentity: 'reader', destination: 'account' }),
     guard: async () => {},

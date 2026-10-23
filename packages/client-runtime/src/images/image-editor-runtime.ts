@@ -131,7 +131,7 @@ export function imageEditorRuntime(source: string) {
     }
   }
   canvas.onpointerdown = (event) => {
-    if (!loaded || pointer !== null) return
+    if (!loaded || finished || pointer !== null) return
     event.preventDefault()
     pointer = event.pointerId
     canvas.setPointerCapture(pointer)
@@ -163,6 +163,7 @@ export function imageEditorRuntime(source: string) {
   }
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-tool]'))
     button.onclick = () => {
+      if (draft || finished) return
       tool = button.dataset.tool as Tool
       for (const other of document.querySelectorAll('[data-tool]'))
         other.setAttribute('aria-pressed', String(other === button))
@@ -204,16 +205,53 @@ export function imageEditorRuntime(source: string) {
     }
   }
   document.onkeydown = (event) => {
-    if (event.key === 'Escape') send({ type: 'cancel' })
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+    if (finished || event.isComposing || event.repeat || event.altKey || draft) return
+    const target = event.target
+    if (
+      target instanceof HTMLElement &&
+      target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+    )
+      return
+    const key = event.key.toLowerCase()
+    let button: HTMLElement | undefined
+    if (event.ctrlKey || event.metaKey) {
+      if (key === 'z') button = event.shiftKey ? redo : undo
+      else if (key === 'y' && event.ctrlKey && !event.shiftKey) button = redo
+      else if (key === 'enter' && !event.shiftKey) button = element('attach')
+    } else if (key === 'escape') button = element('cancel')
+    else if (!event.shiftKey) {
+      const tools: Record<string, Tool> = {
+        p: 'pen',
+        b: 'pen',
+        h: 'highlighter',
+        a: 'arrow',
+        r: 'rectangle',
+        c: 'crop',
+      }
+      if (tools[key])
+        button =
+          document.querySelector<HTMLButtonElement>(`[data-tool="${tools[key]}"]`) ?? undefined
+      else if (key === '[' || key === ']') {
+        event.preventDefault()
+        size.value = String(
+          Math.max(
+            Number(size.min),
+            Math.min(Number(size.max), Number(size.value) + (key === ']' ? 2 : -2)),
+          ),
+        )
+        return
+      }
+    }
+    if (button) {
       event.preventDefault()
-      ;(event.shiftKey ? redo : undo).click()
+      button.click()
     }
   }
   image.onload = () => {
     loaded = true
     render()
     element<HTMLButtonElement>('attach').disabled = false
+    canvas.focus()
   }
   image.onerror = () => {
     element('error').textContent =

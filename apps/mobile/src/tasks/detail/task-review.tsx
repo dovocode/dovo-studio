@@ -3,7 +3,12 @@ import { CodeReviewReport, type ReviewTab } from '../../scm/review/code-review-r
 import type { CodeFinding } from '@dovo/protocol'
 import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { pendingReviewComments } from '@dovo/protocol'
-import { changedFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
+import {
+  changedFileFingerprint,
+  reviewFileState,
+  orderReviewFiles,
+  pullFileKind,
+} from '@dovo/protocol'
 import { useFileReview } from '../../scm/review/use-file-review'
 import { MobileOrganizeReview } from '../../scm/review/organize-review'
 import { MobileFileReview } from '../../scm/review/file-review'
@@ -485,6 +490,7 @@ export function TaskReview({
                 const amounts = stats.get(file.path)
                 return {
                   path: file.path,
+                  changeKind: pullFileKind(file),
                   viewed: file.viewed,
                   label: file.preview ? filePreviewLabel(file) : undefined,
                   additions: file.preview ? undefined : (amounts?.additions ?? 0),

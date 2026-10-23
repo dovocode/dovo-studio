@@ -1,4 +1,4 @@
-import { checkpointFiles, filePreviewLabel } from '@dovo/protocol'
+import { checkpointFiles, filePreviewLabel, pullFileKind, type FileKind } from '@dovo/protocol'
 import { useMemo } from 'react'
 import { View } from 'react-native'
 import type { ChangedFile } from '@dovo/protocol'
@@ -9,18 +9,23 @@ export function CheckpointFiles({
   files,
   omitted,
   onOpen,
+  kind,
 }: {
   files: ChangedFile[]
   omitted: string[]
   onOpen: (path: string) => void
+  kind?: FileKind
 }) {
   const entries = useMemo(
     () =>
-      checkpointFiles({ files, omitted }).map((file) => ({
-        path: file.path,
-        ...(file.preview ? { label: filePreviewLabel(file) } : fileStats(file)),
-      })),
-    [files, omitted],
+      checkpointFiles({ files, omitted })
+        .filter((file) => !kind || pullFileKind(file) === kind)
+        .map((file) => ({
+          changeKind: pullFileKind(file),
+          path: file.path,
+          ...(file.preview ? { label: filePreviewLabel(file) } : fileStats(file)),
+        })),
+    [files, omitted, kind],
   )
   return (
     <View>

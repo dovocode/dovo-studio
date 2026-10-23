@@ -499,24 +499,39 @@ const tools: Array<
               {
                 name: 'pipeline_watch',
                 description:
-                  'Proactively hand monitoring of relevant CI and release runs to Dovo after pushes, PR updates, pipeline triggers or reruns, and CI fixes; no separate monitoring request is needed. Respect requests not to monitor and exclude unrelated runs. Discover provider run IDs once through the project’s forge or CLI, then use watch with runIds (provider run IDs, up to 20 active runs per thread). Optional repositoryId selects an editable linked project; watch defaults to the primary project. Adds watches without replacing other runs. Returns current run details; already finished runs need no watch. Dovo queues failures and actionable waiting/blocked states without duplicate deliveries; successful runs finish silently. Survives turns and restarts; respects paused queues. Finished threads with active watches move to Waiting; settling or archiving cancels their watches. Finish your turn after registering. Use status or stop with optional repositoryId and runIds; omitting both selects all watches. Does not follow a branch or discover future runs.',
+                  'Proactively hand monitoring of relevant CI and release runs to Dovo after pushes, PR updates, pipeline triggers or reruns, and CI fixes; no separate monitoring request is needed. Respect requests not to monitor and exclude unrelated runs. Discover provider run IDs once through the project’s forge or CLI, then use watch with runIds (provider run IDs, up to 20 active runs per thread). Alternatively use url for a direct GitHub Actions or GitLab pipeline URL, without a local checkout or Studio project. URL watches inherit the primary project’s forge account; optional repositoryId selects an editable linked project as the account source. Run IDs still default to the primary project. Adds watches without replacing other runs. Returns current run details; already finished runs need no watch. Dovo queues failures and actionable waiting/blocked states without duplicate deliveries; successful runs finish silently. Survives turns and restarts; respects paused queues. Finished threads with active watches move to Waiting; settling or archiving cancels their watches. Finish your turn after registering. Use status or stop with optional repositoryId and runIds; omitting both selects all watches. Does not follow a branch or discover future runs.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
                     action: { type: 'string' as const, enum: ['watch', 'status', 'stop'] },
+                    connectionId: {
+                      type: 'string' as const,
+                      minLength: 1,
+                      maxLength: 200,
+                      description:
+                        'For URL watches in General without a Git project: choose a configured runtime account when several match. Linked threads always inherit their project account.',
+                    },
                     repositoryId: {
                       type: 'string' as const,
                       minLength: 1,
                       maxLength: 200,
                       description:
-                        'Primary or editable linked project ID. Watch defaults to primary; status/stop default to all projects.',
+                        'Primary or editable linked project ID: supplies the forge account for URL watches, or selects the project for run IDs. Status/stop select the returned watch repositoryId; omit to select all.',
+                    },
+                    url: {
+                      type: 'string' as const,
+                      minLength: 1,
+                      maxLength: 2048,
+                      description:
+                        'Direct GitHub Actions or GitLab pipeline URL, without a local checkout. Supply either url or runIds for watch. Optional URL selection for status/stop.',
                     },
                     runIds: {
                       type: 'array' as const,
                       items: { type: 'string' as const, minLength: 1, maxLength: 300 },
                       minItems: 1,
                       maxItems: 20,
-                      description: 'Required for watch; optional selection for status and stop.',
+                      description:
+                        'Use for project runs instead of url; optional selection for status and stop.',
                     },
                   },
                   required: ['action'],
@@ -529,17 +544,24 @@ const tools: Array<
               {
                 name: 'pull_request_watch',
                 description:
-                  'Hand PR feedback monitoring to Dovo. Use watch with a PR URL and optional repositoryId for an editable linked project; defaults to the primary project. One PR per project, so another PR replaces only that project’s watch. Returns watches and current failedChecks. Dovo queues new or edited comments, submitted reviews and check failures and wakes the thread without a polling loop. Survives turns and restarts; each watch stops when its PR closes. Use status or stop with optional repositoryId or url; omitting both selects all watches. Respects paused queues. Finished threads with active watches move to Waiting; settling or archiving cancels their watches.',
+                  'Hand PR feedback monitoring to Dovo. Use watch with a PR URL, including repositories without a local checkout or Studio project. Inherit the thread’s primary project forge account; optional repositoryId selects an editable linked project as the account source. General threads inherit their sole editable linked Git project’s account; without one, use an unambiguous matching runtime account or choose connectionId when several match. One PR per target repository, so another PR replaces only that repository’s watch. Returns watches and current failedChecks. Dovo queues new or edited comments, submitted reviews and check failures and wakes the thread without a polling loop. Survives turns and restarts; each watch stops when its PR closes. Use status or stop with optional repositoryId or url; omitting both selects all watches. Respects paused queues. Finished threads with active watches move to Waiting; settling or archiving cancels their watches.',
                 inputSchema: {
                   type: 'object' as const,
                   properties: {
                     action: { type: 'string' as const, enum: ['watch', 'status', 'stop'] },
+                    connectionId: {
+                      type: 'string' as const,
+                      minLength: 1,
+                      maxLength: 200,
+                      description:
+                        'In General without a Git project: choose a configured runtime account when several match. Linked threads always inherit their project account.',
+                    },
                     repositoryId: {
                       type: 'string' as const,
                       minLength: 1,
                       maxLength: 200,
                       description:
-                        'Primary or editable linked project ID. Watch defaults to primary; status/stop default to all projects.',
+                        'Primary or editable linked project ID: supplies the forge account for URL watches, or selects the project for run IDs. Status/stop select the returned watch repositoryId; omit to select all.',
                     },
                     url: {
                       type: 'string' as const,

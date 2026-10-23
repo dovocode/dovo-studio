@@ -39,3 +39,28 @@ it.each(['light', 'dark'] as const)(
     expect(theme.syntaxTheme).toBe(codeTheme)
   },
 )
+
+it.each(['default', 'blue-orange'] as const)(
+  'keeps %s diff semantics independent of imported syntax colors',
+  (colorVision) => {
+    for (const mode of ['light', 'dark'] as const) {
+      const codeTheme = {
+        ...resolveCodeTheme('dovo', [], 'dovo', mode),
+        label: 'Conflicting diff colors',
+        colors: {
+          'editorGutter.addedBackground': '#ff0000',
+          'editorGutter.deletedBackground': '#00ff00',
+        },
+      }
+      const theme = createMobileTheme(
+        'sand',
+        mode,
+        { theme: codeTheme, custom: true },
+        { colorVision },
+      )
+      expect(theme.code?.colors.addition).toBe(statusColors(mode, colorVision).success)
+      expect(theme.code?.colors.deletion).toBe(statusColors(mode, colorVision).error)
+      expect(theme.colors.done).toBe(statusColors(mode, colorVision).done)
+    }
+  },
+)

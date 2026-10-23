@@ -46,6 +46,9 @@ async function bundle(mobile) {
     '../../runtime/state/app-active': `export const useForegroundInterval=()=>{};`,
     '../../runtime/preferences/app-preferences': `import {useFixture} from 'fixture';export const useCarMode=()=>false;export const useMobilePreferences=()=>useFixture().preferences;export const formatTime=()=>'';`,
     '../../runtime/connection/provider': `export const useRuntime=()=>({connected:true});`,
+    '../controls/icon': `export const Icon=({name})=><span data-file-icon={name}/>;`,
+    '../theme': `export const useTheme=()=>({mode:'dark',colors:{},styles:{}});`,
+    './text': `export {Text} from 'react-native';`,
     '../../ui/theme': `export const styles={},colors={};export const useTheme=()=>({styles,colors,mode:'dark'});`,
     '../../../ui/content/server-image': `export const ServerImage=({label})=><div data-image>{label}</div>;`,
     '../../ui/content/text': `export {Text} from 'react-native';`,
@@ -70,8 +73,8 @@ const Component=components.Message;return <MessageContext.Provider value={messag
 }};`,
     'react-native': `
 import {useEffect} from 'react';
-export const View=({children})=><div>{children}</div>,Text=({children})=><span>{children}</span>;
-export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} onClick={onPress}>{children}</button>:<div onClick={onPress}>{children}</div>;
+export const View=({children,style,accessibilityRole,accessibilityLabel})=><div style={style} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel}>{children}</div>,Text=({children,style})=><span style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;export const SectionList=()=>null;
+export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>:<div onClick={onPress}>{children}</div>;
 export const ActivityIndicator=()=>null;
 export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout})=>{useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[onLayout]);return <div style={{display:'flex',flexDirection:'column-reverse'}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
   }
@@ -100,7 +103,7 @@ export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFoo
     '../actions/retry-turn': 'RetryTurn',
     './components/message-actions': 'MessageActions',
     './components/message-attachments': 'MessageAttachments',
-    './components/checkpoint-files': 'CheckpointFiles',
+
     '../detail/approvals': 'TaskApprovals',
   }))
     mocks[path] = `export const ${name}=()=>null;`
@@ -473,16 +476,46 @@ try {
           })),
         }))
       })
-      await page
-        .getByText('Code 2 · Tests 1 · Mocks 1 · Docs 2 · Generated 1', { exact: true })
-        .waitFor()
-      await page.getByText('Code 1 · Docs 1', { exact: true }).waitFor()
+      for (const name of ['All 7', 'Code 2', 'Tests 1', 'Mocks 1', 'Docs 2', 'Generated 1'])
+        await page.getByRole('button', { name, exact: true }).waitFor()
       assert.equal(
         await page
           .getByRole('button', { name: 'Turn changes · 7 files', exact: true })
           .getAttribute('aria-expanded'),
         'false',
       )
+      await page.getByRole('button', { name: 'Tests 1', exact: true }).click()
+      assert.equal(
+        await page
+          .getByRole('button', { name: 'Tests 1', exact: true })
+          .getAttribute('aria-pressed'),
+        'true',
+      )
+      assert.equal(
+        await page
+          .getByRole('button', { name: 'Turn changes · 7 files', exact: true })
+          .getAttribute('aria-expanded'),
+        'true',
+      )
+      await page.getByRole('button', { name: 'tests', exact: true }).click()
+      const testFile = page.getByRole('button', { name: 'tests/index.test.ts', exact: true })
+      await testFile.waitFor()
+      assert.equal(await testFile.locator('[role=img][aria-label=Tests]').count(), 1)
+      assert.equal(await testFile.locator('[data-file-icon]').count(), 1)
+      assert.equal(await page.getByRole('button', { name: 'src', exact: true }).count(), 0)
+      const docs = page.getByRole('button', { name: 'Docs 2', exact: true })
+      await docs.click()
+      assert.equal(
+        await page.getByRole('button', { name: 'docs', exact: true }).count(),
+        2,
+        'Both checkouts retain their matching docs',
+      )
+      await docs.click()
+      assert.equal(await docs.getAttribute('aria-pressed'), 'false')
+      await page.getByRole('button', { name: 'Generated 1', exact: true }).click()
+      await page.getByRole('button', { name: 'pnpm-lock.yaml', exact: true }).waitFor()
+      assert.equal(await page.getByRole('button', { name: 'src', exact: true }).count(), 0)
+      await page.getByRole('button', { name: 'All 7', exact: true }).click()
       await page.evaluate(() =>
         window.setTask((task) => ({
           ...task,

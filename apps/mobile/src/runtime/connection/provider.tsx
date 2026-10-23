@@ -45,6 +45,7 @@ import {
 } from '@dovo/protocol'
 import {
   setPeerConnectionsActive,
+  setPeerConnectionsAppState,
   setPeerConnectionNetwork,
   forgetPeerConnection,
   peerConnectionVersion,
@@ -196,7 +197,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const [restoreAttempt, setRestoreAttempt] = useApplicationState(0)
   const { computerRefresh } = useMobilePreferences()
   useEffect(() => {
-    setPeerConnectionsActive(AppState.currentState === 'active')
+    setPeerConnectionsAppState(AppState.currentState)
     let disposed = false
     let networkObserved = false
     const network = Network.addNetworkStateListener((state) => {
@@ -213,7 +214,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       (error: unknown) => console.warn('Could not read the initial network state:', error),
     )
     const subscription = AppState.addEventListener('change', (state) => {
-      setPeerConnectionsActive(state === 'active')
+      setPeerConnectionsAppState(state)
       setAppActive(state === 'active')
     })
     return () => {

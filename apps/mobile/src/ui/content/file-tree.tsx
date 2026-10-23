@@ -9,6 +9,7 @@ import {
 } from '@dovo/protocol'
 import { Icon, type IconName } from '../controls/icon'
 import { Text } from './text'
+import { ChangeTypeIndicator } from './change-types'
 import { useTheme } from '../theme'
 
 const fileIcons: Record<ReturnType<typeof fileIconKind>, IconName> = {
@@ -159,6 +160,7 @@ export function MobileFileTree({
         ) : (
           <MobileFileTypeIcon path={node.path} />
         )}
+        {!folder && node.changeKind && <ChangeTypeIndicator kind={node.changeKind} />}
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
           <Text
             numberOfLines={1}

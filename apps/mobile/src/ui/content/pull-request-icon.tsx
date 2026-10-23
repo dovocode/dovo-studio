@@ -7,11 +7,9 @@ import {
 import { useTheme } from '../theme'
 
 export function usePullRequestColor(state?: string, draft?: boolean) {
-  const { colors, mode } = useTheme()
+  const { colors } = useTheme()
   return state === 'merged'
-    ? mode === 'dark'
-      ? '#a78bfa'
-      : '#7c3aed'
+    ? colors.done
     : state === 'closed'
       ? colors.error
       : draft || state !== 'open'

@@ -522,11 +522,21 @@ export class PullCache {
     return runClientEffect(this.detailEffect(cwd, number, force))
   }
   /** Feedback watches share a credential-scoped cache without loading files or annotations. */
-  feedback(cwd: string, number: number, force = false, background = false) {
+  feedback(
+    cwd: string,
+    number: number,
+    force = false,
+    background = false,
+    target?: { identity: () => Promise<string>; feedback: NonNullable<PullReader['feedback']> },
+  ) {
     return runClientEffect(
       Effect.gen({ self: this }, function* () {
         const identify = this.identity
-        const scope = identify ? yield* runtimeOperation(() => identify(cwd, false)) : cwd
+        const scope = target
+          ? yield* runtimeOperation(() => target.identity())
+          : identify
+            ? yield* runtimeOperation(() => identify(cwd, false))
+            : cwd
         this.rememberScope(cwd, scope)
         return yield* this.readEffect(
           JSON.stringify(['feedback', scope, number]),
@@ -534,9 +544,11 @@ export class PullCache {
           () =>
             retrievalWatching(async () => {
               const reader = this.pulls.forDestination?.(scope) ?? this.pulls
-              const result = await (reader.feedback
-                ? reader.feedback(cwd, number)
-                : reader.detail(cwd, number))
+              const result = await (target
+                ? target.feedback(cwd, number)
+                : reader.feedback
+                  ? reader.feedback(cwd, number)
+                  : reader.detail(cwd, number))
               this.validateDestination(result, scope)
               return result
             }, background),

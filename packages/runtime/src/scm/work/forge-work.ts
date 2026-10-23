@@ -1,3 +1,4 @@
+import type { WatchSource } from '../tasks/watch-source.js'
 import { retrievalFresh, type RetrievalHook } from '../../retrieval/context.js'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode, maxValue, minValue } from '@dovo/protocol'
@@ -92,11 +93,14 @@ export class ForgeWork {
         return { cwd: repo.path }
       throw error
     }
+    return this.contextTarget(repo.path, scope, background)
+  }
+  private contextTarget(cwd: string, scope: SourceContext, background = false) {
     if (scope.provider !== 'github') {
       if (!scope.http)
         throw new HttpError(409, 'Provider credentials unavailable. Refresh before continuing.')
       return {
-        cwd: repo.path,
+        cwd,
         scope,
         provider:
           scope.provider === 'azure-devops'
@@ -109,7 +113,7 @@ export class ForgeWork {
       }
     }
     return {
-      cwd: repo.path,
+      cwd,
       scope,
       provider: new GitForgeWork(
         {
@@ -126,7 +130,7 @@ export class ForgeWork {
                 ...(options?.body === undefined ? [] : ['--input', '-']),
               ],
               { timeout: 60000, maxBuffer: 32 * 1024 * 1024 },
-              repo.path,
+              cwd,
               scope.github,
               background && (options?.method ?? 'GET') === 'GET',
               options?.body === undefined ? undefined : JSON.stringify(options.body),
@@ -144,6 +148,23 @@ export class ForgeWork {
     return retrievalFresh(query.refresh === true || !!query.revision, () =>
       this.requestLocal(repositoryId, operation, input, background),
     )
+  }
+  /** URL watches are restricted to reading one explicit pipeline. */
+  pipelineFromUrl(source: WatchSource, input: unknown, background = false) {
+    const query = decode(forgeWorkQuerySchema, input)
+    return retrievalFresh(query.refresh === true, async () => {
+      const { cwd, scope } = await this.pulls.watchReader(source).context()
+      const { provider } = this.contextTarget(cwd, scope, background)
+      return this.execute(
+        provider,
+        cwd,
+        ['url', source.url],
+        'pipelines/detail',
+        input,
+        scope.validate,
+        scope,
+      )
+    })
   }
   requestJira(sourceId: string, operation: string, input: unknown) {
     const query = decode(forgeWorkQuerySchema, input)

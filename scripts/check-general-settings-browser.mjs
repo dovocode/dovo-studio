@@ -564,10 +564,10 @@ try {
   await choose('Time format', '24-hour')
   assert.equal(await preference('timeFormat'), '24h')
   await openLocal('Appearance')
-  await choose('Status colors', 'Blue / orange')
+  await choose('Status colors', 'GitHub colorblind · higher contrast')
   assert.equal(await preference('colorVision'), 'blue-orange')
   const success = page.getByLabel('Status color preview').getByText('Finished', { exact: true })
-  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(121, 191, 255)')
+  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(173, 220, 255)')
   await page.getByRole('switch', { name: 'Higher contrast', exact: true }).click()
   assert.equal(await preference('highContrast'), true)
   assert.equal(
@@ -577,7 +577,7 @@ try {
     '#888888',
   )
   assert.equal(await page.evaluate(() => window.diffOptions.options.diffIndicators), 'classic')
-  assert.ok((await page.evaluate(() => window.diffOptions.options.unsafeCSS)).includes('#79bfff'))
+  assert.ok((await page.evaluate(() => window.diffOptions.options.unsafeCSS)).includes('#addcff'))
   await page.getByLabel('VS Code theme file', { exact: true }).setInputFiles({
     name: 'Accessibility light.json',
     mimeType: 'application/json',
@@ -591,12 +591,12 @@ try {
     ),
   })
   await page.waitForFunction(() => window.diffOptions.options.themeType === 'light')
-  assert.ok((await page.evaluate(() => window.diffOptions.options.unsafeCSS)).includes('#005a9c'))
+  assert.ok((await page.evaluate(() => window.diffOptions.options.unsafeCSS)).includes('#023b95'))
   assert.ok((await page.evaluate(() => window.diffOptions.options.unsafeCSS)).includes('#404040'))
   await page.getByRole('button', { name: 'Remove theme', exact: true }).click()
   await page.waitForFunction(() => window.diffOptions.options.themeType === 'dark')
   await choose('Color scheme', 'Light')
-  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(0, 90, 156)')
+  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(2, 59, 149)')
   assert.equal(
     await page.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue('--border').trim(),
@@ -612,7 +612,7 @@ try {
   assert.equal(await codeFont.evaluate((el) => getComputedStyle(el).outlineStyle), 'solid')
   assert.equal(await codeFont.evaluate((el) => getComputedStyle(el).outlineWidth), '2px')
   await page.emulateMedia({ forcedColors: 'none' })
-  await choose('Status colors', 'Default')
+  await choose('Status colors', 'GitHub colorblind')
   await choose('Color scheme', 'Dark')
   await choose('Text size', 'Large')
   await choose('Chat width', 'Full width')

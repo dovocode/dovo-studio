@@ -7,6 +7,7 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../theme'
 import { Text } from './text'
 import { Action } from '../controls/action'
+import { IconButton } from '../controls/icon-button'
 import { useAction } from '../controls/use-action'
 import { SafeModal } from '../layout/safe-modal'
 
@@ -170,11 +171,10 @@ export function ServerImage({
       >
         <View style={styles.screen}>
           <ScrollView
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[styles.content, { paddingTop: 68 }]}
             maximumZoomScale={4}
             minimumZoomScale={1}
           >
-            <Action secondary label="Close image" onPress={() => setPreview(false)} />
             {onOpenOriginal && (
               <Action
                 secondary
@@ -209,6 +209,14 @@ export function ServerImage({
               />
             )}
           </ScrollView>
+          <View style={{ position: 'absolute', top: 12, right: 16, zIndex: 1 }}>
+            <IconButton
+              label="Close image"
+              icon="close"
+              variant="glass"
+              onPress={() => setPreview(false)}
+            />
+          </View>
         </View>
       </SafeModal>
     </View>

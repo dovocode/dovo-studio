@@ -1,7 +1,7 @@
 import { RuntimePreferences } from '../../storage/runtime-preferences'
 import { expect, it, vi } from 'vite-plus/test'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openDatabase } from '../../storage/database'
@@ -854,3 +854,95 @@ it.each(['inherit', 'auto', 'smart'] as const)(
     }
   },
 )
+
+it('investigates catalogued source with read-only tools even when future links need edits', async () => {
+  const s = autoFixture()
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'dovo-scope-tools-')))
+  let captured: AgentRun | undefined
+  try {
+    await writeFile(join(root, 'README.md'), 'Dashboard uses the billing API contracts.')
+    s.store.update((w) => ({
+      ...w,
+      repositories: w.repositories.map((repo) =>
+        repo.kind === 'scratch' ? repo : { ...repo, path: root },
+      ),
+    }))
+    vi.spyOn(s.registry, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        captured = run
+        expect(run.tools).toBeUndefined()
+        expect(run.agent.permission).toBe('read-only')
+        expect(run.agent.resources).toBeUndefined()
+        expect(run.linkedDirectories).toEqual([
+          { id: 'web', path: root, access: 'read-only' },
+          { id: 'api', path: root, access: 'read-only' },
+        ])
+        expect(run.agent.instructions).toContain('callers, shared contracts')
+        expect(run.prompt).toContain('Dashboard uses the billing API contracts')
+        expect(await run.approve('Write', 'README.md')).toBe('deny')
+        expect(await run.approve('Bash', 'git checkout -b change')).toBe('deny')
+        run.onText(
+          JSON.stringify({
+            status: 'selected',
+            repositoryId: 'web',
+            links: [{ repositoryId: 'api', access: 'edit' }],
+            reason: 'Update dashboard and API contract.',
+          }),
+        )
+      },
+    })
+    const result = await runClientEffect(
+      s.titles.selectProjectsEffect({ id: 'auto', text: 'Change billing behavior' }),
+    )
+    expect(result.linkedCheckouts?.[0].access).toBe('edit')
+    expect(result.linkedCheckoutSetup).toBeUndefined()
+    expect(result.messages).toEqual([])
+    expect(captured?.sessionId).toBeUndefined()
+    expect(captured?.taskId).toBeUndefined()
+    expect(captured?.ephemeral).toBe(true)
+    expect(existsSync(captured?.cwd ?? '')).toBe(false)
+    expect(await readFile(join(root, 'README.md'), 'utf8')).toBe(
+      'Dashboard uses the billing API contracts.',
+    )
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+it('rejects a project whose path changes during Scope investigation', async () => {
+  const s = autoFixture()
+  const before = s.store.task('auto')
+  vi.spyOn(s.registry, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      s.store.update((w) => ({
+        ...w,
+        repositories: w.repositories.map((repo) =>
+          repo.id === 'api' ? { ...repo, path: '/replacement' } : repo,
+        ),
+      }))
+      run.onText(
+        JSON.stringify({
+          status: 'selected',
+          repositoryId: 'web',
+          links: [{ repositoryId: 'api', access: 'read-only' }],
+          reason: 'Needs API reference',
+        }),
+      )
+    },
+  })
+  try {
+    await expect(
+      runClientEffect(s.titles.selectProjectsEffect({ id: 'auto', text: 'Change dashboard' })),
+    ).rejects.toThrow('A project changed during Scope selection')
+    expect(s.store.task('auto')).toEqual(before)
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})

@@ -1,3 +1,4 @@
+import { watchSourceSchema, pipelineUrlTarget, type WatchSource } from './watch-source.js'
 import { retrievalWatching } from '../../retrieval/context.js'
 import { permissionPolicyReadOnly } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
@@ -19,13 +20,19 @@ import {
 import { z } from 'zod'
 import type { Services } from '../../services.js'
 import { errorMessage, HttpError } from '../../errors.js'
-import { WatchLifecycleCache, watchRepositoryError } from './watch-repository.js'
+import {
+  WatchLifecycleCache,
+  watchRepositoryError,
+  watchAccountRepositoryId,
+} from './watch-repository.js'
 
 export const pipelineWatchRequestSchema = mutableStruct({
   taskId: maxValue(minValue(Schema.String, 1), 200),
   parentRunId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   action: Schema.Literals(['watch', 'status', 'stop']),
   repositoryId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  connectionId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  url: Schema.optional(maxValue(minValue(Schema.String, 1), 2048)),
   runIds: Schema.optional(
     maxValue(minValue(mutableArray(maxValue(minValue(Schema.String, 1), 300)), 1), 20),
   ),
@@ -35,6 +42,7 @@ const stateSchema = z.object({
   taskId: z.string(),
   repositoryId: z.string(),
   primaryRepositoryId: z.string().optional(),
+  source: watchSourceSchema.optional(),
   runId: z.string(),
   url: z.string(),
   sha: z.string(),
@@ -49,7 +57,16 @@ const stateSchema = z.object({
   error: z.string().optional(),
 })
 type State = z.infer<typeof stateSchema>
-type WatchServices = Pick<Services, 'store' | 'preferences' | 'forgeWork' | 'tasks' | 'activity'>
+type WatchServices = Pick<
+  Services,
+  'pulls' | 'store' | 'preferences' | 'forgeWork' | 'tasks' | 'activity'
+>
+const samePipelineUrl = (left: string | undefined, right: string) => {
+  if (!left) return false
+  const a = pipelineUrlTarget(left)
+  const b = pipelineUrlTarget(right)
+  return !!a && !!b && a.pullUrl === b.pullUrl && a.id === b.id
+}
 const summary = ({
   id: _id,
   taskId: _taskId,
@@ -105,7 +122,10 @@ export class PipelineWatch {
       taskId: string
       repositoryId: string
       primaryRepositoryId: string
+      accountRepositoryId: string
+      source?: WatchSource
       runIds: string[]
+      url?: string
     }
   >()
   constructor(
@@ -171,7 +191,11 @@ export class PipelineWatch {
         !task ||
         task.archived ||
         task.archivedAt ||
-        watchRepositoryError(task, registration.repositoryId, registration.primaryRepositoryId)
+        watchRepositoryError(
+          task,
+          registration.accountRepositoryId,
+          registration.primaryRepositoryId,
+        )
       )
         this.registrations.delete(token)
     }
@@ -184,12 +208,17 @@ export class PipelineWatch {
           this.db.prepare('DELETE FROM task_pipeline_watches WHERE task_id=?').run(state.taskId)
         } else if (
           state.status === 'watching' &&
-          watchRepositoryError(task, state.repositoryId, state.primaryRepositoryId)
+          watchRepositoryError(task, state.repositoryId, state.primaryRepositoryId, state.source)
         ) {
           this.save({
             ...state,
             status: 'stopped',
-            error: watchRepositoryError(task, state.repositoryId, state.primaryRepositoryId),
+            error: watchRepositoryError(
+              task,
+              state.repositoryId,
+              state.primaryRepositoryId,
+              state.source,
+            ),
           })
         } else if (state.status === 'watching') watching.add(state.taskId)
       }
@@ -217,8 +246,14 @@ export class PipelineWatch {
       throw new HttpError(403, 'Pipeline watching is disabled for read-only threads')
     return task
   }
-  private async detail(repositoryId: string, runId: string, refresh = false, background = false) {
-    // IDs go only to the project's configured forge, never an agent-supplied URL.
+  private async detail(
+    repositoryId: string,
+    runId: string,
+    refresh = false,
+    background = false,
+    source?: WatchSource,
+  ) {
+    // URL sources are verified and pinned to an account before any pipeline read.
     const jobs = new Map<string, ForgePipelineDetail['jobs'][number]>()
     const cursors = new Set<string>()
     let cursor: string | undefined
@@ -229,17 +264,25 @@ export class PipelineWatch {
         forgePipelineDetailSchema,
         await retrievalWatching(
           () =>
-            this.s.forgeWork.request(
-              repositoryId,
-              'pipelines/detail',
-              { id: runId, refresh, ...(cursor ? { cursor } : {}) },
-              background,
-            ),
+            source
+              ? this.s.forgeWork.pipelineFromUrl(
+                  source,
+                  { id: runId, refresh, ...(cursor ? { cursor } : {}) },
+                  background,
+                )
+              : this.s.forgeWork.request(
+                  repositoryId,
+                  'pipelines/detail',
+                  { id: runId, refresh, ...(cursor ? { cursor } : {}) },
+                  background,
+                ),
           background,
         ),
       )
       if (detail.stale || detail.refreshError)
         throw new HttpError(503, detail.refreshError ?? 'Waiting for fresh pipeline details')
+      if (source && pipelineUrlTarget(detail.run.url)?.pullUrl !== source.url)
+        throw new HttpError(409, 'The pipeline URL belongs to a different repository')
       if (detail.run.id !== runId) throw new HttpError(409, 'The pipeline run identity changed')
       if (
         first &&
@@ -274,22 +317,24 @@ export class PipelineWatch {
       manageExisting && input.action !== 'watch'
         ? this.s.store.taskSummary(input.taskId)
         : this.writable(input.taskId)
-    const selected = (state: State) =>
+    const selected = (state: { repositoryId: string; runId: string; url?: string }) =>
       (!input.repositoryId || input.repositoryId === state.repositoryId) &&
-      (!input.runIds || input.runIds.includes(state.runId))
-    const cancelRegistrations = (repositoryId?: string, runIds?: string[]) => {
+      (!input.runIds || input.runIds.includes(state.runId)) &&
+      (!input.url || samePipelineUrl(state.url, input.url))
+    const cancelRegistrations = (repositoryId?: string, runIds?: string[], url?: string) => {
       for (const [token, registration] of this.registrations)
         if (
           registration.taskId === task.id &&
           (!repositoryId || registration.repositoryId === repositoryId) &&
-          (!runIds || registration.runIds.some((id) => runIds.includes(id)))
+          (!runIds || registration.runIds.some((id) => runIds.includes(id))) &&
+          (!url || samePipelineUrl(registration.url, url))
         )
           this.registrations.delete(token)
     }
     const previous = this.read(task.id)
     if (input.action === 'status') return { watches: previous.filter(selected).map(summary) }
     if (input.action === 'stop') {
-      cancelRegistrations(input.repositoryId, input.runIds)
+      cancelRegistrations(input.repositoryId, input.runIds, input.url)
       const states = previous
         .filter(selected)
         .map((state): State => ({ ...state, status: 'stopped' }))
@@ -301,22 +346,75 @@ export class PipelineWatch {
     }
     if (!this.eligible(task))
       throw new HttpError(409, 'Register pipeline watches in an active thread')
-    if (!input.runIds) throw new HttpError(400, 'Run IDs are required for action watch')
-    const repositoryId = input.repositoryId ?? task.repositoryId
-    const accessError = watchRepositoryError(task, repositoryId, task.repositoryId)
+    if (input.connectionId && !input.url)
+      throw new HttpError(400, 'connectionId is only supported with a pipeline URL')
+    if (!!input.url === !!input.runIds)
+      throw new HttpError(400, 'Supply either a pipeline URL or run IDs for action watch')
+    const accountRepositoryId =
+      input.repositoryId ??
+      (!input.url
+        ? task.repositoryId
+        : watchAccountRepositoryId(
+            task,
+            new Set(
+              this.s.store
+                .get()
+                .repositories.filter((repo) => !repo.kind)
+                .map((repo) => repo.id),
+            ),
+          ))
+    const accessError = watchRepositoryError(task, accountRepositoryId, task.repositoryId)
     if (accessError) throw new HttpError(403, accessError)
-    const runIds = [...new Set(input.runIds)]
-    cancelRegistrations(repositoryId, runIds)
+    let repositoryId = accountRepositoryId
+    let source: WatchSource | undefined
+    const target = input.url ? pipelineUrlTarget(input.url) : undefined
+    if (input.url && !target)
+      throw new HttpError(400, 'Supply a full GitHub Actions or GitLab pipeline URL')
+    const runIds = target ? [target.id] : [...new Set(input.runIds ?? [])]
+    const selectedUrl = input.url
+    if (selectedUrl)
+      repositoryId =
+        previous.find((state) => samePipelineUrl(state.url, selectedUrl))?.repositoryId ??
+        accountRepositoryId
+    cancelRegistrations(input.url ? undefined : repositoryId, runIds, input.url)
     const registration = Symbol()
     this.registrations.set(registration, {
       taskId: task.id,
       repositoryId,
       primaryRepositoryId: task.repositoryId,
+      accountRepositoryId,
       runIds,
+      url: input.url,
     })
     try {
+      if (target) {
+        const account = this.s.store
+          .get()
+          .repositories.find((repo) => repo.id === accountRepositoryId)
+        if (input.repositoryId && (!account || account.kind))
+          throw new HttpError(400, 'Choose a Git project to supply the forge account')
+        const resolved = await this.s.pulls.watchSource(
+          target.pullUrl,
+          account && !account.kind ? account.id : undefined,
+          input.connectionId,
+        )
+        if (!this.registrations.has(registration))
+          throw new HttpError(409, 'This pipeline watch registration was replaced or stopped')
+        repositoryId = resolved.repositoryId
+        source = resolved.source
+        this.registrations.set(registration, {
+          taskId: task.id,
+          repositoryId,
+          primaryRepositoryId: task.repositoryId,
+          accountRepositoryId,
+          runIds,
+          source,
+          url: input.url,
+        })
+      }
       const details: ForgePipelineDetail[] = []
-      for (const runId of runIds) details.push(await this.detail(repositoryId, runId, true))
+      for (const runId of runIds)
+        details.push(await this.detail(repositoryId, runId, true, false, source))
       if (!this.registrations.has(registration))
         throw new HttpError(409, 'This pipeline watch registration was replaced or stopped')
       this.enabled()
@@ -324,7 +422,7 @@ export class PipelineWatch {
       const latest = this.writable(task.id)
       if (
         this.stopped ||
-        watchRepositoryError(latest, repositoryId, task.repositoryId) ||
+        watchRepositoryError(latest, repositoryId, task.repositoryId, source) ||
         !this.eligible(latest)
       )
         throw new HttpError(409, 'This thread changed while registering its pipeline watches')
@@ -345,6 +443,7 @@ export class PipelineWatch {
           taskId: task.id,
           repositoryId,
           primaryRepositoryId: task.repositoryId,
+          source,
           runId: detail.run.id,
           url: detail.run.url,
           sha: detail.run.sha,
@@ -415,6 +514,7 @@ export class PipelineWatch {
           task,
           state.repositoryId,
           state.primaryRepositoryId,
+          state.source,
         )
         if (accessError) {
           this.save({ ...state, status: 'stopped', error: accessError })
@@ -424,17 +524,22 @@ export class PipelineWatch {
         try {
           // Polling is slower than the forge cache's freshness window. Wait for the
           // refresh rather than repeatedly rejecting stale-while-revalidate responses.
-          const readKey = JSON.stringify([state.repositoryId, state.runId])
+          const readKey = JSON.stringify([state.repositoryId, state.runId, state.source])
           let reading = reads.get(readKey)
           if (!reading) {
-            reading = this.detail(state.repositoryId, state.runId, true, true)
+            reading = this.detail(state.repositoryId, state.runId, true, true, state.source)
             reads.set(readKey, reading)
           }
           const detail = await reading
           if (!this.current(state)) continue
           const latest = this.s.store.taskSummary(state.taskId)
           if (
-            watchRepositoryError(latest, state.repositoryId, state.primaryRepositoryId) ||
+            watchRepositoryError(
+              latest,
+              state.repositoryId,
+              state.primaryRepositoryId,
+              state.source,
+            ) ||
             !this.eligible(latest)
           )
             continue

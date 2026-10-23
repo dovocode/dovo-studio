@@ -48,7 +48,7 @@ try {
   const frame = page.frameLocator('iframe')
   const ready = async () => {
     await frame.getByRole('button', { name: 'Attach image', exact: true }).waitFor()
-    await frame.getByRole('button', { name: 'Attach image', exact: true }).isEnabled()
+    await frame.locator('#attach:enabled').waitFor()
   }
   const drag = async (x1, y1, x2, y2) => {
     const box = await frame.locator('canvas').boundingBox()
@@ -73,8 +73,41 @@ try {
       return { type: result.type, width: c.width, height: c.height, pixel }
     })
   await ready()
+  for (const [key, label] of [
+    ['h', 'Highlight'],
+    ['a', 'Arrow'],
+    ['r', 'Rectangle'],
+    ['c', 'Crop'],
+    ['b', 'Pen'],
+    ['p', 'Pen'],
+  ]) {
+    const button = frame.getByRole('button', { name: label, exact: true })
+    assert.equal(await button.locator('svg').count(), 1)
+    assert.equal(await button.textContent(), '')
+    await frame.locator('canvas').focus()
+    await page.keyboard.press(key)
+    await frame.getByRole('button', { name: label, exact: true, pressed: true }).waitFor()
+  }
+  await frame.locator('canvas').focus()
+  await page.keyboard.press(']')
+  assert.equal(await frame.getByLabel('Stroke size').inputValue(), '8')
+  await page.keyboard.press('[')
+  assert.equal(await frame.getByLabel('Stroke size').inputValue(), '6')
+  await frame.getByLabel('Stroke size').focus()
+  await page.keyboard.press('c')
+  await frame.getByRole('button', { name: 'Pen', exact: true, pressed: true }).waitFor()
+  await frame.locator('canvas').focus()
   await drag(0.15, 0.5, 0.85, 0.5)
-  await frame.getByRole('button', { name: 'Attach image', exact: true }).click()
+  await page.keyboard.press('Control+z')
+  assert.equal(await frame.getByRole('button', { name: 'Undo', exact: true }).isDisabled(), true)
+  await page.keyboard.press('Control+y')
+  assert.equal(await frame.getByRole('button', { name: 'Undo', exact: true }).isEnabled(), true)
+  await page.keyboard.press('Meta+z')
+  assert.equal(await frame.getByRole('button', { name: 'Undo', exact: true }).isDisabled(), true)
+  await page.keyboard.press('Meta+Shift+z')
+  assert.equal(await frame.getByRole('button', { name: 'Undo', exact: true }).isEnabled(), true)
+  await page.screenshot({ path: '/tmp/dovo-image-editor-icons.png' })
+  await page.keyboard.press('Control+Enter')
   await page.waitForFunction(() => window.results.length === 1)
   let result = await output()
   assert.deepEqual([result.width, result.height], [400, 240])
@@ -104,7 +137,8 @@ try {
   }
   await page.evaluate(() => window.openEditor())
   await ready()
-  await frame.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await frame.locator('canvas').focus()
+  await page.keyboard.press('Escape')
   await page.waitForFunction(() => window.results.length === 1)
   assert.equal((await output()).type, 'cancel')
   await page.evaluate(() => window.openEditor())
@@ -148,7 +182,7 @@ try {
   )
   assert.deepEqual(errors, [])
   console.log(
-    'Image editor: pen pixels, crop bounds, undo/redo/reset, all drawing tools, narrow layouts, cancel/original, native bridge and result validation passed.',
+    'Image editor: pen pixels, crop bounds, undo/redo/reset, icon tools, keyboard shortcuts, input isolation, narrow layouts, cancel/original, native bridge and result validation passed.',
   )
 } finally {
   await browser.close()

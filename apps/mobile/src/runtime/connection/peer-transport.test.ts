@@ -8,6 +8,9 @@ import {
   replacePeerConnection,
   setPeerConnectionNetwork,
   peerConnectionRoute,
+  peerConnectionReady,
+  setPeerConnectionsAppState,
+  subscribePeerConnections,
 } from './peer-transport'
 const native = vi.hoisted(() => ({ open: vi.fn<typeof import('./peer-native').openPeerTunnel>() }))
 vi.mock('./peer-native', () => ({ openPeerTunnel: native.open }))
@@ -16,6 +19,7 @@ const address = peerAddress(config)
 const signal = () => new AbortController().signal
 beforeEach(() => {
   native.open.mockReset()
+  setPeerConnectionNetwork({ type: 'WIFI', isConnected: true })
   setPeerConnectionsActive(true)
   preparePeerConnection(config)
 })
@@ -148,4 +152,46 @@ it('reuses a tunnel for the same network and opens a fresh one after Wi-Fi/cellu
   expect(next.close).toHaveBeenCalledOnce()
   expect(peerTransportAddress(address)).toBe('http://127.0.0.1:0')
   expect(peerConnectionRoute(address)).toBeUndefined()
+})
+
+it('keeps the tunnel through iOS inactive prompts and closes it only in background', async () => {
+  const tunnel = {
+    address: 'http://127.0.0.1:12345',
+    close: vi.fn<() => void>(),
+    alive: () => true,
+    route: () => 'direct' as const,
+  }
+  native.open.mockResolvedValue(tunnel)
+  await resolvePeerTransport(address, config, signal())
+  setPeerConnectionsAppState('inactive')
+  setPeerConnectionsAppState('active')
+  expect(peerConnectionReady(address)).toBe(true)
+  expect(tunnel.close).not.toHaveBeenCalled()
+  setPeerConnectionsAppState('background')
+  expect(tunnel.close).toHaveBeenCalledOnce()
+  expect(peerConnectionReady(address)).toBe(false)
+})
+
+it('fails immediately while offline and notifies listeners when the same network returns', async () => {
+  setPeerConnectionNetwork({ type: 'WIFI', isConnected: false })
+  await expect(resolvePeerTransport(address, config, signal())).rejects.toThrow(
+    'No network connection',
+  )
+  expect(native.open).not.toHaveBeenCalled()
+  const changed = vi.fn<() => void>()
+  const unsubscribe = subscribePeerConnections(changed)
+  try {
+    setPeerConnectionNetwork({ type: 'WIFI', isConnected: true })
+    expect(changed).toHaveBeenCalledOnce()
+    const tunnel = {
+      address: 'http://127.0.0.1:12345',
+      close: () => {},
+      alive: () => true,
+      route: () => 'direct' as const,
+    }
+    native.open.mockResolvedValue(tunnel)
+    expect(await resolvePeerTransport(address, config, signal())).toBe(tunnel.address)
+  } finally {
+    unsubscribe()
+  }
 })

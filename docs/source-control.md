@@ -88,16 +88,19 @@ Running tasks on the selected computer.
 
 Before the first message, choose **Scope** (the magic icon) in the project picker to infer the
 primary project and necessary linked projects from your prompt. Machine selection remains explicit:
-Scope uses only registered projects on the selected computer, using their names, paths and Git
-identities. Choose **Project defaults**, **New worktrees**, or **Local checkouts** alongside Scope;
-the checkout choice applies to the primary and linked Git projects, while folder projects always
-stay local. Choose a project manually to select an existing worktree or a specific base branch. It
-uses the selector utility model in Settings → Agents (inheriting the title model by default) and
-runs without tools. Clear matches start with the selected project's defaults; reference links are
-read-only and projects requiring changes receive edit access. If no project is discovered, Scope
-continues in General without linked checkouts. Invalid selections or model failures keep the prompt
-unsent so you can choose a project manually or retry. General conversations stay in the private
-thread folder.
+Scope uses only registered projects on the selected computer. It reads bounded root documentation,
+manifests and directory summaries, then searches relevant source, callers and contracts to identify
+the intended change and project ownership. Choose **Project defaults**, **New worktrees**, or
+**Local checkouts** alongside Scope; the checkout choice applies to the primary and linked Git
+projects, while folder projects always stay local. Choose a project manually to select an existing
+worktree or a specific base branch. It uses the selector utility model in Settings → Agents
+(inheriting the title model by default) and runs an ephemeral read-only investigation (up to two
+minutes). It cannot edit files or create checkouts, and tool approval requests are denied.
+Unavailable folders are marked as uninspected; uncertain matches remain available for manual
+selection. Clear matches start with the selected project's defaults; reference links are read-only
+and projects requiring changes receive edit access. If no project is discovered, Scope continues in
+General without linked checkouts. Invalid selections or model failures keep the prompt unsent so you
+can choose a project manually or retry. General conversations stay in the private thread folder.
 
 In thread settings, **Linked projects** attaches up to twelve registered projects or checkouts on
 the thread's computer. Choose main checkout, an existing worktree, or a new worktree with optional

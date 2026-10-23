@@ -9,7 +9,7 @@ const controls = `
 import {useImperativeHandle} from 'react';
 const flat=style=>Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));
 export const View=({children,style,testID,accessibilityRole,accessibilityLabel})=><div role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;
-export const ScrollView=View;
+export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel})=><div aria-label={accessibilityLabel} style={{minHeight:0,overflowY:'auto',...flat(style)}}><div style={{display:'flex',flexDirection:'column',...flat(contentContainerStyle)}}>{children}</div></div>;
 export const Text=({children,style})=><span style={flat(style)}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
 export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole})=><button role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
@@ -179,9 +179,24 @@ try {
   const compact = await page
     .getByRole('button', { name: 'Compact context', exact: true })
     .boundingBox()
-  const queue = await page.getByRole('button', { name: /1 queued messages/ }).boundingBox()
+  const queue = await page.getByTestId('Queued messages').boundingBox()
   const input = await page.getByRole('textbox', { name: 'Message', exact: true }).boundingBox()
   assert.ok(compact.y + compact.height <= queue.y && queue.y + queue.height <= input.y)
+  await page.getByText('Check the tests', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Up 1', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Agent & model', exact: true }).innerText(), 'GPT')
+  for (const name of ['Edit queued message 1', 'Steer with message 1', 'Cancel 1 and return to composer']) {
+    const bounds = await page.getByRole('button', { name, exact: true }).boundingBox()
+    assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44)
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320)
+  }
+  await page.getByRole('button', { name: 'Pause queue', exact: true }).click()
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'pause')
+  await page.evaluate(() => window.setTask({ queuePaused: true }))
+  await page.getByRole('button', { name: 'Resume queue', exact: true }).click()
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'resume')
+  await page.evaluate(() => window.setTask({ queuePaused: false }))
   await page.getByRole('button', { name: 'Steer agent', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'steer' })
   assert.equal(await page.getByRole('dialog', { name: 'Message actions' }).count(), 0)
@@ -217,7 +232,6 @@ try {
   await page.waitForFunction(() => window.navigations.length === 1)
   assert.deepEqual(await page.evaluate(() => window.navigations[0]), ['tasks', 'fork', 'runtime'])
   assert.equal(await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(), '')
-  await page.getByRole('button', { name: /1 queued messages/ }).click()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Verify before shipping')
   await page.getByRole('button', { name: 'Agent & model', exact: true }).click()
@@ -287,6 +301,9 @@ try {
     await page.getByRole('button', { name: 'Ask a side question', exact: true }).isDisabled(),
     true,
   )
+  for (const name of ['Pause queue', 'Edit queued message 1', 'Steer with message 1', 'Cancel 1 and return to composer']) {
+    assert.equal(await page.getByRole('button', { name, exact: true }).isDisabled(), true)
+  }
   await page.evaluate(() => window.setTask({ repositoryId: undefined }))
   assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).count(), 0)
   await page.evaluate(() => {
@@ -371,7 +388,7 @@ try {
   await page.getByText('Native progress step', { exact: true }).waitFor()
   await queueTab.click()
   await page.getByTestId('Queued messages').waitFor()
-  await page.getByTestId('Queued messages').click()
+  await page.getByText('Queued follow-up', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Keep native queue edit')
   await page.evaluate(() =>
@@ -481,7 +498,7 @@ try {
     }),
   )
   await page.getByRole('tab', { name: 'Queue · 1', exact: true }).click()
-  await page.getByTestId('Queued messages').click()
+  await page.getByText('Preserve queued message', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   const queueEdit = page.getByRole('textbox', { name: 'Message', exact: true })
   await queueEdit.fill('Keep edit after clearing checklist')
@@ -496,9 +513,29 @@ try {
     await page.evaluate(() => window.currentTask.queue[0].text),
     'Preserve queued message',
   )
+  await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
+  await page.evaluate(() => window.setTask({
+    queue: Array.from({ length: 20 }, (_, index) => ({ id: 'queue-' + index, role: 'user', text: 'Queued item ' + (index + 1) })),
+  }))
+  await page.getByRole('button', { name: 'Up 20', exact: true }).waitFor({ state: 'attached' })
+  const queuedList = page.getByLabel('Queued message list', { exact: true })
+  assert.ok(await queuedList.evaluate(element => element.scrollHeight > element.clientHeight))
+  assert.ok((await queuedList.boundingBox()).height <= 180)
+  await page.getByRole('button', { name: 'Up 2', exact: true }).click()
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'up')
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queue-1')
+  await page.getByRole('button', { name: 'Steer with message 2', exact: true }).click()
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'steer')
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queue-1')
+  await page.getByRole('button', { name: 'Cancel 20 and return to composer', exact: true }).click()
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'restore')
+  await page.waitForFunction(() => window.conversation.actions.draft.text.includes('Queued item 20'))
+  assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
+  await page.evaluate(() => window.setTask({ queue: [] }))
+  await page.getByTestId('Queued messages').waitFor({ state: 'detached' })
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile composer: compact/queue/input order, inline 44pt actions at 320px, steer and fork dispatch, queue editing, immediate side-chat sending, failure recovery and offline guards passed with native control adapters.',
+    'Mobile composer: inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/steer/restore, composer queue editing, checklist collapse, side-chat sending, failure recovery and offline guards passed with native control adapters.',
   )
 } finally {
   await browser.close()

@@ -20,7 +20,7 @@ function pullSignalColor(signal: PullSignal, colors: MobileColors) {
       : signal.tone === 'warning'
         ? colors.warning
         : signal.tone === 'accent'
-          ? colors.accent
+          ? colors.done
           : colors.muted
 }
 export function Signal({ signal, emphasis = false }: { signal: PullSignal; emphasis?: boolean }) {

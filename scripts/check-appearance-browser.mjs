@@ -14,7 +14,7 @@ import {studioThemeIds,studioThemes} from '@dovo/studio-core';
 import {useAppearance} from '${root}/packages/studio-shell/src/appearance.ts';
 import Appearance from '${root}/packages/studio-shell/src/app-settings/appearance.tsx';
 import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';
-import {Button,Message,MessageContent,MessageResponse,TooltipProvider} from '@dovo/studio-ui';
+import {Button,Message,MessageContent,MessageResponse,TooltipProvider,PullRequestIcon} from '@dovo/studio-ui';
 import {preloadStudioHighlighter,useDiffOptions} from '@dovo/studio-ui/code-themes';
 import {FileDiff} from '@pierre/diffs/react';
 import {parseDiffFromFile} from '@pierre/diffs';
@@ -37,7 +37,7 @@ function App(){useAppearance();return <TooltipProvider><div className="flex h-sc
 <TitleBar online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>
 <main className="flex min-h-0 flex-1"><Appearance/>
 <aside style={{width:400}} className="flex shrink-0 flex-col gap-4 overflow-auto border-l p-4">
-<Button>Start task</Button><Message from="user"><MessageContent>Build this interface.</MessageContent></Message>
+<Button>Start task</Button><div data-testid="pull-states"><PullRequestIcon state="open"/><PullRequestIcon state="closed"/><PullRequestIcon state="merged"/></div><Message from="user"><MessageContent>Build this interface.</MessageContent></Message>
 <MessageResponse>{'Read the [docs](https://dovocode.com).\\n\\n~~~typescript\\n'+sample+'\\n~~~'}</MessageResponse>
 <div data-testid="diff" className="studio-code"><Diff/></div>
 <div className="flex h-40 shrink-0 flex-col"><TerminalSession id="fixture" active/></div>
@@ -193,6 +193,13 @@ try {
         const terminal = window.terminals[0]
         return {
           background: root.getPropertyValue('--background').trim(),
+          border: root.getPropertyValue('--border').trim(),
+          statuses: ['success', 'error', 'done'].map((name) =>
+            root.getPropertyValue('--status-' + name).trim(),
+          ),
+          icons: [...document.querySelector('[data-testid="pull-states"]').children].map(
+            (el) => getComputedStyle(el).color,
+          ),
           user: color(getComputedStyle(user).backgroundColor),
           userText: color(getComputedStyle(user).color),
           terminal: terminal.options.theme,
@@ -204,6 +211,12 @@ try {
       const rgb = (hex) =>
         `rgb(${[1, 3, 5].map((pos) => parseInt(hex.slice(pos, pos + 2), 16)).join(', ')})`
       assert.equal(actual.background, expected.background, id + ' ' + scheme)
+      assert.equal(actual.border, expected.border)
+      assert.deepEqual(
+        actual.icons,
+        actual.statuses.map(rgb),
+        'PR icons follow colorblind status tokens',
+      )
       // Button transitions settle before comparing the final filled color.
       await page.waitForFunction(
         ({ background, foreground }) => {
@@ -238,6 +251,25 @@ try {
         )
         return token && getComputedStyle(token).color === expected
       }, rgb(expected['syntax-keyword']))
+      await page.waitForFunction(() => {
+        const host = document.querySelector('[data-testid=diff] diffs-container')
+        if (!host) return false
+        const diff = getComputedStyle(host),
+          root = getComputedStyle(document.documentElement)
+        return (
+          diff.getPropertyValue('--diffs-addition-color-override').trim() ===
+            root.getPropertyValue('--status-success').trim() &&
+          diff.getPropertyValue('--diffs-deletion-color-override').trim() ===
+            root.getPropertyValue('--status-error').trim()
+        )
+      })
+      if (
+        process.env.DOVO_APPEARANCE_SCREENSHOT &&
+        ['dovo', 'nord', 'rose-pine', 'sand'].includes(id)
+      )
+        await page.screenshot({
+          path: process.env.DOVO_APPEARANCE_SCREENSHOT.replace('.png', `-${id}-${scheme}.png`),
+        })
     }
   }
   await choose('Claude')

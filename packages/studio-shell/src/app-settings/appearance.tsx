@@ -36,14 +36,14 @@ export default function AppearanceSettings() {
       >
         <SettingRow
           label="Status colors"
-          description="Blue and orange replace green and red in statuses and diffs."
+          description="GitHub’s colorblind palette for statuses and diffs."
         >
           <SettingsSelect
             label="Status colors"
             value={colorVision}
             options={[
-              ['default', 'Default'],
-              ['blue-orange', 'Blue / orange'],
+              ['default', 'GitHub colorblind'],
+              ['blue-orange', 'GitHub colorblind · higher contrast'],
             ]}
             onChange={(colorVision) => updateAppPreferences({ colorVision })}
           />

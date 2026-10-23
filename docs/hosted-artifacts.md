@@ -13,12 +13,14 @@ administrator-configured organization OIDC providers.
 
 1. Open the saved artifact/version. On desktop choose **Share**; on mobile choose **Export → Hosted
    sharing**. Sign in, check the displayed destination and account, then **Publish private copy**.
-2. Open **Manage invitations and links**. Initially only the publisher can open the private link.
-3. Ask a recipient to open that link, sign in, and send you their **Sharing ID**. In sharing
-   settings, paste it into **Recipient sharing ID** and choose **Invite account**. The recipient can
-   now open the same private link. Use the exact ID: names and email addresses are not identity
-   proofs. The current account service does not expose verified-email invitations or send invitation
-   emails.
+2. Open **Manage invitations and links**. This opens the hosted viewer’s **Share artifact** dialog.
+   Initially only the publisher can open the private link. Reopen the dialog with **Share** in the
+   compact viewer header.
+3. Ask a recipient to open that link, sign in, and send you their **Sharing ID** from **Account**.
+   In sharing settings, paste it into **Recipient sharing ID** and choose **Invite account**. The
+   recipient can now open the same private link. Use the exact ID: names and email addresses are not
+   identity proofs. The current account service does not expose verified-email invitations or send
+   invitation emails.
 4. **Remove access** revokes an invitation. An invited account can view the artifact but cannot
    manage invitations, links or hosted copies. Organization relay membership alone grants no access.
 
@@ -35,11 +37,25 @@ retention and deletion. Publish another version explicitly to share updated cont
 publication of the same saved version recovers the same hosted copy. **Delete hosted artifact**
 removes that copy and its invitations and links; it does not delete the local artifact.
 
-The web viewer works on mobile and desktop. HTML/SVG run in an opaque sandbox with scripts allowed
-for interaction, strict CSP, no external network, host DOM, account credentials or native bridge.
-Markdown and code render inside the same sandbox. Publishing creates a saved document; an optional
-publisher-approved live data feed can update its dashboard data without exposing MCP tools or server
-credentials. See the live dashboard setup below.
+The web viewer works on mobile and desktop. The saved artifact fills the space below the Dovo
+header; **Share** opens invitations and expiring links, while **Account** contains sign-in, the
+sharing ID and sign-out. Management links open the sharing dialog automatically. Delete the hosted
+copy from the dialog’s **Advanced** section. Dialogs support keyboard focus and Escape to close.
+
+Hosted artifacts use the same Dovo identity and Connect consent flow as Studio, with a separate
+sharing-only session that grants no access to computers. Sign-in resumes automatically when you
+return from the sign-in page; **Check sign-in** remains available. Moving identity providers
+requires the explicit stable-owner mapping described in
+[Optional accounts](optional-accounts.md#preserve-existing-ownership-when-moving-from-the-previous-identity-provider).
+Keep the existing Connect and artifact databases: with that mapping, publications, ownership,
+invitations, private URLs and unexpired share links retain their access. No separate artifact
+account is created or merged by email or display name.
+
+HTML/SVG run in an opaque sandbox with scripts allowed for interaction, strict CSP, no external
+network, host DOM, account credentials or native bridge. Markdown and code render inside the same
+sandbox. Publishing creates a saved document; an optional publisher-approved live data feed can
+update its dashboard data without exposing MCP tools or server credentials. See the live dashboard
+setup below.
 
 ## Run the separate service
 

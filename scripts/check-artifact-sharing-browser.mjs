@@ -96,8 +96,14 @@ try {
   assert.match(response.headers()['cache-control'], /no-store/)
   assert.equal(response.headers()['referrer-policy'], 'no-referrer')
   await owner.getByRole('heading', { name: 'Sharing settings', exact: true }).waitFor()
+  await owner.getByRole('dialog', { name: 'Share artifact', exact: true }).waitFor()
+  await owner.getByRole('button', { name: 'Close', exact: true }).click()
   assert.equal(new URL(owner.url()).hash, '')
   assert.equal(await owner.locator('header img').count(), 0)
+  assert.equal(
+    await owner.locator('.brand-product').evaluate((element) => getComputedStyle(element).color),
+    'rgb(161, 161, 161)',
+  )
   assert.equal(await owner.getByRole('heading', { name: artifact.title, exact: true }).count(), 1)
   const cookies = await ownerContext.cookies(origin)
   assert.equal(cookies.find((cookie) => cookie.name === 'dovo-artifacts').httpOnly, true)
@@ -135,6 +141,11 @@ try {
   await guest.getByRole('button', { name: 'Try navigation' }).click()
   // The outer frame-src policy also prevents an artifact navigating its own frame to an exfiltration URL.
   assert.deepEqual(leaks, [])
+  // Navigation destroyed the guest document; reload the saved copy before testing sharing.
+  await owner.reload()
+  await owner.getByRole('heading', { name: 'Sharing settings', exact: true }).waitFor()
+  await owner.getByRole('button', { name: 'Close', exact: true }).click()
+  await guest.getByRole('button', { name: '0', exact: true }).click()
 
   const recipientContext = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -151,15 +162,18 @@ try {
   await recipient.getByRole('link', { name: 'Continue to sign-in' }).click()
   const popup = await popupPromise
   await popup.getByRole('heading', { name: 'Sign in to Dovo Artifacts', exact: true }).waitFor()
+  await popup.screenshot({ path: '/tmp/dovo-artifact-connect-consent.png' })
   await popup.getByRole('button', { name: 'Continue to Dovo sign-in', exact: true }).click()
   await popup.getByRole('heading', { name: 'You are signed in', exact: true }).waitFor()
   await popup.close()
-  await recipient.getByRole('button', { name: 'Check sign-in', exact: true }).click()
+  await recipient.evaluate(() => window.dispatchEvent(new Event('focus')))
   await recipient.getByLabel('Sharing ID', { exact: true }).waitFor()
   assert.equal(await recipient.getByLabel('Sharing ID', { exact: true }).inputValue(), 'recipient')
+  await owner.getByRole('button', { name: 'Share', exact: true }).click()
   await owner.getByLabel('Recipient sharing ID', { exact: true }).fill('recipient')
   await owner.getByRole('button', { name: 'Invite account', exact: true }).click()
   await owner.getByRole('status').filter({ hasText: 'Account invited' }).waitFor()
+  assert.equal(await guest.locator('#counter').textContent(), '1')
   await recipient.reload()
   await recipient.getByRole('heading', { name: artifact.title, exact: true }).waitFor()
   assert.equal(
@@ -172,6 +186,28 @@ try {
     true,
   )
 
+  const mobileHeader = await recipient.locator('.site-header').boundingBox()
+  const mobileFrame = await recipient.locator('iframe[title="Artifact preview"]').boundingBox()
+  assert.ok(mobileHeader.height < 130)
+  assert.ok(mobileFrame.height > 650)
+  await recipient.getByRole('button', { name: 'Share', exact: true }).click()
+  const dialog = recipient.getByRole('dialog', { name: 'Share artifact', exact: true })
+  await dialog.waitFor()
+  assert.equal(await dialog.getByRole('button', { name: 'Invite account', exact: true }).count(), 0)
+  assert.equal(
+    await dialog.getByLabel('Artifact link', { exact: true }).inputValue(),
+    published.url,
+  )
+  const mobileDialog = await dialog.boundingBox()
+  assert.ok(mobileDialog.x >= 0 && mobileDialog.x + mobileDialog.width <= 390)
+  await recipient.keyboard.press('Tab')
+  assert.equal(await dialog.evaluate((element) => element.contains(document.activeElement)), true)
+  await recipient.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'hidden' })
+  await recipient.waitForFunction(() => document.activeElement?.textContent === 'Share')
+  await recipient.screenshot({ path: '/tmp/dovo-artifact-mobile.png' })
+  await owner.screenshot({ path: '/tmp/dovo-artifact-sharing.png' })
+
   await owner.getByRole('combobox', { name: 'Share link lifetime' }).click()
   await owner.getByRole('option', { name: '1 day', exact: true }).click()
   const linkRequest = owner.waitForRequest(
@@ -183,9 +219,24 @@ try {
   await shared.waitFor()
   const sharedUrl = await shared.inputValue()
   assert.match(sharedUrl, /#share=[A-Za-z0-9_-]{43}$/)
+  await owner.setViewportSize({ width: 320, height: 640 })
+  const ownerDialog = owner.getByRole('dialog', { name: 'Share artifact', exact: true })
+  assert.equal(
+    await ownerDialog.evaluate((element) => element.scrollWidth <= element.clientWidth),
+    true,
+  )
+  await ownerDialog
+    .getByRole('button', { name: 'Copy shareable artifact link' })
+    .scrollIntoViewIfNeeded()
+  await owner.screenshot({ path: '/tmp/dovo-artifact-sharing-mobile.png' })
+  await owner.setViewportSize({ width: 1280, height: 720 })
   const anonymous = await browser.newPage()
   await anonymous.goto(sharedUrl)
   await anonymous.getByRole('heading', { name: artifact.title, exact: true }).waitFor()
+  await anonymous.getByRole('button', { name: 'Share', exact: true }).click()
+  assert.equal(await anonymous.getByLabel('Artifact link', { exact: true }).inputValue(), sharedUrl)
+  await anonymous.keyboard.press('Escape')
+  await anonymous.screenshot({ path: '/tmp/dovo-artifact-desktop.png' })
   await anonymous.reload()
   await anonymous.getByRole('heading', { name: artifact.title, exact: true }).waitFor()
   assert.equal(anonymous.url(), sharedUrl)
@@ -219,6 +270,21 @@ try {
     .getByRole('status')
     .filter({ hasText: 'Artifact unavailable or access not granted' })
     .waitFor()
+  await recipient.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await recipient.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await recipient.getByRole('button', { name: 'Cancel sign-in', exact: true }).waitFor()
+  await recipient.clock.install()
+  await recipient.clock.fastForward(300001)
+  await recipient.getByRole('status').filter({ hasText: 'Sign-in expired. Start again' }).waitFor()
+  await recipient.getByRole('button', { name: 'Sign in', exact: true }).waitFor()
+  await owner.getByRole('button', { name: 'Close', exact: true }).click()
+  await owner.getByRole('link', { name: 'Dovo Artifacts home', exact: true }).click()
+  await owner.getByRole('heading', { name: 'Your published artifacts', exact: true }).waitFor()
+  await owner.screenshot({ path: '/tmp/dovo-artifact-library.png' })
+  await owner.getByRole('button', { name: 'Account', exact: true }).click()
+  await owner.getByRole('dialog', { name: 'Your Dovo account', exact: true }).waitFor()
+  assert.equal(await owner.getByLabel('Sharing ID', { exact: true }).inputValue(), 'owner')
+  await owner.keyboard.press('Escape')
   accounts.revoke(login.token)
   await owner.goto('about:blank')
   await owner.goto(published.manageUrl)
