@@ -919,22 +919,44 @@ try {
         .getByRole(platform === 'ios' ? 'menuitem' : 'button', { name: value, exact: true })
         .click()
     }
-    await chooseAppearance('Status colors', 'GitHub colorblind · higher contrast')
+    await chooseAppearance('Status colors', 'GitHub colorblind')
     await page.waitForFunction(() => window.savedPreferences?.colorVision === 'blue-orange')
+    assert.equal(
+      await page
+        .getByText('Finished', { exact: true })
+        .evaluate((el) => getComputedStyle(el).color),
+      'rgb(88, 166, 255)',
+    )
+    await page.getByRole('switch', { name: 'Higher contrast', exact: true }).click()
+    await page.waitForFunction(() => window.savedPreferences?.highContrast === true)
     assert.equal(
       await page
         .getByText('Finished', { exact: true })
         .evaluate((el) => getComputedStyle(el).color),
       'rgb(173, 220, 255)',
     )
-    await page.getByRole('switch', { name: 'Higher contrast', exact: true }).click()
-    await page.waitForFunction(() => window.savedPreferences?.highContrast === true)
     await chooseAppearance('Color scheme', 'Light')
     assert.equal(
       await page
         .getByText('Finished', { exact: true })
         .evaluate((el) => getComputedStyle(el).color),
       'rgb(2, 59, 149)',
+    )
+    await page.getByRole('switch', { name: 'Higher contrast', exact: true }).click()
+    await page.waitForFunction(() => window.savedPreferences?.highContrast === false)
+    assert.equal(
+      await page
+        .getByText('Finished', { exact: true })
+        .evaluate((el) => getComputedStyle(el).color),
+      'rgb(5, 80, 174)',
+    )
+    await chooseAppearance('Status colors', 'Normal')
+    await page.waitForFunction(() => window.savedPreferences?.colorVision === 'default')
+    assert.equal(
+      await page
+        .getByText('Finished', { exact: true })
+        .evaluate((el) => getComputedStyle(el).color),
+      'rgb(8, 115, 79)',
     )
     await page.getByLabel('Reduced motion', { exact: true }).filter({ hasText: 'false' }).waitFor()
     await chooseAppearance('Animations', 'Reduce')

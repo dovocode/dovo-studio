@@ -19,7 +19,7 @@ function createMobileColors(
     mode,
     !!accessibility.highContrast,
   )
-  const status = statusColors(mode, accessibility.colorVision)
+  const status = statusColors(mode, accessibility.colorVision, accessibility.highContrast)
   return {
     background: tokens.background,
     surface: tokens.card,
@@ -56,8 +56,16 @@ export function createMobileTheme(
       ? {
           colors: {
             ...nativeCodeColors(code.theme),
-            addition: statusColors(code.theme.type, accessibility.colorVision).success,
-            deletion: statusColors(code.theme.type, accessibility.colorVision).error,
+            addition: statusColors(
+              code.theme.type,
+              accessibility.colorVision,
+              accessibility.highContrast,
+            ).success,
+            deletion: statusColors(
+              code.theme.type,
+              accessibility.colorVision,
+              accessibility.highContrast,
+            ).error,
           },
           custom: code.custom,
         }

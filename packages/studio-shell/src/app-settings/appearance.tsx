@@ -36,14 +36,14 @@ export default function AppearanceSettings() {
       >
         <SettingRow
           label="Status colors"
-          description="GitHub’s colorblind palette for statuses and diffs."
+          description="Normal colors or GitHub’s colorblind palette for statuses and diffs."
         >
           <SettingsSelect
             label="Status colors"
             value={colorVision}
             options={[
-              ['default', 'GitHub colorblind'],
-              ['blue-orange', 'GitHub colorblind · higher contrast'],
+              ['default', 'Normal'],
+              ['blue-orange', 'GitHub colorblind'],
             ]}
             onChange={(colorVision) => updateAppPreferences({ colorVision })}
           />
@@ -68,7 +68,7 @@ export default function AppearanceSettings() {
         </div>
         <SettingRow
           label="Higher contrast"
-          description="Stronger text, borders and controls with neutral surfaces."
+          description="Stronger text, borders, controls and status colors with neutral surfaces."
         >
           <Toggle
             label="Higher contrast"

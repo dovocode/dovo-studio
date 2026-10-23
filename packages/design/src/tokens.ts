@@ -40,11 +40,26 @@ export const dovoColors = {
   },
 } as const
 
-/** GitHub / Primer colorblind semantic palette. Keep icons and text alongside color.
- * https://unpkg.com/@primer/primitives/dist/css/functional/themes/light-colorblind.css
- * Light text uses Primer's high-contrast colors to stay readable across Studio surfaces.
- */
+/** Normal status palette. States also retain their icons and text. */
 export const semanticColors = {
+  dark: {
+    success: '#8ad5b0',
+    error: '#ff7e97',
+    warning: '#e7c681',
+    done: '#b79bf5',
+    onError: '#341520',
+  },
+  light: {
+    success: '#08734f',
+    error: '#ba2549',
+    warning: '#855700',
+    done: '#7046b5',
+    onError: '#ffffff',
+  },
+} as const
+
+/** GitHub / Primer blue-orange colorblind palette, with readable light-mode accent shades. */
+export const colorVisionColors = {
   dark: {
     success: '#58a6ff',
     error: '#f0883e',
@@ -53,23 +68,48 @@ export const semanticColors = {
     onError: '#241000',
   },
   light: {
-    success: '#023b95',
-    error: '#702c00',
-    warning: '#603700',
-    done: '#512598',
+    success: '#0550ae',
+    error: '#953800',
+    warning: '#7d4e00',
+    done: '#6639ba',
     onError: '#ffffff',
   },
 } as const
-/** Primer's high-contrast colorblind variant; saved accessibility preferences remain valid. */
-export const colorVisionColors = {
-  dark: {
-    success: '#addcff',
-    error: '#ffb757',
-    warning: '#f0b72f',
-    done: '#d3abff',
-    onError: '#241000',
+
+/** Stronger status colors are enabled only by the Higher contrast preference. */
+export const highContrastStatusColors = {
+  default: {
+    dark: {
+      success: '#ace8c6',
+      error: '#ffb3c3',
+      warning: '#ffe09c',
+      done: '#d3abff',
+      onError: '#341520',
+    },
+    light: {
+      success: '#005638',
+      error: '#8a1734',
+      warning: '#603700',
+      done: '#512598',
+      onError: '#ffffff',
+    },
   },
-  light: semanticColors.light,
+  'blue-orange': {
+    dark: {
+      success: '#addcff',
+      error: '#ffb757',
+      warning: '#f0b72f',
+      done: '#d3abff',
+      onError: '#241000',
+    },
+    light: {
+      success: '#023b95',
+      error: '#702c00',
+      warning: '#603700',
+      done: '#512598',
+      onError: '#ffffff',
+    },
+  },
 } as const
 
 export const designTokens = {

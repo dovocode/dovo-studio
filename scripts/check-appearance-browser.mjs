@@ -215,7 +215,7 @@ try {
       assert.deepEqual(
         actual.icons,
         actual.statuses.map(rgb),
-        'PR icons follow colorblind status tokens',
+        'PR icons follow the selected status tokens',
       )
       // Button transitions settle before comparing the final filled color.
       await page.waitForFunction(
@@ -456,7 +456,7 @@ try {
     .waitFor()
   assert.deepEqual(errors, [])
   console.log(
-    'Appearance: all 28 palette/mode combinations, markdown/diff syntax, font persistence, bundled Nerd glyphs, terminal continuity, system mode, persistence, keyboard selection, text-only titlebar and narrow layout passed.',
+    `Appearance: all ${ids.length * 2} palette/mode combinations, markdown/diff syntax, font persistence, bundled Nerd glyphs, terminal continuity, system mode, persistence, keyboard selection, text-only titlebar and narrow layout passed.`,
   )
 } finally {
   await browser.close()

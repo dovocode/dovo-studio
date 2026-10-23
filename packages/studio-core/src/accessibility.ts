@@ -1,12 +1,18 @@
-import { semanticColors, colorVisionColors } from '@dovo/design'
+import { semanticColors, colorVisionColors, highContrastStatusColors } from '@dovo/design'
 import type { StudioThemeColors, StudioThemeMode } from './themes'
 
 /** Status colors are paired with icons/text, never used as the sole state indicator. */
 export function statusColors(
   mode: StudioThemeMode,
   colorVision: 'default' | 'blue-orange' = 'default',
+  highContrast = false,
 ): { success: string; error: string; warning: string; done: string; onError: string } {
-  return { ...(colorVision === 'blue-orange' ? colorVisionColors[mode] : semanticColors[mode]) }
+  const colors = highContrast
+    ? highContrastStatusColors[colorVision][mode]
+    : colorVision === 'blue-orange'
+      ? colorVisionColors[mode]
+      : semanticColors[mode]
+  return { ...colors }
 }
 
 /** Neutral high-contrast surfaces keep code syntax colors independent. */

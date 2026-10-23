@@ -15,7 +15,7 @@ it('uses the selected status palette and strong borders in mobile settings and t
     colorVision: 'blue-orange',
   })
   expect(accessible.colors).toMatchObject({
-    ...statusColors('dark', 'blue-orange'),
+    ...statusColors('dark', 'blue-orange', true),
     border: '#888888',
     text: '#ffffff',
   })
@@ -40,9 +40,14 @@ it.each(['light', 'dark'] as const)(
   },
 )
 
-it.each(['default', 'blue-orange'] as const)(
-  'keeps %s diff semantics independent of imported syntax colors',
-  (colorVision) => {
+it.each([
+  ['default', false],
+  ['default', true],
+  ['blue-orange', false],
+  ['blue-orange', true],
+] as const)(
+  'keeps %s diff semantics with high contrast %s independent of imported syntax colors',
+  (colorVision, highContrast) => {
     for (const mode of ['light', 'dark'] as const) {
       const codeTheme = {
         ...resolveCodeTheme('dovo', [], 'dovo', mode),
@@ -56,11 +61,13 @@ it.each(['default', 'blue-orange'] as const)(
         'sand',
         mode,
         { theme: codeTheme, custom: true },
-        { colorVision },
+        { colorVision, highContrast },
       )
-      expect(theme.code?.colors.addition).toBe(statusColors(mode, colorVision).success)
-      expect(theme.code?.colors.deletion).toBe(statusColors(mode, colorVision).error)
-      expect(theme.colors.done).toBe(statusColors(mode, colorVision).done)
+      expect(theme.code?.colors.addition).toBe(
+        statusColors(mode, colorVision, highContrast).success,
+      )
+      expect(theme.code?.colors.deletion).toBe(statusColors(mode, colorVision, highContrast).error)
+      expect(theme.colors.done).toBe(statusColors(mode, colorVision, highContrast).done)
     }
   },
 )

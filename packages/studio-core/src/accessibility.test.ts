@@ -26,11 +26,14 @@ for (const mode of ['light', 'dark'] as const) {
         expect(contrast(high.border, high[surface])).toBeGreaterThanOrEqual(3)
         for (const colorVision of ['default', 'blue-orange'] as const) {
           const status = statusColors(mode, colorVision)
+          const strong = statusColors(mode, colorVision, true)
           for (const color of [status.success, status.error, status.warning, status.done]) {
             expect(contrast(color, original[surface])).toBeGreaterThanOrEqual(4.5)
-            expect(contrast(color, high[surface])).toBeGreaterThanOrEqual(4.5)
           }
+          for (const color of [strong.success, strong.error, strong.warning, strong.done])
+            expect(contrast(color, high[surface])).toBeGreaterThanOrEqual(7)
           expect(contrast(status.error, status.onError)).toBeGreaterThanOrEqual(4.5)
+          expect(contrast(strong.error, strong.onError)).toBeGreaterThanOrEqual(7)
         }
       }
       expect(contrast(high.action, high['action-foreground'])).toBeGreaterThanOrEqual(7)
@@ -39,3 +42,16 @@ for (const mode of ['light', 'dark'] as const) {
     })
   }
 }
+
+it.each(['dark', 'light'] as const)(
+  'keeps %s color mode independent of higher contrast',
+  (mode) => {
+    const normal = statusColors(mode)
+    const colorblind = statusColors(mode, 'blue-orange')
+    expect(normal).not.toEqual(colorblind)
+    expect(statusColors(mode, 'default', false)).toEqual(normal)
+    expect(statusColors(mode, 'blue-orange', false)).toEqual(colorblind)
+    expect(statusColors(mode, 'default', true)).not.toEqual(normal)
+    expect(statusColors(mode, 'blue-orange', true)).not.toEqual(colorblind)
+  },
+)

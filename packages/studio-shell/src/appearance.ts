@@ -49,7 +49,7 @@ export function useAppearance(onWindowColors?: (colors: WindowColors) => unknown
     root.style.setProperty('--muted', colors.card)
     root.style.setProperty('--accent', colors.selection)
     root.style.setProperty('--ring', colors.primary)
-    const status = statusColors(mode, colorVision)
+    const status = statusColors(mode, colorVision, highContrast)
     for (const name of ['success', 'error', 'warning', 'done'] as const)
       root.style.setProperty(`--status-${name}`, status[name])
     root.style.setProperty('--destructive', status.error)

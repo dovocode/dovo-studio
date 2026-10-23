@@ -2,6 +2,7 @@ export {
   dovoColors,
   semanticColors,
   colorVisionColors,
+  highContrastStatusColors,
   designTokens,
   cssVariables,
   tokenStyles,

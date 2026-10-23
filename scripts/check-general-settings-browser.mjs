@@ -564,12 +564,13 @@ try {
   await choose('Time format', '24-hour')
   assert.equal(await preference('timeFormat'), '24h')
   await openLocal('Appearance')
-  await choose('Status colors', 'GitHub colorblind · higher contrast')
+  await choose('Status colors', 'GitHub colorblind')
   assert.equal(await preference('colorVision'), 'blue-orange')
   const success = page.getByLabel('Status color preview').getByText('Finished', { exact: true })
-  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(173, 220, 255)')
+  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(88, 166, 255)')
   await page.getByRole('switch', { name: 'Higher contrast', exact: true }).click()
   assert.equal(await preference('highContrast'), true)
+  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(173, 220, 255)')
   assert.equal(
     await page.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue('--border').trim(),
@@ -604,6 +605,8 @@ try {
     '#777777',
   )
   await page.getByRole('switch', { name: 'Higher contrast', exact: true }).click()
+  assert.equal(await preference('colorVision'), 'blue-orange')
+  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(5, 80, 174)')
   await page.emulateMedia({ forcedColors: 'active' })
   await page.getByRole('combobox', { name: 'App font', exact: true }).focus()
   await page.keyboard.press('Tab')
@@ -612,8 +615,10 @@ try {
   assert.equal(await codeFont.evaluate((el) => getComputedStyle(el).outlineStyle), 'solid')
   assert.equal(await codeFont.evaluate((el) => getComputedStyle(el).outlineWidth), '2px')
   await page.emulateMedia({ forcedColors: 'none' })
-  await choose('Status colors', 'GitHub colorblind')
+  await choose('Status colors', 'Normal')
   await choose('Color scheme', 'Dark')
+  assert.equal(await preference('colorVision'), 'default')
+  assert.equal(await success.evaluate((el) => getComputedStyle(el).color), 'rgb(138, 213, 176)')
   await choose('Text size', 'Large')
   await choose('Chat width', 'Full width')
   await choose('Animations', 'Reduce')
