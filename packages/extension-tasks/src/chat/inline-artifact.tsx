@@ -11,6 +11,7 @@ import { useWorkspace } from '@dovo/studio-core'
 import { Button, IconButton, MessageResponse } from '@dovo/studio-ui'
 import { FloatingPreview, type PreviewPlacement } from '../detail/floating-preview'
 import { useArtifactPreviewTheme } from './preview-theme'
+import { ArtifactSharedBadge } from './artifact-shared-badge'
 
 export function InlineArtifact({
   reference,
@@ -84,6 +85,7 @@ export function InlineArtifact({
         onClose={placement === 'inline' ? undefined : () => setPlacement('inline')}
         actions={
           <>
+            <ArtifactSharedBadge artifact={reference} />
             <IconButton
               label={source ? 'Show rendered artifact' : 'View artifact source'}
               className="size-7 shrink-0"

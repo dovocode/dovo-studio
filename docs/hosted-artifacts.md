@@ -9,6 +9,12 @@ Local artifacts, HTTP LAN/VPN pairing and account-free runtime access continue t
 service. Hosted publishing and private invitations use Dovo's existing account sign-in, including
 administrator-configured organization OIDC providers.
 
+Artifact lists and previews show **Shared** when the selected version is already hosted by the
+signed-in account. **Shared vN · This version is local** means another revision is hosted. These
+indicators describe an existing hosted copy, not public access. Opening sharing refreshes the server
+status and offers management for an existing publication without uploading it again. Status is
+specific to the selected Connect server and account.
+
 ## Publish and invite
 
 1. Open the saved artifact/version. On desktop choose **Share**; on mobile choose **Export → Hosted
@@ -58,6 +64,10 @@ update its dashboard data without exposing MCP tools or server credentials. See 
 setup below.
 
 ## Run the separate service
+
+For the combined Connect, Auth and storage walkthrough, start with
+[Custom Connect and artifact store](self-hosting.md), including service URL settings on desktop and
+mobile.
 
 All code is in `apps/artifact-server` in `dovocode/dovo-studio`. Build from GitHub, using
 `apps/artifact-server/Dockerfile` and the repository root as Docker build context. The service uses

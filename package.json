@@ -120,7 +120,7 @@
     "test:chat-files:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-chat-files-browser.mjs",
     "test:file-review:browser": "node scripts/check-file-review-browser.mjs && node scripts/check-file-trees-browser.mjs && node scripts/check-project-file-preview-browser.mjs",
     "test:diff-scroll:browser": "pnpm --filter @dovo/desktop build && node scripts/check-diff-scroll-browser.mjs && node scripts/check-checkpoint-diff-browser.mjs",
-    "test:account-directory:browser": "node scripts/check-account-directory-browser.mjs && node scripts/check-mobile-computers-browser.mjs",
+    "test:account-directory:browser": "node scripts/check-account-directory-browser.mjs && node scripts/check-mobile-computers-browser.mjs && node scripts/check-service-urls-browser.mjs",
     "test:paired-connect:browser": "node scripts/check-paired-connect-browser.mjs",
     "test:github-accounts:browser": "node scripts/check-github-accounts-browser.mjs",
     "test:mobile:smoke": "maestro test apps/mobile/maestro/smoke.yaml",

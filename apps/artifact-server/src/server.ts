@@ -227,6 +227,11 @@ export function createArtifactServer(options: {
       const session = await identity(req)
       return json(res, 200, session)
     }
+    if (path === '/v1/publications/sources' && req.method === 'GET') {
+      const session = await identity(req)
+      if (!session) throw new ShareError(401, 'Sign in')
+      return json(res, 200, { publications: store.sources(session.user.id) })
+    }
     if (path === '/v1/publications') {
       if (req.method === 'GET') {
         const session = await identity(req)

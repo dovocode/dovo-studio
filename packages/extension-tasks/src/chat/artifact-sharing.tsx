@@ -1,9 +1,11 @@
+import { useAppPreferences } from '@dovo/studio-core'
 import { useEffect, useState } from 'react'
-import type { AccountStorage, Artifact, PublishedArtifact } from '@dovo/protocol'
+import type { AccountStorage, Artifact } from '@dovo/protocol'
 import { ArtifactFeedSetup } from './artifact-feed'
 import { useAccount, useStudioHost } from '@dovo/studio-core'
 import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@dovo/studio-ui'
 import { Share2 } from 'lucide-react'
+import { ArtifactSharedBadge } from './artifact-shared-badge'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 
 export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
@@ -12,6 +14,7 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
   if (!host.accountStorage || !host.openExternalLink) return null
   return (
     <>
+      <ArtifactSharedBadge artifact={artifact} />
       <Button size="sm" variant="ghost" onClick={() => setOpen(true)} aria-label="Share artifact">
         <Share2 className="size-3.5" /> Share
       </Button>
@@ -43,19 +46,29 @@ function ArtifactSharingContent({
   storage: AccountStorage
   open: (url: string) => Promise<void>
 }) {
-  const account = useAccount(storage, open)
+  const services = useAppPreferences()
+  const account = useAccount(storage, open, services)
   const [origin, setOrigin] = useState(''),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false)
-  const [published, setPublished] = useState<PublishedArtifact>()
+  const existing = account.publications?.find(
+    (item) => item.sourceId === artifact.id && item.revision === artifact.revision,
+  )
+  const published =
+    account.directory && existing && origin && origin === account.publicationOrigin
+      ? {
+          publicationId: existing.id,
+          url: origin + '/s/' + existing.id,
+          manageUrl: origin + '/manage/' + existing.id,
+        }
+      : undefined
   const [retry, setRetry] = useState(0)
   const sessionId = account.client.sessionId()
   useEffect(() => {
-    setPublished(undefined)
-  }, [sessionId])
-  useEffect(() => {
     let disposed = false
     setError('')
+    setOrigin('')
+    void account.client.refreshPublications()
     void account.client
       .artifactService()
       .then((value) => {
@@ -67,12 +80,12 @@ function ArtifactSharingContent({
     return () => {
       disposed = true
     }
-  }, [account.client, retry])
+  }, [account.client, retry, account.directory?.user.id])
   const publish = async () => {
     setBusy(true)
     setError('')
     try {
-      setPublished(await account.client.publishArtifact(artifact, origin))
+      await account.client.publishArtifact(artifact, origin)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Publication failed')
     } finally {
@@ -134,9 +147,17 @@ function ArtifactSharingContent({
       )}
       {published && (
         <div className="space-y-2" role="status">
-          <p>Private copy published.</p>
+          <p>
+            Shared · Version {artifact.revision}. Hosted access is managed separately from this
+            local copy.
+          </p>
           <Button
-            onClick={() => void open(published.manageUrl).catch((cause) => setError(String(cause)))}
+            onClick={() =>
+              void account.client
+                .artifactManagementUrl(published.publicationId, origin)
+                .then(open)
+                .catch((cause: unknown) => setError(String(cause)))
+            }
           >
             Manage invitations and links
           </Button>
@@ -162,6 +183,11 @@ function ArtifactSharingContent({
       {(error || account.error) && (
         <p role="alert" className="text-destructive">
           {error || account.error}
+        </p>
+      )}
+      {account.directory && account.publicationError && !error && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {account.publicationError}
         </p>
       )}
       {error && !origin && (

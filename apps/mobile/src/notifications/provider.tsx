@@ -1,3 +1,4 @@
+import { ACCOUNT_DIRECTORY_URL } from '@dovo/protocol'
 import { useMobileAccount } from '../runtime/connection/account-provider'
 import { runtimeComputerName } from '@dovo/protocol'
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
@@ -182,6 +183,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
               entry.profile.connection.token,
               serverEnabled,
               accountRef.current.directory?.user.id,
+              accountRef.current.client.origin,
               token,
               questionActions,
             ])
@@ -199,6 +201,14 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
                       : ('sandbox' as const),
                   ...(questionActions ? { questionActions: 1 as const } : {}),
                 }
+                if (
+                  accountRef.current.directory &&
+                  accountRef.current.client.origin !== ACCOUNT_DIRECTORY_URL &&
+                  !entry.snapshot?.internet?.origin
+                )
+                  throw new Error(
+                    'Update this computer to use notifications with a custom Connect URL',
+                  )
                 const grant = accountRef.current.directory
                   ? await accountRef.current.client.subscribePush(registration)
                   : undefined
@@ -206,7 +216,10 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
                 const status = await latest.current.readRuntime(
                   entry.profile,
                   '/api/notifications/register',
-                  { ...registration, ...(grant ? { managedToken: grant.token } : {}) },
+                  {
+                    ...registration,
+                    ...(grant ? { managedToken: grant.token, managedOrigin: grant.origin } : {}),
+                  },
                   pushStatusSchema,
                 )
                 if (!status.configured || !status.registered || status.error) {

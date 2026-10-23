@@ -1,8 +1,15 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ServerQuickStart } from '../../components/server-quick-start'
+import { HomebrewInstall } from '../../components/homebrew-install'
 import { featureCatalog } from '../../components/feature-catalog'
-import { guide, serverGuide, mobileGuide, repository } from '../../components/site-links'
+import {
+  guide,
+  serverGuide,
+  mobileGuide,
+  repository,
+  selfHostingGuide,
+} from '../../components/site-links'
 
 export const metadata: Metadata = {
   alternates: { canonical: '/docs/' },
@@ -30,9 +37,11 @@ export default function Docs() {
           <span>GETTING STARTED</span>
           <a href="#server">Quick server setup</a>
           <a href="#install">01 · Install</a>
+          <a href="#homebrew">Homebrew</a>
           <a href="#agents">02 · Connect agents</a>
           <a href="#project">03 · Add a project</a>
           <a href="#devices">04 · Pair a device</a>
+          <a href="#custom-services">Custom Connect & artifact store</a>
           <a href="#more">Feature guides ↗</a>
         </nav>
         <div className="docs-steps">
@@ -49,6 +58,7 @@ export default function Docs() {
               <a href={serverGuide}>server setup guide</a>.
             </p>
           </section>
+          <HomebrewInstall />
           <section id="agents">
             <span className="step-number">02</span>
             <h2>Connect your coding agents.</h2>
@@ -98,6 +108,44 @@ export default function Docs() {
               coming soon.
             </p>
           </section>
+          <section id="custom-services">
+            <p className="eyebrow">OPTIONAL · SELF-HOSTING</p>
+            <h2>Your Connect. Your artifact store.</h2>
+            <p>
+              Connect handles internet connection signaling and the account directory. The artifact
+              service stores only the saved versions you publish. Deploy them separately with their
+              own hostnames and persistent volumes; add Dovo Auth for account sign-in and hosted
+              sharing.
+            </p>
+            <ol className="custom-service-steps">
+              <li>
+                <strong>Deploy Connect and Auth.</strong> Build the supplied Docker services from
+                the repository root. Configure your Connect origin, GitHub OAuth callback and Auth
+                credentials, then enable WebSocket forwarding on your HTTPS reverse proxy.
+              </li>
+              <li>
+                <strong>Connect the artifact store.</strong> Set the same artifact origin and
+                generated service key on Connect and the artifact service. Set the Connect origin on
+                the artifact service and preserve its private <code>/data</code> volume. Storage
+                uses SQLite; no S3 bucket is needed.
+              </li>
+              <li>
+                <strong>Choose your services in Settings.</strong> Open Dovo services in desktop
+                Devices &amp; runtime or mobile Devices. Save your Dovo Connect URL, then sign in
+                and enable Connect on your computers. Leave the Artifacts URL blank for discovery,
+                or set it to require the same store configured on Connect. Accounts stay separate
+                for each Connect server. Existing computers need Connect disabled and enabled again
+                through LAN/VPN to change brokers.
+              </li>
+            </ol>
+            <p>
+              Keep existing databases and the explicit identity mapping when migrating accounts.
+              Local runtime pairing stays account-free, with HTTP supported on LAN and VPN.
+            </p>
+            <a className="text-link" href={selfHostingGuide}>
+              Custom Connect & artifact store setup commands ↗
+            </a>
+          </section>
         </div>
       </div>
       <section id="more" className="more-guides">
@@ -111,6 +159,10 @@ export default function Docs() {
           <a href={serverGuide}>
             <strong>Server & networking ↗</strong>
             <span>Standalone hosts, services and pairing.</span>
+          </a>
+          <a href={selfHostingGuide}>
+            <strong>Custom Connect & artifact store ↗</strong>
+            <span>Docker deployment, shared sign-in, client configuration and data migration.</span>
           </a>
           <a href={`${repository}/blob/main/docs/releases-and-updates.md`}>
             <strong>Releases & updates ↗</strong>

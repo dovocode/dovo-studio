@@ -10,6 +10,8 @@ provider setup, and feature manual. The guides below focus on particular workflo
 
 - [Run a server and pair devices](server-setup.md): source or release setup, workspace migration,
   lifecycle, LAN/VPN access, pairing, updates, and recovery.
+- [Custom Connect and artifact store](self-hosting.md): self-hosted Docker services, shared Auth,
+  desktop/mobile service URL settings, storage and account migration.
 - [Releases and updates](releases-and-updates.md): desktop releases, local iPhone installs, and Live
   Activities.
 - [Security and pairing](security-and-pairing.md): runtime trust boundaries, device credentials, and

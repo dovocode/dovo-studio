@@ -13,11 +13,12 @@ export const runtimeExtension = defineStudioExtension(
       navigationGroup: 'settings',
       settingsScope: 'computer',
       title: 'Devices & runtime',
+      settingsFields: ['Dovo Connect URL', 'Dovo Artifacts URL'],
       icon: 'runtime',
       order: 4,
       settingsSection: 'computers',
       keywords:
-        'computers pair phone connect devices trusted revoke network address tailscale netbird lan',
+        'computers pair phone connect devices trusted revoke network address tailscale netbird lan services custom self-hosted artifacts url',
       load: () => import('./view'),
     },
     ...runtimeSettings,

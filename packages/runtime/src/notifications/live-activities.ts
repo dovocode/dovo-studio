@@ -205,7 +205,10 @@ export class LiveActivities {
               }
             : undefined
         const result = yield* runtimeOperation(async () => {
-          if (row.managedToken && message) return this.managedSend(message, row.managedToken)
+          if (row.managedToken && message)
+            return row.managedOrigin
+              ? this.managedSend(message, row.managedToken, row.managedOrigin)
+              : this.managedSend(message, row.managedToken)
           if (this.relay.send && message) return this.relay.send(message)
           if (!this.apns) throw new Error('Live Activity push delivery is not configured')
           const status = await this.apns.send(row.pushToken, activityPayload(props, ended, now))

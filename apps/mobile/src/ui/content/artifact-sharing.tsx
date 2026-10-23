@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Alert, Linking, View } from 'react-native'
-import type { Artifact, PublishedArtifact } from '@dovo/protocol'
+import type { Artifact } from '@dovo/protocol'
 import { ArtifactFeedSetup } from './artifact-feed'
 import { useMobileAccount } from '../../runtime/connection/account-provider'
 import { Action } from '../controls/action'
 import { Text } from './text'
 import { useTheme } from '../theme'
+import { ArtifactSharedBadge } from './artifact-shared-badge'
 
 export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
   const account = useMobileAccount(),
@@ -13,11 +14,23 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
   const [origin, setOrigin] = useState(''),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false)
-  const [published, setPublished] = useState<PublishedArtifact>()
+  const existing = account.publications?.find(
+    (item) => item.sourceId === artifact.id && item.revision === artifact.revision,
+  )
+  const published =
+    account.directory && existing && origin && origin === account.publicationOrigin
+      ? {
+          publicationId: existing.id,
+          url: origin + '/s/' + existing.id,
+          manageUrl: origin + '/manage/' + existing.id,
+        }
+      : undefined
   const [retry, setRetry] = useState(0)
   useEffect(() => {
     let disposed = false
     setError('')
+    setOrigin('')
+    void account.client.refreshPublications()
     void account.client
       .artifactService()
       .then((value) => {
@@ -29,11 +42,8 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
     return () => {
       disposed = true
     }
-  }, [account.client, retry])
+  }, [account.client, retry, account.directory?.user.id])
   const sessionId = account.client.sessionId()
-  useEffect(() => {
-    setPublished(undefined)
-  }, [sessionId])
   const publish = () =>
     Alert.alert(
       'Publish private artifact?',
@@ -51,7 +61,6 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
             setError('')
             void account.client
               .publishArtifact(artifact, origin)
-              .then(setPublished)
               .catch((cause: unknown) =>
                 setError(cause instanceof Error ? cause.message : 'Publication failed'),
               )
@@ -63,6 +72,7 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
   return (
     <View style={{ gap: 8, paddingVertical: 12 }} accessibilityLabel="Hosted artifact sharing">
       <Text style={styles.title}>Hosted sharing</Text>
+      <ArtifactSharedBadge artifact={artifact} />
       <Text style={styles.muted}>
         Publish a private saved copy. It remains available independently of this computer. Manage
         account invitations and optional expiring links in your browser.
@@ -96,13 +106,17 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
       )}
       {published && (
         <>
-          <Text style={styles.text}>Private copy published.</Text>
+          <Text style={styles.text}>
+            Shared · Version {artifact.revision}. Hosted access is managed separately from this
+            local copy.
+          </Text>
           <Action
             label="Manage invitations and links"
             onPress={() => {
-              void Linking.openURL(published.manageUrl).catch((cause: unknown) =>
-                setError(String(cause)),
-              )
+              void account.client
+                .artifactManagementUrl(published.publicationId, origin)
+                .then((url) => Linking.openURL(url))
+                .catch((cause: unknown) => setError(String(cause)))
             }}
           />
           <Text selectable style={styles.muted}>
@@ -123,6 +137,9 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
         <Text accessibilityRole="alert" style={styles.error}>
           {error || account.error}
         </Text>
+      )}
+      {!!account.directory && !!account.publicationError && !error && (
+        <Text style={styles.muted}>{account.publicationError}</Text>
       )}
       {!!error && !origin && (
         <Action

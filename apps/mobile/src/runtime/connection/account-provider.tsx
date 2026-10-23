@@ -6,19 +6,30 @@ import * as SecureStore from 'expo-secure-store'
 import { useRuntime } from './provider'
 import { useAccount } from '@dovo/studio-core'
 import type { AccountStorage } from '@dovo/protocol'
+import { ACCOUNT_DIRECTORY_URL, connectServiceOrigin } from '@dovo/protocol'
+import * as Crypto from 'expo-crypto'
+import { useMobilePreferences } from '../preferences/app-preferences'
+async function storageKey(origin = ACCOUNT_DIRECTORY_URL) {
+  const normalized = connectServiceOrigin(origin)
+  return normalized === ACCOUNT_DIRECTORY_URL
+    ? 'dovo-account-session'
+    : 'dovo-account-session-' +
+        (await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, normalized))
+}
 const storage: AccountStorage = {
-  read: () => SecureStore.getItemAsync('dovo-account-session'),
-  write: (token) =>
+  read: async (origin) => SecureStore.getItemAsync(await storageKey(origin)),
+  write: async (token, origin) =>
     token === null
-      ? SecureStore.deleteItemAsync('dovo-account-session')
-      : SecureStore.setItemAsync('dovo-account-session', token, {
+      ? SecureStore.deleteItemAsync(await storageKey(origin))
+      : SecureStore.setItemAsync(await storageKey(origin), token, {
           keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
         }),
 }
 const open = (url: string) => Linking.openURL(url)
 
 export function MobileAccountProvider({ children }: { children: ReactNode }) {
-  const account = useAccount(storage, open)
+  const preferences = useMobilePreferences()
+  const account = useAccount(storage, open, preferences)
   const { syncAccountSession, registryLoaded, overviews } = useRuntime()
   const connections = overviews
     .map((source) =>
@@ -29,10 +40,10 @@ export function MobileAccountProvider({ children }: { children: ReactNode }) {
     .join(',')
   const session = account.client.sessionId()
   useEffect(() => {
-    if (account.loaded && registryLoaded)
+    if (preferences.ready && account.loaded && registryLoaded)
       void syncAccountSession(session).catch(() => {
         /* The runtime provider exposes persistence failures. */
       })
-  }, [account.loaded, session, registryLoaded, syncAccountSession, connections])
+  }, [account.loaded, session, registryLoaded, syncAccountSession, connections, preferences.ready])
   return <MobileAccountContext.Provider value={account}>{children}</MobileAccountContext.Provider>
 }

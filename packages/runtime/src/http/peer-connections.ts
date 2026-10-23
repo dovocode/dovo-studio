@@ -5,7 +5,6 @@ import { WebSocket } from 'ws'
 import type { RTCPeerConnection } from 'werift'
 import { Schema } from 'effect'
 import {
-  ACCOUNT_DIRECTORY_URL,
   decode,
   peerConfigSchema,
   peerOfferSchema,
@@ -218,7 +217,7 @@ export class PeerConnections {
     // either side to other TURN destinations. Omitted, both sides pin turn.dovo.studio.
     const hosts = process.env.DOVO_PEER_RELAY_HOSTS
     return decode(peerConfigSchema, {
-      origin: process.env.DOVO_CONNECT_ORIGIN ?? ACCOUNT_DIRECTORY_URL,
+      origin: this.internet.origin,
       secret: randomBytes(32).toString('hex'),
       ...(hosts !== undefined
         ? {

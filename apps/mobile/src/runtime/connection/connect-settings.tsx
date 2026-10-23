@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Alert, View } from 'react-native'
 import * as Crypto from 'expo-crypto'
-import { responses, runtimeComputerName } from '@dovo/protocol'
+import { responses, runtimeComputerName, ACCOUNT_DIRECTORY_URL } from '@dovo/protocol'
 import { useRuntime } from './provider'
 import { useMobileAccount } from './account-provider'
 import { preparePeerConnection } from './peer-transport'
@@ -54,12 +54,14 @@ export function ConnectSettings({ onBusyChange }: { onBusyChange?: (busy: boolea
   }
   const enable = async () => {
     if (!snapshot?.runtimeId) throw new Error('Reconnect to this computer first')
+    if (client.origin !== ACCOUNT_DIRECTORY_URL && !snapshot.internet?.origin)
+      throw new Error('Update this computer before using a custom Connect URL')
     await client.enablePairedInternet(
       snapshot.runtimeId,
       (session) =>
         call(
           '/api/runtime/internet/setup',
-          { session, consent: true, relay: 'dovo' },
+          { session, consent: true, relay: 'dovo', origin: client.origin },
           responses.internetSetup,
         ),
       (id, grant) =>
@@ -72,6 +74,9 @@ export function ConnectSettings({ onBusyChange }: { onBusyChange?: (busy: boolea
   return (
     <View style={{ gap: 8 }} accessibilityLabel={`Dovo Connect for ${name}`}>
       <Text style={styles.title}>Dovo Connect + relay</Text>
+      {!!snapshot?.internet?.origin && (
+        <Text style={styles.muted}>Connect server: {snapshot.internet.origin}</Text>
+      )}
       <Text style={styles.muted}>
         {snapshot?.internet?.enabled
           ? snapshot.internet.connected

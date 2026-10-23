@@ -143,6 +143,18 @@ export class ArtifactStore {
         return decode(artifactPublicationSchema, JSON.parse(row.metadata))
       })
   }
+  sources(owner: string) {
+    return this.db
+      .prepare('SELECT source,metadata FROM publications WHERE owner=? ORDER BY rowid DESC')
+      .all(owner)
+      .map((row) => {
+        const value = decode(Schema.Struct({ source: Schema.String, metadata: Schema.String }), row)
+        return {
+          ...decode(artifactPublicationSchema, JSON.parse(value.metadata)),
+          sourceId: value.source,
+        }
+      })
+  }
   own(id: string, user: string) {
     const publication = this.metadata(id)
     if (publication.owner !== user)

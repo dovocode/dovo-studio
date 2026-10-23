@@ -38,7 +38,7 @@ const app=createRoot(document.getElementById('app'));window.kind='desktop';windo
   [
     {
       path: '@dovo/studio-core',
-      contents: `export {useAccount} from '${root}/packages/studio-core/src/use-account';export const useWorkspace=()=>window.scope();export const useStudioHost=()=>({accountStorage:window.storage,openExternalLink:window.open});`,
+      contents: `export {useAccount} from '${root}/packages/studio-core/src/use-account';export const useWorkspace=()=>window.scope();export const useAppPreferences=()=>({connectOrigin:'',artifactsOrigin:''});export const useStudioHost=()=>({accountStorage:window.storage,openExternalLink:window.open});`,
     },
     {
       path: '@dovo/studio-ui',
@@ -135,6 +135,7 @@ try {
       session: writes.at(-2).input.session,
       consent: true,
       relay: 'dovo',
+      origin: 'https://connect.dovo.studio',
     })
     assert.match(writes.at(-2).input.session, /^[A-Za-z0-9_-]{43}$/)
     assert.equal(JSON.stringify(writes).includes('a'.repeat(43)), false)

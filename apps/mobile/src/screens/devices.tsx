@@ -1,4 +1,5 @@
 import { AccountPanel } from '../runtime/connection/account-panel'
+import { ServiceUrlSettings } from '../runtime/connection/service-url-settings'
 import { RuntimeIconSettings } from '../runtime/connection/runtime-icon-settings'
 import { runtimeIconName } from '../ui/content/runtime-icon'
 import {
@@ -141,6 +142,7 @@ export default function DevicesScreen() {
         keyboardDismissMode="interactive"
         automaticallyAdjustKeyboardInsets
       >
+        <ServiceUrlSettings />
         <AccountPanel
           onPair={(address) => {
             setDiscoveredAddress(address)

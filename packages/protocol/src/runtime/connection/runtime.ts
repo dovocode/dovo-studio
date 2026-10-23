@@ -116,6 +116,7 @@ export const peerUpgradeSchema = mutableStruct({
   peer: Schema.optional(peerConfigSchema),
 })
 export const internetStatusSchema = mutableStruct({
+  origin: Schema.optional(Schema.String),
   enabled: Schema.Boolean,
   connected: Schema.Boolean,
   error: Schema.String,

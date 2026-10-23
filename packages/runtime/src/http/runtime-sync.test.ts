@@ -317,9 +317,12 @@ it.each([false, true])(
     const credential = 'connect-status-phone-with-at-least-32-characters'
     const device = runtime.services.devices.add('Phone', credential)
     runtime.services.devices.add('Other phone', 'connect-status-other-device-token')
-    const status = vi
-      .spyOn(runtime.services.peers.internet, 'status')
-      .mockReturnValue({ enabled: false, connected: false, error: '' })
+    const status = vi.spyOn(runtime.services.peers.internet, 'status').mockReturnValue({
+      enabled: false,
+      connected: false,
+      error: '',
+      origin: 'https://connect.dovo.studio',
+    })
     const contains = vi.spyOn(runtime.services.peers.internet, 'contains').mockReturnValue(false)
     cleanup.push(() => {
       status.mockRestore()
@@ -334,16 +337,31 @@ it.each([false, true])(
     contains.mockImplementation((id) => accountDerived && id === device)
     phone.socket.send(JSON.stringify({ type: 'resume' }))
     const baseline = (await phone.wait('snapshot')).snapshot
-    expect(baseline.internet).toEqual({ enabled: false, connected: false, error: '' })
+    expect(baseline.internet).toEqual({
+      enabled: false,
+      connected: false,
+      error: '',
+      origin: 'https://connect.dovo.studio',
+    })
     expect(baseline.internetSetupSupported).toBe(!accountDerived)
     expect(baseline.relaySetupSupported).toBe(!accountDerived)
     expect(baseline.devices).toHaveLength(1)
     expect(baseline.pendingDevices).toEqual([])
     expect(baseline.pendingPeerUpgrades).toEqual([])
 
-    status.mockReturnValue({ enabled: true, connected: true, error: '' })
+    status.mockReturnValue({
+      enabled: true,
+      connected: true,
+      error: '',
+      origin: 'https://connect.dovo.studio',
+    })
     const connected = applySnapshotDelta(baseline, (await phone.wait('delta')).delta)
-    expect(connected.internet).toEqual({ enabled: true, connected: true, error: '' })
+    expect(connected.internet).toEqual({
+      enabled: true,
+      connected: true,
+      error: '',
+      origin: 'https://connect.dovo.studio',
+    })
     phone.frames.length = 0
     runtime.services.peers.relay.set({
       urls: ['turns:relay.example.com:5349?transport=tcp'],

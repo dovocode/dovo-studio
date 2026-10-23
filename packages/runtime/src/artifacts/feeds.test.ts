@@ -273,11 +273,42 @@ it('validates arguments and read-only declarations before calling upstream tools
   await expect(s.preview()).rejects.toThrow('read-only')
   expect(s.parameters).toHaveLength(0)
 })
-it.each(['device', 'account', 'tool', 'thread', 'disabled', 'deleted', 'readonly'] as const)(
+it('rejects a writer from another Connect origin before sending its grant anywhere', async () => {
+  const s = await setup()
+  await s.enable()
+  const plan = await s.preview()
+  const requests = vi.spyOn(globalThis, 'fetch')
+  try {
+    await expect(
+      s.feeds.enable(
+        plan.previewId,
+        { ...s.credential(), connectOrigin: 'https://other-connect.test' },
+        s.device,
+      ),
+    ).rejects.toThrow('different Connect URL')
+    expect(requests).not.toHaveBeenCalled()
+  } finally {
+    requests.mockRestore()
+  }
+})
+it.each([
+  'device',
+  'account',
+  'tool',
+  'thread',
+  'disabled',
+  'deleted',
+  'readonly',
+  'broker',
+] as const)(
   'stops background reads after %s revocation while retaining cached selected data',
   async (kind) => {
     const s = await setup()
     await s.enable()
+    if (kind === 'broker')
+      s.runtime.services.db
+        .prepare('UPDATE account_service_settings SET origin=?')
+        .run('https://other-connect.test')
     if (kind === 'deleted')
       s.runtime.services.artifacts.delete(s.ref.taskId, s.ref.id, s.ref.revision)
     if (kind === 'readonly')

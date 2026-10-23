@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import { mutableStruct, mutableArray, maxValue, minValue, refine } from '../shared/schema.js'
+import { connectServiceOriginSchema } from '../auth/service-urls.js'
 export const pushDeliveryTokenSchema = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/)),
 )
@@ -11,6 +12,7 @@ export const pushRegistrationSchema = refine(
     token: text(4096),
     environment: Schema.Literals(['sandbox', 'production']),
     managedToken: Schema.optional(pushDeliveryTokenSchema),
+    managedOrigin: Schema.optional(connectServiceOriginSchema),
     questionActions: Schema.optional(Schema.Literal(1)),
   }),
   (value) => value.platform !== 'ios' || /^[a-fA-F0-9]{32,512}$/.test(value.token),

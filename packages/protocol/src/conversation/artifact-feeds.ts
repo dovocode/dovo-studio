@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { connectServiceOriginSchema } from '../auth/service-urls.js'
 import {
   maxValue,
   minValue,
@@ -35,6 +36,7 @@ export const artifactFeedPreviewSchema = mutableStruct({
 export const artifactFeedPreviewResultSchema = mutableStruct({
   previewId: uuidSchema,
   data: Schema.Unknown,
+  connectOrigin: Schema.optional(connectServiceOriginSchema),
 })
 export const artifactFeedToolSchema = mutableStruct({
   server: Schema.String,
@@ -56,6 +58,7 @@ export const artifactFeedGrantSchema = mutableStruct({
 export const artifactFeedCredentialSchema = mutableStruct({
   ...artifactFeedGrantSchema.fields,
   generation: uuidSchema,
+  connectOrigin: Schema.optional(connectServiceOriginSchema),
 })
 export type ArtifactFeedCredential = typeof artifactFeedCredentialSchema.Type
 export const artifactFeedStatusSchema = mutableStruct({

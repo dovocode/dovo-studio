@@ -54,9 +54,6 @@ export function TurnModelControls({
   }
   return (
     <>
-      <span className="text-xs text-muted-foreground" title="Applies to this message only">
-        Next turn
-      </span>
       <ComposerSettingsControls
         modelOnly={!full}
         value={selected}

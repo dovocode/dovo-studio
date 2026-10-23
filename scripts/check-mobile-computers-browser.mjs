@@ -95,6 +95,7 @@ const stubs = [
 // These editors are opened from the screen but have independent interaction coverage.
 for (const [path, name] of [
   ['../runtime/connection/runtime-icon-settings', 'RuntimeIconSettings'],
+  ['../runtime/connection/service-url-settings', 'ServiceUrlSettings'],
   ['./device-host-settings', 'DeviceHostSettings'],
   ['../runtime/preferences/task-default-settings', 'TaskDefaultSettings'],
   ['../runtime/connection/runtime-preferences', 'RuntimePreferences'],

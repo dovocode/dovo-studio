@@ -21,6 +21,7 @@ import type { WorkspaceStore } from '../storage/workspace.js'
 import { HttpError } from '../errors.js'
 
 const configSchema = mutableStruct({
+  connectOrigin: Schema.optional(Schema.String),
   ...artifactReadSchema.fields,
   query: artifactFeedQuerySchema,
   credential: artifactFeedCredentialSchema,
@@ -50,6 +51,7 @@ export class ArtifactFeeds {
     private devices: Devices,
     private workspace: WorkspaceStore,
     private enabled: () => boolean,
+    private connectOrigin = () => process.env.DOVO_CONNECT_ORIGIN ?? ACCOUNT_DIRECTORY_URL,
   ) {
     db.exec(`CREATE TABLE IF NOT EXISTS artifact_feeds(publication TEXT PRIMARY KEY,task TEXT NOT NULL,
       artifact TEXT NOT NULL,revision INTEGER NOT NULL,device TEXT NOT NULL,config TEXT,next INTEGER NOT NULL,error TEXT NOT NULL);`)
@@ -94,6 +96,7 @@ export class ArtifactFeeds {
       const previewId = randomUUID()
       this.previews.set(previewId, {
         config: {
+          connectOrigin: this.connectOrigin(),
           ...ref,
           revision: saved.revision,
           query,
@@ -103,7 +106,7 @@ export class ArtifactFeeds {
         data: result.data,
         expires: Date.now() + 600_000,
       })
-      return { previewId, data: result.data }
+      return { previewId, data: result.data, connectOrigin: this.connectOrigin() }
     } finally {
       this.previewReads--
     }
@@ -140,19 +143,23 @@ export class ArtifactFeeds {
     return (await response.json()) as unknown
   }
   private async lease(config: Config, signal: AbortSignal) {
+    const origin = config.connectOrigin ?? process.env.DOVO_CONNECT_ORIGIN ?? ACCOUNT_DIRECTORY_URL
+    if (origin !== this.connectOrigin())
+      throw new FeedAccessError(409, 'Connect URL changed. Preview and approve this feed again.')
+    if (config.credential.connectOrigin && config.credential.connectOrigin !== origin)
+      throw new FeedAccessError(
+        409,
+        'This computer uses a different Connect URL. Configure matching services and approve again.',
+      )
     if (config.credential.expiresAt <= Date.now())
       throw new FeedAccessError(401, 'Feed account session expired')
     // Validate the destination with the runtime's trusted broker before sending a token there.
-    const response = await fetch(
-      artifactServiceOrigin(process.env.DOVO_CONNECT_ORIGIN ?? ACCOUNT_DIRECTORY_URL) +
-        '/v1/artifacts/feed-session',
-      {
-        headers: { Authorization: 'Bearer ' + config.credential.token },
-        redirect: 'error',
-        credentials: 'omit',
-        signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-      },
-    )
+    const response = await fetch(artifactServiceOrigin(origin) + '/v1/artifacts/feed-session', {
+      headers: { Authorization: 'Bearer ' + config.credential.token },
+      redirect: 'error',
+      credentials: 'omit',
+      signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    })
     if (!response.ok)
       throw new FeedAccessError(
         response.status,

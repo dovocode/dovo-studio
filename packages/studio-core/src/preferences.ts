@@ -1,5 +1,6 @@
 import { accessibleThemeColors, statusColors } from './accessibility'
 import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
+import { serviceUrlsSchema } from '@dovo/protocol'
 import { dictationLanguageSchema, sharedSettingsSchema } from '@dovo/protocol'
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
@@ -21,6 +22,7 @@ import {
  * They never sync to computers; each device keeps its own. */
 const schema = mutableStruct({
   preferredRepositoryOpenTarget: Schema.optional(repositoryOpenTargetSchema),
+  ...serviceUrlsSchema.fields,
   sharedScopedSettings: sharedSettingsSchema,
   globalModelPreferencesUpdatedAt: Schema.Number,
   globalModelPreferences: Schema.NullOr(modelPreferencesSchema),
@@ -118,6 +120,8 @@ const schema = mutableStruct({
 })
 export type AppPreferences = Schema.Schema.Type<typeof schema>
 export const defaultAppPreferences: AppPreferences = {
+  connectOrigin: '',
+  artifactsOrigin: '',
   sharedScopedSettings: [],
   globalModelPreferencesUpdatedAt: 0,
   globalModelPreferences: null,

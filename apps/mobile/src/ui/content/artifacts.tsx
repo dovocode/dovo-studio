@@ -1,3 +1,4 @@
+import { ArtifactSharedBadge } from './artifact-shared-badge'
 import { SafeModal } from '../layout/safe-modal'
 import { memo, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View } from 'react-native'
@@ -77,6 +78,7 @@ export const ArtifactCard = memo(function ArtifactCard({
           <Text style={styles.muted}>
             {artifactLabel(reference)} · Version {reference.revision}
           </Text>
+          <ArtifactSharedBadge artifact={reference} />
         </View>
         <Icon name="external" size={16} color={colors.muted} />
       </Pressable>
@@ -616,6 +618,7 @@ export function ArtifactBrowser({
                   <Text style={styles.muted}>
                     {artifactLabel(item)} · {new Date(item.updatedAt).toLocaleString()}
                   </Text>
+                  <ArtifactSharedBadge artifact={item} />
                 </View>
                 {(picker === 'artifacts' ? item.id === id : item.revision === revision) && (
                   <Icon name="check" color={colors.accent} />

@@ -1,5 +1,6 @@
+import { useAppPreferences } from '@dovo/studio-core'
 import { useState } from 'react'
-import { accountServerAddresses, responses } from '@dovo/protocol'
+import { accountServerAddresses, responses, ACCOUNT_DIRECTORY_URL } from '@dovo/protocol'
 import { useAccount, useStudioHost, useRuntimeSources, useWorkspace } from '@dovo/studio-core'
 import { Button, ChoicePicker } from '@dovo/studio-ui'
 export function AccountPanel({ onPair }: { onPair: (address: string) => void }) {
@@ -22,9 +23,11 @@ function AccountPanelContent({
   open: (url: string) => Promise<void>
   onPair: (address: string) => void
 }) {
+  const services = useAppPreferences()
   const { client, directory, login, busy, error, loaded, deletionPending } = useAccount(
     storage,
     open,
+    services,
   )
   const sources = useRuntimeSources()
   const { snapshot, request, connected, activeRuntimeId, runtimeRegistry, refreshRuntime } =
@@ -35,9 +38,15 @@ function AccountPanelContent({
     setInternetBusy(true)
     setInternetError('')
     try {
+      if (enabled && client.origin !== ACCOUNT_DIRECTORY_URL && !snapshot?.internet?.origin)
+        throw new Error('Update this computer before using a custom Connect URL')
       if (enabled)
         await client.enableInternet((accountToken) =>
-          request('/api/runtime/internet', { enabled, accountToken }, responses.internetStatus),
+          request(
+            '/api/runtime/internet',
+            { enabled, accountToken, origin: client.origin },
+            responses.internetStatus,
+          ),
         )
       else {
         await request('/api/runtime/internet', { enabled }, responses.internetStatus)

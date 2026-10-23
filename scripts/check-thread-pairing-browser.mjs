@@ -24,6 +24,7 @@ async function bundle(mobile) {
     'expo-crypto': 'export const randomUUID=()=>"draft-id";',
     'expo-router': `export const Redirect=()=>null;export const useLocalSearchParams=()=>window.params;export const router={setParams:changes=>{window.params={...window.params,...changes};window.render();},replace:target=>window.routes.push(target),push:target=>window.routes.push(target),canGoBack:()=>false};`,
     './account-panel': 'export const AccountPanel=()=>null;',
+    './service-url-settings': 'export const ServiceUrlSettings=()=>null;',
     './runtime-icon-settings': 'export const RuntimeIconSettings=()=>null;',
     './runtime-diagnostics': 'export const RuntimeDiagnosticsPanel=()=>null;',
     './settings-views': 'export const runtimeSettings=[];',

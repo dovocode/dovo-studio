@@ -443,6 +443,23 @@ figcaption {
   margin: 10px 0 0;
   font-size: 14px;
 }
+.custom-service-steps {
+  list-style: decimal;
+  padding-left: 22px;
+  color: var(--site-muted);
+  font-size: 15px;
+  line-height: 1.8;
+}
+.custom-service-steps li + li {
+  margin-top: 16px;
+}
+.custom-service-steps strong {
+  color: var(--text);
+}
+.docs-steps .server-setup {
+  border-top: 0;
+  padding-top: 0;
+}
 .more-guides {
   padding-top: 30px;
 }
@@ -848,7 +865,8 @@ figcaption {
 .command-panel code {
   font: inherit;
 }
-.command-panel .copy-error {
+.command-panel .copy-error,
+.command-panel .command-detail {
   margin: 0;
   padding: 0 25px 20px;
   font-size: 12px;

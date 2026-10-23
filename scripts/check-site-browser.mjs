@@ -68,9 +68,33 @@ try {
     for (const route of ['/', '/download/', '/docs/']) {
       await page.goto(origin + route)
       await page.getByRole('heading', { level: 1 }).waitFor()
-      const command = await page.locator('.command-panel pre').textContent()
+      const command = await page.locator('#server .command-panel pre').textContent()
       assert.match(command, /--channel stable --host 0\.0\.0\.0/)
       execFileSync('bash', ['-n', '-c', command])
+      if (route !== '/') {
+        const homebrew = page.locator('#homebrew')
+        for (const pre of await homebrew.locator('pre').all()) {
+          const commands = await pre.textContent()
+          assert.match(
+            commands,
+            /brew tap dovocode\/studio https:\/\/github.com\/dovocode\/dovo-studio/,
+          )
+          execFileSync('bash', ['-n', '-c', commands])
+        }
+        assert.match(
+          await homebrew.getByLabel('Desktop app Homebrew commands', { exact: true }).textContent(),
+          /brew install --cask dovocode\/studio\/dovo-studio$/,
+        )
+        assert.equal(
+          (await page
+            .getByRole('link', { name: /custom Connect.*artifact store.*instructions/i })
+            .count()) +
+            (await page
+              .getByRole('link', { name: /Custom Connect.*artifact store setup commands/ })
+              .count()),
+          1,
+        )
+      }
       assert.equal(
         await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
         'rgb(8, 8, 8)',
@@ -95,6 +119,14 @@ try {
   await page.goto(origin + '/')
   await page.getByRole('link', { name: 'Get Dovo Studio' }).click()
   await page.getByRole('button', { name: /Nightly Try/ }).click()
+  assert.match(
+    await page.getByLabel('Desktop app Homebrew commands', { exact: true }).textContent(),
+    /brew install --cask dovocode\/studio\/dovo-studio-nightly$/,
+  )
+  assert.match(
+    await page.getByLabel('Server only Homebrew commands', { exact: true }).textContent(),
+    /dovo-server-nightly service install --host 0\.0\.0\.0\ndovo-server-nightly pair$/,
+  )
   const latest = page.getByRole('link', { name: /Latest nightly: 0.0.9-nightly.2/ })
   await latest.waitFor()
   assert.equal(
@@ -122,8 +154,27 @@ try {
     'https://github.com/dovocode/dovo-studio/releases?q=nightly&expanded=true',
   )
   await page.goto(origin + '/docs/')
+  const homebrew = page.locator('#homebrew')
+  await homebrew.getByRole('button', { name: 'Nightly', exact: true }).click()
+  const brewCommand = await homebrew
+    .getByLabel('Server only Homebrew commands', { exact: true })
+    .textContent()
+  assert.match(brewCommand, /brew install dovocode\/studio\/dovo-server-nightly/)
+  execFileSync('bash', ['-n', '-c', brewCommand])
+  await homebrew.getByRole('button', { name: 'Copy server only Homebrew commands' }).click()
+  await homebrew
+    .getByRole('button', { name: 'Copy server only Homebrew commands' })
+    .getByText('Copied')
+    .waitFor()
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), brewCommand)
+  await page.getByRole('link', { name: 'Custom Connect & artifact store', exact: true }).click()
+  await page.getByRole('heading', { name: 'Your Connect. Your artifact store.' }).waitFor()
+  assert.match(
+    await page.locator('#custom-services').textContent(),
+    /Choose your services in Settings/,
+  )
   await page.getByRole('button', { name: 'Nightly server', exact: true }).click()
-  const nightlyCommand = await page.locator('.command-panel pre').textContent()
+  const nightlyCommand = await page.locator('#server .command-panel pre').textContent()
   execFileSync('bash', ['-n', '-c', nightlyCommand])
   assert.match(nightlyCommand, /--channel nightly --host 0\.0\.0\.0/)
   assert.match(nightlyCommand, /dovo-server-nightly" pair/)
@@ -131,7 +182,7 @@ try {
   await page.getByRole('button', { name: 'Copied', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), nightlyCommand)
   await page.getByRole('button', { name: 'Stable server', exact: true }).click()
-  const stableCommand = await page.locator('.command-panel pre').textContent()
+  const stableCommand = await page.locator('#server .command-panel pre').textContent()
   assert.match(stableCommand, /dovo-server" pair/)
   await page.evaluate(() =>
     Object.defineProperty(navigator, 'clipboard', {
@@ -145,6 +196,8 @@ try {
   )
   await page.getByRole('button', { name: 'Copy command', exact: true }).click()
   await page.getByRole('status').getByText('Clipboard unavailable.', { exact: false }).waitFor()
+  await homebrew.getByRole('button', { name: 'Copy desktop app Homebrew commands' }).click()
+  await homebrew.getByRole('status').getByText('Clipboard unavailable.', { exact: false }).waitFor()
   assert.equal((await page.request.get(origin + '/robots.txt')).status(), 200)
   assert.match(
     await (await page.request.get(origin + '/sitemap.xml')).text(),
@@ -376,7 +429,7 @@ try {
     true,
   )
   console.log(
-    'Dovo site: production routes, canonical URLs, responsive layouts, navigation, stable/nightly selection, published release filtering, API failure fallback, actual screenshots, WebGL rendering/pause/context recovery/fallback and fleet playback/stages/reduced motion and copyable stable/nightly server setup passed.',
+    'Dovo site: production routes, canonical URLs, responsive layouts, navigation, stable/nightly selection, published release filtering, API failure fallback, actual screenshots, WebGL rendering/pause/context recovery/fallback and fleet playback/stages/reduced motion, copyable stable/nightly Linux and Homebrew setup, and custom service instructions passed.',
   )
 } finally {
   await browser.close()

@@ -33,6 +33,7 @@ import { ArtifactSnapshot } from './chat/artifact-snapshot'
 import { ArtifactLibraryActions } from './chat/artifact-library-actions'
 import { ArtifactBrowser } from './chat/artifacts'
 import { ArtifactIcon } from './chat/artifact-presentation'
+import { ArtifactSharedBadge } from './chat/artifact-shared-badge'
 import {
   artifactLibraryMemory,
   artifactOwnerKey,
@@ -499,6 +500,7 @@ export default function ArtifactsView() {
                                 Scheduled deletion: {new Date(artifact.deleteAt).toLocaleString()}
                               </p>
                             )}
+                            <ArtifactSharedBadge artifact={artifact} />
                           </div>
                         </button>
                         <ArtifactLibraryActions

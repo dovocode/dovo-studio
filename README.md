@@ -16,9 +16,22 @@ data there.
 - For iPhone, use the
   [local iPhone install guide](docs/releases-and-updates.md#local-iphone-updates).
 
+On Apple silicon macOS 13 or later, you can also install the desktop app with Homebrew:
+
+```sh
+brew tap dovocode/studio https://github.com/dovocode/dovo-studio
+brew install --cask dovocode/studio/dovo-studio
+```
+
+For Nightly, use `dovo-studio-nightly` instead. The
+[Homebrew server instructions](docs/server-setup.md#homebrew) cover standalone macOS/Linux runtimes,
+services and pairing. To operate your own optional internet broker and publishing service, see
+[Custom Connect and artifact store](docs/self-hosting.md).
+
 Dovo connects directly to its runtime over your LAN, Tailscale, NetBird, or an optional HTTPS
-endpoint. Pairing codes and device credentials are required. There is no Dovo account or cloud
-relay; HTTP remains supported for private LAN and VPN connections.
+endpoint. Pairing codes and device credentials are required for paired access; HTTP remains
+supported for private LAN and VPN connections without an account. Optional Dovo Connect adds
+account-authorized internet connections and relay fallback.
 
 ## Develop
 

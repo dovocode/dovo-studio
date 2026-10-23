@@ -245,9 +245,9 @@ arm64/x64, with Node 24 and native dependencies included. Windows archives are Z
 (glibc); Alpine/musl is not supported. Agent CLIs and Git remain host tools, so existing signed-in
 accounts and project directories work.
 
-**These commands become available after the first signed stable release is published.** A source
-push does not make downloadable installers. The `Release` workflow creates a draft containing server
-archives, the signed desktop ZIP/DMG and a desktop mise archive. Publish only after all jobs
+For installation, service setup and pairing, see the [Homebrew guide](server-setup.md#homebrew). A
+source push does not make downloadable installers. The `Release` workflow creates a draft containing
+server archives, the signed desktop ZIP/DMG and a desktop mise archive. Publish only after all jobs
 succeed. `Update Homebrew and mise distribution` then computes SHA-256 hashes, attaches `mise.toml`
 and `SHA256SUMS`, and commits `Formula/` and `Casks/` to the default branch. It refuses incomplete
 or older releases. The same repository acts as the tap; no separate tap token is needed. If branch

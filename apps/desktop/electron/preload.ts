@@ -184,8 +184,9 @@ contextBridge.exposeInMainWorld('dovo', {
   runtimeNetwork: (address: string, enabled?: boolean, port?: number): Promise<unknown> =>
     ipcRenderer.invoke('runtime:network', address, enabled, port),
   accountStorage: {
-    read: (): Promise<string | null> => ipcRenderer.invoke('account:read'),
-    write: (token: string | null): Promise<void> => ipcRenderer.invoke('account:write', token),
+    read: (origin?: string): Promise<string | null> => ipcRenderer.invoke('account:read', origin),
+    write: (token: string | null, origin?: string): Promise<void> =>
+      ipcRenderer.invoke('account:write', token, origin),
   },
   readRuntimeRegistry: (): Promise<string | null> => ipcRenderer.invoke('runtime:registry-read'),
   writeRuntimeRegistry: (value: string, before: string): Promise<string> =>

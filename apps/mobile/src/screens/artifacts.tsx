@@ -1,3 +1,4 @@
+import { ArtifactSharedBadge } from '../ui/content/artifact-shared-badge'
 import { artifactLabel, artifactFormatLabels, runtimeComputerName } from '@dovo/protocol'
 import { router } from 'expo-router'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
@@ -274,6 +275,7 @@ export default function ArtifactsScreen() {
                 <Text style={{ fontSize: 11, color: colors.muted, textTransform: 'capitalize' }}>
                   {item.artifact.threadState}
                 </Text>
+                <ArtifactSharedBadge artifact={item.artifact} />
                 {item.artifact.deleteAt && (
                   <Text style={styles.error}>
                     Scheduled deletion: {new Date(item.artifact.deleteAt).toLocaleDateString()}

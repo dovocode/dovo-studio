@@ -56,7 +56,23 @@ export class AccountInternet {
   private error = ''
   private readonly privateKey: Uint8Array
   readonly publicKey: string
-  private readonly origin = process.env.DOVO_CONNECT_ORIGIN ?? ACCOUNT_DIRECTORY_URL
+  get origin(): string {
+    const row = decode(
+      Schema.Struct({ origin: Schema.String }),
+      this.db.prepare('SELECT origin FROM account_service_settings WHERE id=1').get(),
+    )
+    return row.origin
+  }
+  private setOrigin(origin?: string) {
+    if (origin === undefined || origin === this.origin) return
+    decode(peerConfigSchema.fields.origin, origin)
+    if (this.state || this.enabling || this.setups.size)
+      throw new HttpError(
+        409,
+        'Disable Dovo Connect and finish pending setup before changing its URL',
+      )
+    this.db.prepare('UPDATE account_service_settings SET origin=? WHERE id=1').run(origin)
+  }
   constructor(
     private readonly db: Database.Database,
     private readonly devices: Devices,
@@ -64,8 +80,12 @@ export class AccountInternet {
     private readonly identity: ReturnType<typeof peerRelayIdentity>,
   ) {
     db.exec(`CREATE TABLE IF NOT EXISTS account_internet(id INTEGER PRIMARY KEY CHECK(id=1),secret TEXT NOT NULL,state TEXT);
+      CREATE TABLE IF NOT EXISTS account_service_settings(id INTEGER PRIMARY KEY CHECK(id=1),origin TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS account_internet_devices(request TEXT PRIMARY KEY,device TEXT NOT NULL,answer TEXT NOT NULL,session TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS account_internet_blocks(session TEXT PRIMARY KEY);`)
+    db.prepare('INSERT OR IGNORE INTO account_service_settings VALUES(1,?)').run(
+      process.env.DOVO_CONNECT_ORIGIN ?? ACCOUNT_DIRECTORY_URL,
+    )
     let row = db.prepare('SELECT secret,state FROM account_internet WHERE id=1').get()
     if (!row) {
       db.prepare('INSERT INTO account_internet VALUES(1,?,NULL)').run(
@@ -94,6 +114,7 @@ export class AccountInternet {
       enabled: !!this.state,
       connected: !!this.state && this.lease > Date.now(),
       error: this.error,
+      origin: this.origin,
     }
   }
   contains(deviceId: string) {
@@ -117,12 +138,19 @@ export class AccountInternet {
     this.running = true
     if (this.state) void this.poll()
   }
-  prepareSetup(deviceId: string, session: string, runtimeId: string, name: string) {
+  prepareSetup(
+    deviceId: string,
+    session: string,
+    runtimeId: string,
+    name: string,
+    origin?: string,
+  ) {
     if (!this.running) throw new HttpError(409, 'Internet connections are not running')
     if (this.state || this.enabling)
       throw new HttpError(409, 'Dovo Connect is already enabled or being configured')
     for (const [device, setup] of this.setups)
       if (Date.now() - setup.registration.timestamp >= 60000) this.setups.delete(device)
+    this.setOrigin(origin)
     const previous = this.setups.get(deviceId)
     if (previous?.session === session)
       return { id: previous.id, registration: previous.registration }
@@ -196,10 +224,14 @@ export class AccountInternet {
     this.error = ''
     void this.poll()
   }
-  async enable(token: string, runtimeId: string, name: string) {
+  async enable(token: string, runtimeId: string, name: string, origin?: string) {
     if (!this.running) throw new Error('Internet connections are not running')
     if (this.state || this.enabling)
-      throw new Error('Dovo Connect is already enabled. Disable it before changing accounts.')
+      throw new HttpError(
+        409,
+        'Dovo Connect is already enabled. Disable it before changing accounts or URLs.',
+      )
+    this.setOrigin(origin)
     this.enabling = true
     try {
       const generation = this.generation

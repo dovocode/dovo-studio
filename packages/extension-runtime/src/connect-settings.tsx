@@ -1,5 +1,6 @@
+import { useAppPreferences } from '@dovo/studio-core'
 import { useRef, useState } from 'react'
-import { responses } from '@dovo/protocol'
+import { responses, ACCOUNT_DIRECTORY_URL } from '@dovo/protocol'
 import { useAccount, useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { RelaySettings } from './relay-settings'
@@ -23,9 +24,11 @@ function ConnectSettingsContent({
   storage: NonNullable<ReturnType<typeof useStudioHost>['accountStorage']>
   open: (url: string) => Promise<void>
 }) {
+  const services = useAppPreferences()
   const { client, directory, login, loaded, busy, error, deletionPending } = useAccount(
     storage,
     open,
+    services,
   )
   const { snapshot, request, connected, activeRuntimeId, runtimeRegistry, refreshRuntime } =
     useWorkspace()
@@ -42,12 +45,14 @@ function ConnectSettingsContent({
     setSaving(true)
     setFailure('')
     try {
+      if (client.origin !== ACCOUNT_DIRECTORY_URL && !snapshot.internet?.origin)
+        throw new Error('Update this computer before using a custom Connect URL')
       await client.enablePairedInternet(
         snapshot.runtimeId,
         (session) =>
           request(
             '/api/runtime/internet/setup',
-            { session, consent: true, relay: 'dovo' },
+            { session, consent: true, relay: 'dovo', origin: client.origin },
             responses.internetSetup,
           ),
         (id, grant) =>
@@ -65,6 +70,11 @@ function ConnectSettingsContent({
   return (
     <section className="space-y-2 rounded-md border p-3" aria-label={`Dovo Connect for ${name}`}>
       <h2 className="text-sm font-medium">Dovo Connect + relay</h2>
+      {snapshot?.internet?.origin && (
+        <p className="break-all text-xs text-muted-foreground">
+          Connect server: {snapshot.internet.origin}
+        </p>
+      )}
       <p className="text-xs text-muted-foreground">
         {snapshot?.internet?.enabled
           ? snapshot.internet.connected

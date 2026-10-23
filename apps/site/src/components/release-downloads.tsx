@@ -4,6 +4,7 @@ import { Button, Card } from '@dovo/web-ui'
 
 import { useEffect, useState } from 'react'
 import { releases, repository } from './site-links'
+import { HomebrewInstall } from './homebrew-install'
 
 type Nightly = { name: string; url: string; publishedAt: string }
 
@@ -195,6 +196,7 @@ export function ReleaseDownloads() {
           → Updates.
         </p>
       )}
+      <HomebrewInstall channel={channel} />
     </>
   )
 }

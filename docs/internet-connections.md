@@ -158,18 +158,24 @@ not desktop endpoint failover. Diagnose each transport independently with the re
 
 ## Operating Connect
 
-The runtime makes an outbound WSS connection to `/v1/peer` at `https://connect.dovo.studio`.
-`DOVO_CONNECT_ORIGIN` can select another HTTPS signaling origin. Loopback HTTP is accepted only for
-local integration testing. The reverse proxy must forward WebSocket upgrades and allow idle
-connections longer than the 25-second heartbeat. Use one signaling instance: room state is bounded,
-ephemeral and in memory, and is not replicated between processes. Account-authorized connections
-require a signed-in session and explicit owner enablement. Legacy QR-based internet pairing and
-operator-approved relay installations remain supported for existing connections. Do not log
-WebSocket bodies or pairing links. Set `DOVO_CONNECT_TRUSTED_PROXIES` to the exact immediate proxy
-address after verifying that proxy sanitizes client-supplied forwarded headers. Never trust all
-private networks or arbitrary `X-Forwarded-For` values. With no trusted proxy configured, forwarded
-headers are ignored safely, but clients behind one proxy share its connection and request limits.
-Recheck the address when a container changes networks.
+See [Custom Connect and artifact store](self-hosting.md) for deployment commands, shared sign-in and
+selecting your Connect endpoint in desktop/mobile Settings.
+
+The runtime makes an outbound WSS connection to `/v1/peer` at `https://connect.dovo.studio`. Choose
+another HTTPS signaling origin in **Settings → Devices & runtime → Dovo services** (**Settings →
+Devices** on mobile). Explicit Connect setup saves that origin on the runtime; already-enabled
+computers keep their broker until disabled and enabled again. `DOVO_CONNECT_ORIGIN` supplies the
+initial/headless default before first startup. Loopback HTTP is accepted only for local integration
+testing. The reverse proxy must forward WebSocket upgrades and allow idle connections longer than
+the 25-second heartbeat. Use one signaling instance: room state is bounded, ephemeral and in memory,
+and is not replicated between processes. Account-authorized connections require a signed-in session
+and explicit owner enablement. Legacy QR-based internet pairing and operator-approved relay
+installations remain supported for existing connections. Do not log WebSocket bodies or pairing
+links. Set `DOVO_CONNECT_TRUSTED_PROXIES` to the exact immediate proxy address after verifying that
+proxy sanitizes client-supplied forwarded headers. Never trust all private networks or arbitrary
+`X-Forwarded-For` values. With no trusted proxy configured, forwarded headers are ignored safely,
+but clients behind one proxy share its connection and request limits. Recheck the address when a
+container changes networks.
 
 There are no media capture permissions for this transport: it uses data channels only. Mobile
 requires a new native build containing `react-native-webrtc` and `react-native-tcp-socket`; an

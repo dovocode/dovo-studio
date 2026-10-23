@@ -15,12 +15,13 @@ const artifact: Artifact = {
   createdAt: '2026-10-21',
   updatedAt: '2026-10-21',
 }
-function fixture({ changed = false, revoke = false } = {}) {
+function fixture({ changed = false, revoke = false, override = '' } = {}) {
   const calls: Array<{ url: string; init?: RequestInit }> = []
   const client = new AccountClient(
     { read: async () => account, write: async () => {} },
     async () => {},
     'https://connect.test',
+    override,
   )
   vi.stubGlobal(
     'fetch',
@@ -87,4 +88,86 @@ it('cancels publication after account revocation before any artifact upload', as
     'cancelled',
   )
   expect(f.calls.some((call) => call.url.endsWith('/v1/publications'))).toBe(false)
+})
+
+it('pins a custom artifact store before sending sharing credentials or content', async () => {
+  const f = fixture({ override: 'https://private-artifacts.test' })
+  await f.client.load()
+  await expect(f.client.artifactService()).rejects.toThrow('does not match Connect')
+  await expect(f.client.publishArtifact(artifact, 'https://artifacts.test')).rejects.toThrow(
+    'does not match Settings',
+  )
+  expect(f.calls.every((call) => call.url.startsWith('https://connect.test/'))).toBe(true)
+})
+
+it('restores hosted versions using a restricted grant, refreshes deletions and clears status on signout', async () => {
+  const f = fixture()
+  const indexCalls: RequestInit[] = []
+  let publications = [
+    {
+      id: artifact.id,
+      sourceId: artifact.id,
+      title: artifact.title,
+      format: artifact.format,
+      revision: 1,
+      createdAt: artifact.createdAt,
+    },
+  ]
+  const original = fetch
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (
+        (url instanceof Request ? url.url : url.toString()).endsWith('/v1/publications/sources')
+      ) {
+        indexCalls.push(init ?? {})
+        return Response.json({ publications })
+      }
+      return original(url, init)
+    }),
+  )
+  await f.client.load()
+  await f.client.refreshPublications()
+  expect(f.client.snapshot()).toMatchObject({
+    publications,
+    publicationOrigin: 'https://artifacts.test',
+    publicationError: '',
+  })
+  expect(new Headers(indexCalls[0].headers).get('Authorization')).toBe('Bearer ' + scoped)
+  expect(indexCalls[0]).toMatchObject({ credentials: 'omit', redirect: 'error' })
+  publications = []
+  await f.client.refreshPublications()
+  expect(f.client.snapshot().publications).toEqual([])
+  await f.client.publishArtifact(artifact, 'https://artifacts.test')
+  expect(f.client.snapshot().publications).toEqual([
+    expect.objectContaining({ sourceId: artifact.id, revision: 2 }),
+  ])
+  await f.client.signOut()
+  expect(f.client.snapshot()).toMatchObject({ publications: null, publicationOrigin: '' })
+})
+
+it('keeps a newly shared version when an older publication index finishes later', async () => {
+  const f = fixture()
+  const original = fetch
+  let respond: ((response: Response) => void) | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if ((url instanceof Request ? url.url : url.toString()).endsWith('/v1/publications/sources'))
+        return new Promise<Response>((resolve) => {
+          respond = resolve
+        })
+      return original(url, init)
+    }),
+  )
+  await f.client.load()
+  const refresh = f.client.refreshPublications()
+  expect(f.client.refreshPublications()).toBe(refresh)
+  await vi.waitFor(() => expect(respond).toBeTypeOf('function'))
+  await f.client.publishArtifact(artifact, 'https://artifacts.test')
+  respond!(Response.json({ publications: [] }))
+  await refresh
+  expect(f.client.snapshot().publications).toEqual([
+    expect.objectContaining({ sourceId: artifact.id, revision: 2 }),
+  ])
 })

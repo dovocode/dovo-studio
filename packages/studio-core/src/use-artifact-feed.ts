@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Schema } from 'effect'
 import {
   decode,
+  ACCOUNT_DIRECTORY_URL,
   artifactFeedQuerySchema,
   artifactFeedToolsSchema,
   artifactFeedPreviewResultSchema,
@@ -33,7 +34,12 @@ export function useArtifactFeed({
     [argumentsText, setArguments] = useState('{}'),
     [pointer, setPointer] = useState(''),
     [seconds, setSeconds] = useState(60)
-  const [preview, setPreview] = useState<{ signature: string; previewId: string; data: unknown }>()
+  const [preview, setPreview] = useState<{
+    signature: string
+    previewId: string
+    data: unknown
+    connectOrigin?: string
+  }>()
   const [status, setStatus] = useState<typeof artifactFeedStatusSchema.Type>({
     enabled: false,
     error: '',
@@ -135,6 +141,10 @@ export function useArtifactFeed({
       if (!plan) throw new Error('Read and review a fresh preview first')
       if (currentInput.current !== plan.signature)
         throw new Error('Query changed. Read a fresh preview')
+      if ((plan.connectOrigin ?? ACCOUNT_DIRECTORY_URL) !== client.origin)
+        throw new Error(
+          'This computer must use the same Connect URL. Update it and configure matching services before enabling a feed.',
+        )
       const result = await client.enableArtifactFeed(
         publicationId,
         origin,

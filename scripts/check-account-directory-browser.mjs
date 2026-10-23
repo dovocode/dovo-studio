@@ -39,8 +39,14 @@ const app=createRoot(document.getElementById('app'));window.show=kind=>{window.P
   },
   [
     {
+      path: '../preferences/app-preferences',
+      importer: root + '/apps/mobile/src/runtime/connection',
+      contents:
+        "export const useMobilePreferences=()=>({connectOrigin:'',artifactsOrigin:'',ready:true});",
+    },
+    {
       path: '@dovo/studio-core',
-      contents: `export {useAccount} from '${root}/packages/studio-core/src/use-account';export const useStudioHost=()=>window.host;export const useRuntimeSources=()=>window.sources;export {responses,runtimeRequest,runtimeRequestEffect} from '@dovo/protocol';export {startPolling} from '@dovo/client-runtime';export const useWorkspace=()=>({runtimes:window.sources,mutationStatus:()=>({pending:0}),snapshot:{owner:true,internet:window.internetStatus},connected:true,request:window.runtimeRequest,activeRuntimeId:'local',runtimeRegistry:{profiles:window.sources.map(s=>s.profile)},refreshRuntime:async()=>{}});`,
+      contents: `export {useAccount} from '${root}/packages/studio-core/src/use-account';export const useAppPreferences=()=>({connectOrigin:'',artifactsOrigin:''});export const useStudioHost=()=>window.host;export const useRuntimeSources=()=>window.sources;export {responses,runtimeRequest,runtimeRequestEffect} from '@dovo/protocol';export {startPolling} from '@dovo/client-runtime';export const useWorkspace=()=>({runtimes:window.sources,mutationStatus:()=>({pending:0}),snapshot:{owner:true,internet:window.internetStatus},connected:true,request:window.runtimeRequest,activeRuntimeId:'local',runtimeRegistry:{profiles:window.sources.map(s=>s.profile)},refreshRuntime:async()=>{}});`,
     },
     {
       path: '@dovo/studio-core/state',
@@ -58,7 +64,7 @@ const app=createRoot(document.getElementById('app'));window.show=kind=>{window.P
     },
     {
       path: 'expo-crypto',
-      contents: `export const getRandomBytes=count=>crypto.getRandomValues(new Uint8Array(count));`,
+      contents: `export const getRandomBytes=count=>crypto.getRandomValues(new Uint8Array(count));export const CryptoDigestAlgorithm={SHA256:'SHA-256'};export const digestStringAsync=async(algorithm,value)=>Array.from(new Uint8Array(await crypto.subtle.digest(algorithm,new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');`,
     },
     {
       path: './peer-transport',
@@ -198,7 +204,11 @@ try {
       await page.getByText(/Available to devices signed in to your account/).waitFor()
       assert.deepEqual(await page.evaluate(() => window.internetRequests[0]), {
         path: '/api/runtime/internet',
-        body: { enabled: true, accountToken: 'a'.repeat(43) },
+        body: {
+          enabled: true,
+          accountToken: 'a'.repeat(43),
+          origin: 'https://connect.dovo.studio',
+        },
       })
       await page.getByRole('checkbox', { name: 'Enable Dovo Connect', exact: true }).uncheck()
     } else {

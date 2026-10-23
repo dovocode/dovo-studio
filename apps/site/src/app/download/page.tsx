@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { serverGuide } from '../../components/site-links'
+import { serverGuide, selfHostingGuide } from '../../components/site-links'
 import { MobileAvailability } from '../../components/mobile-availability'
 import { ServerQuickStart } from '../../components/server-quick-start'
 import { ReleaseDownloads } from '../../components/release-downloads'
@@ -27,6 +27,11 @@ export default function Download() {
       <p className="download-note">
         Server archives are also available for macOS ARM64 and Windows x64/ARM64.{' '}
         <a href={serverGuide}>Other server installation options ↗</a>
+      </p>
+      <p className="download-note">
+        Hosting your own services? Follow the{' '}
+        <a href={selfHostingGuide}>custom Connect and artifact store instructions ↗</a> for Docker,
+        account sign-in and client configuration.
       </p>
       <div className="callout">
         <strong>First time here?</strong>

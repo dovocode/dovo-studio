@@ -48,6 +48,10 @@ are required.
 Stable and Nightly Linux setup commands are shown directly on the homepage, downloads and docs,
 including service installation, pairing, and the separate Nightly launcher name. Commands use the
 maintained `scripts/install-linux-server.sh`; HTTP LAN/VPN access and device pairing stay supported.
+Downloads and getting-started docs also include copyable Stable/Nightly Homebrew instructions for
+the desktop app and standalone server. The download channel selects matching Homebrew commands. The
+docs explain custom Connect and artifact storage, linking to `docs/self-hosting.md` for Docker
+configuration, shared Auth, desktop/mobile service URL settings and account migration.
 
 To refresh the committed screenshots after changing the app:
 

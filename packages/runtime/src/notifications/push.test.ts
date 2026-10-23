@@ -6,7 +6,7 @@ import {
   type QuestionPrompt,
   type RelayNotification,
 } from '@dovo/protocol'
-import { PushNotifications, notificationRelay } from './push'
+import { PushNotifications, notificationRelay, managedNotification } from './push'
 import { openDatabase } from '../storage/database'
 import { WorkspaceStore } from '../storage/workspace'
 import { Devices } from '../auth/devices'
@@ -14,6 +14,7 @@ const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 function setup(managed = false) {
   const db = openDatabase(':memory:'),
@@ -25,6 +26,7 @@ function setup(managed = false) {
       (
         value: RelayNotification,
         token?: string,
+        origin?: string,
       ) => Promise<{ delivered: boolean; invalidToken: boolean }>
     >()
     .mockResolvedValue({ delivered: true, invalidToken: false })
@@ -374,6 +376,27 @@ it('delivers managed pushes without runtime relay configuration and keeps scoped
   expect(f.send.mock.calls[0][1]).toBe('m'.repeat(43))
   expect(f.send.mock.calls[0][0]).not.toHaveProperty('managedToken')
   expect(JSON.stringify(f.store.get())).not.toContain('m'.repeat(43))
+})
+it('routes managed push grants only to their selected Connect origin', async () => {
+  const f = setup(true)
+  const origin = 'https://connect.example.com'
+  f.service.register(f.device, { ...f.registration, managedOrigin: origin })
+  await f.service.flush()
+  f.input({ id: 'question', preview: 'Choose a branch' })
+  await f.service.flush()
+  expect(f.send).toHaveBeenCalledWith(expect.anything(), 'm'.repeat(43), origin)
+  const send = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(Response.json({ delivered: true, invalidToken: false }))
+  vi.stubGlobal('fetch', send)
+  await managedNotification(f.send.mock.calls[0][0], 'm'.repeat(43), origin)
+  expect(send).toHaveBeenCalledWith(
+    origin + '/v1/push/send',
+    expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer ' + 'm'.repeat(43) }),
+      redirect: 'error',
+    }),
+  )
 })
 it('preserves pending messages across managed credential renewal and does not remove renewed grants on stale failures', async () => {
   const f = setup(true)

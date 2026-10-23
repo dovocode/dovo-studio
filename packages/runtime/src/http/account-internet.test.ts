@@ -45,7 +45,12 @@ afterEach(async () => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
-async function fixture(persistent = false, issueRelay?: PeerRelayIssuer, organization = false) {
+async function fixture(
+  persistent = false,
+  issueRelay?: PeerRelayIssuer,
+  organization = false,
+  configuredInSettings = false,
+) {
   const accounts = new AccountStore(':memory:')
   const configs = organization
     ? organizations(
@@ -99,7 +104,7 @@ async function fixture(persistent = false, issueRelay?: PeerRelayIssuer, organiz
         broker.closeAllConnections()
       }),
   )
-  vi.stubEnv('DOVO_CONNECT_ORIGIN', origin)
+  vi.stubEnv('DOVO_CONNECT_ORIGIN', configuredInSettings ? undefined : origin)
   const folder = await mkdtemp(join(tmpdir(), 'dovo-account-internet-'))
   cleanup.push(() => rm(folder, { recursive: true, force: true }))
   const options = {
@@ -152,6 +157,7 @@ async function fixture(persistent = false, issueRelay?: PeerRelayIssuer, organiz
     owner,
     phone,
     client,
+    origin,
     request,
     call,
     restart: async () => {
@@ -160,6 +166,46 @@ async function fixture(persistent = false, issueRelay?: PeerRelayIssuer, organiz
     },
   }
 }
+it('uses and persists the Connect URL chosen in Settings without an environment override', async () => {
+  const f = await fixture(true, undefined, false, true)
+  expect(f.runtime.services.peers.internet.origin).toBe('https://connect.dovo.studio')
+  const enabled = await f.request({ enabled: true, accountToken: f.owner, origin: f.origin })
+  expect(enabled.status).toBe(200)
+  await f.restart()
+  expect(f.runtime.services.peers.internet.origin).toBe(f.origin)
+  await vi.waitFor(() => expect(f.runtime.services.peers.internet.status().connected).toBe(true))
+  const changed = await f.request({
+    enabled: true,
+    accountToken: f.owner,
+    origin: 'https://another.test',
+  })
+  expect(changed.status).toBe(409)
+  expect(f.runtime.services.peers.internet.origin).toBe(f.origin)
+})
+it('binds paired setup proofs and peer connections to the custom Connect URL', async () => {
+  const f = await fixture(false, undefined, false, true)
+  const token = 'paired-custom-server-with-at-least-32-characters'
+  f.runtime.services.devices.add('Phone', token)
+  await f.client.load()
+  await f.client.enablePairedInternet(
+    f.runtime.services.runtimeId,
+    async (session) => {
+      const response = await f.call(
+        '/api/runtime/internet/setup',
+        { session, consent: true, relay: 'dovo', origin: f.origin },
+        token,
+      )
+      expect(response.status).toBe(200)
+      return decode(responses.internetSetup, await response.json())
+    },
+    async (id, grant) => {
+      const response = await f.call('/api/runtime/internet/complete', { id, grant }, token)
+      expect(response.status).toBe(200)
+    },
+  )
+  expect(f.runtime.services.peers.internet.origin).toBe(f.origin)
+  await vi.waitFor(() => expect(f.runtime.services.peers.internet.status().connected).toBe(true))
+})
 async function tunnel(config: PeerConfig) {
   const pc = new RTCPeerConnection({ iceServers: [], iceUseIpv6: false })
   cleanup.push(() => pc.close())

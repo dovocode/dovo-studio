@@ -23,6 +23,8 @@ import {
   artifactPublicationInput,
   artifactPublicationResponseSchema,
   HOSTED_ARTIFACT_MAX_BYTES,
+  artifactSourcePublicationsSchema,
+  type ArtifactSourcePublication,
 } from '../conversation/artifact-sharing.js'
 import type { Artifact } from '../conversation/artifacts.js'
 import {
@@ -33,6 +35,7 @@ import {
 } from '../conversation/artifact-feeds.js'
 import {
   ACCOUNT_DIRECTORY_URL,
+  connectServiceOrigin,
   accountDirectorySchema,
   accountLoginSchema,
   type AccountDirectory,
@@ -47,6 +50,9 @@ export type AccountState = {
   error: string
   deletionPending: boolean
   loaded: boolean
+  publications: ArtifactSourcePublication[] | null
+  publicationError: string
+  publicationOrigin: string
 }
 export type PublishedArtifact = { publicationId: string; url: string; manageUrl: string }
 class AccountError extends Error {
@@ -68,12 +74,21 @@ export class AccountClient {
     error: '',
     deletionPending: false,
     loaded: false,
+    publications: null,
+    publicationError: '',
+    publicationOrigin: '',
   }
+  readonly origin: string
+  private publicationsRequest?: Promise<void>
+  private publicationsRevision = 0
   constructor(
     private readonly storage: AccountStorage,
     private readonly open: (url: string) => Promise<unknown>,
-    private readonly origin = ACCOUNT_DIRECTORY_URL,
-  ) {}
+    origin = ACCOUNT_DIRECTORY_URL,
+    private readonly artifactsOrigin = '',
+  ) {
+    this.origin = connectServiceOrigin(origin)
+  }
   snapshot = () => this.state
   subscribe = (listener: () => void) => {
     this.listeners.add(listener)
@@ -85,10 +100,85 @@ export class AccountClient {
     this.state = { ...this.state, ...value }
     for (const listener of this.listeners) listener()
   }
-  sessionId = () => (this.token ? bytesToHex(sha256(utf8ToBytes(this.token))) : null)
+  sessionId = () =>
+    this.token
+      ? bytesToHex(
+          sha256(
+            utf8ToBytes(
+              this.origin === ACCOUNT_DIRECTORY_URL
+                ? this.token
+                : JSON.stringify([this.origin, this.token]),
+            ),
+          ),
+        )
+      : null
   artifactService = async () => {
     const service = decode(artifactServiceSchema, await this.request('/v1/artifacts/service'))
-    return artifactServiceOrigin(service.origin)
+    const origin = artifactServiceOrigin(service.origin)
+    if (this.artifactsOrigin && artifactServiceOrigin(this.artifactsOrigin) !== origin)
+      throw new Error(
+        'The artifact URL does not match Connect. Configure the same artifact origin on your Connect broker and artifact server, or clear the override in Settings.',
+      )
+    return origin
+  }
+  refreshPublications = (): Promise<void> => {
+    if (this.publicationsRequest) return this.publicationsRequest
+    const token = this.token
+    if (!token || !this.state.directory) return Promise.resolve()
+    const revision = this.publicationsRevision
+    const run = async () => {
+      try {
+        const origin = await this.artifactService()
+        const grant = await this.artifactGrant(origin)
+        if (this.token !== token) return
+        const response = await fetch(origin + '/v1/publications/sources', {
+          redirect: 'error',
+          credentials: 'omit',
+          signal: AbortSignal.timeout(15_000),
+          headers: { Authorization: 'Bearer ' + grant },
+        })
+        if (!response.ok)
+          throw new Error('Could not check hosted sharing status. Refresh to try again.')
+        const { publications } = decode(artifactSourcePublicationsSchema, await response.json())
+        if (this.token === token && revision === this.publicationsRevision)
+          this.set({ publications, publicationError: '', publicationOrigin: origin })
+      } catch (cause) {
+        if (this.token === token && revision === this.publicationsRevision)
+          this.set({
+            publications: null,
+            publicationError:
+              cause instanceof Error ? cause.message : 'Could not check hosted sharing status',
+          })
+      }
+    }
+    const request = run().finally(() => {
+      if (this.publicationsRequest === request) this.publicationsRequest = undefined
+    })
+    this.publicationsRequest = request
+    return request
+  }
+  artifactManagementUrl = async (publicationId: string, expectedOrigin: string) => {
+    const grant = await this.artifactGrant(expectedOrigin)
+    return expectedOrigin + '/manage/' + publicationId + '#session=' + grant
+  }
+  private artifactGrant = async (expectedOrigin: string) => {
+    const token = this.token
+    if (!token || !this.state.directory || this.state.deletionPending)
+      throw new Error('Sign in to manage hosted artifacts')
+    const grant = decode(
+      artifactGrantSchema,
+      await this.request('/v1/artifacts/session', 'POST', undefined, undefined, token),
+    )
+    if (
+      this.token !== token ||
+      artifactServiceOrigin(grant.origin) !== expectedOrigin ||
+      !/^[A-Za-z0-9_-]{43}$/.test(grant.token) ||
+      grant.expiresAt <= Date.now()
+    )
+      throw new Error('Account or artifact destination changed. Refresh and try again')
+    if (this.artifactsOrigin && artifactServiceOrigin(this.artifactsOrigin) !== expectedOrigin)
+      throw new Error('Artifact destination does not match Settings')
+    return grant.token
   }
   /** Only a short-lived artifact grant crosses to the separately configured storage service. */
   publishArtifact = async (
@@ -106,6 +196,8 @@ export class AccountClient {
       await this.request('/v1/artifacts/session', 'POST', undefined, undefined, token),
     )
     const origin = artifactServiceOrigin(grant.origin)
+    if (this.artifactsOrigin && artifactServiceOrigin(this.artifactsOrigin) !== origin)
+      throw new Error('Artifact destination does not match Settings')
     if (origin !== expectedOrigin)
       throw new Error('Artifact service changed. Review the destination and try again')
     if (!/^[A-Za-z0-9_-]{43}$/.test(grant.token) || grant.expiresAt <= Date.now())
@@ -130,6 +222,15 @@ export class AccountClient {
       throw new Error(
         'Account changed. Sign in to the previous account to check its hosted publications',
       )
+    this.publicationsRevision++
+    this.set({
+      publications: [
+        ...(this.state.publications ?? []).filter((item) => item.id !== result.publication.id),
+        { ...result.publication, sourceId: artifact.id },
+      ],
+      publicationOrigin: origin,
+      publicationError: '',
+    })
     return {
       publicationId: result.publication.id,
       url: origin + '/s/' + result.publication.id,
@@ -187,7 +288,11 @@ export class AccountClient {
         { cause },
       )
     }
-    const credential = decode(artifactFeedCredentialSchema, { ...writer, ...generation })
+    const credential = decode(artifactFeedCredentialSchema, {
+      ...writer,
+      ...generation,
+      connectOrigin: this.origin,
+    })
     try {
       if (this.token !== token) throw new Error('Account changed. Preview and approve again')
       await enable(credential)
@@ -367,6 +472,7 @@ export class AccountClient {
       const response = await fetch(this.origin + path, {
         method,
         redirect: 'error',
+        credentials: 'omit',
         headers: {
           ...(token ? { Authorization: 'Bearer ' + token } : {}),
           ...(body ? { 'Content-Type': 'application/json' } : {}),
@@ -409,9 +515,24 @@ export class AccountClient {
       this.set({ busy: false, loaded: true })
     }
   }
+  private setToken(token: string | null) {
+    if (token !== this.token) {
+      this.publicationsRevision++
+      this.publicationsRequest = undefined
+      this.set({
+        directory: null,
+        publications: null,
+        publicationError: '',
+        publicationOrigin: '',
+        deletionPending: false,
+      })
+    }
+    this.token = token
+  }
   load = () =>
     this.work(async () => {
-      this.token = await this.storage.read()
+      const saved = await this.storage.read(this.origin)
+      this.setToken(saved)
       if (this.token) {
         if (!/^[A-Za-z0-9_-]{43}$/.test(this.token))
           throw new Error('Saved account session is invalid. Sign out and try again.')
@@ -423,14 +544,18 @@ export class AccountClient {
       this.set({ directory: decode(accountDirectorySchema, await this.request('/v1/servers')) })
     } catch (error) {
       if (error instanceof AccountError && error.status === 401) {
-        await this.storage.write(null)
-        this.token = null
-        this.set({ directory: null })
+        await this.storage.write(null, this.origin)
+        this.setToken(null)
+        this.set({ directory: null, publications: null, publicationError: '' })
       }
       throw error
     }
   }
-  refresh = () => this.work(() => this.refreshDirectory())
+  refresh = () =>
+    this.work(async () => {
+      await this.refreshDirectory()
+      await this.refreshPublications()
+    })
   signIn = () =>
     this.work(async () => {
       const controller = new AbortController()
@@ -460,12 +585,12 @@ export class AccountClient {
               await this.request('/v1/servers', 'GET', undefined, controller.signal, login.token),
             )
             if (controller.signal.aborted) return
-            await this.storage.write(login.token)
+            await this.storage.write(login.token, this.origin)
             if (controller.signal.aborted) {
-              await this.storage.write(this.token)
+              await this.storage.write(this.token, this.origin)
               return
             }
-            this.token = login.token
+            this.setToken(login.token)
             this.set({ directory })
             return
           }
@@ -493,32 +618,53 @@ export class AccountClient {
   signOut = () =>
     this.work(async () => {
       await this.request('/v1/session', 'DELETE')
-      await this.storage.write(null)
-      this.token = null
-      this.set({ directory: null, deletionPending: false, error: '' })
+      await this.storage.write(null, this.origin)
+      this.setToken(null)
+      this.set({
+        directory: null,
+        deletionPending: false,
+        error: '',
+        publications: null,
+        publicationError: '',
+      })
     })
   deleteAccount = () =>
     this.work(async () => {
       await this.request('/v1/account', 'DELETE', { confirm: 'DELETE' })
-      this.token = null
-      this.set({ directory: null, login: null, deletionPending: false, error: '' })
-      await this.storage.write(null)
+      this.setToken(null)
+      this.set({
+        directory: null,
+        login: null,
+        deletionPending: false,
+        error: '',
+        publications: null,
+        publicationError: '',
+      })
+      await this.storage.write(null, this.origin)
     })
   subscribePush = async (registration: ManagedPushSubscription) => {
     if (!this.token || !this.state.directory)
       throw new Error('Sign in on this phone to enable managed push.')
-    return decode(
+    const grant = decode(
       managedPushGrantSchema,
       await this.request('/v1/push/subscriptions', 'PUT', registration),
     )
+    return {
+      token: grant.token,
+      ...(this.origin !== ACCOUNT_DIRECTORY_URL ? { origin: this.origin } : {}),
+    }
   }
   subscribeLiveActivity = async (registration: ManagedLiveActivity) => {
     if (!this.token || !this.state.directory)
       throw new Error('Sign in on this phone to enable managed Live Activity updates.')
-    return decode(
+    const grant = decode(
       managedPushGrantSchema,
       await this.request('/v1/push/activities', 'PUT', registration),
     )
+    return {
+      token: grant.token,
+      ...(this.origin !== ACCOUNT_DIRECTORY_URL ? { origin: this.origin } : {}),
+    }
   }
   retainLiveActivities = async (activities: Array<{ runtimeId: string; activityId: string }>) => {
     if (this.token) await this.request('/v1/push/activities/retain', 'PUT', { activities })

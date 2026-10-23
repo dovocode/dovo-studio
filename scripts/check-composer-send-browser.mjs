@@ -279,6 +279,7 @@ try {
   )
     throw new Error(JSON.stringify(requests))
   // A one-turn choice is carried through a failed send and resets after acknowledgement.
+  assert.equal(await page.getByText('Next turn', { exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Next turn model and reasoning' }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Configure task permissions' }).count(), 0)
   await page.getByRole('button', { name: 'Choose agent and model', exact: true }).click()

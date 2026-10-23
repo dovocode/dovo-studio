@@ -6,13 +6,18 @@ type Event = { senderFrame: { url: string }; sender: { mainFrame: { url: string 
 const f = vi.hoisted(() => ({
   directory: '',
   available: true,
-  handlers: new Map<string, (event: Event, token?: unknown) => Promise<unknown>>(),
+  handlers: new Map<
+    string,
+    (event: Event, token?: unknown, origin?: unknown) => Promise<unknown>
+  >(),
 }))
 vi.mock('./runtime-data-directory.js', () => ({ desktopRuntimeDirectory: () => f.directory }))
 vi.mock('electron', () => ({
   ipcMain: {
-    handle: (name: string, handler: (event: Event, token?: unknown) => Promise<unknown>) =>
-      f.handlers.set(name, handler),
+    handle: (
+      name: string,
+      handler: (event: Event, token?: unknown, origin?: unknown) => Promise<unknown>,
+    ) => f.handlers.set(name, handler),
   },
   safeStorage: {
     isEncryptionAvailable: () => f.available,
@@ -58,4 +63,17 @@ it('rejects untrusted pages, subframes, malformed credentials and locked keychai
   f.available = false
   await expect(read()).rejects.toThrow('Unlock your system keychain')
   expect(() => write('a'.repeat(43))).toThrow('Unlock your system keychain')
+})
+it('isolates custom Connect credentials and preserves the existing hosted session', async () => {
+  const origin = 'https://connect.company.test'
+  await write('a'.repeat(43))
+  await f.handlers.get('account:write')!(event(), 'b'.repeat(43), origin)
+  expect(await read()).toBe('a'.repeat(43))
+  expect(await f.handlers.get('account:read')!(event(), origin)).toBe('b'.repeat(43))
+  expect(await f.handlers.get('account:read')!(event(), 'https://other.test')).toBeNull()
+  await f.handlers.get('account:write')!(event(), null, origin)
+  expect(await read()).toBe('a'.repeat(43))
+  await expect(
+    f.handlers.get('account:read')!(event(), 'https://user:secret@host.test'),
+  ).rejects.toThrow('Use an HTTPS Connect URL')
 })

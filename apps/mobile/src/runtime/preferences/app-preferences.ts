@@ -1,4 +1,5 @@
 import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
+import { serviceUrlsSchema } from '@dovo/protocol'
 import { mergeSharedSettings, sharedSettingsSchema } from '@dovo/protocol'
 import { nerdFontFamily, terminalFontSizeSchema } from '@dovo/studio-core/fonts'
 import { studioThemeIds } from '@dovo/studio-core/themes'
@@ -16,6 +17,7 @@ import {
 
 /** Local preferences for this phone. Never synced to computers. */
 const schema = mutableStruct({
+  ...serviceUrlsSchema.fields,
   motion: Schema.Literals(['system', 'reduce']),
   theme: Schema.Literals(['system', 'light', 'dark']),
   terminalFontFamily: Schema.Literals(['', nerdFontFamily]),
@@ -58,6 +60,8 @@ const schema = mutableStruct({
 })
 export type MobilePreferences = Schema.Schema.Type<typeof schema>
 const defaults: MobilePreferences = {
+  connectOrigin: '',
+  artifactsOrigin: '',
   motion: 'system',
   theme: 'dark',
   themePalette: 'dovo',

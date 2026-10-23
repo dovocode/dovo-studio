@@ -2,7 +2,7 @@ import { internetKeySchema } from './account-internet.js'
 import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../shared/schema.js'
 
-export const ACCOUNT_DIRECTORY_URL = 'https://connect.dovo.studio'
+export * from './service-urls.js'
 export const accountUserSchema = mutableStruct({
   id: Schema.String,
   name: Schema.String,
@@ -30,8 +30,8 @@ export type AccountDirectory = typeof accountDirectorySchema.Type
 export type AccountServer = typeof accountServerSchema.Type
 export type AccountLogin = typeof accountLoginSchema.Type
 export interface AccountStorage {
-  read(): Promise<string | null>
-  write(token: string | null): Promise<void>
+  read(origin?: string): Promise<string | null>
+  write(token: string | null, origin?: string): Promise<void>
 }
 
 /** Directory addresses must be usable by another device; HTTP LAN/VPN routes stay valid. */

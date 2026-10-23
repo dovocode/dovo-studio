@@ -1,7 +1,7 @@
 import Constants from 'expo-constants'
 import { useMobileAccount } from '../runtime/connection/account-provider'
 import type { ActivityDelivery } from './controller'
-import { liveTaskProps, runtimeComputerName } from '@dovo/protocol'
+import { liveTaskProps, runtimeComputerName, ACCOUNT_DIRECTORY_URL } from '@dovo/protocol'
 import { useAppActive } from '../runtime/state/app-active'
 import { nativeEffect } from '../runtime/state/native-effect'
 import { Effect } from 'effect'
@@ -22,7 +22,9 @@ const Context = createContext({
 export const useLiveActivities = () => useContext(Context)
 export function LiveActivityProvider({ children }: { children: ReactNode }) {
   const account = useMobileAccount()
-  const identity = account.directory?.user.id
+  const identity = account.directory
+    ? JSON.stringify([account.client.origin, account.directory.user.id, account.client.sessionId()])
+    : undefined
   const deliverySession = useRef({ identity, revision: 0 })
   if (deliverySession.current.identity !== identity)
     deliverySession.current = { identity, revision: deliverySession.current.revision + 1 }
@@ -33,7 +35,17 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
       ? {
           managed: {
             key: JSON.stringify([identity, deliverySession.current.revision]),
-            subscribe: account.client.subscribeLiveActivity,
+            subscribe: async (registration) => {
+              const source = overviews.find((item) => item.profile.id === registration.runtimeId)
+              if (
+                account.client.origin !== ACCOUNT_DIRECTORY_URL &&
+                !source?.snapshot?.internet?.origin
+              )
+                throw new Error(
+                  'Update this computer to use Live Activities with a custom Connect URL',
+                )
+              return account.client.subscribeLiveActivity(registration)
+            },
             retain: account.client.retainLiveActivities,
           },
         }

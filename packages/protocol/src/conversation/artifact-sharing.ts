@@ -4,19 +4,7 @@ import { maxValue, minValue, mutableArray, mutableStruct, refine } from '../shar
 import { artifactSchema, type Artifact } from './artifacts.js'
 
 export const HOSTED_ARTIFACT_MAX_BYTES = 20 * 1024 * 1024
-export const artifactServiceOrigin = (value: string) => {
-  const url = new URL(value)
-  if (
-    !['http:', 'https:'].includes(url.protocol) ||
-    url.username ||
-    url.password ||
-    url.pathname !== '/' ||
-    url.search ||
-    url.hash
-  )
-    throw new Error('Use an HTTP or HTTPS artifact service origin without credentials or a path')
-  return url.origin
-}
+export { artifactServiceOrigin } from '../auth/service-urls.js'
 export const artifactServiceSchema = mutableStruct({ origin: Schema.String })
 export const artifactSessionSchema = mutableStruct({
   audience: Schema.String,
@@ -60,6 +48,15 @@ export const artifactPublicationSchema = mutableStruct({
   createdAt: Schema.String,
 })
 export type ArtifactPublication = typeof artifactPublicationSchema.Type
+/** Owner-only index. Source IDs are never included in the public viewer metadata. */
+export const artifactSourcePublicationSchema = mutableStruct({
+  ...artifactPublicationSchema.fields,
+  sourceId: artifactSchema.fields.id,
+})
+export type ArtifactSourcePublication = typeof artifactSourcePublicationSchema.Type
+export const artifactSourcePublicationsSchema = mutableStruct({
+  publications: mutableArray(artifactSourcePublicationSchema),
+})
 export const artifactPublicationResponseSchema = mutableStruct({
   publication: artifactPublicationSchema,
 })

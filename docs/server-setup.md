@@ -2,7 +2,9 @@
 
 A Dovo runtime owns projects, tasks, Git operations, agent sessions, terminals, scheduled jobs, and
 SQLite persistence. Desktop, web, and mobile are clients of that runtime. A phone connects directly
-to the host over LAN, Tailscale, NetBird, or an HTTPS reverse proxy; Dovo provides no cloud relay.
+to the host over LAN, Tailscale, NetBird, or an HTTPS reverse proxy. Optional Connect adds
+account-authorized internet access and TURN relay fallback; see
+[custom service setup](self-hosting.md).
 
 The thread list syncs status and editable drafts; opening a conversation subscribes to its history.
 Split panes subscribe to both conversations. Search runs on each connected runtime, so it can find
@@ -99,6 +101,63 @@ written by older versions. If an older installation reports
 `~/.config/systemd/user/dovo-server-*.service` file, run `systemctl --user daemon-reload`, then
 restart that service. Reloading alone does not fix an invalid path. Updating or removing the service
 preserves its database and pairings.
+
+## Homebrew
+
+With [Homebrew](https://brew.sh/) installed, add the tap explicitly (the tap is hosted in the Studio
+repository):
+
+```sh
+brew tap dovocode/studio https://github.com/dovocode/dovo-studio
+```
+
+For the desktop app on Apple silicon macOS 13 or later:
+
+```sh
+brew install --cask dovocode/studio/dovo-studio
+```
+
+For a standalone server on macOS ARM64 or Linux x64/ARM64 with glibc:
+
+```sh
+brew install dovocode/studio/dovo-server
+dovo-server service install --host 0.0.0.0
+dovo-server pair
+```
+
+The service command starts the runtime and registers a user-level login service; Homebrew alone does
+not start it. Dovo manages the service, not `brew services`. Agent CLIs and Git remain separate host
+tools. Use your host's reachable LAN/VPN address and the printed pairing code; HTTP is supported.
+The default workspace is `~/.dovo` and is preserved when upgrading or uninstalling.
+
+To try Nightly instead, use the separate package and launcher names:
+
+```sh
+brew install --cask dovocode/studio/dovo-studio-nightly
+# Or a standalone Nightly server:
+brew install dovocode/studio/dovo-server-nightly
+dovo-server-nightly service install --host 0.0.0.0
+dovo-server-nightly pair
+```
+
+Choose the desktop app or standalone server, and run one local runtime at a time. Stable and Nightly
+share workspace and pairing data. Finish active work before updates. On macOS, a registered service
+can use `dovo-server service update` (or `dovo-server-nightly service update`), which upgrades the
+Homebrew formula and restarts the service. On Linux, stop and unregister the service before
+upgrading, then register it again; data, saved addresses and pairings are preserved:
+
+```sh
+dovo-server service remove
+brew upgrade dovocode/studio/dovo-server
+dovo-server service install
+```
+
+For a server started with plain `start`, stop it, run `brew upgrade dovocode/studio/dovo-server`,
+then start it again. Update the desktop with its in-app updater or
+`brew upgrade --cask dovocode/studio/dovo-studio`; substitute `-nightly` for the Nightly channel.
+
+To host your own optional connection broker and publishing service, follow
+[Custom Connect and artifact store](self-hosting.md). Those are separate services from the runtime.
 
 ## Crash records
 

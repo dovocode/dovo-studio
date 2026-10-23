@@ -16,10 +16,13 @@ const built = await bundleBrowser(
     window.reset=value=>{
       round++;kind=value;window.uploads=[];window.opened=[];window.consent=null;window.session='owner-session';window.fail=false;window.feedCalls=[];window.feedWrites=[];window.feedEnabled=false;window.runtimeId='computer-one';
       window.artifact={id:'3ef552ad-eac4-4e4b-b7de-9f530b267879',taskId:'private-thread',revision:7,title:'Quarterly report',format:'html',content:'<h1>Report</h1>',createdAt:'2026-10-21',updatedAt:'2026-10-21'};
-      window.account={loaded:true,busy:false,deletionPending:false,error:'',directory:{user:{id:'owner',name:'Owner'}},client:{
+      window.account={loaded:true,busy:false,deletionPending:false,error:'',directory:{user:{id:'owner',name:'Owner'}},publications:[],publicationOrigin:'https://artifacts.example.com',client:{
+        origin:'https://connect.dovo.studio',
         sessionId:()=>window.session,
+        refreshPublications:async()=>{},
+        artifactManagementUrl:async()=> 'https://artifacts.example.com/manage/private#session=scoped-session',
         artifactService:async()=> 'https://artifacts.example.com',
-        publishArtifact:async(artifact,origin)=>{window.uploads.push({id:artifact.id,revision:artifact.revision,origin,session:window.session});if(window.fail)throw Error('Publication failed');return {publicationId:'3ef552ad-eac4-4e4b-b7de-9f530b267879',url:'https://artifacts.example.com/s/private',manageUrl:'https://artifacts.example.com/manage/private#session=scoped-session'}},
+        publishArtifact:async(artifact,origin)=>{window.uploads.push({id:artifact.id,revision:artifact.revision,origin,session:window.session});if(window.fail)throw Error('Publication failed');window.account.publications=[{id:artifact.id,sourceId:artifact.id,revision:artifact.revision}];window.render();return {publicationId:'3ef552ad-eac4-4e4b-b7de-9f530b267879',url:'https://artifacts.example.com/s/private',manageUrl:'https://artifacts.example.com/manage/private#session=scoped-session'}},
         enableArtifactFeed:async(id,origin,seconds,data,enable)=>{window.feedWrites.push({id,origin,seconds,data});await enable({token:'writer'});return {generation:'3ef552ad-eac4-4e4b-b7de-9f530b267880'}},
         stopArtifactFeed:async()=>{window.feedWrites.push({stop:true})},
       }};
@@ -48,7 +51,7 @@ const built = await bundleBrowser(
   [
     {
       path: '@dovo/studio-core',
-      contents: `export {useArtifactFeed} from '${root}/packages/studio-core/src/use-artifact-feed';export const useWorkspace=()=>window.workspace;export const useStudioHost=()=>window.host;export const useAccount=()=>window.account;`,
+      contents: `export {useArtifactFeed} from '${root}/packages/studio-core/src/use-artifact-feed';export const useWorkspace=()=>window.workspace;export const useStudioHost=()=>window.host;export const useAccount=()=>window.account;export const useAppPreferences=()=>({connectOrigin:'',artifactsOrigin:''});`,
     },
     {
       path: '@dovo/studio-ui',
@@ -146,7 +149,7 @@ try {
       await page.getByRole('button', { name: 'Publish private copy', exact: true }).click()
       await page.evaluate(() => window.confirmMobile())
     }
-    await page.getByText('Private copy published.', { exact: true }).waitFor()
+    await page.getByText(/Shared · Version 7/).waitFor()
     assert.deepEqual(await page.evaluate(() => window.uploads), [
       {
         id: '3ef552ad-eac4-4e4b-b7de-9f530b267879',
@@ -163,7 +166,7 @@ try {
       await page.getByRole('button', { name: 'Copy private link', exact: true }).click()
       assert.equal(
         await page.evaluate(() => window.copied),
-        'https://artifacts.example.com/s/private',
+        'https://artifacts.example.com/s/3ef552ad-eac4-4e4b-b7de-9f530b267879',
       )
     }
     await page.getByRole('button', { name: 'Load read-only MCP tools', exact: true }).click()
@@ -218,9 +221,44 @@ try {
     )
     await page.evaluate(() => {
       window.session = 'new-session'
+      window.account.publications = []
       window.render()
     })
     await page.getByRole('button', { name: 'Publish private copy', exact: true }).waitFor()
+    assert.equal(
+      await page.getByRole('button', { name: 'Manage invitations and links', exact: true }).count(),
+      0,
+    )
+    await page.evaluate(() => {
+      window.account.publications = [
+        { id: 'hosted-older', sourceId: window.artifact.id, revision: 6 },
+      ]
+      window.render()
+    })
+    await page.getByText('Shared v6 · This version is local', { exact: true }).waitFor()
+    assert.equal(
+      await page.getByRole('button', { name: 'Publish private copy', exact: true }).count(),
+      1,
+    )
+    await page.evaluate(() => {
+      window.account.publications = [
+        { id: 'hosted-current', sourceId: window.artifact.id, revision: 7 },
+      ]
+      window.render()
+    })
+    await page.getByText('Shared', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Manage invitations and links', exact: true }).waitFor()
+    assert.equal(
+      await page.getByRole('button', { name: 'Publish private copy', exact: true }).count(),
+      0,
+    )
+    assert.equal(await page.evaluate(() => window.uploads.length), 1)
+    await page.evaluate(() => {
+      window.account.directory = null
+      window.account.publications = null
+      window.render()
+    })
+    assert.equal(await page.getByText('Shared', { exact: true }).count(), 0)
     assert.equal(
       await page.getByRole('button', { name: 'Manage invitations and links', exact: true }).count(),
       0,

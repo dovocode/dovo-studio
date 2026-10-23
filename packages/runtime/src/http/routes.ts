@@ -1,3 +1,4 @@
+import { peerConfigSchema } from '@dovo/protocol'
 import { remoteDesktopRequestSchema } from '@dovo/protocol'
 import { serveRetrieval } from '../retrieval/host.js'
 import { retrievalRequestSchema } from '../retrieval/request.js'
@@ -1299,14 +1300,18 @@ export function route(
         owner()
         requireLocalStudioUI(remoteAddress)
         const input = decode(
-          mutableStruct({ enabled: Schema.Boolean, accountToken: Schema.optional(Schema.String) }),
+          mutableStruct({
+            enabled: Schema.Boolean,
+            accountToken: Schema.optional(Schema.String),
+            origin: Schema.optional(peerConfigSchema.fields.origin),
+          }),
           yield* serviceResult(body(request)),
         )
         if (!input.enabled) return yield* serviceResult(s.peers.internet.disable())
         if (!input.accountToken || !/^[A-Za-z0-9_-]{43}$/.test(input.accountToken))
           throw new HttpError(400, 'Sign in to enable Dovo Connect')
         return yield* serviceResult(
-          s.peers.internet.enable(input.accountToken, s.runtimeId, hostname()),
+          s.peers.internet.enable(input.accountToken, s.runtimeId, hostname(), input.origin),
         )
       }
       if (
@@ -1323,10 +1328,17 @@ export function route(
               session: Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/))),
               consent: Schema.Literal(true),
               relay: Schema.Literal('dovo'),
+              origin: Schema.optional(peerConfigSchema.fields.origin),
             }),
             yield* serviceResult(body(request, 4096)),
           )
-          return s.peers.internet.prepareSetup(device.id, input.session, s.runtimeId, hostname())
+          return s.peers.internet.prepareSetup(
+            device.id,
+            input.session,
+            s.runtimeId,
+            hostname(),
+            input.origin,
+          )
         }
         const input = decode(
           mutableStruct({

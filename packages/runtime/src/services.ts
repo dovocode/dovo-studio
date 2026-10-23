@@ -434,6 +434,10 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       devices,
       store,
       () => preferences.get().enableArtifacts,
+      () => {
+        if (!peerConnections) throw new Error('Runtime connections are not initialized')
+        return peerConnections.internet.origin
+      },
     ),
     memory,
     scratch,

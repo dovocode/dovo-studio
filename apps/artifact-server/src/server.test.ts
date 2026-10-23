@@ -172,6 +172,33 @@ it('publishes private, immutable, idempotent copies and grants only explicitly i
   await f.request(path + '/invites', 'DELETE', { userId: 'invited' }, owner)
   expect((await f.request(path, 'GET', undefined, invited)).status).toBe(404)
 })
+it('returns source IDs only in the signed-in owners publication index', async () => {
+  const f = await fixture()
+  const publication = await f.publish()
+  expect((await f.request('/v1/publications/sources')).status).toBe(401)
+  const own = await f.request('/v1/publications/sources', 'GET', undefined, f.grant(f.owner))
+  expect(await own.json()).toEqual({
+    publications: [{ ...publication, sourceId: f.input.sourceId }],
+  })
+  const invitation = await f.request(
+    '/v1/publications/' + publication.id + '/invites',
+    'POST',
+    { userId: 'invited' },
+    f.grant(f.owner),
+  )
+  expect(invitation.status).toBe(200)
+  expect(
+    (await f.request('/v1/publications/' + publication.id, 'GET', undefined, f.grant(f.invited)))
+      .status,
+  ).toBe(200)
+  const invited = await f.request('/v1/publications/sources', 'GET', undefined, f.grant(f.invited))
+  expect(await invited.json()).toEqual({ publications: [] })
+  const ordinary = await f.request('/v1/publications', 'GET', undefined, f.grant(f.owner))
+  expect(JSON.stringify(await ordinary.json())).not.toContain('sourceId')
+  await f.request('/v1/publications/' + publication.id, 'DELETE', undefined, f.grant(f.owner))
+  const deleted = await f.request('/v1/publications/sources', 'GET', undefined, f.grant(f.owner))
+  expect(await deleted.json()).toEqual({ publications: [] })
+})
 
 it('keeps link tokens hashed, publication-bound, expiring and independently revocable', async () => {
   const f = await fixture(),

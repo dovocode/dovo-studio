@@ -4,6 +4,7 @@ import { Effect, Schema } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import {
   ACCOUNT_DIRECTORY_URL,
+  connectServiceOrigin,
   decode,
   mutableStruct,
   pushRegistrationSchema,
@@ -76,9 +77,14 @@ export function notificationRelay(env = process.env): Relay {
     },
   }
 }
-export async function managedNotification(message: RelayMessage, token: string) {
+export async function managedNotification(
+  message: RelayMessage,
+  token: string,
+  origin = ACCOUNT_DIRECTORY_URL,
+) {
   const response = await fetch(
-    ACCOUNT_DIRECTORY_URL + ('kind' in message ? '/v1/push/activities/send' : '/v1/push/send'),
+    connectServiceOrigin(origin) +
+      ('kind' in message ? '/v1/push/activities/send' : '/v1/push/send'),
     {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
@@ -108,6 +114,7 @@ export class PushNotifications {
     private managedSend: (
       message: RelayNotification,
       token: string,
+      origin?: string,
     ) => ReturnType<typeof managedNotification> = managedNotification,
   ) {
     this.error = relay.error ?? null
@@ -379,7 +386,9 @@ export class PushNotifications {
       }
       try {
         const result = registration.managedToken
-          ? await this.managedSend(value, registration.managedToken)
+          ? registration.managedOrigin
+            ? await this.managedSend(value, registration.managedToken, registration.managedOrigin)
+            : await this.managedSend(value, registration.managedToken)
           : await this.relay.send?.(value)
         if (!result) throw new Error('Notification relay is not configured')
         if (result.invalidToken) {

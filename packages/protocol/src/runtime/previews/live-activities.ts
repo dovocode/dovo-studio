@@ -1,4 +1,5 @@
 import { pushDeliveryTokenSchema } from '../push-notifications.js'
+import { connectServiceOriginSchema } from '../../auth/service-urls.js'
 import { mutableArray } from '../../shared/schema.js'
 import { mutableStruct } from '../../shared/schema.js'
 import { minValue, maxValue } from '../../shared/schema.js'
@@ -13,6 +14,7 @@ export const liveActivityRegistrationSchema = mutableStruct({
   runtimeId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   environment: Schema.optional(Schema.Literals(['sandbox', 'production'])),
   managedToken: Schema.optional(pushDeliveryTokenSchema),
+  managedOrigin: Schema.optional(connectServiceOriginSchema),
   pushToken: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-fA-F0-9]{32,512}$/))),
 })
 export const liveActivityStatusSchema = mutableStruct({

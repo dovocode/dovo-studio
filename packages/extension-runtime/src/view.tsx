@@ -1,3 +1,4 @@
+import { ServiceUrlSettings } from './service-url-settings'
 import { useEffect, useRef, useState } from 'react'
 import { AccountPanel } from './account-panel'
 import { ComputerSshSettings } from './computer-ssh-settings'
@@ -111,6 +112,7 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
               <Button onClick={() => setPairingPhone(host.profile)}>Connect your phone</Button>
             </article>
           )}
+          <ServiceUrlSettings />
           <AccountPanel onPair={(address) => setDiscovered({ address })} />
           <PairingClient onManage={setManaging} discovered={discovered} />
           <p className="text-xs leading-6 text-muted-foreground">

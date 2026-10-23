@@ -122,7 +122,7 @@ Device listings show paired devices, not live network presence.`)
             `Sign in to enable Dovo Connect on this server:\n${url}\nConfirm code ${client.snapshot().login?.code} in your browser.`,
           )
         },
-        process.env.DOVO_CONNECT_ORIGIN ?? ACCOUNT_DIRECTORY_URL,
+        snapshot.internet.origin ?? process.env.DOVO_CONNECT_ORIGIN ?? ACCOUNT_DIRECTORY_URL,
       )
       await client.signIn()
       if (!client.snapshot().directory)

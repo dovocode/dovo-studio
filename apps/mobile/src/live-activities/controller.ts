@@ -31,7 +31,7 @@ export type ActivityDelivery = {
   environment: 'sandbox' | 'production'
   managed?: {
     key: string
-    subscribe(value: ManagedLiveActivity): Promise<{ token: string }>
+    subscribe(value: ManagedLiveActivity): Promise<{ token: string; origin?: string }>
     retain(activities: Array<{ runtimeId: string; activityId: string }>): Promise<void>
   }
 }
@@ -326,7 +326,12 @@ export function createActivityController(onError: (message: string) => void) {
                       pushToken: token,
                       runtimeId: source.profile.id,
                       environment,
-                      ...(grant ? { managedToken: grant.token } : {}),
+                      ...(grant
+                        ? {
+                            managedToken: grant.token,
+                            ...(grant.origin ? { managedOrigin: grant.origin } : {}),
+                          }
+                        : {}),
                     },
                     liveActivityStatusSchema,
                   )
