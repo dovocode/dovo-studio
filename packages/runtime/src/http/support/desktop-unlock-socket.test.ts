@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { once } from 'node:events'
+import { on, once } from 'node:events'
 import { createServer, createConnection, type Socket } from 'node:net'
 import { WebSocket, WebSocketServer } from 'ws'
 import { attachDesktopUnlockSocket } from './desktop-unlock-socket.js'
@@ -68,13 +68,23 @@ it('relays opaque binary RFB bytes in order and tears down both sides when shari
   const reply = once(f.native, 'data')
   f.client.send(Buffer.from('RFB 003.008\n'))
   expect((await reply)[0]).toEqual(Buffer.from('RFB 003.008\n'))
-  const chunks: Buffer[] = []
-  f.client.on('message', (data) => {
-    if (Buffer.isBuffer(data)) chunks.push(data)
-  })
-  const pixels = Buffer.alloc(2 * 1024 * 1024, 123)
+  const pixels = Buffer.alloc(2 * 1024 * 1024)
+  // Distinct blocks detect reordering as well as missing or corrupted bytes.
+  for (let offset = 0; offset < pixels.length; offset += 4096)
+    pixels.fill((offset / 4096) % 251, offset, offset + 4096)
+  const frames = on(f.client, 'message', { close: ['close'] })
   f.native.write(pixels)
-  await vi.waitFor(() => expect(Buffer.concat(chunks)).toEqual(pixels))
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const [data] of frames) {
+    if (!Buffer.isBuffer(data)) throw Error('Expected binary RFB bytes')
+    chunks.push(data)
+    size += data.length
+    if (size >= pixels.length) break
+  }
+  expect(size).toBe(pixels.length)
+  // Buffer.equals avoids constructing a multi-megabyte deep assertion diff.
+  expect(Buffer.concat(chunks).equals(pixels)).toBe(true)
   const closed = once(f.client, 'close')
   f.stop()
   expect((await closed)[0]).toBe(1000)
