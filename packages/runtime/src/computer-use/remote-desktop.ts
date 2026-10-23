@@ -11,6 +11,7 @@ import {
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { detectCua } from './cua.js'
+import { desktopLocked } from './desktop-lock.js'
 import { processEnvironment } from '../process.js'
 import { HttpError } from '../errors.js'
 
@@ -80,12 +81,14 @@ type Session = {
   deviceId: string
   viewer: string
   control: boolean
+  locked: boolean
   seen: number
   driver: Promise<DesktopDriver>
   busy: boolean
   pending: Promise<void>
   frame?: { value: RemoteDesktopFrame; captureId: string; time: number }
   inputs: Set<string>
+  unlock?: () => void
 }
 
 /** One human viewer per runtime; no agent credentials or arbitrary driver calls. */
@@ -103,11 +106,18 @@ export class RemoteDesktop {
     private changed: () => void,
     private report: (error: unknown) => void,
     private connect: (command: string) => Promise<DesktopDriver> = connectDesktopDriver,
+    private isLocked: () => Promise<boolean> = desktopLocked,
   ) {}
   status() {
     const session = this.session
     return session && this.enabled()
-      ? { id: session.id, viewer: session.viewer, control: session.control }
+      ? {
+          id: session.id,
+          viewer: session.viewer,
+          control: session.control,
+          ...(session.locked ? { locked: true } : {}),
+          ...(session.unlock ? { unlocking: true } : {}),
+        }
       : null
   }
   private assert(session: Session, authorize: () => void) {
@@ -116,6 +126,42 @@ export class RemoteDesktop {
       throw new HttpError(403, 'Experimental remote desktop is disabled on this computer.')
     if (this.session !== session)
       throw new HttpError(410, 'Desktop session ended. Start a new session.')
+  }
+  private async refreshLockState(session: Session, authorize: () => void) {
+    const locked = await this.isLocked()
+    this.assert(session, authorize)
+    if (locked !== session.locked) {
+      session.locked = locked
+      if (locked) {
+        session.control = false
+        session.frame = undefined
+      } else {
+        session.unlock?.()
+      }
+      this.changed()
+    }
+    return locked
+  }
+  authorizeUnlock(id: string, deviceId: string, authorize: () => void) {
+    const session = this.session
+    if (!session || session.id !== id)
+      throw new HttpError(410, 'Desktop session ended. Start a new session.')
+    this.assert(session, authorize)
+    if (session.deviceId !== deviceId)
+      throw new HttpError(403, 'This desktop session belongs to another device.')
+    if (!session.locked) throw new HttpError(409, 'The desktop is no longer locked.')
+    return session
+  }
+  attachUnlock(id: string, deviceId: string, authorize: () => void, close: () => void) {
+    const session = this.authorizeUnlock(id, deviceId, authorize)
+    if (session.unlock) throw new HttpError(409, 'An unlock connection is already active.')
+    session.unlock = close
+    this.changed()
+    return () => {
+      if (session.unlock !== close) return
+      session.unlock = undefined
+      this.changed()
+    }
   }
   async request(
     input: RemoteDesktopRequest,
@@ -139,6 +185,7 @@ export class RemoteDesktop {
         deviceId,
         viewer,
         control: false,
+        locked: false,
         seen: Date.now(),
         busy: false,
         pending: Promise.resolve(),
@@ -164,11 +211,6 @@ export class RemoteDesktop {
       throw new HttpError(403, 'This desktop session belongs to another device.')
     this.assert(session, authorize)
     session.seen = Date.now()
-    if (input.action === 'control') {
-      session.control = input.enabled
-      this.changed()
-      return { session: this.status() }
-    }
     if (session.busy)
       throw new HttpError(409, 'Desktop is busy. Wait for the current frame or action.')
     session.busy = true
@@ -180,6 +222,12 @@ export class RemoteDesktop {
     try {
       const driver = await session.driver
       this.assert(session, authorize)
+      if (await this.refreshLockState(session, authorize)) return { session: this.status() }
+      if (input.action === 'control') {
+        session.control = input.enabled
+        this.changed()
+        return { session: this.status() }
+      }
       if (input.action === 'input') {
         if (!session.control)
           throw new HttpError(403, 'Enable control before sending desktop input.')
@@ -273,7 +321,8 @@ export class RemoteDesktop {
       if (!metadata.width || !metadata.height)
         throw new Error('Desktop screenshot dimensions are unavailable.')
       const jpeg = await pipeline.jpeg({ quality: 75 }).toBuffer()
-      this.assert(session, authorize)
+      // A lock while capture was in flight must also discard the image and pending control.
+      if (await this.refreshLockState(session, authorize)) return { session: this.status() }
       const frame: RemoteDesktopFrame = {
         id: randomUUID(),
         image: `data:image/jpeg;base64,${jpeg.toString('base64')}`,
@@ -307,6 +356,7 @@ export class RemoteDesktop {
     const session = this.session
     if (!session) return this.closing
     this.session = undefined
+    session.unlock?.()
     this.changed()
     this.closing = (async () => {
       let driver: DesktopDriver

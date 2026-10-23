@@ -10,6 +10,7 @@ import { useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { HostPage } from './host-page'
 import { RemoteDesktopPreferences } from './runtime-preferences'
+import { DesktopUnlock } from './desktop-unlock'
 
 export default function RemoteDesktopView({ entityId }: { entityId?: string }) {
   return (
@@ -28,6 +29,8 @@ export function RemoteDesktopViewer() {
   const [id, setId] = useState<string | null>(null)
   const [control, setControl] = useState(false)
   const [frame, setFrame] = useState<RemoteDesktopFrame | null>(null)
+  const [locked, setLocked] = useState(false)
+  const [unlocking, setUnlocking] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [stopping, setStopping] = useState(false)
@@ -82,12 +85,25 @@ export function RemoteDesktopViewer() {
     try {
       const result = await request('/api/remote-desktop', input, remoteDesktopResponseSchema)
       if (version !== state.generation) return
-      state.control = result.session?.control ?? false
+      const locked = result.session?.locked === true
+      setLocked(locked)
+      if (!locked) setUnlocking(false)
+      state.control = !locked && (result.session?.control ?? false)
       setControl(state.control)
-      if (result.frame) {
+      if (locked) {
+        state.frame = null
+        queue.current = []
+        pointer.current = null
+        if (clickTimer.current) clearTimeout(clickTimer.current)
+        clickTimer.current = null
+        clickPoint.current = null
+        setFrame(null)
+      } else if (result.frame) {
         state.frame = result.frame
-        state.error = false
         setFrame(result.frame)
+      }
+      if (locked || result.frame) {
+        state.error = false
         setError('')
       }
     } catch (cause) {
@@ -127,6 +143,8 @@ export function RemoteDesktopViewer() {
       state.id = null
       setId(null)
       setFrame(null)
+      setLocked(false)
+      setUnlocking(false)
       setError('')
     } catch (cause) {
       if (version === state.generation)
@@ -142,12 +160,15 @@ export function RemoteDesktopViewer() {
   }
   useEffect(() => {
     if (!id || error || !connected || stopping) return
-    const timer = setInterval(() => {
-      if (!document.hidden && !pointer.current && !clickTimer.current && !queue.current.length)
-        void send({ action: 'frame', id })
-    }, 750)
+    const timer = setInterval(
+      () => {
+        if (!document.hidden && !pointer.current && !clickTimer.current && !queue.current.length)
+          void send({ action: 'frame', id })
+      },
+      locked ? 2000 : 750,
+    )
     return () => clearInterval(timer)
-  }, [id, error, connected, stopping, request])
+  }, [id, error, connected, stopping, request, locked])
   drain.current = () => {
     const state = live.current
     if (
@@ -296,11 +317,21 @@ export function RemoteDesktopViewer() {
         ) : (
           <>
             <span role="status" className="text-xs font-medium">
-              {stopping ? 'Stopping…' : control ? 'Controlling desktop' : 'Viewing desktop'}
+              {stopping
+                ? 'Stopping…'
+                : locked
+                  ? 'Desktop locked'
+                  : !frame
+                    ? busy
+                      ? 'Connecting…'
+                      : 'Waiting for desktop'
+                    : control
+                      ? 'Controlling desktop'
+                      : 'Viewing desktop'}
             </span>
             <Button
               variant="outline"
-              disabled={!connected || busy || stopping || !!error || !frame}
+              disabled={!connected || busy || stopping || !!error || locked || !frame}
               onClick={() => void send({ action: 'control', id, enabled: !control })}
             >
               {control ? 'Switch to view only' : 'Enable control'}
@@ -308,7 +339,7 @@ export function RemoteDesktopViewer() {
             <Button
               variant="outline"
               disabled={!connected || busy || stopping}
-              onClick={() => (frame ? void send({ action: 'frame', id }) : start())}
+              onClick={() => (frame || locked ? void send({ action: 'frame', id }) : start())}
             >
               Refresh desktop
             </Button>
@@ -322,6 +353,26 @@ export function RemoteDesktopViewer() {
           </>
         )}
       </div>
+      {locked && (
+        <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+          <p role="status" className="text-sm">
+            This Mac is locked. Unlock it to resume viewing automatically. Enable control again
+            after unlocking.
+          </p>
+          {!unlocking && (
+            <Button
+              variant="outline"
+              disabled={!connected || stopping}
+              onClick={() => setUnlocking(true)}
+            >
+              Unlock in Studio
+            </Button>
+          )}
+        </div>
+      )}
+      {locked && unlocking && id && connected && !stopping && (
+        <DesktopUnlock id={id} onClose={() => setUnlocking(false)} />
+      )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

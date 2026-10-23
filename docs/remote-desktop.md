@@ -17,6 +17,23 @@ text and common modifier shortcuts are supported. Tab leaves the image so keyboa
 trapped; use the Tab button to send a remote Tab. The text field also supports composing text before
 sending it. Browser/OS-reserved shortcuts may remain local.
 
+On macOS, a locked host is shown as **Desktop locked** instead of a black or frozen screenshot.
+Choose **Unlock in Studio** to open the Mac's native Screen Sharing session inside the viewer.
+Authenticate with a macOS account allowed to use Screen Sharing, then use the lock screen if macOS
+asks. The host must have **System Settings → General → Sharing → Screen Sharing** enabled (or Remote
+Management configured to permit screen sharing). Studio does not change those settings or bypass
+macOS authentication. This works with a running, locked macOS session; it cannot unlock FileVault
+before macOS starts.
+
+The embedded client uses noVNC's Apple Remote Desktop authentication. Passwords stay in the
+short-lived viewer client; they are not saved in settings, sent through JSON request bodies, or
+recorded in runtime activity. Authentication requires Web Crypto: use Studio's desktop app or a
+secure browser page (HTTPS or localhost). The runtime address can still use HTTP over LAN/VPN.
+
+Studio keeps checking while the viewer is visible and resumes the same session in view-only mode
+after unlock. The embedded Screen Sharing connection closes at that point. Locking the host discards
+its previous frame and queued input; enable control again to send new input.
+
 The first version sends periodic screenshots (at most one request every 750 ms while idle), capped
 at a 1600-pixel long edge and compressed to JPEG. Capture and native actions are serialized. Typing
 is queued in order and adjacent text is combined; obsolete pointer moves are coalesced. This is
@@ -41,18 +58,27 @@ never automatically retries an input after an error or lost response: inspect a 
 before acting again. Driver-native approvals and platform restrictions still apply.
 
 Pairing codes and device tokens remain required. Agent run credentials cannot access this API. The
-feature preserves HTTP over LAN/VPN (including Tailscale and NetBird) and optional HTTPS.
+feature preserves HTTP over LAN/VPN (including Tailscale and NetBird) and optional HTTPS. Embedded
+unlock uses a one-use, 30-second socket ticket bound to the owning paired device and desktop
+session. Its opaque relay can reach only the host's loopback Screen Sharing service, port 5900.
+Stopping sharing, disabling the feature, idle expiry or device revocation closes the relay. Agent
+credentials and agent-marked requests cannot obtain or use unlock tickets.
 
 ## Verification
 
 `pnpm test:remote-desktop:browser` checks the production viewer with schema-validated demo
 responses: flag gating, view-only mode, mouse scaling, drag/wheel, queued typing, modifiers, focus
 escape, input failure without replay, unconfirmed Stop, and responsive layouts. These are component
-checks with a simulated runtime, not native desktop proof.
+checks with a simulated runtime, not native desktop proof. The embedded client's authentication is
+also checked over a real local WebSocket, including encrypted ARD credentials, authentication
+rejection, cancellation and automatic handoff after unlock.
 
 Runtime tests cover ownership, duplicate input rejection, stale captures, coordinate bounds,
 credential/flag revocation, cancellation during connection, idle expiry, and HTTP access without
 persisting typed text. A separate local test exercised Cua Driver 0.36.0 in a private Linux Xvfb
 desktop: real screenshot capture, text entry and Ctrl+A were verified against a test field; native
-mouse movement/click/drag/scroll and session shutdown completed successfully. Physical macOS,
-Windows and Wayland behavior remains unverified.
+mouse movement/click/drag/scroll and session shutdown completed successfully. On a locked physical
+Mac Studio with Cua Driver 0.36.0, native lock detection and suppression of unusable frames were
+verified. The production embedded client and relay reached its native ARD authentication prompt and
+closed cleanly without supplying credentials. Successful macOS authentication and physical
+post-unlock recovery, Windows and Wayland behavior remain unverified.

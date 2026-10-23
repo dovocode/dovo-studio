@@ -20,6 +20,7 @@ import { route } from './routes.js'
 import { json } from './support/body.js'
 import { HttpError, errorMessage } from '../errors.js'
 import { attachBrowserSocket } from './support/browser-socket.js'
+import { attachDesktopUnlockSocket } from './support/desktop-unlock-socket.js'
 import type { PeerOrigin } from './peer-connections.js'
 /** `tunnel` marks the dedicated internet listener. Its connections arrive over loopback, so
  * their provenance comes only from the tunnel itself, never from the socket address. */
@@ -226,6 +227,32 @@ export function createRuntimeServer(
       if (tunnel && !peer?.deviceId)
         throw new HttpError(403, 'Internet connection is not authorized')
       const url = new URL(request.url ?? '/', 'http://runtime.local')
+      if (url.pathname === '/ws/remote-desktop/unlock') {
+        if (process.platform !== 'darwin' || request.headers['x-dovo-agent-access'] === '1')
+          throw new HttpError(
+            403,
+            'Desktop unlock is available only to paired human clients on macOS',
+          )
+        const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
+        if (isRunToken(ticket.token) || !ticket.resourceId.startsWith('remote-desktop-unlock:'))
+          throw new HttpError(403, 'Invalid desktop unlock ticket')
+        const device = services.devices.authenticate(ticket.token)
+        const id = ticket.resourceId.slice('remote-desktop-unlock:'.length)
+        const authorize = () => {
+          bind(ticket.token)
+          services.remoteDesktop.authorizeUnlock(id, device.id, () =>
+            services.devices.authenticate(ticket.token),
+          )
+        }
+        authorize()
+        sockets.handleUpgrade(request, socket, head, (client) => {
+          track(client, ticket.token)
+          attachDesktopUnlockSocket(client, authorize, (close) =>
+            services.remoteDesktop.attachUnlock(id, device.id, authorize, close),
+          )
+        })
+        return
+      }
       if (url.pathname === '/ws/sync') {
         const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
         if (

@@ -1,5 +1,5 @@
 import { peerConfigSchema } from '@dovo/protocol'
-import { remoteDesktopRequestSchema } from '@dovo/protocol'
+import { remoteDesktopRequestSchema, remoteDesktopUnlockSchema } from '@dovo/protocol'
 import { serveRetrieval } from '../retrieval/host.js'
 import { retrievalRequestSchema } from '../retrieval/request.js'
 import { requireLocalStudioUI } from '../studio/local-ui.js'
@@ -264,9 +264,22 @@ export function route(
         (!peer || !s.peers.internet.authorized(device.id))
       )
         throw new HttpError(403, 'Account access requires an authorized Dovo Connect tunnel')
-      if (method === 'POST' && path === '/api/remote-desktop') {
+      if (
+        method === 'POST' &&
+        (path === '/api/remote-desktop' || path === '/api/remote-desktop/unlock-ticket')
+      ) {
         if (run || request.headers['x-dovo-agent-access'] === '1')
           throw new HttpError(403, 'Remote desktop is available only to paired human clients.')
+        if (path === '/api/remote-desktop/unlock-ticket') {
+          if (process.platform !== 'darwin')
+            throw new HttpError(409, 'In-Studio unlocking requires macOS Screen Sharing.')
+          const { id } = decode(
+            remoteDesktopUnlockSchema,
+            yield* serviceResult(body(request, 4096)),
+          )
+          s.remoteDesktop.authorizeUnlock(id, device.id, () => s.devices.authenticate(token))
+          return { ticket: s.tickets.issue(token, `remote-desktop-unlock:${id}`) }
+        }
         const input = decode(
           remoteDesktopRequestSchema,
           yield* serviceResult(body(request, 16 * 1024)),

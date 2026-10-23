@@ -30,7 +30,11 @@ function SharingStatus({ name }: { name: string }) {
   return (
     <div className="space-y-2">
       <p role="status" className="text-xs">
-        {name}: desktop {session.control ? 'controlled' : 'viewed'} by {session.viewer}
+        {session.unlocking
+          ? `${name}: ${session.viewer} is unlocking the desktop with macOS Screen Sharing`
+          : session.locked
+            ? `${name}: desktop locked · ${session.viewer} is waiting for unlock`
+            : `${name}: desktop ${session.control ? 'controlled' : 'viewed'} by ${session.viewer}`}
       </p>
       <Button
         size="sm"

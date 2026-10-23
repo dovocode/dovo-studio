@@ -1,5 +1,8 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
+import process from 'node:process'
+import { once } from 'node:events'
+import { WebSocket } from 'ws'
 import sharp from 'sharp'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import {
@@ -13,6 +16,7 @@ import { startRuntime } from '../index.js'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   vi.useRealTimers()
   for (const close of cleanup.splice(0).reverse()) await close()
 })
@@ -37,12 +41,14 @@ async function fixture() {
   )
   const close = vi.fn<DesktopDriver['close']>(async () => {})
   const connect = vi.fn<() => Promise<DesktopDriver>>(async () => ({ call, close }))
+  const isLocked = vi.fn<() => Promise<boolean>>(async () => false)
   const desktop = new RemoteDesktop(
     () => enabled,
     () => '',
     () => {},
     () => {},
     connect,
+    isLocked,
   )
   cleanup.push(() => desktop.dispose())
   const id = randomUUID()
@@ -58,6 +64,7 @@ async function fixture() {
     call,
     close,
     connect,
+    isLocked,
     disable: () => {
       enabled = false
     },
@@ -211,6 +218,7 @@ it('serves paired HTTP clients, advertises capability, enforces the flag and nev
     () => {},
     () => {},
     f.connect,
+    f.isLocked,
   )
   const post = async (body: unknown, credential = token, path = '/api/remote-desktop') =>
     fetch(`http://127.0.0.1:${runtime.port}${path}`, {
@@ -256,6 +264,9 @@ it('serves paired HTTP clients, advertises capability, enforces the flag and nev
     new AbortController().signal,
   )
   expect((await post({ action: 'start', id: f.id }, agentToken)).status).toBe(403)
+  expect((await post({ id: f.id }, agentToken, '/api/remote-desktop/unlock-ticket')).status).toBe(
+    403,
+  )
 
   expect((await post({ action: 'start', id: f.id })).status).toBe(200)
   const frame = await post({ action: 'frame', id: f.id }).then((response) => response.json())
@@ -271,7 +282,36 @@ it('serves paired HTTP clients, advertises capability, enforces the flag and nev
   expect(JSON.stringify(runtime.services.activity.list('', '', 0))).not.toContain(
     'never record this',
   )
+  // The unlock route remains paired-human-only and its tickets cannot outlive the session.
+  f.isLocked.mockResolvedValue(true)
+  await post({ action: 'frame', id: f.id })
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+  expect((await post({ id: f.id }, 'invalid', '/api/remote-desktop/unlock-ticket')).status).toBe(
+    401,
+  )
+  expect(
+    (
+      await fetch(`http://127.0.0.1:${runtime.port}/api/remote-desktop/unlock-ticket`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          'x-dovo-agent-access': '1',
+        },
+        body: JSON.stringify({ id: f.id }),
+      })
+    ).status,
+  ).toBe(403)
+  const ticket = await post({ id: f.id }, token, '/api/remote-desktop/unlock-ticket').then(
+    (response) => response.json(),
+  )
+  expect(typeof ticket.ticket).toBe('string')
   await post({ enableRemoteDesktop: false }, token, '/api/runtime/preferences/save')
+  const denied = new WebSocket(
+    `ws://127.0.0.1:${runtime.port}/ws/remote-desktop/unlock?ticket=${encodeURIComponent(ticket.ticket)}`,
+  )
+  await expect(once(denied, 'open')).rejects.toThrow('401')
+  expect(() => runtime.services.tickets.consume(ticket.ticket)).toThrow('expired')
   expect(runtime.services.remoteDesktop.status()).toBeNull()
   expect(f.close).toHaveBeenCalledOnce()
 })
@@ -320,4 +360,113 @@ it('retries a failed start without leaking a reservation or launching duplicate 
   const retry = await f.start()
   expect(first.session?.id).toBe(retry.session?.id)
   expect(f.connect).toHaveBeenCalledTimes(2)
+})
+
+it('waits for unlock without capturing black images and resumes the same session view-only', async () => {
+  const f = await fixture()
+  f.isLocked.mockResolvedValue(true)
+  const waiting = await f.start()
+  expect(waiting).toMatchObject({ session: { id: f.id, locked: true, control: false } })
+  expect(waiting.frame).toBeUndefined()
+  await f.request({ action: 'frame', id: f.id })
+  await f.request({ action: 'control', id: f.id, enabled: true })
+  expect(f.desktop.status()?.control).toBe(false)
+  expect(f.call).not.toHaveBeenCalled()
+  f.isLocked.mockResolvedValue(false)
+  const resumed = await f.request({ action: 'frame', id: f.id })
+  expect(resumed.frame?.width).toBe(200)
+  expect(resumed.session).toMatchObject({ id: f.id, control: false })
+  expect(resumed.session?.locked).not.toBe(true)
+  expect(f.connect).toHaveBeenCalledOnce()
+})
+
+it('discards stale frames and suspends control when the host locks before queued input', async () => {
+  const f = await fixture()
+  const first = await f.start()
+  await f.request({ action: 'control', id: f.id, enabled: true })
+  f.isLocked.mockResolvedValue(true)
+  const waiting = await f.request({
+    action: 'input',
+    id: f.id,
+    requestId: randomUUID(),
+    frameId: first.frame!.id,
+    input: { type: 'text', text: 'do not replay after unlock' },
+  })
+  expect(waiting.session).toMatchObject({ locked: true, control: false })
+  expect(waiting.frame).toBeUndefined()
+  expect(f.calls.some((call) => call.name === 'type_text')).toBe(false)
+  f.isLocked.mockResolvedValue(false)
+  const resumed = await f.request({ action: 'frame', id: f.id })
+  expect(resumed.frame?.id).not.toBe(first.frame?.id)
+  expect(resumed.session?.control).toBe(false)
+  expect(f.calls.some((call) => call.name === 'type_text')).toBe(false)
+})
+
+it('does not return a capture if the Mac locks while capture is in flight', async () => {
+  const f = await fixture()
+  const original = f.call.getMockImplementation()!
+  f.call.mockImplementation(async (name, args) => {
+    const result = await original(name, args)
+    if (name === 'get_desktop_state') f.isLocked.mockResolvedValue(true)
+    return result
+  })
+  const waiting = await f.start()
+  expect(waiting.session?.locked).toBe(true)
+  expect(waiting.frame).toBeUndefined()
+  await f.request({ action: 'stop', id: f.id })
+  expect(f.desktop.status()).toBeNull()
+  expect(f.close).toHaveBeenCalledOnce()
+})
+
+it('rechecks revoked credentials after the lock-state probe', async () => {
+  const f = await fixture()
+  let authorized = true
+  f.isLocked.mockImplementation(async () => {
+    authorized = false
+    return true
+  })
+  await expect(
+    f.desktop.request({ action: 'start', id: f.id }, 'device', 'Device', () => {
+      if (!authorized) throw Error('Revoked device')
+    }),
+  ).rejects.toThrow('Revoked')
+  expect(f.calls.map((call) => call.name)).toEqual(['end_session'])
+  expect(f.desktop.status()).toBeNull()
+})
+
+it('binds unlock to the locked session and viewer, and detaches it on completion or stop', async () => {
+  const f = await fixture()
+  await f.start()
+  expect(() => f.desktop.authorizeUnlock(f.id, 'device', () => {})).toThrow('no longer locked')
+  f.isLocked.mockResolvedValue(true)
+  await f.request({ action: 'frame', id: f.id })
+  expect(() => f.desktop.authorizeUnlock(f.id, 'another', () => {})).toThrow('another device')
+  expect(() =>
+    f.desktop.authorizeUnlock(f.id, 'device', () => {
+      throw Error('revoked')
+    }),
+  ).toThrow('revoked')
+  let detach = () => {}
+  const close = vi.fn<() => void>(() => detach())
+  detach = f.desktop.attachUnlock(f.id, 'device', () => {}, close)
+  expect(f.desktop.status()).toMatchObject({ unlocking: true, control: false })
+  expect(() =>
+    f.desktop.attachUnlock(
+      f.id,
+      'device',
+      () => {},
+      () => {},
+    ),
+  ).toThrow('already active')
+  f.isLocked.mockResolvedValue(false)
+  await f.request({ action: 'frame', id: f.id })
+  expect(close).toHaveBeenCalledOnce()
+  expect(f.desktop.status()).toMatchObject({ control: false })
+  expect(f.desktop.status()?.unlocking).not.toBe(true)
+  f.isLocked.mockResolvedValue(true)
+  await f.request({ action: 'frame', id: f.id })
+  detach = f.desktop.attachUnlock(f.id, 'device', () => {}, close)
+  await f.request({ action: 'stop', id: f.id }, 'host')
+  expect(close).toHaveBeenCalledTimes(2)
+  expect(() => f.desktop.authorizeUnlock(f.id, 'device', () => {})).toThrow('ended')
 })

@@ -847,6 +847,9 @@ importers:
       '@dovo/studio-ui':
         specifier: workspace:*
         version: link:../studio-ui
+      '@novnc/novnc':
+        specifier: 1.7.0
+        version: 1.7.0
       effect:
         specifier: 4.0.5
         version: 4.0.5
@@ -860,6 +863,9 @@ importers:
         specifier: ^19.3.1
         version: 19.3.1
     devDependencies:
+      '@types/novnc__novnc':
+        specifier: 1.6.0
+        version: 1.6.0
       '@types/qrcode':
         specifier: ^1.5.6
         version: 1.5.6
@@ -3206,6 +3212,9 @@ packages:
   '@nodable/entities@3.1.0':
     resolution: {integrity: sha512-LsS/DjHr+uDM647Gru/cA8+J3a3HfhttwCKLyuoyN7yXTFCxKBtSgMQBvrW9yNPa2/zDRUNuGPaH5QUFoa4arQ==}
 
+  '@novnc/novnc@1.7.0':
+    resolution: {integrity: sha512-ucEJOx4T2avIRCleodk7YobZj5O2Ga2AeLfQ69A/yjG9HHba2+PDgwSkN3FttrmG+70ZGx21sElNFouK13RzyA==}
+
   '@noxcturnal/noxcturnal-darwin-arm64@0.1.1':
     resolution: {integrity: sha512-Y0JXi8J4abYq88swQLqXOw0kSw0v6CfKp4tboyqPOWNVgQvUy14SMTKVyPLUpaKd0ZJGP8cvNTSQI9bZP7+5CQ==}
     engines: {node: '>=18'}
@@ -5184,6 +5193,9 @@ packages:
 
   '@types/node@26.6.5':
     resolution: {integrity: sha512-uMzsv9stDdofIZBx4UGh4Z9ZgXnGC9seRDscilBcTHAeOFk67MZg/k9bWVfO+bk4qZmG+l52hRnLwUiH2LnJTg==}
+
+  '@types/novnc__novnc@1.6.0':
+    resolution: {integrity: sha512-kIH/PQACbf9qj6whiSXRKECpyzgs6IFNVsW4wohyqQUZfQHdLhuGRMLi9XEhBiISSh0lKCSbBa7kScuPu9Gk+Q==}
 
   '@types/prop-types@15.7.15':
     resolution: {integrity: sha512-F6bEyamV9jKGAFBEmlQnesRPGOQqS2+Uwi0Em15xenOxHaf2hv6L8YCVn3rPdPJOiJfPiCnLIRyvwVaqMY3MIw==}
@@ -12663,6 +12675,8 @@ snapshots:
   '@nodable/entities@3.1.0':
     optional: true
 
+  '@novnc/novnc@1.7.0': {}
+
   '@noxcturnal/noxcturnal-darwin-arm64@0.1.1':
     optional: true
 
@@ -14773,6 +14787,8 @@ snapshots:
   '@types/node@26.6.5':
     dependencies:
       undici-types: 8.9.0
+
+  '@types/novnc__novnc@1.6.0': {}
 
   '@types/prop-types@15.7.15': {}
 

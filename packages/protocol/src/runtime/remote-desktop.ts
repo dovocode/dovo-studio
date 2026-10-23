@@ -56,7 +56,10 @@ export const remoteDesktopSessionSchema = mutableStruct({
   id: uuidSchema,
   viewer: Schema.String,
   control: Schema.Boolean,
+  locked: Schema.optional(Schema.Boolean),
+  unlocking: Schema.optional(Schema.Boolean),
 })
+export const remoteDesktopUnlockSchema = mutableStruct({ id: uuidSchema })
 export const remoteDesktopFrameSchema = mutableStruct({
   id: uuidSchema,
   image: Schema.String,
