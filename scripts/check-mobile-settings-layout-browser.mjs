@@ -77,6 +77,7 @@ const modifiers =
     .map((name) => `export const ${name}=value=>({name:'${name}',value});`)
     .join('\n') + `\nexport const shapes={rectangle:()=>({})};`
 const mocks = {
+  '../../screens/remote-desktop': 'export const MobileRemoteDesktop=()=>null;',
   'react-native': native,
   '@expo/ui/swift-ui': swift,
   '@expo/ui/swift-ui/modifiers': modifiers,

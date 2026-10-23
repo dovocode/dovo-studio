@@ -72,7 +72,15 @@ const css = await readFile(
     (await readdir(assets)).find((name) => name.startsWith('index-') && name.endsWith('.css')),
   'utf8',
 )
+const mobileHtml = JSON.parse(
+  await readFile(root + 'apps/mobile/assets/remote-desktop.json', 'utf8'),
+)
 const http = createServer((_request, response) => {
+  if (_request.url === '/mobile') {
+    response.setHeader('content-type', 'text/html; charset=utf-8')
+    response.end(mobileHtml)
+    return
+  }
   response.setHeader('content-type', 'text/html; charset=utf-8')
   response.end(
     `<meta charset="utf-8"><style>${css}</style><div style="padding:24px;max-width:1000px;margin:auto" id="app"></div>`,
@@ -347,6 +355,125 @@ try {
     })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
   }
+  // Exercise the actual self-contained mobile document and its constrained native bridge.
+  const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true })
+  mobile.on('pageerror', (error) => errors.push(error.message))
+  await mobile.addInitScript(
+    ({ address }) => {
+      window.messages = []
+      window.locked = true
+      window.session = null
+      window.ReactNativeWebView = {
+        postMessage(raw) {
+          const message = JSON.parse(raw)
+          window.messages.push(message)
+          const post = (value) =>
+            window.dispatchEvent(
+              new MessageEvent('message', { data: { channel: 'dovo-desktop', ...value } }),
+            )
+          if (message.type === 'ready') {
+            post({ type: 'configure', connected: true, enabled: true })
+            return
+          }
+          if (message.action === 'unlock') {
+            post({
+              type: 'result',
+              id: message.id,
+              value:
+                address.replace('http', 'ws') +
+                '/ws/remote-desktop/unlock?ticket=single-use-demo-ticket',
+            })
+            return
+          }
+          const input = message.input
+          if (input.action === 'start')
+            window.session = { id: input.id, viewer: 'iPhone', control: false }
+          if (input.action === 'stop') window.session = null
+          else if (input.action === 'control') window.session.control = input.enabled
+          if (window.session) window.session.locked = window.locked
+          post({
+            type: 'result',
+            id: message.id,
+            value: {
+              session: window.session,
+              ...(!window.locked && window.session
+                ? {
+                    frame: {
+                      id: crypto.randomUUID(),
+                      width: 1000,
+                      height: 600,
+                      image:
+                        'data:image/svg+xml;base64,' +
+                        btoa(
+                          '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="600"><rect width="1000" height="600" fill="blue"/></svg>',
+                        ),
+                    },
+                  }
+                : {}),
+            },
+          })
+        },
+      }
+    },
+    { address: unlockAddress },
+  )
+  await mobile.goto(unlockAddress + '/mobile')
+  await mobile.getByRole('button', { name: 'Connect to desktop', exact: true }).tap()
+  await mobile.getByRole('button', { name: 'Unlock in Studio', exact: true }).tap()
+  await mobile.getByLabel('Mac username', { exact: true }).fill('demo-mac-user')
+  await mobile.getByLabel('Mac password', { exact: true }).fill('demo-mac-password')
+  await mobile.getByRole('button', { name: 'Authenticate', exact: true }).tap()
+  await mobile
+    .getByRole('region', { name: 'Unlock desktop', exact: true })
+    .locator('canvas')
+    .waitFor({ state: 'visible' })
+  // Credentials must never enter the native bridge or any JSON API request.
+  assert.equal(
+    await mobile.evaluate(() => JSON.stringify(window.messages).includes('demo-mac-password')),
+    false,
+  )
+  await mobile.evaluate(() => (window.locked = false))
+  await mobile.getByRole('img', { name: 'Remote primary display' }).waitFor()
+  await mobile
+    .getByRole('region', { name: 'Unlock desktop', exact: true })
+    .waitFor({ state: 'detached' })
+  await mobile.getByRole('button', { name: 'Enable control', exact: true }).tap()
+  const mobileImage = mobile.getByRole('img', { name: 'Remote primary display' })
+  await mobileImage.tap()
+  await mobile.waitForFunction(() =>
+    window.messages.some((item) => item.input?.input?.type === 'click'),
+  )
+  assert.deepEqual(
+    await mobile.evaluate(() =>
+      Array.from(document.querySelectorAll('*'))
+        .filter((e) => e.getBoundingClientRect().right > innerWidth + 1)
+        .map((e) => ({
+          tag: e.tagName,
+          classes: e.className,
+          width: e.getBoundingClientRect().width,
+          right: e.getBoundingClientRect().right,
+        })),
+    ),
+    [],
+  )
+  await mobile.evaluate(() =>
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { channel: 'dovo-desktop', type: 'configure', connected: false, enabled: true },
+      }),
+    ),
+  )
+  await mobile.getByRole('alert').filter({ hasText: 'Computer offline' }).waitFor()
+  await mobile.evaluate(() =>
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { channel: 'dovo-desktop', type: 'configure', connected: true, enabled: true },
+      }),
+    ),
+  )
+  await mobile.getByRole('button', { name: 'Stop sharing', exact: true }).tap()
+  await mobile.getByRole('button', { name: 'Connect to desktop', exact: true }).waitFor()
+  await mobile.close()
   assert.deepEqual(errors, [])
   console.log(
     'Remote desktop: embedded ARD authentication, rejection, lock-screen canvas/input, keyboard escape, automatic view-only recovery without replay, flag, scaled mouse/drag/wheel, queued typing/modifiers, input failure without replay, unconfirmed stop/retry and responsive layouts passed.',

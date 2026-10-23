@@ -1,6 +1,7 @@
+import { MobileRemoteDesktop } from '../../screens/remote-desktop'
 import { useSettingsDraft } from '../preferences/settings-target'
 import { router } from 'expo-router'
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { View } from 'react-native'
 import { SettingsGroup, SettingsSwitchRow } from '../../screens/settings-group'
 import { Effect } from 'effect'
@@ -41,6 +42,7 @@ export type RuntimePreferencesSection =
   | 'activity'
 
 export function RuntimePreferences({ section }: { section?: RuntimePreferencesSection }) {
+  const [desktopOpen, setDesktopOpen] = useState(false)
   const show = (group: RuntimePreferencesSection) => !section || section === group
   const { styles } = useTheme()
 
@@ -501,6 +503,14 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
           )}
           {show('tools') && snapshot?.remoteDesktopEnabled !== undefined && (
             <Section title="Remote desktop (experimental)">
+              <Action
+                label="Connect to desktop"
+                disabled={!connected || !snapshot?.remoteDesktopEnabled}
+                onPress={() => setDesktopOpen(true)}
+              />
+              {desktopOpen && (
+                <MobileRemoteDesktop key={activeId} onClose={() => setDesktopOpen(false)} />
+              )}
               <SettingsSwitchRow
                 first
                 label="Enable remote desktop"
@@ -510,8 +520,7 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
                 Allow paired devices to view this computer’s primary display. Requires Cua Driver
-                and host OS permissions. Open Remote desktop in desktop/web settings to connect.
-                Turning this off ends sharing.
+                and host OS permissions. Turning this off ends sharing.
               </Text>
             </Section>
           )}

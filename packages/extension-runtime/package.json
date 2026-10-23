@@ -13,6 +13,7 @@
     "@dovo/protocol": "workspace:*",
     "@dovo/studio-core": "workspace:*",
     "@dovo/studio-ui": "workspace:*",
+    "@dovo/web-ui": "workspace:*",
     "@novnc/novnc": "1.7.0",
     "effect": "4.0.5",
     "lucide-react": "^1.57.0",

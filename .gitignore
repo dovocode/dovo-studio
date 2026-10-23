@@ -27,6 +27,7 @@ apps/mobile/ios/
 apps/mobile/android/
 apps/mobile/modules/*/android/build/
 apps/mobile/assets/terminal.json
+apps/mobile/assets/remote-desktop.json
 apps/mobile/assets/mermaid.json
 
 # Generated shared canvas viewer

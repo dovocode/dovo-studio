@@ -9,10 +9,10 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "typecheck": "sb-rn-get-stories --config-path .rnstorybook && tsc -p tsconfig.json --noEmit",
-    "prestart": "pnpm --filter @dovo/design --filter @dovo/protocol --filter @dovo/client-runtime -r build && node ../../scripts/build-mobile-icons.mjs && node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs",
-    "preios": "pnpm --filter @dovo/design --filter @dovo/protocol --filter @dovo/client-runtime -r build && node ../../scripts/build-mobile-icons.mjs && node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs",
-    "preandroid": "pnpm --filter @dovo/design --filter @dovo/protocol --filter @dovo/client-runtime -r build && node ../../scripts/build-mobile-icons.mjs && node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs",
-    "build": "node ../../scripts/build-mobile-icons.mjs && node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-mermaid.mjs",
+    "prestart": "pnpm --filter @dovo/design --filter @dovo/protocol --filter @dovo/client-runtime -r build && node ../../scripts/build-mobile-icons.mjs && node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-desktop.mjs && node ../../scripts/build-mobile-mermaid.mjs",
+    "preios": "pnpm --filter @dovo/design --filter @dovo/protocol --filter @dovo/client-runtime -r build && node ../../scripts/build-mobile-icons.mjs && node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-desktop.mjs && node ../../scripts/build-mobile-mermaid.mjs",
+    "preandroid": "pnpm --filter @dovo/design --filter @dovo/protocol --filter @dovo/client-runtime -r build && node ../../scripts/build-mobile-icons.mjs && node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-desktop.mjs && node ../../scripts/build-mobile-mermaid.mjs",
+    "build": "node ../../scripts/build-mobile-icons.mjs && node ../../scripts/build-mcp-apps.mjs && node ../../scripts/build-browser-viewer.mjs && node ../../scripts/build-mobile-terminal.mjs && node ../../scripts/build-mobile-desktop.mjs && node ../../scripts/build-mobile-mermaid.mjs",
     "storybook": "sb-rn-get-stories --config-path .rnstorybook && EXPO_PUBLIC_DOVO_STORYBOOK=1 expo start --clear",
     "storybook:ios": "sb-rn-get-stories --config-path .rnstorybook && EXPO_PUBLIC_DOVO_STORYBOOK=1 expo run:ios",
     "prestorybook": "pnpm run prestart",
@@ -91,6 +91,7 @@
     "@storybook/react-native": "10.7.0",
     "@types/mdast": "^4.0.4",
     "@types/react": "~19.3.0",
+    "@types/react-dom": "^19.3.0",
     "babel-preset-expo": "^58.0.14"
   },
   "enriched-markdown": {

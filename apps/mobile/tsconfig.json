@@ -13,6 +13,7 @@
     "terminal/**/*.ts",
     "mermaid/**/*.ts",
     ".rnstorybook/**/*.ts",
-    ".rnstorybook/**/*.tsx"
+    ".rnstorybook/**/*.tsx",
+    "remote-desktop/**/*.tsx"
   ]
 }

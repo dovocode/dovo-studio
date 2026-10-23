@@ -65,6 +65,11 @@ const built = await bundleBrowser(
   },
   [
     {
+      path: '../../screens/remote-desktop',
+      importer: native,
+      contents: 'export const MobileRemoteDesktop=()=>null;',
+    },
+    {
       path: 'expo-router',
       contents: 'export const router={push:()=>{}};',
     },

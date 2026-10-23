@@ -1,20 +1,28 @@
 import './novnc-types'
 import { useEffect, useRef, useState } from 'react'
 import type RFB from '@novnc/novnc'
-import { createRuntimeClient, responses } from '@dovo/protocol'
-import { useWorkspace } from '@dovo/studio-core'
-import { Button, Input } from '@dovo/studio-ui'
+import { Button } from '@dovo/web-ui/button'
+import { Input } from '@dovo/web-ui/input'
 
 /** Native Screen Sharing authentication, embedded only for the lifetime of a locked session. */
-export function DesktopUnlock({ id, onClose }: { id: string; onClose: () => void }) {
-  const { connection, request } = useWorkspace()
+export function DesktopUnlock({
+  id,
+  onClose,
+  unlockUrl,
+}: {
+  id: string
+  onClose: () => void
+  unlockUrl: (id: string) => Promise<string>
+}) {
+  const currentUnlockUrl = useRef(unlockUrl)
+  currentUnlockUrl.current = unlockUrl
   const target = useRef<HTMLDivElement>(null)
   const client = useRef<RFB | null>(null)
   const [credentials, setCredentials] = useState(false)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
-    if (!connection || !target.current) return
+    if (!target.current) return
     setError('')
     setCredentials(false)
     setReady(false)
@@ -32,15 +40,9 @@ export function DesktopUnlock({ id, onClose }: { id: string; onClose: () => void
     void (async () => {
       const { default: RFB } = await import('@novnc/novnc')
       if (disposed) return
-      const { ticket } = await request(
-        '/api/remote-desktop/unlock-ticket',
-        { id },
-        responses.ticket,
-      )
+      const url = await currentUnlockUrl.current(id)
       if (disposed) return
-      socket = new WebSocket(
-        createRuntimeClient(connection).socketUrl('/ws/remote-desktop/unlock', ticket),
-      )
+      socket = new WebSocket(url)
       socket.addEventListener('close', (event) => {
         if (!disposed && event.code !== 1000 && event.reason && !failed) {
           failed = true
@@ -94,7 +96,7 @@ export function DesktopUnlock({ id, onClose }: { id: string; onClose: () => void
       rfb?.disconnect()
       socket?.close()
     }
-  }, [id, request, connection?.address])
+  }, [id])
   return (
     <section aria-label="Unlock desktop" className="space-y-3 rounded-lg border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
