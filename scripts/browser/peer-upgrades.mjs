@@ -57,7 +57,7 @@ export async function checkPeerUpgrades(browser, root) {
       },
       {
         path: '@dovo/studio-core',
-        contents: `export {responses} from '${root}/packages/protocol/src/index.ts';export {useAccount} from '${root}/packages/studio-core/src/use-account';export const useStudioHost=()=>({});export const useWorkspace=()=>window.desktop();`,
+        contents: `export {responses} from '${root}/packages/protocol/src/index.ts';export {useAccount} from '${root}/packages/studio-core/src/use-account';export const useAppPreferences=()=>({});export const useStudioHost=()=>({});export const useWorkspace=()=>window.desktop();`,
       },
       {
         path: '@dovo/studio-core/state',

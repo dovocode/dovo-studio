@@ -29,7 +29,8 @@ const built = await build({
     resolveDir: root,
     loader: 'tsx',
     contents: `
-import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';import {decode,RuntimeRequestError} from '@dovo/protocol';
+import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';import {Effect} from 'effect';import {decode,RuntimeRequestError} from '@dovo/protocol';
+window.commit=flushSync;
 import PullRequestsView from '${root}packages/extension-scm/src/pulls/list/view.tsx';
 import {WorkContent} from '${root}packages/extension-scm/src/work/content.tsx';
 import IssuesView,{PipelinesView} from '${root}packages/extension-scm/src/work/work-view.tsx';
@@ -114,16 +115,22 @@ try {
     assert.ok(discovery < 30, 'Detail polling unexpectedly multiplied account discovery')
     // Connection loss preserves the original saved details, without any replica reads.
     await page.evaluate(() => {
+      // Commit disconnection and stop all section pollers before measuring offline reads.
+      // Clearing first can count an online status poll dispatched before React commits.
+      window.commit(() => {
+        window.store = { ...window.store, connected: false }
+        window.sources = window.sources.map((source) => ({
+          ...source,
+          connected: source.runtimeId !== 'a',
+        }))
+        window.render(false)
+      })
       window.reads = []
-      window.store = { ...window.store, connected: false }
-      window.sources = window.sources.map((source) => ({
-        ...source,
-        connected: source.runtimeId !== 'a',
-      }))
-      window.render(false)
     })
     await page.waitForFunction(
-      () => window.detailResult?.detail?.stale && !window.detailResult.readConnected,
+      () =>
+        window.detailResult?.detail?.stale &&
+        Object.values(window.detailResult.sections).every((section) => !section.readConnected),
     )
     await page.clock.runFor(30001)
     assert.deepEqual(await page.evaluate(() => window.reads), [])
