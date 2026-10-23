@@ -131,7 +131,7 @@ it('serves the shared, keyboard-accessible hosted artifact shell', async () => {
   expect(markup).toContain('--dovo-background:#080808;')
   expect(markup).toContain('--dovo-card:#101010;')
   expect(markup).toContain('--dovo-muted-foreground:#a1a1a1;')
-  expect(markup).toContain('--dovo-border:#282828;')
+  expect(markup).toContain('--dovo-border:#202020;')
   expect(markup).toContain('--dovo-primary:#7cc9ff;')
   expect(markup).toContain('--radius-md: var(--dovo-radius-control)')
   expect(markup).toContain('focus-visible\\:outline-ring')

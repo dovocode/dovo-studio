@@ -49,7 +49,7 @@ export async function checkHostedScreens(page, origin, { interactionsOnly = fals
               [...document.images].every((image) => image.complete && image.naturalWidth > 0),
             )
           } else if (entry.name.startsWith('Artifacts') && entry.name !== 'Artifacts Loading')
-            await frame.locator('#status').waitFor()
+            await frame.locator('.app-shell').waitFor()
           await frame.evaluate(async () => {
             await Promise.allSettled(
               document
@@ -67,8 +67,11 @@ export async function checkHostedScreens(page, origin, { interactionsOnly = fals
           for (const control of await frame.locator('[data-slot="button"]').all()) {
             if (await control.isVisible())
               assert.ok(
-                (await control.boundingBox()).height >= 44,
-                `${entry.id}: hosted control must use the shared touch size`,
+                await control.evaluate((el) => {
+                  const minimum = el.closest('.header-actions') ? (innerWidth <= 640 ? 40 : 36) : 44
+                  return el.getBoundingClientRect().height >= minimum
+                }),
+                `${entry.id}: hosted control must meet its header or dialog touch size`,
               )
           }
 

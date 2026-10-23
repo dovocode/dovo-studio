@@ -356,6 +356,7 @@ it.each([
       archiveOnPullMerge: policy === 'archive',
     })
     if (kind === 'pr') {
+      vi.spyOn(f.s.pulls, 'watchSource').mockResolvedValue({ repositoryId: 'linked' })
       const closed = await f.s.pullCache.status(repo.path, 7)
       const url = 'https://github.com/o/linked/pull/7'
       vi.spyOn(f.s.pullCache, 'feedback').mockResolvedValue({

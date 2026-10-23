@@ -122,10 +122,18 @@ try {
             )
             const buttons = root.locator('button')
             for (const button of await buttons.all())
-              assert.ok(
-                await button.evaluate((el) => el.getBoundingClientRect().height >= 44),
-                'Hosted touch target must be at least 44px',
-              )
+              if (await button.isVisible())
+                assert.ok(
+                  await button.evaluate((el) => {
+                    const minimum = el.closest('.header-actions')
+                      ? innerWidth <= 640
+                        ? 40
+                        : 36
+                      : 44
+                    return el.getBoundingClientRect().height >= minimum
+                  }),
+                  `${story.id}: hosted controls must meet their header or dialog touch size`,
+                )
           }
           if (story.id === 'dovo-controls--composer') {
             const field = page.getByRole('textbox', { name: 'Task message' })

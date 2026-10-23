@@ -192,11 +192,11 @@ export const ConnectArtifactConsent = connectStory(
 )
 export const ConnectDeviceSuccess = connectStory(
   'Connect /auth/callback · device success',
-  connectSuccess(false),
+  connectSuccess(),
 )
 export const ConnectArtifactSuccess = connectStory(
   'Connect /auth/callback · artifact success',
-  connectSuccess(true),
+  connectSuccess('https://artifacts.example.test'),
 )
 
 // Runs the real imperative viewer against an in-frame synthetic transport. CSP blocks real fetches.

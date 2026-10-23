@@ -185,8 +185,15 @@ try {
   await page.getByText('Check the tests', { exact: true }).waitFor()
   assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Up 1', exact: true }).count(), 0)
-  assert.equal(await page.getByRole('button', { name: 'Agent & model', exact: true }).innerText(), 'GPT')
-  for (const name of ['Edit queued message 1', 'Steer with message 1', 'Cancel 1 and return to composer']) {
+  assert.equal(
+    await page.getByRole('button', { name: 'Agent & model', exact: true }).innerText(),
+    'GPT',
+  )
+  for (const name of [
+    'Edit queued message 1',
+    'Steer with message 1',
+    'Cancel 1 and return to composer',
+  ]) {
     const bounds = await page.getByRole('button', { name, exact: true }).boundingBox()
     assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44)
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320)
@@ -301,7 +308,12 @@ try {
     await page.getByRole('button', { name: 'Ask a side question', exact: true }).isDisabled(),
     true,
   )
-  for (const name of ['Pause queue', 'Edit queued message 1', 'Steer with message 1', 'Cancel 1 and return to composer']) {
+  for (const name of [
+    'Pause queue',
+    'Edit queued message 1',
+    'Steer with message 1',
+    'Cancel 1 and return to composer',
+  ]) {
     assert.equal(await page.getByRole('button', { name, exact: true }).isDisabled(), true)
   }
   await page.evaluate(() => window.setTask({ repositoryId: undefined }))
@@ -514,12 +526,18 @@ try {
     'Preserve queued message',
   )
   await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
-  await page.evaluate(() => window.setTask({
-    queue: Array.from({ length: 20 }, (_, index) => ({ id: 'queue-' + index, role: 'user', text: 'Queued item ' + (index + 1) })),
-  }))
+  await page.evaluate(() =>
+    window.setTask({
+      queue: Array.from({ length: 20 }, (_, index) => ({
+        id: 'queue-' + index,
+        role: 'user',
+        text: 'Queued item ' + (index + 1),
+      })),
+    }),
+  )
   await page.getByRole('button', { name: 'Up 20', exact: true }).waitFor({ state: 'attached' })
   const queuedList = page.getByLabel('Queued message list', { exact: true })
-  assert.ok(await queuedList.evaluate(element => element.scrollHeight > element.clientHeight))
+  assert.ok(await queuedList.evaluate((element) => element.scrollHeight > element.clientHeight))
   assert.ok((await queuedList.boundingBox()).height <= 180)
   await page.getByRole('button', { name: 'Up 2', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'up')
@@ -529,7 +547,9 @@ try {
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queue-1')
   await page.getByRole('button', { name: 'Cancel 20 and return to composer', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'restore')
-  await page.waitForFunction(() => window.conversation.actions.draft.text.includes('Queued item 20'))
+  await page.waitForFunction(() =>
+    window.conversation.actions.draft.text.includes('Queued item 20'),
+  )
   assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
   await page.evaluate(() => window.setTask({ queue: [] }))
   await page.getByTestId('Queued messages').waitFor({ state: 'detached' })

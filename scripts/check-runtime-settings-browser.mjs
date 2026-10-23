@@ -364,7 +364,10 @@ try {
   await page.evaluate(() => window.show('diagnostics'))
   const internetDiagnostics = page.getByText('Internet connection diagnostics', { exact: true })
   await internetDiagnostics.waitFor()
-  const emptyConnections = page.getByText('No WebRTC connections observed since this runtime started.', { exact: false })
+  const emptyConnections = page.getByText(
+    'No WebRTC connections observed since this runtime started.',
+    { exact: false },
+  )
   assert.equal(await emptyConnections.isVisible(), false)
   await internetDiagnostics.click()
   await emptyConnections.waitFor()
