@@ -133,6 +133,13 @@ export function RuntimeDiagnosticsPanel() {
                         : 'Route not established'}
                     {peer.roundTripMs !== null ? ` · ${peer.roundTripMs} ms` : ''}
                   </p>
+                  {(peer.answerMs != null || peer.setupMs != null) && (
+                    <p>
+                      {peer.trickle ? 'Trickle ICE' : 'Complete SDP'}
+                      {peer.answerMs != null ? ` · Answer ${peer.answerMs} ms` : ''}
+                      {peer.setupMs != null ? ` · Ready ${peer.setupMs} ms` : ''}
+                    </p>
+                  )}
                   <p>
                     Computer candidates: {peer.localCandidates.host} local ·{' '}
                     {peer.localCandidates.srflx} STUN · {peer.localCandidates.relay} TURN. Phone

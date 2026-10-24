@@ -214,6 +214,7 @@ window.rowRenders={};window.alerts=[];window.requests=[];window.navigations=[];w
 window.navigation={focused:true,navigate:(...args)=>window.navigations.push(args),setDetail:()=>{},openWork:()=>{}};
 window.fetch=async(url,options)=>{
   const target=new URL(url),path=target.pathname,body=options?.body?JSON.parse(options.body):null;window.requests.push({path,body,origin:target.origin,method:options?.method});
+  if(path==='/api/tasks/search'){if(window.searchFailure)return Response.json({error:'History unavailable'},{status:503});if(body.query==='old history')await new Promise(resolve=>window.finishOldSearch=resolve);return Response.json({taskIds:body.query==='history needle'?['task-98']:body.query==='old history'?['task-97']:[],hits:[]})};
   if(path==='/api/mutations/status')return Response.json({version:1});
   if(path==='/api/workspace'&&options?.method==='PATCH')return Response.json({revision:window.snapshot.revision+1,runtimeInstanceId:'fixture'});
   if(path==='/api/runtime')return Response.json(window.snapshot,{headers:{ETag:'fixture-'+window.snapshot.revision}});
@@ -481,22 +482,51 @@ try {
     1,
     'Compact title has its own row',
   )
+  const historyInput = page.getByRole('textbox', { name: 'Search tasks', exact: true })
+  await historyInput.fill('old history')
+  await page.waitForFunction(() => !!window.finishOldSearch)
+  await page.getByText('Searching conversation history…', { exact: true }).waitFor()
+  await historyInput.fill('history needle')
+  await page.getByTestId('Task task-98').waitFor()
+  await page
+    .getByText('Searching conversation history…', { exact: true })
+    .waitFor({ state: 'detached' })
+  assert.equal(await page.getByTestId('Task task-97').count(), 0)
+  await page.evaluate(() => window.finishOldSearch())
+  await page.waitForFunction(
+    () => window.requests.filter((r) => r.path === '/api/tasks/search').length >= 2,
+  )
+  assert.equal(
+    await page.getByTestId('Task task-98').count(),
+    1,
+    'A stale search must not replace current history results',
+  )
+  await page.evaluate(() => (window.searchFailure = true))
+  await historyInput.fill('Task 99')
+  await page.getByTestId('Task task-99').waitFor()
+  await page.getByRole('alert').filter({ hasText: 'History unavailable' }).waitFor()
+  assert.equal(
+    await page.getByTestId('Task task-99').count(),
+    1,
+    'Local matches survive a history search error',
+  )
+  await page.evaluate(() => (window.searchFailure = false))
+  await historyInput.fill('')
+  await page.getByTestId('Task task-0').waitFor()
   const filters = page.getByRole('button', { name: 'Filters', exact: true })
-  assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).count(), 0)
+  assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).count(), 1)
   assert.equal(await filters.getAttribute('aria-pressed'), 'false')
   await filters.click()
   const filterSheet = page.getByRole('dialog', { name: 'Filter threads', exact: true })
-  await filterSheet.getByRole('textbox', { name: 'Search tasks' }).fill('Task 99')
+  assert.equal(await filterSheet.getByRole('textbox', { name: 'Search tasks' }).count(), 0)
+  await page.getByRole('textbox', { name: 'Search tasks' }).fill('Task 99')
   await page.getByTestId('Task task-0').waitFor({ state: 'detached' })
   await filterSheet.getByRole('button', { name: 'Close details' }).click()
   assert.equal(await filters.getAttribute('aria-pressed'), 'true')
   await page.getByTestId('Task task-99').waitFor()
-  assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).count(), 0)
+  assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).count(), 1)
   await filters.click()
-  assert.equal(
-    await filterSheet.getByRole('textbox', { name: 'Search tasks' }).inputValue(),
-    'Task 99',
-  )
+  assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).inputValue(), 'Task 99')
   await filterSheet.getByRole('button', { name: 'Clear filters', exact: true }).click()
   await page.getByTestId('Task task-0').waitFor()
   assert.equal(await filters.getAttribute('aria-pressed'), 'false')

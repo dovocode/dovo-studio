@@ -650,6 +650,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             id: idSchema,
             action: Schema.Literals([
               'edit',
+              'duplicate',
               'remove',
               'restore',
               'steer',
@@ -662,6 +663,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               'resume-message',
             ]),
             messageId: Schema.optional(idSchema),
+            duplicateMessageId: Schema.optional(idSchema),
             beforeMessageId: Schema.optional(Schema.NullOr(idSchema)),
             text: Schema.optional(maxValue(Schema.String, 120000)),
             expectedText: Schema.optional(maxValue(Schema.String, 120000)),
@@ -674,7 +676,11 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         const wasBlockedByMessage = !!s.store.taskSummary(input.id).queue?.[0]?.paused
-        if (input.action === 'edit') {
+        if (input.action === 'duplicate') {
+          if (!input.messageId || !input.duplicateMessageId)
+            throw new HttpError(400, 'Choose a queued message and a new message id for its copy')
+          s.tasks.queue.duplicate(input.id, input.messageId, input.duplicateMessageId)
+        } else if (input.action === 'edit') {
           if (!input.messageId || input.text === undefined || input.expectedText === undefined)
             throw new HttpError(
               400,

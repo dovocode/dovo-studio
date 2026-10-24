@@ -1,10 +1,6 @@
 import { createRuntimeClient } from '../../shared/runtime-client.js'
 import { desktopRuntimeSyncBridge } from './desktop-sync.js'
-import {
-  failRuntimeStreamingRoute,
-  invalidateRuntimeRoute,
-  runtimeTransportAddress,
-} from './routes.js'
+import { failRuntimeStreamingRoute, invalidateRuntimeRoute } from './routes.js'
 import { decode } from '../../shared/schema.js'
 import { setRuntimeSnapshotTag } from '../../shared/client.js'
 import {
@@ -401,19 +397,20 @@ export function startRuntimeSync(
       )
         return
       taskUpdates = ticket.format === 5
-      const route = runtimeTransportAddress(connection, 'stream')
-      const address = createRuntimeClient(connection).socketUrl('/ws/sync', ticket.ticket, {
+      const address = createRuntimeClient(connection).socketUrl('/ws/sync', ticket, {
         route: 'stream',
       })
+      const selectedRoute = new URL(address)
+      selectedRoute.protocol = selectedRoute.protocol === 'wss:' ? 'https:' : 'http:'
       let current: WebSocket
       try {
         current = new WebSocket(address)
       } catch (error) {
-        failRuntimeStreamingRoute(connection, route)
+        failRuntimeStreamingRoute(connection, selectedRoute.origin)
         throw error
       }
       socket = current
-      socketRoute = route
+      socketRoute = selectedRoute.origin
       socketEstablished = false
       resumeStarted = undefined
       socketStarted = lastSeen = Date.now()

@@ -273,6 +273,7 @@ export async function resolveRuntimeEndpoint(
   signal: AbortSignal,
   purpose: RoutePurpose = 'http',
 ) {
+  if (signal.aborted) throw signal.reason
   const internet = connection.internet
   if (!internet)
     return {
@@ -287,22 +288,45 @@ export async function resolveRuntimeEndpoint(
     throw new Error('Internet fallback belongs to another computer')
   const id = key(connection) + purpose
   const saved = internetRoutes.get(id)
-  if (!saved || Date.now() - saved.checkedAt >= 10000) {
-    try {
-      const address = await resolveDirectRoute(connection, signal, purpose)
-      if (internetRoutes.delete(id)) publish()
-      return { address, token: connection.token }
-    } catch (error) {
-      if (signal.aborted) throw error
+  if (saved) {
+    if (Date.now() - saved.checkedAt >= 10000) {
+      // Reconsider LAN/VPN without stopping traffic on the existing internet route.
+      // One bounded background reader shares discovery with foreground readers;
+      // cancellation or invalidation cannot resurrect a superseded selection.
+      saved.checkedAt = Date.now()
+      void resolveDirectRoute(connection, AbortSignal.timeout(3500), purpose).then(
+        () => {
+          if (internetRoutes.get(id) !== saved) return
+          internetRoutes.delete(id)
+          publish()
+        },
+        () => {
+          // Unreachable LAN routes are expected while away; retain the fallback.
+        },
+      )
     }
+    const address = await resolvePeerTransport(internet.address, internet.peer, signal)
+    // This operation keeps its endpoint and credential together even if discovery
+    // selected LAN in the meantime. Only subsequent operations switch routes.
+    if (internetRoutes.get(id) === saved && saved.address !== address) {
+      saved.address = address
+      publish()
+    }
+    return { address, token: internet.token }
+  }
+  try {
+    const address = await resolveDirectRoute(connection, signal, purpose)
+    if (internetRoutes.delete(id)) publish()
+    return { address, token: connection.token }
+  } catch (error) {
+    if (signal.aborted) throw error
   }
   const address = await resolvePeerTransport(internet.address, internet.peer, signal)
   internetRoutes.set(id, {
     address,
     peerAddress: internet.address,
-    checkedAt:
-      saved?.checkedAt && Date.now() - saved.checkedAt < 10000 ? saved.checkedAt : Date.now(),
+    checkedAt: Date.now(),
   })
-  if (saved?.peerAddress !== internet.address || saved.address !== address) publish()
+  publish()
   return { address, token: internet.token }
 }

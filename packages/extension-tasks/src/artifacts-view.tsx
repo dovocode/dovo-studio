@@ -5,6 +5,7 @@ import {
   artifactLabel,
   artifactLibrarySchema,
   runtimeComputerName,
+  runtimeReachability,
   type ArtifactLibraryEntry,
   type RuntimeProfile,
   type RuntimeSnapshot,
@@ -52,6 +53,7 @@ type Source = {
   computerName: string
   icon: RuntimeSnapshot['runtimeIcon']
   connected: boolean
+  connecting: boolean
 }
 type Entry = { source: Source; artifact: ArtifactLibraryEntry }
 type ThreadStateFilter = 'all' | ArtifactLibraryEntry['threadState']
@@ -107,6 +109,7 @@ export default function ArtifactsView() {
       computerName: runtimeComputerName(runtime),
       icon: runtime.snapshot?.runtimeIcon,
       connected: runtime.connected,
+      connecting: runtimeReachability(runtime) === 'connecting',
     }))
   const [states, setStates] = useState<ReadonlyMap<ArtifactOwnerKey, ArtifactSourceState>>(
     () =>
@@ -114,7 +117,12 @@ export default function ArtifactsView() {
         sources.flatMap((source) => {
           const saved = artifactLibraryMemory.recall(source.owner)
           return saved
-            ? [[source.owner, { status: source.connected ? 'loading' : 'offline', saved }] as const]
+            ? [
+                [
+                  source.owner,
+                  { status: source.connected || source.connecting ? 'loading' : 'offline', saved },
+                ] as const,
+              ]
             : []
         }),
       ),
@@ -122,7 +130,9 @@ export default function ArtifactsView() {
   const [guard] = useState(createRequestGuard)
   const started = useRef(new Map<ArtifactOwnerKey, string>())
   // Snapshot text updates must not refetch every artifact list while an agent is running.
-  const identity = JSON.stringify(sources.map((source) => [source.owner, source.connected]))
+  const identity = JSON.stringify(
+    sources.map((source) => [source.owner, source.connected, source.connecting]),
+  )
   const start = useEffectEvent(() => {
     const owners = new Set(runtimes.map((runtime) => artifactOwnerKey(runtime.profile)))
     artifactLibraryMemory.retain(owners)
@@ -131,7 +141,7 @@ export default function ArtifactsView() {
       if (!owners.has(owner)) started.current.delete(owner)
     // Each computer settles on its own, so one slow or offline host never holds back the others.
     for (const source of sources) {
-      const signature = `${source.connected}:${reload}`
+      const signature = `${source.connected}:${source.connecting}:${reload}`
       if (started.current.get(source.owner) === signature) continue
       started.current.set(source.owner, signature)
       const current = guard.begin(source.owner)
@@ -139,7 +149,7 @@ export default function ArtifactsView() {
         setStates((previous) => new Map(previous).set(source.owner, next))
       setStates((previous) =>
         new Map(previous).set(source.owner, {
-          status: source.connected ? 'loading' : 'offline',
+          status: source.connected || source.connecting ? 'loading' : 'offline',
           saved:
             previous.get(source.owner)?.saved ?? artifactLibraryMemory.recall(source.owner) ?? null,
         }),
@@ -152,7 +162,7 @@ export default function ArtifactsView() {
         cache: () => runtimeReadCache(source.profile),
         current,
       }).then((next) => {
-        if (current()) publish(next)
+        if (current()) publish(source.connecting ? { status: 'loading', saved: next.saved } : next)
       })
     }
   })
@@ -194,6 +204,8 @@ export default function ArtifactsView() {
           (sort === 'oldest' ? -1 : 1),
     )
   const filtered = !!query || state !== 'all' || format !== 'all'
+  const incomplete = failed.length > 0 || offline.length > 0
+  const unavailable = !entries.length && incomplete
   const clearFilters = () => {
     setSearch('')
     setFormat('all')
@@ -364,19 +376,47 @@ export default function ArtifactsView() {
               {!(loading && !entries.length) && !visible.length && (
                 <EmptyState
                   icon={<Layers />}
-                  title={filtered ? 'No matching artifacts' : 'Your next idea belongs here'}
+                  title={
+                    unavailable
+                      ? failed.length
+                        ? 'Couldn’t load artifacts'
+                        : 'Connect a computer'
+                      : filtered
+                        ? 'No matching artifacts'
+                        : 'Your next idea belongs here'
+                  }
                   description={
-                    sources.length
-                      ? filtered
-                        ? 'Try another search or clear your filters.'
-                        : 'Ask an agent to create a document, a graphic or an interactive tool. You’ll find it here, across all your threads.'
-                      : 'Enable Dovo Artifacts in a computer’s settings to start your collection.'
+                    unavailable
+                      ? failed.length
+                        ? 'Retry loading artifacts, or reconnect their computers.'
+                        : 'Reconnect a computer to load its artifacts. Saved artifacts appear here when available.'
+                      : filtered && incomplete
+                        ? 'No matches in available artifacts. Some computers could not be checked.'
+                        : sources.length
+                          ? filtered
+                            ? 'Try another search or clear your filters.'
+                            : 'Ask an agent to create a document, a graphic or an interactive tool. You’ll find it here, across all your threads.'
+                          : 'Enable Dovo Artifacts in a computer’s settings to start your collection.'
                   }
                   action={
-                    filtered && (
-                      <Button variant="outline" size="sm" onClick={clearFilters}>
-                        Clear filters
-                      </Button>
+                    (failed.length > 0 || filtered) && (
+                      <>
+                        {failed.length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={loading}
+                            onClick={() => setReload((value) => value + 1)}
+                          >
+                            Retry loading artifacts
+                          </Button>
+                        )}
+                        {filtered && (
+                          <Button variant="outline" size="sm" onClick={clearFilters}>
+                            Clear filters
+                          </Button>
+                        )}
+                      </>
                     )
                   }
                 />
@@ -467,7 +507,8 @@ export default function ArtifactsView() {
                           </span>
                           <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                             {artifact.threadTitle} · {source.computerName}
-                            {!source.connected && ' · Offline'}
+                            {!source.connected &&
+                              (source.connecting ? ' · Connecting…' : ' · Offline')}
                           </span>
                         </span>
                         <time
@@ -517,6 +558,7 @@ export default function ArtifactsView() {
                               profile={source.profile}
                               artifact={artifact}
                               connected={source.connected}
+                              connecting={source.connecting}
                               refreshKey={reload}
                             />
                           )}
@@ -567,7 +609,8 @@ export default function ArtifactsView() {
                                 />
                                 <span className="truncate">
                                   {source.computerName}
-                                  {!source.connected && ' · Offline'}
+                                  {!source.connected &&
+                                    (source.connecting ? ' · Connecting…' : ' · Offline')}
                                 </span>
                               </span>
                               <span className="shrink-0 capitalize">{artifact.threadState}</span>
@@ -691,7 +734,7 @@ function ArtifactDetail({
           <>
             <RuntimeIcon icon={source.icon} aria-hidden="true" className="size-3 shrink-0" />
             {source.computerName} · {artifact.threadTitle}
-            {!source.connected && ' · Offline'}
+            {!source.connected && (source.connecting ? ' · Connecting…' : ' · Offline')}
           </>
         }
         leading={back}
@@ -715,6 +758,14 @@ function ArtifactDetail({
               initialId={artifact.id}
             />
           </WorkspaceScope>
+        ) : source.connecting ? (
+          <div
+            role="status"
+            className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"
+          >
+            <LoaderCircle className="size-4 animate-spin" />
+            Connecting to {source.computerName}…
+          </div>
         ) : (
           <EmptyState
             icon={<WifiOff />}

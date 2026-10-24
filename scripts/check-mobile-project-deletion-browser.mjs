@@ -6,6 +6,12 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const importer = root + 'apps/mobile/src/scm/connections/project-deletion.tsx'
 const mocks = [
   {
+    path: '../work/work-menu',
+    importer,
+    contents: `import {useState} from 'react';export const WorkMenu=({actions,label})=>{const[open,setOpen]=useState(false);return <div><button onClick={()=>setOpen(!open)}>{label}</button>{open&&actions.map(action=><button key={action.label} disabled={action.disabled} onClick={()=>{setOpen(false);action.onPress()}}>{action.label}</button>)}</div>};`,
+  },
+
+  {
     path: 'react-native',
     importer,
     contents:
@@ -37,12 +43,6 @@ const mocks = [
     importer,
     contents:
       'export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;',
-  },
-  {
-    path: '../../ui/controls/action',
-    importer,
-    contents:
-      'export const Action=({label,disabled,onPress})=><button disabled={disabled} onClick={onPress}>{label}</button>;',
   },
   {
     path: '../../ui/controls/use-action',
@@ -90,7 +90,8 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  await page.getByRole('button', { name: 'Delete My project', exact: true }).click()
+  await page.getByRole('button', { name: 'Actions for My project', exact: true }).click()
+  await page.getByRole('button', { name: 'Delete project…', exact: true }).click()
   assert.equal(await page.evaluate(() => window.alerts[0].title), 'Delete “My project”?')
   const explanation = await page.evaluate(() => window.alerts[0].message)
   assert.match(explanation, /task and conversation history from Dovo/)
@@ -99,7 +100,8 @@ try {
   // Native alerts dismiss automatically when the user taps Cancel; it has no action callback.
   assert.equal(await page.evaluate(() => window.calls.length), 0)
 
-  await page.getByRole('button', { name: 'Delete My project', exact: true }).click()
+  await page.getByRole('button', { name: 'Actions for My project', exact: true }).click()
+  await page.getByRole('button', { name: 'Delete project…', exact: true }).click()
   await page.evaluate(() => {
     window.fail = true
     window.alerts.at(-1).buttons[1].onPress()
@@ -109,7 +111,8 @@ try {
   await page.evaluate(() => {
     window.fail = false
   })
-  await page.getByRole('button', { name: 'Delete My project', exact: true }).click()
+  await page.getByRole('button', { name: 'Actions for My project', exact: true }).click()
+  await page.getByRole('button', { name: 'Delete project…', exact: true }).click()
   await page.evaluate(() => window.alerts.at(-1).buttons[1].onPress())
   await page.waitForFunction(() => window.navigations.length === 1)
   assert.deepEqual(await page.evaluate(() => window.calls), [

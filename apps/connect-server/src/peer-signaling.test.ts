@@ -8,6 +8,8 @@ import {
   peerCapability,
   peerDigest,
   signPeerSignal,
+  signPeerIce,
+  PEER_ICE_LIMIT,
   peerRelayAdmissionPayload,
 } from '@dovo/protocol'
 import { attachPeerSignaling } from './peer-signaling.js'
@@ -116,6 +118,109 @@ it('exchanges one authenticated offer/answer without any account, HTTP traffic o
   const closed = once(client.socket, 'close')
   client.socket.send(JSON.stringify(offer))
   expect((await closed)[0]).toBe(1008)
+})
+it('advertises trickle only when both endpoints support it', async () => {
+  for (const [hostTrickle, clientTrickle] of [
+    [false, true],
+    [true, false],
+    [true, true],
+  ]) {
+    const f = await fixture()
+    const host = await f.open({ ...f.hostHello, trickle: hostTrickle })
+    await host.reply
+    const client = await f.open({ ...f.clientHello, trickle: clientTrickle })
+    expect(JSON.parse(String((await client.reply)[0])).trickle).toBe(
+      hostTrickle && clientTrickle ? true : undefined,
+    )
+  }
+})
+async function trickleFixture(account?: { grant: string; active: boolean }) {
+  const f = await fixture(undefined, false, account)
+  const host = await f.open({ ...f.hostHello, trickle: true })
+  await host.reply
+  const client = await f.open({ ...f.clientHello, trickle: true })
+  await client.reply
+  const sdp = 'v=0\r\na=fingerprint:sha-256 AA:BB\r\n'
+  const offer = signPeerSignal(f.config, {
+    session: f.clientHello.session,
+    role: 'offer',
+    offer: peerDigest(sdp),
+    sdp,
+    trickle: true,
+    pipeWindow: 64,
+  })
+  const offered = once(host.socket, 'message')
+  client.socket.send(JSON.stringify(offer))
+  await offered
+  const answered = once(client.socket, 'message')
+  host.socket.send(JSON.stringify(signPeerSignal(f.config, { ...offer, role: 'answer' })))
+  await answered
+  const candidate = (role: 'offer' | 'answer', sequence = 0) =>
+    signPeerIce(f.config, {
+      type: 'ice',
+      session: offer.session,
+      offer: offer.offer,
+      role,
+      sequence,
+      candidate: {
+        candidate: 'candidate:1 1 UDP 1 192.0.2.1 1234 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      },
+    })
+  return { ...f, host, client, offer, candidate }
+}
+it('forwards bounded candidates and signed end markers in both directions after the answer', async () => {
+  const f = await trickleFixture()
+  for (const role of ['offer', 'answer'] as const) {
+    const [sender, recipient] = role === 'offer' ? [f.client, f.host] : [f.host, f.client]
+    for (let sequence = 0; sequence <= PEER_ICE_LIMIT; sequence++) {
+      const value = signPeerIce(f.config, {
+        ...f.candidate(role, sequence),
+        ...(sequence === PEER_ICE_LIMIT ? { candidate: null } : {}),
+      })
+      const received = once(recipient.socket, 'message')
+      sender.socket.send(JSON.stringify(value))
+      expect(JSON.parse(String((await received)[0]))).toEqual(value)
+    }
+  }
+})
+it('rejects cross-session, wrong-role, skipped, replayed and post-end ICE frames', async () => {
+  for (const attack of ['session', 'role', 'sequence', 'replay', 'end'] as const) {
+    const f = await trickleFixture()
+    const value = f.candidate('offer')
+    if (attack === 'replay' || attack === 'end') {
+      const received = once(f.host.socket, 'message')
+      f.client.socket.send(JSON.stringify(attack === 'end' ? { ...value, candidate: null } : value))
+      await received
+    }
+    const messages = vi.fn<() => void>()
+    f.host.socket.on('message', messages)
+    const closed = once(f.client.socket, 'close')
+    f.client.socket.send(
+      JSON.stringify({
+        ...value,
+        ...(attack === 'session' ? { session: 'f'.repeat(64) } : {}),
+        ...(attack === 'role' ? { role: 'answer' } : {}),
+        ...(attack === 'sequence' || attack === 'end' ? { sequence: 1 } : {}),
+      }),
+    )
+    expect((await closed)[0]).toBe(1008)
+    expect(messages).not.toHaveBeenCalled()
+    expect(f.host.socket.readyState).toBe(WebSocket.OPEN)
+  }
+})
+it('checks live account revocation before forwarding trickled candidates', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  const account = { grant: 'g'.repeat(43), active: true }
+  const f = await trickleFixture(account)
+  const messages = vi.fn<() => void>()
+  f.host.socket.on('message', messages)
+  const closed = once(f.client.socket, 'close')
+  account.active = false
+  f.client.socket.send(JSON.stringify(f.candidate('offer')))
+  expect((await closed)[0]).toBe(1008)
+  expect(messages).not.toHaveBeenCalled()
 })
 it('issues relay credentials only after a valid room join and sends the same ICE configuration to both peers', async () => {
   const relay = {

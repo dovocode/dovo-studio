@@ -10,6 +10,7 @@ import {
   runtimeRouteVersion,
 } from './routes.js'
 import { runtimeRequest } from '../../shared/client.js'
+import { createRuntimeClient } from '../../shared/runtime-client.js'
 import type { RuntimeConnection } from './runtime.js'
 const requestUrl = (url: Parameters<typeof fetch>[0]) =>
   new URL(url instanceof Request ? url.url : url)
@@ -104,10 +105,18 @@ it('prefers verified LAN, uses the internet credential only on the tunnel, and r
     {},
     Schema.Struct({ ok: Schema.Boolean }),
   )
-  expect(runtimePeerAddress(connection)).toBeUndefined()
+  await vi.waitFor(() => expect(runtimePeerAddress(connection)).toBeUndefined())
   expect(runtimeRouteVersion()).toBeGreaterThan(peerVersion)
+  await runtimeRequest(
+    connection,
+    connection.address,
+    '/api/tasks/run',
+    {},
+    Schema.Struct({ ok: Schema.Boolean }),
+  )
   expect(calls.filter((call) => call.token)).toEqual([
     { host: 'lan.test', token: 'Bearer ' + direct.token },
+    { host: '127.0.0.1:4444', token: 'Bearer ' + internet.token },
     { host: '127.0.0.1:4444', token: 'Bearer ' + internet.token },
     { host: 'lan.test', token: 'Bearer ' + direct.token },
   ])
@@ -227,4 +236,155 @@ it('keeps mutation receipt retries on the first endpoint and credential', async 
     'Bearer pinned-primary',
   ])
   expect(peerResolve).not.toHaveBeenCalled()
+})
+
+it('keeps twenty internet requests moving while sharing a slow background LAN recheck', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const connection = mergeAccountInternetConnection(
+    { ...direct, token: 'background-lan-primary' },
+    internet,
+  )
+  registerPeerTransport({
+    address: () => 'http://127.0.0.1:4444',
+    resolve: async () => 'http://127.0.0.1:4444',
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => {
+      throw new Error('Away from LAN')
+    }),
+  )
+  const signal = new AbortController().signal
+  await resolveRuntimeEndpoint(connection, signal)
+  vi.setSystemTime(Date.now() + 10001)
+  let finish: ((response: Response) => void) | undefined
+  const probe = vi.fn<typeof fetch>(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve
+      }),
+  )
+  vi.stubGlobal('fetch', probe)
+  const pending = Promise.all(
+    Array.from({ length: 20 }, () => resolveRuntimeEndpoint(connection, signal)),
+  )
+  let settled = false
+  void pending.then(() => {
+    settled = true
+  })
+  try {
+    await vi.waitFor(() => expect(settled).toBe(true), { timeout: 500 })
+    expect(await pending).toEqual(
+      Array(20).fill({ address: 'http://127.0.0.1:4444', token: internet.token }),
+    )
+    expect(probe).toHaveBeenCalledTimes(1)
+    expect(runtimePeerAddress(connection)).toBe(internet.address)
+  } finally {
+    finish?.(Response.json({ service: 'dovo-runtime', runtimeId: 'runtime' }))
+  }
+  await vi.waitFor(() => expect(runtimePeerAddress(connection)).toBeUndefined())
+  expect(await resolveRuntimeEndpoint(connection, signal)).toEqual({
+    address: direct.address,
+    token: connection.token,
+  })
+})
+
+it('does not switch to LAN from an invalidated background probe or revive the internet selection', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const connection = mergeAccountInternetConnection(
+    { ...direct, token: 'invalidated-background' },
+    internet,
+  )
+  registerPeerTransport({
+    address: () => 'http://127.0.0.1:4444',
+    resolve: async () => 'http://127.0.0.1:4444',
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => {
+      throw new Error('Away from LAN')
+    }),
+  )
+  const signal = new AbortController().signal
+  await resolveRuntimeEndpoint(connection, signal)
+  vi.setSystemTime(Date.now() + 10001)
+  let finish: ((response: Response) => void) | undefined
+  let backgroundSignal: AbortSignal | null | undefined
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>((_url, options) => {
+      backgroundSignal = options?.signal
+      return new Promise<Response>((resolve) => {
+        finish = resolve
+      })
+    }),
+  )
+  await resolveRuntimeEndpoint(connection, signal)
+  invalidateRuntimeRoute(connection)
+  expect(backgroundSignal?.aborted).toBe(true)
+  finish?.(Response.json({ service: 'dovo-runtime', runtimeId: 'runtime' }))
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(runtimePeerAddress(connection)).toBeUndefined()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () =>
+      Response.json({ service: 'dovo-runtime', runtimeId: 'wrong-runtime' }),
+    ),
+  )
+  expect(await resolveRuntimeEndpoint(connection, signal)).toEqual({
+    address: 'http://127.0.0.1:4444',
+    token: internet.token,
+  })
+})
+
+it('pins a ticket to its issuing tunnel when LAN recovers while the response is in flight', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const connection = mergeAccountInternetConnection(
+    { ...direct, token: 'pinned-ticket-primary' },
+    internet,
+  )
+  registerPeerTransport({
+    address: () => 'http://127.0.0.1:4444',
+    resolve: async () => 'http://127.0.0.1:4444',
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => {
+      throw new Error('Away from LAN')
+    }),
+  )
+  await resolveRuntimeEndpoint(connection, new AbortController().signal)
+  vi.setSystemTime(Date.now() + 10001)
+  let verifyLan: ((response: Response) => void) | undefined
+  let issueTicket: ((response: Response) => void) | undefined
+  const fetcher = vi.fn<typeof fetch>(
+    (url) =>
+      new Promise<Response>((resolve) => {
+        if (requestUrl(url).pathname === '/health') verifyLan = resolve
+        else issueTicket = resolve
+      }),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const client = createRuntimeClient(connection)
+  const pending = client.request(
+    '/api/terminals/ticket',
+    {},
+    Schema.Struct({ ticket: Schema.String }),
+  )
+  await vi.waitFor(() => expect(issueTicket).toBeDefined())
+  verifyLan?.(Response.json({ service: 'dovo-runtime', runtimeId: 'runtime' }))
+  await vi.waitFor(() => expect(runtimePeerAddress(connection)).toBeUndefined())
+  issueTicket?.(Response.json({ ticket: 'one-use-socket-ticket' }))
+  const ticket = await pending
+  expect(client.socketUrl('/ws/terminal', ticket)).toBe(
+    'ws://127.0.0.1:4444/ws/terminal?ticket=one-use-socket-ticket',
+  )
+  expect(await resolveRuntimeEndpoint(connection, new AbortController().signal)).toEqual({
+    address: direct.address,
+    token: connection.token,
+  })
+  expect(new Headers(fetcher.mock.calls[1]?.[1]?.headers).get('Authorization')).toBe(
+    'Bearer ' + internet.token,
+  )
 })

@@ -883,8 +883,13 @@ export function TaskList({
           scrollTop.current = event.currentTarget.scrollTop
         }}
         className="min-h-0 flex-1 overflow-y-auto px-1.5"
-        aria-busy={busy}
+        aria-busy={busy || search.loading}
       >
+        {search.loading && (
+          <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
+            Searching conversation history…
+          </p>
+        )}
         {groups.map((group, index) => {
           // Collapsed sections do not build rows; opening one renders its rows on demand.
           const rows =
@@ -979,7 +984,7 @@ export function TaskList({
             </details>
           )
         })}
-        {!tasks.length && (
+        {!tasks.length && !search.loading && (
           <div className="space-y-2 px-3 py-6 text-xs">
             <p className="font-medium">
               {query || projectId || environment ? 'No matching tasks' : 'Ready for your next idea'}

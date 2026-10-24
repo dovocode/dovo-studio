@@ -22,6 +22,15 @@ without checking the applied patch and its fixture.
 
 # Compatibility patches and version constraints
 
+- **werift 0.25.1:** add an opt-in `setLocalDescription(description, { trickle: true })` path so
+  answers start ICE checks while discovery continues. Keep checks alive for late local and remote
+  candidates, pair late TURN allocations, finish exhausted checklists, and close transports that
+  finish gathering after cancellation. Preserve all TURN URL transports and credentials through
+  configuration updates and gather alternatives concurrently; Dovo bounds those allocations to four
+  URLs covering UDP/TCP/TLS. The default still waits for complete gathering. Apply to CommonJS and
+  bundled ESM entrypoints, including polyfills. Verify with `peer-ice-engine.test.ts`,
+  `peer-connections.test.ts` and `pnpm test:peer-connection:browser`; set `DOVO_TEST_TURN_BINARY`
+  for real UDP/TCP/TLS coturn coverage, including unavailable TLS and blocked UDP alternatives.
 - **react-native-enriched-markdown 1.1.1:** retain streaming render coalescing, live accessibility
   geometry and query predicate evaluation. Verify with
   `node scripts/check-mobile-markdown-highlighting.mjs`.

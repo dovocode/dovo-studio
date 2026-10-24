@@ -93,6 +93,8 @@ export const peerSignalSchema = mutableStruct({
   ),
   mac: hex,
   relay: Schema.optional(peerRelayProviderSchema),
+  trickle: Schema.optional(Schema.Literal(true)),
+  pipeWindow: Schema.optional(Schema.Literal(64)),
 })
 export type PeerSignal = typeof peerSignalSchema.Type
 const credential = Schema.String.pipe(
@@ -151,6 +153,7 @@ export function validPeerRelay(
 }
 export const peerReadySchema = mutableStruct({
   type: Schema.Literal('ready'),
+  trickle: Schema.optional(Schema.Literal(true)),
   customRelay: Schema.optional(internetBoxSchema),
   relay: Schema.optional(peerRelaySchema),
   relayUnavailable: Schema.optional(peerRelayProviderSchema),
@@ -198,6 +201,8 @@ export function signPeerSignal(config: PeerConfig, value: Omit<PeerSignal, 'mac'
             value.offer,
             value.sdp,
             value.relay ?? 'direct',
+            ...(value.trickle ? ['trickle-v1'] : []),
+            ...(value.pipeWindow ? [value.pipeWindow] : []),
           ]),
         ),
       ),

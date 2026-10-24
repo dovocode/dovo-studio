@@ -1,7 +1,12 @@
 import type { Schema } from 'effect'
 import type { RuntimeConnection } from '../runtime/connection/runtime.js'
 import { runtimeTransportAddress } from '../runtime/connection/routes.js'
-import { runtimeRequest, runtimeRequestEffect, type RuntimeRequestOptions } from './client.js'
+import {
+  runtimeRequest,
+  runtimeRequestEffect,
+  runtimeResponseAddress,
+  type RuntimeRequestOptions,
+} from './client.js'
 import { runtimeUrl } from './runtime-url.js'
 
 type RequestOptions = RuntimeRequestOptions & {
@@ -54,11 +59,13 @@ export function createRuntimeClient(connection: RuntimeConnection) {
     },
     /** Resolve a runtime-issued file URL after its request has selected a route. */
     url: (path: string, options?: RouteOptions) => url(path, options).href,
-    /** Tickets must be obtained using the same route purpose. Credentials never enter URLs. */
-    socketUrl(path: string, ticket: string, options?: RouteOptions) {
-      const target = url(path, options)
+    /** Pass the ticket response to retain its issuing transport across route changes.
+     * String tickets retain compatibility with older integrations. Credentials never enter URLs. */
+    socketUrl(path: string, ticket: string | { readonly ticket: string }, options?: RouteOptions) {
+      const issuedAt = typeof ticket === 'string' ? undefined : runtimeResponseAddress(ticket)
+      const target = issuedAt ? runtimeUrl(issuedAt, path) : url(path, options)
       target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:'
-      target.searchParams.set('ticket', ticket)
+      target.searchParams.set('ticket', typeof ticket === 'string' ? ticket : ticket.ticket)
       return target.href
     },
   }

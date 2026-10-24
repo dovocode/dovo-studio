@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
   startRuntimeSync,
   runtimeSyncOnline,
+  retryRuntimeSync,
   watchRuntimeTask,
   watchRuntimeActivity,
   runtimeSnapshotPath,
@@ -809,4 +810,31 @@ it('automatically retries a transient forbidden ticket with the same credential'
   expect(socket).toHaveBeenCalled()
   for (const [, init] of request.mock.calls)
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer ' + connection.token)
+})
+
+it('aborts an old network ticket during explicit recovery and ignores its late response', async () => {
+  const address = 'http://handover-during-ticket.local'
+  const { Socket, live } = await stalledSocketFixture(address)
+  let firstSignal: AbortSignal | null | undefined
+  let finish: ((response: Response) => void) | undefined
+  const fetcher = vi.fn<typeof fetch>((_url, options) => {
+    if (fetcher.mock.calls.length > 1)
+      return Promise.resolve(Response.json({ ticket: 'fresh-network' }))
+    firstSignal = options?.signal
+    return new Promise<Response>((resolve, reject) => {
+      finish = resolve
+      firstSignal?.addEventListener('abort', () => reject(firstSignal?.reason), { once: true })
+    })
+  })
+  vi.stubGlobal('fetch', fetcher)
+  live.retry()
+  await vi.waitFor(() => expect(firstSignal).toBeDefined())
+  retryRuntimeSync({ address, token: 'stalled-socket-test-token' })
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(2))
+  expect(firstSignal?.aborted).toBe(true)
+  expect(fetcher).toHaveBeenCalledTimes(2)
+  finish?.(Response.json({ ticket: 'late-old-network' }))
+  await Promise.resolve()
+  expect(Socket.instances).toHaveLength(2)
+  expect(Socket.instances[0]?.readyState).toBe(3)
 })

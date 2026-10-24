@@ -6,7 +6,7 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { useNavigation } from '../../shell/navigation'
 import { useTaskListView } from '../../tasks/list/task-list-view'
 import { Text } from '../../ui/content/text'
-import { Action } from '../../ui/controls/action'
+import { WorkMenu } from '../work/work-menu'
 import { useAction } from '../../ui/controls/use-action'
 import { useTheme } from '../../ui/theme'
 
@@ -56,7 +56,19 @@ export function DeleteProjectAction({ repository }: { repository: Repository }) 
     )
   return (
     <View style={{ gap: 4 }}>
-      <Action label={`Delete ${repository.name}`} disabled={!connected || busy} onPress={confirm} />
+      <View style={{ alignItems: 'flex-end' }}>
+        <WorkMenu
+          label={`Actions for ${repository.name}`}
+          actions={[
+            {
+              label: 'Delete project…',
+              disabled: !connected || busy,
+              onPress: confirm,
+              destructive: true,
+            },
+          ]}
+        />
+      </View>
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

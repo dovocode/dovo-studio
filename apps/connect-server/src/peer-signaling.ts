@@ -5,6 +5,8 @@ import { Schema } from 'effect'
 import {
   decode,
   peerSignalSchema,
+  peerIceSignalSchema,
+  PEER_ICE_LIMIT,
   peerRelayProviderSchema,
   peerRelayIdentitySchema,
   peerRelayProofSchema,
@@ -24,6 +26,7 @@ const key = Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{64}$/)))
 const helloSchema = Schema.Union([
   Schema.Struct({
     type: Schema.Literal('host'),
+    trickle: Schema.optional(Schema.Boolean),
     room: key,
     key,
     clientKey: key,
@@ -34,6 +37,7 @@ const helloSchema = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal('client'),
+    trickle: Schema.optional(Schema.Boolean),
     room: key,
     key,
     session: key,
@@ -74,6 +78,19 @@ export function attachPeerSignaling(
       relayIdentity?: string
       accountGrant?: string
       customRelay: boolean
+      trickle: boolean
+      exchanges: Map<
+        string,
+        {
+          offer: string
+          trickle: boolean
+          answered: boolean
+          offerSequence: number
+          answerSequence: number
+          offerEnded: boolean
+          answerEnded: boolean
+        }
+      >
       pendingRelays: Map<string, (box?: typeof internetBoxSchema.Type) => void>
     }
   >()
@@ -147,6 +164,7 @@ export function attachPeerSignaling(
           for (const joined of room.clients.values()) joined.close(1012, 'Computer disconnected')
         } else if (hello.type === 'client' && room?.clients.get(hello.session) === client) {
           room.clients.delete(hello.session)
+          room.exchanges.delete(hello.session)
           if (room.customRelay && room.host.readyState === WebSocket.OPEN)
             room.host.send(JSON.stringify({ type: 'relay-cancel', session: hello.session }))
           room.pendingRelays.get(hello.session)?.()
@@ -160,7 +178,8 @@ export function attachPeerSignaling(
             messages = 0
             window = Date.now()
           }
-          if (++messages > 60) throw new Error('Signaling rate exceeded')
+          if (++messages > (hello?.type === 'host' ? 600 : 140))
+            throw new Error('Signaling rate exceeded')
           const bytes = Array.isArray(raw)
             ? Buffer.concat(raw)
             : Buffer.from(raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw)
@@ -187,6 +206,8 @@ export function attachPeerSignaling(
                 accountGrant: input.accountGrant,
                 customRelay: input.customRelay === true,
                 pendingRelays: new Map(),
+                trickle: input.trickle === true,
+                exchanges: new Map(),
               })
             } else {
               if (
@@ -279,6 +300,9 @@ export function attachPeerSignaling(
               client.send(
                 JSON.stringify({
                   type: 'ready',
+                  ...(input.type === 'client' && input.trickle && existing?.trickle
+                    ? { trickle: true }
+                    : {}),
                   ...(customRelay
                     ? { customRelay }
                     : relay
@@ -333,6 +357,33 @@ export function attachPeerSignaling(
             room.pendingRelays.delete(response.session)
             return
           }
+          if (value && typeof value === 'object' && 'type' in value && value.type === 'ice') {
+            const signal = decode(peerIceSignalSchema, value)
+            const room = availableRoom()
+            const exchange = room?.exchanges.get(signal.session)
+            if (
+              !room ||
+              !exchange?.trickle ||
+              signal.offer !== exchange.offer ||
+              signal.role !== (hello.type === 'client' ? 'offer' : 'answer') ||
+              (hello.type === 'client' && signal.session !== hello.session) ||
+              (hello.type === 'host' && !exchange.answered)
+            )
+              throw new Error('Unexpected ICE candidate')
+            const sequence = signal.role === 'offer' ? 'offerSequence' : 'answerSequence'
+            const ended = signal.role === 'offer' ? 'offerEnded' : 'answerEnded'
+            if (
+              exchange[ended] ||
+              signal.sequence !== exchange[sequence] ||
+              (signal.candidate && signal.sequence >= PEER_ICE_LIMIT)
+            )
+              throw new Error('ICE candidate limit or sequence exceeded')
+            exchange[sequence]++
+            exchange[ended] = signal.candidate === null
+            const target = hello.type === 'client' ? room.host : room.clients.get(signal.session)
+            if (target?.readyState === WebSocket.OPEN) target.send(JSON.stringify(signal))
+            return
+          }
           const signal = decode(peerSignalSchema, value)
           const room = availableRoom()
           if (!room) throw new Error('Computer is unavailable')
@@ -341,14 +392,37 @@ export function attachPeerSignaling(
               throw new Error('Unexpected offer')
             if (signal.relay !== (customRelay ? 'custom' : relay?.provider))
               throw new Error('Relay consent does not match offer')
+            if (signal.trickle && (!hello.trickle || !room.trickle))
+              throw new Error('Trickle ICE was not negotiated')
             sent = true
+            room.exchanges.set(signal.session, {
+              offer: signal.offer,
+              trickle: signal.trickle === true,
+              answered: false,
+              offerSequence: 0,
+              answerSequence: 0,
+              offerEnded: false,
+              answerEnded: false,
+            })
             room.host.send(JSON.stringify({ type: 'offer', signal, ...(relay ? { relay } : {}) }))
           } else {
             if (signal.role !== 'answer') throw new Error('Unexpected answer')
             const target = room.clients.get(signal.session)
             if (!target || target.readyState !== WebSocket.OPEN) return
+            const exchange = room.exchanges.get(signal.session)
+            if (
+              !exchange ||
+              exchange.answered ||
+              exchange.offer !== signal.offer ||
+              !!signal.trickle !== exchange.trickle
+            )
+              throw new Error('Unexpected answer binding')
+            exchange.answered = true
             target.send(JSON.stringify(signal))
-            room.clients.delete(signal.session)
+            if (!exchange.trickle) {
+              room.clients.delete(signal.session)
+              room.exchanges.delete(signal.session)
+            }
           }
         } catch {
           client.close(1008, 'Invalid or unavailable signaling session')

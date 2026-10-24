@@ -101,6 +101,13 @@ it('authenticates the full SDP, role, session and offer binding independently of
   expect(verifyPeerSignal({ ...config, secret: 'b'.repeat(64) }, signal)).toBe(false)
   expect(verifyPeerSignal(config, signPeerSignal(config, { ...value, sdp: 'v=0' }))).toBe(false)
 })
+it('authenticates trickle and flow-control capabilities without changing legacy signatures', () => {
+  const signal = signPeerSignal(config, { ...value, trickle: true, pipeWindow: 64 })
+  expect(verifyPeerSignal(config, signal)).toBe(true)
+  expect(verifyPeerSignal(config, { ...signal, trickle: undefined })).toBe(false)
+  expect(verifyPeerSignal(config, { ...signal, pipeWindow: undefined })).toBe(false)
+  expect(verifyPeerSignal(config, signPeerSignal(config, value))).toBe(true)
+})
 it('bounds SDP and permits only HTTPS signaling, with loopback HTTP for isolated tests', () => {
   for (const origin of [
     'http://public.example',

@@ -170,6 +170,56 @@ export class TaskQueue {
     )
     return true
   }
+  duplicate(id: string, messageId: string, duplicateMessageId: string) {
+    const task = this.store.taskSummary(id)
+    const receipt = createHash('sha256')
+      .update(JSON.stringify({ action: 'duplicate', messageId }))
+      .digest('hex')
+    const accepted = this.store.taskSubmission(id, duplicateMessageId)
+    if (accepted) {
+      if (accepted !== receipt) throw new HttpError(409, 'This message id is already in use')
+      return
+    }
+    if (task.archived || task.archivedAt)
+      throw new HttpError(409, 'Restore this task before changing its queue')
+    if (
+      [...this.store.task(id).messages, ...(task.queue ?? [])].some(
+        (item) => item.id === duplicateMessageId,
+      )
+    )
+      throw new HttpError(409, 'This message id is already in use')
+    const index = task.queue?.findIndex((item) => item.id === messageId) ?? -1
+    const message = task.queue?.[index]
+    if (!message) throw new HttpError(409, 'This message already started or was removed')
+    if (message.steering) throw new HttpError(409, 'This message is being delivered to the agent')
+    if ((task.queue?.length ?? 0) >= 50)
+      throw new HttpError(409, 'Queue is full (50 messages). Remove a message or let it run.')
+    this.validateSettings(id, message.turnSettings)
+    const createdAt = new Date().toISOString()
+    this.store.updateTask(
+      id,
+      (current) => ({
+        ...current,
+        checkoutLocked: true,
+        lastPromptAt: createdAt,
+        queue: [
+          ...(current.queue ?? []).slice(0, index + 1),
+          {
+            id: duplicateMessageId,
+            role: 'user',
+            text: message.text,
+            attachments: message.attachments,
+            turnSettings: message.turnSettings,
+            paused: message.paused,
+            createdAt,
+          },
+          ...(current.queue ?? []).slice(index + 1),
+        ],
+      }),
+      { id: duplicateMessageId, fingerprint: receipt },
+    )
+    this.activity?.add('queue', id, 'Queued message duplicated', { messageId, duplicateMessageId })
+  }
   edit(
     id: string,
     messageId: string,

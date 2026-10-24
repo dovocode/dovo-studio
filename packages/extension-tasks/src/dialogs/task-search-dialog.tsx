@@ -73,11 +73,6 @@ export function TaskSearchDialog({
           Type to search, use the arrow keys to choose, and Enter to open. Tab switches between
           tasks and messages.
         </DialogDescription>
-        {(search.error || search.loading) && (
-          <p role="status" className="pl-2 pr-10 text-xs text-muted-foreground max-sm:pr-12">
-            {search.error || 'Searching conversations…'}
-          </p>
-        )}
         <div className="flex min-h-8 items-center gap-2 pl-2 pr-10 max-sm:min-h-11 max-sm:pr-12">
           {mode === 'messages' ? (
             <MessageSquare className="size-4 text-muted-foreground" aria-hidden />
@@ -115,7 +110,13 @@ export function TaskSearchDialog({
             Tab: {mode === 'messages' ? 'tasks' : 'messages'}
           </span>
         </div>
-        <ul ref={list} id={listId} role="listbox" className="max-h-[50vh] overflow-y-auto">
+        <ul
+          ref={list}
+          id={listId}
+          role="listbox"
+          aria-busy={search.loading}
+          className="h-[min(18rem,40vh)] overflow-y-auto"
+        >
           {results.map((result, index) => (
             <li
               key={result.key}
@@ -139,12 +140,30 @@ export function TaskSearchDialog({
           ))}
           {!results.length && !search.loading && (
             <li className="px-3 py-6 text-center text-xs text-muted-foreground">
-              {mode === 'messages' && query.trim().length < 2
-                ? 'Type at least two characters.'
-                : 'No matches.'}
+              {mode === 'messages' && !query.trim()
+                ? 'Search all conversations.'
+                : search.error
+                  ? 'No matches in available results.'
+                  : 'No matches.'}
             </li>
           )}
         </ul>
+        <p
+          role={search.error ? 'alert' : 'status'}
+          className={cn(
+            'min-h-4 break-words px-3 text-xs [overflow-wrap:anywhere]',
+            search.error ? 'text-destructive' : 'text-muted-foreground',
+          )}
+        >
+          {search.error ||
+            (search.loading
+              ? 'Searching conversations…'
+              : search.offline
+                ? 'Offline computers: searching saved messages only.'
+                : mode === 'messages' && !query.trim()
+                  ? 'Type to search conversation history.'
+                  : '\u00a0')}
+        </p>
       </DialogContent>
     </Dialog>
   )

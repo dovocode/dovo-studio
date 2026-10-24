@@ -164,8 +164,8 @@ export const ScrollView=({children,style,contentContainerStyle,horizontal})=><Vi
 export const Modal=({children,visible=true})=>visible?<div role="dialog" style={{position:'fixed',inset:0,zIndex:100,background:'#0a0a0a',display:'flex',flexDirection:'column'}}>{children}</div>:null;export const ActivityIndicator=()=> <p>Loading</p>;export const Keyboard={dismiss(){}};
 export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,disabled,style})=><button onClick={onPress} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',backgroundColor:'transparent',border:0,padding:0,margin:0,color:'#e8e9ed',textAlign:'left',fontFamily:'system-ui',flexShrink:0,...webStyle(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={event=>onValueChange(event.target.checked)}/>;
-export const Image=({source,style})=><img src={source.uri} style={webStyle(style)}/>;export const Text=({children,style})=><span style={webStyle(style)}>{children}</span>;
-export const FlatList=({data,renderItem,ListEmptyComponent,contentContainerStyle})=><ScrollView contentContainerStyle={contentContainerStyle}>{data.length?data.map((item,index)=><React.Fragment key={index}>{renderItem({item})}</React.Fragment>):ListEmptyComponent}</ScrollView>;
+export const Image=({source,style})=><img src={source.uri} style={webStyle(style)}/>;export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole==='header'?'heading':accessibilityRole} style={webStyle(style)}>{children}</span>;
+export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent,contentContainerStyle})=><ScrollView contentContainerStyle={contentContainerStyle}>{ListHeaderComponent}{data.length?data.map((item,index)=><React.Fragment key={index}>{renderItem({item})}</React.Fragment>):ListEmptyComponent}</ScrollView>;
 export const Linking={openURL:async url=>window.openedArtifactLinks.push(url)};export const Alert={alert:(...args)=>(window.artifactAlerts??=[]).push(args)};export const StyleSheet={create:x=>x,hairlineWidth:1};export const Platform={OS:'ios'};
 `,
   'react-native-safe-area-context': `import {View} from 'react-native';export const SafeAreaProvider=({children})=><View style={{flex:1,minHeight:0}}>{children}</View>;export const SafeAreaView=View;`,
@@ -183,7 +183,7 @@ export const Linking={openURL:async url=>window.openedArtifactLinks.push(url)};e
   '../controls/icon-button': `import React from 'react';import {Icon} from '../controls/icon';export const IconButton=({label,icon,onPress,disabled})=><button aria-label={label} data-icon={icon} disabled={disabled} onClick={onPress} style={{width:44,height:44,display:'flex',alignItems:'center',justifyContent:'center',background:'transparent',border:0,opacity:disabled?0.4:1}}><Icon name={icon}/></button>;`,
   '../runtime/connection/provider': `import {useWorkspace,WorkspaceScope} from '@dovo/studio-core';export const useRuntime=()=>useWorkspace();export const RuntimeScope=({runtimeId,children})=><WorkspaceScope profile={window.artifactWorkspace.overviews.find(x=>x.profile.id===runtimeId).profile}>{children}</WorkspaceScope>;`,
   '../shell/navigation': `export const useNavigation=()=>({focused:true,navigate:(view,entityId,runtimeId)=>window.artifactNavigation={view,entityId,runtimeId}});`,
-  '../ui/layout/screen-header': `export const ScreenHeader=({title,subtitle,buttons,onBack})=><header>{onBack&&<button aria-label="Back" onClick={onBack}>Back</button>}<h1>{title}</h1><p>{subtitle}</p>{buttons.map(button=><button key={button.label} aria-label={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;`,
+  '../ui/layout/screen-header': `export const ScreenHeader=({title,subtitle,buttons,onBack})=><header>{onBack&&<button aria-label="Back" onClick={onBack}>Back</button>}<h1>{title}</h1><p>{subtitle}</p>{buttons.map(button=><button key={button.label} aria-label={button.label} aria-pressed={button.selected} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;`,
   '../ui/controls/field': `export const Field=({label,value,onChangeText,editable})=><label>{label}<input aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/></label>;export const SearchField=Field;`,
   '../ui/controls/choice': `export const Choice=({label,value,items,onChange})=><select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;`,
   '../ui/controls/action': `export {Action} from '../controls/action';`,
@@ -1463,6 +1463,27 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     await cards.first().waitFor()
     assert.equal(await cards.count(), 8)
     if (native) {
+      const filters = library.getByRole('button', { name: 'Artifact filters', exact: true })
+      const compactTop = (await cards.first().boundingBox()).y
+      assert.equal(await library.getByLabel('Sort artifacts', { exact: true }).count(), 0)
+      await filters.click()
+      assert.ok(
+        (await cards.first().boundingBox()).y > compactTop,
+        'Secondary filters start collapsed',
+      )
+      await library.getByRole('button', { name: 'Document', exact: true }).click()
+      assert.equal(await cards.count(), 2)
+      await filters.click()
+      assert.equal(
+        await filters.getAttribute('aria-pressed'),
+        'true',
+        'Collapsed active filters remain indicated',
+      )
+      assert.equal(await library.getByLabel('Sort artifacts', { exact: true }).count(), 0)
+      assert.equal(await cards.count(), 2, 'Collapsing filters preserves the selected format')
+      await library.getByRole('button', { name: 'Clear filters', exact: true }).click()
+      assert.equal(await cards.count(), 8)
+      await filters.click()
       await library.getByRole('button', { name: 'Back', exact: true }).click()
       assert.equal(await library.evaluate(() => window.artifactBackRoute), '/')
       await library.evaluate(() => (window.artifactHistory = '/settings'))
@@ -1842,6 +1863,128 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     assert.equal(await cards.count(), 7, 'Offline mode preserves saved rows')
     await library.close()
   }
+  for (const platform of ['library', 'mobile-library']) {
+    const native = platform === 'mobile-library'
+    const recovery = await browser.newPage({
+      viewport: { width: native ? 390 : 1280, height: 844 },
+    })
+    await prepareView(recovery, native)
+    await recovery.evaluate(() => {
+      window.recoveryMode = 'failed'
+      window.recoveryReads = 0
+      const source = {
+        profile: {
+          id: 'recovery',
+          name: 'Recovery host',
+          nameIsCustom: true,
+          connection: { address: 'http://recovery.lan', token: 'first' },
+        },
+        connected: true,
+        error: null,
+        snapshot: {
+          artifactsEnabled: true,
+          workspace: { agents: [], repositories: [], tasks: [] },
+        },
+      }
+      window.recoverySource = source
+      window.artifactWorkspace = {
+        runtimes: [source],
+        overviews: [source],
+        runtimeReadCache: () => ({ read: async () => null, write: async () => {} }),
+        cacheForRuntime: () => ({ read: async () => null, write: async () => {} }),
+        readRuntime: async (profile, path) => {
+          if (path.endsWith('/snapshot')) return { excerpt: 'Saved preview' }
+          window.recoveryReads++
+          if (window.recoveryMode === 'failed') throw Error('Library temporarily unavailable')
+          return {
+            artifacts: [
+              {
+                id: 'saved',
+                taskId: 'thread',
+                title: 'Recovered document',
+                format: 'markdown',
+                revision: 1,
+                createdAt: '2026-10-01',
+                updatedAt: '2026-10-02',
+                threadTitle: 'Research',
+                threadState: 'active',
+              },
+            ],
+          }
+        },
+      }
+      window.changeRecovery = (patch) => {
+        window.recoverySource = { ...window.recoverySource, ...patch }
+        window.artifactWorkspace.runtimes = [window.recoverySource]
+        window.artifactWorkspace.overviews = [window.recoverySource]
+        window.updateLibrary()
+      }
+    })
+    await recovery.addScriptTag({ content: interfaces.find((ui) => ui.platform === platform).code })
+    await recovery.getByText('Couldn’t load artifacts', { exact: true }).waitFor()
+    assert.equal(
+      await recovery.getByText('Your next idea belongs here', { exact: true }).count(),
+      0,
+    )
+    await recovery
+      .getByRole('alert')
+      .filter({ hasText: 'Library temporarily unavailable' })
+      .waitFor()
+    await recovery.evaluate(() => (window.recoveryMode = 'ready'))
+    await recovery.getByRole('button', { name: 'Retry loading artifacts', exact: true }).click()
+    const recovered = recovery.getByRole('button', {
+      name: 'Open artifact Recovered document',
+      exact: true,
+    })
+    await recovered.waitFor()
+    assert.equal(await recovery.evaluate(() => window.recoveryReads), 2)
+    await recovery.evaluate(() => window.changeRecovery({ connected: false, error: 'Offline' }))
+    await recovery.getByText(/Recovery host is offline/).waitFor()
+    assert.equal(await recovered.count(), 1, 'Disconnecting keeps the recovered artifacts')
+    if (!native) {
+      await recovery.evaluate(() => window.changeRecovery({ error: null }))
+      await recovered.click()
+      await recovery
+        .getByRole('status')
+        .filter({ hasText: 'Connecting to Recovery host…' })
+        .waitFor()
+      assert.equal(
+        await recovery
+          .getByRole('heading', { name: 'Recovery host is offline', exact: true })
+          .count(),
+        0,
+      )
+      await recovery.getByRole('button', { name: 'Back to artifacts', exact: true }).first().click()
+      await recovery.evaluate(() => window.changeRecovery({ error: 'Offline' }))
+      await recovery.getByText(/Recovery host is offline/).waitFor()
+    }
+    await recovery.getByLabel('Search artifacts').fill('not in saved results')
+    await recovery
+      .getByText('No matches in available artifacts. Some computers could not be checked.', {
+        exact: true,
+      })
+      .waitFor()
+    await recovery.getByRole('button', { name: 'Clear filters', exact: true }).click()
+    await recovery.evaluate(() =>
+      window.changeRecovery({
+        profile: {
+          ...window.recoverySource.profile,
+          connection: { address: 'http://recovery.lan', token: 'second' },
+        },
+      }),
+    )
+    await recovery.getByText('Connect a computer', { exact: true }).waitFor()
+    assert.equal(await recovered.count(), 0, 'A new pairing cannot inherit saved artifacts')
+    await recovery.evaluate(() => window.changeRecovery({ error: null }))
+    await recovery.getByText(native ? 'Loading' : 'Loading artifacts…', { exact: true }).waitFor()
+    assert.equal(
+      await recovery.getByText('Connect a computer', { exact: true }).count(),
+      0,
+      'Connecting is not reported as offline',
+    )
+    assert.equal(await recovery.getByText(/Recovery host is offline/).count(), 0)
+    await recovery.close()
+  }
   {
     const owners = await browser.newPage({ viewport: { width: 1280, height: 800 } })
     await prepareView(owners)
@@ -1916,7 +2059,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     const row = (title) => owners.getByRole('button', { name: `Open artifact ${title}` })
     await row('Alpha notes').waitFor()
     // Host B is still loading; a newer read must win over the slower older reply.
-    await owners.evaluate(() => window.setRuntime('b', { connected: false }))
+    await owners.evaluate(() => window.setRuntime('b', { connected: false, error: 'Offline' }))
     await owners.getByText('Host B is offline.', { exact: false }).waitFor()
     await owners.evaluate(() => window.setRuntime('b', { connected: true }))
     await owners.waitForFunction(() => window.pendingB.length === 2)
@@ -1932,7 +2075,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     assert.equal(await row('Fresh B').count(), 1)
 
     const onlineCardHeight = (await row('Alpha notes').boundingBox()).height
-    await owners.evaluate(() => window.setRuntime('a', { connected: false }))
+    await owners.evaluate(() => window.setRuntime('a', { connected: false, error: 'Offline' }))
     await owners.getByText('Host A is offline. Showing artifacts saved', { exact: false }).waitFor()
     assert.equal(await row('Alpha notes').count(), 1, 'Disconnects keep the last healthy rows')
     assert.equal(

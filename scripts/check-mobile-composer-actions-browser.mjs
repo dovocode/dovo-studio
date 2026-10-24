@@ -6,14 +6,16 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/'
 const controls = `
-import {useImperativeHandle,useLayoutEffect,useRef} from 'react';
+import {useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';
 const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(Array.isArray(s.transform))s.transform=s.transform.map(t=>'translateY('+t.translateY+'px)').join(' ');return s};
 const useLayout=(ref,callback)=>{const current=useRef(callback);current.current=callback;const report=()=>{if(!ref.current||!current.current)return;const r=ref.current.getBoundingClientRect(),p=ref.current.parentElement.getBoundingClientRect();current.current({nativeEvent:{layout:{x:ref.current.offsetLeft-ref.current.parentElement.offsetLeft,y:ref.current.offsetTop-ref.current.parentElement.offsetTop,width:r.width,height:r.height}}})};useLayoutEffect(report);useLayoutEffect(()=>{const observer=new ResizeObserver(report);observer.observe(ref.current);return()=>observer.disconnect()},[])};
-export const View=({children,style,testID,accessibilityRole,accessibilityLabel,onLayout})=>{const ref=useRef(null);useLayout(ref,onLayout);return <div ref={ref} role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',borderStyle:'solid',borderWidth:0,...flat(style)}}>{children}</div>};
+export const View=({children,style,testID,accessibilityRole,accessibilityLabel,onLayout,ref:forwardedRef})=>{const ref=useRef(null);useLayout(ref,onLayout);useImperativeHandle(forwardedRef,()=>({measureInWindow:callback=>{const r=ref.current.getBoundingClientRect();callback(r.x,r.y,r.width,r.height)}}));return <div ref={ref} role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',borderStyle:'solid',borderWidth:0,...flat(style)}}>{children}</div>};
 export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,overflowY:scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:'column',...flat(contentContainerStyle)}}>{children}</div></div>};
 export const Text=({children,style,numberOfLines,accessibilityRole,accessibilityLabel})=><span role={accessibilityRole} aria-label={accessibilityLabel} style={{...flat(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
 export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole,accessibilityActions,onAccessibilityAction})=><button data-actions={JSON.stringify(accessibilityActions)} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Modal=({children,onRequestClose})=>createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body);
+export const useWindowDimensions=()=>{const[viewport,setViewport]=useState({width:innerWidth,height:innerHeight});useLayoutEffect(()=>{const resize=()=>setViewport({width:innerWidth,height:innerHeight});addEventListener('resize',resize);return()=>removeEventListener('resize',resize)},[]);return viewport};
 export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
 export const Keyboard={dismiss(){document.activeElement?.blur()}};export const Linking={openSettings:async()=>{}};
@@ -34,7 +36,7 @@ const stubs = [
     contents: `
 import {useRef} from 'react';export {Pressable} from 'react-native';
 export const Gesture={Pan:()=>{const gesture={callbacks:{},enabled(value){this.active=value;return this},activateAfterLongPress(value){this.delay=value;return this},runOnJS(){return this},onStart(fn){this.callbacks.start=fn;return this},onUpdate(fn){this.callbacks.update=fn;return this},onEnd(fn){this.callbacks.end=fn;return this},onFinalize(fn){this.callbacks.finalize=fn;return this}};return gesture}};
-export const GestureDetector=({gesture,children})=>{const state=useRef(null);return <div style={{display:'flex',flex:1,minWidth:0}} onPointerDown={event=>{if(!gesture.active)return;event.currentTarget.setPointerCapture(event.pointerId);const current={y:event.clientY,dragging:false};state.current=current;current.timer=setTimeout(()=>{current.dragging=true;gesture.callbacks.start()},gesture.delay)}} onPointerMove={event=>{const current=state.current;if(!current)return;if(current.dragging)gesture.callbacks.update({translationY:event.clientY-current.y});else if(Math.abs(event.clientY-current.y)>10){clearTimeout(current.timer);state.current=null}}} onPointerUp={()=>{const current=state.current;if(!current)return;clearTimeout(current.timer);if(current.dragging){gesture.callbacks.end();gesture.callbacks.finalize({},true)}}} onPointerCancel={()=>{clearTimeout(state.current?.timer);gesture.callbacks.finalize({},false);state.current=null}} onClickCapture={event=>{if(state.current?.dragging){event.preventDefault();event.stopPropagation()}state.current=null}}>{children}</div>};
+export const GestureDetector=({gesture,children})=>{const state=useRef(null);return <div style={{display:'flex',flex:1,minWidth:0}} onPointerDown={event=>{if(!gesture.active)return;const target=event.currentTarget;const current={y:event.clientY,dragging:false};state.current=current;current.timer=setTimeout(()=>{current.dragging=true;target.setPointerCapture(event.pointerId);gesture.callbacks.start()},gesture.delay)}} onPointerMove={event=>{const current=state.current;if(!current)return;if(current.dragging)gesture.callbacks.update({translationY:event.clientY-current.y});else if(Math.abs(event.clientY-current.y)>10){clearTimeout(current.timer);state.current=null}}} onPointerUp={()=>{const current=state.current;if(!current)return;clearTimeout(current.timer);if(current.dragging){gesture.callbacks.end();gesture.callbacks.finalize({},true)}}} onPointerCancel={()=>{clearTimeout(state.current?.timer);gesture.callbacks.finalize({},false);state.current=null}} onClickCapture={event=>{if(state.current?.dragging){event.preventDefault();event.stopPropagation()}state.current=null}}>{children}</div>};
 `,
   },
   ...[
@@ -91,7 +93,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
   },
   {
     path: 'react-native-safe-area-context',
-    contents: 'export const useSafeAreaInsets=()=>({bottom:0});',
+    contents: 'export const useSafeAreaInsets=()=>({top:0,right:0,bottom:0,left:0});',
   },
   { path: 'expo-crypto', contents: 'let id=0;export const randomUUID=()=> "fork-"+(++id);' },
   {
@@ -134,14 +136,14 @@ import {defaultTaskHarness} from '@dovo/protocol';
 import {Composer} from './src/tasks/composer/composer';import {ComposerActivity} from './src/tasks/composer/composer-activity';
 window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
 function App(){
-  const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
+  const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',activeRunId:'active-run',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
   const [inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;
   const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;const [text,setText]=useState('Continue the review');const [connected,setConnected]=useState(true);
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
   const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
-  const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
-  window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
-  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
+  const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
+  window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}},catch:error=>error})};
+  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
   return <Composer task={task} renderAbove={setup=> <>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -247,7 +249,7 @@ try {
     await page.getByRole('button', { name: 'Agent & model', exact: true }).innerText(),
     'GPT',
   )
-  for (const name of ['Edit queued message 1', 'Actions for queued message 1']) {
+  for (const name of ['Steer with queued message 1', 'Actions for queued message 1']) {
     const bounds = await page.getByRole('button', { name, exact: true }).boundingBox()
     assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44)
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320)
@@ -264,6 +266,84 @@ try {
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'resume-message')
   await page.evaluate(() =>
     window.setTask({ queue: window.currentTask.queue.map((item) => ({ ...item, paused: false })) }),
+  )
+  // Steering is available directly on the row and targets the current run.
+  await page.getByRole('button', { name: 'Steer with queued message 1', exact: true }).click()
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'steer')
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.runId), 'active-run')
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queued')
+  assert.equal(await page.getByRole('dialog', { name: 'Queued message 1', exact: true }).count(), 0)
+  const queueBeforeMenu = await page.getByTestId('Queued messages').boundingBox()
+  await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
+  const menu = page.getByRole('menu', { name: 'Actions for queued message 1', exact: true })
+  const menuBox = await menu.boundingBox()
+  assert.ok(menuBox.width <= 264 && menuBox.height < 200, JSON.stringify(menuBox))
+  assert.ok(menuBox.x >= 0 && menuBox.x + menuBox.width <= 320)
+  assert.ok(menuBox.y >= 0 && menuBox.y + menuBox.height <= 900)
+  assert.equal(await page.getByRole('dialog').count(), 0)
+  assert.deepEqual(await page.getByTestId('Queued messages').boundingBox(), queueBeforeMenu)
+  await page.getByRole('button', { name: 'Dismiss queued message actions', exact: true }).click()
+  assert.equal(await page.getByRole('menu').count(), 0)
+  // Lost responses keep the same duplicate id; a successful new click gets a fresh id.
+  const duplicate = async () => {
+    await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Duplicate queued message 1', exact: true }).click()
+  }
+  const draftBeforeDuplicate = await page
+    .getByRole('textbox', { name: 'Message', exact: true })
+    .inputValue()
+  await page.evaluate(() => {
+    window.failDuplicate = true
+  })
+  await duplicate()
+  await page.getByRole('alert').filter({ hasText: 'Duplicate failed' }).waitFor()
+  const duplicateId = await page.evaluate(() => window.calls.at(-1).input.duplicateMessageId)
+  assert.ok(duplicateId)
+  await page.evaluate(() => {
+    window.failDuplicate = false
+  })
+  await duplicate()
+  await page.waitForFunction(() => !document.querySelector('[role="alert"]'))
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.duplicateMessageId), duplicateId)
+  await duplicate()
+  await page.waitForFunction(
+    (id) => window.calls.at(-1).input.duplicateMessageId !== id,
+    duplicateId,
+  )
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
+    draftBeforeDuplicate,
+  )
+  for (const update of [{ archived: true }, { activeRunId: null }, { status: 'review' }]) {
+    await page.evaluate((update) => window.setTask(update), update)
+    await page.waitForFunction(
+      () => document.querySelector('[aria-label="Steer with queued message 1"]')?.disabled,
+    )
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Steer with queued message 1', exact: true })
+        .isDisabled(),
+      true,
+    )
+    await page.evaluate(() =>
+      window.setTask({
+        archived: false,
+        activeRunId: 'active-run',
+        status: 'running',
+        queue: [{ id: 'queued', role: 'user', text: 'Check the tests' }],
+      }),
+    )
+  }
+  await page.evaluate(() =>
+    window.setTask({
+      queue: [{ id: 'queued', role: 'user', text: 'Check the tests', steering: true }],
+    }),
+  )
+  await page
+    .getByRole('button', { name: 'Steer with queued message 1', exact: true })
+    .waitFor({ state: 'detached' })
+  await page.evaluate(() =>
+    window.setTask({ queue: [{ id: 'queued', role: 'user', text: 'Check the tests' }] }),
   )
   await page.getByRole('button', { name: 'Steer agent', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'steer' })
@@ -300,7 +380,8 @@ try {
   await page.waitForFunction(() => window.navigations.length === 1)
   assert.deepEqual(await page.evaluate(() => window.navigations[0]), ['tasks', 'fork', 'runtime'])
   assert.equal(await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(), '')
-  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Edit queued message 1', exact: true }).click()
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Verify before shipping')
   await page.getByRole('button', { name: 'Agent & model', exact: true }).click()
   await page.getByRole('button', { name: 'Fast model', exact: true }).click()
@@ -373,15 +454,22 @@ try {
   for (const name of [
     'Pause queued message 1',
     'Edit queued message 1',
+    'Duplicate queued message 1',
+    'Steer with queued message 1',
     'Steer with message 1',
     'Return message 1 to composer',
   ]) {
-    assert.equal(await page.getByRole('button', { name, exact: true }).isDisabled(), true)
+    assert.equal(
+      await page
+        .getByRole(
+          name.startsWith('Pause ') || name.startsWith('Steer with queued') ? 'button' : 'menuitem',
+          { name, exact: true },
+        )
+        .isDisabled(),
+      true,
+    )
   }
-  await page
-    .getByRole('dialog', { name: 'Queued message 1', exact: true })
-    .getByRole('button', { name: 'Close', exact: true })
-    .click()
+  await page.getByRole('button', { name: 'Dismiss queued message actions', exact: true }).click()
   await page.evaluate(() => window.setTask({ repositoryId: undefined }))
   await page.getByRole('button', { name: 'Fork', exact: true }).waitFor({ state: 'detached' })
   await page.evaluate(() => {
@@ -499,7 +587,8 @@ try {
   await queueTab.click()
   await page.getByTestId('Queued messages').waitFor()
   await page.getByText('Queued follow-up', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Edit queued message 1', exact: true }).click()
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Keep native queue edit')
   await page.evaluate(() =>
     window.setInputs({
@@ -609,7 +698,8 @@ try {
   )
   await page.getByRole('tab', { name: 'Queue · 1', exact: true }).click()
   await page.getByText('Preserve queued message', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Edit queued message 1', exact: true }).click()
   const queueEdit = page.getByRole('textbox', { name: 'Message', exact: true })
   await queueEdit.fill('Keep edit after clearing checklist')
   await page.getByRole('tab', { name: /Checklist · 0\/1/ }).click()
@@ -636,6 +726,23 @@ try {
   await page
     .getByRole('button', { name: 'Actions for queued message 20', exact: true })
     .waitFor({ state: 'attached' })
+  await page.evaluate(() =>
+    window.setTask({
+      queue: window.currentTask.queue.map((item, index) => ({ ...item, paused: index === 0 })),
+    }),
+  )
+  await page
+    .getByRole('button', { name: /^View queued message 2:.*Waiting behind paused message 1/ })
+    .waitFor()
+  await page.evaluate(() =>
+    window.setTask({ queue: window.currentTask.queue.map((item) => ({ ...item, paused: false })) }),
+  )
+  assert.equal(
+    await page
+      .getByRole('button', { name: /^View queued message 2:.*Waiting behind paused message/ })
+      .count(),
+    0,
+  )
   const queuedList = page.getByLabel('Queued message list', { exact: true })
   assert.ok(await queuedList.evaluate((element) => element.scrollHeight > element.clientHeight))
   assert.ok((await queuedList.boundingBox()).height <= 180)
@@ -667,14 +774,12 @@ try {
   const preview = row.locator('span').last()
   assert.equal(await preview.evaluate((element) => getComputedStyle(element).whiteSpace), 'nowrap')
   assert.ok(await preview.evaluate((element) => element.scrollWidth > element.clientWidth))
-  await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
+  await page.getByRole('button', { name: /^View queued message 1:/ }).click()
   const details = page.getByRole('dialog', { name: 'Queued message 1', exact: true })
   assert.equal(await details.getByText(longMessage, { exact: true }).textContent(), longMessage)
+  assert.equal(await row.getByText('test-model · Default reasoning', { exact: true }).count(), 0)
+  await details.getByText('test-model · Default reasoning', { exact: true }).waitFor()
   await details.getByText('review.txt', { exact: true }).waitFor()
-  assert.equal(
-    await details.getByRole('button', { name: 'Steer with message 1', exact: true }).isDisabled(),
-    true,
-  )
   await details.getByRole('button', { name: 'Close', exact: true }).click()
 
   // Touch-and-hold a message, then move it across another row.
@@ -733,11 +838,11 @@ try {
   await page.waitForFunction(() => window.calls.at(-1)?.input?.beforeMessageId === 'queue-3')
 
   await page.getByRole('button', { name: 'Actions for queued message 2', exact: true }).click()
-  await page.getByRole('button', { name: 'Steer with message 2', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Steer with message 2', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'steer')
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queue-1')
   await page.getByRole('button', { name: 'Actions for queued message 20', exact: true }).click()
-  await page.getByRole('button', { name: 'Return message 20 to composer', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Return message 20 to composer', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'restore')
   await page.waitForFunction(() =>
     window.conversation.actions.draft.text.includes('Queued item 20'),
@@ -747,7 +852,7 @@ try {
   await page.getByTestId('Queued messages').waitFor({ state: 'detached' })
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile composer: inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/steer/restore, composer queue editing, checklist collapse, side-chat sending, failure recovery and offline guards passed with native control adapters.',
+    'Mobile composer: inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/direct steer/restore, compact anchored queue menus, retry-safe duplication, composer queue editing, checklist collapse, side-chat sending, failure recovery and offline guards passed with native control adapters.',
   )
 } finally {
   await browser.close()

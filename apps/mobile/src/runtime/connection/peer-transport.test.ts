@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { peerAddress, resolvePeerTransport, peerTransportAddress } from '@dovo/protocol'
 import {
   closePeerConnections,
+  preconnectPeerConnection,
   forgetPeerConnection,
   preparePeerConnection,
   setPeerConnectionsActive,
@@ -194,4 +195,37 @@ it('fails immediately while offline and notifies listeners when the same network
   } finally {
     unsubscribe()
   }
+})
+
+it('shares foreground preconnection with the first request, and does no setup offline or in background', async () => {
+  const tunnel = {
+    address: 'http://127.0.0.1:12345',
+    close: vi.fn<() => void>(),
+    alive: () => true,
+    route: () => 'direct' as const,
+  }
+  native.open.mockResolvedValue(tunnel)
+  setPeerConnectionsAppState('background')
+  await preconnectPeerConnection(address)
+  expect(native.open).not.toHaveBeenCalled()
+  setPeerConnectionsAppState('active')
+  await Promise.all([
+    preconnectPeerConnection(address),
+    resolvePeerTransport(address, config, signal()),
+  ])
+  expect(native.open).toHaveBeenCalledOnce()
+  expect(peerConnectionReady(address)).toBe(true)
+  closePeerConnections()
+  setPeerConnectionNetwork({ isConnected: false })
+  await preconnectPeerConnection(address)
+  expect(native.open).toHaveBeenCalledOnce()
+})
+
+it('requests immediate sync recovery only on a real handover or return from offline', () => {
+  expect(setPeerConnectionNetwork({ type: 'WIFI', isConnected: true })).toBe(false)
+  expect(setPeerConnectionNetwork({ type: 'CELLULAR', isConnected: true })).toBe(true)
+  expect(setPeerConnectionNetwork({ type: 'CELLULAR', isConnected: true })).toBe(false)
+  expect(setPeerConnectionNetwork({ isConnected: false })).toBe(false)
+  expect(setPeerConnectionNetwork({ type: 'CELLULAR', isConnected: true })).toBe(true)
+  expect(setPeerConnectionNetwork({ type: 'CELLULAR', isConnected: true })).toBe(false)
 })

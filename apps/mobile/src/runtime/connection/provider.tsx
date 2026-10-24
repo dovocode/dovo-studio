@@ -53,6 +53,7 @@ import {
   peerConnectionReady,
   replacePeerConnection,
   preparePeerConnection,
+  preconnectPeerConnection,
 } from './peer-transport'
 import { mobileMutationStorage } from './mutation-storage'
 import {
@@ -201,16 +202,25 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     setPeerConnectionsAppState(AppState.currentState)
     let disposed = false
     let networkObserved = false
+    const updateNetwork = (state: Network.NetworkState) => {
+      if (!setPeerConnectionNetwork(state)) return
+      const selected = current.current.profiles.find((item) => item.id === current.current.activeId)
+      // Handover invalidates pending negotiation as well as open native sockets.
+      // Abort the old sync ticket and reconnect now, rather than refreshing an
+      // OPEN socket or waiting for a ticket issued on the previous network.
+      if (selected && !entryRef.current[selected.id]?.unauthorized)
+        retryRuntimeSync(selected.connection)
+    }
     const network = Network.addNetworkStateListener((state) => {
       if (disposed) return
       networkObserved = true
-      setPeerConnectionNetwork(state)
+      updateNetwork(state)
     })
     // Android may emit its initial native state before this listener is attached.
     // A late initial read must not overwrite a newer handover event.
     void Network.getNetworkStateAsync().then(
       (state) => {
-        if (!disposed && !networkObserved) setPeerConnectionNetwork(state)
+        if (!disposed && !networkObserved) updateNetwork(state)
       },
       (error: unknown) => console.warn('Could not read the initial network state:', error),
     )
@@ -709,6 +719,17 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   )
   const refreshAll = useCallback(() => runClientEffect(refreshAllEffect()), [refreshAllEffect])
   const profile = registry.profiles.find((item) => item.id === registry.activeId) ?? null
+  const selectedPeerAddress =
+    profile?.connection.peer && isPeerAddress(profile.connection.address)
+      ? profile.connection.address
+      : undefined
+  useEffect(() => {
+    if (!appActive || !selectedPeerAddress || !registryLoaded) return
+    void preconnectPeerConnection(selectedPeerAddress).catch((error: unknown) => {
+      // Normal requests publish connection status; retain the warmup failure for diagnostics.
+      console.warn('Selected computer connection warmup failed:', error)
+    })
+  }, [appActive, selectedPeerAddress, registryLoaded])
   const connection = profile?.connection ?? null
   const active =
     profile && entries[profile.id]?.profile.connection.token === profile.connection.token

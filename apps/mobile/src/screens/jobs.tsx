@@ -14,6 +14,7 @@ import { CreationTarget } from '../runtime/connection/creation-target'
 import { SettingsSearchField as SearchField } from './settings-controls'
 import { AutomationEditor } from '../jobs/automation-editor'
 import { ScreenHeader } from '../ui/layout/screen-header'
+import { Action } from '../ui/controls/action'
 import { Icon } from '../ui/controls/icon'
 import { useListScroll } from '../ui/layout/use-list-scroll'
 import { automationHref } from '../shell/source-route'
@@ -24,6 +25,23 @@ export default function JobsScreen() {
   const { overviews, refreshAll } = useRuntime()
   const connected = overviews.some((entry) => entry.connected)
   const [refreshing, setRefreshing] = useApplicationState(false)
+  const [refreshError, setRefreshError] = useApplicationState('')
+  const refresh = () => {
+    if (refreshing) return
+    setRefreshing(true)
+    setRefreshError('')
+    void runClientEffect(
+      nativeEffect(() => refreshAll()).pipe(
+        Effect.catch((cause) =>
+          Effect.sync(() =>
+            setRefreshError(cause instanceof Error ? cause.message : String(cause)),
+          ),
+        ),
+        Effect.ensuring(Effect.sync(() => setRefreshing(false))),
+      ),
+    )
+  }
+  const failedSources = overviews.filter((entry) => entry.error || !entry.connected)
   const { focused } = useNavigation()
   const [creating, setCreating] = useApplicationState(false)
   const [query, setQuery] = useApplicationState('')
@@ -69,14 +87,7 @@ export default function JobsScreen() {
         data={visible}
         keyExtractor={(item) => item.key}
         refreshing={refreshing}
-        onRefresh={() => {
-          setRefreshing(true)
-          void runClientEffect(
-            nativeEffect(() => refreshAll()).pipe(
-              Effect.ensuring(nativeEffect(() => setRefreshing(false)).pipe(Effect.orDie)),
-            ),
-          )
-        }}
+        onRefresh={refresh}
         scrollEventThrottle={32}
         contentContainerStyle={[
           styles.content,
@@ -95,6 +106,29 @@ export default function JobsScreen() {
               paddingBottom: 8,
             }}
           >
+            {!!refreshError && (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {refreshError}
+              </Text>
+            )}
+            {failedSources.map((entry) => (
+              <Text
+                key={entry.profile.id}
+                accessibilityRole={entry.error ? 'alert' : undefined}
+                style={entry.error ? styles.error : styles.muted}
+              >
+                {runtimeComputerName(entry)} ·{' '}
+                {entry.error || 'Offline · Showing saved automations'}
+              </Text>
+            ))}
+            {(refreshError || failedSources.length > 0) && (
+              <Action
+                secondary
+                label="Retry loading automations"
+                disabled={refreshing}
+                onPress={refresh}
+              />
+            )}
             <Text style={styles.muted}>All computers</Text>
             <SearchField
               label="Search automations"
@@ -150,7 +184,7 @@ export default function JobsScreen() {
                   },
                 ]}
               >
-                Create an automation
+                {connected ? 'Create an automation' : 'Connect a computer'}
               </Text>
               <Text
                 style={[
@@ -160,8 +194,9 @@ export default function JobsScreen() {
                   },
                 ]}
               >
-                Run repeatable tasks manually or on a schedule, with review steps when you need
-                them.
+                {connected
+                  ? 'Run repeatable tasks manually or on a schedule, with review steps when you need them.'
+                  : 'Reconnect a computer to load its automations.'}
               </Text>
             </View>
           ) : (

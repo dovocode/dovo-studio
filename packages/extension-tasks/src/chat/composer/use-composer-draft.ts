@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, useSyncExternalStore, type SetStateAction } from 'react'
+import {
+  useCallback,
+  useLayoutEffect,
+  useState,
+  useSyncExternalStore,
+  type SetStateAction,
+} from 'react'
 import { updateTask, useWorkspace, type Task } from '@dovo/studio-core'
 import { createComposerDraft } from './composer-draft'
 
@@ -25,7 +31,7 @@ export function useComposerDraft(
     ),
   )
   const controller = editController ?? savedController
-  useEffect(() => {
+  useLayoutEffect(() => {
     savedController.rebind((draft) => {
       setWorkspace((workspace) =>
         updateTask(workspace, task.id, (current) => ({ ...current, draft })),
@@ -46,10 +52,11 @@ export function useComposerDraft(
       throw cause
     }
   }
-  useEffect(() => {
+  // Reconcile and flush during layout so remounts cannot paint an old debounced draft.
+  useLayoutEffect(() => {
     savedController.receive(task.draft)
   }, [savedController, task.draft])
-  useEffect(
+  useLayoutEffect(
     () => () => {
       try {
         controller.flush()

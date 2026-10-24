@@ -98,11 +98,11 @@ try {
     }),
   )
   await page.goto('http://localhost/')
-  for (const file of readdirSync(root + 'apps/web/dist/client/assets').filter((file) =>
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
     file.endsWith('.css'),
   ))
     await page.addStyleTag({
-      content: readFileSync(root + 'apps/web/dist/client/assets/' + file, 'utf8'),
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
     })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   mkdirSync(root + 'work/browser-tabs', { recursive: true })
@@ -112,7 +112,8 @@ try {
     throw new Error('Profile picker is outside options')
   const toolbar = page.getByRole('form', { name: 'Browser navigation' })
   const toolbarBox = await toolbar.boundingBox()
-  if (!toolbarBox || toolbarBox.height > 45) throw new Error('Browser toolbar is not compact')
+  if (!toolbarBox || toolbarBox.height > 100)
+    throw new Error('Browser toolbar should fit in two compact rows at narrow widths')
   const input = page.getByRole('textbox', { name: 'Preview URL' })
   if (await input.inputValue()) throw new Error('New tab should have an empty address')
   const inputBox = await input.boundingBox()
@@ -306,6 +307,17 @@ try {
     errors.length
   )
     throw new Error(JSON.stringify({ calls, errors }))
+  const browserTabs = page.getByRole('tab')
+  await page.getByRole('tab', { selected: true }).press('Home')
+  if ((await browserTabs.first().getAttribute('aria-selected')) !== 'true')
+    throw new Error('Home did not select the first tab')
+  await browserTabs.first().press('End')
+  if ((await browserTabs.last().getAttribute('aria-selected')) !== 'true')
+    throw new Error('End did not select the last tab')
+  const previousTab = await browserTabs.nth((await browserTabs.count()) - 2).textContent()
+  await browserTabs.last().locator('..').getByRole('button').click()
+  if ((await page.getByRole('tab', { selected: true }).textContent()) !== previousTab)
+    throw new Error('Closing the current tab should select its neighbor')
   console.log(
     'Compact toolbar, native browser visibility with retained chat and real overlays, hidden single-tab strip, Enter navigation, HTTP LAN addresses, browser options, plus menu, mixed tab strip, remote indicators, title updates, retained sessions, per-tab local/remote profile choices, profile switching, and scoped close passed.',
   )

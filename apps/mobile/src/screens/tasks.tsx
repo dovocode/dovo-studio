@@ -1,3 +1,4 @@
+import { useTaskSearch } from '../tasks/list/use-task-search'
 import { EmptyState } from '../ui/content/empty-state'
 import { useTaskPanes } from '../shell/task-panes'
 import { contentColumn } from '../ui/layout/content-column'
@@ -121,6 +122,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     () => (source === 'all' ? overviews : overviews.filter((entry) => entry.profile.id === source)),
     [overviews, source],
   )
+  const historySearch = useTaskSearch(entries, query)
+  const searchKeys = JSON.stringify([...historySearch.keys].sort())
   const projectGroups = useMemo(
     () =>
       projectMachineGroups(
@@ -197,6 +200,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               !isSnoozed(task, now) &&
               (!task.waitingForFeedback || needsInput))) &&
           (!query ||
+            historySearch.keys.has(key) ||
+            threadDescendants(tree.nodes.get(key)?.children ?? []).some((child) =>
+              historySearch.keys.has(child.key),
+            ) ||
             [
               task.title,
               projectName,
@@ -228,7 +235,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           }
         return compareTasks(first, second, sort, needsInput, projects)
       })
-  }, [allTasks, tree, source, car, now, query, sort, project, projectMembers, archived])
+  }, [allTasks, tree, source, car, now, query, sort, project, projectMembers, archived, searchKeys])
   const listItems = useMemo(() => {
     if (archived || car) return tasks.map((entry): TaskListItem => ({ kind: 'task', entry }))
     const orderedItems = (sections: { key: string; items: TaskListItem[] }[]) =>
@@ -567,6 +574,21 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               ]
         }
       />
+      {!car && (
+        <View style={{ ...contentColumn.collection, paddingHorizontal: 16, paddingBottom: 8 }}>
+          <SearchField
+            label={archived ? 'Search archived tasks' : 'Search tasks'}
+            placeholder="Search threads"
+            clearButtonMode="while-editing"
+            returnKeyType="search"
+            value={search}
+            onChangeText={(search) => {
+              scrollOffset.current = 0
+              setView((current) => ({ ...current, search }))
+            }}
+          />
+        </View>
+      )}
       {selecting && (
         <View
           testID="Task selection toolbar"
@@ -613,17 +635,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       )}
       {filtering && !car && (
         <Sheet ref={filterSheet} title="Filter threads" onClose={() => setFiltering(false)}>
-          <SearchField
-            label={archived ? 'Search archived tasks' : 'Search tasks'}
-            placeholder="Search threads"
-            clearButtonMode="while-editing"
-            returnKeyType="search"
-            value={search}
-            onChangeText={(search) => {
-              scrollOffset.current = 0
-              setView((current) => ({ ...current, search }))
-            }}
-          />
           {!archived && (
             <>
               <ProjectThreadFilter
@@ -732,11 +743,23 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           },
         ]}
         ListHeaderComponent={
-          error || refreshError ? (
-            <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 10 }]}>
-              {error || refreshError}
-            </Text>
-          ) : undefined
+          <View style={{ gap: 4 }}>
+            {!!(error || refreshError || historySearch.error) && (
+              <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 10 }]}>
+                {error || refreshError || historySearch.error}
+              </Text>
+            )}
+            {historySearch.loading && (
+              <Text accessibilityRole="status" style={styles.muted}>
+                Searching conversation history…
+              </Text>
+            )}
+            {historySearch.offline && (
+              <Text style={styles.muted}>
+                Offline computers: searching saved thread details only.
+              </Text>
+            )}
+          </View>
         }
         renderItem={({ item }) =>
           item.kind === 'history' ? (
@@ -852,7 +875,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           )
         }
         ListEmptyComponent={
-          archived ? (
+          historySearch.loading ? undefined : archived ? (
             <EmptyState
               icon="archive"
               title={search ? 'No matching archived threads' : 'No archived threads'}

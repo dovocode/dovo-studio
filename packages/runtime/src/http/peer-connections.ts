@@ -19,6 +19,7 @@ import {
   PEER_STUN_URLS,
   PEER_DISCONNECT_GRACE_MS,
   createPeerPipe,
+  createPeerIce,
   createPeerHeartbeat,
   peerCandidateCounts,
   selectedPeerRoute,
@@ -37,6 +38,7 @@ import { peerRelayIdentity } from './peer-relay-identity.js'
 import type { RuntimeConnectionMode } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 import { RuntimeRelaySettings } from './relay-settings.js'
+import { peerRelayServers } from './peer-ice-servers.js'
 
 type Room = {
   config: PeerConfig
@@ -45,9 +47,11 @@ type Room = {
   expiresAt?: number
   socket?: WebSocket
   retry?: ReturnType<typeof setTimeout>
+  reconnects: number
   ready?: Promise<void>
   /** Each negotiated peer's teardown: pipes, loopback sockets, timers, then the ICE session. */
   peers: Map<RTCPeerConnection, () => void>
+  ice: Map<string, ReturnType<typeof createPeerIce>>
   sessions: Set<string>
   customRelays: Map<string, PeerRelay>
   stopped: boolean
@@ -289,8 +293,10 @@ export class PeerConnections {
       expiresAt,
       peers: new Map(),
       sessions: new Set(),
+      ice: new Map(),
       customRelays: new Map(),
       stopped: false,
+      reconnects: 0,
       online: false,
       lastError: null,
       origin: {
@@ -317,7 +323,8 @@ export class PeerConnections {
     return room
   }
   private open(room: Room) {
-    if (room.stopped || !this.port || this.relay.connectionMode() === 'lan') return
+    if (!room.origin.active || room.socket || !this.port || this.relay.connectionMode() === 'lan')
+      return
     if (room.retry) {
       clearTimeout(room.retry)
       room.retry = undefined
@@ -329,6 +336,35 @@ export class PeerConnections {
     })
     room.socket = socket
     room.online = false
+    let readyAt: number | undefined
+    let pingTimer: ReturnType<typeof setTimeout> | undefined
+    let pongTimer: ReturnType<typeof setTimeout> | undefined
+    let pingNonce: Buffer | undefined
+    const ping = () => {
+      pingTimer = setTimeout(() => {
+        if (room.socket !== socket || socket.readyState !== WebSocket.OPEN) return
+        pingNonce = randomBytes(8)
+        pongTimer = setTimeout(() => {
+          if (room.socket !== socket || room.stopped) return
+          room.lastError = 'Dovo Connect stopped responding; reconnecting.'
+          socket.terminate()
+        }, 10000)
+        pongTimer.unref()
+        // RFC 6455 ping/pong works with existing brokers too. Monitor our own
+        // connection rather than waiting up to two broker heartbeat intervals.
+        socket.ping(pingNonce, undefined, (error) => {
+          if (error && room.socket === socket) socket.terminate()
+        })
+      }, 5000)
+      pingTimer.unref()
+    }
+    socket.on('pong', (value) => {
+      if (!pingNonce?.equals(value) || room.socket !== socket) return
+      pingNonce = undefined
+      clearTimeout(pongTimer)
+      pongTimer = undefined
+      ping()
+    })
     room.ready = new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         room.lastError = 'Timed out contacting Dovo Connect.'
@@ -339,6 +375,7 @@ export class PeerConnections {
       const config = room.config
       const host = {
         type: 'host',
+        trickle: true,
         room: peerRoom(config),
         key: peerCapability(config, 'host'),
         clientKey: peerCapability(config, 'client'),
@@ -402,6 +439,8 @@ export class PeerConnections {
             }
             phase = 'ready'
             room.online = true
+            readyAt = Date.now()
+            ping()
             clearTimeout(timeout)
             resolve()
             return
@@ -428,6 +467,17 @@ export class PeerConnections {
             )
             return
           }
+          if (
+            type === 'ice' &&
+            value &&
+            typeof value === 'object' &&
+            'session' in value &&
+            typeof value.session === 'string'
+          ) {
+            const ice = room.ice.get(value.session)
+            if (ice) ice.receive(value)
+            return
+          }
           const offer = decode(peerOfferSchema, value)
           const signal = offer.signal
           if (this.relay.connectionMode() !== 'automatic' && (offer.relay || signal.relay)) return
@@ -438,7 +488,11 @@ export class PeerConnections {
           if (room.sessions.size >= 128) room.sessions.delete(room.sessions.values().next().value!)
           room.sessions.add(signal.session)
           void this.accept(room, signal, signal.relay === 'custom' ? custom : offer.relay).catch(
-            () => console.error('Internet peer negotiation failed'),
+            () => {
+              room.ice.get(signal.session)?.stop()
+              room.ice.delete(signal.session)
+              console.error('Internet peer negotiation failed')
+            },
           )
         } catch {
           room.lastError = 'Dovo Connect sent invalid signaling metadata.'
@@ -459,43 +513,71 @@ export class PeerConnections {
       socket.terminate()
     })
     socket.once('close', () => {
-      if (room.socket === socket) {
-        room.online = false
-        room.lastError ??= 'Signaling disconnected; reconnecting to Dovo Connect.'
-        room.customRelays.clear()
-        room.socket = undefined
-        room.ready = undefined
-      }
-      if (!room.stopped && room.socket === undefined && this.relay.connectionMode() !== 'lan') {
-        room.retry = setTimeout(() => this.open(room), 5000 + Math.random() * 5000)
+      clearTimeout(pingTimer)
+      clearTimeout(pongTimer)
+      pingNonce = undefined
+      if (room.socket !== socket) return
+      room.online = false
+      room.lastError ??= 'Signaling disconnected; reconnecting to Dovo Connect.'
+      room.customRelays.clear()
+      room.socket = undefined
+      room.ready = undefined
+      if (
+        room.origin.active &&
+        room.socket === undefined &&
+        this.relay.connectionMode() !== 'lan'
+      ) {
+        // Recover a healthy signaling session promptly. Repeated outages/flapping
+        // back off with jitter; a briefly admitted socket must not reset that budget.
+        if (readyAt !== undefined && Date.now() - readyAt >= 30000) room.reconnects = 0
+        const delay = Math.min(30000, 500 * 2 ** Math.min(room.reconnects++, 6))
+        room.retry = setTimeout(() => this.open(room), delay * (0.5 + Math.random() * 0.5))
         room.retry.unref()
       }
     })
   }
   private async accept(room: Room, signal: PeerSignal, relay?: PeerRelay) {
     if (!this.port || room.stopped || this.relay.connectionMode() === 'lan') return
+    let iceFailed = false
+    let failIce = () => {
+      iceFailed = true
+    }
+    const ice = signal.trickle
+      ? createPeerIce({
+          config: room.config,
+          session: signal.session,
+          offer: signal.offer,
+          role: 'answer',
+          send: (value) => {
+            if (!closed && room.socket?.readyState === WebSocket.OPEN)
+              room.socket.send(JSON.stringify(value))
+          },
+          add: async (candidate) => {
+            await pc.addIceCandidate(candidate)
+            diagnostic.remoteCandidates = peerCandidateCounts(pc.remoteDescription?.sdp ?? '')
+          },
+          onError: () => failIce(),
+        })
+      : undefined
+    if (ice) room.ice.set(signal.session, ice)
     const { RTCPeerConnection } = await import('werift')
     if (
       room.stopped ||
+      iceFailed ||
       this.relay.connectionMode() === 'lan' ||
       (this.relay.connectionMode() !== 'automatic' && !!relay) ||
       room.peers.size >= 4 ||
       !room.socket ||
       room.socket.readyState !== WebSocket.OPEN
-    )
+    ) {
+      ice?.stop()
+      room.ice.delete(signal.session)
       return
+    }
     const pc = new RTCPeerConnection({
       iceServers: [
         ...PEER_STUN_URLS.map((urls) => ({ urls })),
-        ...(relay?.iceServers.map((server) => ({
-          ...server,
-          urls: [...server.urls].sort(
-            (a, b) =>
-              Number(b.startsWith('turns:')) * 2 +
-              Number(b.includes(':443?')) -
-              (Number(a.startsWith('turns:')) * 2 + Number(a.includes(':443?'))),
-          ),
-        })) ?? []),
+        ...peerRelayServers(relay?.iceServers),
       ],
       iceTransportPolicy: 'all',
       iceUseIpv6: true,
@@ -509,6 +591,9 @@ export class PeerConnections {
       localCandidates: peerCandidateCounts(''),
       remoteCandidates: peerCandidateCounts(signal.sdp),
       roundTripMs: null,
+      setupMs: null,
+      answerMs: null,
+      trickle: signal.trickle === true,
       error: null,
     }
     this.recent.unshift(diagnostic)
@@ -526,6 +611,8 @@ export class PeerConnections {
       if (closed) return
       closed = true
       diagnostic.state = 'closed'
+      ice?.stop()
+      room.ice.delete(signal.session)
       diagnostic.error = reason ?? diagnostic.error
       clearTimeout(deadline)
       clearTimeout(statsTimer)
@@ -541,6 +628,7 @@ export class PeerConnections {
       room.peers.delete(pc)
       void pc.close().catch((error: unknown) => console.error('Internet peer close failed:', error))
     }
+    failIce = () => close('Invalid authenticated ICE candidate.')
     const refreshRoute = async () => {
       if (closed || readingStats || pc.connectionState !== 'connected') return
       clearTimeout(statsTimer)
@@ -624,12 +712,18 @@ export class PeerConnections {
         channel.stateChange.subscribe((state) => {
           if (state === 'open') {
             clearTimeout(deadline)
+            diagnostic.setupMs ??= Date.now() - Date.parse(diagnostic.startedAt)
+            ice?.stop()
+            room.ice.delete(signal.session)
             heartbeat?.announce()
           }
           if (state === 'closed') close('Connection health channel closed.')
         })
         if (channel.readyState === 'open') {
           clearTimeout(deadline)
+          diagnostic.setupMs ??= Date.now() - Date.parse(diagnostic.startedAt)
+          ice?.stop()
+          room.ice.delete(signal.session)
           heartbeat.announce()
         }
         return
@@ -638,7 +732,7 @@ export class PeerConnections {
         closed ||
         room.stopped ||
         pipes.size >= 32 ||
-        channel.label !== 'dovo-tcp-v1' ||
+        channel.label !== (signal.pipeWindow === 64 ? 'dovo-tcp-v2' : 'dovo-tcp-v1') ||
         !channel.ordered ||
         channel.maxRetransmits !== null ||
         channel.maxPacketLifeTime !== null
@@ -666,6 +760,7 @@ export class PeerConnections {
           this.origins.delete(source)
       })
       const pipe = createPeerPipe({
+        window: signal.pipeWindow,
         stream: {
           onData: (f) => {
             socket.on('data', f)
@@ -711,7 +806,26 @@ export class PeerConnections {
     })
     try {
       await pc.setRemoteDescription({ type: 'offer', sdp: signal.sdp })
-      await pc.setLocalDescription(await pc.createAnswer())
+      ice?.ready()
+      if (ice)
+        pc.onIceCandidate.subscribe((candidate) => {
+          try {
+            const value = candidate?.toJSON()
+            ice.candidate(
+              value
+                ? {
+                    candidate: value.candidate,
+                    sdpMid: value.sdpMid ?? null,
+                    sdpMLineIndex: value.sdpMLineIndex ?? null,
+                  }
+                : null,
+            )
+            diagnostic.localCandidates = peerCandidateCounts(pc.localDescription?.sdp ?? '')
+          } catch {
+            close('Could not send ICE candidates.')
+          }
+        })
+      await pc.setLocalDescription(await pc.createAnswer(), { trickle: !!ice })
       if (closed || room.stopped || room.socket?.readyState !== WebSocket.OPEN) {
         close()
         return
@@ -720,6 +834,7 @@ export class PeerConnections {
       if (!sdp) throw new Error('No local ICE description')
       diagnostic.localCandidates = peerCandidateCounts(sdp)
       diagnostic.state = 'waiting for encrypted transport'
+      diagnostic.answerMs = Date.now() - Date.parse(diagnostic.startedAt)
       room.socket.send(
         JSON.stringify(
           signPeerSignal(room.config, {
@@ -727,10 +842,13 @@ export class PeerConnections {
             role: 'answer',
             offer: signal.offer,
             sdp,
+            ...(ice ? { trickle: true as const } : {}),
+            ...(signal.pipeWindow ? { pipeWindow: signal.pipeWindow } : {}),
             ...(relay ? { relay: relay.provider } : {}),
           }),
         ),
       )
+      ice?.start()
     } catch (error) {
       close(`Negotiation failed while ${diagnostic.state}.`)
       throw error
@@ -738,6 +856,8 @@ export class PeerConnections {
   }
   private remove(id: string, room: Room) {
     room.stopped = true
+    for (const ice of room.ice.values()) ice.stop()
+    room.ice.clear()
     if (room.retry) clearTimeout(room.retry)
     room.retry = undefined
     room.socket?.terminate()

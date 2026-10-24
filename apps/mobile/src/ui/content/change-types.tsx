@@ -66,7 +66,7 @@ export function ChangeTypeFilters({
                 style={{
                   flexGrow: weights.get(category.kind),
                   flexBasis: 0,
-                  minWidth: unit === 'lines' ? 0 : 44,
+                  minWidth: unit === 'lines' ? 8 : 44,
                   minHeight: 44,
                   justifyContent: 'center',
                 }}

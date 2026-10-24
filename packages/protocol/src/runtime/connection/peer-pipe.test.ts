@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { createPeerPipe } from './peer-pipe.js'
 
-function fixture(writeError?: Error, sendError?: Error) {
+function fixture(writeError?: Error, sendError?: Error, window?: 8 | 64) {
   let data: (chunk: Uint8Array) => void = () => {},
     end: () => void = () => {}
   const writes: Array<{ bytes: Uint8Array; done: (error?: Error | null) => void }> = []
@@ -13,6 +13,7 @@ function fixture(writeError?: Error, sendError?: Error) {
     remoteEnd = vi.fn<() => void>()
   const resume = vi.fn<() => void>()
   const pipe = createPeerPipe({
+    window,
     stream: {
       onData: (f) => {
         data = f
@@ -130,4 +131,25 @@ it('bounds inbound writes and outgoing queues and rejects data after END', () =>
     attack(f)
     expect(f.close).toHaveBeenCalledOnce()
   }
+})
+
+it('negotiates a bounded 1 MiB window without changing legacy credit limits', () => {
+  const legacy = fixture(),
+    fast = fixture(undefined, undefined, 64)
+  for (const f of [legacy, fast]) {
+    f.pipe.ready()
+    f.data(new Uint8Array(1024 * 1024))
+  }
+  expect(legacy.send).toHaveBeenCalledTimes(8)
+  expect(fast.send).toHaveBeenCalledTimes(64)
+  fast.data(new Uint8Array(16384))
+  expect(fast.send).toHaveBeenCalledTimes(64)
+  fast.pipe.receive('ack')
+  expect(fast.send).toHaveBeenCalledTimes(65)
+  expect(fast.close).not.toHaveBeenCalled()
+  const receiving = fixture(undefined, undefined, 64)
+  for (let i = 0; i < 64; i++) receiving.pipe.receive(new Uint8Array(16384))
+  expect(receiving.close).not.toHaveBeenCalled()
+  receiving.pipe.receive(new Uint8Array(1))
+  expect(receiving.close).toHaveBeenCalledOnce()
 })

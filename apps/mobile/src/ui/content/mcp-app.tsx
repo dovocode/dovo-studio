@@ -70,16 +70,21 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     const key = nonce.current
     const sendTool = (value: unknown) =>
       view.current?.injectJavaScript(`window.dovoMcpAppTool(${JSON.stringify(value)});true;`)
+    let issued: { ticket: string } | undefined
     const current = startMcpAppTools({
-      socketUrl: (ticket) => createRuntimeClient(connection).socketUrl('/ws/mcp-app', ticket),
-      ticket: async () =>
-        (
-          await call(
-            '/api/mcp-apps/ticket',
-            { taskId: reference.taskId, id: reference.id },
-            responses.ticket,
-          )
-        ).ticket,
+      socketUrl: (ticket) =>
+        createRuntimeClient(connection).socketUrl(
+          '/ws/mcp-app',
+          issued?.ticket === ticket ? issued : ticket,
+        ),
+      ticket: async () => {
+        issued = await call(
+          '/api/mcp-apps/ticket',
+          { taskId: reference.taskId, id: reference.id },
+          responses.ticket,
+        )
+        return issued.ticket
+      },
       call: (value) => sendTool({ ...value, type: 'app-tool-call', nonce: key }),
       cancel: (requestId) => sendTool({ type: 'app-tool-cancel', requestId, nonce: key }),
       onError: (cause) => setNotice(cause.message),

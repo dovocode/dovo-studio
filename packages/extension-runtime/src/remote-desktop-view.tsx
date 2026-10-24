@@ -25,11 +25,7 @@ export function RemoteDesktopViewer() {
       enabled={snapshot?.remoteDesktopEnabled === true}
       unlockUrl={async (id) => {
         if (!connection) throw new Error('Computer offline')
-        const { ticket } = await request(
-          '/api/remote-desktop/unlock-ticket',
-          { id },
-          responses.ticket,
-        )
+        const ticket = await request('/api/remote-desktop/unlock-ticket', { id }, responses.ticket)
         return createRuntimeClient(connection).socketUrl('/ws/remote-desktop/unlock', ticket)
       }}
     />

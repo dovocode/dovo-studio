@@ -1,7 +1,12 @@
 import { Alert, Pressable } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
-export type WorkMenuAction = { label: string; onPress: () => void; disabled?: boolean }
+export type WorkMenuAction = {
+  label: string
+  onPress: () => void
+  disabled?: boolean
+  destructive?: boolean
+}
 export function WorkMenu({
   actions,
   label = 'Work actions',
@@ -27,7 +32,11 @@ export function WorkMenu({
         Alert.alert('Actions', undefined, [
           ...actions
             .filter((action) => !action.disabled)
-            .map(({ label, onPress }) => ({ text: label, onPress })),
+            .map(({ label, onPress, destructive }) => ({
+              text: label,
+              onPress,
+              style: destructive ? ('destructive' as const) : ('default' as const),
+            })),
           { text: 'Cancel', style: 'cancel' },
         ])
       }

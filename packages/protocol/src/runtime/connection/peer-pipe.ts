@@ -15,14 +15,16 @@ export function createPeerPipe(options: {
   }
   send: (value: Uint8Array | string) => void
   close: () => void
+  window?: 8 | 64
 }) {
   const { stream } = options
+  const window = options.window ?? 8
   let ready = false,
     stopped = false,
     sourceEnded = false,
     sentEnd = false,
     receivedEnd = false
-  let credits = 8,
+  let credits = window,
     received = 0,
     bytes = 0
   const queue: Uint8Array[] = []
@@ -88,7 +90,7 @@ export function createPeerPipe(options: {
     receive: (value: string | Uint8Array) => {
       if (stopped) return
       if (value === 'ack') {
-        if (++credits > 8) {
+        if (++credits > window) {
           stop()
           return
         }
@@ -105,7 +107,7 @@ export function createPeerPipe(options: {
         receivedEnd ||
         value.byteLength === 0 ||
         value.byteLength > 16384 ||
-        ++received > 8
+        ++received > window
       ) {
         stop()
       } else {

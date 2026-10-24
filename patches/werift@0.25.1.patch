@@ -1,0 +1,912 @@
+diff --git a/lib/ice/src/ice.js b/lib/ice/src/ice.js
+index f478e2275e12909fd972a52aab12f34f3a18c4ee..66647d42fd6704a9e948073a5cd8d2c8da0dea4f 100644
+--- a/lib/ice/src/ice.js
++++ b/lib/ice/src/ice.js
+@@ -613,6 +613,7 @@ class Connection {
+             ...this.options,
+             stunServer: options.stunServer,
+             turnServer: options.turnServer,
++            turnServers: options.turnServers,
+             turnUsername: options.turnUsername,
+             turnPassword: options.turnPassword,
+             turnTransport: options.turnTransport,
+@@ -741,9 +742,10 @@ class Connection {
+             await Promise.allSettled(candidatePromises);
+             this.localCandidatesEnd = true;
+         }
+-        this.setState("completed");
++        if (this.state === "new") this.setState("completed");
+     }
+     appendLocalCandidate(candidate) {
++        if (this.state === "closed") return;
+         this.localCandidates.push(candidate);
+         this.onIceCandidate.execute(candidate);
+     }
+@@ -842,12 +844,16 @@ class Connection {
+         const candidatePromises = [];
+         const { stunServer, turnServer } = this;
+         const { turnUsername, turnPassword } = this.options;
++        const turnServers = this.options.turnServers ?? (turnServer ? [{
++            address: turnServer,
++            username: turnUsername,
++            password: turnPassword,
++            transport: this.options.turnTransport,
++        }] : []);
++        const usableTurnServers = turnServers.filter((server) => server.username && server.password);
+         const gatherIceLite = this.iceLite;
+         const gatherRelayOnly = !gatherIceLite &&
+-            this.options.forceTurn &&
+-            turnServer &&
+-            turnUsername &&
+-            turnPassword;
++            this.options.forceTurn && usableTurnServers.length > 0;
+         addresses = addresses.filter((address) => {
+             // ice restartで同じアドレスが追加されるのを防ぐ
+             if (this.protocols.find((protocol) => protocol.localIp === address)) {
+@@ -863,6 +869,10 @@ class Connection {
+                 this.ensureProtocol(protocol);
+                 try {
+                     await protocol.connectionMade((0, net_1.isIPv4)(address), this.options.portRange, this.options.interfaceAddresses);
++                    if (this.state === "closed") {
++                        await protocol.close();
++                        return;
++                    }
+                     protocol.localIp = address;
+                     this.protocols.push(protocol);
+                     log("protocol", protocol.localIp);
+@@ -892,6 +902,10 @@ class Connection {
+                     const passiveProtocol = new tcpProtocol_1.TcpPassiveProtocol();
+                     this.ensureProtocol(passiveProtocol);
+                     await passiveProtocol.connectionMade(address, this.options.portRange);
++                    if (this.state === "closed") {
++                        await passiveProtocol.close();
++                        return;
++                    }
+                     passiveProtocol.localIp = address;
+                     passiveProtocol.localCandidate = new candidate_1.Candidate((0, candidate_1.candidateFoundation)("host", "tcp", address), 1, "tcp", (0, candidate_1.candidatePriority)("host", {
+                         transport: "tcp",
+@@ -904,6 +918,10 @@ class Connection {
+                     const activeProtocol = new tcpProtocol_1.TcpActiveProtocol();
+                     this.ensureProtocol(activeProtocol);
+                     await activeProtocol.connectionMade(address);
++                    if (this.state === "closed") {
++                        await activeProtocol.close();
++                        return;
++                    }
+                     activeProtocol.localIp = address;
+                     activeProtocol.localCandidate = new candidate_1.Candidate((0, candidate_1.candidateFoundation)("host", "tcp", address), 1, "tcp", (0, candidate_1.candidatePriority)("host", {
+                         transport: "tcp",
+@@ -945,9 +963,10 @@ class Connection {
+             });
+             candidatePromises.push(...stunCandidatePromises);
+         }
+-        if (!gatherIceLite && turnServer && turnUsername && turnPassword) {
++        for (const { address: turnServer, username: turnUsername, password: turnPassword, transport: turnTransport = "udp" }
++            of gatherIceLite ? [] : usableTurnServers) {
+             const turnCandidatePromise = (async () => {
+-                const turnTransport = this.options.turnTransport ?? "udp";
++                
+                 const protocol = await (0, protocol_2.createStunOverTurnClient)({
+                     address: turnServer,
+                     username: turnUsername,
+@@ -960,7 +979,7 @@ class Connection {
+                     connectTimeoutMs: (this.options.turnConnectTimeout ?? 8) * 1000,
+                     udpFamily: this.options.turnUdpFamily,
+                 }).catch(async (e) => {
+-                    if (turnTransport === "udp") {
++                    if (turnTransport === "udp" && usableTurnServers.length === 1) {
+                         return await (0, protocol_2.createStunOverTurnClient)({
+                             address: turnServer,
+                             username: turnUsername,
+@@ -976,12 +995,17 @@ class Connection {
+                         throw e;
+                     }
+                 });
++                if (this.state === "closed") {
++                    await protocol.close();
++                    return;
++                }
+                 this.ensureProtocol(protocol);
+                 this.protocols.push(protocol);
+                 const candidateAddress = protocol.turn.relayedAddress;
+                 const relatedAddress = protocol.turn.mappedAddress;
+                 log("turn candidateAddress", candidateAddress);
+                 protocol.localCandidate = new candidate_1.Candidate((0, candidate_1.candidateFoundation)("relay", "udp", candidateAddress[0]), 1, "udp", (0, candidate_1.candidatePriority)("relay"), candidateAddress[0], candidateAddress[1], "relay", relatedAddress[0], relatedAddress[1], undefined, this.generation, this.localUsername);
++                this.pairLocalProtocol(protocol);
+                 this.appendLocalCandidate(protocol.localCandidate);
+                 return protocol.localCandidate;
+             })().catch((error) => {
+@@ -1050,7 +1074,7 @@ class Connection {
+         }
+         // # wait for completion
+         let res = iceBase_1.ICE_FAILED;
+-        while (this.checkList.length > 0 && res === iceBase_1.ICE_FAILED) {
++        if (this.checkList.length > 0 && this.state !== "closed") {
+             res = await this.checkListState.get();
+             log("checkListState", res);
+         }
+@@ -1111,9 +1135,14 @@ class Connection {
+             }
+         }
+         // # if we expect more candidates, keep going
+-        if (!this.remoteCandidatesEnd) {
++        if (!this.remoteCandidatesEnd || !this.localCandidatesEnd) {
+             return !this.checkListDone;
+         }
++        if (!this.checkListDone && !this.nominating && this.checkList.every(
++            (pair) => pair.state === iceBase_1.CandidatePairState.FAILED)) {
++            this.checkListDone = true;
++            this.checkListState.put(Promise.resolve(iceBase_1.ICE_FAILED));
++        }
+         return false;
+     }
+     /**
+@@ -1197,6 +1226,7 @@ class Connection {
+         this.lookup = undefined;
+     }
+     setState(state) {
++        if (this.state === "closed") return;
+         this.state = state;
+         this.stateChanged.execute(state);
+     }
+@@ -1355,7 +1385,8 @@ class Connection {
+                 return;
+             }
+         }
+-        if (!this.checkListDone) {
++        if (!this.checkListDone && this.remoteCandidatesEnd && this.localCandidatesEnd) {
++            this.checkListDone = true;
+             log("ICE failed");
+             this.checkListState.put(new Promise((r) => {
+                 r(iceBase_1.ICE_FAILED);
+diff --git a/lib/ice/src/iceBase.d.ts b/lib/ice/src/iceBase.d.ts
+index 31dd5d1fa122deab3460eac51bb30b13361e7f5a..649a246763132c684808ac0f6d0238e113954515 100644
+--- a/lib/ice/src/iceBase.d.ts
++++ b/lib/ice/src/iceBase.d.ts
+@@ -161,6 +161,13 @@ export interface IceOptions {
+     turnConnectTimeout?: number;
+     stunServer?: Address;
+     turnServer?: Address;
++    /** TURN alternatives gathered concurrently. Legacy single-server fields remain supported. */
++    turnServers?: {
++        address: Address;
++        username?: string;
++        password?: string;
++        transport?: "udp" | "tcp" | "tls";
++    }[];
+     turnUsername?: string;
+     turnPassword?: string;
+     turnTransport?: "udp" | "tcp" | "tls";
+diff --git a/lib/index.mjs b/lib/index.mjs
+index bff50abac05804fe26aaed3ca39c78aeb32a4729..1a6adcb99e8c157d412cafbf38d5b14be18741df 100644
+--- a/lib/index.mjs
++++ b/lib/index.mjs
+@@ -9453,6 +9453,7 @@ var Connection = class {
+       ...this.options,
+       stunServer: options.stunServer,
+       turnServer: options.turnServer,
++            turnServers: options.turnServers,
+       turnUsername: options.turnUsername,
+       turnPassword: options.turnPassword,
+       turnTransport: options.turnTransport
+@@ -9585,9 +9586,10 @@ var Connection = class {
+       await Promise.allSettled(candidatePromises);
+       this.localCandidatesEnd = true;
+     }
+-    this.setState("completed");
++    if (this.state === "new") this.setState("completed");
+   }
+   appendLocalCandidate(candidate) {
++    if (this.state === "closed") return;
+     this.localCandidates.push(candidate);
+     this.onIceCandidate.execute(candidate);
+   }
+@@ -9672,8 +9674,15 @@ var Connection = class {
+     const candidatePromises = [];
+     const { stunServer, turnServer } = this;
+     const { turnUsername, turnPassword } = this.options;
++        const turnServers = this.options.turnServers ?? (turnServer ? [{
++            address: turnServer,
++            username: turnUsername,
++            password: turnPassword,
++            transport: this.options.turnTransport,
++        }] : []);
++        const usableTurnServers = turnServers.filter((server) => server.username && server.password);
+     const gatherIceLite = this.iceLite;
+-    const gatherRelayOnly = !gatherIceLite && this.options.forceTurn && turnServer && turnUsername && turnPassword;
++    const gatherRelayOnly = !gatherIceLite && this.options.forceTurn && usableTurnServers.length > 0;
+     addresses = addresses.filter((address) => {
+       if (this.protocols.find((protocol) => protocol.localIp === address)) {
+         return false;
+@@ -9689,6 +9698,10 @@ var Connection = class {
+           this.options.portRange,
+           this.options.interfaceAddresses
+         );
++        if (this.state === "closed") {
++          await protocol.close();
++          return;
++        }
+         protocol.localIp = address;
+         this.protocols.push(protocol);
+         log23("protocol", protocol.localIp);
+@@ -9730,6 +9743,10 @@ var Connection = class {
+           const passiveProtocol = new TcpPassiveProtocol();
+           this.ensureProtocol(passiveProtocol);
+           await passiveProtocol.connectionMade(address, this.options.portRange);
++        if (this.state === "closed") {
++          await passiveProtocol.close();
++          return;
++        }
+           passiveProtocol.localIp = address;
+           passiveProtocol.localCandidate = new Candidate(
+             candidateFoundation("host", "tcp", address),
+@@ -9755,7 +9772,11 @@ var Connection = class {
+           const activeProtocol = new TcpActiveProtocol();
+           this.ensureProtocol(activeProtocol);
+           await activeProtocol.connectionMade(address);
+-          activeProtocol.localIp = address;
++          if (this.state === "closed") {
++          await activeProtocol.close();
++          return;
++        }
++        activeProtocol.localIp = address;
+           activeProtocol.localCandidate = new Candidate(
+             candidateFoundation("host", "tcp", address),
+             1,
+@@ -9813,9 +9834,10 @@ var Connection = class {
+       );
+       candidatePromises.push(...stunCandidatePromises);
+     }
+-    if (!gatherIceLite && turnServer && turnUsername && turnPassword) {
++    for (const { address: turnServer, username: turnUsername, password: turnPassword, transport: turnTransport = "udp" }
++            of gatherIceLite ? [] : usableTurnServers) {
+       const turnCandidatePromise = (async () => {
+-        const turnTransport = this.options.turnTransport ?? "udp";
++        
+         const protocol = await createStunOverTurnClient(
+           {
+             address: turnServer,
+@@ -9831,7 +9853,7 @@ var Connection = class {
+             udpFamily: this.options.turnUdpFamily
+           }
+         ).catch(async (e) => {
+-          if (turnTransport === "udp") {
++          if (turnTransport === "udp" && usableTurnServers.length === 1) {
+             return await createStunOverTurnClient(
+               {
+                 address: turnServer,
+@@ -9849,6 +9871,10 @@ var Connection = class {
+             throw e;
+           }
+         });
++        if (this.state === "closed") {
++          await protocol.close();
++          return;
++        }
+         this.ensureProtocol(protocol);
+         this.protocols.push(protocol);
+         const candidateAddress = protocol.turn.relayedAddress;
+@@ -9868,6 +9894,7 @@ var Connection = class {
+           this.generation,
+           this.localUsername
+         );
++        this.pairLocalProtocol(protocol);
+         this.appendLocalCandidate(protocol.localCandidate);
+         return protocol.localCandidate;
+       })().catch((error) => {
+@@ -9923,7 +9950,7 @@ var Connection = class {
+       await timers.setTimeout(20);
+     }
+     let res = ICE_FAILED;
+-    while (this.checkList.length > 0 && res === ICE_FAILED) {
++    if (this.checkList.length > 0 && this.state !== "closed") {
+       res = await this.checkListState.get();
+       log23("checkListState", res);
+     }
+@@ -9972,9 +9999,14 @@ var Connection = class {
+         return true;
+       }
+     }
+-    if (!this.remoteCandidatesEnd) {
++    if (!this.remoteCandidatesEnd || !this.localCandidatesEnd) {
+       return !this.checkListDone;
+     }
++    if (!this.checkListDone && !this.nominating && this.checkList.every(
++      (pair) => pair.state === 4 /* FAILED */)) {
++      this.checkListDone = true;
++      this.checkListState.put(Promise.resolve(ICE_FAILED));
++    }
+     return false;
+   }
+   /**
+@@ -10201,6 +10233,7 @@ var Connection = class {
+     this.lookup = void 0;
+   }
+   setState(state) {
++    if (this.state === "closed") return;
+     this.state = state;
+     this.stateChanged.execute(state);
+   }
+@@ -10341,7 +10374,8 @@ var Connection = class {
+         return;
+       }
+     }
+-    if (!this.checkListDone) {
++    if (!this.checkListDone && this.remoteCandidatesEnd && this.localCandidatesEnd) {
++      this.checkListDone = true;
+       log23("ICE failed");
+       this.checkListState.put(
+         new Promise((r) => {
+@@ -11685,7 +11719,15 @@ function parseIceServers(iceServers) {
+       if (!options.stunServer && parsed.kind === "stun") {
+         options.stunServer = parsed.address;
+       }
+-      if (!options.turnServer && parsed.kind === "turn") {
++      if (parsed.kind === "turn") {
++                (options.turnServers ??= []).push({
++                    address: parsed.address,
++                    transport: parsed.transport,
++                    username: iceServer.username,
++                    password: iceServer.credential,
++                });
++            }
++            if (!options.turnServer && parsed.kind === "turn") {
+         options.turnServer = parsed.address;
+         options.turnTransport = parsed.transport;
+         options.turnUsername = iceServer.username;
+@@ -19056,6 +19098,14 @@ var SecureTransportManager = class {
+     return {
+       stunServer: iceServerOptions.stunServer,
+       turnServer: iceServerOptions.turnServer,
++            turnServers: iceServerOptions.turnServers?.map((server) => ({
++                ...server,
++                transport: resolveTurnTransport({
++                    parsedTurnTransport: server.transport,
++                    configuredTurnTransport: this.config.turnTransport,
++                    forceTurnTCP: this.config.forceTurnTCP,
++                }),
++            })),
+       turnUsername: iceServerOptions.turnUsername,
+       turnPassword: iceServerOptions.turnPassword,
+       turnTransport
+@@ -19987,7 +20037,7 @@ var RTCPeerConnection = class extends EventTarget {
+       });
+     }
+   }
+-  async setLocalDescription(sessionDescription) {
++  async setLocalDescription(sessionDescription, { trickle = false } = {}) {
+     const implicitOfferState = [
+       "stable",
+       "have-local-offer",
+@@ -20097,9 +20147,10 @@ var RTCPeerConnection = class extends EventTarget {
+       this.transceiverManager.getTransceivers(),
+       this.sctpTransport
+     );
+-    await this.gatherCandidates().catch((e) => {
++    const gathering = this.gatherCandidates().catch((e) => {
+       log38("gatherCandidates failed", e);
+     });
++    if (!trickle) await gathering;
+     if (description.type === "answer") {
+       this.connect().catch((err5) => {
+         log38("connect failed", err5);
+diff --git a/lib/polyfill/dom.mjs b/lib/polyfill/dom.mjs
+index 63c562f3f3181c8f29772ab3077325c3672a050d..0e587b1cdc2dfba2b3232b38af7f6d5f8cec0be7 100644
+--- a/lib/polyfill/dom.mjs
++++ b/lib/polyfill/dom.mjs
+@@ -9570,6 +9570,7 @@ var Connection = class {
+       ...this.options,
+       stunServer: options.stunServer,
+       turnServer: options.turnServer,
++            turnServers: options.turnServers,
+       turnUsername: options.turnUsername,
+       turnPassword: options.turnPassword,
+       turnTransport: options.turnTransport
+@@ -9702,9 +9703,10 @@ var Connection = class {
+       await Promise.allSettled(candidatePromises);
+       this.localCandidatesEnd = true;
+     }
+-    this.setState("completed");
++    if (this.state === "new") this.setState("completed");
+   }
+   appendLocalCandidate(candidate) {
++    if (this.state === "closed") return;
+     this.localCandidates.push(candidate);
+     this.onIceCandidate.execute(candidate);
+   }
+@@ -9789,8 +9791,15 @@ var Connection = class {
+     const candidatePromises = [];
+     const { stunServer, turnServer } = this;
+     const { turnUsername, turnPassword } = this.options;
++        const turnServers = this.options.turnServers ?? (turnServer ? [{
++            address: turnServer,
++            username: turnUsername,
++            password: turnPassword,
++            transport: this.options.turnTransport,
++        }] : []);
++        const usableTurnServers = turnServers.filter((server) => server.username && server.password);
+     const gatherIceLite = this.iceLite;
+-    const gatherRelayOnly = !gatherIceLite && this.options.forceTurn && turnServer && turnUsername && turnPassword;
++    const gatherRelayOnly = !gatherIceLite && this.options.forceTurn && usableTurnServers.length > 0;
+     addresses = addresses.filter((address) => {
+       if (this.protocols.find((protocol) => protocol.localIp === address)) {
+         return false;
+@@ -9806,6 +9815,10 @@ var Connection = class {
+           this.options.portRange,
+           this.options.interfaceAddresses
+         );
++        if (this.state === "closed") {
++          await protocol.close();
++          return;
++        }
+         protocol.localIp = address;
+         this.protocols.push(protocol);
+         log24("protocol", protocol.localIp);
+@@ -9847,6 +9860,10 @@ var Connection = class {
+           const passiveProtocol = new TcpPassiveProtocol();
+           this.ensureProtocol(passiveProtocol);
+           await passiveProtocol.connectionMade(address, this.options.portRange);
++        if (this.state === "closed") {
++          await passiveProtocol.close();
++          return;
++        }
+           passiveProtocol.localIp = address;
+           passiveProtocol.localCandidate = new Candidate(
+             candidateFoundation("host", "tcp", address),
+@@ -9872,7 +9889,11 @@ var Connection = class {
+           const activeProtocol = new TcpActiveProtocol();
+           this.ensureProtocol(activeProtocol);
+           await activeProtocol.connectionMade(address);
+-          activeProtocol.localIp = address;
++          if (this.state === "closed") {
++          await activeProtocol.close();
++          return;
++        }
++        activeProtocol.localIp = address;
+           activeProtocol.localCandidate = new Candidate(
+             candidateFoundation("host", "tcp", address),
+             1,
+@@ -9930,9 +9951,10 @@ var Connection = class {
+       );
+       candidatePromises.push(...stunCandidatePromises);
+     }
+-    if (!gatherIceLite && turnServer && turnUsername && turnPassword) {
++    for (const { address: turnServer, username: turnUsername, password: turnPassword, transport: turnTransport = "udp" }
++            of gatherIceLite ? [] : usableTurnServers) {
+       const turnCandidatePromise = (async () => {
+-        const turnTransport = this.options.turnTransport ?? "udp";
++        
+         const protocol = await createStunOverTurnClient(
+           {
+             address: turnServer,
+@@ -9948,7 +9970,7 @@ var Connection = class {
+             udpFamily: this.options.turnUdpFamily
+           }
+         ).catch(async (e) => {
+-          if (turnTransport === "udp") {
++          if (turnTransport === "udp" && usableTurnServers.length === 1) {
+             return await createStunOverTurnClient(
+               {
+                 address: turnServer,
+@@ -9966,6 +9988,10 @@ var Connection = class {
+             throw e;
+           }
+         });
++        if (this.state === "closed") {
++          await protocol.close();
++          return;
++        }
+         this.ensureProtocol(protocol);
+         this.protocols.push(protocol);
+         const candidateAddress = protocol.turn.relayedAddress;
+@@ -9985,6 +10011,7 @@ var Connection = class {
+           this.generation,
+           this.localUsername
+         );
++        this.pairLocalProtocol(protocol);
+         this.appendLocalCandidate(protocol.localCandidate);
+         return protocol.localCandidate;
+       })().catch((error) => {
+@@ -10040,7 +10067,7 @@ var Connection = class {
+       await timers.setTimeout(20);
+     }
+     let res = ICE_FAILED;
+-    while (this.checkList.length > 0 && res === ICE_FAILED) {
++    if (this.checkList.length > 0 && this.state !== "closed") {
+       res = await this.checkListState.get();
+       log24("checkListState", res);
+     }
+@@ -10089,9 +10116,14 @@ var Connection = class {
+         return true;
+       }
+     }
+-    if (!this.remoteCandidatesEnd) {
++    if (!this.remoteCandidatesEnd || !this.localCandidatesEnd) {
+       return !this.checkListDone;
+     }
++    if (!this.checkListDone && !this.nominating && this.checkList.every(
++      (pair) => pair.state === 4 /* FAILED */)) {
++      this.checkListDone = true;
++      this.checkListState.put(Promise.resolve(ICE_FAILED));
++    }
+     return false;
+   }
+   /**
+@@ -10318,6 +10350,7 @@ var Connection = class {
+     this.lookup = void 0;
+   }
+   setState(state) {
++    if (this.state === "closed") return;
+     this.state = state;
+     this.stateChanged.execute(state);
+   }
+@@ -10458,7 +10491,8 @@ var Connection = class {
+         return;
+       }
+     }
+-    if (!this.checkListDone) {
++    if (!this.checkListDone && this.remoteCandidatesEnd && this.localCandidatesEnd) {
++      this.checkListDone = true;
+       log24("ICE failed");
+       this.checkListState.put(
+         new Promise((r) => {
+@@ -11413,7 +11447,15 @@ function parseIceServers(iceServers) {
+       if (!options.stunServer && parsed.kind === "stun") {
+         options.stunServer = parsed.address;
+       }
+-      if (!options.turnServer && parsed.kind === "turn") {
++      if (parsed.kind === "turn") {
++                (options.turnServers ??= []).push({
++                    address: parsed.address,
++                    transport: parsed.transport,
++                    username: iceServer.username,
++                    password: iceServer.credential,
++                });
++            }
++            if (!options.turnServer && parsed.kind === "turn") {
+         options.turnServer = parsed.address;
+         options.turnTransport = parsed.transport;
+         options.turnUsername = iceServer.username;
+@@ -17111,6 +17153,14 @@ var SecureTransportManager = class {
+     return {
+       stunServer: iceServerOptions.stunServer,
+       turnServer: iceServerOptions.turnServer,
++            turnServers: iceServerOptions.turnServers?.map((server) => ({
++                ...server,
++                transport: resolveTurnTransport({
++                    parsedTurnTransport: server.transport,
++                    configuredTurnTransport: this.config.turnTransport,
++                    forceTurnTCP: this.config.forceTurnTCP,
++                }),
++            })),
+       turnUsername: iceServerOptions.turnUsername,
+       turnPassword: iceServerOptions.turnPassword,
+       turnTransport
+@@ -18042,7 +18092,7 @@ var RTCPeerConnection = class extends EventTarget {
+       });
+     }
+   }
+-  async setLocalDescription(sessionDescription) {
++  async setLocalDescription(sessionDescription, { trickle = false } = {}) {
+     const implicitOfferState = [
+       "stable",
+       "have-local-offer",
+@@ -18152,9 +18202,10 @@ var RTCPeerConnection = class extends EventTarget {
+       this.transceiverManager.getTransceivers(),
+       this.sctpTransport
+     );
+-    await this.gatherCandidates().catch((e) => {
++    const gathering = this.gatherCandidates().catch((e) => {
+       log36("gatherCandidates failed", e);
+     });
++    if (!trickle) await gathering;
+     if (description.type === "answer") {
+       this.connect().catch((err5) => {
+         log36("connect failed", err5);
+diff --git a/lib/polyfill/index.mjs b/lib/polyfill/index.mjs
+index 63c562f3f3181c8f29772ab3077325c3672a050d..0e587b1cdc2dfba2b3232b38af7f6d5f8cec0be7 100644
+--- a/lib/polyfill/index.mjs
++++ b/lib/polyfill/index.mjs
+@@ -9570,6 +9570,7 @@ var Connection = class {
+       ...this.options,
+       stunServer: options.stunServer,
+       turnServer: options.turnServer,
++            turnServers: options.turnServers,
+       turnUsername: options.turnUsername,
+       turnPassword: options.turnPassword,
+       turnTransport: options.turnTransport
+@@ -9702,9 +9703,10 @@ var Connection = class {
+       await Promise.allSettled(candidatePromises);
+       this.localCandidatesEnd = true;
+     }
+-    this.setState("completed");
++    if (this.state === "new") this.setState("completed");
+   }
+   appendLocalCandidate(candidate) {
++    if (this.state === "closed") return;
+     this.localCandidates.push(candidate);
+     this.onIceCandidate.execute(candidate);
+   }
+@@ -9789,8 +9791,15 @@ var Connection = class {
+     const candidatePromises = [];
+     const { stunServer, turnServer } = this;
+     const { turnUsername, turnPassword } = this.options;
++        const turnServers = this.options.turnServers ?? (turnServer ? [{
++            address: turnServer,
++            username: turnUsername,
++            password: turnPassword,
++            transport: this.options.turnTransport,
++        }] : []);
++        const usableTurnServers = turnServers.filter((server) => server.username && server.password);
+     const gatherIceLite = this.iceLite;
+-    const gatherRelayOnly = !gatherIceLite && this.options.forceTurn && turnServer && turnUsername && turnPassword;
++    const gatherRelayOnly = !gatherIceLite && this.options.forceTurn && usableTurnServers.length > 0;
+     addresses = addresses.filter((address) => {
+       if (this.protocols.find((protocol) => protocol.localIp === address)) {
+         return false;
+@@ -9806,6 +9815,10 @@ var Connection = class {
+           this.options.portRange,
+           this.options.interfaceAddresses
+         );
++        if (this.state === "closed") {
++          await protocol.close();
++          return;
++        }
+         protocol.localIp = address;
+         this.protocols.push(protocol);
+         log24("protocol", protocol.localIp);
+@@ -9847,6 +9860,10 @@ var Connection = class {
+           const passiveProtocol = new TcpPassiveProtocol();
+           this.ensureProtocol(passiveProtocol);
+           await passiveProtocol.connectionMade(address, this.options.portRange);
++        if (this.state === "closed") {
++          await passiveProtocol.close();
++          return;
++        }
+           passiveProtocol.localIp = address;
+           passiveProtocol.localCandidate = new Candidate(
+             candidateFoundation("host", "tcp", address),
+@@ -9872,7 +9889,11 @@ var Connection = class {
+           const activeProtocol = new TcpActiveProtocol();
+           this.ensureProtocol(activeProtocol);
+           await activeProtocol.connectionMade(address);
+-          activeProtocol.localIp = address;
++          if (this.state === "closed") {
++          await activeProtocol.close();
++          return;
++        }
++        activeProtocol.localIp = address;
+           activeProtocol.localCandidate = new Candidate(
+             candidateFoundation("host", "tcp", address),
+             1,
+@@ -9930,9 +9951,10 @@ var Connection = class {
+       );
+       candidatePromises.push(...stunCandidatePromises);
+     }
+-    if (!gatherIceLite && turnServer && turnUsername && turnPassword) {
++    for (const { address: turnServer, username: turnUsername, password: turnPassword, transport: turnTransport = "udp" }
++            of gatherIceLite ? [] : usableTurnServers) {
+       const turnCandidatePromise = (async () => {
+-        const turnTransport = this.options.turnTransport ?? "udp";
++        
+         const protocol = await createStunOverTurnClient(
+           {
+             address: turnServer,
+@@ -9948,7 +9970,7 @@ var Connection = class {
+             udpFamily: this.options.turnUdpFamily
+           }
+         ).catch(async (e) => {
+-          if (turnTransport === "udp") {
++          if (turnTransport === "udp" && usableTurnServers.length === 1) {
+             return await createStunOverTurnClient(
+               {
+                 address: turnServer,
+@@ -9966,6 +9988,10 @@ var Connection = class {
+             throw e;
+           }
+         });
++        if (this.state === "closed") {
++          await protocol.close();
++          return;
++        }
+         this.ensureProtocol(protocol);
+         this.protocols.push(protocol);
+         const candidateAddress = protocol.turn.relayedAddress;
+@@ -9985,6 +10011,7 @@ var Connection = class {
+           this.generation,
+           this.localUsername
+         );
++        this.pairLocalProtocol(protocol);
+         this.appendLocalCandidate(protocol.localCandidate);
+         return protocol.localCandidate;
+       })().catch((error) => {
+@@ -10040,7 +10067,7 @@ var Connection = class {
+       await timers.setTimeout(20);
+     }
+     let res = ICE_FAILED;
+-    while (this.checkList.length > 0 && res === ICE_FAILED) {
++    if (this.checkList.length > 0 && this.state !== "closed") {
+       res = await this.checkListState.get();
+       log24("checkListState", res);
+     }
+@@ -10089,9 +10116,14 @@ var Connection = class {
+         return true;
+       }
+     }
+-    if (!this.remoteCandidatesEnd) {
++    if (!this.remoteCandidatesEnd || !this.localCandidatesEnd) {
+       return !this.checkListDone;
+     }
++    if (!this.checkListDone && !this.nominating && this.checkList.every(
++      (pair) => pair.state === 4 /* FAILED */)) {
++      this.checkListDone = true;
++      this.checkListState.put(Promise.resolve(ICE_FAILED));
++    }
+     return false;
+   }
+   /**
+@@ -10318,6 +10350,7 @@ var Connection = class {
+     this.lookup = void 0;
+   }
+   setState(state) {
++    if (this.state === "closed") return;
+     this.state = state;
+     this.stateChanged.execute(state);
+   }
+@@ -10458,7 +10491,8 @@ var Connection = class {
+         return;
+       }
+     }
+-    if (!this.checkListDone) {
++    if (!this.checkListDone && this.remoteCandidatesEnd && this.localCandidatesEnd) {
++      this.checkListDone = true;
+       log24("ICE failed");
+       this.checkListState.put(
+         new Promise((r) => {
+@@ -11413,7 +11447,15 @@ function parseIceServers(iceServers) {
+       if (!options.stunServer && parsed.kind === "stun") {
+         options.stunServer = parsed.address;
+       }
+-      if (!options.turnServer && parsed.kind === "turn") {
++      if (parsed.kind === "turn") {
++                (options.turnServers ??= []).push({
++                    address: parsed.address,
++                    transport: parsed.transport,
++                    username: iceServer.username,
++                    password: iceServer.credential,
++                });
++            }
++            if (!options.turnServer && parsed.kind === "turn") {
+         options.turnServer = parsed.address;
+         options.turnTransport = parsed.transport;
+         options.turnUsername = iceServer.username;
+@@ -17111,6 +17153,14 @@ var SecureTransportManager = class {
+     return {
+       stunServer: iceServerOptions.stunServer,
+       turnServer: iceServerOptions.turnServer,
++            turnServers: iceServerOptions.turnServers?.map((server) => ({
++                ...server,
++                transport: resolveTurnTransport({
++                    parsedTurnTransport: server.transport,
++                    configuredTurnTransport: this.config.turnTransport,
++                    forceTurnTCP: this.config.forceTurnTCP,
++                }),
++            })),
+       turnUsername: iceServerOptions.turnUsername,
+       turnPassword: iceServerOptions.turnPassword,
+       turnTransport
+@@ -18042,7 +18092,7 @@ var RTCPeerConnection = class extends EventTarget {
+       });
+     }
+   }
+-  async setLocalDescription(sessionDescription) {
++  async setLocalDescription(sessionDescription, { trickle = false } = {}) {
+     const implicitOfferState = [
+       "stable",
+       "have-local-offer",
+@@ -18152,9 +18202,10 @@ var RTCPeerConnection = class extends EventTarget {
+       this.transceiverManager.getTransceivers(),
+       this.sctpTransport
+     );
+-    await this.gatherCandidates().catch((e) => {
++    const gathering = this.gatherCandidates().catch((e) => {
+       log36("gatherCandidates failed", e);
+     });
++    if (!trickle) await gathering;
+     if (description.type === "answer") {
+       this.connect().catch((err5) => {
+         log36("connect failed", err5);
+diff --git a/lib/webrtc/src/peerConnection.d.ts b/lib/webrtc/src/peerConnection.d.ts
+index b41d8b6470fef138ca8c433ea115a77f1e465cff..64804bf734e28dc3cd62413204d79eb5c5e957b8 100644
+--- a/lib/webrtc/src/peerConnection.d.ts
++++ b/lib/webrtc/src/peerConnection.d.ts
+@@ -244,7 +244,7 @@ export declare class RTCPeerConnection extends EventTarget {
+     setLocalDescription(sessionDescription: {
+         type: "rollback";
+     }): Promise<void>;
+-    setLocalDescription(sessionDescription?: RTCLocalSessionDescriptionInit): Promise<SessionDescription>;
++    setLocalDescription(sessionDescription?: RTCLocalSessionDescriptionInit, options?: { trickle?: boolean }): Promise<SessionDescription>;
+     private gatherCandidates;
+     addIceCandidate(candidateMessage?: RTCIceCandidate | RTCIceCandidateInit | null): Promise<void>;
+     private applyRemoteIceCandidate;
+diff --git a/lib/webrtc/src/peerConnection.js b/lib/webrtc/src/peerConnection.js
+index 9c0a2b21c63532cc675f90793de69916d56280c5..add87aa92561dcfaa8fa16e109bfe276800fa503 100644
+--- a/lib/webrtc/src/peerConnection.js
++++ b/lib/webrtc/src/peerConnection.js
+@@ -763,7 +763,7 @@ class RTCPeerConnection extends helper_1.EventTarget {
+             });
+         }
+     }
+-    async setLocalDescription(sessionDescription) {
++    async setLocalDescription(sessionDescription, { trickle = false } = {}) {
+         // https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/setLocalDescription#type
+         const implicitOfferState = [
+             "stable",
+@@ -916,9 +916,10 @@ class RTCPeerConnection extends helper_1.EventTarget {
+         }
+         // for trickle ice
+         this.sdpManager.setLocal(description, this.transceiverManager.getTransceivers(), this.sctpTransport);
+-        await this.gatherCandidates().catch((e) => {
++        const gathering = this.gatherCandidates().catch((e) => {
+             log("gatherCandidates failed", e);
+         });
++        if (!trickle) await gathering;
+         // connect transports
+         if (description.type === "answer") {
+             this.connect().catch((err) => {
+diff --git a/lib/webrtc/src/secureTransportManager.js b/lib/webrtc/src/secureTransportManager.js
+index 2384a6228ab1de319a35882673db37c97fddbf6c..17bf6fda227ced9fc3a55aabcecd377aedff4ccf 100644
+--- a/lib/webrtc/src/secureTransportManager.js
++++ b/lib/webrtc/src/secureTransportManager.js
+@@ -127,6 +127,14 @@ class SecureTransportManager {
+         return {
+             stunServer: iceServerOptions.stunServer,
+             turnServer: iceServerOptions.turnServer,
++            turnServers: iceServerOptions.turnServers?.map((server) => ({
++                ...server,
++                transport: (0, utils_1.resolveTurnTransport)({
++                    parsedTurnTransport: server.transport,
++                    configuredTurnTransport: this.config.turnTransport,
++                    forceTurnTCP: this.config.forceTurnTCP,
++                }),
++            })),
+             turnUsername: iceServerOptions.turnUsername,
+             turnPassword: iceServerOptions.turnPassword,
+             turnTransport,
+diff --git a/lib/webrtc/src/utils.d.ts b/lib/webrtc/src/utils.d.ts
+index 2ebab931f7869b4df1ebce3791f1cdf4ef2d11e7..ef4d73bedd5c7ab689e4c599aee4bde439c08814 100644
+--- a/lib/webrtc/src/utils.d.ts
++++ b/lib/webrtc/src/utils.d.ts
+@@ -24,6 +24,13 @@ export declare const compactNtp: (ntp: bigint) => number;
+ export declare function parseIceServers(iceServers: RTCIceServer[]): {
+     stunServer?: Address;
+     turnServer?: Address;
++    /** TURN alternatives gathered concurrently. Legacy single-server fields remain supported. */
++    turnServers?: {
++        address: Address;
++        username?: string;
++        password?: string;
++        transport?: "udp" | "tcp" | "tls";
++    }[];
+     turnUsername?: string;
+     turnPassword?: string;
+     turnTransport?: "udp" | "tcp" | "tls";
+diff --git a/lib/webrtc/src/utils.js b/lib/webrtc/src/utils.js
+index ce508efd427c0855c146e48276205014c0fb43e7..cc906667baf76c6779fe756a38e7e739a1038208 100644
+--- a/lib/webrtc/src/utils.js
++++ b/lib/webrtc/src/utils.js
+@@ -107,6 +107,14 @@ function parseIceServers(iceServers) {
+             if (!options.stunServer && parsed.kind === "stun") {
+                 options.stunServer = parsed.address;
+             }
++            if (parsed.kind === "turn") {
++                (options.turnServers ??= []).push({
++                    address: parsed.address,
++                    transport: parsed.transport,
++                    username: iceServer.username,
++                    password: iceServer.credential,
++                });
++            }
+             if (!options.turnServer && parsed.kind === "turn") {
+                 options.turnServer = parsed.address;
+                 options.turnTransport = parsed.transport;

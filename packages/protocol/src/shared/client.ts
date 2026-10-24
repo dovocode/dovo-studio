@@ -95,6 +95,11 @@ export type RuntimeRequestOptions = {
   beforeMutation?: (token: string | undefined) => Effect.Effect<void, RuntimeRequestError>
 }
 
+// A ticket's socket must use the transport that issued it, even if a background
+// route check selects LAN while its response is in flight. Weak keys retain no tickets.
+const responseAddresses = new WeakMap<object, string>()
+export const runtimeResponseAddress = (value: object) => responseAddresses.get(value)
+
 /** A single request; interruption aborts both the fetch and response body read.
  * GET and allowlisted POST reads and ID-deduplicated sends retry within the same deadline;
  * other mutations never retry. */
@@ -297,6 +302,8 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
           )
         }
         const parsed = yield* decodeResponse(yield* parseJson(text))
+        if (parsed !== null && typeof parsed === 'object')
+          responseAddresses.set(parsed, transportTarget.origin)
         if (conditional) {
           conditional.save(
             response.headers.get('etag'),

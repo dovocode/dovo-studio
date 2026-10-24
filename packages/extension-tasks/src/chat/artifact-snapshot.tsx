@@ -12,11 +12,13 @@ export function ArtifactSnapshot({
   profile,
   artifact,
   connected,
+  connecting = false,
   refreshKey,
 }: {
   profile: RuntimeProfile
   artifact: ArtifactMetadata
   connected: boolean
+  connecting?: boolean
   refreshKey: number
 }) {
   const { readRuntime } = useWorkspace()
@@ -104,7 +106,7 @@ export function ArtifactSnapshot({
           title={connected ? current?.error : undefined}
           className="absolute bottom-1 right-2 rounded bg-background/90 px-2 text-[10px] text-muted-foreground"
         >
-          {!connected ? 'Computer offline' : 'Snapshot unavailable'}
+          {!connected ? (connecting ? 'Connecting…' : 'Computer offline') : 'Snapshot unavailable'}
         </span>
       )}
     </div>

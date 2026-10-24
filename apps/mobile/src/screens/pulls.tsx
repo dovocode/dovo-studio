@@ -143,6 +143,11 @@ export default function PullsScreen() {
   )
   const attentionCount = matchingPulls.filter(pullNeedsAttention).length
   const pulls = attention ? matchingPulls.filter(pullNeedsAttention) : matchingPulls
+  const failedPages = pages.filter((page) => page.error)
+  const unavailable =
+    !!pages.length &&
+    failedPages.length === pages.length &&
+    !pages.some((page) => page.pulls.length)
   const { retainPosition, ...listScroll } = useListScroll<(typeof pulls)[number]>(
     listOffset,
     focused,
@@ -355,6 +360,22 @@ export default function PullsScreen() {
                 ]}
               />
             </View>
+            {failedPages.map((page) => (
+              <View key={page.sourceKey} style={{ paddingVertical: 8, gap: 4 }}>
+                <Text accessibilityRole="alert" style={styles.error}>
+                  {page.name} · {page.runtimeName}: {page.error}
+                </Text>
+                {!page.readConnected && (
+                  <Text style={styles.muted}>Reconnect this source to retry.</Text>
+                )}
+                <Action
+                  secondary
+                  label={`Retry · ${page.name} · ${page.runtimeName}`}
+                  disabled={busy || !page.readConnected}
+                  onPress={() => void more(page.sourceKey)}
+                />
+              </View>
+            ))}
           </View>
         }
         data={pulls}
@@ -577,18 +598,24 @@ export default function PullsScreen() {
             <EmptyState
               icon="pulls"
               title={
-                filtersActive
-                  ? 'No matching pull requests'
-                  : connected
-                    ? 'No pull requests to show'
-                    : 'Connect to a computer'
+                unavailable
+                  ? 'Couldn’t load pull requests'
+                  : filtersActive
+                    ? 'No matching pull requests'
+                    : connected
+                      ? 'No pull requests to show'
+                      : 'Connect to a computer'
               }
               description={
-                filtersActive
-                  ? 'Try another search or clear your filters.'
-                  : connected
-                    ? 'Pull down to refresh, or create a pull request.'
-                    : 'Your saved pull requests will appear here when available.'
+                unavailable
+                  ? 'Retry the sources above, or reconnect their computers.'
+                  : failedPages.length
+                    ? 'No matches in the available results. Retry the sources above to check the rest.'
+                    : filtersActive
+                      ? 'Try another search or clear your filters.'
+                      : connected
+                        ? 'Pull down to refresh, or create a pull request.'
+                        : 'Your saved pull requests will appear here when available.'
               }
               action={
                 filtersActive && <Action secondary label="Clear filters" onPress={clearFilters} />
@@ -604,15 +631,10 @@ export default function PullsScreen() {
           >
             {pages.map((page) => (
               <View key={page.sourceKey}>
-                {page.error && (
-                  <Text style={styles.error}>
-                    {page.name} · {page.runtimeName}: {page.error}
-                  </Text>
-                )}
-                {(page.hasMore || page.error) && (
+                {page.hasMore && !page.error && (
                   <Action
                     secondary
-                    label={`${page.error ? 'Retry' : 'Load more'} · ${page.name} · ${page.runtimeName}`}
+                    label={`Load more · ${page.name} · ${page.runtimeName}`}
                     disabled={busy || !page.readConnected}
                     onPress={() => void more(page.sourceKey)}
                   />

@@ -140,6 +140,11 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
   const selectedSource = sources.find(
     (source) => source.key === selected?.source.key && source.scope === selected.source.scope,
   )
+  const failedPages = pages.filter((page) => page.error)
+  const unavailable =
+    !!pages.length &&
+    failedPages.length === pages.length &&
+    !pages.some((page) => page.pulls.length)
   const creatingSource = sources.find(
     (source) => source.key === creating?.key && source.scope === creating.scope,
   )
@@ -601,9 +606,37 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       ? 'Showing saved results where fresh data is unavailable.'
                       : ''}
               </p>
+              {failedPages.map((page) => (
+                <div key={page.source.key} className="mb-3 space-y-1 rounded-lg border p-3">
+                  <p
+                    role="alert"
+                    className="break-words text-xs text-destructive [overflow-wrap:anywhere]"
+                  >
+                    {page.source.repository.name} · {page.source.runtimeName}: {page.error}
+                  </p>
+                  {!page.reader.connected && (
+                    <p className="text-xs text-muted-foreground">Reconnect this source to retry.</p>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="max-w-full"
+                    disabled={busy || !page.reader.connected}
+                    onClick={() => void more(page.source.key)}
+                  >
+                    <span className="min-w-0 truncate">
+                      Retry · {page.source.repository.name} · {page.source.runtimeName}
+                    </span>
+                  </Button>
+                </div>
+              ))}
               {!busy && connected && !pulls.length && (
                 <p className="text-xs text-muted-foreground">
-                  No matching PRs in loaded results.
+                  {unavailable
+                    ? 'Couldn’t load pull requests. Retry the sources above.'
+                    : failedPages.length
+                      ? 'No matching PRs in available results. Retry the sources above to check the rest.'
+                      : 'No matching PRs in loaded results.'}
                   {!sources.length ? ' Add a project from the Projects menu in Tasks.' : ''}
                 </p>
               )}
@@ -648,15 +681,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               </div>
               {pages.map((page) => (
                 <div key={page.source.key} className="mt-3">
-                  {page.error && (
-                    <p
-                      role="alert"
-                      className="break-words text-xs text-destructive [overflow-wrap:anywhere]"
-                    >
-                      {page.source.repository.name} · {page.source.runtimeName}: {page.error}
-                    </p>
-                  )}
-                  {(page.hasMore || page.error) && (
+                  {page.hasMore && !page.error && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -665,8 +690,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       onClick={() => void more(page.source.key)}
                     >
                       <span className="min-w-0 truncate">
-                        {page.error ? 'Retry' : 'Load more'} · {page.source.repository.name} ·{' '}
-                        {page.source.runtimeName}
+                        Load more · {page.source.repository.name} · {page.source.runtimeName}
                       </span>
                     </Button>
                   )}

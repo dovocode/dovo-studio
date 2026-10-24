@@ -341,3 +341,35 @@ it.each(['move', 'up', 'down', 'remove', 'restore'] as const)(
     }
   },
 )
+
+it('validates duplicate requests and safely replays the accepted copy', async () => {
+  const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { store, tasks } = runtime.services
+    const task = tasks.create({ title: 'Copy queue', repositoryId: '', agentId: '', objective: '' })
+    store.updateTask(task.id, (t) => ({ ...t, queuePaused: true, draft: 'Keep draft' }))
+    tasks.queue.add(task.id, 'source', 'Original')
+    const request = (input: Record<string, unknown>) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.id, action: 'duplicate', ...input }),
+      })
+    expect((await request({ messageId: 'source' })).status).toBe(400)
+    expect((await request({ duplicateMessageId: 'copy' })).status).toBe(400)
+    expect((await request({ messageId: 'source', duplicateMessageId: 'copy' })).status).toBe(200)
+    tasks.queue.change(task.id, 'remove', 'source')
+    expect((await request({ messageId: 'source', duplicateMessageId: 'copy' })).status).toBe(200)
+    expect((await request({ messageId: 'source', duplicateMessageId: 'other-copy' })).status).toBe(
+      409,
+    )
+    expect(store.task(task.id)).toMatchObject({
+      draft: 'Keep draft',
+      queuePaused: true,
+      queue: [{ id: 'copy', text: 'Original' }],
+    })
+  } finally {
+    await runtime.close()
+  }
+})

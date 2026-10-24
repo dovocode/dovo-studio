@@ -53,7 +53,7 @@ export function ChangeTypeFilters({
                 style={{ flexGrow: weights.get(kind), flexBasis: 0 }}
                 className={cn(
                   'group py-2.5 focus-visible:outline-2 focus-visible:outline-ring',
-                  unit === 'lines' ? 'min-w-0' : 'min-w-6',
+                  unit === 'lines' ? 'min-w-2' : 'min-w-6',
                   color,
                 )}
               >

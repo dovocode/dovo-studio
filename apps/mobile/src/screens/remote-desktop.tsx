@@ -157,7 +157,7 @@ export function MobileRemoteDesktop({ onClose }: { onClose: () => void }) {
               if (message.action === 'unlock') {
                 if (!connection || message.sessionId !== live.current.id)
                   throw new Error('Desktop session ended')
-                const { ticket } = await runClientEffect(
+                const ticket = await runClientEffect(
                   readEffect(
                     '/api/remote-desktop/unlock-ticket',
                     { id: message.sessionId },

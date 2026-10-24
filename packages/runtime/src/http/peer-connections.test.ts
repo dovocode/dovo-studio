@@ -7,7 +7,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { WebSocket, WebSocketServer } from 'ws'
-import { RTCPeerConnection } from 'werift'
+import { RTCPeerConnection, Connection } from 'werift'
+import { createSocket } from 'node:dgram'
 import {
   peerRoom,
   peerCapability,
@@ -18,6 +19,7 @@ import {
   peerSignalSchema,
   decode,
   createPeerPipe,
+  createPeerIce,
   peerConfigSchema,
   peerRelayAdmissionPayload,
   peerReadySchema,
@@ -95,7 +97,7 @@ async function fixture(persistent = false) {
     runtime = await startRuntime(options)
     return runtime
   }
-  const tunnel = async (config: PeerConfig) => {
+  const tunnel = async (config: PeerConfig, trickle = false) => {
     const pc = new RTCPeerConnection({ iceServers: [], iceUseIpv6: false })
     cleanup.push(() => pc.close())
     const ready = pc.createDataChannel('dovo-ready-v1')
@@ -115,27 +117,82 @@ async function fixture(persistent = false) {
         room: peerRoom(config),
         key: peerCapability(config, 'client'),
         session,
+        ...(trickle ? { trickle: true } : {}),
       }),
     )
-    await joined
-    await pc.setLocalDescription(await pc.createOffer())
-    const sdp = pc.localDescription!.sdp
-    const offer = signPeerSignal(config, { session, role: 'offer', offer: peerDigest(sdp), sdp })
-    const answered = once(socket, 'message')
+    const joinedValue = decode(peerReadySchema, JSON.parse(String((await joined)[0])))
+    expect(!!joinedValue.trickle).toBe(trickle)
+    let ice: ReturnType<typeof createPeerIce> | undefined
+    let offer: PeerSignal
+    if (trickle) {
+      const description = await pc.createOffer()
+      offer = signPeerSignal(config, {
+        session,
+        role: 'offer',
+        offer: peerDigest(description.sdp),
+        sdp: description.sdp,
+        trickle: true,
+        pipeWindow: 64,
+      })
+      ice = createPeerIce({
+        config,
+        session,
+        offer: offer.offer,
+        role: 'offer',
+        send: (value) => socket.send(JSON.stringify(value)),
+        add: (value) => pc.addIceCandidate(value),
+        onError: (error) => {
+          throw error
+        },
+      })
+      cleanup.push(() => ice?.stop())
+      pc.onIceCandidate.subscribe((candidate) =>
+        ice?.candidate(
+          candidate
+            ? {
+                candidate: candidate.candidate,
+                sdpMid: candidate.sdpMid ?? null,
+                sdpMLineIndex: candidate.sdpMLineIndex ?? null,
+              }
+            : null,
+        ),
+      )
+      await pc.setLocalDescription(description, { trickle: true })
+    } else {
+      await pc.setLocalDescription(await pc.createOffer())
+      const sdp = pc.localDescription!.sdp
+      offer = signPeerSignal(config, { session, role: 'offer', offer: peerDigest(sdp), sdp })
+    }
+    const answered = new Promise<PeerSignal>((resolve) => {
+      socket.on('message', (raw) => {
+        const bytes = Array.isArray(raw)
+          ? Buffer.concat(raw)
+          : Buffer.from(raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw)
+        const value = JSON.parse(bytes.toString())
+        if (value.type === 'ice') ice?.receive(value)
+        else resolve(decode(peerSignalSchema, value))
+      })
+    })
     socket.send(JSON.stringify(offer))
-    const answer = decode(peerSignalSchema, JSON.parse(String((await answered)[0])))
+    ice?.start()
+    const answer = await answered
     expect(answer.session).toBe(session)
-    expect(answer.offer).toBe(peerDigest(sdp))
+    expect(answer.offer).toBe(offer.offer)
     expect(verifyPeerSignal(config, answer)).toBe(true)
+    expect(answer.trickle).toBe(offer.trickle)
+    expect(answer.pipeWindow).toBe(offer.pipeWindow)
     await pc.setRemoteDescription({ type: 'answer', sdp: answer.sdp })
+    ice?.ready()
     await connected
+    ice?.stop()
     socket.close()
     const connections = new Set<Socket>()
     const proxy = createServer({ allowHalfOpen: true, pauseOnConnect: true }, (tcp) => {
       connections.add(tcp)
       tcp.once('close', () => connections.delete(tcp))
-      const channel = pc.createDataChannel('dovo-tcp-v1')
+      const channel = pc.createDataChannel(trickle ? 'dovo-tcp-v2' : 'dovo-tcp-v1')
       const pipe = createPeerPipe({
+        window: trickle ? 64 : 8,
         stream: {
           onData: (f) => {
             tcp.on('data', f)
@@ -200,6 +257,76 @@ async function fixture(persistent = false) {
   }
   return { runtime, tunnel, directory, restart }
 }
+
+it('serves authenticated HTTP and large binary files while STUN gathering is still unfinished', async () => {
+  const sink = createSocket('udp4')
+  sink.bind(0, '127.0.0.1')
+  await once(sink, 'listening')
+  cleanup.push(() => new Promise<void>((resolve) => sink.close(() => resolve())))
+  const gathering: Connection[] = []
+  // Retain the original method; invoke it with the actual connection below.
+  const gather = Connection.prototype.gatherCandidates
+  vi.spyOn(Connection.prototype, 'gatherCandidates').mockImplementation(function (
+    this: Connection,
+  ) {
+    // Real STUN packets go unanswered; host candidates must establish the encrypted
+    // transport without waiting for the six-second discovery deadline.
+    this.stunServer = ['127.0.0.1', sink.address().port]
+    this.options.stunGatherTimeout = 6
+    gathering.push(this)
+    return gather.call(this)
+  })
+  const f = await fixture()
+  const credential = 'trickle-paired-device'
+  const device = f.runtime.services.devices.add('Trickle phone', credential)
+  const config = await f.runtime.services.peers.enable(device)
+  const peer = await f.tunnel(config, true)
+  expect(gathering).toHaveLength(2)
+  expect(gathering.every((connection) => !connection.localCandidatesEnd)).toBe(true)
+  expect((await peer.request('/api/snapshot?scope=overview', undefined, credential)).status).toBe(
+    200,
+  )
+  expect((await peer.request('/api/snapshot', undefined, 'wrong-token')).status).toBe(401)
+  expect(gathering.every((connection) => !connection.localCandidatesEnd)).toBe(true)
+  const diagnostics = f.runtime.services.peers.diagnostics().recent[0]!
+  expect(diagnostics.trickle).toBe(true)
+  expect(diagnostics.answerMs).toBeTypeOf('number')
+  expect(diagnostics.setupMs).toBeTypeOf('number')
+  expect(diagnostics.remoteCandidates.host).toBeGreaterThan(0)
+  f.runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      {
+        id: 'trickle-file',
+        title: 'Trickle file',
+        agentId: '',
+        repositoryId: '',
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+      },
+    ],
+  }))
+  vi.spyOn(f.runtime.services.checkouts, 'fileDirectory').mockResolvedValue(f.directory)
+  const bytes = randomBytes(2 * 1024 * 1024 + 17)
+  await writeFile(join(f.directory, 'binary.bin'), bytes)
+  const shared = await peer.request(
+    '/api/tasks/files/share',
+    {
+      taskId: 'trickle-file',
+      path: 'binary.bin',
+    },
+    credential,
+  )
+  expect(shared.status).toBe(200)
+  const file: { url: string } = await shared.json()
+  const download = await peer.request(file.url + '?download=1')
+  expect(download.status).toBe(200)
+  expect(Buffer.from(await download.arrayBuffer())).toEqual(bytes)
+}, 20000)
 
 it('allows confirmed paired TURN setup, keeps secrets out of snapshots and refreshes encrypted policy without pairing again', async () => {
   const { runtime } = await fixture()
@@ -1070,9 +1197,9 @@ it('stays direct-only when Connect has not approved this installation', async ()
 })
 
 /** A broker whose admission of each host connection is scripted by the test. */
-async function scriptedBroker() {
+async function scriptedBroker(autoPong = true) {
   const broker = httpServer()
-  const sockets = new WebSocketServer({ server: broker })
+  const sockets = new WebSocketServer({ server: broker, autoPong })
   const closes: number[] = []
   let script: (socket: WebSocket, hello: Record<string, unknown>) => void = () => {}
   sockets.on('connection', (socket) => {
@@ -1262,3 +1389,89 @@ it('validates broker relays against the room’s pinned hosts, not the default',
   await expect.poll(() => sessions().has(pinned)).toBe(true)
   for (const session of [unpinned, mixed, insecure]) expect(sessions().has(session)).toBe(false)
 }, 30000)
+
+it('recovers signaling promptly, backs off flapping brokers, resets after stability and stops retries on disposal', async () => {
+  const f = await scriptedBroker()
+  const hosts: WebSocket[] = []
+  f.script((socket) => {
+    hosts.push(socket)
+    socket.send(JSON.stringify({ type: 'ready' }))
+  })
+  await f.invite()
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  vi.spyOn(Math, 'random').mockReturnValue(0)
+  const drop = async () => {
+    hosts.at(-1)!.terminate()
+    await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(0))
+  }
+  try {
+    await drop()
+    await vi.advanceTimersByTimeAsync(500)
+    await vi.waitFor(() => expect(hosts).toHaveLength(2))
+    await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1))
+    await drop()
+    await vi.advanceTimersByTimeAsync(1000)
+    await vi.waitFor(() => expect(hosts).toHaveLength(3))
+    await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1))
+    await drop()
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.waitFor(() => expect(hosts).toHaveLength(4))
+    await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1))
+    await drop()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(hosts).toHaveLength(4)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.waitFor(() => expect(hosts).toHaveLength(5))
+    await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1))
+    vi.setSystemTime(Date.now() + 30000)
+    await drop()
+    await vi.advanceTimersByTimeAsync(500)
+    await vi.waitFor(() => expect(hosts).toHaveLength(6))
+    await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1))
+    await drop()
+    await f.runtime.services.peers.dispose()
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(hosts).toHaveLength(6)
+  } finally {
+    vi.useRealTimers()
+  }
+}, 15000)
+
+it('detects half-open signaling, rejects stale pongs and recovers without waiting for the broker heartbeat', async () => {
+  const f = await scriptedBroker(false)
+  const hosts: WebSocket[] = []
+  let healthy = false
+  f.script((socket) => {
+    hosts.push(socket)
+    socket.on('ping', (nonce) => socket.pong(healthy ? nonce : Buffer.from('stale-pong')))
+    socket.send(JSON.stringify({ type: 'ready' }))
+  })
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  vi.spyOn(Math, 'random').mockReturnValue(0)
+  try {
+    const invited = f.invite()
+    await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1))
+    await invited
+    await vi.advanceTimersByTimeAsync(5000)
+    // An unrelated/stale pong must not indefinitely keep this broken socket online.
+    await vi.advanceTimersByTimeAsync(10000)
+    healthy = true
+    await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(0))
+    await vi.advanceTimersByTimeAsync(500)
+    await vi.waitFor(() => expect(hosts).toHaveLength(2))
+    await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1))
+    // A responsive replacement remains stable over multiple watchdog periods.
+    for (let i = 0; i < 5; i++) {
+      await vi.advanceTimersByTimeAsync(5000)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    expect(hosts).toHaveLength(2)
+    expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1)
+    await f.runtime.services.peers.dispose()
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(hosts).toHaveLength(2)
+  } finally {
+    vi.useRealTimers()
+  }
+}, 15000)

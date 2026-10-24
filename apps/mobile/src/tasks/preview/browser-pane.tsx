@@ -5,7 +5,7 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { type ComponentRef, useEffect, useLayoutEffect, useRef } from 'react'
 import { captureRef } from 'react-native-view-shot'
-import { Image, Platform, ScrollView, View } from 'react-native'
+import { Image, Platform, ScrollView, View, StyleSheet } from 'react-native'
 import { WebView } from 'react-native-webview'
 import {
   deviceHostSettingsResultSchema,
@@ -56,7 +56,7 @@ function PreviewPane({
   onExpand,
   initialMode,
 }: PreviewProps & { initialMode: 'remote' | 'devices' }) {
-  const { styles } = useTheme()
+  const { colors, styles } = useTheme()
 
   const { profile, snapshot } = useRuntime()
   const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>(initialMode)
@@ -74,55 +74,67 @@ function PreviewPane({
       setReloadToken((value) => value + 1)
   }, [latestTurn?.id, latestTurn?.status, latestTurn?.checkpoint])
   const scope = `${profile?.id}:${taskId}`
+  const browserControls = (
+    <View
+      style={{
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderTopWidth: initialMode === 'devices' ? 0 : StyleSheet.hairlineWidth,
+        borderBottomWidth: initialMode === 'devices' ? StyleSheet.hairlineWidth : 0,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+      }}
+    >
+      <View
+        style={{
+          flex: 1,
+        }}
+      >
+        {initialMode === 'devices' && <Text style={styles.muted}>Devices</Text>}
+        {!expanded && initialMode !== 'devices' && (
+          <Choice
+            label="Browser mode"
+            compact
+            hideLabel
+            value={mode}
+            items={[
+              {
+                id: 'remote',
+                name: 'Host browser',
+              },
+              {
+                id: 'web',
+                name: 'Direct preview',
+              },
+            ]}
+            onChange={(value) => {
+              if (value === 'remote' || value === 'web') setMode(value)
+            }}
+          />
+        )}
+        {expanded && (
+          <Text style={styles.muted}>
+            {mode === 'remote' ? 'Host browser' : mode === 'devices' ? 'Devices' : 'Direct preview'}
+          </Text>
+        )}
+      </View>
+      <IconButton
+        label={expanded ? 'Show controls' : 'Expand preview'}
+        icon={expanded ? 'collapse' : 'expand'}
+        onPress={() => onExpand(!expanded)}
+      />
+    </View>
+  )
   return (
     <View
       style={{
         flex: 1,
       }}
     >
-      <View
-        style={{
-          paddingHorizontal: 8,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 4,
-        }}
-      >
-        <View
-          style={{
-            flex: 1,
-          }}
-        >
-          {initialMode === 'devices' && <Text style={styles.muted}>Devices</Text>}
-          {!expanded && initialMode !== 'devices' && (
-            <Choice
-              label="Browser mode"
-              compact
-              hideLabel
-              value={mode}
-              items={[
-                {
-                  id: 'remote',
-                  name: 'Host browser',
-                },
-                {
-                  id: 'web',
-                  name: 'Direct preview',
-                },
-              ]}
-              onChange={(value) => {
-                if (value === 'remote' || value === 'web') setMode(value)
-              }}
-            />
-          )}
-          {expanded && <Text style={styles.muted}>Preview</Text>}
-        </View>
-        <IconButton
-          label={expanded ? 'Show controls' : 'Expand preview'}
-          icon={expanded ? 'collapse' : 'expand'}
-          onPress={() => onExpand(!expanded)}
-        />
-      </View>
+      {initialMode === 'devices' && browserControls}
       {mode === 'remote' ? (
         <RemoteBrowser key={scope} taskId={taskId} expanded={expanded} reloadToken={reloadToken} />
       ) : (
@@ -135,6 +147,7 @@ function PreviewPane({
           reloadToken={reloadToken}
         />
       )}
+      {initialMode !== 'devices' && browserControls}
     </View>
   )
 }
@@ -308,6 +321,131 @@ function BrowserContent({
       onClose={() => setSetupDevice(undefined)}
     />
   ) : null
+  const previewControls = (
+    <View
+      style={{
+        display: expanded ? 'none' : 'flex',
+        padding: 8,
+        gap: 6,
+        borderTopWidth: mode === 'web' ? StyleSheet.hairlineWidth : 0,
+        borderBottomWidth: mode === 'web' ? 0 : StyleSheet.hairlineWidth,
+        borderColor: colors.border,
+      }}
+    >
+      <Field
+        label="Preview URL"
+        hideLabel
+        value={input}
+        onChangeText={setInput}
+        keyboardType="url"
+        autoCorrect={false}
+        returnKeyType="go"
+        onSubmitEditing={navigate}
+      />
+      {mode === 'web' && (
+        <View
+          style={[
+            styles.row,
+            {
+              justifyContent: 'space-between',
+            },
+          ]}
+        >
+          <IconButton
+            label="Back"
+            icon="back"
+            disabled={!history.back || mode !== 'web'}
+            onPress={() => web.current?.goBack()}
+          />
+          <IconButton
+            label="Forward"
+            icon="next"
+            disabled={!history.forward || mode !== 'web'}
+            onPress={() => web.current?.goForward()}
+          />
+          <IconButton
+            label="Reload"
+            icon="refresh"
+            disabled={!url || mode !== 'web'}
+            onPress={() => {
+              setLoadError('')
+              web.current?.reload()
+            }}
+          />
+          <Action
+            secondary
+            label="Take screenshot"
+            disabled={
+              !connected || busy || screenshots.busy || !url || !active || Platform.OS === 'web'
+            }
+            onPress={() =>
+              act(() =>
+                nativeEffect(async () => {
+                  if (!browserCapture.current)
+                    throw new Error('Open the browser page before taking a screenshot.')
+                  const data = await captureRef(browserCapture.current, {
+                    format: 'png',
+                    result: 'base64',
+                  })
+                  await screenshots.attach(`data:image/png;base64,${data}`)
+                }),
+              )
+            }
+          />
+          <IconButton
+            label="Open externally"
+            icon="web"
+            disabled={!url}
+            onPress={() => act(() => openLink(history.url || url))}
+          />
+          <Action label="Go" disabled={mode !== 'web'} onPress={navigate} />
+        </View>
+      )}
+      {mode === 'web' && (
+        <View
+          style={[
+            styles.row,
+            {
+              flexWrap: 'wrap',
+            },
+          ]}
+        >
+          <View
+            style={{
+              flex: 1,
+            }}
+          >
+            <Choice
+              label="Preview mode"
+              hideLabel
+              value={preset}
+              items={previewPresets.map((p) => ({
+                id: p.id,
+                name: p.name,
+              }))}
+              onChange={setPreset}
+            />
+          </View>
+          <Action
+            secondary
+            label="Rotate"
+            disabled={mode !== 'web' || preset === 'fill'}
+            onPress={() => setLandscape((v) => !v)}
+          />
+        </View>
+      )}
+      {(error || loadError) && (
+        <Text
+          accessibilityRole="alert"
+          style={{
+            color: colors.error,
+          }}
+        >
+          {deviceHostMessage(error || loadError, profiles)}
+        </Text>
+      )}
+    </View>
+  )
   if (mode === 'devices' && liveDevice)
     return (
       <View
@@ -380,128 +518,7 @@ function BrowserContent({
           {screenshots.error}
         </Text>
       ) : null}
-      <View
-        style={{
-          display: expanded ? 'none' : 'flex',
-          padding: 8,
-          gap: 6,
-          borderBottomWidth: 0.5,
-          borderColor: colors.border,
-        }}
-      >
-        <Field
-          label="Preview URL"
-          hideLabel
-          value={input}
-          onChangeText={setInput}
-          keyboardType="url"
-          autoCorrect={false}
-          returnKeyType="go"
-          onSubmitEditing={navigate}
-        />
-        {mode === 'web' && (
-          <View
-            style={[
-              styles.row,
-              {
-                justifyContent: 'space-between',
-              },
-            ]}
-          >
-            <IconButton
-              label="Back"
-              icon="back"
-              disabled={!history.back || mode !== 'web'}
-              onPress={() => web.current?.goBack()}
-            />
-            <IconButton
-              label="Forward"
-              icon="next"
-              disabled={!history.forward || mode !== 'web'}
-              onPress={() => web.current?.goForward()}
-            />
-            <IconButton
-              label="Reload"
-              icon="refresh"
-              disabled={!url || mode !== 'web'}
-              onPress={() => {
-                setLoadError('')
-                web.current?.reload()
-              }}
-            />
-            <Action
-              secondary
-              label="Take screenshot"
-              disabled={
-                !connected || busy || screenshots.busy || !url || !active || Platform.OS === 'web'
-              }
-              onPress={() =>
-                act(() =>
-                  nativeEffect(async () => {
-                    if (!browserCapture.current)
-                      throw new Error('Open the browser page before taking a screenshot.')
-                    const data = await captureRef(browserCapture.current, {
-                      format: 'png',
-                      result: 'base64',
-                    })
-                    await screenshots.attach(`data:image/png;base64,${data}`)
-                  }),
-                )
-              }
-            />
-            <IconButton
-              label="Open externally"
-              icon="web"
-              disabled={!url}
-              onPress={() => act(() => openLink(history.url || url))}
-            />
-            <Action label="Go" disabled={mode !== 'web'} onPress={navigate} />
-          </View>
-        )}
-        {mode === 'web' && (
-          <View
-            style={[
-              styles.row,
-              {
-                flexWrap: 'wrap',
-              },
-            ]}
-          >
-            <View
-              style={{
-                flex: 1,
-              }}
-            >
-              <Choice
-                label="Preview mode"
-                hideLabel
-                value={preset}
-                items={previewPresets.map((p) => ({
-                  id: p.id,
-                  name: p.name,
-                }))}
-                onChange={setPreset}
-              />
-            </View>
-            <Action
-              secondary
-              label="Rotate"
-              disabled={mode !== 'web' || preset === 'fill'}
-              onPress={() => setLandscape((v) => !v)}
-            />
-          </View>
-        )}
-        {(error || loadError) && (
-          <Text
-            accessibilityRole="alert"
-            style={{
-              color: colors.error,
-            }}
-          >
-            {deviceHostMessage(error || loadError, profiles)}
-          </Text>
-        )}
-      </View>
+      {mode !== 'web' && previewControls}
       {mode === 'web' ? (
         url ? (
           <ScrollView
@@ -581,6 +598,7 @@ function BrowserContent({
         ) : (
           <View
             style={{
+              flex: 1,
               padding: 20,
               gap: 12,
             }}
@@ -760,6 +778,7 @@ function BrowserContent({
           )}
         </ScrollView>
       )}
+      {mode === 'web' && previewControls}
     </View>
   )
 }

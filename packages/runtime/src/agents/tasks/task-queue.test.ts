@@ -824,3 +824,136 @@ it('persists pauses through editing and dragging and never skips a paused queue 
     db.close()
   }
 })
+
+it('duplicates adjacent queued input with attachments, settings and pause state without changing drafts', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const settings = { provider: 'codex' as const, model: 'large', reasoning: 'high' }
+    const attachment = {
+      id: '00000000-0000-0000-0000-000000000000',
+      name: 'photo.png',
+      mime: 'image/png',
+      size: 10,
+    }
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Queue',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          harness: defaultTaskHarness('codex'),
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: 'Unrelated draft',
+          draftAttachments: [attachment],
+          draftTurnSettings: settings,
+          queuePaused: true,
+          example: false,
+          queue: [
+            {
+              id: 'source',
+              role: 'user',
+              text: 'Review this',
+              attachments: [attachment],
+              turnSettings: settings,
+              paused: true,
+              review: true,
+              subagentResultId: 'child',
+              createdAt: 'old',
+            },
+            { id: 'next', role: 'user', text: 'Next', createdAt: '' },
+          ],
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    queue.duplicate('task', 'source', 'copy')
+    const saved = new WorkspaceStore(db).task('task')
+    expect(saved.queue?.map((m) => m.id)).toEqual(['source', 'copy', 'next'])
+    expect(saved.queue?.[1]).toMatchObject({
+      id: 'copy',
+      text: 'Review this',
+      attachments: [attachment],
+      turnSettings: settings,
+      paused: true,
+    })
+    expect(saved.queue?.[1].createdAt).not.toBe('old')
+    expect(saved.queue?.[1].review).toBeUndefined()
+    expect(saved.queue?.[1].subagentResultId).toBeUndefined()
+    expect(saved).toMatchObject({
+      draft: 'Unrelated draft',
+      draftAttachments: [attachment],
+      draftTurnSettings: settings,
+      queuePaused: true,
+    })
+    // A lost response can be retried after editing/removing the source, or a runtime restart.
+    queue.edit('task', 'source', 'Changed', 'Review this')
+    queue.change('task', 'remove', 'source')
+    new TaskQueue(new WorkspaceStore(db)).duplicate('task', 'source', 'copy')
+    expect(store.task('task').queue?.filter((m) => m.id === 'copy')).toHaveLength(1)
+    expect(store.task('task').queue?.find((m) => m.id === 'copy')?.text).toBe('Review this')
+    expect(() => queue.duplicate('task', 'next', 'copy')).toThrow('already in use')
+    expect(() => queue.duplicate('task', 'source', 'new-copy')).toThrow('already started')
+  } finally {
+    db.close()
+  }
+})
+
+it('rejects duplication of delivering or archived messages, collisions and overflow without queue changes', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'task',
+          title: 'Queue',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          createdAt: '',
+          messages: [{ id: 'history', role: 'user', text: 'Sent', createdAt: '' }],
+          files: [],
+          draft: '',
+          example: false,
+          queue: [{ id: 'source', role: 'user', text: 'Input', createdAt: '', steering: true }],
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    expect(() => queue.duplicate('task', 'source', 'copy')).toThrow('being delivered')
+    store.updateTask('task', (t) => ({
+      ...t,
+      queue: t.queue?.map((m) => ({ ...m, steering: false })),
+    }))
+    for (const id of ['source', 'history'])
+      expect(() => queue.duplicate('task', 'source', id)).toThrow('already in use')
+    store.updateTask('task', (t) => ({ ...t, archived: true }))
+    expect(() => queue.duplicate('task', 'source', 'copy')).toThrow('Restore')
+    store.updateTask('task', (t) => ({
+      ...t,
+      archived: false,
+      queue: [
+        ...(t.queue ?? []),
+        ...Array.from({ length: 49 }, (_, i) => ({
+          id: String(i),
+          role: 'user' as const,
+          text: 'Next',
+          createdAt: '',
+        })),
+      ],
+    }))
+    const before = store.task('task')
+    expect(() => queue.duplicate('task', 'source', 'copy')).toThrow('Queue is full')
+    expect(store.task('task')).toEqual(before)
+    expect(store.taskSubmission('task', 'copy')).toBeUndefined()
+  } finally {
+    db.close()
+  }
+})

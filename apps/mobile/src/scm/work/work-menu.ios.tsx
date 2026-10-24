@@ -47,6 +47,7 @@ export function WorkMenu({
             key={action.label}
             testID={action.label}
             label={action.label}
+            role={action.destructive ? 'destructive' : undefined}
             onPress={action.onPress}
             modifiers={[disabled(action.disabled ?? false)]}
           />

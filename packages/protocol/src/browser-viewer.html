@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src ws: wss:;"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        font:
+          14px -apple-system,
+          BlinkMacSystemFont,
+          system-ui,
+          sans-serif;
+        --bg: #141416;
+        --bar: #1c1c1f;
+        --field: #29292d;
+        --panel: #222225;
+        --text: #f4f4f5;
+        --muted: #a1a1aa;
+        --border: #ffffff12;
+        --hover: #ffffff0d;
+        --accent: #91c3ff;
+        --success: #69c9a2;
+        --error: #ffa3a3;
+        --shadow: #0005;
+        color: var(--text);
+        background: var(--bg);
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
+        --bg: #f3f4f6;
+        --bar: #fafafa;
+        --field: #eeeef0;
+        --panel: #fff;
+        --text: #202024;
+        --muted: #62626c;
+        --border: #00000012;
+        --hover: #00000008;
+        --accent: #145bb8;
+        --success: #137451;
+        --error: #b42335;
+        --shadow: #0002;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+        color: inherit;
+      }
+      button,
+      select,
+      summary {
+        -webkit-tap-highlight-color: transparent;
+      }
+      button,
+      select {
+        height: 34px;
+        min-width: 34px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        padding: 0 8px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover,
+      button[aria-pressed='true'],
+      summary:hover {
+        background: var(--hover);
+      }
+      button:active {
+        background: var(--border);
+      }
+      button:disabled,
+      select:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible,
+      summary:focus-visible,
+      canvas:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      button svg {
+        width: 17px;
+        height: 17px;
+        vertical-align: middle;
+        flex-shrink: 0;
+      }
+      input {
+        min-width: 0;
+        border: 0;
+        background: transparent;
+        padding: 6px 8px;
+        font-size: 13px;
+        outline-offset: -2px;
+      }
+      #browserBar {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        padding: 8px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bar);
+        position: relative;
+        z-index: 10;
+        flex-shrink: 0;
+      }
+      #navigation {
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        order: 4;
+        align-items: center;
+        height: 36px;
+        padding: 0 3px 0 10px;
+        margin: 0 5px;
+        border: 1px solid transparent;
+        border-radius: 11px;
+        background: var(--field);
+      }
+      #navigation:focus-within {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+      }
+      #navigation > svg {
+        width: 15px;
+        height: 15px;
+        color: var(--muted);
+        flex-shrink: 0;
+      }
+      #address {
+        flex: 1;
+        width: 0;
+        height: 100%;
+        outline: none;
+      }
+      #address::placeholder {
+        color: var(--muted);
+      }
+      #go {
+        color: var(--muted);
+      }
+      #go:hover {
+        color: var(--text);
+      }
+      #tools {
+        display: contents;
+      }
+      #home {
+        order: 0;
+      }
+      #back {
+        order: 1;
+      }
+      #forward {
+        order: 2;
+      }
+      #reload {
+        order: 3;
+      }
+      #deviceButton {
+        order: 5;
+        max-width: 120px;
+      }
+      #sessionState {
+        order: 5;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+        padding: 0 6px;
+      }
+      #sessionState::before {
+        content: '';
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+      #sessionState[data-state='online']::before {
+        background: var(--success);
+      }
+      #keyboard {
+        order: 6;
+      }
+      #more {
+        order: 7;
+        position: relative;
+      }
+      #more > summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 9px;
+        cursor: pointer;
+      }
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      #more > summary svg {
+        width: 18px;
+        height: 18px;
+      }
+      #more[open] > summary {
+        background: var(--hover);
+      }
+      #menu {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 8px);
+        z-index: 20;
+        width: 280px;
+        max-width: calc(100vw - 16px);
+        max-height: calc(100dvh - 120px);
+        overflow: auto;
+        padding: 8px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: 0 12px 36px var(--shadow);
+      }
+      .menu-heading {
+        padding: 6px 8px 10px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .menu-section {
+        border-top: 1px solid var(--border);
+        padding: 8px 0;
+      }
+      .menu-section:last-child {
+        padding-bottom: 0;
+      }
+      #menu label {
+        display: block;
+        padding: 3px 8px 7px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      #menu select {
+        width: 100%;
+        padding: 0 10px;
+        background: var(--field);
+        border: 1px solid var(--border);
+        font-size: 12px;
+      }
+      #menu button {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        text-align: left;
+        font-size: 12px;
+        height: 36px;
+      }
+      #menu button span {
+        flex: 1;
+      }
+      #menu #close {
+        color: var(--error);
+      }
+      #viewport {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+        background: var(--bg);
+      }
+      #page {
+        touch-action: none;
+        display: block;
+        background: white;
+        flex-shrink: 0;
+        outline-offset: -2px;
+      }
+      #empty {
+        max-width: 380px;
+        width: 100%;
+        padding: 28px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+        max-height: 100%;
+        overflow: auto;
+      }
+      .empty-icon {
+        display: grid;
+        place-items: center;
+        margin: 0 auto 20px;
+        width: 56px;
+        height: 56px;
+        border-radius: 18px;
+        background: var(--bar);
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+      .empty-icon svg {
+        width: 25px;
+        height: 25px;
+      }
+      #empty h1 {
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: -0.5px;
+        color: var(--text);
+        margin: 0 0 8px;
+      }
+      #empty p {
+        margin: 0;
+      }
+      #starters {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 22px;
+      }
+      #starters button {
+        height: 36px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      #status {
+        font-size: 12px;
+        padding: 10px 14px;
+        color: var(--muted);
+        max-height: 90px;
+        flex-shrink: 0;
+        overflow: auto;
+        overflow-wrap: anywhere;
+        background: var(--bar);
+        border-top: 1px solid var(--border);
+      }
+      #status.error {
+        color: var(--error);
+      }
+      #reconnect {
+        align-self: center;
+        margin: 8px;
+        height: 36px;
+        color: var(--accent);
+        border: 1px solid var(--border);
+        background: var(--panel);
+      }
+      #editor {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 1px;
+        height: 1px;
+        opacity: 0.01;
+        font-size: 16px;
+        padding: 0;
+        border: 0;
+      }
+      #streamPerformance {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      #streamPerformance summary {
+        padding: 8px;
+        cursor: pointer;
+        border-radius: 8px;
+        line-height: 1.6;
+      }
+      #streamDetails {
+        padding: 6px 8px;
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+      }
+      dialog {
+        max-width: calc(100% - 32px);
+        width: 360px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--panel);
+        color: var(--text);
+        padding: 20px;
+        box-shadow: 0 20px 60px var(--shadow);
+      }
+      dialog::backdrop {
+        background: #0006;
+        backdrop-filter: blur(3px);
+      }
+      dialog p {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        max-height: 40vh;
+        overflow: auto;
+      }
+      dialog input {
+        width: 100%;
+        background: var(--field);
+        border-radius: 8px;
+        height: 40px;
+        font-size: 16px;
+      }
+      dialog footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 16px;
+      }
+      dialog button {
+        color: var(--accent);
+      }
+      dialog button[value='accept'] {
+        background: var(--field);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      body.device #browserBar {
+        justify-content: flex-end;
+      }
+      body.device #sessionState {
+        margin-right: auto;
+        order: -1;
+      }
+      body.device #viewport {
+        background: var(--bg);
+      }
+      body.expanded #browserBar {
+        display: none;
+      }
+      body.expanded #status:not(.error) {
+        display: none;
+      }
+      body.mobile #browserBar {
+        order: 1;
+        border-bottom: 0;
+        border-top: 1px solid var(--border);
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        padding-left: max(8px, env(safe-area-inset-left));
+        padding-right: max(8px, env(safe-area-inset-right));
+      }
+      body.mobile #more {
+        position: static;
+      }
+      body.mobile #menu {
+        top: auto;
+        bottom: calc(100% + 8px);
+        right: max(8px, env(safe-area-inset-right));
+      }
+      #reload[aria-busy='true'] svg {
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (max-width: 600px) {
+        #sessionState {
+          font-size: 0;
+          padding: 0 3px;
+          gap: 0;
+        }
+      }
+      @media (max-width: 520px) {
+        #browserBar {
+          flex-wrap: wrap;
+          gap: 2px;
+        }
+        #navigation {
+          order: -1;
+          flex-basis: 100%;
+          margin: 0 0 4px;
+          height: 40px;
+        }
+        #sessionState {
+          flex: 1;
+          min-width: 0;
+          padding: 0 2px;
+          justify-content: center;
+          font-size: 11px;
+          gap: 6px;
+        }
+        #more {
+          position: static;
+        }
+        #menu {
+          right: 8px;
+        }
+
+        #menu {
+          max-height: calc(100dvh - 152px);
+        }
+        body.device #browserBar {
+          flex-wrap: nowrap;
+        }
+        body.device #sessionState {
+          justify-content: flex-start;
+        }
+        #empty {
+          padding: 20px;
+        }
+        .empty-icon {
+          margin-bottom: 14px;
+        }
+      }
+      @media (pointer: coarse) {
+        button,
+        select,
+        #more > summary {
+          min-width: 44px;
+          height: 44px;
+        }
+        #navigation {
+          height: 44px;
+        }
+        #address {
+          font-size: 16px;
+        }
+        #menu button,
+        #menu select,
+        #starters button {
+          height: 44px;
+        }
+        #menu {
+          max-height: calc(100dvh - 168px);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #reload[aria-busy='true'] svg {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header id="browserBar" aria-label="Browser toolbar">
+      <form id="navigation" aria-label="Browser address">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z" />
+        </svg>
+        <input
+          id="address"
+          aria-label="Host browser URL"
+          type="text"
+          inputmode="url"
+          autocapitalize="off"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="Enter a URL or localhost:3000"
+        />
+        <button id="go" type="submit" aria-label="Go" title="Go">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M5 12h14m-6-6 6 6-6 6" />
+          </svg>
+        </button>
+      </form>
+      <div id="tools" role="toolbar" aria-label="Host browser controls">
+        <button id="home" type="button" aria-label="Home" title="Home" hidden>__HOME_ICON__</button>
+        <button id="back" type="button" aria-label="Back" title="Back">__BACK_ICON__</button>
+        <button id="forward" type="button" aria-label="Forward" title="Forward">
+          __FORWARD_ICON__
+        </button>
+        <button id="reload" type="button" aria-label="Reload" title="Reload">
+          __RELOAD_ICON__
+        </button>
+        <span id="sessionState" role="status" data-state="connecting">Connecting</span>
+        <select id="deviceButton" aria-label="Hardware controls" hidden>
+          <option value="">Hardware</option>
+          <option value="VolumeUp">Volume up</option>
+          <option value="VolumeDown">Volume down</option>
+          <option value="Mute">Mute</option>
+          <option value="Lock">Lock screen</option>
+        </select>
+        <button
+          id="keyboard"
+          type="button"
+          aria-label="Keyboard"
+          title="Keyboard"
+          aria-pressed="false"
+        >
+          __KEYBOARD_ICON__
+        </button>
+        <details id="more">
+          <summary aria-label="Browser options" title="Browser options">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.6" />
+              <circle cx="12" cy="12" r="1.6" />
+              <circle cx="19" cy="12" r="1.6" />
+            </svg>
+          </summary>
+          <div id="menu">
+            <div class="menu-heading">Browser controls</div>
+            <div class="menu-section" id="viewportOptions">
+              <label for="preset">Viewport</label
+              ><select id="preset" aria-label="Viewport">
+                <option value="fill">Fit view</option>
+                <option value="phone">Phone · 390 × 844</option>
+                <option value="tablet">Tablet · 820 × 1180</option>
+                <option value="desktop">Desktop · 1440 × 900</option></select
+              ><button id="rotate" type="button" aria-label="Rotate viewport">
+                __ROTATE_ICON__<span>Rotate viewport</span>
+              </button>
+            </div>
+            <div class="menu-section">
+              <button id="screenshot" type="button" aria-label="Take screenshot">
+                __SCREENSHOT_ICON__<span>Attach screenshot</span>
+              </button>
+              <details id="streamPerformance" aria-label="Browser stream performance">
+                <summary id="streamSummary">Measuring stream…</summary>
+                <div id="streamDetails">Waiting for stream measurements.</div>
+              </details>
+            </div>
+            <div class="menu-section">
+              <button id="close" type="button" aria-label="Close browser session">
+                __CLOSE_ICON__<span id="closeLabel">Close browser session</span>
+              </button>
+            </div>
+          </div>
+        </details>
+      </div>
+    </header>
+    <div id="viewport" role="main">
+      <canvas
+        id="page"
+        tabindex="0"
+        aria-label="Remote browser page. Tap to interact, swipe to scroll. Use Keyboard to type."
+        hidden
+      ></canvas>
+      <div id="empty">
+        <div class="empty-icon">__HOME_ICON__</div>
+        <h1 id="emptyTitle">Your project, live.</h1>
+        <p id="emptyMessage">
+          Open a website or preview a development server running on this computer.
+        </p>
+        <div id="starters" aria-label="Development server shortcuts">
+          <button type="button" data-url="http://localhost:3000">localhost:3000</button
+          ><button type="button" data-url="http://localhost:5173">localhost:5173</button>
+        </div>
+      </div>
+    </div>
+    <textarea
+      id="editor"
+      aria-label="Type into remote page"
+      autocapitalize="off"
+      autocomplete="off"
+      autocorrect="off"
+      spellcheck="false"
+    ></textarea>
+    <div id="status" role="status">Connecting to host browser…</div>
+    <button id="reconnect" type="button" hidden>Reconnect</button>
+    <dialog id="dialog" aria-labelledby="dialogText">
+      <form method="dialog">
+        <p id="dialogText"></p>
+        <input id="dialogValue" aria-label="Website prompt response" />
+        <footer>
+          <button id="cancelDialog" value="cancel">Cancel</button><button value="accept">OK</button>
+        </footer>
+      </form>
+    </dialog>
+    <script>
+      __BROWSER_SCRIPT__
+    </script>
+  </body>
+</html>

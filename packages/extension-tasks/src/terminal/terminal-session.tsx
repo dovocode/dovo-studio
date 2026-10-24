@@ -85,7 +85,7 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
     })
     const reconnect = startReconnecting(
       async (signal, connected) => {
-        const { ticket } = await request('/api/terminals/ticket', { id }, responses.ticket)
+        const ticket = await request('/api/terminals/ticket', { id }, responses.ticket)
         if (signal.aborted) return
         const url = createRuntimeClient(connection).socketUrl('/ws/terminal', ticket)
         await new Promise<void>((resolve, reject) => {

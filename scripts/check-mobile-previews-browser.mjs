@@ -5,11 +5,12 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mobile = `${root}/apps/mobile`
 const controls = `
+export const StyleSheet={hairlineWidth:1};
 export const View=({children})=><div>{children}</div>;
 export const ScrollView=View;
 export const Image=()=>null;
 export const Text=({children})=><span>{children}</span>;
-export const useTheme=()=>({colors:{},styles:{}});
+export const useTheme=()=>({mode:window.previewTheme??'dark',colors:{},styles:{}});
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const IconButton=Action;
 export const Field=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;
@@ -170,6 +171,21 @@ try {
     page.evaluate(() => window.commands.filter(({ code }) => code.includes('"type":"connect"')))
   await tickets(1)
   await page.waitForFunction(() => window.commands.some(({ code }) => code.includes('ticket-1')))
+  await page.waitForFunction(() =>
+    window.commands.some(({ code }) => code.includes('"type":"appearance","theme":"dark"')),
+  )
+  await page.evaluate(() => {
+    window.previewTheme = 'light'
+    window.setScene({})
+  })
+  await page.waitForFunction(() =>
+    window.commands.some(({ code }) => code.includes('"type":"appearance","theme":"light"')),
+  )
+  assert.equal(
+    await page.evaluate(() => window.requests.length),
+    1,
+    'Changing appearance preserves the stream',
+  )
   const original = await page.locator('[data-webview]').getAttribute('data-webview')
   await page.evaluate(() => window.setScene({ focused: false }))
   assert.equal(await page.evaluate(() => window.commands.at(-1).code.includes('pagehide')), true)
@@ -233,11 +249,35 @@ try {
   await tickets(7)
 
   await page.evaluate(() => window.setScene({ surface: 'browser' }))
+  assert.equal(
+    await page
+      .getByLabel('Browser mode')
+      .evaluate(
+        (node) =>
+          !!(
+            document.querySelector('[data-webview]').compareDocumentPosition(node) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+          ),
+      ),
+    true,
+    'Host browser mode controls follow the preview',
+  )
   await page.getByLabel('Browser mode').selectOption('web')
   const input = page.getByLabel('Preview URL')
   await input.fill('http://preview.lan/initial')
   await page.getByRole('button', { name: 'Go', exact: true }).click()
   await page.locator('[data-uri="http://preview.lan/initial"]').waitFor()
+  assert.equal(
+    await input.evaluate(
+      (node) =>
+        !!(
+          document.querySelector('[data-webview]').compareDocumentPosition(node) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+    ),
+    true,
+    'Direct preview address controls follow the page',
+  )
   const navigate = () =>
     page.evaluate(() =>
       [...window.webViews.values()][0].onNavigationStateChange({

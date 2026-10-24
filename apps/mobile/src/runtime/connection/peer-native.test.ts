@@ -6,6 +6,7 @@ import {
   PEER_HEARTBEAT_INTERVAL_MS,
   PEER_HEARTBEAT_TIMEOUT_MS,
   signPeerSignal,
+  signPeerIce,
   decode,
   peerSignalSchema,
   type PeerConfig,
@@ -56,6 +57,21 @@ class Peer {
   iceGatheringState = 'complete'
   onconnectionstatechange: (() => void) | null = null
   onicegatheringstatechange: (() => void) | null = null
+  onicecandidate:
+    | ((event: {
+        candidate: {
+          toJSON: () => { candidate: string; sdpMid: string; sdpMLineIndex: number }
+        } | null
+      }) => void)
+    | null = null
+  addEventListener(_type: string, handler: NonNullable<Peer['onicecandidate']>) {
+    this.onicecandidate = handler
+  }
+  createOffer = vi.fn<() => Promise<{ type: string; sdp: string }>>(async () => ({
+    type: 'offer',
+    sdp: this.localDescription.sdp,
+  }))
+  addIceCandidate = vi.fn<(candidate: unknown) => Promise<void>>(async () => {})
   localDescription = { sdp: 'v=0\r\na=fingerprint:sha-256 AA:BB\r\n' }
   ready = new Channel()
   createDataChannel = vi.fn<() => Channel>(() => {
@@ -480,3 +496,53 @@ it.each([
     expect(vi.getTimerCount()).toBe(0)
   },
 )
+
+it('sends a signed trickle offer immediately while gathering, buffers answer candidates, and keeps new pipe settings authenticated', async () => {
+  const f = await start()
+  f.pc.iceGatheringState = 'gathering'
+  f.signal.onopen?.()
+  f.signal.message({ type: 'ready', trickle: true })
+  await vi.advanceTimersByTimeAsync(0)
+  const offer = decode(peerSignalSchema, JSON.parse(f.signal.send.mock.calls[1]![0]))
+  expect(offer.trickle).toBe(true)
+  expect(offer.pipeWindow).toBe(64)
+  const candidate = {
+    candidate: 'candidate:1 1 UDP 1 192.0.2.1 1234 typ host',
+    sdpMid: '0',
+    sdpMLineIndex: 0,
+  }
+  f.pc.onicecandidate?.({ candidate: { toJSON: () => candidate } })
+  expect(JSON.parse(f.signal.send.mock.calls[2]![0])).toMatchObject({
+    type: 'ice',
+    offer: offer.offer,
+    candidate,
+  })
+  f.signal.message(
+    signPeerIce(config, {
+      type: 'ice',
+      session: offer.session,
+      offer: offer.offer,
+      role: 'answer',
+      sequence: 0,
+      candidate,
+    }),
+  )
+  expect(f.pc.addIceCandidate).not.toHaveBeenCalled()
+  f.signal.message(signPeerSignal(config, { ...offer, role: 'answer' }))
+  await vi.advanceTimersByTimeAsync(0)
+  const tunnel = await f.result
+  expect(tunnel.alive()).toBe(true)
+  expect(f.pc.addIceCandidate).toHaveBeenCalledWith(candidate)
+  tunnel.close()
+  expect(vi.getTimerCount()).toBe(0)
+})
+it('rejects a trickle answer that changes the negotiated transfer window', async () => {
+  const f = await start()
+  f.signal.onopen?.()
+  f.signal.message({ type: 'ready', trickle: true })
+  await vi.advanceTimersByTimeAsync(0)
+  const offer = decode(peerSignalSchema, JSON.parse(f.signal.send.mock.calls[1]![0]))
+  f.signal.message(signPeerSignal(config, { ...offer, role: 'answer', pipeWindow: undefined }))
+  await expect(f.result).rejects.toThrow('identity')
+  expect(f.pc.setRemoteDescription).not.toHaveBeenCalled()
+})

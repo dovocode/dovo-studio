@@ -5,7 +5,7 @@ import { useUsageData } from './use-usage-data'
 import { SettingsAction as Action } from './settings-controls'
 import { ResetCredits } from './reset-credits'
 import { useMemo, useState, memo } from 'react'
-import { FlatList, StyleSheet, View } from 'react-native'
+import { FlatList, StyleSheet, View, useWindowDimensions } from 'react-native'
 import {
   formatUsageCost,
   accountPlanLimits,
@@ -42,7 +42,7 @@ const Row = memo(function Row({ row, first }: { row: UsageRow; first: boolean })
         borderTopColor: colors.border,
       }}
     >
-      <Text numberOfLines={1} style={styles.text}>
+      <Text numberOfLines={2} style={styles.text}>
         {row.label}
       </Text>
       <Text style={styles.muted}>
@@ -65,6 +65,8 @@ const Row = memo(function Row({ row, first }: { row: UsageRow; first: boolean })
 export default function UsageScreen() {
   const { colors, styles } = useTheme()
 
+  const { width, fontScale } = useWindowDimensions()
+  const stackedMetrics = width / fontScale < 360
   const { overviews } = useRuntime()
   const [computer, setComputer] = useState('all')
   const [view, setView] = useState<'costs' | 'tokens' | 'limits'>('costs')
@@ -105,6 +107,18 @@ export default function UsageScreen() {
     1e-9,
     ...chartDays.map((row) => (view === 'tokens' ? row.tokens : row.estimatedCostUsd)),
   )
+  const chartHasData = chartDays.some((row) =>
+    view === 'tokens' ? row.tokens > 0 : row.estimatedCostUsd > 0,
+  )
+  const chartEmptyMessage = !total.turns
+    ? 'No usage in this period.'
+    : view === 'tokens'
+      ? total.tokenTurns
+        ? 'Reported token usage is zero in this period.'
+        : 'No tokens reported in this period.'
+      : total.pricedTurns
+        ? 'Reported cost is $0.00 in this period.'
+        : 'No priced usage in this period.'
   const limits = accountPlanLimits(
     hosts.map((entry) => ({
       computer: runtimeComputerName(entry),
@@ -181,6 +195,11 @@ export default function UsageScreen() {
                 disabled={busy || !hosts.some((entry) => entry.connected)}
                 secondary
               />
+              {!hosts.length && (
+                <Text accessibilityLiveRegion="polite" style={styles.muted}>
+                  Connect a computer to see recorded usage and account limits.
+                </Text>
+              )}
               {hosts.map(
                 (entry) =>
                   notices[entry.profile.id] && (
@@ -213,8 +232,11 @@ export default function UsageScreen() {
                     }}
                   />
                   <Text style={styles.muted}>
-                    {overviews.filter((entry) => entry.snapshot).length} computers with usage data ·
-                    Dovo turns and CLI requests · Includes running turns
+                    {hosts.filter((entry) => entry.snapshot).length}{' '}
+                    {hosts.filter((entry) => entry.snapshot).length === 1
+                      ? 'computer'
+                      : 'computers'}{' '}
+                    with usage data · Dovo turns and CLI requests · Includes running turns
                   </Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                     {[
@@ -241,7 +263,10 @@ export default function UsageScreen() {
                     ].map((metric) => (
                       <View
                         key={metric.label}
-                        style={[styles.card, { flexGrow: 1, flexBasis: '45%' }]}
+                        style={[
+                          styles.card,
+                          { flexGrow: 1, flexBasis: stackedMetrics ? '100%' : '45%', minWidth: 0 },
+                        ]}
                       >
                         <Text style={styles.muted}>{metric.label}</Text>
                         <Text style={[styles.title, { fontVariant: ['tabular-nums'] }]}>
@@ -264,30 +289,42 @@ export default function UsageScreen() {
                   <View
                     style={[
                       styles.card,
-                      { height: 132, flexDirection: 'row', alignItems: 'flex-end', gap: 2 },
+                      {
+                        height: 132,
+                        flexDirection: 'row',
+                        alignItems: chartHasData ? 'flex-end' : 'center',
+                        justifyContent: 'center',
+                        gap: chartDays.length > 31 ? 1 : 2,
+                      },
                     ]}
                   >
-                    {chartDays.map((day) => {
-                      const value = view === 'tokens' ? day.tokens : day.estimatedCostUsd
-                      const maximum = chartMaximum
-                      return (
-                        <View
-                          key={day.key}
-                          accessible
-                          accessibilityRole="image"
-                          accessibilityLabel={`${day.label}: ${view === 'tokens' ? formatUsageTokens(value) + ' tokens' : day.pricedTurns ? formatUsageCost(value) : day.turns ? 'Unpriced' : 'No usage'}`}
-                          style={{
-                            flex: 1,
-                            height: `${Math.max(value ? 2 : 0, (value / maximum) * 100)}%`,
-                            backgroundColor: colors.accent,
-                            borderTopLeftRadius: 3,
-                            borderTopRightRadius: 3,
-                          }}
-                        />
-                      )
-                    })}
-                    {!summary.days.length && (
-                      <Text style={styles.muted}>No usage in this period.</Text>
+                    {chartHasData &&
+                      chartDays.map((day) => {
+                        const value = view === 'tokens' ? day.tokens : day.estimatedCostUsd
+                        const maximum = chartMaximum
+                        return (
+                          <View
+                            key={day.key}
+                            accessible
+                            accessibilityRole="image"
+                            accessibilityLabel={`${day.label}: ${view === 'tokens' ? (day.tokenTurns ? formatUsageTokens(value) + ' tokens' : day.turns ? 'Tokens not reported' : 'No usage') : day.pricedTurns ? formatUsageCost(value) : day.turns ? 'Unpriced' : 'No usage'}`}
+                            style={{
+                              flex: 1,
+                              height: `${Math.max(value ? 2 : 0, (value / maximum) * 100)}%`,
+                              backgroundColor: colors.accent,
+                              borderTopLeftRadius: 3,
+                              borderTopRightRadius: 3,
+                            }}
+                          />
+                        )
+                      })}
+                    {!chartHasData && (
+                      <Text
+                        accessibilityLiveRegion="polite"
+                        style={[styles.muted, { flex: 1, textAlign: 'center' }]}
+                      >
+                        {chartEmptyMessage}
+                      </Text>
                     )}
                   </View>
                   {view === 'tokens' && (
@@ -299,8 +336,8 @@ export default function UsageScreen() {
                     </Text>
                   )}
                   <Text style={styles.muted}>
-                    {chartDays[0]?.label} {summary.days.length ? '—' : ''} {chartDays.at(-1)?.label}{' '}
-                    · Recorded usage survives thread deletion.
+                    {chartDays[0]?.label} — {chartDays.at(-1)?.label} · Recorded usage survives
+                    thread deletion.
                   </Text>
                 </View>
               </>
@@ -310,6 +347,12 @@ export default function UsageScreen() {
                 title="Account limits"
                 footer="Limits are reported by Codex and Claude agents on connected computers. API-key usage may not have subscription windows."
               >
+                {!limits.length && (
+                  <Text accessibilityLiveRegion="polite" style={[styles.muted, { padding: 12 }]}>
+                    No account limits reported. Refresh to check connected computers. API-key
+                    accounts may not have subscription limits.
+                  </Text>
+                )}
                 {accountLimitGroups(limits).map((group) => {
                   const { provider, windows } = group
                   return (

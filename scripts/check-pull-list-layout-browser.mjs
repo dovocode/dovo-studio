@@ -13,7 +13,7 @@ const data = `
 window.sources=['mac','backup'].map(id=>({key:id,scope:id,runtimeId:id,runtimeName:id==='mac'?'Mac Studio':'MacBook',computerName:id==='mac'?'Mac Studio':'MacBook',connected:true,repository:{id:'repo',name:'Dovo Studio',path:'/repo'},profile:{id,connection:{address:'http://'+id,token:'paired'}}}));
 const base={state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-23T12:00:00Z',head:'feature',base:'main',labels:['ui'],additions:24,deletions:8,commentCount:3,viewerIsAuthor:true};
 window.pulls=[{...base,number:1,title:'Fix connection',checksState:'FAILURE'},{...base,number:2,title:'Ready to ship',checksState:'SUCCESS',reviewDecision:'APPROVED'},{...base,number:3,title:'Draft feature',draft:true},{...base,number:4,title:'Waiting for checks',checksState:'PENDING'},{...base,number:5,title:'Shipped change',state:'merged'}].map(pull=>({...pull,url:'https://github.com/team/studio/pull/'+pull.number}));
-window.pages=()=>window.sources.map((source,index)=>({source,reader:source,pulls:index?window.pulls.slice(0,2).map(pull=>({...pull,url:pull.url+'/'})):window.pulls,runtimeId:source.runtimeId,runtimeName:source.runtimeName,sourceKey:source.key,connected:source.connected,readConnected:source.connected,repositoryId:'repo',name:source.repository.name}));
+window.pages=()=>window.sources.map((source,index)=>({source,reader:source,error:window.sourceErrors?.[source.key],pulls:window.emptySources?.includes(source.key)?[]:index?window.pulls.slice(0,2).map(pull=>({...pull,url:pull.url+'/'})):window.pulls,runtimeId:source.runtimeId,runtimeName:source.runtimeName,sourceKey:source.key,connected:source.connected,readConnected:source.connected,repositoryId:'repo',name:source.repository.name}));
 window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>window.copied.push(value)}});
 `
 const native = `
@@ -42,7 +42,7 @@ async function bundle(isMobile) {
         '../runtime/connection/provider': `export const useRuntime=()=>({overviews:window.sources.map(source=>({profile:source.profile})),cacheForRuntime:()=>({})});`,
         '../shell/navigation': `export const useNavigation=()=>({focused:true});`,
         '../shell/source-route': `export const pullHref=(runtime,repo,number)=>'/'+runtime+'/pull/'+number;`,
-        '../scm/pulls/list/use-pulls': `export const usePulls=(repositoryId)=>({sources:window.sources,pages:window.pages().filter(page=>!repositoryId||page.sourceKey===repositoryId),busy:false,connected:window.sources.some(source=>source.connected),refresh:()=>{},more:async()=>{},chooseSource:async()=>{}});`,
+        '../scm/pulls/list/use-pulls': `export const usePulls=(repositoryId)=>({sources:window.sources,pages:window.pages().filter(page=>!repositoryId||page.sourceKey===repositoryId),busy:false,connected:window.sources.some(source=>source.connected),refresh:()=>{},more:async key=>{window.retried=key},chooseSource:async()=>{}});`,
         '../runtime/state/collection-sources': `export const collectionSources=()=>window.sources;`,
         '../ui/layout/use-list-scroll': `export const useListScroll=()=>({retainPosition:()=>{}});`,
         '../scm/pulls/list/add-to-thread': `export const AddPullsToThread=()=>null;`,
@@ -76,7 +76,7 @@ async function bundle(isMobile) {
         '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
         '@dovo/studio-core': `export * from '@dovo/protocol';export const useStudioHost=()=>({navigate:target=>window.opened=target});export const useWorkspace=()=>({activeRuntimeId:'mac',runtimes:window.sources.map(source=>({profile:source.profile})),workspace:{repositories:[],tasks:[]}});export const WorkspaceRuntimeScope=({children})=>children;export const repositorySourceKey=()=>'';export const formatDateTime=value=>'Oct 23';`,
         '@dovo/studio-ui': `export const MessageResponse=()=>null;export {PageHeader} from '${ui}page-header';export * from '${ui}sidebar-header';export {Button} from '${ui}components/ui/button';export {Input} from '${ui}components/ui/input';export {Badge} from '${ui}components/ui/badge';export * from '${ui}components/ui/dialog';export {ChoicePicker} from '${ui}choice-picker';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
-        './use-pulls': `export const usePulls=()=>({sources:window.sources,pages:window.pages(),busy:!!window.refreshing,connected:window.sources.some(source=>source.connected),refresh:()=>{},more:async()=>{}});`,
+        './use-pulls': `export const usePulls=()=>({sources:window.sources,pages:window.pages(),busy:!!window.refreshing,connected:window.sources.some(source=>source.connected),refresh:()=>{},more:async key=>{window.retried=key}});`,
         './add-to-thread': `export const AddPullsToThread=()=>null;`,
         '../detail/detail': `export const PullDetail=()=>null;`,
         './create': `export const CreatePull=()=>null;`,
@@ -186,6 +186,50 @@ try {
       )
       for (const label of ['24 lines added', '8 lines deleted', '3 comments'])
         assert.equal(await first.getByLabel(label, { exact: true }).count(), 1)
+      await page.evaluate(() => {
+        window.sourceErrors = { backup: 'Forge access expired' }
+        window.emptySources = ['backup']
+        window.render()
+      })
+      await expectRows(4, 'A failed source preserves healthy results')
+      const failure = page.getByText('Dovo Studio · MacBook: Forge access expired', { exact: true })
+      await failure.waitFor()
+      assert.ok(
+        (await failure.boundingBox()).y < (await first.boundingBox()).y,
+        'Source errors appear before results',
+      )
+      const retry = page.getByRole('button', { name: 'Retry · Dovo Studio · MacBook', exact: true })
+      assert.equal(await retry.count(), 1, 'Retry is not duplicated below the list')
+      await retry.click()
+      assert.equal(await page.evaluate(() => window.retried), 'backup')
+      await page.evaluate(() => {
+        window.sourceErrors.mac = 'Network unavailable'
+        window.emptySources = ['mac', 'backup']
+        window.render()
+      })
+      await expectRows(0)
+      await page
+        .getByText(
+          isMobile
+            ? 'Couldn’t load pull requests'
+            : 'Couldn’t load pull requests. Retry the sources above.',
+          { exact: true },
+        )
+        .waitFor()
+      await page.evaluate(() => {
+        window.sources[1].connected = false
+        window.render()
+      })
+      assert.equal(await retry.isDisabled(), true, 'Offline sources cannot retry until reconnected')
+      await page.getByText('Reconnect this source to retry.', { exact: true }).waitFor()
+      await page.evaluate(() => {
+        window.sourceErrors = {}
+        window.emptySources = []
+        window.sources[1].connected = true
+        window.render()
+      })
+      await expectRows(4)
+      assert.equal(await retry.count(), 0, 'Recovered sources clear their error actions')
       if (isMobile) {
         assert.equal(
           await page

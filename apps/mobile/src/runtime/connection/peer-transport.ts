@@ -76,6 +76,7 @@ export function setPeerConnectionNetwork(state: { type?: string; isConnected?: b
   // Old ICE candidates cannot describe the phone's new Wi-Fi/cellular route.
   if (changed || state.isConnected === false) closePeerConnections()
   else if (reconnected) publish()
+  return online && (changed || reconnected)
 }
 export function forgetPeerConnection(address: string) {
   configs.delete(address)
@@ -123,6 +124,12 @@ async function ensure(address: string) {
     })
   pending.set(address, connecting)
   return connecting
+}
+/** Start the selected peer while cached UI restores. Requests share this negotiation;
+ * explicit LAN/VPN profiles retain their direct-route preference. */
+export async function preconnectPeerConnection(address: string) {
+  if (!active || !online) return
+  await ensure(address)
 }
 registerPeerTransport({
   address: (address) => {

@@ -25,6 +25,57 @@ const viewport = element('viewport', HTMLDivElement)
 const address = element('address', HTMLInputElement)
 const status = element('status', HTMLDivElement)
 const empty = element('empty', HTMLDivElement)
+const emptyTitle = element('emptyTitle', HTMLHeadingElement)
+const emptyMessage = element('emptyMessage', HTMLParagraphElement)
+const sessionState = element('sessionState', HTMLSpanElement)
+const more = element('more', HTMLDetailsElement)
+const navigation = element('navigation', HTMLFormElement)
+const starters = element('starters', HTMLDivElement)
+const touchControls = window.matchMedia('(pointer: coarse)')
+function positionControls() {
+  document.body.classList.toggle('mobile', !!window.ReactNativeWebView || touchControls.matches)
+}
+positionControls()
+touchControls.addEventListener('change', positionControls)
+function connectionStatus(state: 'online' | 'offline' | 'connecting') {
+  sessionState.dataset.state = state
+  sessionState.textContent =
+    state === 'online' ? 'Connected' : state === 'offline' ? 'Offline' : 'Connecting'
+}
+// Keep the options anchored and dismissible without covering the page indefinitely.
+document.addEventListener('pointerdown', (event) => {
+  if (event.target instanceof Node && !more.contains(event.target)) more.open = false
+})
+// Keep browser navigation shortcuts local; the host page never owns this address bar.
+document.addEventListener(
+  'keydown',
+  (event) => {
+    if (simulator || dialog.open || event.isComposing || !(event.metaKey || event.ctrlKey)) return
+    const key = event.key.toLowerCase()
+    if (key !== 'l' && (key !== 'r' || !online)) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (key === 'l') {
+      address.focus()
+      address.select()
+    } else send({ type: 'reload' })
+  },
+  true,
+)
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && more.open && !dialog.open) {
+    event.preventDefault()
+    more.open = false
+    more.querySelector('summary')?.focus()
+  }
+})
+for (const button of starters.querySelectorAll('button')) {
+  button.onclick = () => {
+    address.value = button.dataset.url ?? ''
+    addressEdited = true
+    navigation.requestSubmit()
+  }
+}
 const back = element('back', HTMLButtonElement)
 const forward = element('forward', HTMLButtonElement)
 const reload = element('reload', HTMLButtonElement)
@@ -98,6 +149,7 @@ function scheduleReconnect() {
   if (intentionallyClosed || retryTimer || retryAttempt >= maxRetries) return false
   const delay = Math.min(1000 * 2 ** retryAttempt, 15000)
   retryAttempt++
+  connectionStatus('connecting')
   notice(simulator ? 'Device connection lost. Reconnecting…' : 'Connection lost. Reconnecting…')
   retryTimer = setTimeout(() => {
     retryTimer = undefined
@@ -137,6 +189,8 @@ function notice(message: string, error = false) {
 }
 function enabled(value: boolean) {
   online = value
+  connectionStatus(value ? 'online' : 'offline')
+  for (const button of starters.querySelectorAll('button')) button.disabled = !value
   clearInterval(performanceTimer)
   performanceTimer = undefined
   transportMs = undefined
@@ -163,6 +217,7 @@ function enabled(value: boolean) {
     moveTimer = undefined
     moveFrame = 0
     move = undefined
+    reload.setAttribute('aria-busy', 'false')
     back.disabled = forward.disabled = true
     setKeyboard(false)
   }
@@ -234,7 +289,15 @@ function configure(device: unknown) {
     'aria-label',
     simulator ? 'Close device preview' : 'Close browser session',
   )
-  empty.textContent = simulator ? 'Connecting to device…' : 'Enter an address to start browsing.'
+  element('viewportOptions', HTMLDivElement).hidden = simulator
+  element('closeLabel', HTMLSpanElement).textContent = simulator
+    ? 'Close device preview'
+    : 'Close browser session'
+  emptyTitle.textContent = simulator ? 'Your device, live.' : 'Your project, live.'
+  emptyMessage.textContent = simulator
+    ? 'Connecting to your device. Its screen will appear here.'
+    : 'Open a website or preview a development server running on this computer.'
+  starters.hidden = simulator
   if (simulator) notice('Connecting to device…')
 }
 async function decodeImage(blob: Blob) {
@@ -283,6 +346,7 @@ function connect(url: string) {
   socket = next
   enabled(false)
   notice(simulator ? 'Connecting to device…' : 'Connecting to host browser…')
+  connectionStatus('connecting')
   next.onopen = () => {
     if (socket !== next) return
     retryAttempt = 0
@@ -393,6 +457,7 @@ function connect(url: string) {
         transportMs = message.transportMs
         transportAt = performance.now()
       } else if (message.type === 'state') {
+        reload.setAttribute('aria-busy', String(message.loading))
         nativeTouch = message.touch === true
         currentUrl = message.url
         if (!addressEdited && document.activeElement !== address)
@@ -433,6 +498,11 @@ window.addEventListener('message', (event) => {
     message.channel !== 'dovo-browser'
   )
     return
+  if ('type' in message && message.type === 'appearance') {
+    if ('theme' in message && (message.theme === 'light' || message.theme === 'dark'))
+      document.documentElement.dataset.theme = message.theme
+    return
+  }
   if ('type' in message && message.type === 'presentation') {
     document.body.classList.toggle('expanded', 'expanded' in message && message.expanded === true)
     return
@@ -489,6 +559,7 @@ reconnect.onclick = () => {
   retryAttempt = 0
   cancelReconnect()
   notice(simulator ? 'Connecting to device…' : 'Connecting to host browser…')
+  connectionStatus('connecting')
   bridge('reconnect')
 }
 element('close', HTMLButtonElement).onclick = () => {
@@ -496,7 +567,7 @@ element('close', HTMLButtonElement).onclick = () => {
   cancelReconnect()
   bridge('close')
 }
-element('navigation', HTMLFormElement).onsubmit = (event) => {
+navigation.onsubmit = (event) => {
   event.preventDefault()
   if (!online || !address.value.trim()) return
   notice('')
@@ -801,4 +872,5 @@ document.addEventListener('visibilitychange', () => {
   else if (!online && !intentionallyClosed) bridge('reconnect')
 })
 enabled(false)
+connectionStatus('connecting')
 bridge('ready')

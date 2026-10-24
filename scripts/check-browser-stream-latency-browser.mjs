@@ -209,6 +209,7 @@ try {
       await page.waitForFunction(() =>
         /\d+ ms RTT/.test(document.querySelector('#streamSummary').textContent),
       )
+      await page.getByLabel('Browser options', { exact: true }).click()
       await page.locator('#streamSummary').click()
       assert.match(
         await page.locator('#streamDetails').textContent(),

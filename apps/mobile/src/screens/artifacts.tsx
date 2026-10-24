@@ -51,6 +51,7 @@ export default function ArtifactsScreen() {
   const [format, setFormat] = useState<ArtifactLibraryEntry['format'] | 'all'>('all')
   const [state, setState] = useState('all')
   const [sort, setSort] = useState('updated')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [layout, setLayout] = useState<'preview' | 'list'>('preview')
   const [reload, setReload] = useState(0)
   const [states, setStates] = useState<ReadonlyMap<string, ArtifactSourceState>>(() => new Map())
@@ -162,6 +163,9 @@ export default function ArtifactsScreen() {
           (sort === 'oldest' ? -1 : 1),
     )
   const filtered = !!search || format !== 'all' || state !== 'all'
+  const offline = sources.some((source) => !source.connected && !source.connecting)
+  const incomplete = errors.length > 0 || offline
+  const unavailable = !entries.length && incomplete
   const clearFilters = () => {
     setQuery('')
     setFormat('all')
@@ -174,6 +178,12 @@ export default function ArtifactsScreen() {
         onBack={() => backToCollection('/')}
         subtitle="Your creations, all in one place."
         buttons={[
+          {
+            label: 'Artifact filters',
+            icon: 'filters',
+            selected: filtersOpen || filtered || sort !== 'updated',
+            onPress: () => setFiltersOpen((value) => !value),
+          },
           {
             label: layout === 'preview' ? 'List view' : 'Preview view',
             icon: layout === 'preview' ? 'artifactList' : 'preview',
@@ -194,112 +204,127 @@ export default function ArtifactsScreen() {
           value={query}
           onChangeText={setQuery}
         />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8 }}
-        >
-          {(['all', 'markdown', 'html', 'svg', 'code'] as const).map((value) => (
-            <Pressable
-              key={value}
-              accessibilityRole="button"
-              accessibilityLabel={value === 'all' ? 'All formats' : artifactFormatLabels[value]}
-              accessibilityState={{ selected: value === format }}
-              onPress={() => setFormat(value)}
-              style={({ pressed }) => ({
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                minHeight: 44,
-                paddingHorizontal: 12,
-                borderRadius: 10,
-                backgroundColor: value === format ? colors.selection : 'transparent',
-                borderWidth: 1,
-                borderColor: value === format && highContrast ? colors.text : 'transparent',
-                opacity: pressed ? 0.6 : 1,
-              })}
-            >
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontWeight: value === format ? '600' : '400',
-                  color: value === format ? colors.text : colors.muted,
-                }}
-              >
-                {value === 'all' ? 'All' : artifactFormatLabels[value]}
-              </Text>
-              <Text style={{ fontSize: 11, color: colors.muted }}>
-                {
-                  matching.filter(({ artifact }) => value === 'all' || artifact.format === value)
-                    .length
-                }
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-        <View
-          style={{
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-          }}
-        >
-          <Choice
-            label="Artifact thread state"
-            value={state}
-            items={[
-              { id: 'all', name: 'All threads' },
-              { id: 'active', name: 'Active' },
-              { id: 'settled', name: 'Settled' },
-              { id: 'archived', name: 'Archived' },
-            ]}
-            onChange={setState}
-            hideLabel
-            compact
-          />
-          <Choice
-            label="Sort artifacts"
-            value={sort}
-            items={[
-              { id: 'updated', name: 'Recently updated' },
-              { id: 'oldest', name: 'Oldest updated' },
-              { id: 'title', name: 'Title A–Z' },
-            ]}
-            onChange={setSort}
-            hideLabel
-            compact
-          />
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 }}>
-          <Text accessibilityLiveRegion="polite" style={[styles.muted, { flex: 1 }]}>
-            {visible.length} {visible.length === 1 ? 'artifact' : 'artifacts'}
-            {filtered && ` of ${entries.length}`}
-          </Text>
-          {filtered && visible.length > 0 && (
-            <Action secondary label="Clear filters" onPress={clearFilters} />
-          )}
-        </View>
-        {sources
-          .filter((source) => !source.connected && !source.connecting)
-          .map((source) => (
-            <Text key={source.owner} accessibilityRole="text" style={styles.muted}>
-              {source.computerName} is offline.{' '}
-              {states.get(source.owner)?.saved
-                ? 'Showing saved artifacts.'
-                : 'Connect to load its artifacts.'}
-            </Text>
-          ))}
-        {errors.map((error) => (
-          <Text key={error} style={styles.error}>
-            {error}
-          </Text>
-        ))}
       </View>
       <FlatList
+        ListHeaderComponent={
+          <View style={{ gap: 12 }}>
+            {filtersOpen && (
+              <>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8 }}
+                >
+                  {(['all', 'markdown', 'html', 'svg', 'code'] as const).map((value) => (
+                    <Pressable
+                      key={value}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        value === 'all' ? 'All formats' : artifactFormatLabels[value]
+                      }
+                      accessibilityState={{ selected: value === format }}
+                      onPress={() => setFormat(value)}
+                      style={({ pressed }) => ({
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        minHeight: 44,
+                        paddingHorizontal: 12,
+                        borderRadius: 10,
+                        backgroundColor: value === format ? colors.selection : 'transparent',
+                        borderWidth: 1,
+                        borderColor: value === format && highContrast ? colors.text : 'transparent',
+                        opacity: pressed ? 0.6 : 1,
+                      })}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: value === format ? '600' : '400',
+                          color: value === format ? colors.text : colors.muted,
+                        }}
+                      >
+                        {value === 'all' ? 'All' : artifactFormatLabels[value]}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.muted }}>
+                        {
+                          matching.filter(
+                            ({ artifact }) => value === 'all' || artifact.format === value,
+                          ).length
+                        }
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                  }}
+                >
+                  <Choice
+                    label="Artifact thread state"
+                    value={state}
+                    items={[
+                      { id: 'all', name: 'All threads' },
+                      { id: 'active', name: 'Active' },
+                      { id: 'settled', name: 'Settled' },
+                      { id: 'archived', name: 'Archived' },
+                    ]}
+                    onChange={setState}
+                    hideLabel
+                    compact
+                  />
+                  <Choice
+                    label="Sort artifacts"
+                    value={sort}
+                    items={[
+                      { id: 'updated', name: 'Recently updated' },
+                      { id: 'oldest', name: 'Oldest updated' },
+                      { id: 'title', name: 'Title A–Z' },
+                    ]}
+                    onChange={setSort}
+                    hideLabel
+                    compact
+                  />
+                </View>
+              </>
+            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 }}>
+              <Text accessibilityLiveRegion="polite" style={[styles.muted, { flex: 1 }]}>
+                {visible.length} {visible.length === 1 ? 'artifact' : 'artifacts'}
+                {filtered && ` of ${entries.length}`}
+                {format !== 'all' && ` · ${artifactFormatLabels[format]}`}
+                {state !== 'all' && ` · ${state}`}
+              </Text>
+              {filtered && visible.length > 0 && (
+                <Action secondary label="Clear filters" onPress={clearFilters} />
+              )}
+            </View>
+            {sources
+              .filter((source) => !source.connected && !source.connecting)
+              .map((source) => (
+                <Text key={source.owner} accessibilityRole="text" style={styles.muted}>
+                  {source.computerName} is offline.{' '}
+                  {states.get(source.owner)?.saved
+                    ? 'Showing saved artifacts.'
+                    : 'Connect to load its artifacts.'}
+                </Text>
+              ))}
+            {errors.map((error) => (
+              <Text key={error} accessibilityRole="alert" style={styles.error}>
+                {error}
+              </Text>
+            ))}
+          </View>
+        }
         data={visible}
         initialNumToRender={6}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         maxToRenderPerBatch={4}
         windowSize={5}
         keyExtractor={({ profile, artifact }) =>
@@ -310,19 +335,47 @@ export default function ArtifactsScreen() {
         contentContainerStyle={[contentColumn.collection, { padding: 16, gap: 12 }]}
         ListEmptyComponent={
           loading ? (
-            <ActivityIndicator color={colors.accent} />
+            <ActivityIndicator color={colors.accent} accessibilityLabel="Loading artifacts" />
           ) : (
             <EmptyState
               icon="artifactList"
-              title={filtered ? 'No matching artifacts' : 'Your next idea belongs here'}
-              description={
-                sources.length
-                  ? filtered
-                    ? 'Try another search or clear your filters.'
-                    : 'Ask an agent to create a document, a graphic or an interactive tool. You’ll find it here, across all your threads.'
-                  : 'Enable Dovo Artifacts in a computer’s settings to start your collection.'
+              title={
+                unavailable
+                  ? errors.length
+                    ? 'Couldn’t load artifacts'
+                    : 'Connect a computer'
+                  : filtered
+                    ? 'No matching artifacts'
+                    : 'Your next idea belongs here'
               }
-              action={filtered && <Action secondary label="Clear filters" onPress={clearFilters} />}
+              description={
+                unavailable
+                  ? errors.length
+                    ? 'Retry loading artifacts, or reconnect their computers.'
+                    : 'Reconnect a computer to load its artifacts. Saved artifacts appear here when available.'
+                  : filtered && incomplete
+                    ? 'No matches in available artifacts. Some computers could not be checked.'
+                    : sources.length
+                      ? filtered
+                        ? 'Try another search or clear your filters.'
+                        : 'Ask an agent to create a document, a graphic or an interactive tool. You’ll find it here, across all your threads.'
+                      : 'Enable Dovo Artifacts in a computer’s settings to start your collection.'
+              }
+              action={
+                (errors.length > 0 || filtered) && (
+                  <>
+                    {errors.length > 0 && (
+                      <Action
+                        secondary
+                        label="Retry loading artifacts"
+                        disabled={loading}
+                        onPress={() => setReload((value) => value + 1)}
+                      />
+                    )}
+                    {filtered && <Action secondary label="Clear filters" onPress={clearFilters} />}
+                  </>
+                )
+              }
             />
           )
         }

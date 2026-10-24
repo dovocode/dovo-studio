@@ -244,6 +244,35 @@ try {
     )
   assert.equal(new Set(categoryColors).size, 4)
   await page.screenshot({ path: '/tmp/dovo-change-type-filters.png' })
+  await page.evaluate(() =>
+    window.setTurn((turn) => ({
+      ...turn,
+      checkpoint: {
+        ...turn.checkpoint,
+        files: turn.checkpoint.files.map((file) =>
+          file.path === 'src/greeting.test.ts'
+            ? { ...file, after: 'change\n'.repeat(10000) }
+            : file,
+        ),
+      },
+    })),
+  )
+  const tinyDoc = distribution.getByRole('button', {
+    name: 'Filter Docs: 1 files, 1 of 10006 changed lines',
+    exact: true,
+  })
+  assert.ok(
+    (await tinyDoc.boundingBox()).width >= 8,
+    'A one-line category remains visible beside a huge diff',
+  )
+  await tinyDoc.click()
+  assert.equal(
+    await breakdown
+      .getByRole('button', { name: 'Docs 1', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  )
+  await breakdown.getByRole('button', { name: 'All 8', exact: true }).click()
   const disclosure = page.getByRole('button', { name: /8 changed files/ })
   await disclosure.click()
   assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')

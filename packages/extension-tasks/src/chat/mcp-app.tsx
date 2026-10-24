@@ -70,16 +70,21 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     if (!connected || !connection || !app?.connected || app.format !== 'apps') return
     const key = nonce.current
     const sendTool = (value: unknown) => frame.current?.contentWindow?.postMessage(value, '*')
+    let issued: { ticket: string } | undefined
     const current = startMcpAppTools({
-      socketUrl: (ticket) => createRuntimeClient(connection).socketUrl('/ws/mcp-app', ticket),
-      ticket: async () =>
-        (
-          await request(
-            '/api/mcp-apps/ticket',
-            { taskId: reference.taskId, id: reference.id },
-            responses.ticket,
-          )
-        ).ticket,
+      socketUrl: (ticket) =>
+        createRuntimeClient(connection).socketUrl(
+          '/ws/mcp-app',
+          issued?.ticket === ticket ? issued : ticket,
+        ),
+      ticket: async () => {
+        issued = await request(
+          '/api/mcp-apps/ticket',
+          { taskId: reference.taskId, id: reference.id },
+          responses.ticket,
+        )
+        return issued.ticket
+      },
       call: (value) => sendTool({ ...value, type: 'app-tool-call', nonce: key }),
       cancel: (requestId) => sendTool({ type: 'app-tool-cancel', requestId, nonce: key }),
       onError: (cause) => setNotice(cause.message),

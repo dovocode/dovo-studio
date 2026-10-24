@@ -238,6 +238,22 @@ try {
     await page.getByRole('button', { name: 'Docs 1', exact: true }).click()
     assert.equal(await page.getByLabel('Active file type').textContent(), 'docs')
     await page.evaluate(() =>
+      window.setDistribution({
+        weightBy: 'lines',
+        files: [
+          { path: 'app.ts', additions: 10000 },
+          { path: 'app.test.ts', additions: 1 },
+        ],
+      }),
+    )
+    const tinySegment = page.getByRole('button', {
+      name: 'Filter Tests: 1 files, 1 of 10001 changed lines',
+      exact: true,
+    })
+    assert.ok((await tinySegment.boundingBox()).width >= 8, 'Even a tiny category stays visible')
+    await tinySegment.click()
+    assert.equal(await page.getByLabel('Active file type').textContent(), 'tests')
+    await page.evaluate(() =>
       window.setDistribution({ weightBy: 'lines', files: [{ path: 'README.md' }] }),
     )
     await page.getByLabel('File type distribution', { exact: true }).waitFor()

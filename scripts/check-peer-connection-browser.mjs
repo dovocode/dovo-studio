@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
+import { createSocket } from 'node:dgram'
 import { randomBytes } from 'node:crypto'
 import { spawn, execFileSync } from 'node:child_process'
 import { createServer as netServer } from 'node:net'
@@ -18,7 +19,14 @@ import { dovoTurn } from '../apps/connect-server/dist/dovo-turn.js'
 import { approvedRelayInstallations } from '../apps/connect-server/dist/relay-admission.js'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
-async function run(relay, externalOrigin, forcedProtocol, attack, custom = false) {
+async function run(
+  relay,
+  externalOrigin,
+  forcedProtocol,
+  attack,
+  custom = false,
+  relayOnlyRemote = false,
+) {
   const provider =
     forcedProtocol === 'direct'
       ? undefined
@@ -68,6 +76,14 @@ async function run(relay, externalOrigin, forcedProtocol, attack, custom = false
         contents: provider
           ? `export class RTCPeerConnection extends window.RTCPeerConnection {
               constructor(config){super(config);window.peerConnection=this}
+              async setRemoteDescription(description){
+                if(${JSON.stringify(relayOnlyRemote)}) description={...description,sdp:description.sdp.split('\\r\\n').filter(line=>!line.startsWith('a=candidate:') || line.includes(' typ relay')).join('\\r\\n')};
+                return super.setRemoteDescription(description);
+              }
+              async addIceCandidate(candidate){
+                if(${JSON.stringify(relayOnlyRemote)} && candidate?.candidate && !candidate.candidate.includes(' typ relay'))return;
+                return super.addIceCandidate(candidate);
+              }
               setConfiguration(config){
                 const protocol=${JSON.stringify(forcedProtocol ?? null)};
                 const iceServers=protocol ? config.iceServers.map(server=>({...server,
@@ -142,7 +158,7 @@ async function run(relay, externalOrigin, forcedProtocol, attack, custom = false
         window.RTCPeerConnection = class extends NativePeer {
           createDataChannel(label, options) {
             const channel = super.createDataChannel(label, options)
-            if (label !== 'dovo-tcp-v1') return channel
+            if (label !== 'dovo-tcp-v1' && label !== 'dovo-tcp-v2') return channel
             // Model native synchronous creation: JS receives an open channel without
             // another open event. Buffer until Chromium's asynchronous DCEP completes.
             const queued = []
@@ -215,9 +231,19 @@ async function run(relay, externalOrigin, forcedProtocol, attack, custom = false
       return
     }
     const opened = await page.evaluate(async (config) => {
+      const started = performance.now()
       window.tunnel = await window.openTunnel(config)
-      return { address: window.tunnel.address, alive: window.tunnel.alive() }
+      return {
+        address: window.tunnel.address,
+        alive: window.tunnel.alive(),
+        setupMs: Math.round(performance.now() - started),
+      }
     }, config)
+    const setupMs = opened.setupMs
+    if (relayOnlyRemote) {
+      assert.ok(setupMs < 8000, `Alternate TURN route took ${setupMs}ms`)
+      console.log(`Mixed TURN endpoints, relay candidates only: connected in ${setupMs}ms.`)
+    }
     assert.equal(opened.alive, true)
     assert.equal(opened.address, 'http://127.0.0.1:12345')
     const response = await page.evaluate(
@@ -388,6 +414,58 @@ if (process.env.DOVO_TEST_TURN_BINARY) {
       }
       attempt()
     })
+    // Force both ends to relay: host/LAN candidates cannot conceal a host that
+    // ignores all advertised TURN endpoints after its first unavailable one.
+    const unavailablePort = await availablePort()
+    const mixed = dovoTurn({
+      urls: [
+        'turns:127.0.0.1:' + unavailablePort + '?transport=tcp',
+        'turn:127.0.0.1:' + port + '?transport=udp',
+      ],
+      secret: 'local-test-only-turn-secret-1234567890',
+    })
+    await run(
+      await mixed('mixed-transports', '127.0.0.1'),
+      undefined,
+      'udp',
+      undefined,
+      false,
+      true,
+    )
+    await run(
+      { ...(await mixed('custom-mixed', '127.0.0.1')), provider: 'custom' },
+      undefined,
+      'udp',
+      undefined,
+      true,
+      true,
+    )
+    const blockedUdp = createSocket('udp4')
+    blockedUdp.bind(0, '127.0.0.1')
+    await once(blockedUdp, 'listening')
+    try {
+      for (const protocol of ['tcp', 'tls']) {
+        const alternatives = dovoTurn({
+          urls: [
+            'turn:127.0.0.1:' + blockedUdp.address().port + '?transport=udp',
+            protocol === 'tls'
+              ? 'turns:127.0.0.1:' + tlsPort + '?transport=tcp'
+              : 'turn:127.0.0.1:' + port + '?transport=tcp',
+          ],
+          secret: 'local-test-only-turn-secret-1234567890',
+        })
+        await run(
+          await alternatives('udp-blocked-' + protocol, '127.0.0.1'),
+          undefined,
+          protocol,
+          undefined,
+          false,
+          true,
+        )
+      }
+    } finally {
+      blockedUdp.close()
+    }
     for (const transport of ['udp', 'tcp', 'tls']) {
       const issue = dovoTurn({
         urls: [

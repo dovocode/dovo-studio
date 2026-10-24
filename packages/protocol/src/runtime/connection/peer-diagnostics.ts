@@ -15,6 +15,9 @@ export const peerSessionDiagnosticsSchema = mutableStruct({
   localCandidates: candidates,
   remoteCandidates: candidates,
   roundTripMs: Schema.NullOr(Schema.Number),
+  setupMs: Schema.optional(Schema.NullOr(Schema.Number)),
+  answerMs: Schema.optional(Schema.NullOr(Schema.Number)),
+  trickle: Schema.optional(Schema.Boolean),
   error: Schema.NullOr(Schema.String),
 })
 export type PeerSessionDiagnostics = typeof peerSessionDiagnosticsSchema.Type

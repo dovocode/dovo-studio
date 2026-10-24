@@ -5,9 +5,10 @@ import {
   remoteBrowserMessageSchema,
   type RemoteBrowserMessage,
 } from '@dovo/protocol'
-import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useLayoutEffect } from 'react'
 import {
   useWorkspace,
+  useResolvedTheme,
   remoteBrowserHtml,
   remoteBrowserTicketSchema,
   responses,
@@ -33,6 +34,8 @@ export function RemoteBrowser({
   reloadToken?: number
 }) {
   const { connection, request } = useWorkspace()
+  const theme = useResolvedTheme()
+  const appearance = useRef(theme)
   const screenshots = useScreenshotAttachment(taskId)
   const attachScreenshot = useEffectEvent((image: string) => screenshots.attach(image))
   const reportState = useEffectEvent((state: Extract<RemoteBrowserMessage, { type: 'state' }>) =>
@@ -49,6 +52,10 @@ export function RemoteBrowser({
   const post = useCallback((message: object) => {
     frame.current?.contentWindow?.postMessage({ channel: 'dovo-browser', ...message }, '*')
   }, [])
+  useLayoutEffect(() => {
+    appearance.current = theme
+    post({ type: 'appearance', theme })
+  }, [theme, post])
   useEffect(() => {
     visibility.current = active
     if (tabId) post({ type: 'visibility', visible: active })
@@ -60,6 +67,7 @@ export function RemoteBrowser({
     if (!connection || pending.current) return
     const generation = version.current
     pending.current = true
+    post({ type: 'appearance', theme: appearance.current })
     if (!deviceId) post({ type: 'configure', viewport: readAppPreferences().browserViewport })
     if (deviceId)
       post({
@@ -79,7 +87,7 @@ export function RemoteBrowser({
         throw new Error('Update the connected runtime to use remote browser tabs.')
       const target = createRuntimeClient(connection).socketUrl(
         deviceId ? '/ws/simulator' : '/ws/browser',
-        result.ticket,
+        result,
       )
       if (tabId) post({ type: 'visibility', visible: visibility.current })
       post({ type: 'connect', url: target, device: result.device })

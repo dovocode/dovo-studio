@@ -28,6 +28,12 @@ only when its verified LAN / VPN addresses cannot be reached. Both credentials s
 either connection preserves the computer entry and its chat grouping. Route selection happens before
 a request is sent; an uncertain mutation is never replayed on the other transport.
 
+Once the internet fallback is selected, LAN/VPN discovery runs in the background at most once every
+ten seconds per route purpose. Unreachable LAN addresses do not pause traffic on the tunnel. Only a
+matching runtime descriptor can restore LAN preference. Requests retain their selected endpoint and
+credential; ticketed sockets retain the transport that issued their ticket even if LAN recovers
+before the response arrives.
+
 For a headless server, run `dovo-server connect on` through SSH and open the printed sign-in URL in
 your browser. Verify its confirmation code, then sign in to the same account on your phone.
 `dovo-server connect status` reports availability; `dovo-server connect off` disables internet
@@ -92,9 +98,9 @@ disablement closes access immediately even if the directory is unavailable. In t
 directory entry may remain until it can be unlinked.
 
 Connect checks the current account grant before accepting installation proofs, completing joins
-(including after asynchronous relay issuance), or forwarding offers and answers. Its background
-revocation sweep only cleans up idle signaling sockets; active operations do not wait for it.
-Account installation proofs do not depend on a legacy approval callback or approved-key list.
+(including after asynchronous relay issuance), or forwarding offers, answers and ICE candidates. Its
+background revocation sweep only cleans up idle signaling sockets; active operations do not wait for
+it. Account installation proofs do not depend on a legacy approval callback or approved-key list.
 
 On the phone, an ephemeral loopback listener carries existing HTTP, WebSockets, images, files and
 WebViews over the same peer connection. On the computer, the only tunnel destination is an ordinary
@@ -102,15 +108,43 @@ runtime listener on loopback: it cannot forward arbitrary ports or use desktop-o
 runtime authorization checks remain in place. Server-owned tunnel provenance denies local-only
 Studio APIs and binds authenticated HTTP/WebSocket access to the paired device. Unknown local
 connections to that dedicated listener are refused; forwarded headers cannot override provenance.
-Stream credits bound buffering in both directions. Connections close when mobile backgrounds and
-reconnect when it returns. A temporary ICE disconnect has a ten-second recovery window before the
-tunnel and its sockets close. Failed ICE or a closed readiness channel closes them immediately.
-Wi-Fi/cellular changes and network loss discard old tunnels and pending negotiations; the next
-request negotiates fresh candidates. Repeated events for the same connected network keep the tunnel.
-Cancellation and the setup deadline also interrupt pending native operations and ICE gathering.
-Uncertain mutations retain their existing idempotency/recovery behavior; transport reconnect does
-not replay them. Native background notification replies cannot establish WebRTC while JavaScript is
-suspended; unconfirmed answers stay saved for review in Dovo.
+Stream credits bound buffering in both directions. Connections close when mobile backgrounds and the
+selected internet computer starts reconnecting as soon as it returns, sharing negotiation with
+normal requests. Explicit LAN/VPN profiles keep their existing route preference. A temporary ICE
+disconnect has a ten-second recovery window before the tunnel and its sockets close. Failed ICE or a
+closed readiness channel closes them immediately. Wi-Fi/cellular changes and network loss discard
+old tunnels and pending negotiations; live sync cancels its previous ticket request and reconnects
+immediately when connectivity returns or the connected network changes. Repeated events for the same
+connected network keep the tunnel. Cancellation and the setup deadline also interrupt pending native
+operations and ICE gathering. Uncertain mutations retain their existing idempotency/recovery
+behavior; transport reconnect does not replay them. Native background notification replies cannot
+establish WebRTC while JavaScript is suspended; unconfirmed answers stay saved for review in Dovo.
+
+Updated phone, runtime and Connect builds negotiate **trickle ICE**: the signed offer and answer are
+sent without waiting for STUN/TURN discovery to finish. Both endpoints exchange candidates as they
+arrive and start connectivity checks immediately. Each candidate and end marker has its own HMAC,
+bound to the exact offer, session, sender role and ordered sequence; replayed or altered candidates
+are rejected. Each direction is limited to 128 candidates and one end marker. Signaling closes once
+the encrypted readiness channel opens; application traffic still travels only over WebRTC. An older
+endpoint or Connect service uses the existing complete-SDP negotiation automatically.
+
+The runtime gathers TURN alternatives concurrently, including UDP, TCP and TLS. It selects at most
+four distinct configured URLs, covering each offered transport before additional endpoints, with
+each server's own credentials. An unreachable first URL no longer prevents other transports from
+connecting. This allocation limit bounds relay usage; a single configured UDP URL retains the
+library's existing TCP fallback. STUN and direct connectivity checks continue alongside TURN.
+
+The computer probes its signaling WebSocket every five seconds and requires the matching pong within
+ten seconds. A half-open socket is replaced without waiting for the broker to notice. Reconnection
+starts with 250–500 ms jitter and backs off to 15–30 seconds during repeated failures; thirty
+seconds of stable admission resets that backoff. Signaling recovery leaves established encrypted
+tunnels running, and disabling internet access or revoking a pairing stops retries.
+
+New endpoints also authenticate a larger transfer window: up to 64 × 16 KiB frames (1 MiB) per TCP
+channel, compared with the legacy eight frames (128 KiB). This reduces waiting for acknowledgments
+on higher-latency connections. Receivers acknowledge only after their destination socket accepts the
+write; outstanding writes and queued bytes remain bounded. It does not change a relay's network
+latency or bandwidth limit, or keep an iOS app running in the background.
 
 Some CGNAT, symmetric-NAT and corporate networks need TURN. Direct-only connections report failure
 rather than switching to a relay or advertised LAN routes. TURN supports UDP and TCP/TLS. Set
@@ -138,6 +172,11 @@ including setup stage, observed direct or TURN route, round-trip time, candidate
 reason a connection closed. Use **Refresh** for a new snapshot. Attempts are kept only in memory
 until the runtime restarts. Diagnostics omit candidate addresses, raw SDP, ICE passwords, pairing
 secrets and relay credentials.
+
+New attempts also show the negotiation mode, time to send the answer and time until the encrypted
+readiness channel opens. These timings start when the runtime accepts the offer; they exclude phone
+startup and the initial Connect join. The heartbeat round-trip includes application scheduling and
+is not a pure network latency measurement. Older runtimes omit these additional fields.
 
 Local candidates describe available interfaces; STUN candidates describe discovered public routes;
 TURN candidates describe available relay allocations. Gathering a TURN candidate does not mean it

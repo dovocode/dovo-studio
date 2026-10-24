@@ -37,7 +37,8 @@ export function RemoteBrowser({
   expanded?: boolean
   reloadToken?: number
 }) {
-  const { styles } = useTheme()
+  const { styles, mode } = useTheme()
+  const appearance = useRef(mode)
   const screenshots = useScreenshotAttachment(taskId)
 
   const { connection, profiles, readEffect } = useRuntime()
@@ -59,6 +60,10 @@ export function RemoteBrowser({
         ...message,
       }).replace(/</g, '\\u003c')}}));true;`,
     )
+  useLayoutEffect(() => {
+    appearance.current = mode
+    if (ready.current) post({ type: 'appearance', theme: mode })
+  }, [mode])
   useEffect(() => {
     if (reloadToken) post({ type: 'reload' })
   }, [reloadToken])
@@ -74,6 +79,7 @@ export function RemoteBrowser({
           return
         const version = current.current
         pending.current = true
+        post({ type: 'appearance', theme: appearance.current })
         if (deviceId)
           post({
             type: 'configure',
@@ -102,7 +108,7 @@ export function RemoteBrowser({
             return
           const target = createRuntimeClient(connection).socketUrl(
             deviceId ? '/ws/simulator' : '/ws/browser',
-            result.ticket,
+            result,
           )
           post({
             type: 'connect',

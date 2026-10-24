@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { taskSearchSchema } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { messageResults, type MessageHit } from './task-search'
@@ -6,53 +6,60 @@ import type { TaskEntry } from './task-collection'
 
 /** Query each owning runtime instead of downloading every conversation for a search. */
 export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
-  const { runtimeRegistry, readRuntime, request } = useWorkspace()
+  const { runtimeRegistry, readRuntime, request, connection, activeRuntimeId } = useWorkspace()
   const needle = query.trim()
   const [remote, setRemote] = useState<{
-    query: string
+    scope: string
     hits: MessageHit[]
     keys: Set<string>
     error: string
-  }>({ query: '', hits: [], keys: new Set(), error: '' })
+  }>({ scope: '', hits: [], keys: new Set(), error: '' })
   // Streaming metadata changes must not restart an in-flight search.
-  const identity = JSON.stringify([
-    ...new Set(
-      entries.map((entry) => JSON.stringify([entry.source.runtimeId, entry.source.online])),
-    ),
-  ])
+  const owners = [
+    ...new Map(entries.map((entry) => [entry.source.runtimeId, entry.source])).values(),
+  ]
+  const identity = JSON.stringify(
+    owners
+      .map((source) => [
+        source.runtimeId,
+        source.online,
+        runtimeRegistry.profiles.find((profile) => profile.id === source.runtimeId)?.connection ??
+          (source.runtimeId === null || source.runtimeId === activeRuntimeId ? connection : null),
+      ])
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+  )
+  const scope = JSON.stringify([needle, identity])
+  const run = useEffectEvent(() =>
+    owners
+      .filter((source) => source.online)
+      .map(async (source) => {
+        const profile = runtimeRegistry.profiles.find((profile) => profile.id === source.runtimeId)
+        if (!profile && source.runtimeId !== null && source.runtimeId !== activeRuntimeId)
+          throw new Error(`${source.name}: this computer connection is no longer available`)
+        const result = await (profile
+          ? readRuntime(profile, '/api/tasks/search', { query: needle }, taskSearchSchema)
+          : request('/api/tasks/search', { query: needle }, taskSearchSchema))
+        const ownerEntries = new Map(
+          entries
+            .filter((entry) => entry.source.runtimeId === source.runtimeId)
+            .map((entry) => [entry.task.id, entry]),
+        )
+        return {
+          keys: result.taskIds.flatMap((id) => ownerEntries.get(id)?.key ?? []),
+          hits: result.hits.flatMap((hit) => {
+            const entry = ownerEntries.get(hit.taskId)
+            return entry
+              ? [{ entry, messageId: hit.messageId, snippet: hit.snippet, role: hit.role }]
+              : []
+          }),
+        }
+      }),
+  )
   useEffect(() => {
     if (!needle) return
     let stopped = false
     const timer = setTimeout(() => {
-      const owners = [
-        ...new Map(entries.map((entry) => [entry.source.runtimeId, entry.source])).values(),
-      ]
-      void Promise.allSettled(
-        owners
-          .filter((source) => source.online)
-          .map(async (source) => {
-            const profile = runtimeRegistry.profiles.find(
-              (profile) => profile.id === source.runtimeId,
-            )
-            const result = await (profile
-              ? readRuntime(profile, '/api/tasks/search', { query: needle }, taskSearchSchema)
-              : request('/api/tasks/search', { query: needle }, taskSearchSchema))
-            const ownerEntries = new Map(
-              entries
-                .filter((entry) => entry.source.runtimeId === source.runtimeId)
-                .map((entry) => [entry.task.id, entry]),
-            )
-            return {
-              keys: result.taskIds.flatMap((id) => ownerEntries.get(id)?.key ?? []),
-              hits: result.hits.flatMap((hit) => {
-                const entry = ownerEntries.get(hit.taskId)
-                return entry
-                  ? [{ entry, messageId: hit.messageId, snippet: hit.snippet, role: hit.role }]
-                  : []
-              }),
-            }
-          }),
-      ).then((results) => {
+      void Promise.allSettled(run()).then((results) => {
         if (stopped) return
         const values = results.flatMap((result) =>
           result.status === 'fulfilled' ? [result.value] : [],
@@ -63,7 +70,7 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
             : [],
         )
         setRemote({
-          query: needle,
+          scope,
           keys: new Set(values.flatMap((value) => value.keys)),
           hits: values.flatMap((value) => value.hits).slice(0, 50),
           error: errors.join(' · '),
@@ -74,11 +81,11 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
       stopped = true
       clearTimeout(timer)
     }
-  }, [needle, identity, readRuntime, request, runtimeRegistry.profiles])
+  }, [needle, scope])
   const local = useMemo(() => messageResults(entries, needle), [entries, needle])
   const currentEntries = new Map(entries.map((entry) => [entry.key, entry]))
   const remoteHits =
-    remote.query === needle
+    remote.scope === scope
       ? remote.hits.flatMap((hit) => {
           const entry = currentEntries.get(hit.entry.key)
           return entry ? [{ ...hit, entry }] : []
@@ -92,10 +99,11 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
   return {
     hits,
     keys: new Set([
-      ...(remote.query === needle ? remote.keys : []),
+      ...(remote.scope === scope ? remote.keys : []),
       ...local.map((hit) => hit.entry.key),
     ]),
-    error: remote.query === needle ? remote.error : '',
-    loading: !!needle && remote.query !== needle,
+    error: remote.scope === scope ? remote.error : '',
+    loading: !!needle && remote.scope !== scope,
+    offline: !!needle && owners.some((source) => !source.online),
   }
 }

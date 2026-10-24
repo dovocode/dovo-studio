@@ -160,6 +160,18 @@ export default function UsageSettings() {
     1e-9,
     ...chartDays.map((row) => (view === 'tokens' ? row.tokens : row.estimatedCostUsd)),
   )
+  const chartHasData = chartDays.some((row) =>
+    view === 'tokens' ? row.tokens > 0 : row.estimatedCostUsd > 0,
+  )
+  const chartEmptyMessage = !total.turns
+    ? 'No usage in this period.'
+    : view === 'tokens'
+      ? total.tokenTurns
+        ? 'Reported token usage is zero in this period.'
+        : 'No tokens reported in this period.'
+      : total.pricedTurns
+        ? 'Reported cost is $0.00 in this period.'
+        : 'No priced usage in this period.'
   const limits = accountPlanLimits(
     hosts.map((entry) => ({
       computer: runtimeComputerName(entry),
@@ -259,7 +271,7 @@ export default function UsageSettings() {
               onChange={setPeriod}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 sm:grid-cols-4">
             {[
               {
                 label: 'Usage records',
@@ -282,41 +294,51 @@ export default function UsageSettings() {
                 detail: `${total.pricedTurns} of ${total.turns} turns priced`,
               },
             ].map((metric) => (
-              <div key={metric.label} className="rounded-lg border bg-card p-3">
+              <div key={metric.label} className="min-w-0 rounded-lg border bg-card p-3 break-words">
                 <p className="text-xs text-muted-foreground">{metric.label}</p>
                 <p className="mt-2 text-xl font-semibold tabular-nums">{metric.value}</p>
                 <p className="mt-1 text-xs leading-4 text-muted-foreground">{metric.detail}</p>
               </div>
             ))}
           </div>
-          <section className="space-y-3" aria-label="Daily usage">
+          <section
+            className="space-y-3"
+            aria-label={`${period === 'day' ? 'Hourly' : 'Daily'} usage`}
+          >
             <h2 className="text-sm font-medium">
               {period === 'day' ? 'Hourly' : 'Daily'}{' '}
               {view === 'tokens' ? 'tokens' : 'API-equivalent cost'}
             </h2>
-            <div className="flex items-end gap-1 rounded-lg border p-3" style={{ height: 128 }}>
-              {chartDays.map((day) => {
-                const value = view === 'tokens' ? day.tokens : day.estimatedCostUsd
-                const maximum = chartMaximum
-                const label = `${day.label}: ${view === 'tokens' ? formatUsageTokens(value) + ' tokens' : day.pricedTurns ? formatUsageCost(value) : day.turns ? 'Unpriced' : 'No usage'}`
-                return (
-                  <div
-                    key={day.key}
-                    role="img"
-                    aria-label={label}
-                    title={label}
-                    className="flex h-full min-w-0 flex-1 items-end"
-                  >
+            <div
+              className="flex items-end rounded-lg border p-3"
+              style={{ height: 128, gap: chartDays.length > 31 ? 1 : 4 }}
+            >
+              {chartHasData &&
+                chartDays.map((day) => {
+                  const value = view === 'tokens' ? day.tokens : day.estimatedCostUsd
+                  const maximum = chartMaximum
+                  const label = `${day.label}: ${view === 'tokens' ? (day.tokenTurns ? formatUsageTokens(value) + ' tokens' : day.turns ? 'Tokens not reported' : 'No usage') : day.pricedTurns ? formatUsageCost(value) : day.turns ? 'Unpriced' : 'No usage'}`
+                  return (
                     <div
-                      className="w-full rounded-t bg-primary"
-                      style={{ height: `${Math.max(value ? 2 : 0, (value / maximum) * 100)}%` }}
-                    />
-                  </div>
-                )
-              })}
-              {!summary.days.length && (
-                <p className="self-center text-xs text-muted-foreground">
-                  No usage in this period.
+                      key={day.key}
+                      role="img"
+                      aria-label={label}
+                      title={label}
+                      className="flex h-full min-w-0 flex-1 items-end"
+                    >
+                      <div
+                        className="w-full rounded-t bg-primary"
+                        style={{ height: `${Math.max(value ? 2 : 0, (value / maximum) * 100)}%` }}
+                      />
+                    </div>
+                  )
+                })}
+              {!chartHasData && (
+                <p
+                  role="status"
+                  className="w-full text-center text-xs text-muted-foreground self-center"
+                >
+                  {chartEmptyMessage}
                 </p>
               )}
             </div>
@@ -328,8 +350,8 @@ export default function UsageSettings() {
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              {chartDays[0]?.label} {summary.days.length ? '—' : ''} {chartDays.at(-1)?.label} ·
-              Recorded usage remains available after deleting a thread.
+              {chartDays[0]?.label} — {chartDays.at(-1)?.label} · Recorded usage remains available
+              after deleting a thread.
             </p>
           </section>
         </>

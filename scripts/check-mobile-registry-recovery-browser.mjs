@@ -81,7 +81,7 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
     },
     {
       path: '@dovo/protocol',
-      contents: `export * from '${root}packages/protocol/src/index.ts';export const startRuntimeSync=(connection,callbacks)=>{window.streams??={};window.streams[connection.address]=callbacks;return {online:()=>false,refresh:()=>{window.liveRefreshes=(window.liveRefreshes??0)+1},stop:()=>{delete window.streams[connection.address]}}};`,
+      contents: `export * from '${root}packages/protocol/src/index.ts';export const retryRuntimeSync=connection=>{(window.syncRetries??=[]).push(connection.address)};export const startRuntimeSync=(connection,callbacks)=>{window.streams??={};window.streams[connection.address]=callbacks;return {online:()=>false,refresh:()=>{window.liveRefreshes=(window.liveRefreshes??0)+1},stop:()=>{delete window.streams[connection.address]}}};`,
     },
     {
       path: '@dovo/client-runtime',
@@ -348,6 +348,22 @@ try {
   await page.evaluate(() => window.connectPeer())
   await page.waitForFunction(
     () => window.runtime.profile?.name === 'Peer' && window.runtime.connected,
+  )
+  await page.evaluate(() => {
+    window.networkChanged({ type: 'WIFI', isConnected: true })
+    window.syncRetries = []
+    window.networkChanged({ type: 'CELLULAR', isConnected: true })
+  })
+  assert.deepEqual(
+    await page.evaluate(() => window.syncRetries),
+    [await page.evaluate(() => window.runtime.profile.connection.address)],
+    'A real handover immediately replaces the old live-sync attempt',
+  )
+  await page.evaluate(() => window.networkChanged({ type: 'CELLULAR', isConnected: true }))
+  assert.equal(
+    await page.evaluate(() => window.syncRetries.length),
+    1,
+    'Repeated network status does not restart live sync',
   )
   const peerId = await page.evaluate(() => window.runtime.profile.id)
   await page.evaluate((id) => window.setPeerRelay(id, 'dovo'), peerId)

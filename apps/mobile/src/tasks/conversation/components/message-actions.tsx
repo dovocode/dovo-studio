@@ -253,8 +253,8 @@ export function MessageActions({
               .catch((error: unknown) => Alert.alert('Could not update bookmark', String(error)))
           }
           style={({ pressed }) => ({
-            width: 36,
-            minHeight: 32,
+            width: 44,
+            minHeight: 44,
             alignItems: 'center',
             justifyContent: 'center',
             opacity: pressed || !connected ? 0.5 : 1,
@@ -269,12 +269,12 @@ export function MessageActions({
           accessibilityRole="button"
           accessibilityLabel="Try again"
           accessibilityHint="Runs this request again, with this or another model."
+          accessibilityState={{ disabled: !connected || retrying, busy: retrying }}
           disabled={!connected || retrying}
-          hitSlop={6}
           onPress={chooseRetry}
           style={({ pressed }) => ({
-            width: 36,
-            minHeight: 32,
+            width: 44,
+            minHeight: 44,
             alignItems: 'center',
             justifyContent: 'center',
             opacity: pressed || !connected || retrying ? 0.5 : 1,
@@ -289,12 +289,12 @@ export function MessageActions({
           accessibilityRole="button"
           accessibilityLabel="Fork from here"
           accessibilityHint="Starts a new task with the conversation up to this reply."
+          accessibilityState={{ disabled: !connected || forking, busy: forking }}
           disabled={!connected || forking}
-          hitSlop={6}
           onPress={fork}
           style={({ pressed }) => ({
-            width: 36,
-            minHeight: 32,
+            width: 44,
+            minHeight: 44,
             alignItems: 'center',
             justifyContent: 'center',
             opacity: pressed || !connected || forking ? 0.5 : 1,
@@ -311,10 +311,10 @@ export function MessageActions({
           accessibilityHint="Runs a command from this reply in the task's terminal on the computer."
           accessibilityState={{ disabled: !connected || running }}
           disabled={!connected || running}
-          hitSlop={6}
           onPress={chooseCommand}
           style={({ pressed }) => ({
-            minHeight: 32,
+            minHeight: 44,
+            minWidth: 44,
             paddingHorizontal: 8,
             paddingVertical: 6,
             maxWidth: '100%',
@@ -333,10 +333,10 @@ export function MessageActions({
           testID="Copy code"
           accessibilityRole="button"
           accessibilityLabel={feedback === 'code' ? 'Code copied' : 'Copy code'}
-          hitSlop={6}
           onPress={copyCode}
           style={({ pressed }) => ({
-            minHeight: 32,
+            minHeight: 44,
+            minWidth: 44,
             paddingHorizontal: 8,
             paddingVertical: 6,
             maxWidth: '100%',
@@ -372,12 +372,11 @@ function ActionButton(props: {
       accessibilityRole="button"
       accessibilityLabel={props.label}
       accessibilityHint={props.hint}
-      hitSlop={6}
       onPress={props.onPress}
       onLongPress={props.onLongPress}
       style={({ pressed }) => ({
-        width: 36,
-        minHeight: 32,
+        width: 44,
+        minHeight: 44,
         alignItems: 'center',
         justifyContent: 'center',
         opacity: pressed ? 0.5 : 1,

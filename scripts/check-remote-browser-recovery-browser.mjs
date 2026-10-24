@@ -14,6 +14,7 @@ window.host={sessions:new Map(),calls:[],states:[]};
 function App(){
   const [url,setUrl]=useState('http://localhost:3000/initial');
   const [mount,setMount]=useState(0);
+  const [theme,setTheme]=useState('dark');window.theme=theme;window.setTheme=setTheme;
   window.setInitialUrl=setUrl;
   window.remount=()=>setMount(value=>value+1);
   return <><span data-url={url}/><RemoteBrowser key={mount} taskId="task" tabId="tab"
@@ -75,6 +76,7 @@ const request=async(path,input)=>{
 };
 const connection={address:'http://runtime.lan:4310',token:'device-token'};
 export const useWorkspace=()=>({connection,request});
+export const useResolvedTheme=()=> window.theme;
 export const remoteBrowserHtml='<html><body>Host viewer bridge</body></html>';
 export const readAppPreferences=()=>({browserViewport:'fill'});
 `,
@@ -97,6 +99,20 @@ try {
     assert.equal(latest.url, expected || 'about:blank')
   }
   await opened(1, 'http://localhost:3000/initial')
+  const viewer = page.frames()[1]
+  await viewer.evaluate(() => {
+    window.appearances = []
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'appearance') window.appearances.push(event.data.theme)
+    })
+  })
+  await page.evaluate(() => window.setTheme('light'))
+  await viewer.waitForFunction(() => window.appearances.at(-1) === 'light')
+  assert.equal(
+    await page.evaluate(() => window.host.calls.length),
+    1,
+    'Theme changes preserve the browser session',
+  )
   await page.evaluate(() => window.recover('http://localhost:3000/current'))
   await opened(2, 'http://localhost:3000/current')
   assert.equal(

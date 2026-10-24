@@ -18,6 +18,7 @@ import {
   PEER_CONNECTION_ERROR,
   PEER_DISCONNECT_GRACE_MS,
   createPeerPipe,
+  createPeerIce,
   createPeerHeartbeat,
   peerCandidateCounts,
   type PeerConfig,
@@ -93,6 +94,8 @@ export async function openPeerTunnel(
       }
     }
   }
+  let trickle = false
+  let ice: ReturnType<typeof createPeerIce> | undefined
   let finishGathering: (() => void) | undefined
   let fail: (error: Error) => void = () => {}
   const closed = new Promise<never>((_, reject) => {
@@ -111,6 +114,7 @@ export async function openPeerTunnel(
     if (disconnected) clearTimeout(disconnected)
     clearTimeout(statsTimer)
     heartbeat.stop()
+    ice?.stop()
     route = undefined
     finishGathering?.()
     for (const pipe of pipes) pipe.stop()
@@ -193,6 +197,7 @@ export async function openPeerTunnel(
           key: peerCapability(config, 'client'),
           session,
           customRelaySupported: true,
+          trickle: true,
           ...(config.relay ? { relay: config.relay } : {}),
         }),
       )
@@ -220,6 +225,7 @@ export async function openPeerTunnel(
           if (brokerJoined) throw new Error('Duplicate signaling readiness')
           brokerJoined = true
           const joined = decode(peerReadySchema, value)
+          trickle = joined.trickle === true
           relay = joined.customRelay
             ? openCustomRelay(config, session, joined.customRelay)
             : joined.relay
@@ -233,6 +239,11 @@ export async function openPeerTunnel(
           resolve()
           return
         }
+        if (value && typeof value === 'object' && 'type' in value && value.type === 'ice') {
+          if (!ice || !trickle) throw new Error('Unexpected ICE candidate')
+          ice.receive(value)
+          return
+        }
         const answer = decode(peerSignalSchema, value)
         if (
           accepted ||
@@ -240,12 +251,19 @@ export async function openPeerTunnel(
           answer.role !== 'answer' ||
           answer.offer !== offerHash ||
           answer.relay !== relay?.provider ||
+          !!answer.trickle !== trickle ||
+          answer.pipeWindow !== (trickle ? 64 : undefined) ||
           !verifyPeerSignal(config, answer)
         )
           throw new Error('Computer identity could not be verified')
         accepted = true
         stage = 'establishing the encrypted data connection'
-        void pc.setRemoteDescription({ type: 'answer', sdp: answer.sdp }).catch(() => close())
+        void pc
+          .setRemoteDescription({ type: 'answer', sdp: answer.sdp })
+          .then(() => {
+            if (!stopped) ice?.ready()
+          })
+          .catch(close)
       } catch (error) {
         reject(error)
         close(error)
@@ -262,46 +280,97 @@ export async function openPeerTunnel(
       iceServers: [...PEER_STUN_URLS.map((urls) => ({ urls })), ...(relay?.iceServers ?? [])],
       iceTransportPolicy: 'all',
     })
-    stage = 'gathering STUN and TURN candidates'
-    await untilClosed(pc.setLocalDescription())
-    await untilClosed(
-      new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-          resolve()
-          return
+    if (trickle) {
+      stage = 'starting ICE connectivity checks'
+      const offer = await untilClosed(pc.createOffer())
+      const sdp = offer.sdp
+      if (!sdp) throw new Error('No local ICE description')
+      offerHash = peerDigest(sdp)
+      ice = createPeerIce({
+        config,
+        session,
+        offer: offerHash,
+        role: 'offer',
+        send: (value) => signal.send(JSON.stringify(value)),
+        add: (candidate) =>
+          pc.addIceCandidate(candidate ?? { candidate: '', sdpMid: null, sdpMLineIndex: null }),
+        onError: close,
+      })
+      pc.addEventListener('icecandidate', (event) => {
+        try {
+          const value = event.candidate?.toJSON()
+          ice?.candidate(
+            value
+              ? {
+                  candidate: value.candidate,
+                  sdpMid: value.sdpMid ?? null,
+                  sdpMLineIndex: value.sdpMLineIndex ?? null,
+                }
+              : null,
+          )
+        } catch (error) {
+          close(error)
         }
-        // Keep already gathered host/IPv6 candidates useful even when one STUN service
-        // is unreachable. The signed offer contains the candidates available now.
-        const deadline = setTimeout(() => finishGathering?.(), relay ? 8000 : 4000)
-        finishGathering = () => {
-          clearTimeout(deadline)
-          pc.onicegatheringstatechange = null
-          finishGathering = undefined
-          resolve()
-        }
-        pc.onicegatheringstatechange = () => {
-          if (pc.iceGatheringState === 'complete') finishGathering?.()
-        }
-      }),
-    )
-    if (stopped) throw new Error(PEER_CONNECTION_ERROR)
-    const sdp = pc.localDescription?.sdp
-    if (!sdp) throw new Error('No local ICE description')
-    offerHash = peerDigest(sdp)
-    stage = 'waiting for the computer’s authenticated answer'
-    signal.send(
-      JSON.stringify(
-        signPeerSignal(config, {
-          role: 'offer',
-          session,
-          offer: offerHash,
-          sdp,
-          ...(relay ? { relay: relay.provider } : {}),
+      })
+      await untilClosed(pc.setLocalDescription(offer))
+      if (stopped) throw new Error(PEER_CONNECTION_ERROR)
+      signal.send(
+        JSON.stringify(
+          signPeerSignal(config, {
+            role: 'offer',
+            session,
+            offer: offerHash,
+            sdp,
+            trickle: true,
+            pipeWindow: 64,
+            ...(relay ? { relay: relay.provider } : {}),
+          }),
+        ),
+      )
+      ice.start()
+    } else {
+      stage = 'gathering STUN and TURN candidates'
+      await untilClosed(pc.setLocalDescription())
+      await untilClosed(
+        new Promise<void>((resolve) => {
+          if (pc.iceGatheringState === 'complete') {
+            resolve()
+            return
+          }
+          // Keep already gathered host/IPv6 candidates useful even when one STUN service
+          // is unreachable. The signed offer contains the candidates available now.
+          const deadline = setTimeout(() => finishGathering?.(), relay ? 8000 : 4000)
+          finishGathering = () => {
+            clearTimeout(deadline)
+            pc.onicegatheringstatechange = null
+            finishGathering = undefined
+            resolve()
+          }
+          pc.onicegatheringstatechange = () => {
+            if (pc.iceGatheringState === 'complete') finishGathering?.()
+          }
         }),
-      ),
-    )
+      )
+      if (stopped) throw new Error(PEER_CONNECTION_ERROR)
+      const sdp = pc.localDescription?.sdp
+      if (!sdp) throw new Error('No local ICE description')
+      offerHash = peerDigest(sdp)
+      stage = 'waiting for the computer’s authenticated answer'
+      signal.send(
+        JSON.stringify(
+          signPeerSignal(config, {
+            role: 'offer',
+            session,
+            offer: offerHash,
+            sdp,
+            ...(relay ? { relay: relay.provider } : {}),
+          }),
+        ),
+      )
+    }
     await untilClosed(established)
     stage = 'opening the local connection listener'
+    ice?.stop()
     signal.close()
     server = TcpSocket.createServer(
       { allowHalfOpen: true, pauseOnConnect: true, noDelay: true },
@@ -312,7 +381,7 @@ export async function openPeerTunnel(
         }
         let channel: ReturnType<RTCPeerConnection['createDataChannel']>
         try {
-          channel = pc.createDataChannel('dovo-tcp-v1', { ordered: true })
+          channel = pc.createDataChannel(trickle ? 'dovo-tcp-v2' : 'dovo-tcp-v1', { ordered: true })
         } catch (error) {
           // Native teardown can precede its JS state event. Fail the tunnel so the
           // request layer can recover, instead of throwing out of the socket callback.
@@ -322,6 +391,7 @@ export async function openPeerTunnel(
         }
         channel.binaryType = 'arraybuffer'
         const pipe = createPeerPipe({
+          window: trickle ? 64 : 8,
           stream: {
             onData: (f) => {
               socket.on('data', (bytes) => {
