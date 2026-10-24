@@ -96,10 +96,9 @@ export async function checkScreenInteractions(page, origin) {
     await activeFilters.getByRole('button', { name: /Done/ }).waitFor()
     await page.getByRole('region', { name: 'Jira issue results' }).waitFor({ state: 'attached' })
     await open('dovo-screens-desktop--usage')
-    await page
-      .getByRole('img', { name: /No usage/ })
-      .first()
-      .waitFor()
+    const usageChart = page.getByRole('region', { name: 'Daily usage', exact: true })
+    await usageChart.getByRole('status').filter({ hasText: 'No usage in this period.' }).waitFor()
+    assert.equal(await usageChart.getByRole('img').count(), 0, 'Empty usage has no chart bars')
     await open('dovo-screens-desktop--appearance')
     const terminalPreview = page.getByRole('region', { name: 'Terminal font preview' })
     await terminalPreview.focus()
