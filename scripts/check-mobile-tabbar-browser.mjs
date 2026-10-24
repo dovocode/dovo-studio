@@ -164,6 +164,13 @@ try {
   const plus = page.getByRole('button', { name: 'New thread', exact: true })
   assert.equal(await page.locator('nav').getAttribute('data-prominent'), 'compose')
   assert.equal(await plus.getAttribute('data-role'), 'search')
+  // Expo maps Trigger.role to systemItem. RNScreens now needs its separate native
+  // role to create UISearchTab, plus automatic activation for detachment on iOS 27.
+  assert.deepEqual(
+    await page.evaluate(() => window.compose.unstable_nativeProps.ios),
+    { role: 'search', automaticallyActivatesSearch: true },
+    'The plus uses the detached native action rather than a regular collection tab',
+  )
   assert.equal(await page.locator('nav button').count(), 3)
   assert.equal(await page.locator('nav button[data-testid="Tab More"]').count(), 0)
   await plus.click()

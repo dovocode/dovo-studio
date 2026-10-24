@@ -105,7 +105,12 @@ export function WorkbenchTabs() {
         testID="New thread"
         disabled={!hasOnlineComputer}
         // This is an action: preserve the current tab and its navigation history.
-        unstable_nativeProps={{ preventNativeSelection: true }}
+        unstable_nativeProps={{
+          preventNativeSelection: true,
+          // Expo's role sets systemItem; newer iOS versions need the native search role
+          // as well to keep this action detached from the collection tabs.
+          ios: { role: 'search', automaticallyActivatesSearch: true },
+        }}
         listeners={{
           tabPress: newThread,
         }}
