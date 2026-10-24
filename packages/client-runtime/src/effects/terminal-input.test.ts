@@ -1,3 +1,4 @@
+/// <reference lib="es2024" />
 import { expect, it } from 'vite-plus/test'
 import { terminalInputFrames } from './terminal-input.js'
 it.each(['x', '\u0000', '界', '😀'])(

@@ -42,7 +42,7 @@ window.pipeline={run:{id:'42',title:'Release',url:'https://github.com/o/r/action
 const workspace={repositories:[repo],automations:[window.flow],tasks:[]};const snapshot={workspace,runs:[],artifactsEnabled:true};
 const request=async(path,input)=>{if(path==='/api/scm/source/identity')return{readerIdentity:'fixture-account',destination:'fixture-destination'};if(path.endsWith('/options'))return{provider:'github',issues:true,pipelines:true,issueActions:[],pipelineActions:[],issueStates:[]};if(path.endsWith('/issues/detail'))return{issue:window.issues[0],comments:[]};if(path.endsWith('/pipelines/detail'))return window.pipeline;return{items:[],artifacts:[]}};
 window.sources=[window.source];window.source.request=request;window.source.requestEffect=(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error});window.source.readCache={readEffect:()=>Effect.succeed(null),writeEffect:()=>Effect.void,removeEffect:()=>Effect.void};
-window.store={workspace,snapshot,profile,connection:profile.connection,connected:true,activeRuntimeId:'mac',runtimes:[{profile,snapshot,connected:true}],request,readRuntime:request,readCache:null,switchRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
+window.store={workspace,snapshot,profile,connection:profile.connection,connected:true,activeRuntimeId:'mac',runtimes:[{profile,snapshot,connected:true}],request,readRuntime:(_profile,path,input)=>request(path,input),readCache:null,switchRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
 function App(){const[page,setPage]=useState('issues'),[sidebar,setSidebar]=useState(true);window.show=setPage;window.toggle=()=>setSidebar(v=>!v);return <SidebarHeaderLayout collapsed={!sidebar} onCollapsedChange={value=>setSidebar(previous=>!(typeof value==='function'?value(!previous):value))} brand={<div className="studio-sidebar-brand">Dovo Studio · Nightly</div>}><HeaderFallback><div className="studio-titlebar flex items-center"><span className="px-4">Dovo Studio · Nightly</span><HeaderMainSlot/></div></HeaderFallback><div className="flex h-full min-h-0">{page==='issues'?<IssuesView/>:page==='jira'?<JiraView/>:page==='pipelines'?<PipelinesView/>:page==='jobs'?<JobsView/>:page==='artifacts'?<ArtifactsView/>:<WorkContent key={page} repositoryId="repo" repositoryName="Dovo Studio" mode={page==='pipeline'?'pipelines':'issues'} initialSelected={page==='pipeline'?'42':'1'} request={request} connected onBack={()=>setPage('issues')} collectionHeader={<PageHeader title="Collection"/>}/>}</div></SidebarHeaderLayout>};createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);`,
   },
   bundle: true,
@@ -112,6 +112,12 @@ try {
       )
       if (target === 'issue')
         await page.getByText('Preserve the runtime session', { exact: true }).waitFor()
+      if (target === 'artifacts')
+        assert.equal(
+          await page.getByRole('alert').count(),
+          0,
+          'Artifact header verification must load without request errors',
+        )
       if (target === 'pipeline')
         await page
           .locator('[aria-label="Pipeline graph"]')

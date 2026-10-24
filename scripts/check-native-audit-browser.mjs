@@ -120,8 +120,12 @@ function App(){const[state,setState]=useState({page:'create',tab:undefined,fragm
     {
       name: 'native-audit-fixtures',
       setup(builder) {
-        builder.onResolve({ filter: /.*/ }, ({ path }) =>
-          mocks[path] ? { path, namespace: 'native-fixture' } : undefined,
+        builder.onResolve({ filter: /.*/ }, ({ path, importer }) =>
+          path === './pull-status' && importer.endsWith('/tasks/detail/task-project-sheet.tsx')
+            ? undefined
+            : mocks[path]
+              ? { path, namespace: 'native-fixture' }
+              : undefined,
         )
         builder.onLoad({ filter: /.*/, namespace: 'native-fixture' }, ({ path }) => ({
           contents: mocks[path],
@@ -243,7 +247,7 @@ try {
     window.update({ connected: true })
     window.show('project')
   })
-  const linked = page.getByRole('button', { name: 'Linked PRs (1)', exact: true })
+  const linked = page.getByRole('link', { name: 'Open PR #7: Review me', exact: true })
   await linked.waitFor()
   assert.equal(await linked.count(), 1)
   await linked.click()

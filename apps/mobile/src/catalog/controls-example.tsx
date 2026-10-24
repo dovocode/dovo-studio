@@ -113,7 +113,8 @@ function ControlsContent() {
           />
         </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-          <Action label="Save preview" onPress={() => setSaved(true)} secondary />
+          <Action label="Save preview" onPress={() => setSaved(true)} />
+          <Action label="Test connection" onPress={() => setSaved(true)} variant="outline" />
           <Action label="Agent & model" onPress={() => setError(true)} secondary />
           <Pill
             label={count ? `Preview updated ${count}` : 'Preview status'}

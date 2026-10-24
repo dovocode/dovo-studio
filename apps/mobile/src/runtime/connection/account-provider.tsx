@@ -9,6 +9,7 @@ import type { AccountStorage } from '@dovo/protocol'
 import { ACCOUNT_DIRECTORY_URL, connectServiceOrigin } from '@dovo/protocol'
 import * as Crypto from 'expo-crypto'
 import { useMobilePreferences } from '../preferences/app-preferences'
+import { useAccountRecovery } from './use-account-recovery'
 async function storageKey(origin = ACCOUNT_DIRECTORY_URL) {
   const normalized = connectServiceOrigin(origin)
   return normalized === ACCOUNT_DIRECTORY_URL
@@ -30,12 +31,21 @@ const open = (url: string) => Linking.openURL(url)
 export function MobileAccountProvider({ children }: { children: ReactNode }) {
   const preferences = useMobilePreferences()
   const account = useAccount(storage, open, preferences)
-  const { syncAccountSession, registryLoaded, overviews } = useRuntime()
+  const runtime = useRuntime()
+  const { syncAccountSession, registryLoaded, overviews } = runtime
+  const recovery = useAccountRecovery(
+    account,
+    runtime,
+    preferences.ready,
+    preferences.computerRefresh,
+  )
   const connections = overviews
     .map((source) =>
-      [source.profile.connection.accountSession, source.profile.connection.internet?.session].join(
-        ':',
-      ),
+      [
+        source.profile.connection.accountSession,
+        source.profile.connection.internet?.session,
+        runtime.mutationStatus(source.profile).pending,
+      ].join(':'),
     )
     .join(',')
   const session = account.client.sessionId()
@@ -45,5 +55,11 @@ export function MobileAccountProvider({ children }: { children: ReactNode }) {
         /* The runtime provider exposes persistence failures. */
       })
   }, [account.loaded, session, registryLoaded, syncAccountSession, connections, preferences.ready])
-  return <MobileAccountContext.Provider value={account}>{children}</MobileAccountContext.Provider>
+  return (
+    <MobileAccountContext.Provider
+      value={{ ...account, recovery: recovery.states, retryRecovery: recovery.retry }}
+    >
+      {children}
+    </MobileAccountContext.Provider>
+  )
 }

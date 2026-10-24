@@ -1,3 +1,4 @@
+/// <reference lib="es2024" />
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
   decode,

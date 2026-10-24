@@ -6,7 +6,7 @@ import { useRuntimeSources } from './workspace/runtime-sources'
 
 const Context = createContext<{
   target: SettingsTarget
-  setTarget: (target: SettingsTarget) => void
+  setTarget: (target: SettingsTarget) => boolean
   confirmNavigation: () => boolean
   registerDraft: (id: symbol, dirty: boolean, saving: boolean) => () => void
 } | null>(null)
@@ -35,8 +35,10 @@ export function SettingsTargetProvider({ children }: { children: ReactNode }) {
     (next: SettingsTarget) => {
       const current = currentTarget.current
       if (next.environmentId === current.environmentId && next.projectId === current.projectId)
-        return
-      if (confirmNavigation()) updateTarget(next)
+        return true
+      if (!confirmNavigation()) return false
+      updateTarget(next)
+      return true
     },
     [updateTarget, confirmNavigation],
   )

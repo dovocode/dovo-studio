@@ -37,7 +37,7 @@ export function Choice({
 
   const [open, setOpen] = useApplicationState(false),
     [search, setSearch] = useApplicationState('')
-  const { width, fontScale } = useWindowDimensions()
+  const { width, height, fontScale } = useWindowDimensions()
   const insideSheet = useInsideSheet()
   const selected = items.find((item) => item.id === value)
   const horizontal = row && fontScale < 1.5 && width / fontScale >= 360
@@ -51,54 +51,53 @@ export function Choice({
       clearButtonMode="while-editing"
     />
   )
+  const filtered = items.filter((item) =>
+    `${item.name} ${item.id}`.toLowerCase().includes(search.trim().toLowerCase()),
+  )
   const optionRows = (
     <>
-      {items
-        .filter((item) => item.name.toLowerCase().includes(search.toLowerCase()))
-        .map((item) => (
-          <Pressable
-            key={item.id}
-            testID={`Choose ${item.name}`}
-            accessibilityRole="button"
-            accessibilityState={{
-              selected: item.id === value,
-              disabled: disabled || item.disabled,
-            }}
-            disabled={disabled || item.disabled}
-            style={({ pressed }) => [
-              styles.row,
+      {filtered.map((item) => (
+        <Pressable
+          key={item.id}
+          testID={`Choose ${item.name}`}
+          accessibilityRole="button"
+          accessibilityState={{
+            selected: item.id === value,
+            disabled: disabled || item.disabled,
+          }}
+          disabled={disabled || item.disabled}
+          style={({ pressed }) => [
+            styles.row,
+            {
+              minHeight: 48,
+              flexWrap: 'nowrap',
+              padding: 12,
+              opacity: disabled || item.disabled ? 0.45 : 1,
+              backgroundColor: pressed || item.id === value ? colors.selection : undefined,
+              borderRadius: 8,
+            },
+          ]}
+          onPress={() => {
+            onChange(item.id)
+            setOpen(false)
+          }}
+        >
+          {item.icon && <Icon name={item.icon} size={18} />}
+          <Text
+            style={[
+              styles.text,
               {
-                minHeight: 48,
-                flexWrap: 'nowrap',
-                padding: 12,
-                opacity: disabled || item.disabled ? 0.45 : 1,
-                backgroundColor: pressed || item.id === value ? colors.selection : undefined,
-                borderRadius: 8,
+                flex: 1,
+                minWidth: 0,
               },
             ]}
-            onPress={() => {
-              onChange(item.id)
-              setOpen(false)
-            }}
           >
-            {item.icon && <Icon name={item.icon} size={18} />}
-            <Text
-              style={[
-                styles.text,
-                {
-                  flex: 1,
-                  minWidth: 0,
-                },
-              ]}
-            >
-              {item.name}
-            </Text>
-            {item.id === value && <Icon name="check" size={17} />}
-          </Pressable>
-        ))}
-      {!items.some((item) => item.name.toLowerCase().includes(search.toLowerCase())) && (
-        <Text style={styles.muted}>No matching options.</Text>
-      )}
+            {item.name}
+          </Text>
+          {item.id === value && <Icon name="check" size={17} />}
+        </Pressable>
+      ))}
+      {!filtered.length && <Text style={styles.muted}>No matching options.</Text>}
     </>
   )
   return (
@@ -182,7 +181,7 @@ export function Choice({
                 }}
                 accessibilityState={{
                   disabled,
-                  expanded: open,
+                  expanded: open && !disabled,
                 }}
                 disabled={disabled}
                 onPress={() => {
@@ -231,6 +230,7 @@ export function Choice({
         </View>
       </View>
       {open &&
+        !disabled &&
         (insideSheet ? (
           <View
             style={{
@@ -243,7 +243,10 @@ export function Choice({
               nestedScrollEnabled
               keyboardShouldPersistTaps="handled"
               style={{
+                flexGrow: 0,
+                flexShrink: 0,
                 maxHeight: 320,
+                height: items.length > 6 ? Math.min(320, height * 0.4) : undefined,
               }}
             >
               {optionRows}

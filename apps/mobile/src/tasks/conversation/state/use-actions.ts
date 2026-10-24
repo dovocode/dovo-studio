@@ -63,6 +63,8 @@ export function useConversationActions(task: Task) {
     files: Attachment[]
   } | null>(null)
   const turnSettings = editing ? editing.settings : draftTurnSettings
+  const currentDraftKey = useRef(storedDraft.key)
+  currentDraftKey.current = storedDraft.key
   const pendingScope = JSON.stringify([
     profile?.connection.address,
     profile?.connection.token,
@@ -458,6 +460,29 @@ export function useConversationActions(task: Task) {
   }
   return {
     editing,
+    restoreQueuedMessage: (message: NonNullable<Task['queue']>[number]) =>
+      run(() =>
+        mobileWorkflow(function* () {
+          if (editing || attaching || dictation.active || !storedDraft.ready)
+            throw new Error('Finish editing or attaching files before returning a queued message')
+          if (
+            (storedDraft.text.trim() || task.draftAttachments?.length) &&
+            !sameTurnSettings(message.turnSettings, draftTurnSettings)
+          )
+            throw new Error(
+              'Clear the composer before restoring a message with different model settings',
+            )
+          const key = storedDraft.key
+          yield* callEffect(
+            '/api/tasks/queue',
+            { id: task.id, action: 'restore', messageId: message.id },
+            responses.ok,
+          )
+          // Append durably to this thread's latest text, including keystrokes ahead of React.
+          yield* storedDraft.appendEffect(message.text)
+          if (currentDraftKey.current === key) setTurnSettings(message.turnSettings ?? null)
+        }),
+      ),
     beginEdit: (message: Task['messages'][number]) => {
       if (busy || attaching || editing || dictation.active) return
       setEditing({

@@ -49,11 +49,6 @@ export async function taskWaiting(
             project: watch.source?.repository ?? project(watch.repositoryId),
             url: watch.url,
           })),
-          ...pipelines.watches.map((watch) => ({
-            label: `Pipeline run ${watch.runId}`,
-            project: watch.source?.repository ?? project(watch.repositoryId),
-            url: watch.url,
-          })),
           ...(task.pullRequest
             ? [
                 {
@@ -68,13 +63,10 @@ export async function taskWaiting(
             project: project(task.repositoryId),
             url: pull.url,
           })),
-          ...(task.workItem
+          ...(task.workItem && task.workItem.kind !== 'pipeline'
             ? [
                 {
-                  label:
-                    task.workItem.kind === 'pipeline'
-                      ? `Pipeline run ${task.workItem.id}`
-                      : task.workItem.title,
+                  label: task.workItem.title,
                   project: project(task.repositoryId),
                   url: task.workItem.url,
                 },

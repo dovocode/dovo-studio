@@ -96,6 +96,7 @@ import {
 } from '@dovo/client-runtime'
 import { retainOverviewSnapshot, shouldPublishOverview } from './overview-state'
 import { registryKey, restoreRegistry } from '../state/restore-registry'
+import { saveRecoveredAccountConnection } from './account-recovery'
 import { RuntimeContext as Context, useRuntime } from './context'
 import type { Runtime } from './context'
 export { RuntimeContext } from './context'
@@ -807,37 +808,136 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       )
         return Promise.resolve()
       return runClientEffect(
-        changeRegistryEffect((saved) => {
-          let changed = false
-          const profiles = saved.profiles.flatMap((profile) => {
+        Effect.gen(function* () {
+          // A revoked account must not strand durable actions behind a removed profile.
+          for (const profile of current.current.profiles)
             if (
-              profile.connection.accountSession &&
-              profile.connection.accountSession !== session
-            ) {
-              forgetPeerConnection(profile.connection.address)
-              changed = true
-              return []
-            }
-            if (profile.connection.internet && profile.connection.internet.session !== session) {
-              forgetPeerConnection(profile.connection.internet.address)
-              changed = true
-              return [{ ...profile, connection: { ...profile.connection, internet: undefined } }]
-            }
-            return [profile]
-          })
-          return changed
-            ? {
-                ...saved,
-                profiles,
-                activeId: profiles.some((item) => item.id === saved.activeId)
-                  ? saved.activeId
-                  : (profiles[0]?.id ?? null),
+              (profile.connection.accountSession &&
+                profile.connection.accountSession !== session) ||
+              (profile.connection.internet && profile.connection.internet.session !== session)
+            )
+              yield* mutations.assertEmptyEffect(profile.connection)
+          yield* changeRegistryEffect((saved) => {
+            let changed = false
+            const profiles = saved.profiles.flatMap((profile) => {
+              if (
+                profile.connection.accountSession &&
+                profile.connection.accountSession !== session
+              ) {
+                forgetPeerConnection(profile.connection.address)
+                changed = true
+                return []
               }
-            : saved
-        }),
+              if (profile.connection.internet && profile.connection.internet.session !== session) {
+                forgetPeerConnection(profile.connection.internet.address)
+                changed = true
+                return [{ ...profile, connection: { ...profile.connection, internet: undefined } }]
+              }
+              return [profile]
+            })
+            return changed
+              ? {
+                  ...saved,
+                  profiles,
+                  activeId: profiles.some((item) => item.id === saved.activeId)
+                    ? saved.activeId
+                    : (profiles[0]?.id ?? null),
+                }
+              : saved
+          })
+        }).pipe(Effect.tapError((error) => Effect.sync(() => setStorageError(error.message)))),
       )
     },
-    [changeRegistryEffect],
+    [changeRegistryEffect, mutations],
+  )
+  const recoverAccountConnection = useCallback(
+    async (previous: RuntimeProfile, incoming: RuntimeConnection, signal: AbortSignal) => {
+      let committed = false
+      const address = incoming.peer ? preparePeerConnection(incoming.peer) : incoming.address
+      try {
+        signal.throwIfAborted()
+        // Verify the new credential over its own encrypted route before saving it.
+        const snapshot = await createRuntimeClient(incoming).request(
+          '/api/snapshot?scope=overview',
+          undefined,
+          snapshotSchema,
+          { method: 'GET', signal },
+        )
+        if (snapshot.runtimeId !== incoming.runtimeId)
+          throw new Error('This connection belongs to a different computer')
+        const verified = learnRuntimeRoutes(incoming, snapshot)
+        let next = saveRecoveredAccountConnection(
+          current.current,
+          previous,
+          verified,
+          accountSession.current,
+        ).profiles.find((item) => item.id === previous.id)
+        if (!next) throw new Error('Computer is no longer saved')
+        const replacement = next.connection
+        const commit = Effect.suspend(() => {
+          signal.throwIfAborted()
+          const recovered = saveRecoveredAccountConnection(
+            current.current,
+            previous,
+            verified,
+            accountSession.current,
+          )
+          next = recovered.profiles.find((item) => item.id === previous.id)
+          return persistRegistryEffect(recovered)
+        })
+        await runClientEffect(
+          // Pairing recovery uses the same order: registry lock, then journal locks.
+          storageLock.withPermits(1)(
+            mutations.renewConnectionEffect(previous.connection, replacement, commit),
+          ),
+        )
+        committed = true
+        clearRuntimeRequestCache(previous.connection)
+        if (next)
+          updateEntry(next, (entry) => ({
+            ...entry,
+            snapshot,
+            connected: true,
+            lastSeen: new Date().toISOString(),
+            error: null,
+            unauthorized: false,
+          }))
+        const oldPeer =
+          previous.connection.internet?.address ??
+          (previous.connection.accountSession ? previous.connection.address : undefined)
+        if (oldPeer && oldPeer !== address) forgetPeerConnection(oldPeer)
+      } finally {
+        const retained = current.current.profiles.some(
+          (profile) =>
+            profile.connection.token === incoming.token ||
+            profile.connection.internet?.token === incoming.token,
+        )
+        if (!committed && !retained) {
+          // Retire the unused credential when reachable, without delaying another recovery.
+          const cleanup = new AbortController()
+          const deadline = setTimeout(() => cleanup.abort(), 4000)
+          try {
+            await createRuntimeClient(incoming)
+              .request('/api/devices/revoke-self', {}, responses.ok, { signal: cleanup.signal })
+              .catch(() => undefined)
+          } finally {
+            clearTimeout(deadline)
+          }
+          if (previous.connection.accountSession)
+            await runClientEffect(mutations.discardEffect(incoming)).catch(() => undefined)
+        }
+        if (
+          !committed &&
+          !current.current.profiles.some(
+            (profile) =>
+              profile.connection.address === address ||
+              profile.connection.internet?.address === address,
+          )
+        )
+          forgetPeerConnection(address)
+      }
+    },
+    [mutations, storageLock, persistRegistryEffect, updateEntry],
   )
   const selectRuntimeEffect = useCallback(
     (id: string) => {
@@ -860,7 +960,18 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         const profile = current.current.profiles.find((item) => item.id === id)
         if (profile) yield* mutations.assertEmptyEffect(profile.connection)
         if (profile) clearRuntimeRequestCache(profile.connection)
-        yield* changeRegistryEffect((saved) => removeRuntime(saved, id))
+        yield* changeRegistryEffect((saved) => {
+          const latest = saved.profiles.find((item) => item.id === id)
+          if (
+            profile &&
+            latest &&
+            JSON.stringify(profile.connection) !== JSON.stringify(latest.connection)
+          )
+            throw new Error(
+              'Computer connection changed. Review its saved actions before forgetting it.',
+            )
+          return removeRuntime(saved, id)
+        })
         const next = {
           ...entryRef.current,
         }
@@ -1523,7 +1634,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [mutations],
   )
   const retryMutations = useCallback(
-    (owner: RuntimeProfile) => runClientEffect(mutations.recoverEffect(owner.connection, true)),
+    (owner: RuntimeProfile, confirmRenewalReplay = false) =>
+      runClientEffect(mutations.recoverEffect(owner.connection, true, confirmRenewalReplay)),
     [mutations],
   )
   const discardMutations = useCallback(
@@ -1591,6 +1703,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       readCache,
       refreshEffect,
       syncAccountSession,
+      recoverAccountConnection,
       connectEffect,
       selectRuntimeEffect,
       forgetRuntimeEffect,
@@ -1639,6 +1752,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       readCache,
       refreshEffect,
       syncAccountSession,
+      recoverAccountConnection,
       connectEffect,
       selectRuntimeEffect,
       forgetRuntimeEffect,

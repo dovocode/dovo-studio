@@ -171,6 +171,10 @@ export function TurnCheckpoint({
     [files, kind],
   )
   const stats = useMemo(() => files.filter((file) => !file.preview).map(fileStats), [files])
+  const breakdownFiles = useMemo(() => {
+    const amounts = new Map(stats.map((stat) => [stat.path, stat]))
+    return files.map((file) => ({ ...file, ...amounts.get(file.path) }))
+  }, [files, stats])
   const treeFiles = useMemo(() => {
     const amounts = new Map(stats.map((stat) => [stat.path, stat]))
     return filtered.map((file) => ({
@@ -237,7 +241,8 @@ export function TurnCheckpoint({
       {!!count && (
         <div aria-label="Changed file breakdown" className="mt-1">
           <ChangeTypeFilters
-            files={files}
+            files={breakdownFiles}
+            weightBy="lines"
             value={kind}
             onChange={(value) => {
               setKind(value)
@@ -270,7 +275,12 @@ export function TurnCheckpoint({
               starting snapshot.
             </DialogDescription>
           </div>
-          <ChangeTypeFilters files={files} value={kind} onChange={setKind} />
+          <ChangeTypeFilters
+            files={breakdownFiles}
+            weightBy="lines"
+            value={kind}
+            onChange={setKind}
+          />
           {checkpoint.error && (
             <p role="alert" className="text-xs text-destructive">
               {checkpoint.error}

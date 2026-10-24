@@ -453,7 +453,7 @@ it('does not carry a foreground resume deadline into a replacement socket handsh
   expect(Socket.instances).toHaveLength(2)
   expect(Socket.instances[1]!.readyState).toBe(0)
 })
-it.each([401, 403, 404])(
+it.each([401, 404])(
   'uses HTTP fallback without repeated sync attempts after HTTP %s',
   async (status) => {
     vi.useFakeTimers()
@@ -647,7 +647,7 @@ it.each([401, 403, 404])(
     stopped.push(live.stop)
     await vi.waitFor(() =>
       expect(onStatus).toHaveBeenCalledWith(
-        status === 401 ? 'unauthorized' : status === 403 ? 'forbidden' : 'unsupported',
+        status === 401 ? 'unauthorized' : status === 403 ? 'reconnecting' : 'unsupported',
       ),
     )
     fetcher.mockResolvedValue(Response.json({ ticket: 'recovered' }))
@@ -782,4 +782,31 @@ it('uses the desktop connection owner for snapshots, activity, watches and retry
   expect(stop).toHaveBeenCalledOnce()
   receive?.({ type: 'activity', scope: 'author', events: [] })
   expect(activity).toHaveBeenCalledTimes(1)
+})
+
+it('automatically retries a transient forbidden ticket with the same credential', async () => {
+  vi.useFakeTimers()
+  const connection = { address: 'http://transient-ticket.local', token: 'unchanged-pairing-token' }
+  const request = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(Response.json({ error: 'Lease renewing' }, { status: 403 }))
+  vi.stubGlobal('fetch', request)
+  const socket = vi.fn<() => { readyState: number; close: () => void; send: () => void }>(
+    function () {
+      return { readyState: 0, close() {}, send() {} }
+    },
+  )
+  vi.stubGlobal('WebSocket', socket)
+  const live = startRuntimeSync(connection, { onSnapshot: () => {} })
+  stopped.push(live.stop)
+  await vi.advanceTimersByTimeAsync(10)
+  expect(request).toHaveBeenCalledOnce()
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(request.mock.calls.length).toBeGreaterThan(1)
+  expect(request.mock.calls.length).toBeLessThan(15)
+  request.mockResolvedValue(Response.json({ ticket: 'renewed' }))
+  await vi.advanceTimersByTimeAsync(15000)
+  expect(socket).toHaveBeenCalled()
+  for (const [, init] of request.mock.calls)
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer ' + connection.token)
 })

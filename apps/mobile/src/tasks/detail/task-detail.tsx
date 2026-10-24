@@ -1,3 +1,5 @@
+import { useTaskPanes } from '../../shell/task-panes'
+import { contentColumn } from '../../ui/layout/content-column'
 import {
   createRuntimeClient,
   generatedTitleSchema,
@@ -5,6 +7,7 @@ import {
   workspacePatchResultSchema,
   checkpointFileCount,
   projectDisplayName,
+  taskDisplayProject,
   runtimeComputerName,
   conversationPageSchema,
   readConversationHistory,
@@ -160,18 +163,20 @@ export function TaskDetail({
   const history = retained ?? (available ? cached?.task : undefined)
   if (!loaded && !history)
     return (
-      <View style={{ flex: 1, justifyContent: 'center', gap: 12, padding: 20 }}>
+      <View style={{ flex: 1 }}>
         <ScreenHeader title={task.title} onBack={onBack} />
         {parentNavigation}
-        <ActivityIndicator />
-        <Text style={styles.muted}>
-          {cacheError?.cache === readCache && cacheError.id === task.id
-            ? cacheError.error
-            : connected
-              ? 'Loading conversation…'
-              : 'This conversation is not cached. Connect its computer to load it.'}
-        </Text>
-        <Action label="Retry" onPress={refresh} />
+        <View style={{ flex: 1, justifyContent: 'center', gap: 12, padding: 20 }}>
+          <ActivityIndicator />
+          <Text style={styles.muted}>
+            {cacheError?.cache === readCache && cacheError.id === task.id
+              ? cacheError.error
+              : connected
+                ? 'Loading conversation…'
+                : 'This conversation is not cached. Connect its computer to load it.'}
+          </Text>
+          <Action label="Retry" onPress={refresh} />
+        </View>
       </View>
     )
   return (
@@ -207,6 +212,7 @@ function TaskDetailContent({
   const { focused, navigate } = useNavigation()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
+  const panes = useTaskPanes()
   const { snapshot, connected, profiles, profile, callEffect, activeId, connection } = useRuntime()
   const worktreeThread = useAction()
   const [transferring, setTransferring] = useState(false)
@@ -405,6 +411,8 @@ function TaskDetailContent({
   }, [handoff.error])
   const inWorktree = task.execution === 'worktree'
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
+  const displayProject = taskDisplayProject(task, snapshot?.workspace.repositories ?? [])
+  const hasProject = !!displayProject && displayProject.kind !== 'scratch'
   const moveActions: HeaderAction[] =
     !snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.kind &&
     !canChangeTaskCheckout(task) &&
@@ -480,7 +488,7 @@ function TaskDetailContent({
   })
   // Name the computer only when there is more than one to tell apart.
   const subtitle = [
-    projectDisplayName(repository, ''),
+    projectDisplayName(displayProject, ''),
     profiles.length > 1 ? runtimeHost : undefined,
   ]
     .filter(Boolean)
@@ -605,7 +613,13 @@ function TaskDetailContent({
               style={{
                 minHeight: 44,
                 justifyContent: 'center',
-                width: Math.max(80, width - 180),
+                width: Math.max(
+                  80,
+                  Math.min(
+                    420,
+                    (panes.expanded ? panes.detailWidth : width) - 180 - (hasProject ? 44 : 0),
+                  ),
+                ),
                 minWidth: 0,
               }}
             >
@@ -636,7 +650,7 @@ function TaskDetailContent({
               : undefined
         }
         leading={<Action secondary label="Back" onPress={pane === 'diff' ? backToChat : onBack} />}
-        collapsedMenuGroups={['Project', 'Tools', 'Advanced']}
+        collapsedMenuGroups={['Project', 'Advanced']}
         buttons={
           startup?.temporary
             ? [{ label: 'New thread', icon: 'add', onPress: startup.onNewThread }]
@@ -682,7 +696,7 @@ function TaskDetailContent({
                             : tab,
                   group: tab === 'agents' || tab === 'devices' ? 'Tools' : 'Navigate',
                   selected: pane === tab,
-                  // Keep one primary action beside the menu; car mode keeps every tool inside.
+                  // Keep changes and project information beside the menu; car mode uses the menu.
                   overflow: car || tab !== 'diff',
                   onPress: () => {
                     Keyboard.dismiss()
@@ -698,7 +712,7 @@ function TaskDetailContent({
                       label: 'Project information',
                       group: 'Project',
                       icon: 'info',
-                      overflow: true,
+                      overflow: car || !hasProject,
                       selected: projectInfo,
                       onPress: () => {
                         Keyboard.dismiss()
@@ -882,7 +896,7 @@ function TaskDetailContent({
                   transferActions,
                 )
                 .sort((a, b) => {
-                  const order = ['Navigate', 'Thread', 'Project', 'Tools', 'Advanced', 'Delete']
+                  const order = ['Tools', 'Navigate', 'Thread', 'Project', 'Advanced', 'Delete']
                   return order.indexOf(a.group ?? '') - order.indexOf(b.group ?? '')
                 })
         }
@@ -958,6 +972,7 @@ function TaskDetailContent({
         >
           <View
             style={{
+              ...contentColumn.conversation,
               flex: 1,
               display: pane === 'chat' ? 'flex' : 'none',
             }}

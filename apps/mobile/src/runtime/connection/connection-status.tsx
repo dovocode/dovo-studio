@@ -1,3 +1,4 @@
+import { ConnectionProgress } from './connection-progress'
 import { runtimeSyncStatus, retryRuntimeSync, runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -6,6 +7,7 @@ import { router } from 'expo-router'
 import { runtimeReachability } from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
 import { useRuntime } from './provider'
+import { useOptionalMobileAccount } from './account-context'
 import { Action } from '../../ui/controls/action'
 import { Pill } from '../../ui/controls/pill'
 import { Sheet } from '../../ui/layout/sheet'
@@ -19,6 +21,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
   const { styles } = useTheme()
 
   const runtime = useRuntime()
+  const account = useOptionalMobileAccount()
   const { busy, act } = useAction()
   const [visibleFor, setVisibleFor] = useState<string | null>(null)
   const [attempted, setAttempted] = useApplicationState(false)
@@ -48,7 +51,14 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
     saved.map((entry) => entry.profile.id).sort(),
     fallback.map((entry) => entry.profile.id).sort(),
   ])
-  const revoked = unavailable.filter((entry) => entry.unauthorized)
+  const accountManaged = (entry: (typeof scoped)[number]) =>
+    !!(
+      account?.client.sessionId() &&
+      (entry.profile.connection.accountSession === account.client.sessionId() ||
+        entry.profile.connection.internet?.session === account.client.sessionId())
+    )
+  const revoked = unavailable.filter((entry) => entry.unauthorized && !accountManaged(entry))
+  const renewing = unavailable.some((entry) => account?.recovery?.[entry.profile.id]?.pending)
   useEffect(() => {
     if (!offline) {
       setVisibleFor(null)
@@ -64,19 +74,21 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
   const subject =
     unavailable.length === 1 && scoped.length === 1 ? 'Offline' : `${unavailable.length} offline`
   // Reconnecting cannot fix a revoked pairing; say what will.
-  const label = busy
-    ? 'Reconnecting…'
-    : fallback.length && !hasSaved && !unavailable.length
-      ? 'HTTP updates · Review'
-      : hasSaved && !unavailable.length
-        ? 'Saved actions · Review'
-        : revoked.length
-          ? 'Pairing expired · Pair again'
-          : attempted
-            ? `Still ${subject.toLowerCase()}`
-            : `${subject} · Reconnect`
+  const label =
+    busy || renewing
+      ? 'Reconnecting…'
+      : fallback.length && !hasSaved && !unavailable.length
+        ? 'HTTP updates · Review'
+        : hasSaved && !unavailable.length
+          ? 'Saved actions · Review'
+          : revoked.length
+            ? 'Pairing expired · Pair again'
+            : attempted
+              ? `Still ${subject.toLowerCase()}`
+              : `${subject} · Reconnect`
   const reconnect = () =>
     act(async () => {
+      account?.retryRecovery?.()
       for (const entry of scoped) retryRuntimeSync(entry.profile.connection)
       await runtime.refreshAll()
       setAttempted(true)
@@ -124,7 +136,21 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                 <Action
                   label="Retry saved actions"
                   disabled={busy || !entry.connected}
-                  onPress={() => act(() => runtime.retryMutations(entry.profile))}
+                  onPress={() =>
+                    status.reviewRequired
+                      ? Alert.alert(
+                          `Retry saved actions on ${runtimeComputerName(entry)}?`,
+                          'Access to this computer was renewed. Some saved actions may already have run and retrying could repeat them. Check the computer before continuing. Messages keep their original delivery identity.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Retry actions',
+                              onPress: () => act(() => runtime.retryMutations(entry.profile, true)),
+                            },
+                          ],
+                        )
+                      : act(() => runtime.retryMutations(entry.profile))
+                  }
                 />
                 <Action
                   label="Discard saved actions"
@@ -147,9 +173,13 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
               </View>
             )
           })}
-          {unavailable.map((entry) => (
+          {scoped.map((entry) => (
             <View key={entry.profile.id} style={{ gap: 6 }}>
               <Text style={styles.title}>{runtimeComputerName(entry)}</Text>
+              <ConnectionProgress
+                entry={entry}
+                recovering={account?.recovery?.[entry.profile.id]?.pending}
+              />
               <Text selectable style={styles.muted}>
                 {entry.profile.connection.address}
               </Text>
@@ -159,6 +189,11 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
               {!!entry.error && (
                 <Text selectable style={styles.error}>
                   {entry.error}
+                </Text>
+              )}
+              {!!account?.recovery?.[entry.profile.id]?.error && (
+                <Text selectable style={styles.error}>
+                  Dovo Connect: {account.recovery[entry.profile.id]?.error}
                 </Text>
               )}
             </View>

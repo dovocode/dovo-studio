@@ -1,3 +1,4 @@
+/// <reference lib="es2024" />
 import { beforeEach, expect, it, vi } from 'vite-plus/test'
 
 const f = vi.hoisted(() => ({

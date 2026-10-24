@@ -34,8 +34,12 @@ without checking the applied patch and its fixture.
 - **iOS scenes:** use Expo 58's `ExpoAppSceneDelegate` for native startup and lifecycle forwarding.
   Dovo's scene plugin only seeds the cold-start quick-action URL before React starts. Run
   `expo prebuild --no-install --platform ios` to verify generated projects.
-- **Mobile React and AsyncStorage:** use Expo 58's recommended versions; `expo install --check`
-  validates the native dependency set. Desktop/web React can update independently.
+- **Mobile React, AsyncStorage and gesture handler:** retain Expo 58's recommended versions (React
+  19.3.0, AsyncStorage 2.2.0, gesture handler ~3.3.0); `expo install --check` validates the native
+  dependency set. Desktop/web React can update independently.
+- **ACP SDK 2:** use its `/unstable` v1 entrypoint consistently to retain negotiated subagents and
+  session features. The local callback boundary derives its request types from the SDK handler maps;
+  no legacy SDK implementation interface is required.
 
 Expo 58 removes the dependency on decode-uri-component 0.2.2, so its security backport is retired.
 The remaining version-based audit reports are covered by the security regressions above.

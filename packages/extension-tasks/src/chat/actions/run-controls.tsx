@@ -58,11 +58,12 @@ export function RunControls({ task }: { task: Task }) {
         )
       )
         return
-      const first = document.querySelector('[data-approval-id]')
-      if (first?.getAttribute('data-approval-id') !== approvals[0].id) return
+      const card = event.target.closest('[data-approval-id]')
+      const approval = approvals.find((item) => item.id === card?.getAttribute('data-approval-id'))
+      if (!approval) return
       if (event.key.toLowerCase() !== 'y' && event.key.toLowerCase() !== 'n') return
       event.preventDefault()
-      act('/api/approvals', { id: approvals[0].id, allow: event.key.toLowerCase() === 'y' })
+      act('/api/approvals', { id: approval.id, allow: event.key.toLowerCase() === 'y' })
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -118,6 +119,8 @@ export function RunControls({ task }: { task: Task }) {
         <div
           key={approval.id}
           data-approval-id={approval.id}
+          tabIndex={0}
+          aria-keyshortcuts="Y N"
           data-studio-human-only
           className="mx-auto max-w-[var(--chat-max)] rounded-lg border bg-card p-3"
         >
@@ -142,6 +145,11 @@ export function RunControls({ task }: { task: Task }) {
                 }
               >
                 {action.label}
+                {action.decision === 'approve' || action.decision === 'deny' ? (
+                  <kbd aria-hidden="true" className="ml-1 text-[0.625rem] opacity-70">
+                    {action.decision === 'approve' ? 'Y' : 'N'}
+                  </kbd>
+                ) : null}
               </Button>
             ))}
           </div>

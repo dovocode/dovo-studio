@@ -33,13 +33,13 @@ export function useAttachmentPicker(
   const { busy, error, act, run } = useAction()
   const imageEditor = useImageEditor()
   const uploading = useRef(false)
-  const prepare = async (asset: AttachmentAsset, replacing: boolean) => {
+  const prepare = async (asset: AttachmentAsset, replacing: boolean, editChatImage: boolean) => {
     const temporary = new Set<string>()
     let prepared: AttachmentAsset | null = null
     try {
       const optimized = await optimizeAttachmentImage(asset)
       if (optimized.uri !== asset.uri) temporary.add(optimized.uri)
-      const edited = await imageEditor.edit(optimized)
+      const edited = await imageEditor.edit(optimized, editChatImage)
       if (!edited || (replacing && edited === optimized)) return null
       if (edited.uri !== optimized.uri) temporary.add(edited.uri)
       prepared = edited === optimized ? optimized : await optimizeAttachmentImage(edited)
@@ -48,7 +48,7 @@ export function useAttachmentPicker(
       for (const uri of temporary) if (uri !== prepared?.uri) new File(uri).delete()
     }
   }
-  const uploadAssets = (assets: AttachmentAsset[], replaceId?: string) =>
+  const uploadAssets = (assets: AttachmentAsset[], replaceId?: string, editChatImage = false) =>
     mobileWorkflow(function* () {
       const count =
         (editing
@@ -63,7 +63,7 @@ export function useAttachmentPicker(
           continue
         }
         yield* mobileWorkflow(function* () {
-          const prepared = yield* nativeEffect(() => prepare(asset, !!replaceId))
+          const prepared = yield* nativeEffect(() => prepare(asset, !!replaceId, editChatImage))
           if (!prepared) return
           const data = yield* nativeEffect(async () => {
             const file = new File(prepared.uri)
@@ -99,12 +99,12 @@ export function useAttachmentPicker(
       }
       if (rejected.length) throw new Error(rejected.join('\n'))
     })
-  const upload = (assets: AttachmentAsset[]) => {
+  const upload = (assets: AttachmentAsset[], editChatImage = false) => {
     if (!connected) return Promise.reject(new Error('Reconnect to attach files.'))
     if (busy || uploading.current)
       return Promise.reject(new Error('Wait for the current attachment operation to finish.'))
     uploading.current = true
-    return run(() => uploadAssets(assets)).finally(() => {
+    return run(() => uploadAssets(assets, undefined, editChatImage)).finally(() => {
       uploading.current = false
     })
   }

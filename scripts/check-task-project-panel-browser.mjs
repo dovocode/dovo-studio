@@ -216,6 +216,36 @@ try {
       await page.screenshot({
         path: `/tmp/dovo-shared-header-thread-${mobile ? 'compact' : 'desktop'}.png`,
       })
+    assert.ok(
+      (
+        await page
+          .locator('[data-thread-content] header')
+          .filter({ visible: true })
+          .first()
+          .innerText()
+      ).includes('Project'),
+    )
+    // Tool navigation is available directly from the first thread menu in both layouts.
+    await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
+    const firstMenu = page.getByRole('menu').first()
+    assert.equal(
+      await firstMenu
+        .getByRole('menuitem', { name: 'Chat', exact: true })
+        .getAttribute('aria-current'),
+      'page',
+    )
+    for (const name of ['Files', 'Devices', 'Terminal', 'Side chats']) {
+      assert.equal(await firstMenu.getByRole('menuitem', { name, exact: true }).count(), 1)
+    }
+    await firstMenu.getByRole('menuitem', { name: 'Devices', exact: true }).click()
+    await page.waitForFunction(() => window.surface === 'devices')
+    await page.getByRole('button', { name: 'Thread actions', exact: true }).first().click()
+    await page
+      .getByRole('menu')
+      .first()
+      .getByRole('menuitem', { name: 'Chat', exact: true })
+      .click()
+    await page.waitForFunction(() => window.surface === 'chat')
     const chatWidth = (await page.locator('[data-thread-content]').boundingBox()).width
     await page.getByRole('button', { name: 'Show project panel', exact: true }).click()
     await page.getByRole('dialog', { name: 'Project information', exact: true }).waitFor()
@@ -295,9 +325,16 @@ try {
       ['open', true, 'text-muted-foreground'],
     ]) {
       await page.evaluate(([state, draft]) => window.setPullState(state, draft), [state, draft])
-      await page.locator('.studio-project-pull svg').first().waitFor()
+      await page
+        .getByLabel('Linked pull requests', { exact: true })
+        .locator('svg')
+        .first()
+        .waitFor()
       await page.waitForFunction(
-        (tone) => document.querySelector('.studio-project-pull svg')?.classList.contains(tone),
+        (tone) =>
+          document
+            .querySelector('[aria-label="Linked pull requests"] svg')
+            ?.classList.contains(tone),
         tone,
       )
     }
@@ -339,9 +376,21 @@ try {
       const card = await page.locator('.studio-project-card').boundingBox()
       assert.ok(totals && card && card.x + card.width - (totals.x + totals.width) < 30)
     }
-    await page.getByRole('button', { name: 'Show 1 more', exact: true }).click()
-    await page.getByRole('button', { name: /Preserve the runtime session/ }).waitFor()
-    await page.getByRole('button', { name: 'Show less', exact: true }).click()
+    const linkedRow = page.getByLabel('Linked pull requests', { exact: true })
+    await linkedRow.getByRole('link', { name: /Open PR #7/ }).waitFor()
+    await linkedRow
+      .getByRole('button', { name: 'Open PR #9: Preserve the runtime session', exact: true })
+      .waitFor()
+    const linkedBox = await linkedRow.boundingBox()
+    const editorBox = await page
+      .getByRole('button', { name: 'Open in Zed', exact: true })
+      .boundingBox()
+    assert.ok(linkedBox && editorBox && linkedBox.y < editorBox.y)
+    assert.equal(await page.getByRole('button', { name: 'Show 1 more', exact: true }).count(), 0)
+    await linkedRow
+      .getByRole('button', { name: 'Open PR #9: Preserve the runtime session', exact: true })
+      .click()
+    assert.equal(await page.evaluate(() => window.opened), 'https://github.com/test/project/pull/9')
     await page.getByRole('button', { name: 'Stop watching Pipeline run 8', exact: true }).click()
     const stopDialog = page.getByRole('dialog', { name: 'Stop watching?', exact: true })
     await stopDialog.getByRole('button', { name: 'Stop watching', exact: true }).click()
@@ -559,9 +608,9 @@ try {
         await page.getByRole('button', { name: 'Open child thread Review implementation' }).count(),
         0,
       )
-      const bottomRow = page.locator('.studio-thread-card-context').nth(1)
+      const statusRow = page.locator('.studio-thread-card-context').first()
       const toggleBounds = await toggle.boundingBox()
-      const rowBounds = await bottomRow.boundingBox()
+      const rowBounds = await statusRow.boundingBox()
       assert.ok(
         toggleBounds.y >= rowBounds.y - 4 && toggleBounds.y < rowBounds.y + rowBounds.height,
       )

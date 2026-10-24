@@ -1,3 +1,4 @@
+import { SearchField } from '@dovo/studio-ui/search-field'
 import {
   uniquePulls,
   forgePullTarget,
@@ -7,7 +8,7 @@ import {
 import { AddPullsToThread } from './add-to-thread'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
-import { Plug, Plus, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
+import { Plug, Plus, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import {
   comparePulls,
   matchesPull,
@@ -22,7 +23,6 @@ import {
 } from '@dovo/studio-core'
 import {
   Button,
-  Input,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -87,6 +87,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
   const [marked, setMarked] = useApplicationState<string[]>([])
   const [adding, setAdding] = useApplicationState<PullSummary[] | null>(null)
   const selectionAnchor = useRef<string | null>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
   const {
     sources,
     pages: allPages,
@@ -345,337 +346,328 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               disabled={!sources.some((source) => source.connected)}
               onClick={() => setPicking('create')}
             >
-              <Plus className="size-3.5" /> Create
+              <Plus className="size-3.5" />
+              <span className="hidden @sm/pr-list:inline">Create</span>
             </Button>
           </PageHeader>
-          <div
-            className="min-h-0 max-h-[calc(50%-var(--studio-header-height,52px))] shrink-0 overflow-y-auto overscroll-contain"
-            aria-label="Pull request filters"
-          >
-            <div className="flex shrink-0 items-center border-b">
-              <div
-                className="flex min-w-0 flex-1 gap-1 overflow-x-auto px-3 [scrollbar-width:none]"
-                aria-label="Personal pull request filters"
-              >
-                {(
-                  [
-                    { id: 'all', label: 'All PRs', count: filteredPulls.length },
-                    {
-                      id: 'authored',
-                      label: 'Authored by me',
-                      count: filteredPulls.filter((pull) => pull.viewerIsAuthor).length,
-                    },
-                    {
-                      id: 'review',
-                      label: 'Review requests',
-                      count: filteredPulls.filter((pull) => pull.viewerReviewRequested).length,
-                    },
-                    {
-                      id: 'assigned',
-                      label: 'Assigned to me',
-                      count: filteredPulls.filter((pull) => pull.viewerIsAssigned).length,
-                    },
-                    {
-                      id: 'involved',
-                      label: 'Involves me',
-                      count: filteredPulls.filter((pull) => pull.viewerIsInvolved).length,
-                    },
-                  ] as const
-                ).map((item) => (
-                  <Button
-                    key={item.id}
-                    size="sm"
-                    variant="ghost"
-                    aria-label={item.label}
-                    aria-pressed={personal === item.id}
-                    title={`${item.count} in loaded, filtered results`}
-                    className={`h-10 shrink-0 rounded-none border-b-2 px-2.5 text-xs hover:bg-transparent ${personal === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'}`}
-                    onClick={() => {
-                      setPersonal(item.id)
-                      setMarked([])
-                    }}
-                  >
-                    {item.label}
-                    <span
-                      aria-hidden
-                      className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
-                    >
-                      {item.count}
-                    </span>
-                  </Button>
-                ))}
-              </div>
-              <Button
-                className="mx-2 shrink-0"
-                size="sm"
-                variant={activeFilters ? 'secondary' : 'outline'}
-                aria-label="Filters"
-                aria-expanded={filtersOpen}
-                aria-controls="pr-list-filters"
-                onClick={() => setFiltersOpen((value) => !value)}
-              >
-                <SlidersHorizontal className="size-3.5" />
-                Filters
-                {!!activeFilters && <span className="tabular-nums">{activeFilters}</span>}
-              </Button>
-            </div>
-            <div id="pr-list-filters" hidden={!filtersOpen}>
-              <div className="flex shrink-0 flex-wrap items-center gap-2 border-b p-3">
-                <div className="relative min-w-40 flex-1 basis-full @xl/pr-list:basis-40">
-                  <Search
-                    aria-hidden
-                    className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
-                  />
-                  <Input
-                    aria-label="Search pull requests"
-                    className="h-8 pl-8 text-xs"
-                    placeholder="Search PRs, branches, people…"
-                    value={search}
-                    onChange={(event) => {
-                      setMarked([])
-                      setSearch(event.target.value)
-                    }}
-                  />
-                </div>
-                <ChoicePicker
-                  aria-label="PR repository"
-                  className={selectStyle}
-                  value={repositoryId}
-                  onValueChange={(selection) => {
-                    setMarked([])
-                    void (chooseReader?.(selection) ?? Promise.resolve())
-                      .then(() => {
-                        setRepository(selection)
-                        setSelected(null)
-                      })
-                      .catch((cause: unknown) =>
-                        setOpenError(cause instanceof Error ? cause.message : String(cause)),
-                      )
-                  }}
+          <div className="shrink-0 border-b px-3 py-2">
+            <SearchField
+              inputRef={searchInput}
+              aria-label="Search pull requests"
+              clearLabel="Clear PR search"
+              placeholder="Search PRs, branches, people…"
+              value={search}
+              onValueChange={(value) => {
+                setMarked([])
+                setSearch(value)
+              }}
+            />
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div
+              className="min-h-10 max-h-[max(2.5rem,calc(100%-8rem))] shrink-0 overflow-y-auto overscroll-contain"
+              aria-label="Pull request filters"
+            >
+              <div className="flex shrink-0 items-center border-b">
+                <div
+                  className="flex min-w-0 flex-1 gap-1 overflow-x-auto px-3 [scrollbar-width:none]"
+                  aria-label="Personal pull request filters"
                 >
-                  <option value="">All repositories</option>
-                  {sources.map((source) => (
-                    <option key={source.key} value={source.key}>
-                      {source.repository.name} · {source.runtimeName}
-                    </option>
-                  ))}
-                </ChoicePicker>
-                <ChoicePicker
-                  aria-label="PR state"
-                  className={selectStyle}
-                  value={state}
-                  onValueChange={(selection) => {
-                    setMarked([])
-                    setState(selection)
-                    setSelected(null)
-                  }}
-                >
-                  {['open', 'closed', 'merged', 'all'].map((value) => (
-                    <option key={value} value={value}>
-                      {value === 'all'
-                        ? 'All states'
-                        : value.charAt(0).toUpperCase() + value.slice(1)}
-                    </option>
-                  ))}
-                </ChoicePicker>
-                <ChoicePicker
-                  aria-label="PR sort"
-                  className={selectStyle}
-                  value={sort}
-                  onValueChange={setSort}
-                >
-                  <option value="attention">Attention first</option>
-                  <option value="updated">Recently updated</option>
-                </ChoicePicker>
-              </div>
-              <div className="shrink-0 space-y-3 border-b p-3">
-                {!!pulls.length && (
-                  <div
-                    className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
-                    aria-label="Visible pull request summary"
-                  >
-                    <span>
-                      <strong className="font-medium text-foreground">
-                        {pulls.filter(pullNeedsAttention).length}
-                      </strong>{' '}
-                      need attention
-                    </span>
-                    <span>
-                      <strong className="font-medium text-foreground">
-                        {pulls.filter((pull) => pull.state === 'open' && pull.draft).length}
-                      </strong>{' '}
-                      drafts
-                    </span>
-                    <span>
-                      <strong className="font-medium text-foreground">
-                        {
-                          pulls.filter(
-                            (pull) => pull.state === 'open' && pull.viewerReviewRequested,
-                          ).length
-                        }
-                      </strong>{' '}
-                      awaiting your review
-                    </span>
-                    <span>In loaded, filtered results</span>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <ChoicePicker
-                    aria-label="PR draft status"
-                    className={selectStyle}
-                    value={draft}
-                    onValueChange={(selection) => {
-                      setMarked([])
-                      setDraft(selection)
-                    }}
-                  >
-                    <option value="all">Draft + ready</option>
-                    <option value="draft">Drafts</option>
-                    <option value="ready">Ready</option>
-                  </ChoicePicker>
-                  <Button
-                    size="sm"
-                    variant={attention ? 'secondary' : 'ghost'}
-                    aria-pressed={attention}
-                    title="Your review requests, blocked PRs, and your approved PRs with passing checks"
-                    onClick={() => {
-                      setMarked([])
-                      setAttention((value) => !value)
-                    }}
-                  >
-                    Needs attention
-                  </Button>
-                  {!!activeFilters && (
+                  {(
+                    [
+                      { id: 'all', label: 'All PRs', count: filteredPulls.length },
+                      {
+                        id: 'authored',
+                        label: 'Authored by me',
+                        count: filteredPulls.filter((pull) => pull.viewerIsAuthor).length,
+                      },
+                      {
+                        id: 'review',
+                        label: 'Review requests',
+                        count: filteredPulls.filter((pull) => pull.viewerReviewRequested).length,
+                      },
+                      {
+                        id: 'assigned',
+                        label: 'Assigned to me',
+                        count: filteredPulls.filter((pull) => pull.viewerIsAssigned).length,
+                      },
+                      {
+                        id: 'involved',
+                        label: 'Involves me',
+                        count: filteredPulls.filter((pull) => pull.viewerIsInvolved).length,
+                      },
+                    ] as const
+                  ).map((item) => (
                     <Button
+                      key={item.id}
                       size="sm"
                       variant="ghost"
+                      aria-label={item.label}
+                      aria-pressed={personal === item.id}
+                      title={`${item.count} in loaded, filtered results`}
+                      className={`h-10 shrink-0 rounded-none border-b-2 px-2.5 text-xs hover:bg-transparent ${personal === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'}`}
                       onClick={() => {
+                        setPersonal(item.id)
                         setMarked([])
-                        setSearch('')
-                        setRepository('')
-                        setState('open')
-                        setSort('updated')
-                        setDraft('all')
-                        setAttention(false)
                       }}
                     >
-                      Clear filters
+                      {item.label}
+                      <span
+                        aria-hidden
+                        className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
+                      >
+                        {item.count}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+                <Button
+                  className="mx-2 shrink-0"
+                  size="sm"
+                  variant={activeFilters ? 'secondary' : 'outline'}
+                  aria-label="Filters"
+                  aria-expanded={filtersOpen}
+                  aria-controls="pr-list-filters"
+                  onClick={() => setFiltersOpen((value) => !value)}
+                >
+                  <SlidersHorizontal className="size-3.5" />
+                  Filters
+                  {!!activeFilters && <span className="tabular-nums">{activeFilters}</span>}
+                </Button>
+              </div>
+              <div id="pr-list-filters" hidden={!filtersOpen}>
+                <div className="flex shrink-0 flex-wrap items-center gap-2 border-b p-3">
+                  <ChoicePicker
+                    aria-label="PR repository"
+                    className={selectStyle}
+                    value={repositoryId}
+                    onValueChange={(selection) => {
+                      setMarked([])
+                      void (chooseReader?.(selection) ?? Promise.resolve())
+                        .then(() => {
+                          setRepository(selection)
+                          setSelected(null)
+                        })
+                        .catch((cause: unknown) =>
+                          setOpenError(cause instanceof Error ? cause.message : String(cause)),
+                        )
+                    }}
+                  >
+                    <option value="">All repositories</option>
+                    {sources.map((source) => (
+                      <option key={source.key} value={source.key}>
+                        {source.repository.name} · {source.runtimeName}
+                      </option>
+                    ))}
+                  </ChoicePicker>
+                  <ChoicePicker
+                    aria-label="PR state"
+                    className={selectStyle}
+                    value={state}
+                    onValueChange={(selection) => {
+                      setMarked([])
+                      setState(selection)
+                      setSelected(null)
+                    }}
+                  >
+                    {['open', 'closed', 'merged', 'all'].map((value) => (
+                      <option key={value} value={value}>
+                        {value === 'all'
+                          ? 'All states'
+                          : value.charAt(0).toUpperCase() + value.slice(1)}
+                      </option>
+                    ))}
+                  </ChoicePicker>
+                  <ChoicePicker
+                    aria-label="PR sort"
+                    className={selectStyle}
+                    value={sort}
+                    onValueChange={setSort}
+                  >
+                    <option value="attention">Attention first</option>
+                    <option value="updated">Recently updated</option>
+                  </ChoicePicker>
+                </div>
+                <div className="shrink-0 space-y-3 border-b p-3">
+                  {!!pulls.length && (
+                    <div
+                      className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
+                      aria-label="Visible pull request summary"
+                    >
+                      <span>
+                        <strong className="font-medium text-foreground">
+                          {pulls.filter(pullNeedsAttention).length}
+                        </strong>{' '}
+                        need attention
+                      </span>
+                      <span>
+                        <strong className="font-medium text-foreground">
+                          {pulls.filter((pull) => pull.state === 'open' && pull.draft).length}
+                        </strong>{' '}
+                        drafts
+                      </span>
+                      <span>
+                        <strong className="font-medium text-foreground">
+                          {
+                            pulls.filter(
+                              (pull) => pull.state === 'open' && pull.viewerReviewRequested,
+                            ).length
+                          }
+                        </strong>{' '}
+                        awaiting your review
+                      </span>
+                      <span>In loaded, filtered results</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ChoicePicker
+                      aria-label="PR draft status"
+                      className={selectStyle}
+                      value={draft}
+                      onValueChange={(selection) => {
+                        setMarked([])
+                        setDraft(selection)
+                      }}
+                    >
+                      <option value="all">Draft + ready</option>
+                      <option value="draft">Drafts</option>
+                      <option value="ready">Ready</option>
+                    </ChoicePicker>
+                    <Button
+                      size="sm"
+                      variant={attention ? 'secondary' : 'ghost'}
+                      aria-pressed={attention}
+                      title="Your review requests, blocked PRs, and your approved PRs with passing checks"
+                      onClick={() => {
+                        setMarked([])
+                        setAttention((value) => !value)
+                      }}
+                    >
+                      Needs attention
+                    </Button>
+                    {!!activeFilters && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setMarked([])
+                          setSearch('')
+                          setRepository('')
+                          setState('open')
+                          setSort('updated')
+                          setDraft('all')
+                          setAttention(false)
+                        }}
+                      >
+                        Clear filters
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div
+              aria-label="Pull request rows"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+            >
+              {filtersOpen && personal !== 'all' && (
+                <p className="mb-3 px-2 text-xs text-muted-foreground">
+                  Personal filters use each computer’s connected forge account. Involves me includes
+                  authorship, assignment and review participation where reported. Bitbucket and
+                  Azure DevOps use reviewers rather than PR assignees.
+                </p>
+              )}
+              {!!unknownRelationships && (
+                <p role="status" className="mb-3 px-2 text-xs text-status-warning">
+                  Personal relationship data is unavailable for {unknownRelationships} loaded PRs.
+                  Choose All PRs to see these results.
+                </p>
+              )}
+              <p role="status" className="mb-3 min-h-4 text-xs text-muted-foreground">
+                {!connected
+                  ? pulls.length
+                    ? 'Offline · showing saved pull requests.'
+                    : 'Connect to the runtime to load pull requests.'
+                  : busy
+                    ? pulls.length
+                      ? 'Updating pull requests…'
+                      : 'Loading pull requests…'
+                    : pages.some((page) => page.stale)
+                      ? 'Showing saved results where fresh data is unavailable.'
+                      : ''}
+              </p>
+              {!busy && connected && !pulls.length && (
+                <p className="text-xs text-muted-foreground">
+                  No matching PRs in loaded results.
+                  {!sources.length ? ' Add a project from the Projects menu in Tasks.' : ''}
+                </p>
+              )}
+              {!hasDetail && !!pulls.length && (
+                <div className="hidden items-center gap-3 border-b py-2 pl-3 pr-12 text-[0.625rem] font-medium text-muted-foreground @4xl/pr-list:flex">
+                  <span className="flex-1">Pull request</span>
+                  <span className="w-44">Checks & review</span>
+                  <span className="w-22 text-right">Updated</span>
+                </div>
+              )}
+              {!!marked.length && (
+                <div className="sticky top-0 z-10 flex items-center justify-between bg-background px-3 py-2 text-xs">
+                  <span>{marked.length} PRs selected</span>
+                  <Button size="sm" variant="ghost" onClick={() => setMarked([])}>
+                    Clear selection
+                  </Button>
+                </div>
+              )}
+              <div
+                className="divide-y divide-border/50"
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setMarked([])
+                }}
+              >
+                {pulls.map((p) => (
+                  <PullRow
+                    key={JSON.stringify([p.source.key, p.number])}
+                    pull={p}
+                    compact={hasDetail}
+                    repository={`${p.repositoryName} · ${p.source.runtimeName}${p.source.connected ? '' : ' · Offline'}`}
+                    selected={
+                      marked.includes(rowKey(p)) ||
+                      (selected?.source.key === p.source.key && selected.number === p.number)
+                    }
+                    onAddToThread={() => addSelection(p)}
+                    selectionCount={marked.includes(rowKey(p)) ? marked.length : 1}
+                    onClick={(event) => selectRow(p, event)}
+                    onSelect={() => open(p.source, p.number)}
+                  />
+                ))}
+              </div>
+              {pages.map((page) => (
+                <div key={page.source.key} className="mt-3">
+                  {page.error && (
+                    <p
+                      role="alert"
+                      className="break-words text-xs text-destructive [overflow-wrap:anywhere]"
+                    >
+                      {page.source.repository.name} · {page.source.runtimeName}: {page.error}
+                    </p>
+                  )}
+                  {(page.hasMore || page.error) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="max-w-full"
+                      disabled={busy || !page.reader.connected}
+                      onClick={() => void more(page.source.key)}
+                    >
+                      <span className="min-w-0 truncate">
+                        {page.error ? 'Retry' : 'Load more'} · {page.source.repository.name} ·{' '}
+                        {page.source.runtimeName}
+                      </span>
                     </Button>
                   )}
                 </div>
-              </div>
-            </div>
-          </div>
-          <div
-            aria-label="Pull request rows"
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
-          >
-            {filtersOpen && personal !== 'all' && (
-              <p className="mb-3 px-2 text-xs text-muted-foreground">
-                Personal filters use each computer’s connected forge account. Involves me includes
-                authorship, assignment and review participation where reported. Bitbucket and Azure
-                DevOps use reviewers rather than PR assignees.
-              </p>
-            )}
-            {!!unknownRelationships && (
-              <p role="status" className="mb-3 px-2 text-xs text-status-warning">
-                Personal relationship data is unavailable for {unknownRelationships} loaded PRs.
-                Choose All PRs to see these results.
-              </p>
-            )}
-            {!connected && (
-              <p className="text-xs text-muted-foreground">
-                {pulls.length
-                  ? 'Offline · showing saved pull requests.'
-                  : 'Connect to the runtime to load pull requests.'}
-              </p>
-            )}
-            {connected && pages.some((page) => page.stale) && (
-              <p role="status" className="mb-3 text-xs text-muted-foreground">
-                Showing saved results where fresh data is unavailable.
-              </p>
-            )}
-            {busy && (
-              <p role="status" className="mb-3 text-xs text-muted-foreground">
-                Loading pull requests…
-              </p>
-            )}
-            {!busy && connected && !pulls.length && (
-              <p className="text-xs text-muted-foreground">
-                No matching PRs in loaded results.
-                {!sources.length ? ' Add a project from the Projects menu in Tasks.' : ''}
-              </p>
-            )}
-            {!hasDetail && !!pulls.length && (
-              <div className="hidden items-center gap-3 border-b py-2 pl-10 pr-12 text-[0.625rem] font-medium text-muted-foreground @4xl/pr-list:flex">
-                <span className="flex-1">Pull request</span>
-                {pulls.some(
-                  (pull) =>
-                    pull.checksState !== undefined ||
-                    pull.reviewDecision !== undefined ||
-                    !!pull.statusError,
-                ) && <span className="w-44">Checks & review</span>}
-                <span className="w-22 text-right">Updated</span>
-              </div>
-            )}
-            {!!marked.length && (
-              <div className="sticky top-0 z-10 flex items-center justify-between bg-background px-3 py-2 text-xs">
-                <span>{marked.length} PRs selected</span>
-                <Button size="sm" variant="ghost" onClick={() => setMarked([])}>
-                  Clear selection
-                </Button>
-              </div>
-            )}
-            <div
-              className="divide-y divide-border/50"
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') setMarked([])
-              }}
-            >
-              {pulls.map((p) => (
-                <PullRow
-                  key={JSON.stringify([p.source.key, p.number])}
-                  pull={p}
-                  compact={hasDetail}
-                  repository={`${p.repositoryName} · ${p.source.runtimeName}${p.source.connected ? '' : ' · Offline'}`}
-                  selected={
-                    marked.includes(rowKey(p)) ||
-                    (selected?.source.key === p.source.key && selected.number === p.number)
-                  }
-                  onAddToThread={() => addSelection(p)}
-                  selectionCount={marked.includes(rowKey(p)) ? marked.length : 1}
-                  onClick={(event) => selectRow(p, event)}
-                  onSelect={() => open(p.source, p.number)}
-                />
               ))}
             </div>
-            {pages.map((page) => (
-              <div key={page.source.key} className="mt-3">
-                {page.error && (
-                  <p
-                    role="alert"
-                    className="break-words text-xs text-destructive [overflow-wrap:anywhere]"
-                  >
-                    {page.source.repository.name} · {page.source.runtimeName}: {page.error}
-                  </p>
-                )}
-                {(page.hasMore || page.error) && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="max-w-full"
-                    disabled={busy || !page.reader.connected}
-                    onClick={() => void more(page.source.key)}
-                  >
-                    <span className="min-w-0 truncate">
-                      {page.error ? 'Retry' : 'Load more'} · {page.source.repository.name} ·{' '}
-                      {page.source.runtimeName}
-                    </span>
-                  </Button>
-                )}
-              </div>
-            ))}
           </div>
         </nav>
         {urlSelection && detailTarget && urlRuntimeId ? (

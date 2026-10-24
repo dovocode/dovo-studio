@@ -112,7 +112,7 @@ try {
     )
   const filterToggle = list.getByRole('button', { name: 'Filters', exact: true })
   assert.equal(await filterToggle.getAttribute('aria-expanded'), 'false')
-  assert.equal(await list.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), false)
+  assert.equal(await list.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), true)
   for (const name of ['PR repository', 'PR state', 'PR sort', 'PR draft status'])
     assert.equal(await list.getByRole('button', { name, exact: true }).isVisible(), false)
   await list.getByRole('button', { name: 'Authored by me', exact: true }).waitFor()
@@ -175,7 +175,7 @@ try {
   assert.equal(await row('Improve pull request reviews').count(), 0)
   await row('Other author').waitFor()
   await filterToggle.click()
-  assert.equal(await search.isVisible(), false)
+  assert.equal(await search.isVisible(), true)
   assert.match(await filterToggle.innerText(), /1/)
   assert.equal(await row('Improve pull request reviews').count(), 0)
   await filterToggle.click()
@@ -300,7 +300,7 @@ try {
   await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
   await fullWidthList()
   await noOverflow()
-  assert.equal(await list.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), false)
+  assert.equal(await list.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), true)
   await page.screenshot({ path: '/tmp/dovo-pull-list-narrow.png' })
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.evaluate(() => {
@@ -358,7 +358,7 @@ try {
   )
   assert.equal(await page.evaluate(() => document.scrollingElement.scrollTop), 0)
   assert.equal(await page.evaluate(() => document.querySelector('.studio').scrollTop), 0)
-  assert.equal(await page.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), false)
+  assert.equal(await page.getByRole('textbox', { name: 'Search pull requests' }).isVisible(), true)
   const overflow = await scroll.evaluate((element) => ({
     width: element.scrollWidth,
     visible: element.clientWidth,

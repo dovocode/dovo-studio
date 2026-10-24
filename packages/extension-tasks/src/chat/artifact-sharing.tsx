@@ -54,6 +54,12 @@ function ArtifactSharingContent({
   const existing = account.publications?.find(
     (item) => item.sourceId === artifact.id && item.revision === artifact.revision,
   )
+  const otherVersion =
+    account.directory && origin === account.publicationOrigin
+      ? account.publications
+          ?.filter((item) => item.sourceId === artifact.id && item.revision !== artifact.revision)
+          .sort((a, b) => b.revision - a.revision)[0]
+      : undefined
   const published =
     account.directory && existing && origin && origin === account.publicationOrigin
       ? {
@@ -108,6 +114,26 @@ function ArtifactSharingContent({
         Only you can open it initially. Invite accounts or explicitly create expiring shareable
         links in sharing settings.
       </p>
+      {!published && otherVersion && (
+        <div className="space-y-2 rounded-md border p-3">
+          <p>
+            Version {otherVersion.revision} is already shared. Publishing version{' '}
+            {artifact.revision} creates a separate link. Existing links and invitations stay with
+            the shared version.
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void account.client
+                .artifactManagementUrl(otherVersion.id, origin)
+                .then(open)
+                .catch((cause: unknown) => setError(String(cause)))
+            }}
+          >
+            Manage shared v{otherVersion.revision}
+          </Button>
+        </div>
+      )}
       {!account.loaded ? (
         <p>Loading account…</p>
       ) : !account.directory ? (

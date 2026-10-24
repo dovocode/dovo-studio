@@ -1,3 +1,6 @@
+import { EmptyState } from '../ui/content/empty-state'
+import { useTaskPanes } from '../shell/task-panes'
+import { contentColumn } from '../ui/layout/content-column'
 import {
   orderThreadSections,
   threadDescendants,
@@ -62,6 +65,7 @@ type TaskListItem =
 const sortOptions = taskSortOptions.filter((option) => option.id !== 'status')
 export default function TasksScreen({ archived = false }: { archived?: boolean }) {
   const { colors, styles } = useTheme()
+  const panes = useTaskPanes()
 
   const { navigate, focused } = useNavigation(),
     { refreshAll, overviews, profiles, activeId, selectRuntimeEffect, readRuntime, ready } =
@@ -543,6 +547,16 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                       },
                     ]
                   : []),
+                ...(panes.expanded
+                  ? [
+                      {
+                        label: 'New thread',
+                        icon: 'add' as const,
+                        disabled: !overviews.some((entry) => entry.connected),
+                        onPress: () => router.push('/new', { withAnchor: true }),
+                      },
+                    ]
+                  : []),
                 {
                   label: 'Quick task',
                   icon: 'jobs',
@@ -557,6 +571,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         <View
           testID="Task selection toolbar"
           style={{
+            ...contentColumn.collection,
             flexDirection: 'row',
             alignItems: 'center',
             paddingHorizontal: 16,
@@ -667,7 +682,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               <Action
                 secondary
                 label="Organize sections"
-                icon="settings"
                 onPress={() => filterSheet.current?.dismiss(() => setOrganizing(true))}
               />
             </>
@@ -710,6 +724,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         }
         contentContainerStyle={[
           styles.content,
+          contentColumn.collection,
           {
             gap: 0,
             paddingTop: 0,
@@ -826,72 +841,72 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 showDevice={profiles.length > 1}
                 selectionActive={selecting}
                 selected={selected.has(item.entry.key)}
+                current={
+                  !selecting &&
+                  panes.expanded &&
+                  panes.selected?.runtimeId === item.entry.runtimeId &&
+                  panes.selected.taskId === item.entry.task.id
+                }
               />
             </View>
           )
         }
         ListEmptyComponent={
           archived ? (
-            <View style={styles.empty}>
-              <Icon name="archive" size={32} color={colors.muted} />
-              <Text style={styles.title}>
-                {search ? 'No matching archived tasks' : 'No archived tasks'}
-              </Text>
-              <Text style={[styles.muted, { textAlign: 'center' }]}>
-                {search
+            <EmptyState
+              icon="archive"
+              title={search ? 'No matching archived threads' : 'No archived threads'}
+              description={
+                search
                   ? 'Try a different search.'
-                  : 'Archived threads appear here. Restore them from the three-dot menu.'}
-              </Text>
-              {!!search && (
-                <Action
-                  secondary
-                  label="Clear search"
-                  icon="close"
-                  onPress={() => setView((current) => ({ ...current, search: '' }))}
-                />
-              )}
-            </View>
+                  : 'Archived threads appear here. Restore them from the three-dot menu.'
+              }
+              action={
+                !!search && (
+                  <Action
+                    secondary
+                    label="Clear search"
+                    onPress={() => setView((current) => ({ ...current, search: '' }))}
+                  />
+                )
+              }
+            />
           ) : (
-            <View style={styles.empty}>
-              <Icon name="tasks" size={32} color={colors.accent} />
-              <Text style={styles.title}>
-                {search
-                  ? 'No matches'
+            <EmptyState
+              icon="tasks"
+              title={
+                filtersActive
+                  ? 'No matching threads'
                   : entries.some((entry) => !entry.snapshot)
                     ? 'Waiting for your computers'
-                    : search || project || source !== 'all'
-                      ? 'Nothing in this view'
-                      : 'Ready for your next idea'}
-              </Text>
-              <Text style={[styles.muted, { textAlign: 'center' }]}>
-                {entries.some((entry) => !entry.snapshot)
-                  ? 'Tasks will appear when your computer connects.'
-                  : search || project || source !== 'all'
-                    ? 'Try a different search or clear your filters.'
-                    : 'Start with a question, a fix, or something you want to build.'}
-              </Text>
-              {search || project || source !== 'all' ? (
-                <Action
-                  label="Clear filters"
-                  secondary
-                  onPress={() =>
-                    setView((current) => ({
-                      ...current,
-                      search: '',
-                      project: '',
-                      filter: 'active',
-                      source: 'all',
-                    }))
-                  }
-                />
-              ) : (
-                <Action
-                  label="New task"
-                  disabled={busy || !overviews.some((entry) => entry.connected)}
-                  onPress={() => router.push('/new', { withAnchor: true })}
-                />
-              )}
-            </View>
+                    : 'Ready for your next idea'
+              }
+              description={
+                filtersActive
+                  ? 'Try a different search or clear your filters.'
+                  : entries.some((entry) => !entry.snapshot)
+                    ? 'Threads will appear when your computer connects.'
+                    : 'Start with a question, a fix, or something you want to build.'
+              }
+              action={
+                filtersActive ? (
+                  <Action
+                    label="Clear filters"
+                    secondary
+                    onPress={() => {
+                      scrollOffset.current = 0
+                      setView((current) => ({ ...current, search: '', project: '', source: 'all' }))
+                    }}
+                  />
+                ) : (
+                  <Action
+                    label="New thread"
+                    disabled={busy || !overviews.some((entry) => entry.connected)}
+                    onPress={() => router.push('/new', { withAnchor: true })}
+                  />
+                )
+              }
+            />
           )
         }
       />

@@ -597,14 +597,18 @@ function ConnectionForm({
           disabled={busy || !connected}
         />
       )}
-      {!!error && (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {error}
-        </Text>
-      )}
+      <Text
+        accessibilityRole={error ? 'alert' : undefined}
+        accessibilityLiveRegion="polite"
+        accessibilityElementsHidden={!error && !busy}
+        importantForAccessibility={error || busy ? 'auto' : 'no-hide-descendants'}
+        style={[error ? styles.error : styles.muted, { opacity: error || busy ? 1 : 0 }]}
+      >
+        {error || 'Saving account…'}
+      </Text>
       <Action
         wide
-        label={busy ? 'Saving…' : 'Save account'}
+        label="Save account"
         disabled={busy || !connected}
         onPress={() => void submit()}
       />

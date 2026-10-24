@@ -73,7 +73,7 @@ export function automationHref(runtimeId: string, automationId: string) {
   }
 }
 
-export function backToCollection(path: '/issues' | '/pulls' | '/settings/automations') {
+export function backToCollection(path: '/' | '/issues' | '/pulls' | '/settings/automations') {
   Keyboard.dismiss()
   if (router.canGoBack()) router.back()
   else router.replace(path)

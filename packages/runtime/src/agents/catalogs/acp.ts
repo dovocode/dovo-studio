@@ -1,7 +1,7 @@
 import { legacyAcpModels } from '../providers/acp/acp-models.js'
 import { homedir } from 'node:os'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
-import { methods, type SessionConfigOption } from '@agentclientprotocol/sdk'
+import { methods, type SessionConfigOption } from '@agentclientprotocol/sdk/unstable'
 import type { AcpLaunch } from '../execution/types.js'
 import {
   acpControl,

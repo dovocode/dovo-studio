@@ -1,20 +1,40 @@
 import { useEffect, useRef, useState } from 'react'
-import { artifactSnapshotSchema, type ArtifactMetadata, type RuntimeProfile } from '@dovo/protocol'
+import {
+  artifactOwnerKey,
+  artifactSnapshotSchema,
+  type ArtifactMetadata,
+  type RuntimeProfile,
+} from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 import { ArtifactThumbnail } from './artifact-presentation'
 
 export function ArtifactSnapshot({
   profile,
   artifact,
+  connected,
+  refreshKey,
 }: {
   profile: RuntimeProfile
   artifact: ArtifactMetadata
+  connected: boolean
+  refreshKey: number
 }) {
   const { readRuntime } = useWorkspace()
   const ref = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
-  const [preview, setPreview] = useState<typeof artifactSnapshotSchema.Type>()
-  const [error, setError] = useState('')
+  const identity = JSON.stringify([
+    artifactOwnerKey(profile),
+    artifact.taskId,
+    artifact.id,
+    artifact.revision,
+  ])
+  const [snapshot, setSnapshot] = useState<{
+    identity: string
+    preview?: typeof artifactSnapshotSchema.Type
+    error?: string
+  }>()
+  const current = snapshot?.identity === identity ? snapshot : undefined
+  const preview = current?.preview
   useEffect(() => {
     const element = ref.current
     if (!element) return
@@ -31,10 +51,12 @@ export function ArtifactSnapshot({
     return () => observer.disconnect()
   }, [])
   useEffect(() => {
-    if (!visible) return
+    if (!visible || !connected) return
     let stopped = false
-    setPreview(undefined)
-    setError('')
+    // Keep the same revision visible during refresh; another owner/revision never reuses it.
+    setSnapshot((previous) =>
+      previous?.identity === identity ? { ...previous, error: undefined } : undefined,
+    )
     void readRuntime(
       profile,
       '/api/artifacts/snapshot',
@@ -42,15 +64,30 @@ export function ArtifactSnapshot({
       artifactSnapshotSchema,
     )
       .then((result) => {
-        if (!stopped) setPreview(result)
+        if (!stopped) setSnapshot({ identity, preview: result })
       })
       .catch((cause: unknown) => {
-        if (!stopped) setError(String(cause))
+        if (!stopped)
+          setSnapshot((previous) => ({
+            identity,
+            preview: previous?.identity === identity ? previous.preview : undefined,
+            error: String(cause),
+          }))
       })
     return () => {
       stopped = true
     }
-  }, [visible, readRuntime, profile, artifact.id, artifact.taskId, artifact.revision])
+  }, [
+    visible,
+    connected,
+    refreshKey,
+    identity,
+    readRuntime,
+    profile,
+    artifact.id,
+    artifact.taskId,
+    artifact.revision,
+  ])
   return (
     <div ref={ref} className="relative h-36 overflow-hidden border-b" aria-hidden="true">
       {preview?.image ? (
@@ -62,12 +99,12 @@ export function ArtifactSnapshot({
       ) : (
         <ArtifactThumbnail format={artifact.format} />
       )}
-      {error && (
+      {(!connected || current?.error) && (
         <span
-          title={error}
+          title={connected ? current?.error : undefined}
           className="absolute bottom-1 right-2 rounded bg-background/90 px-2 text-[10px] text-muted-foreground"
         >
-          Snapshot unavailable
+          {!connected ? 'Computer offline' : 'Snapshot unavailable'}
         </span>
       )}
     </div>

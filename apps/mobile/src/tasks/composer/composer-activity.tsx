@@ -32,6 +32,9 @@ export function ComposerActivity({ task }: { task: Task }) {
   }, [task.id, snapshot?.questions, snapshot?.approvals])
   const summary = nativeTodoSummary(task)
   const queue = pendingQueue(task, actions.pendingMessages)
+  const pausedCount = task.queuePaused
+    ? queue.length
+    : queue.filter((message) => message.paused).length
   const hasQueue = !!queue.length
   const both = hasQueue && !!summary
   const active = hasQueue ? (summary ? selected : 'queue') : 'checklist'
@@ -57,20 +60,104 @@ export function ComposerActivity({ task }: { task: Task }) {
           style={{ flexDirection: 'row', minWidth: 0, flexShrink: 1 }}
         >
           {[
-            ...(hasQueue ? [{ value: 'queue', label: `Queue · ${queue.length}` }] : []),
+            ...(hasQueue
+              ? [
+                  {
+                    value: 'queue',
+                    title: 'Queue',
+                    count: String(queue.length),
+                    notice: pausedCount > 0,
+                    label: `Queue · ${queue.length}${pausedCount ? (pausedCount === queue.length ? ' · Paused' : ` · ${pausedCount} paused`) : ''}`,
+                  },
+                ]
+              : []),
             ...(summary
               ? [
                   {
                     value: 'checklist',
+                    title: 'Checklist',
+                    count: `${summary.completed}/${summary.total}`,
+                    notice: summary.unfinished,
                     label: `Checklist · ${summary.completed}/${summary.total}${summary.unfinished ? ' · Unfinished' : ''}`,
                   },
                 ]
               : []),
-          ].map(({ value, label }) =>
-            both ? (
+          ].map(({ value, label, title, count, notice }) => {
+            const content = (
+              <>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.muted,
+                    {
+                      fontSize: 12,
+                      flexShrink: 1,
+                      color: active === value ? colors.text : colors.muted,
+                    },
+                  ]}
+                >
+                  {title}
+                </Text>
+                <View
+                  style={{
+                    flexShrink: 0,
+                    borderRadius: 6,
+                    paddingHorizontal: 5,
+                    paddingVertical: 2,
+                    backgroundColor: colors.selection,
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.muted,
+                      {
+                        fontSize: 10,
+                        fontWeight: '600',
+                        fontVariant: ['tabular-nums'],
+                        color: colors.text,
+                      },
+                    ]}
+                  >
+                    {count}
+                  </Text>
+                </View>
+                <View
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                  style={{
+                    width: 12,
+                    height: 12,
+                    flexShrink: 0,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {notice &&
+                    (value === 'queue' ? (
+                      <View style={{ flexDirection: 'row', gap: 2, flexShrink: 0 }}>
+                        {[0, 1].map((bar) => (
+                          <View
+                            key={bar}
+                            style={{
+                              width: 2,
+                              height: 10,
+                              borderRadius: 1,
+                              backgroundColor: colors.warning,
+                            }}
+                          />
+                        ))}
+                      </View>
+                    ) : (
+                      <Icon name="error" size={12} color={colors.warning} />
+                    ))}
+                </View>
+              </>
+            )
+            return both ? (
               <Pressable
                 key={value}
                 accessibilityRole="tab"
+                accessibilityLabel={label}
                 accessibilityState={{ selected: active === value }}
                 onPress={() => {
                   setSelected(value)
@@ -80,35 +167,39 @@ export function ComposerActivity({ task }: { task: Task }) {
                   minHeight: 44,
                   flexShrink: 1,
                   justifyContent: 'center',
-                  paddingHorizontal: 10,
-                  borderBottomWidth: active === value ? 2 : 0,
-                  borderBottomColor: colors.accent,
+                  paddingHorizontal: 8,
+                  minWidth: 0,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 5,
+                  borderBottomWidth: 2,
+                  borderBottomColor: active === value ? colors.accent : 'transparent',
                 }}
               >
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.muted,
-                    {
-                      color: active === value ? colors.text : colors.muted,
-                      fontSize: 12,
-                      flexShrink: 1,
-                    },
-                  ]}
-                >
-                  {label}
-                </Text>
+                {content}
               </Pressable>
             ) : (
-              <Text
+              <View
                 key={value}
-                numberOfLines={1}
-                style={[styles.muted, { padding: 10, fontSize: 12, flexShrink: 1 }]}
+                accessible
+                accessibilityRole="text"
+                accessibilityLabel={label}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 5,
+                  minWidth: 0,
+                  flexShrink: 1,
+                  minHeight: 44,
+                  paddingHorizontal: 8,
+                  borderBottomWidth: 2,
+                  borderBottomColor: 'transparent',
+                }}
               >
-                {label}
-              </Text>
-            ),
-          )}
+                {content}
+              </View>
+            )
+          })}
         </View>
         <Pressable
           accessibilityRole="button"
@@ -127,6 +218,28 @@ export function ComposerActivity({ task }: { task: Task }) {
           <Icon name={collapsed ? 'next' : 'down'} size={20} color={colors.text} />
         </Pressable>
       </View>
+      {collapsed && summary && (
+        <View
+          accessibilityRole="progressbar"
+          accessibilityLabel="Checklist completion"
+          accessibilityValue={{ min: 0, max: summary.total, now: summary.completed }}
+          style={{
+            marginHorizontal: 10,
+            height: 4,
+            borderRadius: 2,
+            backgroundColor: colors.selection,
+            overflow: 'hidden',
+          }}
+        >
+          <View
+            style={{
+              height: 4,
+              width: `${(summary.completed / summary.total) * 100}%`,
+              backgroundColor: colors.success,
+            }}
+          />
+        </View>
+      )}
       {hasQueue && (
         <View style={{ display: !collapsed && active === 'queue' ? 'flex' : 'none' }}>
           <MessageQueue task={task} embedded />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { EditChatImage } from '../composer/chat-image-edit-context'
 import { useWorkspace } from '@dovo/studio-core'
 import {
   taskImageReadSchema,
@@ -80,10 +81,31 @@ function ResultImage({
       ) : (
         content
       )}
+      {image && (
+        <EditChatImage
+          source={
+            reference
+              ? { taskId, eventId: reference.eventId, index: reference.index }
+              : { uri: image }
+          }
+          label={label}
+        />
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-5xl">
           <DialogTitle>{label}</DialogTitle>
           {content}
+          {image && (
+            <EditChatImage
+              source={
+                reference
+                  ? { taskId, eventId: reference.eventId, index: reference.index }
+                  : { uri: image }
+              }
+              label={label}
+              onEdit={() => setOpen(false)}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

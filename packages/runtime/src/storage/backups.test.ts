@@ -13,7 +13,7 @@ import type { Task } from '@dovo/protocol'
 import * as backup from './backup'
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...actual, statfs: vi.fn(actual.statfs) }
+  return { ...actual, statfs: vi.fn<typeof actual.statfs>(actual.statfs) }
 })
 const paths: string[] = []
 afterEach(async () => {

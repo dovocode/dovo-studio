@@ -84,6 +84,24 @@ export function pipelineSignal(status: string): PipelineSignal {
   }
 }
 
+/** Counts describe loaded runs; equivalent forge statuses share one filter. */
+export function pipelineStatusSummary(statuses: readonly string[], selected = 'all') {
+  const groups = new Map<string, PipelineSignal & { status: string; count: number }>()
+  for (const status of statuses) {
+    const signal = pipelineSignal(status)
+    const group = groups.get(signal.label)
+    if (group) group.count++
+    else groups.set(signal.label, { ...signal, status, count: 1 })
+  }
+  // Keep a selected filter available when a refresh or search removes its last run.
+  if (selected !== 'all') {
+    const signal = pipelineSignal(selected)
+    if (!groups.has(signal.label))
+      groups.set(signal.label, { ...signal, status: selected, count: 0 })
+  }
+  return [...groups.values()]
+}
+
 // Provider capabilities and workflow-definition availability are checked by the caller.
 export function pipelineActionAllowed(
   action: 'rerun' | 'cancel' | 'enable' | 'disable',

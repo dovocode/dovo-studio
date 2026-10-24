@@ -28,7 +28,7 @@ export function QuestionField({
         <Pressable
           key={option.value}
           accessibilityRole={q.multiple ? 'checkbox' : 'radio'}
-          accessibilityLabel={option.label}
+          accessibilityLabel={[option.label, option.description].filter(Boolean).join('. ')}
           aria-checked={draft.selected.includes(option.value)}
           accessibilityState={{ checked: draft.selected.includes(option.value), disabled }}
           disabled={disabled}

@@ -107,7 +107,7 @@ window.connectThird=()=>window.runtime.connect({address:'http://third.lan:8787',
     {
       path: './mutation-storage',
       importer,
-      contents: `export {browserMutationStorage as mobileMutationStorage} from '${root}packages/studio-core/src/workspace/read-cache.ts';`,
+      contents: `import {browserMutationStorage} from '${root}packages/studio-core/src/workspace/read-cache.ts';window.outboxStorage=browserMutationStorage;export const mobileMutationStorage=browserMutationStorage;`,
     },
     {
       path: '../preferences/app-preferences',
@@ -480,6 +480,85 @@ try {
     await page.evaluate(() => window.runtime.profile.connection.internet.token),
     'account-internet-token-private',
   )
+  // Automatic access recovery verifies its new route before committing, and never selects
+  // another computer or replaces the independently paired LAN credential.
+  const recovered = await page.evaluate(async () => {
+    window.accountBeforeRecovery = window.runtime.profile
+    await window.runtime.selectRuntime(window.runtime.profiles.find((p) => p.name === 'one').id)
+    const selected = window.runtime.activeId
+    const peer = { origin: 'https://connect.example', secret: 'f'.repeat(64), relay: 'dovo' }
+    const incoming = {
+      address: window.accountPeerAddress(peer),
+      peer,
+      runtimeId: 'account-computer',
+      token: 'renewed-account-internet-device-token',
+      accountSession: 'signed-in-phone',
+    }
+    window.accountIncoming = incoming
+    await window.runtime.recoverAccountConnection(
+      window.accountBeforeRecovery,
+      incoming,
+      new AbortController().signal,
+    )
+    return { selected, saved: JSON.parse(window.saved) }
+  })
+  assert.equal(recovered.saved.activeId, recovered.selected)
+  const savedAccount = recovered.saved.profiles.find(
+    (p) => p.connection.runtimeId === 'account-computer',
+  )
+  assert.equal(savedAccount.connection.token, 'explicit-lan-pairing-token-private')
+  assert.equal(savedAccount.connection.internet.token, 'renewed-account-internet-device-token')
+  assert.equal(savedAccount.id, await page.evaluate(() => window.accountProfileId))
+  const rejectedRecovery = await page.evaluate(async () => {
+    const previous = window.runtime.profiles.find((p) => p.id === window.accountProfileId)
+    const peer = { ...window.accountIncoming.peer, secret: '1'.repeat(64) }
+    window.servers['127.0.0.1:44555'].runtimeId = 'wrong-computer'
+    const failure = await window.runtime
+      .recoverAccountConnection(
+        previous,
+        { ...window.accountIncoming, address: window.accountPeerAddress(peer), peer },
+        new AbortController().signal,
+      )
+      .then(
+        () => '',
+        (e) => e.message,
+      )
+    window.servers['127.0.0.1:44555'].runtimeId = 'account-computer'
+    return { failure, saved: JSON.parse(window.saved) }
+  })
+  assert.match(rejectedRecovery.failure, /different computer/)
+  assert.deepEqual(rejectedRecovery.saved, recovered.saved)
+  await page.evaluate(() => window.runtime.selectRuntime(window.accountProfileId))
+  const unresolved = await page.evaluate(async () => {
+    const profile = window.runtime.profile
+    await window.outboxStorage.update(profile.connection, () => [
+      {
+        id: 'unresolved',
+        path: '/api/tasks/cancel',
+        method: 'POST',
+        input: { id: 'task' },
+        reviewAfterRenewal: true,
+      },
+    ])
+    const error = await window.runtime.syncAccountSession(null).then(
+      () => '',
+      (error) => error.message,
+    )
+    return {
+      error,
+      saved: JSON.parse(window.saved),
+      status: window.runtime.mutationStatus(profile),
+    }
+  })
+  assert.match(unresolved.error, /saved actions/)
+  assert.ok(
+    unresolved.saved.profiles.find((profile) => profile.id === savedAccount.id)?.connection
+      .internet,
+    'Sign-out must preserve access to unresolved actions',
+  )
+  assert.equal(unresolved.status.pending, 1)
+  assert.match(unresolved.status.error, /saved actions/)
+  await page.evaluate(() => window.runtime.discardMutations(window.runtime.profile))
   await page.evaluate(() => window.runtime.syncAccountSession(null))
   await page.waitForFunction(() => !window.runtime.profile.connection.internet)
   assert.equal(

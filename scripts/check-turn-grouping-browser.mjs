@@ -18,7 +18,7 @@ const initial={id:'thread',title:'Thread',status:'done',messages:[
 {id:'steer',turnId:'attempt',role:'user',text:'Clarification',createdAt:'2026-10-03T10:00:10Z'},
 {id:'after',turnId:'attempt',role:'assistant',text:'Linking works on right-click or long-press.Final answer.',textBreaks:[43,56],createdAt:'2026-10-03T10:00:11Z'}],turns:[turn],files:[],draft:''};
 const events=[{id:'last',time:'2026-10-03T10:00:50Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'last',status:'completed',textOffset:56,event:{item:{type:'commandExecution',command:'git diff'}}})},{id:'command',time:'2026-10-03T10:00:20Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'after',toolId:'command',status:'completed',textOffset:35,event:{item:{type:'commandExecution',command:'git status'}}})},{id:'prior',time:'2026-10-03T10:00:05Z',scope:'thread',kind:'tool',summary:'Command',payload:JSON.stringify({turnId:'attempt',messageId:'before',toolId:'prior',status:'completed',textOffset:13,event:{item:{type:'commandExecution',command:'pnpm test'}}})}];
-window.events=events;export function App(){const[task,setTask]=useState(initial),[active,setActive]=useState(true),[collapsedTurns,setCollapsed]=useState({}),[preferences,setPreferences]=useState({toolActivity:'collapsed',showToolDetails:false,responseStreaming:'tokens'});window.setTask=setTask;window.setActive=setActive;window.setPreferences=setPreferences;window.fixturePreferences=preferences;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,childResultIds:new Set(task.messages.filter(message=>message.subagentResultId).map(message=>message.id)),tools:recentTools(events),preferences,collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??[...presentation.values()].find(value=>value.groupId===id)?.groupTurn?.status==='completed')})),workspace:{tasks:[task]},connection:{address:'http://copy.lan:8787',token:'copy-token'},connected:true,request:async()=>({ok:true}),history:{hasMore:false,busy:false,error:'',setBookmark:()=>{}},legacyEvents:[],activityError:'',followRequest:0,recentReady:true,onRecentLayout:()=>{window.recentLayouts=(window.recentLayouts??0)+1}};return <Context.Provider value={value}>CONTENT</Context.Provider>}
+window.events=events;export function App(){const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[historyBusy,setHistoryBusy]=useState(false);window.setHistoryBusy=setHistoryBusy;const[task,setTask]=useState(initial),[active,setActive]=useState(true),[collapsedTurns,setCollapsed]=useState({}),[preferences,setPreferences]=useState({toolActivity:'collapsed',showToolDetails:false,responseStreaming:'tokens'});window.setTask=setTask;window.setActive=setActive;window.setPreferences=setPreferences;window.fixturePreferences=preferences;const presentation=conversationPresentation(task);const messages=conversationMessages(task,events);const value={task,presentation,messages,events,childResultIds:new Set(task.messages.filter(message=>message.subagentResultId).map(message=>message.id)),tools:recentTools(events),preferences,collapsedTurns,toggleTurn:id=>setCollapsed(old=>({...old,[id]:!(old[id]??[...presentation.values()].find(value=>value.groupId===id)?.groupTurn?.status==='completed')})),workspace:{tasks:[task]},connection:{address:'http://copy.lan:8787',token:'copy-token'},connected,request:async()=>({ok:true}),history:{hasMore:false,busy:historyBusy,error:'',setBookmark:()=>{}},legacyEvents:[],activityError:'',followRequest:0,recentReady:true,onRecentLayout:()=>{window.recentLayouts=(window.recentLayouts??0)+1}};return <Context.Provider value={value}>CONTENT</Context.Provider>}
 `
 const ui = `export {cn} from './src/lib/utils';export {Dialog,DialogContent,DialogTitle} from '../studio-ui/src/components/ui/dialog';
 export {FileTypeIcon} from './src/file-tree';export {RepositoryOpenItems} from './src/repository-open-items';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -45,7 +45,7 @@ async function bundle(mobile) {
     '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
     '../../runtime/state/app-active': `export const useForegroundInterval=()=>{};`,
     '../../runtime/preferences/app-preferences': `import {useFixture} from 'fixture';export const useCarMode=()=>false;export const useMobilePreferences=()=>useFixture().preferences;export const formatTime=()=>'';`,
-    '../../runtime/connection/provider': `export const useRuntime=()=>({connected:true});`,
+    '../../runtime/connection/provider': `import {useFixture} from 'fixture';export const useRuntime=()=>({connected:useFixture().connected});`,
     '../controls/icon': `export const Icon=({name})=><span data-file-icon={name}/>;`,
     '../theme': `export const useTheme=()=>({mode:'dark',colors:{},styles:{}});`,
     './text': `export {Text} from 'react-native';`,
@@ -73,10 +73,10 @@ const Component=components.Message;return <MessageContext.Provider value={messag
 }};`,
     'react-native': `
 import {useEffect} from 'react';
-export const View=({children,style,accessibilityRole,accessibilityLabel})=><div style={style} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel}>{children}</div>,Text=({children,style})=><span style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;export const SectionList=()=>null;
+export const View=({children,style,accessibilityRole,accessibilityLabel})=><div style={style} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel}>{children}</div>,Text=({children,style})=><span style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;export const SectionList=()=>null;export const ScrollView=View;
 export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>:<div onClick={onPress}>{children}</div>;
-export const ActivityIndicator=()=>null;
-export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout})=>{useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[onLayout]);return <div style={{display:'flex',flexDirection:'column-reverse'}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
+export const ActivityIndicator=()=> <span data-loading-history style={{display:"block",width:20,height:20}}/>;
+export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout,contentContainerStyle,onScrollBeginDrag,onScrollEndDrag})=>{window.readEarlier=()=>{onScrollBeginDrag();onScrollEndDrag({nativeEvent:{contentOffset:{y:500},velocity:{y:0}}})};const padding=Object.assign({},...contentContainerStyle);useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[onLayout]);return <div data-conversation-list style={{display:'flex',flexDirection:'column-reverse',paddingTop:padding.paddingTop,paddingBottom:padding.paddingBottom}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
   }
   mocks['../state/provider'] =
     `import {useFixture} from 'fixture';export const useConversationTurn=id=>useFixture().presentation.get(id)?.turn;`
@@ -188,7 +188,38 @@ try {
     await page.addScriptTag({ content: await bundle(mobile) })
     const header = page.getByRole('button', { name: /Worked for/ })
     await header.waitFor()
+    assert.equal(await page.getByText('Response', { exact: true }).count(), 0)
     if (mobile) assert.equal(await page.evaluate(() => window.recentLayouts), 1)
+    if (mobile) {
+      const list = page.locator('[data-conversation-list]')
+      const before = await list.boundingBox()
+      await page.evaluate(() => window.setConnected(false))
+      await page.evaluate(() => new Promise(requestAnimationFrame))
+      assert.deepEqual(
+        await list.boundingBox(),
+        before,
+        'A connection status change does not shift conversation content',
+      )
+      await page.evaluate(() => {
+        window.setConnected(true)
+        window.readEarlier()
+      })
+      await page.evaluate(() => new Promise(requestAnimationFrame))
+      assert.deepEqual(
+        await list.boundingBox(),
+        before,
+        'Reading history does not change the conversation padding',
+      )
+      await page.evaluate(() => window.setHistoryBusy(true))
+      await page.locator('[data-loading-history]').waitFor()
+      assert.deepEqual(
+        await list.boundingBox(),
+        before,
+        'Loading earlier messages reserves its indicator space',
+      )
+      await page.evaluate(() => window.setHistoryBusy(false))
+      await page.locator('[data-loading-history]').waitFor({ state: 'detached' })
+    }
     const fallback = page.getByText('Scope found no matching project; continued in General.', {
       exact: true,
     })

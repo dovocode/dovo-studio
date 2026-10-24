@@ -9,7 +9,7 @@ afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close()
 })
 
-it('keeps related PRs and completed pipelines linked without treating them as active watches', async () => {
+it('keeps related PRs linked and hides completed pipelines from project info', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
@@ -55,7 +55,6 @@ it('keeps related PRs and completed pipelines linked without treating them as ac
   const result = await taskWaiting(s, { taskId: task.id })
   expect(result.dependencies).toEqual([])
   expect(result.related).toEqual([
-    { label: 'Pipeline run 8', project: 'Test', url: pipeline.url },
     { label: 'PR #7', project: 'Test', url },
   ])
 })

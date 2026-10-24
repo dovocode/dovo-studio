@@ -121,6 +121,7 @@ export {
   mergePendingMessages,
   pendingMessageDestination,
   startingConversationMessage,
+  nextQueuedMessage,
   pendingMessageQueue,
   type PendingMessage,
 } from './conversation/workflow/pending-message.js'
@@ -208,6 +209,7 @@ export * from './runtime/memory.js'
 export * from './runtime/previews/device-hosts.js'
 
 export * from './conversation/tool-images.js'
+export * from './conversation/chat-image.js'
 export * from './scm/review.js'
 export * from './scm/review-session.js'
 
@@ -245,7 +247,7 @@ export * from './runtime/connection/workspace-mutations.js'
 export { projectIconChoices } from './generated/project-icon-choices.js'
 export { taskPullLinks, taskPullStatusFor } from './tasks/task-pull-links.js'
 
-export { pipelineGraphColumns } from './scm/work/pipeline-graph.js'
+export { pipelineGraphColumns, pipelineFailureImpact } from './scm/work/pipeline-graph.js'
 
 export * from './scm/forges/source-identity.js'
 
@@ -297,3 +299,7 @@ export {
 export * from './scm/pulls/file-breakdown.js'
 
 export * from './runtime/connection/ssh-address.js'
+
+export * from './conversation/artifact-library.js'
+
+export { connectionProgress } from './runtime/connection/connection-progress.js'

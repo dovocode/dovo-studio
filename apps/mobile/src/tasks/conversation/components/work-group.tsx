@@ -79,7 +79,11 @@ export function ConversationWorkGroup({
       </>
     )
   return (
-    <View>
+    <View
+      style={
+        open ? { borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 10 } : undefined
+      }
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={summary}
@@ -90,9 +94,10 @@ export function ConversationWorkGroup({
         }}
         style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
       >
-        <Icon name="settings" size={14} color={colors.muted} />
-        <Text style={[styles.muted, { flex: 1, fontSize: 13, lineHeight: 18 }]}>{summary}</Text>
-        <Icon name={open ? 'down' : 'next'} size={10} color={colors.muted} />
+        <Icon name={open ? 'down' : 'next'} size={14} color={colors.muted} />
+        <Text numberOfLines={2} style={[styles.muted, { flex: 1, fontSize: 12, lineHeight: 18 }]}>
+          {summary}
+        </Text>
       </Pressable>
       {turn && open && workStatus !== 'running' && (
         <Text style={[styles.muted, { paddingLeft: 22, fontSize: 12, paddingBottom: 4 }]}>

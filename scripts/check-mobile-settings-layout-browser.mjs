@@ -19,13 +19,13 @@ const native = `
     ...(style.marginHorizontal!=null?{marginLeft:style.marginLeft??style.marginHorizontal,marginRight:style.marginRight??style.marginHorizontal}:{}),
     ...(style.marginVertical!=null?{marginTop:style.marginTop??style.marginVertical,marginBottom:style.marginBottom??style.marginVertical}:{})}).filter(([,value])=>value!=null));};
   export const StyleSheet={create:style=>style,flatten:flat,hairlineWidth:1};
-  export const Platform={OS:window.platform};
+  export const Platform={OS:window.platform};export const Keyboard={dismiss(){}};
   const base={display:'flex',flexDirection:'column',alignItems:'stretch',flexShrink:0,minHeight:0,position:'relative',boxSizing:'border-box'};
   export const View=({children,style,testID,accessibilityLabel,onLayout,ref:forwarded})=>{
     const ref=useRef();useImperativeHandle(forwarded,()=>{const node=ref.current;node.measureLayout=(parent,done)=>{const a=node.getBoundingClientRect(),b=parent.getBoundingClientRect();done(a.x-b.x,a.y-b.y)};return node;});useLayoutEffect(()=>{if(!onLayout)return;const observer=new ResizeObserver(()=>{const {width,height}=ref.current.getBoundingClientRect();onLayout({nativeEvent:{layout:{width,height}}})});observer.observe(ref.current);return ()=>observer.disconnect()},[onLayout]);
     return <div ref={ref} data-testid={testID} aria-label={accessibilityLabel} style={{...base,...css(style)}}>{children}</div>;
   };
-  export const ScrollView=({children,style,contentContainerStyle,stickyHeaderIndices,ref:forwarded,onContentSizeChange})=>{const outer=useRef(),inner=useRef();useImperativeHandle(forwarded,()=>({getInnerViewNode:()=>inner.current,scrollTo:({y})=>{outer.current.scrollTop=y}}));useLayoutEffect(()=>{if(!onContentSizeChange)return;const observer=new ResizeObserver(()=>{const {width,height}=inner.current.getBoundingClientRect();onContentSizeChange(width,height)});observer.observe(inner.current);return()=>observer.disconnect()},[onContentSizeChange]);return <div ref={outer} style={{...base,overflowY:'auto',flex:1,...css(style)}}><div ref={inner} style={{...base,...css(contentContainerStyle)}}>{Children.toArray(children).map((child,index)=>stickyHeaderIndices?.includes(index)?<View key={index} style={{position:'sticky',top:0,zIndex:1}}>{child}</View>:child)}</div></div>};
+  export const ScrollView=({children,style,contentContainerStyle,stickyHeaderIndices,ref:forwarded,onContentSizeChange})=>{const outer=useRef(),inner=useRef();useImperativeHandle(forwarded,()=>({getInnerViewNode:()=>inner.current,scrollTo:({y})=>{outer.current.scrollTop=y}}));useLayoutEffect(()=>{if(!onContentSizeChange)return;const observer=new ResizeObserver(()=>{const {width,height}=inner.current.getBoundingClientRect();onContentSizeChange(width,height)});observer.observe(inner.current);return()=>observer.disconnect()},[onContentSizeChange]);return <div ref={outer} style={{...base,overflowY:'auto',flexGrow:1,flexShrink:1,...css(style)}}><div ref={inner} style={{...base,...css(contentContainerStyle)}}>{Children.toArray(children).map((child,index)=>stickyHeaderIndices?.includes(index)?<View key={index} style={{position:'sticky',top:0,zIndex:1}}>{child}</View>:child)}</div></div>};
   export const Pressable=({children,style,onPress,testID,accessibilityLabel,accessibilityRole,accessibilityState,accessibilityValue,disabled})=><button data-testid={testID} aria-label={accessibilityLabel} role={accessibilityRole} aria-pressed={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-value={accessibilityValue?.text} disabled={disabled} onClick={onPress} style={{...base,backgroundColor:'transparent',border:0,margin:0,padding:0,font:'inherit',textAlign:'left',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
   export const Text=({children,style,numberOfLines,testID,accessibilityRole})=>{
     const textStyle=css(style),scale=window.fontScale;
@@ -33,7 +33,7 @@ const native = `
   };
   export const TextInput=({style,multiline,accessibilityLabel,value,onChangeText,editable,ref,placeholder,placeholderTextColor})=>{
     const Component=multiline?'textarea':'input';const inputStyle=css(style);
-    return <Component ref={ref} aria-label={accessibilityLabel} placeholder={placeholder} value={value} disabled={editable===false} onChange={e=>onChangeText?.(e.target.value)} style={{boxSizing:'border-box',background:'transparent',border:0,outline:0,'--placeholder-color':placeholderTextColor,minWidth:0,flexShrink:0,...inputStyle,fontSize:(inputStyle.fontSize||14)*window.fontScale,resize:'none'}}/>;
+    return <Component ref={ref} aria-label={accessibilityLabel} placeholder={placeholder} value={value} disabled={editable===false} onChange={e=>onChangeText?.(e.target.value)} style={{boxSizing:'border-box',background:'transparent',border:0,borderStyle:'solid',outline:0,'--placeholder-color':placeholderTextColor,minWidth:0,flexShrink:0,...inputStyle,fontSize:(inputStyle.fontSize||14)*window.fontScale,resize:'none'}}/>;
   };
   export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><button role="switch" aria-label={accessibilityLabel} aria-checked={value} disabled={disabled} onClick={()=>onValueChange(!value)} style={{width:51,height:31,border:0,borderRadius:16,padding:3,opacity:disabled?0.4:1,background:value?'#34c759':'#767680',flexShrink:0,alignSelf:'flex-start'}}><span style={{display:'block',width:25,height:25,borderRadius:13,background:'white',marginLeft:value?20:0}}/></button>;
   const listeners=new Set();window.setFontScale=scale=>{window.fontScale=scale;listeners.forEach(listener=>listener())};
@@ -84,7 +84,7 @@ const mocks = {
   './native-icon': `export const NativeIcon=({name,size,color})=><span data-icon={name} aria-hidden style={{width:size,height:size,flexShrink:0,color}}>⌄</span>;export const NativeIconLabel=({title,icon})=><><span aria-hidden data-icon={icon}/>{title}</>;`,
   './icon': `import {iconAssets} from './src/ui/controls/icon-assets';export const Icon=({name,size=20,color})=>{const asset=iconAssets[name];const url=typeof asset==='string'?asset:asset?.default;return <span data-icon={name} aria-hidden style={{display:'block',width:size,height:size,flexShrink:0,color,backgroundColor:color||'currentColor',maskImage:'url('+url+')',maskSize:'contain',maskRepeat:'no-repeat'}}/>};`,
   '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;export const carZoom=1.4;`,
-  'expo-router': `export const usePreventRemove=()=>{};export const router={push:path=>window.navigate(path),dismissTo:path=>window.navigate(path),canGoBack:()=>window.routeHistory.length>1,back:()=>window.goBack()};export const useLocalSearchParams=()=>({section:window.section,runtimeId:window.requestedRuntimeId,setting:window.requestedSetting});`,
+  'expo-router': `export const usePreventRemove=()=>{};export const router={push:path=>window.navigate(path),dismissTo:path=>window.navigate(path),replace:path=>window.navigate(path),canGoBack:()=>window.routeHistory.length>1,back:()=>window.goBack()};export const useLocalSearchParams=()=>({section:window.section,runtimeId:window.requestedRuntimeId,setting:window.requestedSetting});`,
   expo: `export const requireOptionalNativeModule=()=>({getSupportedLocales:async()=>({locales:['en-US','de-DE']})});`,
   'expo-speech': `export const getAvailableVoicesAsync=async()=>[{identifier:'siri',name:'Siri',language:'en-US',quality:'Enhanced'}];`,
   'expo-constants': `export default {expoConfig:{version:'test'}};`,
@@ -152,9 +152,9 @@ const built = await build({
           <SettingsAction secondary label="Reset all later worktree setup overrides" onPress={()=>{}}/>
         </>;
       }
-      function App(){const [probe,setProbe]=useState(false);window.showSearchProbe=setProbe;const [probeTarget,setProbeTarget]=useState('Probe setting');window.setProbeTarget=setProbeTarget;const [probeRevision,setProbeRevision]=useState(0);window.remountProbe=()=>setProbeRevision(value=>value+1);const [probeHeaderHeight,setProbeHeaderHeight]=useState(0);const [accessibility,setAccessibility]=useState(false);window.showAccessibility=(value=true)=>setAccessibility(value);const [navigation,setNavigation]=useState(false);const [path,setPath]=useState('/settings');const [revision,setRevision]=useState(0);window.refreshSettings=()=>setRevision(revision+1);window.showNavigation=()=>setNavigation(true);window.routeHistory??=['/settings'];window.navigate=target=>{const path=typeof target==='string'?target:target.pathname;window.requestedSetting=typeof target==='string'?undefined:target.params?.setting;window.requestedRuntimeId=typeof target==='string'?undefined:target.params?.runtimeId;window.routeHistory.push(path);window.section=path.split('/')[2];setPath(path)};window.goBack=()=>{window.routeHistory.pop();const path=window.routeHistory.at(-1);window.section=path.split('/')[2];setPath(path)};const [mode,setMode]=useState('dark');const [sheet,setSheet]=useState(false);const [scopeOnly,setScopeOnly]=useState(false);window.showScoped=setScopeOnly;window.setMode=setMode;window.showSheet=setSheet;
+      function App(){const [probe,setProbe]=useState(false);window.showSearchProbe=setProbe;const [probeTarget,setProbeTarget]=useState('Probe setting');window.setProbeTarget=setProbeTarget;const [probeRevision,setProbeRevision]=useState(0);window.remountProbe=()=>setProbeRevision(value=>value+1);const [probeHeaderHeight,setProbeHeaderHeight]=useState(0);const [accessibility,setAccessibility]=useState(false);window.showAccessibility=(value=true)=>setAccessibility(value);const [navigation,setNavigation]=useState(false);const [path,setPath]=useState('/settings');const [revision,setRevision]=useState(0);window.refreshSettings=()=>setRevision(revision+1);window.showNavigation=()=>setNavigation(true);window.routeHistory??=['/settings'];window.navigate=target=>{const path=typeof target==='string'?target:target.pathname;window.requestedSetting=typeof target==='string'?undefined:target.params?.setting;window.requestedRuntimeId=typeof target==='string'?undefined:target.params?.runtimeId;window.routeHistory.push(path);window.section=path.split('/')[2];setPath(path)};window.goBack=()=>{window.routeHistory.pop();const path=window.routeHistory.at(-1);window.section=path.split('/')[2];setPath(path)};const [palette,setPalette]=useState('dovo'),[highContrast,setHighContrast]=useState(false);window.setPalette=setPalette;window.setHighContrast=setHighContrast;const [mode,setMode]=useState('dark');const [sheet,setSheet]=useState(false);const [scopeOnly,setScopeOnly]=useState(false);window.showScoped=setScopeOnly;window.setMode=setMode;window.showSheet=setSheet;
         if(accessibility)return <MobileAppearance><AppearanceScreen/><MotionProbe/></MobileAppearance>;
-        return <MobileThemeContext.Provider value={createMobileTheme('dovo',mode)}><SettingsPage>{probe?<SettingsSearchContext.Provider value={probeTarget}><SettingsScrollView searchHeaderHeight={probeHeaderHeight} stickyHeaderIndices={[0]} style={{flex:1}}><View accessibilityLabel='Probe scope header' onLayout={event=>setProbeHeaderHeight(event.nativeEvent.layout.height)} style={{height:84*window.fontScale,backgroundColor:'#333'}}><RNText>Scope header</RNText></View><View style={{height:800}}/><SettingsAnchor key={probeRevision} label='Probe setting'><View accessibilityLabel='Probe destination' style={{height:100}}><RNText>Probe setting</RNText></View></SettingsAnchor><View style={{height:1000}}/></SettingsScrollView></SettingsSearchContext.Provider>:navigation?<SettingsTargetProvider>{path==='/settings'?<SettingsScreen/>:<SettingsSection key={path}/>}</SettingsTargetProvider>:scopeOnly?<SettingsTargetProvider><ScopedSettings scrollable>{()=> <View style={{height:1800}}><RNText>Settings content</RNText></View>}</ScopedSettings></SettingsTargetProvider>:<ScrollView contentContainerStyle={{padding:16,gap:24}}>
+        return <MobileThemeContext.Provider value={createMobileTheme(palette,mode,undefined,{highContrast})}><SettingsPage>{probe?<SettingsSearchContext.Provider value={probeTarget}><SettingsScrollView searchHeaderHeight={probeHeaderHeight} stickyHeaderIndices={[0]} style={{flex:1}}><View accessibilityLabel='Probe scope header' onLayout={event=>setProbeHeaderHeight(event.nativeEvent.layout.height)} style={{height:84*window.fontScale,backgroundColor:'#333'}}><RNText>Scope header</RNText></View><View style={{height:800}}/><SettingsAnchor key={probeRevision} label='Probe setting'><View accessibilityLabel='Probe destination' style={{height:100}}><RNText>Probe setting</RNText></View></SettingsAnchor><View style={{height:1000}}/></SettingsScrollView></SettingsSearchContext.Provider>:navigation?<SettingsTargetProvider>{path==='/settings'?<SettingsScreen/>:<SettingsSection key={path}/>}</SettingsTargetProvider>:scopeOnly?<SettingsTargetProvider><ScopedSettings scrollable>{()=> <View style={{height:1800}}><RNText>Settings content</RNText></View>}</ScopedSettings></SettingsTargetProvider>:<ScrollView contentContainerStyle={{padding:16,gap:24}}>
           <SettingsGroup title="Computers"><SettingsRow title="Settings scope" subtitle="All projects on this computer" value={computer} icon="device" tint="#087f5b" mark={{icon:'stack',label:'Computer settings'}} onPress={()=>{}}/></SettingsGroup>
           <SettingsGroup title="Preferences"><Controls/></SettingsGroup>
           <SettingsTargetProvider><ScopedSettings>{()=> <SettingSource source="global" overridden={false} label="Worktree setup" setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:undefined,inheritedValue:undefined}}/>}</ScopedSettings></SettingsTargetProvider>
@@ -200,7 +200,7 @@ const built = await build({
               : path === 'code-theme'
                 ? `export const CodeThemeSettings=()=>null;`
                 : path === 'header'
-                  ? `import {createContext,useContext} from 'react';import {View,Text,Pressable} from 'react-native';import {useTheme} from './src/ui/theme';export const ScreenBackContext=createContext(null);export const ScreenHeader=({title})=>{const back=useContext(ScreenBackContext);const {styles}=useTheme();return <View style={{padding:16,flexDirection:'row',alignItems:'center',gap:16}}>{back&&<Pressable accessibilityLabel="Back" onPress={back}><Text style={styles.text}>Back</Text></Pressable>}<Text numberOfLines={1} style={[styles.text,{fontWeight:'600',flex:1,minWidth:0}]} accessibilityRole="heading">{title}</Text></View>};`
+                  ? `import {createContext,useContext} from 'react';import {View,Text,Pressable} from 'react-native';import {useTheme} from './src/ui/theme';export const ScreenBackContext=createContext(null);export const ScreenHeader=({title,onBack})=>{const contextBack=useContext(ScreenBackContext);const back=onBack??contextBack;const {styles}=useTheme();return <View style={{padding:16,flexDirection:'row',alignItems:'center',gap:16}}>{back&&<Pressable accessibilityLabel="Back" onPress={back}><Text style={styles.text}>Back</Text></Pressable>}<Text numberOfLines={1} style={[styles.text,{fontWeight:'600',flex:1,minWidth:0}]} accessibilityRole="heading">{title}</Text></View>};`
                   : path === 'state'
                     ? `export {useState as useApplicationState} from 'react';`
                     : path === 'runtime'
@@ -243,6 +243,39 @@ try {
     await page.addScriptTag({ content: built.outputFiles[0].text })
     if (!navigationOnly) {
       await page.getByTestId('Settings scope').waitFor()
+      // Settings keep the chosen palette; higher contrast still replaces neutral surfaces.
+      for (const [mode, background] of [
+        ['dark', 'rgb(7, 7, 9)'],
+        ['light', 'rgb(248, 247, 251)'],
+      ]) {
+        await page.evaluate((mode) => {
+          window.setPalette('iris')
+          window.setMode(mode)
+        }, mode)
+        await page.waitForFunction(
+          (background) => document.querySelector('#app>div').style.backgroundColor === background,
+          background,
+        )
+      }
+      await page.evaluate(() => {
+        window.setPalette('dovo')
+        window.setMode('dark')
+        window.setHighContrast(true)
+      })
+      await page.waitForFunction(
+        () => document.querySelector('#app>div').style.backgroundColor === 'rgb(0, 0, 0)',
+      )
+      assert.equal(
+        await page
+          .getByLabel('Shell arguments (one per line)', { exact: true })
+          .evaluate((el) => getComputedStyle(el).borderTopWidth),
+        '1px',
+        'Higher contrast keeps input boundaries',
+      )
+      await page.evaluate(() => window.setHighContrast(false))
+      await page.waitForFunction(
+        () => document.querySelector('#app>div').style.backgroundColor === 'rgb(12, 12, 12)',
+      )
       const argumentsField = page.getByLabel('Shell arguments (one per line)', { exact: true })
       assert.equal(
         await argumentsField.evaluate((element) => element.scrollHeight <= element.clientHeight),
@@ -278,7 +311,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(242, 242, 247)'),
+            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(247, 247, 247)'),
           mode,
         )
         for (const locator of [
@@ -382,7 +415,24 @@ try {
       await page.evaluate(() => window.showSheet(true))
       const editor = page.getByLabel('Edit computer', { exact: true })
       await editor.getByLabel('Voice', { exact: true }).click()
-      await editor.getByLabel('Search voice', { exact: true }).fill('voice 13')
+      const voiceSearch = editor.getByLabel('Search voice', { exact: true })
+      const voiceResults = voiceSearch.locator('xpath=../following-sibling::div[1]')
+      const searchBounds = await voiceSearch.locator('..').boundingBox()
+      const resultBounds = await voiceResults.boundingBox()
+      for (const query of ['voice 13', 'no matching voice']) {
+        await voiceSearch.fill(query)
+        assert.deepEqual(
+          await voiceSearch.locator('..').boundingBox(),
+          searchBounds,
+          'Inline choice search stays anchored',
+        )
+        assert.deepEqual(
+          await voiceResults.boundingBox(),
+          resultBounds,
+          'Inline results keep their height when filtered or empty',
+        )
+      }
+      await voiceSearch.fill('  voice 13  ')
       await editor.getByTestId('Choose Siri voice 13 · English · Enhanced quality').click()
       await page.waitForFunction(() => window.voice === '13')
       await page.evaluate(() => window.showSheet(false))
@@ -399,7 +449,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(242, 242, 247)'),
+            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(247, 247, 247)'),
           mode,
         )
         assert.equal(await storage.count(), 0)
@@ -449,7 +499,7 @@ try {
         await page.waitForFunction(
           (mode) =>
             document.querySelector('#app>div').style.backgroundColor ===
-            (mode === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(242, 242, 247)'),
+            (mode === 'dark' ? 'rgb(12, 12, 12)' : 'rgb(247, 247, 247)'),
           mode,
         )
         await page.screenshot({
@@ -794,6 +844,11 @@ try {
         [320, 1],
         [390, 1.5],
         [320, 2],
+        [544, 1],
+        [768, 1],
+        [1024, 1.5],
+        [1366, 1],
+        [1366, 2],
       ]) {
         await page.setViewportSize({ width, height: 844 })
         await page.evaluate((scale) => window.setFontScale(scale), scale)
@@ -815,6 +870,29 @@ try {
           platform + ' settings ' + section + ' overflow at ' + width + ' / ' + scale,
         )
       }
+    }
+    for (const [width, height] of [
+      [544, 1024],
+      [768, 1024],
+      [1024, 768],
+      [1366, 1024],
+      [844, 390],
+    ]) {
+      await page.setViewportSize({ width, height })
+      await page.evaluate(() => {
+        window.setFontScale(1)
+        window.navigate('/settings')
+      })
+      const search = page.getByRole('textbox', { name: 'Search settings', exact: true })
+      await search.waitFor()
+      const box = await search.locator('..').boundingBox()
+      assert.ok(box.width <= 768 && box.width <= width, JSON.stringify({ width, height, box }))
+      assert.ok(
+        Math.abs(box.x - (width - box.width) / 2) < 1,
+        JSON.stringify({ width, height, box }),
+      )
+      if (width >= 768)
+        await page.screenshot({ path: `${screenshotDirectory}/${platform}-tablet-${width}.png` })
     }
     await page.setViewportSize({ width: 390, height: 844 })
     await page.evaluate(() => {

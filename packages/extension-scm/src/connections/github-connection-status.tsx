@@ -7,6 +7,7 @@ import {
   type GithubConnectionCheck,
 } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
+import { RefreshCw } from 'lucide-react'
 
 export function GithubConnectionStatus({
   connectionId,
@@ -25,12 +26,12 @@ export function GithubConnectionStatus({
   const [lastVerifiedAt, setLastVerifiedAt] = useApplicationState<string | null>(null)
   const pending = useRef(false)
   useEffect(() => {
+    setResult(null)
     setLastVerifiedAt(null)
   }, [request, connectionId, repositoryId])
   useEffect(() => {
     let current = true
     setError('')
-    setResult(null)
     setBusy(false)
     pending.current = false
     // Opening settings verifies account identity only. Project access checks are explicit,
@@ -73,38 +74,51 @@ export function GithubConnectionStatus({
       current = false
     }
   }, [request, connected, connectionId, repositoryId, attempt])
+  const status = !connected
+    ? 'Computer offline · Reconnect to verify this connection.'
+    : busy
+      ? 'Checking GitHub connection…'
+      : error ||
+        (!result
+          ? repositoryId
+            ? 'Repository access has not been tested.'
+            : 'Account has not been verified.'
+          : '')
   return (
     <div className="grid gap-2 text-xs" aria-label="GitHub connection status" aria-busy={busy}>
       <p
-        role={error || result?.status === 'failed' ? 'alert' : 'status'}
-        className={`break-words ${error || result?.status === 'failed' ? 'text-status-warning' : 'text-muted-foreground'}`}
+        role={error ? 'alert' : 'status'}
+        className={`min-h-4 break-words ${error ? 'text-status-warning' : 'text-muted-foreground'}`}
       >
-        {!connected ? (
-          'Computer offline · Reconnect to verify this connection.'
-        ) : busy ? (
-          'Checking GitHub connection…'
-        ) : result ? (
-          <>
-            {result.login && (
-              <span className="font-medium text-foreground">
-                @{result.login} · {result.host}
-                <br />
-              </span>
-            )}
-            {result.repository && <span className="block">{result.repository}</span>}
-            {result.message}
-            <span className="mt-1 block">
-              Checked {new Date(result.checkedAt).toLocaleString()}
-            </span>
-          </>
-        ) : (
-          error ||
-          (repositoryId
-            ? 'Repository access has not been tested.'
-            : 'Account has not been verified.')
+        {status || (
+          <span aria-hidden="true" className="invisible">
+            Checking GitHub connection…
+          </span>
         )}
       </p>
-      {lastVerifiedAt && result?.status !== 'verified' && (
+      {result && (
+        <p
+          role={
+            connected && !busy && !error
+              ? result.status === 'failed'
+                ? 'alert'
+                : 'status'
+              : undefined
+          }
+          className={`break-words ${result.status === 'failed' ? 'text-status-warning' : 'text-muted-foreground'}`}
+        >
+          {result.login && (
+            <span className="font-medium text-foreground">
+              @{result.login} · {result.host}
+              <br />
+            </span>
+          )}
+          {result.repository && <span className="block">{result.repository}</span>}
+          {result.message}
+          <span className="mt-1 block">Checked {new Date(result.checkedAt).toLocaleString()}</span>
+        </p>
+      )}
+      {lastVerifiedAt && (error || result?.status !== 'verified') && (
         <p className="text-muted-foreground">
           Last successful check {new Date(lastVerifiedAt).toLocaleString()}
         </p>
@@ -118,13 +132,15 @@ export function GithubConnectionStatus({
         variant="outline"
         className="justify-self-start"
         disabled={!connected || busy}
+        aria-busy={busy}
         onClick={() => {
           if (pending.current) return
           pending.current = true
           setAttempt((value) => value + 1)
         }}
       >
-        {busy ? 'Testing…' : repositoryId ? 'Test project connection' : 'Test connection'}
+        <RefreshCw aria-hidden="true" className={busy ? 'motion-safe:animate-spin' : undefined} />
+        {repositoryId ? 'Test project connection' : 'Test connection'}
       </Button>
       {automatic && (
         <p className="text-muted-foreground">

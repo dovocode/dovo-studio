@@ -20,10 +20,7 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn(
-      'fixed inset-0 z-50 bg-black/55 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-      className,
-    )}
+    className={cn('dovo-dialog-fade fixed inset-0 z-50 bg-black/55 backdrop-blur-sm', className)}
     {...props}
   />
 ))
@@ -38,16 +35,21 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-[50%] top-[calc((100dvh+var(--studio-window-top-inset,0px))/2)] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-var(--studio-window-top-inset,0px)-2rem)] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-3 rounded-lg border bg-background p-4 shadow-lg transition-none duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]',
+        'dovo-dialog-fade fixed left-[50%] top-[calc((100dvh+var(--studio-window-top-inset,0px))/2)] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-var(--studio-window-top-inset,0px)-2rem)] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-3 rounded-lg border bg-background p-4 shadow-lg transition-none',
         className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none max-sm:size-11">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
+      <div className="order-first pointer-events-none sticky top-0 z-10 h-0 w-full shrink-0">
+        <DialogPrimitive.Close
+          data-dialog-close
+          className="pointer-events-auto bg-background absolute right-0 top-0 flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none max-sm:size-11"
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+      </div>
     </DialogPrimitive.Content>
   </DialogPortal>
 ))
@@ -72,7 +74,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn('pr-8 text-lg font-semibold leading-snug tracking-tight', className)}
+    className={cn('pr-8 text-lg font-semibold leading-snug tracking-tight max-sm:pr-12', className)}
     {...props}
   />
 ))

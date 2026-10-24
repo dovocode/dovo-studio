@@ -549,7 +549,7 @@ it('removes a newly refused unsent command when recovery of an earlier action fa
     (await run(f.queue.requestEffect(connection, '/api/tasks/message', { messageId: 'new' }, ok)))
       ._tag,
   ).toBe('Failure')
-  expect(f.stored()).toEqual([{ ...old, blocked: true }])
+  expect(f.stored()).toEqual([{ ...old, blocked: true, receiptToken: connection.token }])
 })
 
 it('clears a stale local error when another client has drained the journal', async () => {
@@ -559,7 +559,7 @@ it('clears a stale local error when another client has drained the journal', asy
   expect(f.queue.status(connection).error).not.toBeNull()
   await run(f.restart().discardEffect(connection))
   await run(f.queue.recoverEffect(connection))
-  expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
 })
 
 it('reads durable state on each empty recovery without notifying unchanged status', async () => {
@@ -570,7 +570,7 @@ it('reads durable state on each empty recovery without notifying unchanged statu
   await run(f.queue.recoverEffect(connection))
   expect(read).toHaveBeenCalledTimes(2)
   expect(changed).not.toHaveBeenCalled()
-  expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
 })
 
 it('notifies changes from other writers while ignoring equivalent freshly decoded journals', async () => {
@@ -580,7 +580,7 @@ it('notifies changes from other writers while ignoring equivalent freshly decode
     changed,
   )
   expect((await run(f.queue.assertEmptyEffect(connection)))._tag).toBe('Failure')
-  expect(changed).toHaveBeenCalledOnce()
+  expect(changed).toHaveBeenCalledTimes(2) // Loaded actions and their actionable status.
   changed.mockClear()
   expect((await run(f.queue.assertEmptyEffect(connection)))._tag).toBe('Failure')
   expect(changed).not.toHaveBeenCalled()
@@ -592,7 +592,7 @@ it('notifies changes from other writers while ignoring equivalent freshly decode
   changed.mockClear()
   await f.storage.clear()
   expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
-  expect(changed).toHaveBeenCalledOnce()
+  expect(changed).toHaveBeenCalledTimes(2) // Removed actions and cleared the review notice.
   changed.mockClear()
   expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
   expect(changed).not.toHaveBeenCalled()
@@ -612,11 +612,15 @@ it('notifies clearing a stale error once when the durable journal is already emp
       ),
   )
   await run(f.queue.requestEffect(connection, '/api/tasks/lifecycle', { id: 'task' }, ok))
-  expect(f.queue.status(connection)).toEqual({ pending: 0, error: 'Conflict' })
+  expect(f.queue.status(connection)).toEqual({
+    reviewRequired: false,
+    pending: 0,
+    error: 'Conflict',
+  })
   changed.mockClear()
   await run(f.queue.recoverEffect(connection))
   expect(changed).toHaveBeenCalledOnce()
-  expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
   changed.mockClear()
   await run(f.queue.recoverEffect(connection))
   expect(changed).not.toHaveBeenCalled()
@@ -725,7 +729,7 @@ it('retires rejected workspace edits without blocking subsequent model switches'
     (await run(f.queue.requestEffect(connection, '/api/workspace', input, ok, 'PATCH')))._tag,
   ).toBe('Failure')
   expect(f.stored()).toEqual([])
-  expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
   rejected = false
   expect(
     (await run(f.queue.requestEffect(connection, '/api/workspace', input, ok, 'PATCH')))._tag,
@@ -746,7 +750,7 @@ it('resolves older blocked validation receipts while preserving uncertain comman
   )
   expect((await run(f.queue.recoverEffect(connection)))._tag).toBe('Success')
   expect(f.stored()).toEqual([])
-  expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
 })
 
 it.each([403, 404, 409, 422])(
@@ -778,7 +782,7 @@ it.each([403, 404, 409, 422])(
         )
       )._tag,
     ).toBe('Failure')
-    expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+    expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
     confirmed = false
     await run(
       f.queue.requestEffect(
@@ -813,7 +817,7 @@ it('resolves an old rejected edit before sending a different new model selection
       ._tag,
   ).toBe('Success')
   expect(sent).toEqual(['old', 'operation-1'])
-  expect(f.queue.status(connection)).toEqual({ pending: 0, error: null })
+  expect(f.queue.status(connection)).toEqual({ reviewRequired: false, pending: 0, error: null })
 })
 it('requests an authoritative refresh after reconnect replays a reconciled workspace edit', async () => {
   const f = fixture([{ id: 'saved-edit', path: '/api/workspace', method: 'PATCH', input: {} }])
@@ -1266,4 +1270,237 @@ it('reads server recoveries when the local recovery journal is corrupt and repor
   expect(value.warnings).toHaveLength(1)
   expect(value.nextCursor).toBe('123')
   expect(fetch).toHaveBeenCalledOnce()
+})
+
+function renewalFixture() {
+  const previous = {
+    address: 'http://old-account.local',
+    token: 'old-token',
+    runtimeId: 'same-runtime',
+    accountSession: 'same-account',
+  }
+  const next = { ...previous, address: 'http://new-account.local', token: 'new-token' }
+  const message = {
+    id: 'message-action',
+    path: '/api/tasks/message',
+    method: 'POST' as const,
+    input: { id: 'task', messageId: 'stable-message', text: 'Offline message' },
+  }
+  const action = {
+    id: 'uncertain-action',
+    path: '/api/tasks/cancel',
+    method: 'POST' as const,
+    input: { id: 'task' },
+  }
+  const journals = new Map<string, MutationOutbox>([[previous.token, [message, action]]])
+  let failCopy = false,
+    failClear = false
+  const storage: MutationStorage = {
+    id: () => 'new-action',
+    read: async (c) => structuredClone(journals.get(c.token) ?? []),
+    clear: async (c) => {
+      if (failClear) throw new Error('Cleanup unavailable')
+      journals.delete(c.token)
+    },
+    update: async (c, change) => {
+      if (failCopy && c.token === next.token) throw new Error('Disk full')
+      const saved = change(structuredClone(journals.get(c.token) ?? []))
+      journals.set(c.token, structuredClone(saved))
+      return saved
+    },
+  }
+  return {
+    previous,
+    next,
+    message,
+    action,
+    journals,
+    storage,
+    queue: new RuntimeMutations(storage),
+    failCopy: () => {
+      failCopy = true
+    },
+    failClear: () => {
+      failClear = true
+    },
+  }
+}
+
+it('renews access with durable actions, recovers messages once and requires consent for uncertain commands', async () => {
+  const f = renewalFixture(),
+    commit = vi.fn<() => void>()
+  const sent: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (urlPath(url).endsWith('/health'))
+        return Response.json({ service: 'dovo-runtime', runtimeId: 'same-runtime' })
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      sent.push(urlPath(url))
+      expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer new-token')
+      return Response.json({ ok: true })
+    }),
+  )
+  await Effect.runPromise(f.queue.renewConnectionEffect(f.previous, f.next, Effect.sync(commit)))
+  expect(commit).toHaveBeenCalledOnce()
+  expect(f.journals.has(f.previous.token)).toBe(false)
+  expect(f.queue.status(f.next).reviewRequired).toBe(true)
+  await run(f.queue.recoverEffect(f.next))
+  expect(sent).toEqual(['http://new-account.local/api/tasks/message'])
+  expect(f.journals.get(f.next.token)?.map((item) => item.id)).toEqual([f.action.id])
+  await run(f.queue.recoverEffect(f.next, true))
+  expect(sent).toHaveLength(1)
+  await Effect.runPromise(f.queue.recoverEffect(f.next, true, true))
+  expect(sent).toEqual([
+    'http://new-account.local/api/tasks/message',
+    'http://new-account.local/api/tasks/cancel',
+  ])
+  expect(f.journals.get(f.next.token)).toEqual([])
+})
+
+it('does not publish a new credential when its journal cannot be persisted', async () => {
+  const f = renewalFixture(),
+    commit = vi.fn<() => void>()
+  f.failCopy()
+  expect(
+    (await run(f.queue.renewConnectionEffect(f.previous, f.next, Effect.sync(commit))))._tag,
+  ).toBe('Failure')
+  expect(commit).not.toHaveBeenCalled()
+  expect(f.journals.get(f.previous.token)).toEqual([f.message, f.action])
+})
+it('requires review when renewing only a LAN computer internet fallback and rejects late old-credential work', async () => {
+  const f = renewalFixture()
+  const peer = { origin: 'https://connect.test', secret: 'a'.repeat(64) }
+  const previous = {
+    address: f.previous.address,
+    token: f.previous.token,
+    runtimeId: f.previous.runtimeId,
+    internet: {
+      address: 'http://old-tunnel.local',
+      token: 'old-internet',
+      runtimeId: f.previous.runtimeId,
+      session: 'account',
+      peer,
+    },
+  }
+  const next = { ...previous, internet: { ...previous.internet, token: 'new-internet' } }
+  await Effect.runPromise(f.queue.renewConnectionEffect(previous, next, Effect.void))
+  expect(f.journals.get(previous.token)).toHaveLength(2)
+  expect(f.queue.status(next).reviewRequired).toBe(true)
+  expect(
+    f.journals.get(previous.token)?.find((item) => item.id === f.action.id)?.reviewAfterRenewal,
+  ).toBe(true)
+  expect((await run(f.queue.assertEmptyEffect(previous)))._tag).toBe('Failure')
+  expect(
+    (await run(f.queue.requestEffect(previous, '/api/tasks/cancel', { id: 'late' }, ok)))._tag,
+  ).toBe('Failure')
+})
+it('persists the first receipt credential across restarts and requires consent before crossing credentials', async () => {
+  const f = fixture()
+  let applied = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      applied++
+      return Response.json({ error: 'Temporary failure' }, { status: 503 })
+    }),
+  )
+  await run(f.queue.requestEffect(connection, '/api/tasks/cancel', { id: 'task' }, ok))
+  expect(f.stored()[0]?.receiptToken).toBe(connection.token)
+  const before = applied
+  const changed = { ...connection, token: 'another-device' }
+  const restarted = f.restart()
+  await run(restarted.recoverEffect(changed))
+  expect(applied).toBe(before)
+  expect(restarted.status(changed).reviewRequired).toBe(true)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status')) return Response.json({ version: 1 })
+      applied++
+      return Response.json({ ok: true })
+    }),
+  )
+  await Effect.runPromise(restarted.recoverEffect(changed, true, true))
+  expect(applied).toBe(before + 1)
+  expect(f.stored()).toEqual([])
+})
+
+it('keeps source actions after a failed commit and safely repeats an interrupted handoff', async () => {
+  const f = renewalFixture()
+  await run(
+    f.queue.renewConnectionEffect(f.previous, f.next, Effect.fail(new Error('Account changed'))),
+  )
+  expect(f.journals.get(f.previous.token)).toHaveLength(2)
+  expect(f.journals.get(f.next.token)).toHaveLength(2)
+  await Effect.runPromise(f.queue.renewConnectionEffect(f.previous, f.next, Effect.void))
+  expect(f.journals.get(f.next.token)).toHaveLength(2)
+  expect(f.journals.has(f.previous.token)).toBe(false)
+})
+
+it('preserves the replacement after cleanup fails and rejects late writes using replaced credentials', async () => {
+  const f = renewalFixture()
+  f.failClear()
+  await Effect.runPromise(f.queue.renewConnectionEffect(f.previous, f.next, Effect.void))
+  expect(f.journals.get(f.next.token)).toHaveLength(2)
+  const result = await run(
+    f.queue.requestEffect(
+      f.previous,
+      '/api/tasks/message',
+      { id: 'task', messageId: 'late', text: 'Late' },
+      ok,
+    ),
+  )
+  expect(result._tag).toBe('Failure')
+  expect(f.journals.get(f.previous.token)).toEqual([f.message, f.action])
+})
+
+it.each(['runtimeId', 'accountSession'] as const)(
+  'rejects journal transfer to another %s',
+  async (field) => {
+    const f = renewalFixture(),
+      commit = vi.fn<() => void>()
+    const result = await run(
+      f.queue.renewConnectionEffect(
+        f.previous,
+        { ...f.next, [field]: 'different' },
+        Effect.sync(commit),
+      ),
+    )
+    expect(result._tag).toBe('Failure')
+    expect(commit).not.toHaveBeenCalled()
+    expect(f.journals.get(f.previous.token)).toHaveLength(2)
+  },
+)
+
+it('keeps a temporary Connect lease rejection recoverable without blocking the saved action', async () => {
+  const f = fixture()
+  let valid = false
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) =>
+      urlPath(url).endsWith('/status')
+        ? Response.json({ version: 1 })
+        : valid
+          ? Response.json({ ok: true })
+          : Response.json(
+              { error: 'Account access requires an authorized Dovo Connect tunnel' },
+              { status: 403 },
+            ),
+    ),
+  )
+  await run(
+    f.queue.requestEffect(
+      connection,
+      '/api/tasks/message',
+      { id: 'task', messageId: 'same-message', text: 'Hello' },
+      ok,
+    ),
+  )
+  expect(f.stored()).toHaveLength(1)
+  expect(f.stored()[0]?.blocked).toBeUndefined()
+  valid = true
+  await Effect.runPromise(f.queue.recoverEffect(connection))
+  expect(f.stored()).toEqual([])
 })

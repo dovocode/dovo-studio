@@ -6,19 +6,20 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/'
 const controls = `
-import {useImperativeHandle} from 'react';
-const flat=style=>Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));
-export const View=({children,style,testID,accessibilityRole,accessibilityLabel})=><div role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;
-export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel})=><div aria-label={accessibilityLabel} style={{minHeight:0,overflowY:'auto',...flat(style)}}><div style={{display:'flex',flexDirection:'column',...flat(contentContainerStyle)}}>{children}</div></div>;
-export const Text=({children,style})=><span style={flat(style)}>{children}</span>;
+import {useImperativeHandle,useLayoutEffect,useRef} from 'react';
+const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(Array.isArray(s.transform))s.transform=s.transform.map(t=>'translateY('+t.translateY+'px)').join(' ');return s};
+const useLayout=(ref,callback)=>{const current=useRef(callback);current.current=callback;const report=()=>{if(!ref.current||!current.current)return;const r=ref.current.getBoundingClientRect(),p=ref.current.parentElement.getBoundingClientRect();current.current({nativeEvent:{layout:{x:ref.current.offsetLeft-ref.current.parentElement.offsetLeft,y:ref.current.offsetTop-ref.current.parentElement.offsetTop,width:r.width,height:r.height}}})};useLayoutEffect(report);useLayoutEffect(()=>{const observer=new ResizeObserver(report);observer.observe(ref.current);return()=>observer.disconnect()},[])};
+export const View=({children,style,testID,accessibilityRole,accessibilityLabel,onLayout})=>{const ref=useRef(null);useLayout(ref,onLayout);return <div ref={ref} role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',borderStyle:'solid',borderWidth:0,...flat(style)}}>{children}</div>};
+export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,overflowY:scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:'column',...flat(contentContainerStyle)}}>{children}</div></div>};
+export const Text=({children,style,numberOfLines,accessibilityRole,accessibilityLabel})=><span role={accessibilityRole} aria-label={accessibilityLabel} style={{...flat(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
-export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole})=><button role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole,accessibilityActions,onAccessibilityAction})=><button data-actions={JSON.stringify(accessibilityActions)} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
-export const Keyboard={dismiss(){}};export const Linking={openSettings:async()=>{}};
+export const Keyboard={dismiss(){document.activeElement?.blur()}};export const Linking={openSettings:async()=>{}};
 export const Icon=()=>null;
 export const IconButton=({label,onPress,disabled})=><button aria-label={label} disabled={disabled} onClick={onPress} style={{width:44,height:44,padding:0,flexShrink:0}}/>;
-export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
+export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress} style={{minWidth:44,minHeight:44}}>{label}</button>;
 export const Glass=View;
 export const Choice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
@@ -28,6 +29,14 @@ export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#9
 `
 const stubs = [
   { path: 'react-native', contents: controls },
+  {
+    path: 'react-native-gesture-handler',
+    contents: `
+import {useRef} from 'react';export {Pressable} from 'react-native';
+export const Gesture={Pan:()=>{const gesture={callbacks:{},enabled(value){this.active=value;return this},activateAfterLongPress(value){this.delay=value;return this},runOnJS(){return this},onStart(fn){this.callbacks.start=fn;return this},onUpdate(fn){this.callbacks.update=fn;return this},onEnd(fn){this.callbacks.end=fn;return this},onFinalize(fn){this.callbacks.finalize=fn;return this}};return gesture}};
+export const GestureDetector=({gesture,children})=>{const state=useRef(null);return <div style={{display:'flex',flex:1,minWidth:0}} onPointerDown={event=>{if(!gesture.active)return;event.currentTarget.setPointerCapture(event.pointerId);const current={y:event.clientY,dragging:false};state.current=current;current.timer=setTimeout(()=>{current.dragging=true;gesture.callbacks.start()},gesture.delay)}} onPointerMove={event=>{const current=state.current;if(!current)return;if(current.dragging)gesture.callbacks.update({translationY:event.clientY-current.y});else if(Math.abs(event.clientY-current.y)>10){clearTimeout(current.timer);state.current=null}}} onPointerUp={()=>{const current=state.current;if(!current)return;clearTimeout(current.timer);if(current.dragging){gesture.callbacks.end();gesture.callbacks.finalize({},true)}}} onPointerCancel={()=>{clearTimeout(state.current?.timer);gesture.callbacks.finalize({},false);state.current=null}} onClickCapture={event=>{if(state.current?.dragging){event.preventDefault();event.stopPropagation()}state.current=null}}>{children}</div>};
+`,
+  },
   ...[
     '../../../ui/content/text',
     '../../../ui/controls/icon',
@@ -94,7 +103,7 @@ const stubs = [
     path: './composer-field',
     importer: mobile,
     contents:
-      'export const ComposerField=({value,onChangeText,onFocus,onBlur,editable})=><textarea aria-label="Message" value={value} disabled={!editable} onFocus={onFocus} onBlur={onBlur} onChange={event=>onChangeText(event.target.value)}/>;',
+      'export const ComposerField=({value,onChangeText,onFocus,onBlur,editable})=><textarea style={{width:"100%",minWidth:0,boxSizing:"border-box"}} aria-label="Message" value={value} disabled={!editable} onFocus={onFocus} onBlur={onBlur} onChange={event=>onChangeText(event.target.value)}/>;',
   },
   ...[
     ['../creation/checkout-choice', 'CheckoutChoice'],
@@ -132,7 +141,7 @@ function App(){
   const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
   window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.sync(()=>{window.calls.push({path,input});return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}})};
-  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
+  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages:[]}};
   return <Composer task={task} renderAbove={setup=> <>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -160,7 +169,9 @@ try {
     errors.push(error.message)
     console.error(error.message)
   })
-  await page.setContent('<div id="app"></div>')
+  await page.setContent(
+    '<style>#app{display:flex;flex-direction:column}</style><div id="app"></div>',
+  )
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('button', { name: 'Queue follow-up', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
@@ -183,27 +194,77 @@ try {
   const input = await page.getByRole('textbox', { name: 'Message', exact: true }).boundingBox()
   assert.ok(compact.y + compact.height <= queue.y && queue.y + queue.height <= input.y)
   await page.getByText('Check the tests', { exact: true }).waitFor()
+  const draftBeforeResize = await page
+    .getByRole('textbox', { name: 'Message', exact: true })
+    .inputValue()
+  // The composer follows window width, and stays readable on iPad and landscape phones.
+  for (const [width, height] of [
+    [320, 900],
+    [544, 1024],
+    [768, 1024],
+    [1024, 768],
+    [1366, 1024],
+    [844, 390],
+  ]) {
+    await page.setViewportSize({ width, height })
+    const bounds = await page.getByTestId('Composer').boundingBox()
+    assert.ok(
+      bounds.width <= 768 && bounds.width <= width,
+      JSON.stringify({ width, height, bounds }),
+    )
+    assert.ok(
+      Math.abs(bounds.x - (width - bounds.width) / 2) < 1,
+      JSON.stringify({ width, height, bounds }),
+    )
+    assert.equal(
+      await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
+      draftBeforeResize,
+    )
+    const editor = page.getByRole('textbox', { name: 'Message', exact: true })
+    const beforeFocus = await editor.boundingBox()
+    await editor.evaluate((node) => {
+      window.composerInput = node
+    })
+    await editor.focus()
+    const focusedBounds = await editor.boundingBox()
+    await page.getByRole('button', { name: 'Dismiss keyboard', exact: true }).click()
+    const blurredBounds = await editor.boundingBox()
+    for (const bounds of [focusedBounds, blurredBounds]) {
+      assert.equal(bounds.x, beforeFocus.x, 'Keyboard changes keep the draft aligned')
+      assert.equal(bounds.width, beforeFocus.width, 'Keyboard changes preserve draft wrapping')
+    }
+    assert.equal(
+      await editor.evaluate((node) => node === window.composerInput),
+      true,
+      'Keyboard dismissal keeps the input mounted',
+    )
+  }
+  await page.setViewportSize({ width: 320, height: 900 })
+
   assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Up 1', exact: true }).count(), 0)
   assert.equal(
     await page.getByRole('button', { name: 'Agent & model', exact: true }).innerText(),
     'GPT',
   )
-  for (const name of [
-    'Edit queued message 1',
-    'Steer with message 1',
-    'Cancel 1 and return to composer',
-  ]) {
+  for (const name of ['Edit queued message 1', 'Actions for queued message 1']) {
     const bounds = await page.getByRole('button', { name, exact: true }).boundingBox()
     assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44)
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320)
   }
-  await page.getByRole('button', { name: 'Pause queue', exact: true }).click()
-  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'pause')
-  await page.evaluate(() => window.setTask({ queuePaused: true }))
-  await page.getByRole('button', { name: 'Resume queue', exact: true }).click()
-  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'resume')
-  await page.evaluate(() => window.setTask({ queuePaused: false }))
+  assert.equal(await page.getByRole('button', { name: 'Pause queue', exact: true }).count(), 0)
+  assert.equal(await page.getByText('After this turn', { exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Pause queued message 1', exact: true }).click()
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'pause-message')
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queued')
+  await page.evaluate(() =>
+    window.setTask({ queue: window.currentTask.queue.map((item) => ({ ...item, paused: true })) }),
+  )
+  await page.getByRole('button', { name: 'Resume queued message 1', exact: true }).click()
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'resume-message')
+  await page.evaluate(() =>
+    window.setTask({ queue: window.currentTask.queue.map((item) => ({ ...item, paused: false })) }),
+  )
   await page.getByRole('button', { name: 'Steer agent', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'steer' })
   assert.equal(await page.getByRole('dialog', { name: 'Message actions' }).count(), 0)
@@ -308,16 +369,21 @@ try {
     await page.getByRole('button', { name: 'Ask a side question', exact: true }).isDisabled(),
     true,
   )
+  await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
   for (const name of [
-    'Pause queue',
+    'Pause queued message 1',
     'Edit queued message 1',
     'Steer with message 1',
-    'Cancel 1 and return to composer',
+    'Return message 1 to composer',
   ]) {
     assert.equal(await page.getByRole('button', { name, exact: true }).isDisabled(), true)
   }
+  await page
+    .getByRole('dialog', { name: 'Queued message 1', exact: true })
+    .getByRole('button', { name: 'Close', exact: true })
+    .click()
   await page.evaluate(() => window.setTask({ repositoryId: undefined }))
-  assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Fork', exact: true }).waitFor({ state: 'detached' })
   await page.evaluate(() => {
     window.setConnected(true)
     window.setTask({ repositoryId: 'scratch', status: 'draft', messages: [], linkedCheckouts: [] })
@@ -387,8 +453,40 @@ try {
   )
   const queueTab = page.getByRole('tab', { name: 'Queue · 1', exact: true })
   const checklistTab = page.getByRole('tab', { name: /Checklist · 0\/1/ })
+  await queueTab.waitFor()
+  assert.match(await queueTab.innerText(), /Queue.*1/s)
+  assert.match(await checklistTab.innerText(), /Checklist.*0\/1/s)
+  const activityHeader = page
+    .getByLabel('Composer activity', { exact: true })
+    .locator(':scope > div')
+    .first()
+  const activityGeometry = () =>
+    activityHeader.evaluate((header) => {
+      const origin = header.getBoundingClientRect()
+      return [...header.querySelectorAll('button')].map((node) => {
+        const box = node.getBoundingClientRect()
+        return { x: box.x - origin.x, y: box.y - origin.y, width: box.width, height: box.height }
+      })
+    })
+  const runningGeometry = await activityGeometry()
+  await page.evaluate(() => window.setTask({ queuePaused: true, status: 'completed' }))
+  await page.getByRole('tab', { name: 'Queue · 1 · Paused', exact: true }).waitFor()
+  await page.getByRole('tab', { name: 'Checklist · 0/1 · Unfinished', exact: true }).waitFor()
+  assert.deepEqual(
+    await activityGeometry(),
+    runningGeometry,
+    'Native pause and unfinished indicators keep the header steady',
+  )
+  await page.evaluate(() => window.setTask({ queuePaused: false, status: 'running' }))
+  await queueTab.waitFor()
+  assert.deepEqual(await activityGeometry(), runningGeometry)
   await checklistTab.click()
   await page.getByText('Native progress step', { exact: true }).waitFor()
+  assert.deepEqual(
+    await activityGeometry(),
+    runningGeometry,
+    'Selecting another tab keeps the header geometry',
+  )
   assert.equal(await queueTab.getAttribute('aria-selected'), 'false')
   assert.equal(await page.getByTestId('Queued messages').isVisible(), false)
   const collapse = page.getByRole('button', { name: 'Collapse composer activity', exact: true })
@@ -535,17 +633,111 @@ try {
       })),
     }),
   )
-  await page.getByRole('button', { name: 'Up 20', exact: true }).waitFor({ state: 'attached' })
+  await page
+    .getByRole('button', { name: 'Actions for queued message 20', exact: true })
+    .waitFor({ state: 'attached' })
   const queuedList = page.getByLabel('Queued message list', { exact: true })
   assert.ok(await queuedList.evaluate((element) => element.scrollHeight > element.clientHeight))
   assert.ok((await queuedList.boundingBox()).height <= 180)
-  await page.getByRole('button', { name: 'Up 2', exact: true }).click()
-  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'up')
+  // Long multiline messages stay on one row, including metadata and attachments.
+  const longMessage =
+    'Review all changed files and explain the remaining work. '.repeat(8) + '\nSecond paragraph'
+  await page.evaluate(
+    (text) =>
+      window.setTask({
+        queue: window.currentTask.queue.map((message, index) =>
+          index === 0
+            ? {
+                ...message,
+                text,
+                attachments: [
+                  { id: 'attachment', name: 'review.txt', mime: 'text/plain', size: 12 },
+                ],
+                turnSettings: { model: 'test-model' },
+              }
+            : message,
+        ),
+      }),
+    longMessage,
+  )
+  const row = page.getByTestId('Queued message row 1')
+  const rowBounds = await row.boundingBox()
+  assert.ok(rowBounds.height >= 44 && rowBounds.height <= 48, JSON.stringify(rowBounds))
+  assert.ok(rowBounds.x >= 0 && rowBounds.x + rowBounds.width <= 320)
+  const preview = row.locator('span').last()
+  assert.equal(await preview.evaluate((element) => getComputedStyle(element).whiteSpace), 'nowrap')
+  assert.ok(await preview.evaluate((element) => element.scrollWidth > element.clientWidth))
+  await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
+  const details = page.getByRole('dialog', { name: 'Queued message 1', exact: true })
+  assert.equal(await details.getByText(longMessage, { exact: true }).textContent(), longMessage)
+  await details.getByText('review.txt', { exact: true }).waitFor()
+  assert.equal(
+    await details.getByRole('button', { name: 'Steer with message 1', exact: true }).isDisabled(),
+    true,
+  )
+  await details.getByRole('button', { name: 'Close', exact: true }).click()
+
+  // Touch-and-hold a message, then move it across another row.
+  const source = page.getByRole('button', { name: /^View queued message 2:/ })
+  await queuedList.evaluate((node) => {
+    node.scrollTop = 0
+  })
+  await source.scrollIntoViewIfNeeded()
+  const sourceBox = await source.boundingBox()
+  const targetBox = await row.boundingBox()
+  await page.mouse.move(sourceBox.x + 10, sourceBox.y + sourceBox.height / 2)
+  await page.mouse.down()
+  await page.waitForTimeout(350)
+  await page.mouse.move(sourceBox.x + 10, targetBox.y + 4, { steps: 4 })
+  await page.mouse.up()
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'move')
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queue-1')
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.beforeMessageId), 'queue-0')
+  assert.equal(await page.getByRole('button', { name: 'Up 2', exact: true }).count(), 0)
+  // The bounded queue scrolls at its edge while a held message is dragged.
+  const moveCount = () =>
+    page.evaluate(() => window.calls.filter((call) => call.input?.action === 'move').length)
+  const beforeAutoScroll = await moveCount()
+  await queuedList.evaluate((node) => {
+    node.scrollTop = 0
+  })
+  await source.scrollIntoViewIfNeeded()
+  const secondBox = await source.boundingBox()
+  const listBox = await queuedList.boundingBox()
+  await page.mouse.move(secondBox.x + 10, secondBox.y + secondBox.height / 2)
+  await page.mouse.down()
+  await page.waitForTimeout(350)
+  await page.mouse.move(secondBox.x + 10, listBox.y + listBox.height - 4, { steps: 4 })
+  await page.waitForFunction(
+    () => document.querySelector('[aria-label="Queued message list"]').scrollTop > 120,
+  )
+  await page.mouse.up()
+  assert.equal(await moveCount(), beforeAutoScroll + 1)
+  assert.notEqual(await page.evaluate(() => window.calls.at(-1).input.beforeMessageId), 'queue-0')
+  // Cancelled gestures leave the authoritative order alone.
+  await source.scrollIntoViewIfNeeded()
+  const cancelBox = await source.boundingBox()
+  const beforeCancel = await moveCount()
+  await page.mouse.move(cancelBox.x + 10, cancelBox.y + cancelBox.height / 2)
+  await page.mouse.down()
+  await page.waitForTimeout(350)
+  await source.evaluate((node) =>
+    node.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true })),
+  )
+  await page.mouse.move(310, 10)
+  await page.mouse.up()
+  assert.equal(await moveCount(), beforeCancel)
+  // VoiceOver users can reorder without visible sort buttons.
+  await source.focus()
+  await page.keyboard.press('ArrowDown')
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.beforeMessageId === 'queue-3')
+
+  await page.getByRole('button', { name: 'Actions for queued message 2', exact: true }).click()
   await page.getByRole('button', { name: 'Steer with message 2', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'steer')
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queue-1')
-  await page.getByRole('button', { name: 'Cancel 20 and return to composer', exact: true }).click()
+  await page.getByRole('button', { name: 'Actions for queued message 20', exact: true }).click()
+  await page.getByRole('button', { name: 'Return message 20 to composer', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'restore')
   await page.waitForFunction(() =>
     window.conversation.actions.draft.text.includes('Queued item 20'),

@@ -6,6 +6,7 @@ import {
   matchesWorkItem,
   pipelineActionAllowed,
   pipelineSignal,
+  pipelineStatusSummary,
   pipelineDuration,
 } from './work-presentation.js'
 describe('pipeline status and actions', () => {
@@ -91,6 +92,41 @@ describe('pipeline status and actions', () => {
     expect(pipelineSignal('').label).toBe('Unknown')
   })
 })
+describe('loaded pipeline status summary', () => {
+  it('groups equivalent forge states without losing their status colors', () => {
+    expect(
+      pipelineStatusSummary([
+        'success',
+        'SUCCESSFUL',
+        'succeeded',
+        'failed',
+        'failure',
+        'in_progress',
+        'running',
+      ]),
+    ).toEqual([
+      { status: 'success', label: 'Passed', tone: 'success', phase: 'finished', count: 3 },
+      { status: 'failed', label: 'Failed', tone: 'danger', phase: 'finished', count: 2 },
+      { status: 'in_progress', label: 'Running', tone: 'info', phase: 'active', count: 2 },
+    ])
+  })
+  it('retains the selected status at zero when search or refresh removes its runs', () => {
+    expect(
+      pipelineStatusSummary(['success'], 'failed').map(({ label, count }) => [label, count]),
+    ).toEqual([
+      ['Passed', 1],
+      ['Failed', 0],
+    ])
+    expect(pipelineStatusSummary(['success'], 'succeeded')).toHaveLength(1)
+    expect(pipelineStatusSummary([])).toEqual([])
+    expect(pipelineStatusSummary(['providerState'])[0]).toMatchObject({
+      label: 'Provider state',
+      count: 1,
+      tone: 'neutral',
+    })
+  })
+})
+
 describe('pipeline timing', () => {
   const startedAt = '2026-09-20T10:00:00Z'
   it.each([

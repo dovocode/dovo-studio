@@ -1,9 +1,9 @@
 import { appChannel } from '../../runtime/preferences/app-build'
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useRef, type ReactNode } from 'react'
 import { Stack } from 'expo-router'
 import { Platform, Pressable, View } from 'react-native'
 import { NavigationContext } from '../../shell/navigation'
-import { Sheet, useInsideSheet } from './sheet'
+import { Sheet, useInsideSheet, type SheetHandle } from './sheet'
 import { Icon } from '../controls/icon'
 import { useApplicationState } from '../../runtime/state/application-state'
 import type { IconName } from '../controls/icon'
@@ -12,8 +12,9 @@ import { IconButton } from '../controls/icon-button'
 import { Text } from '../content/text'
 import { useTheme } from '../theme'
 
-/** Android/web: a screen inside a stack can show a back arrow in its own header. iOS uses the
- * native navigation bar's back button instead. */
+/** Route-owned back actions work in both the native iOS toolbar and Android/web headers. */
+export const InlineScreenHeaderContext = createContext(false)
+
 export const ScreenBackContext = createContext<(() => void) | null>(null)
 
 export type HeaderAction = {
@@ -60,6 +61,7 @@ export function ScreenHeader({
   const title = appChannel ? `${screenTitle} · ${appChannel}` : screenTitle
   const navigation = useContext(NavigationContext)
   const inSheet = useInsideSheet()
+  const inline = useContext(InlineScreenHeaderContext)
   const [menu, setMenu] = useApplicationState(false)
   const heading = titleMenu ? (
     <Pressable
@@ -81,7 +83,7 @@ export function ScreenHeader({
   // Sheets have their own close button; the page's back arrow belongs to the page header only.
   const contextBack = useContext(ScreenBackContext)
   const back = onBack ?? contextBack
-  if (Platform.OS === 'ios' && !inSheet) {
+  if (Platform.OS === 'ios' && !inSheet && !inline) {
     // PRs and pipelines keep their content mounted; only the visible collection owns the bar.
     if (navigation && !navigation.focused) return null
     if (hidden)
@@ -97,19 +99,19 @@ export function ScreenHeader({
             title,
             ...(heading ? { headerTitle: () => heading } : {}),
             headerShown: true,
-            headerBackVisible: !onBack,
+            headerBackVisible: !back,
             headerBackImageSource: iconAssets.back,
             gestureEnabled,
             fullScreenGestureEnabled: gestureEnabled ? undefined : false,
           }}
         />
-        {!!onBack && (
+        {!!back && (
           <Stack.Toolbar placement="left">
             <Stack.Toolbar.Button
               icon={iconAssets.back}
               iconRenderingMode="template"
               accessibilityLabel="Back"
-              onPress={onBack}
+              onPress={back}
             >
               Back
             </Stack.Toolbar.Button>
@@ -268,8 +270,9 @@ function HeaderActionSheet({
 }) {
   const { colors } = useTheme()
   const [expanded, setExpanded] = useApplicationState<string[]>([])
+  const sheet = useRef<SheetHandle>(null)
   return (
-    <Sheet title={title} onClose={onClose}>
+    <Sheet ref={sheet} title={title} onClose={onClose}>
       {groupHeaderActions(buttons).map(({ name, actions }) => (
         <View key={name} style={{ gap: name ? 2 : 12 }}>
           {!!name &&
@@ -317,8 +320,7 @@ function HeaderActionSheet({
                 accessibilityState={{ disabled: button.disabled, selected: button.selected }}
                 disabled={button.disabled}
                 onPress={() => {
-                  onClose()
-                  button.onPress()
+                  sheet.current?.dismiss(button.onPress)
                 }}
                 style={({ pressed }) => ({
                   minHeight: 52,
@@ -354,6 +356,7 @@ function HeaderActionSheet({
                 >
                   {button.label}
                 </Text>
+                {button.selected && <Icon name="check" size={18} color={colors.accent} />}
               </Pressable>
             ))}
         </View>

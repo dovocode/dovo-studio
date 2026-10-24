@@ -539,14 +539,28 @@ export class AccountClient {
         await this.refreshDirectory()
       }
     })
-  private async refreshDirectory() {
+  async refreshDirectory(signal?: AbortSignal) {
+    const token = this.token
     try {
-      this.set({ directory: decode(accountDirectorySchema, await this.request('/v1/servers')) })
+      const directory = decode(
+        accountDirectorySchema,
+        await this.request('/v1/servers', 'GET', undefined, signal, token),
+      )
+      if (signal?.aborted || this.token !== token) throw new Error('Account refresh cancelled')
+      this.set({ directory })
+      return directory
     } catch (error) {
-      if (error instanceof AccountError && error.status === 401) {
+      if (
+        !signal?.aborted &&
+        error instanceof AccountError &&
+        error.status === 401 &&
+        this.token === token
+      ) {
         await this.storage.write(null, this.origin)
-        this.setToken(null)
-        this.set({ directory: null, publications: null, publicationError: '' })
+        if (this.token === token) {
+          this.setToken(null)
+          this.set({ directory: null, publications: null, publicationError: '' })
+        }
       }
       throw error
     }

@@ -93,6 +93,13 @@ try {
       assert.doesNotMatch(await folder.innerText(), /\d+\/\d+/)
     }
   }
+  assert.equal(await project.locator('[data-file-tree-row][tabindex="0"]').count(), 1)
+  await selected.focus()
+  await page.keyboard.press('Tab')
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.hasAttribute('data-file-tree-row')),
+    false,
+  )
   await selected.focus()
   await page.keyboard.press('ArrowLeft')
   assert.equal(

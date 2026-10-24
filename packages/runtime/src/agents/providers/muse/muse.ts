@@ -658,7 +658,12 @@ export function createMuseAdapter(): AgentAdapter {
                     transport: 'stdio',
                     command: server.command,
                     args: server.args,
-                    env: mcpServerEnvironment(server),
+                    env: {
+                      ...mcpServerEnvironment(server),
+                      ...(server.name === 'dovo_task' && server.envValues?.DOVO_TASK_ID
+                        ? { DOVO_TASK_SCHEMA_PROFILE: 'muse' }
+                        : {}),
+                    },
                   }
                 : { transport: 'streamableHttp', url: server.url, headers: mcpHeaders(server) },
             ]),

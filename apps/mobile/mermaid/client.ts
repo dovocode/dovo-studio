@@ -1,4 +1,4 @@
-import mermaid from 'mermaid'
+import { render } from 'pele'
 const diagram = document.getElementById('diagram')!
 function report(message: unknown) {
   const native = Reflect.get(window, 'ReactNativeWebView')
@@ -15,34 +15,32 @@ type DiagramColors = {
   elevated: string
 }
 let generation = 0
-async function renderDiagram(chart: string, colors: DiagramColors) {
+function renderDiagram(chart: string, colors: DiagramColors) {
   const attempt = ++generation
   try {
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: 'strict',
-      theme: 'base',
-      themeVariables: {
-        primaryColor: colors.surface,
-        primaryTextColor: colors.text,
-        primaryBorderColor: colors.border,
-        lineColor: colors.muted,
-        textColor: colors.text,
-        secondaryColor: colors.selection,
-        tertiaryColor: colors.elevated,
-        edgeLabelBackground: colors.background,
-      },
-      suppressErrorRendering: true,
-      maxTextSize: 50000,
-      maxEdges: 500,
-    })
+    for (const [name, value] of Object.entries({
+      bg: colors.background,
+      fg: colors.text,
+      muted: colors.muted,
+      line: colors.muted,
+      surface: colors.surface,
+      'surface-alt': colors.elevated,
+      border: colors.border,
+      accent: colors.selection,
+    }))
+      diagram.style.setProperty(`--pele-${name}`, value)
     document.documentElement.style.color = colors.text
-    const { svg } = await mermaid.render(`diagram-${attempt}`, chart)
-    if (attempt !== generation) return
+    const { svg } = render(chart, {
+      idPrefix: `diagram-${attempt}`,
+      limit: 50000,
+      maxEdges: 500,
+      links: false,
+      images: false,
+    })
     diagram.innerHTML = svg
     report({ height: Math.ceil(diagram.getBoundingClientRect().height) })
   } catch {
-    if (attempt === generation) report({ error: 'Could not render diagram. Mermaid source:' })
+    report({ error: 'Could not render diagram. Mermaid source:' })
   }
 }
 Reflect.set(window, 'renderDiagram', renderDiagram)

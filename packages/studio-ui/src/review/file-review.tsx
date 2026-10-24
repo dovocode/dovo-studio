@@ -1,9 +1,10 @@
 import { useDeferredValue, useMemo, useState } from 'react'
 import { pullFileKind, type FileKind, type ReviewGroup, type FileTreeEntry } from '@dovo/protocol'
-import { ChevronRight, Layers, Search, X } from 'lucide-react'
+import { ChevronRight, Layers } from 'lucide-react'
 import { ChangeTypeFilters } from './change-types'
 import { FileBrowserTree } from '../file-tree'
 import { Button } from '../components/ui/button'
+import { SearchField } from '../search-field'
 import { Checkbox } from '../components/ui/checkbox'
 export type ReviewListFile = FileTreeEntry & { viewed: boolean }
 export function FileReviewControls({
@@ -41,14 +42,21 @@ export function FileReviewControls({
         <span className="text-muted-foreground tabular-nums">
           {files.filter((file) => file.viewed).length}/{files.length} viewed
         </span>
-        <label className="flex min-h-8 items-center gap-2">
+        <label aria-busy={busy} className="flex min-h-8 items-center gap-2">
           <Checkbox
             aria-label="File viewed"
             checked={file?.viewed ?? false}
             disabled={disabled || busy || !file}
             onCheckedChange={(checked) => onViewed(checked === true)}
           />
-          {busy ? 'Saving…' : 'Viewed'}
+          <span className="inline-grid">
+            <span aria-hidden className="invisible col-start-1 row-start-1">
+              Saving…
+            </span>
+            <span role="status" className="col-start-1 row-start-1">
+              {busy ? 'Saving…' : 'Viewed'}
+            </span>
+          </span>
         </label>
         <Button
           size="sm"
@@ -105,6 +113,7 @@ export function ReviewFiles({
   onSelect,
   disabled = false,
   showTypeFilters = true,
+  weightBy = 'files',
 }: {
   files: ReviewListFile[]
   groups: ReviewGroup[]
@@ -114,6 +123,7 @@ export function ReviewFiles({
   onSelect: (path: string) => void
   disabled?: boolean
   showTypeFilters?: boolean
+  weightBy?: 'files' | 'lines'
 }) {
   const [query, setQuery] = useState(''),
     [unviewed, setUnviewed] = useState(false)
@@ -158,31 +168,18 @@ export function ReviewFiles({
   return (
     <>
       <div className="shrink-0 space-y-2 border-b bg-sidebar/40 p-2">
-        {showTypeFilters && <ChangeTypeFilters files={files} value={kind} onChange={setKind} />}
-        <div className="relative">
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground"
-          />
-          <input
-            type="search"
-            aria-label="Search changed files"
-            placeholder="Search files…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="h-9 w-full rounded-md border border-border/60 bg-background pl-8 pr-8 text-xs outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-          />
-          {query && (
-            <button
-              type="button"
-              aria-label="Clear file search"
-              onClick={() => setQuery('')}
-              className="absolute right-1 top-1 flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-accent"
-            >
-              <X aria-hidden className="size-3.5" />
-            </button>
-          )}
-        </div>
+        {showTypeFilters && (
+          <ChangeTypeFilters files={files} weightBy={weightBy} value={kind} onChange={setKind} />
+        )}
+        <SearchField
+          role="searchbox"
+          aria-label="Search changed files"
+          placeholder="Search files…"
+          value={query}
+          onValueChange={setQuery}
+          clearLabel="Clear file search"
+          className="text-xs"
+        />
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {groups.some((group) => group.basis === 'feature') && (
             <Button

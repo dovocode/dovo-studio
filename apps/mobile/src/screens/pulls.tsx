@@ -1,3 +1,5 @@
+import { EmptyState } from '../ui/content/empty-state'
+import { contentColumn } from '../ui/layout/content-column'
 import { PullRequestIcon } from '../ui/content/pull-request-icon'
 import { AuthorAvatar } from '../scm/pulls/author-avatar'
 import { uniquePulls } from '@dovo/protocol'
@@ -89,6 +91,21 @@ export default function PullsScreen() {
   const setDraft = (value: string) => setField('draft', value)
   const setAttention = (value: boolean) => setField('attention', value)
   const setSort = (value: string) => setField('sort', value)
+  const filtersActive = !!(
+    search.trim() ||
+    repositoryId ||
+    draft !== 'all' ||
+    attention ||
+    state !== 'open'
+  )
+  const clearFilters = () => {
+    setMarked([])
+    setRepository('')
+    setSearch('')
+    setState('open')
+    setDraft('all')
+    setAttention(false)
+  }
   const [filters, setFilters] = useApplicationState(false)
   const { pages, sources, busy, connected, more, refresh, chooseSource } = usePulls(
     repositoryId,
@@ -100,11 +117,7 @@ export default function PullsScreen() {
     router.push(pullHref(runtimeId, repositoryId, number))
   }
   const query = useDeferredValue(search)
-  const attentionCount = pages.reduce(
-    (count, page) => count + page.pulls.filter(pullNeedsAttention).length,
-    0,
-  )
-  const pulls = useMemo(
+  const matchingPulls = useMemo(
     () =>
       uniquePulls(
         pages.flatMap((page) =>
@@ -123,12 +136,13 @@ export default function PullsScreen() {
           (p) =>
             (state === 'all' || p.state === state) &&
             (draft === 'all' || p.draft === (draft === 'draft')) &&
-            (!attention || pullNeedsAttention(p)) &&
             matchesPull(p, p.repositoryName, query),
         )
         .sort((a, b) => comparePulls(a, b, sort === 'attention')),
-    [pages, state, draft, attention, query, sort],
+    [pages, state, draft, query, sort],
   )
+  const attentionCount = matchingPulls.filter(pullNeedsAttention).length
+  const pulls = attention ? matchingPulls.filter(pullNeedsAttention) : matchingPulls
   const { retainPosition, ...listScroll } = useListScroll<(typeof pulls)[number]>(
     listOffset,
     focused,
@@ -148,7 +162,7 @@ export default function PullsScreen() {
           {
             label: 'PR filters',
             icon: 'filters',
-            selected: filters,
+            selected: filters || filtersActive,
             onPress: () => setFilters(true),
           },
         ]}
@@ -203,6 +217,7 @@ export default function PullsScreen() {
         keyboardDismissMode="on-drag"
         contentContainerStyle={[
           styles.content,
+          contentColumn.collection,
           {
             gap: 0,
             paddingTop: 0,
@@ -244,12 +259,17 @@ export default function PullsScreen() {
                   styles.muted,
                   {
                     flex: 1,
+                    minWidth: 0,
                   },
                 ]}
+                numberOfLines={1}
               >
-                All computers
+                {repositoryId
+                  ? (sources.find((source) => source.key === repositoryId)?.repository.name ??
+                    'Selected repository')
+                  : 'All repositories'}
               </Text>
-              {attentionCount > 0 && state === 'open' && (
+              {(attentionCount > 0 || attention) && state === 'open' && (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={attention ? 'Show all PRs' : 'Show PRs needing attention'}
@@ -289,16 +309,20 @@ export default function PullsScreen() {
                 </Pressable>
               )}
             </View>
-            {(repositoryId || draft !== 'all' || attention) && (
-              <Text style={styles.muted}>
-                {[
-                  sources.find((source) => source.key === repositoryId)?.repository.name,
-                  draft === 'draft' ? 'Drafts' : draft === 'ready' ? 'Ready for review' : '',
-                  attention ? 'Needs attention' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Text>
+            {filtersActive && (
+              <View style={[styles.row, { justifyContent: 'space-between' }]}>
+                <Text style={[styles.muted, { flex: 1, minWidth: 0 }]}>
+                  {[
+                    draft === 'draft' ? 'Drafts' : draft === 'ready' ? 'Ready for review' : '',
+                    attention ? 'Needs attention' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || 'Filtered results'}
+                </Text>
+                {pulls.length > 0 && (
+                  <Action secondary label="Clear filters" onPress={clearFilters} />
+                )}
+              </View>
             )}
             <View
               style={{
@@ -339,7 +363,7 @@ export default function PullsScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: marked.includes(`${p.sourceKey}-${p.number}`) }}
-            accessibilityLabel={`${p.runtimeName}${p.online ? '' : ', offline'}, ${p.repositoryName}, PR ${p.number}. ${p.title}. ${pullState(p).label}. ${p.checksState !== undefined || p.statusError ? pullChecks(p).label + '. ' : ''}${p.reviewDecision !== undefined || p.statusError ? pullReview(p).label + '. ' : ''} ${p.head} into ${p.base}. ${p.state === 'open' ? pullNextStep(p).label : ''}`}
+            accessibilityLabel={`${p.runtimeName}${p.online ? '' : ', offline'}, ${p.repositoryName}, PR ${p.number}. ${p.title}. ${pullState(p).label}. ${p.checksState !== undefined || p.statusError ? pullChecks(p).label + '. ' : ''}${p.reviewDecision !== undefined || p.statusError ? pullReview(p).label + '. ' : ''} ${p.head} into ${p.base}. ${p.state === 'open' ? pullNextStep(p).label : ''}. ${p.additions != null ? `${p.additions} lines added. ` : ''}${p.deletions != null ? `${p.deletions} lines deleted. ` : ''}${p.commentCount != null ? `${p.commentCount} comments.` : ''}`}
             onPress={() => {
               const key = `${p.sourceKey}-${p.number}`
               if (marked.length)
@@ -399,7 +423,7 @@ export default function PullsScreen() {
             style={({ pressed }) => ({
               gap: 5,
               backgroundColor: marked.includes(`${p.sourceKey}-${p.number}`)
-                ? colors.elevated
+                ? colors.selection
                 : undefined,
               paddingVertical: 12,
               borderBottomWidth: 0.5,
@@ -415,7 +439,10 @@ export default function PullsScreen() {
                 },
               ]}
             >
-              <PullRequestIcon state={p.state} draft={p.draft} size={16} />
+              <View style={[styles.row, { flexWrap: 'nowrap', gap: 5 }]}>
+                <PullRequestIcon state={p.state} draft={p.draft} size={14} />
+                <Signal signal={pullState(p)} emphasis />
+              </View>
               <Text
                 numberOfLines={1}
                 style={[
@@ -426,11 +453,9 @@ export default function PullsScreen() {
                   },
                 ]}
               >
-                {p.repositoryName} · #{p.number}
-                {' · '}
-                {p.runtimeName}
-                {!p.online ? ' · Offline' : ''}
+                {p.repositoryName}
               </Text>
+              <Text style={[styles.muted, { flexShrink: 0 }]}>#{p.number}</Text>
               <Text style={styles.muted}>{formatShortDate(p.updatedAt)}</Text>
             </View>
             <View
@@ -461,6 +486,43 @@ export default function PullsScreen() {
               <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
                 {p.author} · {p.head} → {p.base}
               </Text>
+            </View>
+            <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
+              <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1, minWidth: 0 }]}>
+                {p.runtimeName}
+                {!p.online ? ' · Offline' : ''}
+              </Text>
+              {(p.additions != null || p.deletions != null || p.commentCount != null) && (
+                <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
+                  {p.additions != null && (
+                    <Text
+                      accessibilityLabel={`${p.additions} lines added`}
+                      style={[
+                        styles.muted,
+                        { color: colors.success, fontVariant: ['tabular-nums'] },
+                      ]}
+                    >
+                      +{p.additions.toLocaleString()}
+                    </Text>
+                  )}
+                  {p.deletions != null && (
+                    <Text
+                      accessibilityLabel={`${p.deletions} lines deleted`}
+                      style={[styles.muted, { color: colors.error, fontVariant: ['tabular-nums'] }]}
+                    >
+                      −{p.deletions.toLocaleString()}
+                    </Text>
+                  )}
+                  {p.commentCount != null && (
+                    <View style={[styles.row, { gap: 4 }]}>
+                      <Icon name="chat" size={12} color={colors.muted} />
+                      <Text accessibilityLabel={`${p.commentCount} comments`} style={styles.muted}>
+                        {p.commentCount.toLocaleString()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
             {p.stack && (
               <View style={[styles.row, { gap: 6, paddingVertical: 4 }]}>
@@ -500,38 +562,39 @@ export default function PullsScreen() {
                 {p.labels.length > 3 ? ` · +${p.labels.length - 3} labels` : ''}
               </Text>
             )}
-            <Signal signal={p.state === 'open' ? pullNextStep(p) : pullState(p)} />
+            {p.state === 'open' && !p.draft && <Signal signal={pullNextStep(p)} />}
           </Pressable>
         )}
         ListEmptyComponent={
-          !busy ? (
-            <View style={styles.empty}>
-              <Icon name="pulls" size={30} color={colors.muted} />
-              <Text
-                style={[
-                  styles.text,
-                  {
-                    textAlign: 'center',
-                    fontWeight: '600',
-                  },
-                ]}
-              >
-                {connected ? 'No pull requests to show' : 'Connect to a computer'}
-              </Text>
-              <Text
-                style={[
-                  styles.muted,
-                  {
-                    textAlign: 'center',
-                  },
-                ]}
-              >
-                {connected
-                  ? 'Try another filter or pull down to refresh.'
-                  : 'Your saved pull requests will appear here when available.'}
-              </Text>
-            </View>
-          ) : undefined
+          busy ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={[styles.empty, styles.muted, { textAlign: 'center' }]}
+            >
+              Loading pull requests…
+            </Text>
+          ) : (
+            <EmptyState
+              icon="pulls"
+              title={
+                filtersActive
+                  ? 'No matching pull requests'
+                  : connected
+                    ? 'No pull requests to show'
+                    : 'Connect to a computer'
+              }
+              description={
+                filtersActive
+                  ? 'Try another search or clear your filters.'
+                  : connected
+                    ? 'Pull down to refresh, or create a pull request.'
+                    : 'Your saved pull requests will appear here when available.'
+              }
+              action={
+                filtersActive && <Action secondary label="Clear filters" onPress={clearFilters} />
+              }
+            />
+          )
         }
         ListFooterComponent={
           <View
@@ -641,13 +704,8 @@ export default function PullsScreen() {
             secondary
             label="Reset PR filters"
             onPress={() => {
-              setMarked([])
-              setRepository('')
-              setDraft('all')
-              setAttention(false)
+              clearFilters()
               setSort('attention')
-              setSearch('')
-              setState('open')
             }}
           />
           <Action label="Show pull requests" onPress={() => setFilters(false)} />

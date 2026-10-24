@@ -5,6 +5,7 @@ import { randomUUID } from 'expo-crypto'
 import {
   fixChecksPrompt,
   taskPullStatusFor,
+  taskPullLinks,
   pullStatusLabel,
   pullStackLabel,
   responses,
@@ -18,13 +19,25 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
 /** The task's pull request state and checks; failing checks can be handed to the agent. */
-function PrimaryPullStatus({ task, onOpen }: { task: Task; onOpen?: (url: string) => void }) {
+function PrimaryPullStatus({
+  task,
+  onOpen,
+  url,
+  title,
+  inline = false,
+}: {
+  task: Task
+  onOpen?: (url: string) => void
+  url?: string
+  title?: string
+  inline?: boolean
+}) {
   const openLink = useOpenAppLink(task.id)
   const { colors } = useTheme()
 
   const { connected, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
-  const status = task.pullStatus
+  const status = url ? taskPullStatusFor(task, url) : task.pullStatus
   if (!status) return null
   const failing = status.state === 'open' && status.checks === 'failed'
   const color =
@@ -36,14 +49,20 @@ function PrimaryPullStatus({ task, onOpen }: { task: Task; onOpen?: (url: string
           ? colors.success
           : colors.muted
   return (
-    <View style={{ paddingHorizontal: 16, gap: 4 }}>
+    <View style={{ paddingHorizontal: inline ? 0 : 16, gap: 4, maxWidth: '100%' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 }}>
         <Pressable
           accessibilityRole="link"
-          accessibilityLabel={`${pullStatusLabel(status)}. Opens the pull request.`}
+          accessibilityLabel={
+            title
+              ? `Open PR #${status.number}: ${title}. ${pullStatusLabel(status)}`
+              : `${pullStatusLabel(status)}. Opens the pull request.`
+          }
           onPress={() => (onOpen ? onOpen(status.url) : act(() => openLink(status.url)))}
           style={({ pressed }) => ({
-            flex: 1,
+            flex: inline ? undefined : 1,
+            flexShrink: 1,
+            minHeight: 44,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 6,
@@ -96,10 +115,12 @@ export function PullStatus({
   task,
   onOpen,
   showLinked = true,
+  inline = false,
 }: {
   task: Task
   onOpen?: (url: string) => void
   showLinked?: boolean
+  inline?: boolean
 }) {
   const openLink = useOpenAppLink(task.id)
   const { colors } = useTheme()
@@ -109,6 +130,63 @@ export function PullStatus({
   const links = (showLinked ? (task.linkedPullRequests ?? []) : []).filter(
     (pull) => pull.url !== task.pullStatus?.url && pull.url !== task.pullRequest?.url,
   )
+  if (inline) {
+    const pulls: { number: number; url: string; title: string }[] = taskPullLinks(task)
+    if (task.pullStatus && !pulls.some((pull) => pull.url === task.pullStatus?.url))
+      pulls.unshift({ ...task.pullStatus, title: task.pullStatus.title || task.title })
+    if (!pulls.length) return null
+    return (
+      <View
+        accessibilityLabel="Linked pull requests"
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          columnGap: 16,
+          rowGap: 4,
+        }}
+      >
+        {pulls.map((pull) =>
+          taskPullStatusFor(task, pull.url) ? (
+            <PrimaryPullStatus
+              key={pull.url}
+              task={task}
+              url={pull.url}
+              title={pull.title}
+              inline
+              onOpen={onOpen}
+            />
+          ) : (
+            <Pressable
+              key={pull.url}
+              accessibilityRole="link"
+              accessibilityLabel={`Open PR #${pull.number}: ${pull.title}`}
+              onPress={() => {
+                if (onOpen) return onOpen(pull.url)
+                setLinkError('')
+                void openLink(pull.url).catch((error) => setLinkError(String(error)))
+              }}
+              style={({ pressed }) => ({
+                minHeight: 44,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                opacity: pressed ? 0.55 : 1,
+              })}
+            >
+              <PullRequestIcon size={16} />
+              <Text style={{ color: colors.text, fontSize: 13 }}>PR #{pull.number}</Text>
+            </Pressable>
+          ),
+        )}
+        {!!linkError && (
+          <Text accessibilityRole="alert" style={{ color: colors.error, fontSize: 12 }}>
+            {linkError}
+          </Text>
+        )}
+      </View>
+    )
+  }
   if (!task.pullStatus && !links.length) return null
   return (
     <View style={{ gap: 4 }}>

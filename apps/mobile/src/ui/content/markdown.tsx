@@ -367,7 +367,7 @@ export const Markdown = memo(function Markdown({
               /* A server-local path is resolved through its thread. */
             }
             return uri ? (
-              <ServerImage key={part.offset} source={{ uri }} label={imageLabel} />
+              <ServerImage key={part.offset} taskId={taskId} source={{ uri }} label={imageLabel} />
             ) : taskId ? (
               <ServerImage
                 key={part.offset}

@@ -40,7 +40,7 @@ export const Keyboard={dismiss(){},addListener:(name,callback)=>{window.keyboard
     path: 'expo-router',
     contents: `
 export const router=Object.fromEntries(['push','replace','navigate','dismissTo'].map(method=>[method,(...args)=>window.routes.push({method,args})]));
-function Stack(){const Scene=window.WorkbenchScene;const Tabs=window.WorkbenchTabs;return window.fixture.path.startsWith('/settings')?<Scene tab="settings"/>:<Tabs/>}Stack.Screen=()=>null;export {Stack};
+function Stack(){const Scene=window.WorkbenchScene;const Tabs=window.WorkbenchTabs;return window.fixture.sidebar?<Scene tab="tasks" sidebar/>:window.fixture.path.startsWith('/settings')?<Scene tab="settings"/>:<Tabs/>}Stack.Screen=()=>null;export {Stack};
 export const usePathname=()=>window.fixture.path;export const useGlobalSearchParams=()=>({});export const useIsFocused=()=>true;`,
   },
   {
@@ -88,8 +88,7 @@ NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export
   {
     path: './extensions',
     importer: workbench,
-    contents:
-      'const Scene=()=> <div>Collection content</div>;export const createMobileExtensions=()=>({host:{dispose(){}},view:async()=>Scene});',
+    contents: `import {useNavigation} from '${root}apps/mobile/src/shell/navigation.tsx';const Scene=()=>{const navigation=useNavigation();return <div><span>Collection content</span><button onClick={()=>navigation.navigate('tasks','thread','b')}>Open sidebar thread</button></div>};export const createMobileExtensions=()=>({host:{dispose(){}},view:async()=>Scene});`,
   },
   {
     path: '../tasks/creation/new-task',
@@ -212,6 +211,16 @@ try {
   assert.equal(await page.locator('nav').getByRole('button', { name: 'New thread' }).count(), 0)
   await plus.click()
   assert.equal(await page.evaluate(() => window.routes.length), 3)
+  await page.evaluate(() => window.updateFixture({ sidebar: true, path: '/thread/a/old' }))
+  await page.getByRole('button', { name: 'Open sidebar thread', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.routes.at(-1).method), 'replace')
+  assert.deepEqual(await page.evaluate(() => window.routes.at(-1).args[0].params), {
+    runtimeId: 'b',
+    taskId: 'thread',
+  })
+  await page.evaluate(() => window.updateFixture({ path: '/' }))
+  await page.getByRole('button', { name: 'Open sidebar thread', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.routes.at(-1).method), 'navigate')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile New thread: trailing native action, preserved tab, offline guard, keyboard hiding, no More tab and Android floating action pass. Native controls use browser adapters.',

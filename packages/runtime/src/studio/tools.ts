@@ -1,3 +1,4 @@
+import { nextQueuedMessage } from '@dovo/protocol'
 import { threadSnapshot } from './thread-snapshot.js'
 import { randomUUID } from 'node:crypto'
 import { Effect, Schema } from 'effect'
@@ -314,7 +315,7 @@ export async function studioTool(
           await waitFor(
             () => s.store.taskSummary(command.id),
             (task) =>
-              s.tasks.hasWorkingFamily(task.id) || (!!task.queue?.length && !task.queuePaused),
+              s.tasks.hasWorkingFamily(task.id) || (!!nextQueuedMessage(task) && !task.queuePaused),
             command.timeoutMs ?? 20000,
             check,
           ),

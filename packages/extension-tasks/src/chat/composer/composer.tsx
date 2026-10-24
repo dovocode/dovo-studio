@@ -1,4 +1,5 @@
 import { QueueEditContext } from './queue-edit'
+import { useChatImageUploader } from './chat-image-edit-context'
 import { createComposerDraft } from './composer-draft'
 import { TurnModelControls } from './turn-model-controls'
 import {
@@ -111,7 +112,6 @@ export function Composer({
   const [asideCreating, setAsideCreating] = useState(false)
   const asideRequest = useRef<'saving' | 'asking' | null>(null)
   const [dictating, setDictating] = useState(false)
-  const sending = submitBusy || machineMoving || asideCreating || dictating
   const sendingRequest = useRef(false)
   const [fileDrag, setFileDrag] = useState(false)
   const attachments = useAttachments(
@@ -138,6 +138,16 @@ export function Composer({
         }
       : undefined,
   )
+  const editingChatImage = useChatImageUploader(
+    (file) => attachments.upload([file], undefined, true),
+    connected &&
+      !task.archivedAt &&
+      !task.example &&
+      !submitBusy &&
+      !attachments.busy &&
+      (!editing || !!snapshot?.fullTurnSettingsSupported),
+  )
+  const sending = submitBusy || machineMoving || asideCreating || dictating || editingChatImage
   const composerDraft = useComposerDraft(task, temporary, editing?.controller)
   const askAside = useCommittedCallback(async () => {
     if (

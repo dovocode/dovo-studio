@@ -1,10 +1,11 @@
+import type { AcpClient } from './acp-client.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { constants } from 'node:fs'
 import { lstat, open, realpath } from 'node:fs/promises'
 import { isAbsolute, relative, dirname, basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { Client, ClientCapabilities, TerminalExitStatus } from '@agentclientprotocol/sdk'
+import type { ClientCapabilities, TerminalExitStatus } from '@agentclientprotocol/sdk/unstable'
 import type { AgentRun } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
 import { stopAcpChild } from './acp-process.js'
@@ -70,7 +71,7 @@ export async function acpClientTools(
   }
 
   const client: Pick<
-    Client,
+    AcpClient,
     | 'readTextFile'
     | 'writeTextFile'
     | 'createTerminal'

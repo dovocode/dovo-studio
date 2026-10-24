@@ -45,10 +45,12 @@ export function useImageEditor() {
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
   }, [])
-  const edit = async (file: File): Promise<File | null> => {
+  const edit = async (file: File, stillFrame = false): Promise<File | null> => {
     const format = attachmentImageFormat(file.name, file.type)
-    if (!format || format === 'heic') return file
+    const gif = stillFrame && file.type === 'image/gif'
+    if ((!format && !gif) || format === 'heic') return file
     if (
+      !stillFrame &&
       (format === 'png' || format === 'webp') &&
       isAnimatedAttachmentImage(new Uint8Array(await file.arrayBuffer()), format)
     )
@@ -63,7 +65,7 @@ export function useImageEditor() {
       reader.onerror = () => reject(reader.error ?? new Error('Could not read this image.'))
       reader.readAsDataURL(file)
     })
-    const mime = format === 'jpeg' ? 'image/jpeg' : `image/${format}`
+    const mime = gif ? 'image/gif' : format === 'jpeg' ? 'image/jpeg' : `image/${format}`
     const html = imageEditorDocument(`data:${mime};base64,${source.split(',')[1]}`)
     if (!mounted.current) return null
     return new Promise((resolve) => {
@@ -81,7 +83,7 @@ export function useImageEditor() {
           if (!open) finish(null)
         }}
       >
-        <DialogContent className="h-[min(850px,90dvh)] w-[min(1100px,95vw)] max-w-none overflow-hidden p-0 gap-0 [&>button]:hidden">
+        <DialogContent className="h-[min(850px,90dvh)] w-[min(1100px,95vw)] max-w-none overflow-hidden p-0 gap-0 [&_[data-dialog-close]]:hidden">
           <DialogTitle className="sr-only">Edit image attachment</DialogTitle>
           {document && (
             <iframe

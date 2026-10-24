@@ -1,5 +1,12 @@
 # Queue, steer and agent questions
 
+Images in chat can be edited and attached to the active composer on desktop and mobile. Use **Edit &
+attach** on a sent attachment, or the edit icon in an image preview on mobile. This also works for
+tool screenshots, generated images and inline images. Saving creates a new attachment; the original
+message and image stay intact. Cancel leaves the draft unchanged. If a queued message is being
+edited, the new image joins that draft. Animated images are edited as a still frame. External image
+hosts must allow downloading the image (and browser access on desktop/web).
+
 Running threads keep unread title styling, including while saving changes. Viewing a running chat
 does not mark it read; its completed response must be viewed first. A successful completed turn
 shows **Done** in the task list until you view its chat. Read status syncs across your connected

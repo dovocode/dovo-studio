@@ -25,9 +25,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { fromJSONSchema } from 'zod'
 import type { JSONSchema } from 'zod/v4/core'
 import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { WebSocket } from 'ws'
 import { screenshotPoint, screenshotSize } from './screenshot-point.js'
+import { museToolSchema } from './muse-schema.js'
 
 const taskId = process.env.DOVO_TASK_ID
 const address = process.env.DOVO_TASK_URL
@@ -1144,15 +1146,28 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
     }
   }
 }
-for (const tool of tools.filter(
+const enabledTools = tools.filter(
   (tool) =>
     (linkedProjectsEnabled || tool.name !== 'linked_projects') &&
     (deviceHubEnabled || !deviceTools.has(tool.name)) &&
     (!terminalsDisabled || !tool.name.startsWith('terminal_')),
-))
+)
+for (const tool of enabledTools)
   server.registerTool(
     tool.name,
     { description: tool.description, inputSchema: fromJSONSchema(tool.inputSchema) },
     (input) => callTool(tool.name, input),
   )
+// Preserve root unions (e.g. todos/list vs todos/set), which the SDK's default
+// schema exporter otherwise advertises as an empty object. Validation remains
+// registered above, including the input-size limit and the complete nested schema.
+server.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: enabledTools.map((tool) => ({
+    ...tool,
+    inputSchema:
+      process.env.DOVO_TASK_SCHEMA_PROFILE === 'muse'
+        ? { ...museToolSchema(tool.inputSchema), type: 'object' as const }
+        : tool.inputSchema,
+  })),
+}))
 await server.connect(new StdioServerTransport())

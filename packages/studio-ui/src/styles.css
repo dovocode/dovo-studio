@@ -12,8 +12,20 @@
 @source '../../studio-shell/src';
 @source '../node_modules/streamdown/dist/*.js';
 @source '../node_modules/@streamdown/code/dist/*.js';
-@source '../node_modules/@streamdown/mermaid/dist/*.js';
 @custom-variant dark (&:is(.dark *));
+
+.pele {
+  --pele-bg: var(--background);
+  --pele-fg: var(--foreground);
+  --pele-muted: var(--muted-foreground);
+  --pele-line: var(--muted-foreground);
+  --pele-surface: var(--card);
+  --pele-surface-alt: var(--muted);
+  --pele-border: var(--border);
+  --pele-accent: var(--primary);
+  --pele-font: var(--font-sans);
+  --pele-radius: 6px;
+}
 
 /* Render containment clips fixed descendants. Keep detached previews in viewport coordinates. */
 .studio-chat-turn:has([data-preview-overlay='true']) {
@@ -128,6 +140,10 @@ textarea {
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+/* Loading, filtering and opening a disclosure must not change a scroll surface's line width. */
+:where(.overflow-y-auto, .overflow-auto) {
+  scrollbar-gutter: stable;
 }
 .studio {
   --studio-header-height: 52px;
@@ -744,7 +760,7 @@ textarea {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   height: var(--studio-header-height, 52px);
   min-height: var(--studio-header-height, 52px);
   padding: 0 16px;
@@ -758,8 +774,8 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  font-weight: 550;
+  font-size: 14px;
+  font-weight: 600;
   line-height: 20px;
   letter-spacing: -0.025em;
 }
@@ -780,9 +796,9 @@ textarea {
 .studio-page-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  max-width: 65%;
+  max-width: 55%;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -795,13 +811,47 @@ textarea {
 }
 .studio-page-toolbar {
   padding: 12px 16px;
+  background: color-mix(in srgb, var(--card) 40%, var(--background));
 }
 .studio-empty-icon {
-  padding: 8px;
-  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 6px;
+  border-radius: 14px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.studio-filter-chip {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: var(--card);
-  color: var(--primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 120ms ease-out;
+}
+.studio-filter-chip:hover {
+  background: var(--accent);
+}
+.studio-filter-chip[aria-pressed='true'] {
+  background: var(--selection);
+  font-weight: 600;
+}
+.studio-settings-group > [data-slot='card'] {
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  box-shadow: none;
+}
+[data-high-contrast='true'] .studio-settings-group > [data-slot='card'] {
+  border-color: var(--border);
+}
+[data-high-contrast='true'] .studio-settings-group > [data-slot='card'] > * + * {
+  border-color: var(--border);
+}
+[data-high-contrast='true'] .studio-filter-chip[aria-pressed='true'] {
+  border-color: currentColor;
 }
 .studio-summary {
   display: grid;
@@ -851,6 +901,9 @@ select:focus-visible,
   .studio-page-header {
     padding-inline: 12px;
   }
+  .studio-page-actions {
+    max-width: 50%;
+  }
   .studio-summary {
     gap: 8px;
   }
@@ -863,9 +916,20 @@ select:focus-visible,
 }
 
 @media (pointer: coarse) {
+  .studio-filter-chip,
+  .studio-page-actions :is(button, [role='combobox']) {
+    min-height: 44px;
+    min-width: 44px;
+  }
   .studio-navigation .studio-navigation-item {
     min-height: 44px;
     width: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-filter-chip {
+    transition: none;
   }
 }
 

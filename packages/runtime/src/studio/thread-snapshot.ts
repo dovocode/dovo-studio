@@ -1,3 +1,4 @@
+import { nextQueuedMessage } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
 import {
   taskFamilyIds,
@@ -90,7 +91,7 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
           : item.subagents?.some(nativeAgentWorking) ||
               item.activeRunId ||
               item.status === 'running' ||
-              (!!item.queue?.length && !item.queuePaused)
+              (!!nextQueuedMessage(item) && !item.queuePaused)
             ? 'running'
             : watches.pipelines || watches.pullRequests
               ? 'waiting'

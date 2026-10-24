@@ -277,6 +277,15 @@ it('reconciles a lost send acknowledgement before exposing its saved text', asyn
   await Effect.runPromise(reopened.flushEffect())
   expect(await createDraftStorage(storage).read('runtime.task')).toBe('')
 })
+it('does not append text from a delivered submission when restoring a queued message after reopening', async () => {
+  const { Effect } = await import('effect')
+  const drafts = createDraftStorage(memoryStorage())
+  await drafts.write('runtime.task', submission.text)
+  await Effect.runPromise(drafts.stageEffect('runtime.task', submission, submission.text))
+  await Effect.runPromise(drafts.readRecordEffect('runtime.task', undefined, [submission.id]))
+  await Effect.runPromise(drafts.appendEffect('runtime.task', submission.text, ''))
+  expect(await drafts.read('runtime.task')).toBe(submission.text)
+})
 it('keeps an intentional identical follow-up after a previously accepted send', async () => {
   const { Effect } = await import('effect')
   const storage = memoryStorage()
@@ -336,4 +345,52 @@ it('persists local keystrokes without echoing them into their originating compos
   await drafts.write('runtime.task', 'dictated')
   await drafts.write('runtime.task', '')
   expect(composer.mock.calls).toEqual([['dictated'], ['']])
+})
+
+it('appends a restored queue item to the latest typing without a delayed save overwriting it', async () => {
+  const values = new Map<string, string>()
+  const storage = memoryStorage(values)
+  const blocked = gate()
+  const drafts = createDraftStorage({
+    ...storage,
+    setItem: async (key, value) => {
+      if (value === 'Earlier typing') await blocked.promise
+      await storage.setItem(key, value)
+    },
+  })
+  const first = drafts.write('runtime.task', 'Earlier typing')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const restoring = runClientEffect(
+    drafts.appendEffect('runtime.task', 'Queued message', 'Stale draft'),
+  )
+  const typing = drafts.write('runtime.task', 'Newest typing')
+  await drafts.write('other.task', 'Other thread')
+  blocked.resolve()
+  await Promise.all([first, restoring, typing])
+  expect(await drafts.read('runtime.task')).toBe('Newest typing\n\nQueued message')
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe(
+    'Newest typing\n\nQueued message',
+  )
+  expect(await drafts.read('other.task')).toBe('Other thread')
+})
+
+it('keeps restored queue text in memory and flushes it after a failed disk write', async () => {
+  const storage = memoryStorage()
+  let fail = false
+  const drafts = createDraftStorage({
+    ...storage,
+    setItem: async (key, value) => {
+      if (fail) throw new Error('Disk full')
+      await storage.setItem(key, value)
+    },
+  })
+  await drafts.write('runtime.task', 'Draft')
+  fail = true
+  await expect(
+    runClientEffect(drafts.appendEffect('runtime.task', 'Restored', '')),
+  ).rejects.toThrow('Disk full')
+  expect(await drafts.read('runtime.task')).toBe('Draft\n\nRestored')
+  fail = false
+  await runClientEffect(drafts.flushEffect())
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe('Draft\n\nRestored')
 })

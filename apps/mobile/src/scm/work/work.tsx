@@ -1,4 +1,10 @@
-import { hasJiraIssueFilters, type JiraIssueFilters, runtimeComputerName } from '@dovo/protocol'
+import {
+  pipelineSignal,
+  pipelineStatusSummary,
+  hasJiraIssueFilters,
+  type JiraIssueFilters,
+  runtimeComputerName,
+} from '@dovo/protocol'
 import {
   createDetailDrafts,
   detailDraftKey,
@@ -28,14 +34,14 @@ import {
   type WorkSource,
 } from './work-sources'
 import { useNavigation } from '../../shell/navigation'
-import { issueHref, jiraIssueHref, pipelineHref } from '../../shell/source-route'
+import { backToCollection, issueHref, jiraIssueHref, pipelineHref } from '../../shell/source-route'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { formatShortDate } from '../../ui/content/format-date'
 import { Choice } from '../../ui/controls/choice'
 import { Action } from '../../ui/controls/action'
 import { Icon } from '../../ui/controls/icon'
-import { ScreenHeader } from '../../ui/layout/screen-header'
+import { ScreenHeader, type HeaderAction } from '../../ui/layout/screen-header'
 import { SearchField } from '../../ui/controls/field'
 import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { JiraProjectForm } from '../connections/jira-binding'
@@ -136,11 +142,13 @@ export function WorkScreen({
   const { pages, busy, refresh, more } = useWorkCollection(
     mode,
     repositoryId,
-    state,
+    mode === 'pipelines' ? 'all' : state,
     mode === 'issues' ? serverQuery : '',
     jiraOnly ? jiraFilters : undefined,
   )
-  const connected = overviews.some((entry) => entry.connected)
+  const connected = sources.some(
+    (source) => (!repositoryId || source.key === repositoryId) && source.connected,
+  )
   const listOffset = useRef(0)
   useEffect(() => {
     if (mode !== 'issues' || workTarget?.kind !== 'issue' || workTarget.id) return
@@ -153,7 +161,7 @@ export function WorkScreen({
     setSearch('')
     listOffset.current = 0
   }, [workTarget, mode, activeId, onRepositoryChange])
-  const visible = pages
+  const matching = pages
     .flatMap((page) =>
       page.items.map((row) => ({
         page,
@@ -182,6 +190,17 @@ export function WorkScreen({
           ? a.row.title.localeCompare(b.row.title)
           : (b.row.updatedAt ?? '').localeCompare(a.row.updatedAt ?? ''),
     )
+  const visible =
+    mode === 'pipelines' && state !== 'all'
+      ? matching.filter(
+          ({ row }) =>
+            'status' in row && pipelineSignal(row.status).label === pipelineSignal(state).label,
+        )
+      : matching
+  const pipelineStatuses = pipelineStatusSummary(
+    matching.flatMap(({ row }) => ('status' in row ? [row.status] : [])),
+    state,
+  )
   const { retainPosition, ...listScroll } = useListScroll<(typeof visible)[number]>(
     listOffset,
     focused,
@@ -215,16 +234,22 @@ export function WorkScreen({
     <View style={styles.screen}>
       <ScreenHeader
         title={mode === 'issues' ? 'Issues' : pullNumber ? `PR #${pullNumber} runs` : 'PR runs'}
-        onBack={mode === 'issues' ? () => router.dismissTo('/') : undefined}
+        onBack={mode === 'issues' ? () => backToCollection('/') : undefined}
         subtitle={
           mode === 'issues'
-            ? `${visible.length} issue${visible.length === 1 ? '' : 's'} · ${selected ? workSourceName(selected) : 'All sources'}${busy && visible.length ? ' · Updating' : ''}`
+            ? `${visible.length} issue${visible.length === 1 ? '' : 's'} · ${selected ? workSourceName(selected) : 'All sources'}`
             : `${selected ? workSourceName(selected) : 'Project'} · Commit ${commitSha?.slice(0, 8) || 'unavailable'}`
         }
         leading={onBack ? <Action secondary label="Back to PR" onPress={onBack} /> : undefined}
-        buttons={
-          mode === 'issues'
-            ? [
+        buttons={[
+          {
+            icon: 'refresh',
+            label: `Refresh ${mode}`,
+            disabled: busy || !connected || !focused,
+            onPress: refresh,
+          },
+          ...(mode === 'issues'
+            ? ([
                 {
                   icon: 'add',
                   label: 'New issue',
@@ -244,9 +269,9 @@ export function WorkScreen({
                     (jiraOnly && hasJiraIssueFilters(jiraFilters)),
                   onPress: () => setFilters(true),
                 },
-              ]
-            : undefined
-        }
+              ] satisfies HeaderAction[])
+            : []),
+        ]}
       />
       <FlatList
         {...listScroll}
@@ -281,6 +306,58 @@ export function WorkScreen({
               onChangeText={setSearch}
               placeholder={mode === 'issues' ? 'Search issues…' : 'Search runs…'}
             />
+            {mode === 'pipelines' && (matching.length > 0 || state !== 'all') && (
+              <View style={{ gap: 6 }}>
+                <Text style={styles.muted}>In loaded, searched results</Text>
+                <View
+                  accessibilityRole="none"
+                  accessibilityLabel="Filter loaded runs by status"
+                  style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}
+                >
+                  {[
+                    { status: 'all', label: 'All runs', count: matching.length },
+                    ...pipelineStatuses,
+                  ].map(({ status: statusValue, label, count }) => {
+                    const selected =
+                      statusValue === 'all'
+                        ? state === 'all'
+                        : state !== 'all' && pipelineSignal(state).label === label
+                    return (
+                      <Pressable
+                        key={label}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${statusValue === 'all' ? 'All runs' : `Filter ${label}`}: ${count}${statusValue === 'all' ? '' : ' runs'}`}
+                        accessibilityState={{ selected }}
+                        onPress={() => setState(selected ? 'all' : statusValue)}
+                        style={({ pressed }) => ({
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 8,
+                          minHeight: 44,
+                          maxWidth: '100%',
+                          flexShrink: 1,
+                          paddingHorizontal: 10,
+                          borderRadius: 12,
+                          backgroundColor: selected ? colors.selection : colors.surface,
+                          borderWidth: 1,
+                          borderColor: selected ? colors.accent : colors.border,
+                          opacity: pressed ? 0.55 : 1,
+                        })}
+                      >
+                        {statusValue === 'all' ? (
+                          <Text style={styles.text}>All runs</Text>
+                        ) : (
+                          <WorkSignal status={statusValue} />
+                        )}
+                        <Text style={[styles.muted, { fontVariant: ['tabular-nums'] }]}>
+                          {count}
+                        </Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
+              </View>
+            )}
             {jiraOnly && (
               <>
                 {!!jiraFilters.board && !jiraFilters.sprint && (
@@ -414,13 +491,23 @@ export function WorkScreen({
                 </Pressable>
               </View>
             )}
-            {!!query && (
-              <Text style={styles.muted}>
-                {mode === 'issues' && pages.some((page) => page.options?.issueSearch)
-                  ? 'Searching all connected issue sources.'
-                  : 'Search loaded results. Load more for earlier work.'}
-              </Text>
-            )}
+            <Text
+              numberOfLines={1}
+              accessibilityLiveRegion="polite"
+              style={[styles.muted, { minHeight: 16 }]}
+            >
+              {busy
+                ? `${pages.some((page) => page.items.length) ? 'Updating' : 'Loading'} ${mode}…`
+                : !connected && pages.length
+                  ? pages.some((page) => page.items.length)
+                    ? 'Offline · showing saved results.'
+                    : `Connect to load ${mode}.`
+                  : query
+                    ? mode === 'issues' && pages.some((page) => page.options?.issueSearch)
+                      ? 'Searching all connected issue sources.'
+                      : 'Search loaded results. Load more for earlier work.'
+                    : '\u00a0'}
+            </Text>
             {!!message && (
               <Text accessibilityRole="alert" style={styles.muted}>
                 {message}
@@ -464,7 +551,11 @@ export function WorkScreen({
                   },
                 ]}
               >
-                <Icon name={mode === 'issues' ? 'tasks' : 'jobs'} size={14} color={colors.muted} />
+                {'status' in row ? (
+                  <WorkSignal status={row.status} emphasis />
+                ) : (
+                  <Icon name="tasks" size={14} color={colors.muted} />
+                )}
                 <Text
                   numberOfLines={1}
                   style={[
@@ -533,7 +624,9 @@ export function WorkScreen({
                   )}
                 </View>
               ) : (
-                <WorkSignal status={row.status} />
+                <Text numberOfLines={1} style={styles.muted}>
+                  {[row.ref, row.sha?.slice(0, 8), row.actor].filter(Boolean).join(' · ')}
+                </Text>
               )}
               <Text
                 numberOfLines={1}
@@ -566,7 +659,7 @@ export function WorkScreen({
                   },
                 ]}
               >
-                {query
+                {query || (mode === 'pipelines' && state !== 'all')
                   ? 'No matching results'
                   : mode === 'issues'
                     ? 'No issues found'
@@ -582,11 +675,13 @@ export function WorkScreen({
               >
                 {!connected
                   ? 'Connect to a computer to load work. Saved results stay available offline.'
-                  : mode === 'issues'
-                    ? 'Try another state or source, or add Jira in Sources.'
-                    : pages.some((page) => page.next)
-                      ? 'Load earlier runs below to keep looking.'
-                      : 'Refresh after CI starts, or check the PR on its server.'}
+                  : mode === 'pipelines' && state !== 'all'
+                    ? 'Choose All runs or another status above.'
+                    : mode === 'issues'
+                      ? 'Try another state or source, or add Jira in Sources.'
+                      : pages.some((page) => page.next)
+                        ? 'Load earlier runs below to keep looking.'
+                        : 'Refresh after CI starts, or check the PR on its server.'}
               </Text>
             </View>
           ) : undefined

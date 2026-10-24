@@ -1,5 +1,9 @@
 import { LinuxSetupGuide } from './linux-setup-guide'
 import {
+  connectionProgress,
+  runtimePeerAddress,
+  runtimeTransportAddress,
+  runtimeReachability,
   workspaceRecoveriesSchema,
   type WorkspaceRecovery,
   runtimeSyncStatus,
@@ -256,12 +260,68 @@ export function PairingClient({
                         : runtimeSyncStatus(entry.profile.connection)
                           ? 'Online · HTTP updates'
                           : 'Online'
-                      : 'Offline'}
+                      : entry.unauthorized
+                        ? 'Pairing expired'
+                        : runtimeReachability(entry) === 'connecting'
+                          ? 'Connecting…'
+                          : 'Offline'}
                   </span>
                 </p>
+                <ol
+                  aria-label="Connection stages"
+                  className="my-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+                >
+                  {connectionProgress(entry).map((step) => (
+                    <li
+                      key={step.label}
+                      aria-current={
+                        step.state === 'current' || step.state === 'failed' ? 'step' : undefined
+                      }
+                      className={cn(
+                        'flex items-center gap-1',
+                        step.state === 'failed'
+                          ? 'text-status-error'
+                          : step.state === 'current'
+                            ? 'text-foreground'
+                            : 'text-muted-foreground',
+                      )}
+                    >
+                      <span aria-hidden="true">
+                        {step.state === 'done'
+                          ? '✓'
+                          : step.state === 'failed'
+                            ? '×'
+                            : step.state === 'current'
+                              ? '◉'
+                              : '○'}
+                      </span>
+                      {step.label}
+                      <span className="sr-only"> · {step.state}</span>
+                    </li>
+                  ))}
+                </ol>
+                {entry.connected && (
+                  <p className="text-xs text-muted-foreground">
+                    {runtimePeerAddress(entry.profile.connection)
+                      ? 'Internet · WebRTC'
+                      : 'Direct · HTTP / HTTPS'}{' '}
+                    ·{' '}
+                    {runtimePeerAddress(entry.profile.connection)
+                      ? 'Encrypted peer connection'
+                      : runtimeTransportAddress(entry.profile.connection)}
+                  </p>
+                )}
                 <p className="truncate text-xs text-muted-foreground">
                   {entry.profile.connection.address}
                 </p>
+                {!entry.connected && entry.lastSeen && (
+                  <p className="text-xs text-muted-foreground">
+                    Last connected {new Date(entry.lastSeen).toLocaleString()}
+                  </p>
+                )}
+                {!entry.connected && entry.error && (
+                  <p className="break-words text-xs text-destructive">{entry.error}</p>
+                )}
               </div>
               <div className="flex flex-wrap gap-1">
                 {mutationStatus(entry.profile).pending > 0 && (

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { responses, useWorkspace } from '@dovo/studio-core'
-import { worktreeListSchema, type WorktreeList } from '@dovo/protocol'
+import { runtimeComputerName, worktreeListSchema, type WorktreeList } from '@dovo/protocol'
 import {
   Button,
   Checkbox,
@@ -37,7 +37,7 @@ const stateLabels = {
 } as const
 
 function WorktreeList({ revision }: { revision: number }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, snapshot, connection } = useWorkspace()
   const [list, setList] = useApplicationState<WorktreeList | null>(null)
   const [orphanedOnly, setOrphanedOnly] = useApplicationState(false)
   const [busy, setBusy] = useApplicationState('')
@@ -133,7 +133,8 @@ function WorktreeList({ revision }: { revision: number }) {
       >
         <DialogContent>
           <DialogTitle>
-            Remove {removal.length} worktree{removal.length === 1 ? '' : 's'}?
+            Remove {removal.length} worktree{removal.length === 1 ? '' : 's'} on{' '}
+            {runtimeComputerName({ snapshot }) || connection?.address}?
           </DialogTitle>
           <DialogDescription>
             Only unused, clean Dovo checkouts are removed. Branches are kept. Ignored local files in

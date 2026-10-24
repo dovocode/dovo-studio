@@ -39,6 +39,12 @@ provider identity. Resume omits old history and refuses a different workspace. R
 approval changes use native session commands. Optional arguments replace the default `serve`
 arguments.
 
+For Muse, Dovo advertises bounded MCP schemas to fit the model API's ten-level nesting limit. Deeper
+parameter shapes stay available as JSON Schema in field descriptions; callers still pass normal JSON
+values. The task-tool server validates every call against the complete original schema and keeps its
+input-size and access checks. This applies only to Dovo's managed MCP server; custom MCP servers
+retain their own schemas.
+
 Muse and Hermes cannot enforce tool-free utilities or read-only execution. Use Codex, Claude,
 OpenCode, Copilot or Cursor for titles and dictation. Supervised and auto-edit behavior follows each
 provider's native approval policy; none of these adapters adds an operating-system sandbox.

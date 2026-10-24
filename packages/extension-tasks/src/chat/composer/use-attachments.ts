@@ -74,7 +74,7 @@ export function useAttachments(
       current.filter((item) => !removed.some((old) => old.attachment.id === item.attachment.id)),
     )
   }, [snapshot, uploads, savedFiles])
-  const upload = async (selected: File[], replaceId?: string) => {
+  const upload = async (selected: File[], replaceId?: string, editChatImage = false) => {
     if (lock.current) {
       setError('Wait for the current attachment operation to finish.')
       return
@@ -107,7 +107,7 @@ export function useAttachments(
         let file: File
         try {
           const prepared = await optimizeAttachmentImage(original)
-          const edited = await imageEditor.edit(prepared)
+          const edited = await imageEditor.edit(prepared, editChatImage)
           if (!edited || (replaceId && edited === prepared)) continue
           file = edited === prepared ? prepared : await optimizeAttachmentImage(edited)
         } catch (cause) {

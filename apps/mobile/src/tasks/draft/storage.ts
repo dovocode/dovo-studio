@@ -43,6 +43,8 @@ export function createDraftStorage(storage: Storage) {
   const records = new Map<string, DraftRecord | null>()
   // Text already published to the composer may be ahead of serialized disk writes.
   const publishedText = new Map<string, string>()
+  let revision = 0
+  const appendedAt = new Map<string, number>()
   const dirty = new Set<string>()
   const serialize = <A, E>(key: string, operation: Effect.Effect<A, E>) =>
     Effect.suspend(() => {
@@ -107,6 +109,8 @@ export function createDraftStorage(storage: Storage) {
         const text = record.text.trim() === submission.attempt.text ? '' : record.text
         const next = { ...record, text, submission: { ...submission, accepted: true } }
         if (text !== record.text || !submission.accepted) {
+          if (!publishedText.has(key) || publishedText.get(key) === record.text)
+            publishedText.set(key, text)
           records.set(key, next)
           dirty.add(key)
         }
@@ -117,6 +121,7 @@ export function createDraftStorage(storage: Storage) {
     readRecordEffect(key, legacyKey).pipe(Effect.map((record) => record?.text ?? null))
   const writeEffect = (key: string, value: string, origin?: (value: string) => void) =>
     Effect.suspend(() => {
+      const writing = ++revision
       publishedText.set(key, value)
       listeners.get(key)?.forEach((listener) => {
         if (listener !== origin) listener(value)
@@ -124,6 +129,8 @@ export function createDraftStorage(storage: Storage) {
       return serialize(
         key,
         Effect.gen(function* () {
+          // An append includes all text published before it, including queued keystrokes.
+          if (writing < (appendedAt.get(key) ?? 0)) return
           const previous = yield* load(key)
           yield* save(key, {
             ...previous,
@@ -133,6 +140,23 @@ export function createDraftStorage(storage: Storage) {
         }),
       )
     })
+  const appendEffect = (key: string, text: string, initial: string) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const previous = yield* load(key)
+        const current = publishedText.get(key) ?? previous?.text ?? initial
+        const value = [current, text].filter(Boolean).join('\n\n')
+        appendedAt.set(key, ++revision)
+        publishedText.set(key, value)
+        listeners.get(key)?.forEach((listener) => listener(value))
+        yield* save(key, {
+          ...previous,
+          text: value,
+          submission: previous?.submission?.accepted ? undefined : previous?.submission,
+        })
+      }),
+    )
   const stageEffect = (key: string, attempt: SendAttempt, initial: string) =>
     serialize(
       key,
@@ -190,6 +214,7 @@ export function createDraftStorage(storage: Storage) {
     readRecordEffect,
     readEffect,
     writeEffect,
+    appendEffect,
     stageEffect,
     confirmEffect,
     flushEffect,

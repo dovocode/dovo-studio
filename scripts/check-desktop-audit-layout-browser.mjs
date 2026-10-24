@@ -11,8 +11,8 @@ const ui = `${root}/packages/studio-ui/src`
 const mocks = {
   '@xyflow/react': `export const Handle=()=>null;export const Position={Left:'left',Right:'right'};export const ReactFlowProvider=({children})=>children;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const providers={};export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});export const useRuntimeSources=()=>window.sources;export const useConfirmSettingsNavigation=()=>()=>true;export const WorkspaceScope=({children})=>children;export const WorkspaceRuntimeScope=WorkspaceScope;export const useOptionalSettingsTarget=()=>null;export const useSettingsTarget=()=>({target:{projectId:'',environmentId:''},setTarget:()=>{},sources:window.sources,source:window.sources[0],scope:'global'});export const resolveTaskAgent=()=>undefined;export const acpHarnessName=()=>'';export const formatDateTime=String;`,
-  '@dovo/studio-ui': `export {PageHeader} from '${ui}/page-header';export * from '${ui}/sidebar-header';export {Button} from '${ui}/components/ui/button';export {IconButton} from '${ui}/components/icon-button';export {Input} from '${ui}/components/ui/input';export * from '${ui}/components/ui/dialog';export {ChoicePicker} from '${ui}/choice-picker';export {cn} from '${ui}/lib/utils';export {ProjectIcon} from '${ui}/project-icon';export * from '${ui}/components/ui/tooltip';export * as Popover from '@radix-ui/react-popover';export {EmptyState} from '${ui}/components/empty-state';export {useCompactLayout} from '${ui}/use-compact-layout';export const useModelLabel=()=>'';export const AgentAvatar=()=>null;export const PullRequestIcon=()=>null;export const pullRequestIconTone=()=>'';`,
+  '@dovo/studio-core': `export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const providers={codex:{short:'Codex',name:'OpenAI Codex'}};export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:()=>{}});export const useRuntimeSources=()=>window.sources;export const useConfirmSettingsNavigation=()=>()=>true;export const WorkspaceScope=({children})=>children;export const WorkspaceRuntimeScope=WorkspaceScope;export const useOptionalSettingsTarget=()=>null;export const useSettingsTarget=()=>({target:{projectId:'',environmentId:''},setTarget:()=>{},sources:window.sources,source:window.sources[0],scope:'global'});export const acpHarnessName=()=>'';export const formatDateTime=String;`,
+  '@dovo/studio-ui': `export {PageHeader} from '${ui}/page-header';export * from '${ui}/sidebar-header';export {Button} from '${ui}/components/ui/button';export {IconButton} from '${ui}/components/icon-button';export {Input} from '${ui}/components/ui/input';export * from '${ui}/components/ui/dialog';export {ChoicePicker} from '${ui}/choice-picker';export {cn} from '${ui}/lib/utils';export {ProjectIcon} from '${ui}/project-icon';export * from '${ui}/components/ui/tooltip';export * as Popover from '@radix-ui/react-popover';export {EmptyState} from '${ui}/components/empty-state';export {useCompactLayout} from '${ui}/use-compact-layout';export const useModelLabel=()=>'';export const AgentAvatar=({className})=><span data-agent-avatar className={className}/>;export const PullRequestIcon=()=>null;export const pullRequestIconTone=()=>'';`,
   './task-context-menu': `export const TaskContextMenu=({children})=>children;`,
   './task-branch-menu': `export const TaskBranchMenu=({label})=><button className="min-w-0 max-w-48 truncate">{label}</button>;`,
   './task-pull-status': `export const TaskPullStatus=()=>null;`,
@@ -43,9 +43,9 @@ const repo={id:'repo',name:'Audit project',path:'/repo',branch:'feature/long-bra
 const workspace={repositories:[repo],agents:[],tasks:[],automations:[]};const snapshot={workspace,runs:[],questions:[],approvals:[],terminals:[],artifactsEnabled:true};
 window.sources=['MacBook Pro','Linux workstation with an unusually long saved computer name'].map((name,index)=>({name,scope:String(index),connected:true,profile:{id:String(index),name,connection:{address:'http://computer'+index,token:'paired'}},snapshot}));
 window.store={workspace,snapshot,connected:true,activeRuntimeId:'0',runtimes:window.sources,connection:window.sources[0].profile.connection,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
-window.owner={name:'MacBook Pro',online:true,repositories:[repo],agents:[],acpInstallations:[]};window.workSource={key:'repo',scope:'0',connected:true,repository:repo,name:repo.name,runtimeName:'MacBook Pro',request:async()=>({issues:true,pipelineActions:['run']})};
+window.owner={name:'MacBook Pro',online:true,repositories:[repo],agents:[{id:'agent',name:'Agent',provider:'codex',model:'',endpoint:''}],acpInstallations:[]};window.workSource={key:'repo',scope:'0',connected:true,repository:repo,name:repo.name,runtimeName:'MacBook Pro',request:async()=>({issues:true,pipelineActions:['run']})};
 const baseTask={id:'task',repositoryId:'repo',title:'Short title',status:'draft',files:[],linkedCheckouts:[],turns:[]};
-function App(){const[view,setView]=useState('header'),[long,setLong]=useState(false),[panel,setPanel]=useState(false),[wide,setWide]=useState(false),[unread,setUnread]=useState(false);window.show=(next,options={})=>{setView(next);setLong(!!options.long);setPanel(!!options.panel);setWide(!!options.wide);setUnread(!!options.unread)};const task={...baseTask,status:unread?'running':'draft',title:long?'A_very_long_task_title_'.repeat(12):'Short title'};return <TooltipProvider><div id="fixture" style={{width:'100%',height:'100vh',display:'flex',flexDirection:'column',minWidth:0}}>{view==='header'?<Popover.Root><TaskHeader task={task} compact sidebarVisible hasDiff surface="chat" onSurface={value=>window.lastSurface=value} projectPanelOpen={panel} onProjectPanel={()=>{}} onCreate={()=>{}} onDeselect={()=>{}} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}}/></Popover.Root>:view==='rows'?<div style={{background:'var(--sidebar)'}}><TaskRow task={task} owner={window.owner} subagents={[]} selected={false} onSelect={()=>{}} needsInput={false} terminals={0} editable={false} disabled={false} onOpenSubagent={()=>{}}/></div>:(view==='host'||view==='mixed')?<HostSettingsPage title="Computer settings" description="Per computer" localSettings={view==='mixed'?<button onClick={()=>window.localChanged=true}>Device default</button>:undefined}><p>Computer body</p></HostSettingsPage>:view==='scope'?<SettingsScopePage title="Settings" description="Scoped settings" wide={wide}>{()=> <div data-testid="body-start"><p>Settings body</p><SettingRow label="Worktree setup" source={<SettingSource label="Worktree setup" origin={{source:'global',overridden:true}} setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:'pnpm install',inheritedValue:'a_very_long_setup_command_'.repeat(16)}} onReset={()=>window.inheritanceReset=true}/>}>Custom setup</SettingRow></div>}</SettingsScopePage>:view==='node'?<ReactFlowProvider><AutomationNodeView data={{kind:'task',label:'nightly_dependency_security_review_'.repeat(long?8:1),objective:'Review dependencies'}} selected={false}/></ReactFlowProvider>:view==='jobs'?<JobsView/>:view==='jira'?<JiraView/>:view==='pipelines'?<PipelinesView/>:<IssuesView/>}</div></TooltipProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[view,setView]=useState('header'),[long,setLong]=useState(false),[panel,setPanel]=useState(false),[wide,setWide]=useState(false),[unread,setUnread]=useState(false),[archived,setArchived]=useState(false);window.show=(next,options={})=>{setView(next);setLong(!!options.long);setPanel(!!options.panel);setWide(!!options.wide);setUnread(!!options.unread);setArchived(!!options.archived)};const task={...baseTask,archived,status:unread?'running':'draft',title:long?'A_very_long_task_title_'.repeat(12):'Short title'};return <TooltipProvider><div id="fixture" style={{width:'100%',height:'100vh',display:'flex',flexDirection:'column',minWidth:0}}>{view==='header'?<Popover.Root><TaskHeader task={task} compact sidebarVisible hasDiff surface="chat" onSurface={value=>window.lastSurface=value} projectPanelOpen={panel} onProjectPanel={()=>{}} onCreate={()=>{}} onDeselect={()=>{}} toolsExpanded={false} onTools={()=>{}} bottomTerminalOpen={false} onBottomTerminal={()=>{}}/></Popover.Root>:view==='rows'?<div style={{background:'var(--sidebar)'}}><TaskRow task={{...task,agentId:'agent'}} owner={window.owner} subagents={[{id:'child',name:'Child',provider:'codex',status:'working',startedAt:'2026-10-24T09:00:00Z',updatedAt:'2026-10-24T09:00:00Z'}]} selected={false} onSelect={()=>{}} needsInput={false} terminals={0} editable={false} disabled={false} onOpenSubagent={()=>{}}/></div>:(view==='host'||view==='mixed')?<HostSettingsPage title="Computer settings" description="Per computer" localSettings={view==='mixed'?<button onClick={()=>window.localChanged=true}>Device default</button>:undefined}><p>Computer body</p></HostSettingsPage>:view==='scope'?<SettingsScopePage title="Settings" description="Scoped settings" wide={wide}>{()=> <div data-testid="body-start"><p>Settings body</p><SettingRow label="Worktree setup" source={<SettingSource label="Worktree setup" origin={{source:'global',overridden:true}} setting={{field:{group:'taskDefaults',key:'setupCommand'},scope:'global',value:'pnpm install',inheritedValue:'a_very_long_setup_command_'.repeat(16)}} onReset={()=>window.inheritanceReset=true}/>}>Custom setup</SettingRow></div>}</SettingsScopePage>:view==='node'?<ReactFlowProvider><AutomationNodeView data={{kind:'task',label:'nightly_dependency_security_review_'.repeat(long?8:1),objective:'Review dependencies'}} selected={false}/></ReactFlowProvider>:view==='jobs'?<JobsView/>:view==='jira'?<JiraView/>:view==='pipelines'?<PipelinesView/>:<IssuesView/>}</div></TooltipProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
   },
   bundle: true,
   write: false,
@@ -152,6 +152,47 @@ try {
   const tools = await page.getByRole('group', { name: 'Task workspace' }).boundingBox()
   assert.ok(title.y + title.height <= tools.y)
   await page.screenshot({ path: '/tmp/dovo-desktop-audit-task-pane-320.png' })
+  for (const width of [240, 320, 390, 976]) {
+    await setWidth(width)
+    for (const archived of [false, true]) {
+      await show('rows', { archived })
+      const row = page.locator('.group\\/task')
+      const project = await row.getByText('Audit project', { exact: true }).boundingBox()
+      const title = await row.getByText('Short title', { exact: true }).boundingBox()
+      const status = await row
+        .getByText(archived ? 'Settled' : 'Draft', { exact: true })
+        .boundingBox()
+      const provider = row.locator('[data-agent-avatar]')
+      assert.equal(await provider.count(), 1)
+      assert.equal(
+        await provider.evaluate((icon) =>
+          icon.parentElement.classList.contains('studio-thread-card-context'),
+        ),
+        true,
+      )
+      const providerBox = await provider.boundingBox()
+      assert.ok(Math.abs(providerBox.y + providerBox.height / 2 - status.y - status.height / 2) < 1)
+      if (!archived) {
+        const toggle = row.getByRole('button', { name: 'Subthreads for Short title', exact: true })
+        const icon = await toggle.locator('svg').boundingBox()
+        assert.ok(Math.abs(icon.y + icon.height / 2 - status.y - status.height / 2) <= 1.5)
+        await contained(toggle, row)
+        const bounds = await toggle.boundingBox()
+        assert.ok(
+          providerBox.x + providerBox.width <= bounds.x,
+          'Provider and subthread controls do not overlap',
+        )
+      }
+      assert.ok(
+        project.y + project.height <= title.y,
+        JSON.stringify({ width, archived, project, title }),
+      )
+      assert.ok(
+        status.y + status.height <= title.y,
+        JSON.stringify({ width, archived, status, title }),
+      )
+    }
+  }
   for (const width of [320, 390, 512, 976]) {
     await setWidth(width)
     await show('host')
@@ -316,8 +357,8 @@ try {
           weight: getComputedStyle(title).fontWeight,
         }
       })
-      assert.ok(Math.abs(contrast.titleAlpha - (unread ? 1 : 0.65)) <= 1 / 255)
-      if (unread) assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
+      assert.equal(contrast.titleAlpha, 1)
+      assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
       assert.deepEqual(contrast.metadataOpacity, [1, 1])
       assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
       contrasts.push({ mode, unread, ...contrast })
@@ -327,8 +368,8 @@ try {
     const read = contrasts.find((value) => value.mode === mode && !value.unread)
     const unread = contrasts.find((value) => value.mode === mode && value.unread)
     assert.equal(read.weight, '500')
-    assert.equal(unread.weight, read.weight)
-    assert.ok(unread.title > read.title)
+    assert.equal(unread.weight, '600')
+    assert.equal(unread.title, read.title)
     assert.ok(unread.metadata > read.metadata)
   }
   console.log(

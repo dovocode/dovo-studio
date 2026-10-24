@@ -88,12 +88,15 @@ Running tasks on the selected computer.
 
 Before the first message, choose **Scope** (the magic icon) in the project picker to infer the
 primary project and necessary linked projects from your prompt. Machine selection remains explicit:
-Scope uses only registered projects on the selected computer. It reads bounded root documentation,
-manifests and directory summaries, then searches relevant source, callers and contracts to identify
-the intended change and project ownership. Choose **Project defaults**, **New worktrees**, or
-**Local checkouts** alongside Scope; the checkout choice applies to the primary and linked Git
-projects, while folder projects always stay local. Choose a project manually to select an existing
-worktree or a specific base branch. It uses the selector utility model in Settings → Agents
+Scope uses only registered projects on the selected computer. It reads bounded documentation,
+workspace manifests and source paths up to four levels deep, prioritizing components mentioned in
+the request. Package names and dependency relationships help distinguish implementation owners from
+consumers. Discovery visits at most 64 directories per project and flags partial evidence; it skips
+dependency/build folders and symbolic links. The selector then searches relevant source, callers and
+contracts to identify the intended change and project ownership. Choose **Project defaults**, **New
+worktrees**, or **Local checkouts** alongside Scope; the checkout choice applies to the primary and
+linked Git projects, while folder projects always stay local. Choose a project manually to select an
+existing worktree or a specific base branch. It uses the selector utility model in Settings → Agents
 (inheriting the title model by default) and runs an ephemeral read-only investigation (up to two
 minutes). It cannot edit files or create checkouts, and tool approval requests are denied.
 Unavailable folders are marked as uninspected; uncertain matches remain available for manual

@@ -266,8 +266,10 @@ try {
     mobileSharesBeforeRefresh,
   )
   await mobile.getByRole('button', { name: 'Download original', exact: true }).click()
-  await mobile.getByRole('button', { name: 'Open on runtime computer…', exact: true }).click()
-  await mobile.getByRole('button', { name: 'Open in VS Code', exact: true }).click()
+  assert.equal(
+    await mobile.getByRole('button', { name: /Open on runtime computer|Open in VS Code/ }).count(),
+    0,
+  )
   await mobile.getByRole('button', { name: 'Close preview', exact: true }).click()
   await page.evaluate(() => {
     window.fail = true
@@ -546,7 +548,7 @@ try {
   await page.screenshot({ path: root + '/work/screenshots/chat-pdf-preview.png', fullPage: true })
   assert.deepEqual(errors, [])
   console.log(
-    'Rich chat: desktop and mobile media/file/template cards, citation links, downloads, runtime open actions, draft insertion and errors pass. Real runtime HTML stays sandboxed; video plays and PDF page navigation works on HTTP.',
+    'Rich chat: desktop and mobile media/file/template cards, citation links, downloads, desktop-only runtime open actions, draft insertion and errors pass. Real runtime HTML stays sandboxed; video plays and PDF page navigation works on HTTP.',
   )
 } finally {
   await browser.close()

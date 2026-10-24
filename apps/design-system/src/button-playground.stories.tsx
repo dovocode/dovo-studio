@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useRef, useState, type ComponentProps } from 'react'
-import { ArrowRight, LoaderCircle, Plus, Sparkles } from 'lucide-react'
+import { ArrowRight, LoaderCircle, Plus, Save, Sparkles } from 'lucide-react'
 import { Button } from '../../../packages/studio-ui/src/components/ui/button'
 
 type ButtonVariant = NonNullable<ComponentProps<typeof Button>['variant']>
@@ -39,7 +39,7 @@ const meta = {
     },
     size: {
       control: 'select',
-      options: ['default', 'sm', 'lg', 'icon'],
+      options: ['default', 'sm', 'lg', 'touch', 'icon'],
       description: 'Built-in button height and padding. Icon-only placement uses icon size.',
     },
     disabled: {
@@ -181,8 +181,12 @@ function LoadingAction() {
     <div className="grid justify-items-start gap-3">
       <div className="flex items-center gap-3">
         <Button onClick={run} disabled={loading} aria-busy={loading || undefined}>
-          {loading && <LoaderCircle className="animate-spin" aria-hidden="true" />}
-          {loading ? 'Saving…' : 'Save preferences'}
+          {loading ? (
+            <LoaderCircle className="motion-safe:animate-spin" aria-hidden="true" />
+          ) : (
+            <Save aria-hidden="true" />
+          )}
+          Save preferences
         </Button>
         <Button variant="ghost" onClick={reset}>
           Reset

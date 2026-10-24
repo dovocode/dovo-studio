@@ -111,6 +111,7 @@ export function MobileFileReview({
           accessibilityState={{
             checked: file?.viewed ?? false,
             disabled: disabled || busy || !file,
+            busy,
           }}
           disabled={disabled || busy || !file}
           onPress={() => onViewed(!file?.viewed)}
@@ -127,9 +128,27 @@ export function MobileFileReview({
             size={18}
             color={file?.viewed ? colors.accent : colors.muted}
           />
-          <Text style={{ color: file?.viewed ? colors.accent : colors.muted, fontSize: 12 }}>
-            {busy ? 'Saving…' : 'Viewed'}
-          </Text>
+          <View style={{ position: 'relative' }}>
+            <Text
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={{ opacity: 0, fontSize: 12 }}
+            >
+              Saving…
+            </Text>
+            <Text
+              accessibilityLiveRegion="polite"
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                color: file?.viewed ? colors.accent : colors.muted,
+                fontSize: 12,
+              }}
+            >
+              {busy ? 'Saving…' : 'Viewed'}
+            </Text>
+          </View>
         </Pressable>
         <View
           style={{

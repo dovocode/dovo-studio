@@ -19,9 +19,9 @@
     "@dovo/protocol": "workspace:*",
     "@dovo/studio-core": "workspace:*",
     "@dovo/studio-ui": "workspace:*",
-    "@pierre/diffs": "1.5.2",
-    "effect": "4.0.5",
-    "lucide-react": "^1.57.0",
+    "@pierre/diffs": "1.6.1",
+    "effect": "4.0.6",
+    "lucide-react": "^1.61.0",
     "react": "^19.3.1"
   },
   "devDependencies": {

@@ -134,9 +134,10 @@ const built = await build({
   target: 'es2022',
 })
 const mocks = {
-  'expo-router': `export const router={dismissTo:href=>window.artifactBackRoute=href};`,
+  '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
+  'expo-router': `export const router={canGoBack:()=>!!window.artifactHistory,back:()=>window.artifactBackRoute=window.artifactHistory,replace:href=>window.artifactBackRoute=href};`,
   // Keep account/feed hooks real; these local-artifact scenarios have no account host.
-  '@dovo/studio-core': `export {useAccount} from '${root}packages/studio-core/src/use-account.ts';export {useArtifactFeed} from '${root}packages/studio-core/src/use-artifact-feed.ts';export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo'});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({workspace:{tasks:[]},request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
+  '@dovo/studio-core': `export {useAccount} from '${root}packages/studio-core/src/use-account.ts';export {useArtifactFeed} from '${root}packages/studio-core/src/use-artifact-feed.ts';export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo'});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target,taskNavigationGuard:()=>{const epoch=window.navigationEpoch;return ()=>epoch===window.navigationEpoch}});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({workspace:{tasks:[]},request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
   '@dovo/studio-ui': `
 import React from 'react';import {Button} from '${uiRoot}components/ui/button.tsx';
 export {Button};export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {cn} from '${uiRoot}lib/utils.ts';
@@ -145,6 +146,7 @@ export {Textarea} from '${uiRoot}components/ui/textarea.tsx';
 export {PageHeader} from '${uiRoot}page-header.tsx';
 export {Dialog,DialogContent,DialogDescription,DialogTitle} from '${uiRoot}components/ui/dialog.tsx';
 export {EmptyState} from '${uiRoot}components/empty-state.tsx';
+export {ChoicePicker} from '${uiRoot}choice-picker.tsx';
 export {MessageResponse} from '${uiRoot}components/ai-elements/message.tsx';
 export const IconButton=({label,...props})=><Button variant="ghost" size="icon" aria-label={label} {...props}/>;
 export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true,()=>{}];
@@ -159,12 +161,12 @@ export const flatten=style=>Object.assign({},...(Array.isArray(style)?style.flat
 const webStyle=style=>{const value=flatten(style);if(typeof value.lineHeight==='number')value.lineHeight=value.lineHeight+'px';if(value.paddingHorizontal!==undefined){value.paddingLeft=value.paddingRight=value.paddingHorizontal;delete value.paddingHorizontal}if(value.paddingVertical!==undefined){value.paddingTop=value.paddingBottom=value.paddingVertical;delete value.paddingVertical}if(value.marginVertical!==undefined){value.marginTop=value.marginBottom=value.marginVertical;delete value.marginVertical}return value};
 export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',boxSizing:'border-box',flexShrink:0,...webStyle(style)}}>{children}</div>;
 export const ScrollView=({children,style,contentContainerStyle,horizontal})=><View style={[{overflow:'auto',flexShrink:1},style]}><View style={[horizontal?{flexDirection:'row'}:{},contentContainerStyle]}>{children}</View></View>;
-export const Modal=({children,visible=true})=>visible?<div role="dialog" style={{position:'fixed',inset:0,zIndex:100,background:'#0a0a0a',display:'flex',flexDirection:'column'}}>{children}</div>:null;export const ActivityIndicator=()=> <p>Loading</p>;
-export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,disabled,style})=><button onClick={onPress} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',color:'#e8e9ed',textAlign:'left',fontFamily:'system-ui',flexShrink:0,...webStyle(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Modal=({children,visible=true})=>visible?<div role="dialog" style={{position:'fixed',inset:0,zIndex:100,background:'#0a0a0a',display:'flex',flexDirection:'column'}}>{children}</div>:null;export const ActivityIndicator=()=> <p>Loading</p>;export const Keyboard={dismiss(){}};
+export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,disabled,style})=><button onClick={onPress} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',backgroundColor:'transparent',border:0,padding:0,margin:0,color:'#e8e9ed',textAlign:'left',fontFamily:'system-ui',flexShrink:0,...webStyle(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} disabled={disabled} onChange={event=>onValueChange(event.target.checked)}/>;
 export const Image=({source,style})=><img src={source.uri} style={webStyle(style)}/>;export const Text=({children,style})=><span style={webStyle(style)}>{children}</span>;
 export const FlatList=({data,renderItem,ListEmptyComponent,contentContainerStyle})=><ScrollView contentContainerStyle={contentContainerStyle}>{data.length?data.map((item,index)=><React.Fragment key={index}>{renderItem({item})}</React.Fragment>):ListEmptyComponent}</ScrollView>;
-export const Linking={openURL:async url=>window.openedArtifactLinks.push(url)};export const Alert={alert:(...args)=>(window.artifactAlerts??=[]).push(args)};export const StyleSheet={create:x=>x};export const Platform={OS:'ios'};
+export const Linking={openURL:async url=>window.openedArtifactLinks.push(url)};export const Alert={alert:(...args)=>(window.artifactAlerts??=[]).push(args)};export const StyleSheet={create:x=>x,hairlineWidth:1};export const Platform={OS:'ios'};
 `,
   'react-native-safe-area-context': `import {View} from 'react-native';export const SafeAreaProvider=({children})=><View style={{flex:1,minHeight:0}}>{children}</View>;export const SafeAreaView=View;`,
   'react-native-webview': `import React,{useEffect,useMemo,useRef} from 'react';export default ({source,onContentProcessDidTerminate,onRenderProcessGone,onMessage})=>{const frame=useRef(),callback=useRef(onMessage);callback.current=onMessage;const editor=source.html.includes('id="canvas"');const html=useMemo(()=>source.html.replace('<head>','<head><script>window.ReactNativeWebView={postMessage:data=>parent.postMessage({nativeArtifactMessage:data},"*")}</script>'),[source.html]);useEffect(()=>{if(!editor)window.mobilePreviewMounts=(window.mobilePreviewMounts||0)+1;const receive=event=>{if(event.source===frame.current?.contentWindow&&typeof event.data?.nativeArtifactMessage==='string')callback.current?.({nativeEvent:{data:event.data.nativeArtifactMessage}})};window.addEventListener('message',receive);return()=>window.removeEventListener('message',receive)},[editor]);if(!editor){window.terminateMobilePreview=()=>onContentProcessDidTerminate?.();window.crashMobilePreview=()=>onRenderProcessGone?.()}return <iframe ref={frame} title={editor?'Export editor':'Mobile preview'} sandbox={editor?'allow-scripts allow-same-origin':'allow-scripts allow-downloads'} style={editor?{height:'100%',flex:1,border:0}:undefined} srcDoc={html}/>;};`,
@@ -176,7 +178,7 @@ export const Linking={openURL:async url=>window.openedArtifactLinks.push(url)};e
   './markdown': `import React from 'react';export const Markdown=({text})=><p>{text}</p>;`,
   './open-link': `export const openAppLink=async url=>{window.openedArtifactLinks.push(url)};export const useOpenAppLink=()=>openAppLink;`,
   '../controls/action': `import React from 'react';export const Action=({label,onPress,disabled})=><button onClick={onPress} disabled={disabled}>{label}</button>;`,
-  '../controls/icon': `import {FileText,Files,CodeXml,Eye,Globe,ChevronRight,ArrowUpRight,History,Share2,RotateCw,X,Check} from 'lucide-react';const icons={artifact:FileText,artifactList:Files,code:CodeXml,preview:Eye,web:Globe,next:ChevronRight,external:ArrowUpRight,history:History,share:Share2,refresh:RotateCw,close:X,check:Check};export const Icon=({name,size=20,color='#a0a1a8'})=>{const Glyph=icons[name];return Glyph?<Glyph aria-hidden="true" size={size} color={color}/>:null};`,
+  '../controls/icon': `import {FileText,Files,CodeXml,Eye,Globe,ChevronRight,ArrowUpRight,History,Share2,RotateCw,X,Check,Ellipsis} from 'lucide-react';const icons={artifact:FileText,artifactList:Files,code:CodeXml,preview:Eye,web:Globe,next:ChevronRight,external:ArrowUpRight,history:History,share:Share2,refresh:RotateCw,close:X,check:Check,more:Ellipsis};export const Icon=({name,size=20,color='#a0a1a8'})=>{const Glyph=icons[name];return Glyph?<Glyph aria-hidden="true" size={size} color={color}/>:null};`,
   '../ui/controls/icon': `export {Icon} from '../controls/icon';`,
   '../controls/icon-button': `import React from 'react';import {Icon} from '../controls/icon';export const IconButton=({label,icon,onPress,disabled})=><button aria-label={label} data-icon={icon} disabled={disabled} onClick={onPress} style={{width:44,height:44,display:'flex',alignItems:'center',justifyContent:'center',background:'transparent',border:0,opacity:disabled?0.4:1}}><Icon name={icon}/></button>;`,
   '../runtime/connection/provider': `import {useWorkspace,WorkspaceScope} from '@dovo/studio-core';export const useRuntime=()=>useWorkspace();export const RuntimeScope=({runtimeId,children})=><WorkspaceScope profile={window.artifactWorkspace.overviews.find(x=>x.profile.id===runtimeId).profile}>{children}</WorkspaceScope>;`,
@@ -185,6 +187,7 @@ export const Linking={openURL:async url=>window.openedArtifactLinks.push(url)};e
   '../ui/controls/field': `export const Field=({label,value,onChangeText,editable})=><label>{label}<input aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/></label>;export const SearchField=Field;`,
   '../ui/controls/choice': `export const Choice=({label,value,items,onChange})=><select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;`,
   '../ui/controls/action': `export {Action} from '../controls/action';`,
+  '../layout/sheet': `import {useImperativeHandle} from 'react';export const Sheet=({ref,title,children,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();queueMicrotask(()=>after?.())}}));return <div role="dialog" aria-label={title} style={{position:'fixed',inset:0,zIndex:100,background:'#101010',padding:20}}><h2>{title}</h2>{children}<button aria-label="Close artifact actions" onClick={onClose}>Close</button></div>};`,
 }
 mocks['../../shell/navigation'] = mocks['../shell/navigation']
 mocks['../controls/choice'] = mocks['../ui/controls/choice']
@@ -195,7 +198,7 @@ const interfaces = await Promise.all(
       platform === 'library'
         ? `import {createRoot} from 'react-dom/client';import {useState} from 'react';import ArtifactsView from './src/artifacts-view.tsx';function App(){const[tick,setTick]=useState(0),[shown,setShown]=useState(true);window.updateLibrary=()=>setTick(x=>x+1);window.showLibrary=setShown;return shown?<ArtifactsView/>:null}createRoot(document.getElementById('app')).render(<App/>);`
         : platform === 'mobile-library'
-          ? `import {createRoot} from 'react-dom/client';import ArtifactsScreen from './src/screens/artifacts.tsx';createRoot(document.getElementById('app')).render(<ArtifactsScreen/>);`
+          ? `import {createRoot} from 'react-dom/client';import {useState} from 'react';import ArtifactsScreen from './src/screens/artifacts.tsx';function App(){const[tick,setTick]=useState(0);window.updateLibrary=()=>setTick(x=>x+1);return <ArtifactsScreen/>}createRoot(document.getElementById('app')).render(<App/>);`
           : platform === 'desktop'
             ? `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {ThreadArtifacts,ArtifactCard} from './src/chat/artifacts.tsx';import {ArtifactOpenContext} from './src/chat/artifact-open-context.ts';import {TaskTools} from './src/detail/task-tools.tsx';function App(){const[surface,setSurface]=useState('chat'),[taskId,setTaskId]=useState('thread'),[selection,setSelection]=useState();window.switchArtifactThread=setTaskId;return <div style={{height:'100%',display:'flex'}}><div style={{flex:1,padding:24}}><ArtifactOpenContext value={reference=>{setSelection(previous=>({taskId:reference.taskId,id:reference.id,key:(previous?.key??0)+1}));setSurface('artifacts')}}><ArtifactCard reference={{id:'interactive',taskId,title:'Counter',format:'html',revision:1}}/></ArtifactOpenContext></div>{surface==='artifacts'&&<div style={{width:480,height:'100%'}}><ThreadArtifacts key={taskId+':'+selection?.key} taskId={taskId} initialId={selection?.taskId===taskId?selection.id:undefined} onClose={()=>{setSurface('chat');setSelection(undefined)}}/></div>}<TaskTools task={{id:taskId,status:'done'}} surface={surface} onSelect={setSurface} hasDiff={false} artifactsEnabled={window.artifactsEnabled}/></div>}createRoot(document.getElementById('app')).render(<App/>);`
             : `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {ArtifactCard} from './src/ui/content/artifacts.tsx';function App(){const [kind,setKind]=useState('notes');window.showInlineHtml=()=>setKind('interactive');window.showInlineFolder=()=>setKind('folder');return <ArtifactCard reference={kind==='folder'?{id:'folder',taskId:'thread',title:'Folder demo',format:'html',revision:2,fileCount:3}:kind==='interactive'?{id:'interactive',taskId:'thread',title:'Counter',format:'html',revision:1}:{id:'notes',taskId:'thread',title:'Notes',format:'markdown',revision:2}}/>}createRoot(document.getElementById('app')).render(<App/>);`
@@ -1349,6 +1352,12 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     const library = await browser.newPage({
       viewport: native ? { width: 390, height: 844 } : { width: 1280, height: 800 },
     })
+    const chooseLibrary = async (label, value) => {
+      if (native) return library.getByLabel(label, { exact: true }).selectOption(value)
+      await library.getByRole('button', { name: label, exact: true }).click()
+      await library.getByRole('dialog').locator(`[role="option"][data-value="${value}"]`).click()
+      await library.getByRole('dialog').waitFor({ state: 'hidden' })
+    }
     await prepareView(library, native)
     await library.evaluate(() => {
       const metadata = {
@@ -1370,15 +1379,18 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         { format: 'code', title: 'API client' },
       ]
       const artifactsFor = (host) =>
-        formats.map((item, index) => ({
-          ...metadata,
-          ...item,
-          id: `${host}-${item.format}`,
-          updatedAt: new Date(Date.UTC(2026, 9, index + 1)).toISOString(),
-        }))
+        formats
+          .map((item, index) => ({
+            ...metadata,
+            ...item,
+            id: `${host}-${item.format}`,
+            updatedAt: new Date(Date.UTC(2026, 9, index + 1)).toISOString(),
+          }))
+          .filter((item) => !window.deletedArtifacts.includes(`${host}:${item.id}`))
       const sources = profiles.map((profile, index) => ({
         profile,
         connected: index !== 2,
+        error: index === 2 ? 'Offline' : null,
         snapshot: {
           artifactsEnabled: true,
           workspace: {
@@ -1392,25 +1404,34 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       window.previewHosts = []
       window.snapshotCalls = []
       window.artifactMutations = []
+      window.deletedArtifacts = []
       window.artifactWorkspace = {
         connected: true,
         activeRuntimeId: '0',
         snapshot: { artifactsEnabled: true },
         runtimes: sources,
         overviews: sources,
-        switchRuntime: async () => {},
+        switchRuntime: async () => {
+          if (window.holdRuntimeSwitch)
+            await new Promise((resolve) => (window.finishRuntimeSwitch = resolve))
+        },
         runtimeReadCache: () => ({ read: async () => null, write: async () => {} }),
+        cacheForRuntime: () => ({ read: async () => null, write: async () => {} }),
         readRuntime: async (profile, path, input) => {
           if (path.endsWith('/snapshot')) {
             window.snapshotCalls.push([profile.id, input.id])
-            return { excerpt: 'Snapshot from Host ' + profile.id }
+            if (window.holdSnapshots)
+              await new Promise((resolve) => window.snapshotReplies.push(resolve))
+            return { excerpt: 'Snapshot from Host ' + profile.id + (window.snapshotVersion ?? '') }
           }
           if (path.endsWith('/attach') || path.endsWith('/delete')) {
             window.artifactMutations.push({ profile: profile.id, path, input })
             if (window.failArtifactMutation) throw new Error('Artifact action failed')
-            return path.endsWith('/delete')
-              ? { ok: true }
-              : { artifact: { ...artifactsFor(profile.id)[0], taskId: input.targetTaskId } }
+            if (path.endsWith('/delete')) {
+              window.deletedArtifacts.push(`${profile.id}:${input.id}`)
+              return { ok: true }
+            }
+            return { artifact: { ...artifactsFor(profile.id)[0], taskId: input.targetTaskId } }
           }
           window.libraryCalls.push(profile.id)
           return { artifacts: artifactsFor(profile.id) }
@@ -1444,12 +1465,74 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     if (native) {
       await library.getByRole('button', { name: 'Back', exact: true }).click()
       assert.equal(await library.evaluate(() => window.artifactBackRoute), '/')
+      await library.evaluate(() => (window.artifactHistory = '/settings'))
+      await library.getByRole('button', { name: 'Back', exact: true }).click()
+      assert.equal(await library.evaluate(() => window.artifactBackRoute), '/settings')
     }
     assert.equal(
       await cards.first().getAttribute('aria-label'),
       'Open artifact API client',
       'Library must show recently updated artifacts first',
     )
+    const previewHeight = (await cards.first().boundingBox()).height
+    await library.getByRole('button', { name: 'List view', exact: true }).click()
+    const listHeight = (await cards.first().boundingBox()).height
+    assert.ok(listHeight < previewHeight, JSON.stringify({ platform, previewHeight, listHeight }))
+    if (!native) {
+      const actions = library
+        .getByRole('button', { name: 'Artifact actions API client', exact: true })
+        .first()
+      await actions.focus()
+      await actions.press('Enter')
+      await library.getByRole('menuitem', { name: 'Delete artifact', exact: true }).click()
+      await library
+        .getByRole('dialog')
+        .getByRole('heading', { name: 'Delete artifact?', exact: true })
+        .waitFor()
+      await library.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await library.getByRole('dialog').waitFor({ state: 'detached' })
+      await library.waitForFunction(
+        () => document.activeElement?.getAttribute('aria-label') === 'Artifact actions API client',
+      )
+      assert.equal(await cards.count(), 8, 'Compact menu still confirms deletion')
+      assert.equal(await library.evaluate(() => window.artifactMutations.length), 0)
+      assert.equal(
+        await actions.evaluate((node) => document.activeElement === node),
+        true,
+        'Keyboard focus returns to the actions control',
+      )
+    }
+    const listSnapshots = await library.evaluate(() => window.snapshotCalls.length)
+    await chooseLibrary('Sort artifacts', 'oldest')
+    assert.equal(await cards.first().getAttribute('aria-label'), 'Open artifact Launch brief')
+    await chooseLibrary('Sort artifacts', 'title')
+    assert.deepEqual(
+      await cards.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label'))),
+      ['API client', 'Budget calculator', 'Launch brief', 'System diagram'].flatMap((title) => [
+        `Open artifact ${title}`,
+        `Open artifact ${title}`,
+      ]),
+      'Title order works across computers',
+    )
+    assert.equal(
+      await library.evaluate(() => window.snapshotCalls.length),
+      listSnapshots,
+      'Sorting compact rows does not fetch thumbnails',
+    )
+    for (const width of native ? [320, 390, 544, 768, 1024, 1366] : [320, 390, 1280]) {
+      await library.setViewportSize({ width, height: 844 })
+      assert.ok(
+        await library.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        `${platform} list fits ${width}px`,
+      )
+      if (screenshotDirectory)
+        await library.screenshot({ path: `${screenshotDirectory}/${platform}-list-${width}.png` })
+    }
+    await library.setViewportSize(
+      native ? { width: 390, height: 844 } : { width: 1280, height: 800 },
+    )
+    await chooseLibrary('Sort artifacts', 'updated')
+    await library.getByRole('button', { name: 'Preview view', exact: true }).click()
     if (!native) {
       await library.getByRole('status').filter({ hasText: 'Offline host is offline.' }).waitFor()
       assert.equal(
@@ -1495,23 +1578,67 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       }
     }
     if (!native) await library.evaluate(() => window.updateLibrary())
+    const galleryTop = (await cards.first().boundingBox()).y
     await library.getByLabel('Search artifacts').fill('document')
     assert.equal(await cards.count(), 2, 'Search must match the format labels shown on cards')
+    assert.equal(
+      (await cards.first().boundingBox()).y,
+      galleryTop,
+      'Clear filters appearing must not move the gallery',
+    )
+    await library.getByRole('button', { name: 'Clear filters', exact: true }).click()
+    assert.equal(
+      await cards.count(),
+      8,
+      'Visible results keep a direct way to clear active filters',
+    )
+    assert.equal(await library.getByLabel('Search artifacts').inputValue(), '')
     await library.getByLabel('Search artifacts').fill('Host B')
     assert.equal(await cards.count(), 4)
     await library.getByRole('button', { name: 'Code', exact: true }).click()
     assert.equal(await cards.count(), 1)
-    await library.getByLabel('Artifact thread state').selectOption('archived')
+    await chooseLibrary('Artifact thread state', 'archived')
     await library.getByText('No matching artifacts', { exact: true }).waitFor()
     await library.getByRole('button', { name: 'Clear filters', exact: true }).click()
     assert.equal(await cards.count(), 8)
     await library.getByLabel('Search artifacts').fill('Host B')
     await library.getByRole('button', { name: 'Document', exact: true }).click()
     assert.equal(await cards.count(), 1)
+    if (native) {
+      await library.getByRole('button', { name: 'Open source thread', exact: true }).click()
+      assert.equal(await library.evaluate(() => window.artifactNavigation.runtimeId), '1')
+      assert.equal(await library.evaluate(() => window.artifactNavigation.view), 'tasks')
+    }
     await cards.click()
     await library.getByText('Content from Host 1', { exact: true }).waitFor()
     assert.ok((await library.evaluate(() => window.previewHosts)).every((host) => host === '1'))
     if (!native) {
+      await library.evaluate(() => {
+        window.holdRuntimeSwitch = true
+        window.artifactNavigation = null
+      })
+      await library.getByRole('button', { name: 'Open source thread', exact: true }).click()
+      await library.waitForFunction(() => !!window.finishRuntimeSwitch)
+      await library.evaluate(() => {
+        window.navigationEpoch = 1
+        window.finishRuntimeSwitch()
+      })
+      await library
+        .getByRole('button', { name: 'Open source thread', exact: true })
+        .waitFor({ state: 'visible' })
+      await library.waitForFunction(
+        () =>
+          !document.querySelector('button:disabled')?.textContent?.includes('Open source thread'),
+      )
+      assert.equal(
+        await library.evaluate(() => window.artifactNavigation),
+        null,
+        'A delayed switch must not override later navigation',
+      )
+      await library.evaluate(() => (window.holdRuntimeSwitch = false))
+      await library.getByRole('button', { name: 'Open source thread', exact: true }).click()
+      await library.waitForFunction(() => window.artifactNavigation?.viewId === 'tasks')
+      assert.ok(await library.evaluate(() => window.artifactNavigation.entityId))
       assert.equal(
         await library.getByRole('dialog').count(),
         0,
@@ -1558,7 +1685,56 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     await library.getByRole('button', { name: 'All formats', exact: true }).click()
     const firstCard = library.getByRole('button', { name: 'Open artifact API client' }).first()
     const cardContainer = firstCard.locator('..')
-    await cardContainer.getByRole('button', { name: 'Add to thread', exact: true }).click()
+    await firstCard.scrollIntoViewIfNeeded()
+    await firstCard.getByText('Snapshot from Host 0', { exact: true }).waitFor()
+    await firstCard.focus()
+    await firstCard.evaluate((node) => {
+      window.cardBeforeRefresh = node
+      window.holdSnapshots = true
+      window.snapshotReplies = []
+      window.snapshotVersion = ' refreshed'
+    })
+    const beforeRefresh = await firstCard.boundingBox()
+    // Refresh without moving focus, as a background refresh would do.
+    await library
+      .getByRole('button', { name: native ? 'Refresh artifacts' : 'Refresh', exact: true })
+      .evaluate((node) => node.click())
+    await library.waitForFunction(() => window.snapshotReplies.length > 0)
+    assert.equal(
+      await firstCard.evaluate(
+        (node) => node === window.cardBeforeRefresh && document.activeElement === node,
+      ),
+      true,
+      'Refreshing preserves card identity and keyboard focus',
+    )
+    await firstCard.getByText('Snapshot from Host 0', { exact: true }).waitFor()
+    assert.equal((await firstCard.boundingBox()).height, beforeRefresh.height)
+    await library.evaluate(() => {
+      window.holdSnapshots = false
+      window.snapshotReplies.splice(0).forEach((resolve) => resolve())
+    })
+    await firstCard.getByText('Snapshot from Host 0 refreshed', { exact: true }).waitFor()
+    assert.equal((await firstCard.boundingBox()).height, beforeRefresh.height)
+    const chooseAction = async (label) => {
+      if (native) {
+        await cardContainer
+          .getByRole('button', { name: 'Artifact actions API client', exact: true })
+          .click()
+        await library.getByRole('dialog').getByRole('button', { name: label, exact: true }).click()
+        assert.equal(
+          await library.getByRole('dialog').count(),
+          1,
+          'Action sheet closes before confirmation opens',
+        )
+      } else
+        await cardContainer
+          .getByRole('button', {
+            name: label === 'Delete artifact' ? 'Delete artifact API client' : label,
+            exact: true,
+          })
+          .click()
+    }
+    await chooseAction('Add to thread')
     await library.getByLabel('Destination thread', { exact: true }).selectOption('destination')
     await library
       .getByRole('dialog')
@@ -1568,24 +1744,14 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     let mutations = await library.evaluate(() => window.artifactMutations)
     assert.equal(mutations[0].input.targetTaskId, 'destination')
     assert.equal(mutations[0].profile, '0')
-    await cardContainer
-      .getByRole('button', {
-        name: native ? 'Delete artifact' : 'Delete artifact API client',
-        exact: true,
-      })
-      .click()
+    await chooseAction('Delete artifact')
     await library.getByRole('button', { name: 'Cancel', exact: true }).click()
     assert.equal(
       (await library.evaluate(() => window.artifactMutations)).length,
       1,
       'Cancel must not delete',
     )
-    await cardContainer
-      .getByRole('button', {
-        name: native ? 'Delete artifact' : 'Delete artifact API client',
-        exact: true,
-      })
-      .click()
+    await chooseAction('Delete artifact')
     await library.evaluate(() => (window.failArtifactMutation = true))
     await library
       .getByRole('dialog')
@@ -1612,6 +1778,68 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       (await library.evaluate(() => window.snapshotCalls)).length > 0,
       'Visible cards request snapshots',
     )
+    if (!native) {
+      await chooseLibrary('Sort artifacts', 'title')
+      await library.getByRole('button', { name: 'List view', exact: true }).click()
+      await library.evaluate(() => window.showLibrary(false))
+      await library.getByLabel('Search artifacts').waitFor({ state: 'hidden' })
+      await library.evaluate(() => window.showLibrary(true))
+      await cards.first().waitFor()
+      assert.equal(await library.getByLabel('Sort artifacts').getAttribute('data-value'), 'title')
+      assert.equal(
+        await library
+          .getByRole('button', { name: 'List view', exact: true })
+          .getAttribute('aria-pressed'),
+        'true',
+      )
+    }
+    await library.evaluate(() => {
+      const sources = window.artifactWorkspace.runtimes.map((source, index) =>
+        index === 0 ? { ...source, connected: false } : source,
+      )
+      window.artifactWorkspace.runtimes = sources
+      window.artifactWorkspace.overviews = sources
+      window.updateLibrary()
+    })
+    const offlineCard = library
+      .getByRole('button', { name: 'Open artifact Budget calculator', exact: true })
+      .first()
+      .locator('..')
+    await offlineCard
+      .getByRole('button', { name: 'Artifact actions Budget calculator', exact: true })
+      .click()
+    if (native) {
+      assert.equal(
+        await library
+          .getByRole('dialog')
+          .getByRole('button', { name: 'Add to thread', exact: true })
+          .isDisabled(),
+        true,
+      )
+      assert.equal(
+        await library
+          .getByRole('dialog')
+          .getByRole('button', { name: 'Delete artifact', exact: true })
+          .isDisabled(),
+        true,
+      )
+      await library.getByRole('button', { name: 'Close artifact actions', exact: true }).click()
+    } else {
+      assert.equal(
+        await library
+          .getByRole('menuitem', { name: 'Add to thread', exact: true })
+          .getAttribute('aria-disabled'),
+        'true',
+      )
+      assert.equal(
+        await library
+          .getByRole('menuitem', { name: 'Delete artifact', exact: true })
+          .getAttribute('aria-disabled'),
+        'true',
+      )
+      await library.keyboard.press('Escape')
+    }
+    assert.equal(await cards.count(), 7, 'Offline mode preserves saved rows')
     await library.close()
   }
   {
@@ -1703,9 +1931,16 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     )
     assert.equal(await row('Fresh B').count(), 1)
 
+    const onlineCardHeight = (await row('Alpha notes').boundingBox()).height
     await owners.evaluate(() => window.setRuntime('a', { connected: false }))
     await owners.getByText('Host A is offline. Showing artifacts saved', { exact: false }).waitFor()
     assert.equal(await row('Alpha notes').count(), 1, 'Disconnects keep the last healthy rows')
+    assert.equal(
+      (await row('Alpha notes').boundingBox()).height,
+      onlineCardHeight,
+      'Disconnecting preserves desktop preview space',
+    )
+    await row('Alpha notes').getByText('Snapshot', { exact: true }).waitFor()
     assert.equal(await owners.getByRole('alert').count(), 0)
     assert.deepEqual(await owners.evaluate(() => window.ownerCalls), ['a', 'b', 'b'])
 
@@ -1751,6 +1986,109 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       'Request failures stay distinct from disconnects',
     )
     await owners.close()
+  }
+  {
+    const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await prepareView(mobile)
+    await mobile.evaluate(() => {
+      const artifact = (title) => ({
+        id: title,
+        taskId: 'source-thread',
+        title,
+        format: 'markdown',
+        revision: 1,
+        createdAt: '2026-10-01',
+        updatedAt: '2026-10-02',
+        threadTitle: 'Source thread',
+        threadState: 'active',
+      })
+      const runtime = (id) => ({
+        profile: {
+          id,
+          name: id,
+          nameIsCustom: true,
+          connection: { address: 'http://' + id + '.lan', token: 'first' },
+        },
+        connected: true,
+        snapshot: {
+          artifactsEnabled: true,
+          workspace: { tasks: [], agents: [], repositories: [] },
+        },
+      })
+      window.mobileSources = [runtime('Fast'), runtime('Slow')]
+      window.mobileReads = []
+      window.slowReplies = []
+      window.replica = new Map()
+      const cache = (profile) => ({
+        read: async () => window.replica.get(profile.id + profile.connection.token) ?? null,
+        write: async (_key, value) =>
+          window.replica.set(profile.id + profile.connection.token, {
+            value,
+            cachedAt: '2026-10-23',
+          }),
+      })
+      window.artifactWorkspace = {
+        get overviews() {
+          return window.mobileSources
+        },
+        cacheForRuntime: cache,
+        readRuntime: (profile, path) => {
+          if (path.endsWith('/snapshot')) return Promise.resolve({ excerpt: 'Snapshot' })
+          window.mobileReads.push(profile.id)
+          return profile.id === 'Slow'
+            ? new Promise((resolve) => window.slowReplies.push(resolve))
+            : Promise.resolve({ artifacts: [artifact('Fast notes')] })
+        },
+      }
+      window.resolveSlow = (index, title) =>
+        window.slowReplies[index]({ artifacts: [artifact(title)] })
+      window.changeMobile = (id, patch) => {
+        window.mobileSources = window.mobileSources.map((source) =>
+          source.profile.id === id ? { ...source, ...patch } : source,
+        )
+        window.updateLibrary()
+      }
+    })
+    await mobile.addScriptTag({
+      content: interfaces.find((ui) => ui.platform === 'mobile-library').code,
+    })
+    const card = (title) =>
+      mobile.getByRole('button', { name: 'Open artifact ' + title, exact: true })
+    await card('Fast notes').waitFor()
+    assert.deepEqual(await mobile.evaluate(() => window.mobileReads), ['Fast', 'Slow'])
+    await mobile.evaluate(() => window.changeMobile('Slow', { connected: false, error: 'Offline' }))
+    await mobile.getByText(/Slow is offline/).waitFor()
+    await mobile.evaluate(() => window.changeMobile('Slow', { connected: true }))
+    await mobile.waitForFunction(() => window.slowReplies.length === 2)
+    await mobile.evaluate(() => window.resolveSlow(1, 'Fresh slow notes'))
+    await card('Fresh slow notes').waitFor()
+    await mobile.evaluate(() => window.resolveSlow(0, 'Stale notes'))
+    assert.equal(await card('Stale notes').count(), 0)
+    const onlineCardHeight = (await card('Fast notes').boundingBox()).height
+    await mobile.evaluate(() => window.changeMobile('Fast', { connected: false, error: 'Offline' }))
+    await mobile.getByText(/Fast is offline. Showing saved artifacts/).waitFor()
+    assert.equal(await card('Fast notes').count(), 1)
+    assert.equal(
+      (await card('Fast notes').boundingBox()).height,
+      onlineCardHeight,
+      'Disconnecting preserves mobile preview space',
+    )
+    await card('Fast notes').getByText('Snapshot', { exact: true }).waitFor()
+    await mobile.evaluate(() =>
+      window.changeMobile('Fast', {
+        profile: {
+          ...window.mobileSources[0].profile,
+          connection: { address: 'http://Fast.lan', token: 'repaired' },
+        },
+      }),
+    )
+    await card('Fast notes').waitFor({ state: 'detached' })
+    await mobile.evaluate(() => {
+      window.mobileSources = []
+      window.updateLibrary()
+    })
+    await card('Fresh slow notes').waitFor({ state: 'detached' })
+    await mobile.close()
   }
   assert.deepEqual(pageErrors, [], 'Artifact interfaces must not raise browser errors')
   console.log(

@@ -83,10 +83,13 @@ export function TaskContextMenu({
   onError,
   onActiveChange,
   selectionMenu,
+  toolsMenu,
   dropdown = false,
 }: {
   dropdown?: boolean
   selectionMenu?: ReactNode
+  /** Tool shortcuts supplied by the thread header, shown in the first menu. */
+  toolsMenu?: ReactNode
   task: Task
   owner: TaskOwner
   selected: boolean
@@ -222,6 +225,7 @@ export function TaskContextMenu({
               {repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'General')} ·{' '}
               {source.name}
             </Menu.Label>
+            {toolsMenu}
             <Menu.Label className="px-2.5 py-1.5 text-[0.625rem] font-medium text-muted-foreground">
               Thread
             </Menu.Label>

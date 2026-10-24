@@ -167,7 +167,7 @@ export function SettingSource({
               type="button"
               variant="ghost"
               size="sm"
-              className={`size-7 shrink-0 p-0 ${origin.overridden ? 'text-primary' : 'text-muted-foreground'}`}
+              className={`size-7 shrink-0 p-0 ${origin.overridden ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}
               title={sourceLabel}
               aria-label={`View inheritance for ${label.toLowerCase()}`}
             >
@@ -239,7 +239,7 @@ export function SettingSource({
                         {rows.map((row) => (
                           <div
                             key={row.scope}
-                            className={`flex items-start gap-2 rounded px-2 py-1.5 text-xs ${row.effective ? 'bg-primary/10 text-foreground' : 'text-muted-foreground'}`}
+                            className={`ml-1 flex items-start gap-2 rounded border-l border-border/60 px-2 py-1.5 text-xs ${row.effective ? 'bg-primary/10 text-foreground' : 'text-muted-foreground'}`}
                           >
                             <span className="mt-0.5 w-3 shrink-0">
                               {row.effective && (

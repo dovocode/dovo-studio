@@ -1,3 +1,5 @@
+import { contentColumn } from '../ui/layout/content-column'
+import { ValidationFields } from '../ui/controls/validation-fields'
 import { SettingsFooterContext } from './settings-save-bar'
 import {
   createContext,
@@ -10,6 +12,7 @@ import {
 import { ScrollView, StyleSheet, View } from 'react-native'
 import { MobileThemeContext, useTheme } from '../ui/theme'
 import { Sheet } from '../ui/layout/sheet'
+import { studioThemes } from '@dovo/studio-core/themes'
 
 const SettingsContext = createContext(false)
 export const useInsideSettings = () => useContext(SettingsContext)
@@ -18,13 +21,11 @@ export const useInsideSettings = () => useContext(SettingsContext)
 export function useSettingsTheme() {
   const theme = useTheme()
   return useMemo(() => {
-    const dark = theme.mode === 'dark'
     const colors = {
       ...theme.colors,
-      background: theme.highContrast ? theme.colors.background : dark ? '#000000' : '#f2f2f7',
-      surface: theme.highContrast ? theme.colors.surface : dark ? '#1c1c1e' : '#ffffff',
-      elevated: theme.highContrast ? theme.colors.elevated : dark ? '#2c2c2e' : '#ffffff',
-      border: theme.highContrast ? theme.colors.border : dark ? '#38383a' : '#d1d1d6',
+      background: theme.highContrast
+        ? theme.colors.background
+        : studioThemes[theme.palette][theme.mode].sidebar,
     }
     return {
       ...theme,
@@ -32,11 +33,17 @@ export function useSettingsTheme() {
       styles: StyleSheet.create({
         ...theme.styles,
         screen: { ...theme.styles.screen, backgroundColor: colors.background },
-        content: { ...theme.styles.content, padding: 12, paddingBottom: 24, gap: 20 },
+        content: {
+          ...theme.styles.content,
+          ...contentColumn.form,
+          padding: 12,
+          paddingBottom: 24,
+          gap: 20,
+        },
         card: {
           ...theme.styles.card,
           backgroundColor: colors.surface,
-          borderWidth: 0,
+          borderWidth: theme.highContrast ? 1 : 0,
           borderRadius: 16,
           padding: 12,
           gap: 10,
@@ -46,7 +53,7 @@ export function useSettingsTheme() {
         input: {
           ...theme.styles.input,
           backgroundColor: colors.surface,
-          borderWidth: 0,
+          borderWidth: theme.highContrast ? 1 : 0,
           borderRadius: 12,
           paddingHorizontal: 12,
           paddingVertical: 10,
@@ -80,7 +87,7 @@ export function SettingsPage({ children }: { children: ReactNode }) {
     <SettingsTheme>
       <SettingsFooterContext.Provider value={setFooter}>
         <View style={styles.screen}>
-          {children}
+          <ValidationFields>{children}</ValidationFields>
           {footer}
         </View>
       </SettingsFooterContext.Provider>

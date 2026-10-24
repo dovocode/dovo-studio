@@ -1,3 +1,4 @@
+import { ConnectionProgress } from './connection-progress'
 import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import { useRef } from 'react'
 import { runtimeComputerName } from '@dovo/protocol'
@@ -314,6 +315,7 @@ export function FleetOverview({
               <Text selectable style={styles.muted}>
                 {detail.profile.connection.address}
               </Text>
+              <ConnectionProgress entry={detail} />
               {!!detail.error && <Text style={styles.error}>{detail.error}</Text>}
               <View style={styles.separator} />
               <Pressable

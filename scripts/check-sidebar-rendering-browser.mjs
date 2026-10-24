@@ -386,9 +386,9 @@ try {
   await page.getByRole('button', { name: 'Show all 120 settled threads', exact: true }).click()
   await page.getByText('Settled thread 0', { exact: true }).waitFor({ state: 'attached' })
   const settledRow = page.getByRole('button', { name: /Settled thread 0/, exact: true })
-  // The project badge falls back to its initial; no status, branch or device text remains.
-  assert.equal(await settledRow.textContent(), 'PRSettled thread 0')
-  assert.equal(await settledRow.locator('[aria-hidden="true"]').count(), 1)
+  // Settled rows retain project and status above the title, with no branch or device metadata.
+  for (const label of ['Project', 'Settled', 'Settled thread 0'])
+    assert.equal(await settledRow.getByText(label, { exact: true }).count(), 1)
   assert.equal(await settledRow.locator('[data-row-icon]').count(), 0)
   await settledRow.click()
   assert.equal(await page.evaluate(() => window.selected.task.id), 'settled-0')

@@ -1,4 +1,5 @@
 import { useApplicationState } from '@dovo/studio-core/state'
+import { SearchField } from '@dovo/studio-ui/search-field'
 import {
   ArrowLeft,
   ChevronRight,
@@ -8,7 +9,6 @@ import {
   Home,
   LoaderCircle,
   Monitor,
-  Search,
   X,
 } from 'lucide-react'
 import { useEffect, useId, useRef } from 'react'
@@ -229,52 +229,48 @@ export function DirectoryPicker({
             <Home className="size-4" />
           </Button>
         </div>
-        {data?.breadcrumbs && (
-          <nav ref={breadcrumbs} aria-label="Folder location" className="overflow-x-auto">
-            <ol className="flex min-w-max items-center gap-1 text-xs text-muted-foreground">
-              {data.breadcrumbs.map((crumb, index) => (
-                <li key={crumb.path} className="flex items-center gap-1">
-                  {index > 0 && <ChevronRight className="size-3 shrink-0 opacity-50" />}
-                  <button
-                    type="button"
-                    title={crumb.path}
-                    aria-current={crumb.path === data.path ? 'location' : undefined}
-                    disabled={!connected}
-                    onClick={() => navigate(crumb.path)}
-                    className="max-w-40 truncate rounded px-1.5 py-1.5 hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-ring aria-[current=location]:text-foreground"
-                  >
-                    {crumb.path === data.home ? 'Home' : crumb.name}
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </nav>
-        )}
+        <nav ref={breadcrumbs} aria-label="Folder location" className="min-h-7 overflow-x-auto">
+          <ol className="flex min-w-max items-center gap-1 text-xs text-muted-foreground">
+            {data?.breadcrumbs?.map((crumb, index) => (
+              <li key={crumb.path} className="flex items-center gap-1">
+                {index > 0 && <ChevronRight className="size-3 shrink-0 opacity-50" />}
+                <button
+                  type="button"
+                  title={crumb.path}
+                  aria-current={crumb.path === data.path ? 'location' : undefined}
+                  disabled={!connected}
+                  onClick={() => navigate(crumb.path)}
+                  className="max-w-40 truncate rounded px-1.5 py-1.5 hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-ring aria-[current=location]:text-foreground"
+                >
+                  {crumb.path === data.home ? 'Home' : crumb.name}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </nav>
       </header>
       <div className="flex shrink-0 items-center gap-2 px-4 py-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
-          <Input
-            aria-label="Filter folders"
-            placeholder="Filter folders…"
-            value={location.query}
-            disabled={!connected}
-            className="h-9 pl-9 text-sm"
-            onChange={(event) =>
-              update({
-                query: event.target.value,
-                offset: 0,
-                delay: 250,
-              })
+        <SearchField
+          containerClassName="min-w-0 flex-1"
+          aria-label="Filter folders"
+          clearLabel="Clear folder filter"
+          placeholder="Filter folders…"
+          value={location.query}
+          disabled={!connected}
+          onValueChange={(query) =>
+            update({
+              query,
+              offset: 0,
+              delay: 250,
+            })
+          }
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              list.current?.focus()
             }
-            onKeyDown={(event) => {
-              if (event.key === 'ArrowDown') {
-                event.preventDefault()
-                list.current?.focus()
-              }
-            }}
-          />
-        </div>
+          }}
+        />
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <Button
@@ -336,19 +332,19 @@ export function DirectoryPicker({
         </div>
       )}
       <div
-        className="flex items-center gap-2 px-5 pb-2 text-xs text-muted-foreground"
+        className="flex min-h-6 shrink-0 items-center gap-2 px-5 pb-2 text-xs text-muted-foreground"
         role="status"
         aria-live="polite"
       >
+        <span aria-hidden="true" className="flex size-3 shrink-0 items-center justify-center">
+          {busy && connected && <LoaderCircle className="size-3 animate-spin" />}
+        </span>
         {!connected ? (
           'Offline'
         ) : error ? (
           'Folder unavailable'
         ) : busy ? (
-          <>
-            <LoaderCircle className="size-3 animate-spin" />
-            Loading folders…
-          </>
+          'Loading folders…'
         ) : (
           <>
             {data?.total ?? entries.length}{' '}

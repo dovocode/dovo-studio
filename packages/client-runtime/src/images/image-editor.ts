@@ -22,8 +22,8 @@ export function parseImageEditorResult(value: unknown): ImageEditorResult | null
   return null
 }
 export function imageEditorDocument(source: string) {
-  if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(source))
-    throw new Error('Choose a PNG, JPEG or WebP image to edit.')
+  if (!/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(source))
+    throw new Error('Choose a PNG, JPEG, WebP or GIF image to edit.')
   const icons = {
     pen: '<path d="m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5"/>',
     highlighter: '<path d="m9 11 8-8 4 4-8 8-4-4Z M9 11l-3 3v3h3l4-3 M5 17l-3 4h7"/>',

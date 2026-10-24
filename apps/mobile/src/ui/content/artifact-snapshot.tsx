@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Image, View } from 'react-native'
-import { artifactSnapshotSchema, type ArtifactMetadata, type RuntimeProfile } from '@dovo/protocol'
+import {
+  artifactOwnerKey,
+  artifactSnapshotSchema,
+  type ArtifactMetadata,
+  type RuntimeProfile,
+} from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { ArtifactFormatIcon } from './artifact-presentation'
 import { Text } from './text'
@@ -9,18 +14,37 @@ import { useTheme } from '../theme'
 export function ArtifactSnapshot({
   profile,
   artifact,
+  connected,
+  connecting,
+  refreshKey,
 }: {
   profile: RuntimeProfile
   artifact: ArtifactMetadata
+  connected: boolean
+  connecting: boolean
+  refreshKey: number
 }) {
   const { readRuntime } = useRuntime()
   const { colors } = useTheme()
-  const [preview, setPreview] = useState<typeof artifactSnapshotSchema.Type>()
-  const [error, setError] = useState('')
+  const identity = JSON.stringify([
+    artifactOwnerKey(profile),
+    artifact.taskId,
+    artifact.id,
+    artifact.revision,
+  ])
+  const [snapshot, setSnapshot] = useState<{
+    identity: string
+    preview?: typeof artifactSnapshotSchema.Type
+    error?: string
+  }>()
+  const current = snapshot?.identity === identity ? snapshot : undefined
+  const preview = current?.preview
   useEffect(() => {
+    if (!connected) return
     let stopped = false
-    setPreview(undefined)
-    setError('')
+    setSnapshot((previous) =>
+      previous?.identity === identity ? { ...previous, error: undefined } : undefined,
+    )
     void readRuntime(
       profile,
       '/api/artifacts/snapshot',
@@ -28,18 +52,34 @@ export function ArtifactSnapshot({
       artifactSnapshotSchema,
     )
       .then((result) => {
-        if (!stopped) setPreview(result)
+        if (!stopped) setSnapshot({ identity, preview: result })
       })
       .catch((cause: unknown) => {
-        if (!stopped) setError(String(cause))
+        if (!stopped)
+          setSnapshot((previous) => ({
+            identity,
+            preview: previous?.identity === identity ? previous.preview : undefined,
+            error: String(cause),
+          }))
       })
     return () => {
       stopped = true
     }
-  }, [readRuntime, profile, artifact.id, artifact.taskId, artifact.revision])
+  }, [
+    connected,
+    refreshKey,
+    identity,
+    readRuntime,
+    profile,
+    artifact.id,
+    artifact.taskId,
+    artifact.revision,
+  ])
   return (
     <View
       accessible={false}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
       style={{
         height: 140,
         overflow: 'hidden',
@@ -70,11 +110,20 @@ export function ArtifactSnapshot({
       ) : (
         <ArtifactFormatIcon format={artifact.format} large />
       )}
-      {!!error && (
+      {(!connected || current?.error) && (
         <Text
-          style={{ position: 'absolute', bottom: 4, right: 8, fontSize: 10, color: colors.muted }}
+          style={{
+            position: 'absolute',
+            bottom: 4,
+            right: 8,
+            left: 8,
+            fontSize: 10,
+            color: colors.muted,
+            textAlign: 'right',
+            backgroundColor: colors.elevated,
+          }}
         >
-          Snapshot unavailable
+          {!connected ? (connecting ? 'Connecting…' : 'Computer offline') : 'Snapshot unavailable'}
         </Text>
       )}
     </View>

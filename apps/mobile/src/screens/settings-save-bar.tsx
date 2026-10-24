@@ -1,3 +1,4 @@
+import { contentColumn } from '../ui/layout/content-column'
 import {
   createContext,
   useContext,
@@ -80,11 +81,13 @@ export function SettingsSaveBar({
     () => (
       <View
         accessibilityLabel="Settings save actions"
+        accessibilityState={{ busy: saving }}
         style={{
+          ...contentColumn.form,
           gap: 8,
           padding: 12,
-          borderTopWidth: dirty ? 1 : 0,
-          borderColor: colors.border,
+          borderTopWidth: 1,
+          borderColor: dirty ? colors.border : 'transparent',
           backgroundColor: colors.background,
         }}
       >
@@ -94,8 +97,17 @@ export function SettingsSaveBar({
           accessibilityState={{ expanded: review, disabled: !dirty }}
           disabled={!dirty || !changes.length}
           onPress={() => setReview((value) => !value)}
-          style={{ minHeight: 44, justifyContent: 'center' }}
+          style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
         >
+          <View
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: colors.warning,
+              opacity: dirty ? 1 : 0,
+            }}
+          />
           <Text accessibilityLiveRegion="polite" style={styles.muted}>
             {saving
               ? 'Saving…'
@@ -154,7 +166,7 @@ export function SettingsSaveBar({
             onPress={() => handlers.current.onDiscard()}
           />
           <SettingsAction
-            label={saving ? 'Saving…' : saveLabel}
+            label={saveLabel}
             disabled={!dirty || saving || disabled}
             onPress={() => handlers.current.onSave()}
           />

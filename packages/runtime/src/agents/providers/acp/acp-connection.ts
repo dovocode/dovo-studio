@@ -1,3 +1,4 @@
+import type { AcpClient } from './acp-client.js'
 import { spawn } from 'node:child_process'
 import { basename } from 'node:path'
 import {
@@ -6,13 +7,12 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   RequestError,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import type {
-  Client,
   InitializeResponse,
   ClientCapabilities,
   ListSessionsRequest,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { processEnvironment } from '../../../process.js'
 import { stopAcpChild } from './acp-process.js'
 import type { AcpLaunch } from '../../execution/types.js'
@@ -33,7 +33,7 @@ export function legacyAcpLaunch(endpoint: string, args: string[] = []): AcpLaunc
 
 export function openAcpConnection(
   launch: AcpLaunch,
-  client: Client,
+  client: AcpClient,
   cwd?: string,
   signal?: AbortSignal,
   onStderr?: (text: string) => void,
@@ -229,7 +229,7 @@ export async function acpControl<T>(
   }
 }
 
-const noClientServices: Client = {
+const noClientServices: AcpClient = {
   requestPermission: () => ({ outcome: { outcome: 'cancelled' } }),
   sessionUpdate: () => {},
 }

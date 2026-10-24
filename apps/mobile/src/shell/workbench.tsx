@@ -152,9 +152,10 @@ function WorkbenchNotices() {
     </>
   )
 }
-export function WorkbenchScene({ tab }: { tab: Tab | 'scm' }) {
+export function WorkbenchScene({ tab, sidebar = false }: { tab: Tab | 'scm'; sidebar?: boolean }) {
   const context = useContext(SceneContext)
   const focused = useIsFocused()
+  const pathname = usePathname()
   if (!context) return null
   const navigation = context.navigations[tab === 'scm' ? 'tasks' : tab]
   return (
@@ -162,10 +163,18 @@ export function WorkbenchScene({ tab }: { tab: Tab | 'scm' }) {
       value={{
         ...navigation,
         focused: navigation.focused && focused,
+        navigate: (view, id, runtimeId) => {
+          if (sidebar && pathname !== '/' && view === 'tasks' && id && runtimeId) {
+            Keyboard.dismiss()
+            router.replace(taskHref(runtimeId, id))
+          } else navigation.navigate(view, id, runtimeId)
+        },
       }}
     >
-      <WorkbenchNotices />
-      {context.scenes[tab] ?? null}
+      <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
+        <WorkbenchNotices />
+        {context.scenes[tab] ?? null}
+      </SafeAreaView>
     </NavigationContext.Provider>
   )
 }
@@ -194,6 +203,8 @@ export function WorkbenchDetailRoute({
     >
       <NativeSafeAreaView
         edges={{
+          left: true,
+          right: true,
           bottom: bottomInset,
         }}
       >

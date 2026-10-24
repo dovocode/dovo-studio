@@ -88,7 +88,12 @@ const postReadPaths = new Set([
   '/api/scm/branches',
   '/api/scm/branch-changes',
 ])
-export type RuntimeRequestOptions = { mutationId?: string; route?: 'http' | 'stream' }
+export type RuntimeRequestOptions = {
+  mutationId?: string
+  route?: 'http' | 'stream'
+  /** Persist receipt ownership before a mutation can reach the transport. */
+  beforeMutation?: (token: string | undefined) => Effect.Effect<void, RuntimeRequestError>
+}
 
 /** A single request; interruption aborts both the fetch and response body read.
  * GET and allowlisted POST reads and ID-deduplicated sends retry within the same deadline;
@@ -140,6 +145,9 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
             cause,
           }),
       })
+    // A receipt belongs to the device credential used for its first send. Retrying the
+    // same action through a fallback credential would create a second receipt namespace.
+    let mutationEndpoint: { address: string; token: string | undefined } | undefined
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const controller = yield* Effect.acquireRelease(
@@ -150,7 +158,8 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
             }),
         )
         const endpoint =
-          connection && target.origin === new URL(connection.address).origin
+          mutationEndpoint ??
+          (connection && target.origin === new URL(connection.address).origin
             ? yield* Effect.tryPromise({
                 try: () => resolveRuntimeEndpoint(connection, controller.signal, options?.route),
                 catch: (cause) =>
@@ -171,9 +180,13 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
                       cause,
                     }),
                 })
-              : target.origin
+              : target.origin)
         const resolved = typeof endpoint === 'string' ? endpoint : endpoint.address
         const token = typeof endpoint === 'string' ? connection?.token : endpoint.token
+        if (options?.mutationId && !mutationEndpoint) {
+          if (options.beforeMutation) yield* options.beforeMutation(token)
+          mutationEndpoint = { address: resolved, token }
+        }
         const conditional =
           connection &&
           method === 'GET' &&
@@ -303,9 +316,10 @@ export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
           ? Effect.retry(request, readRetry)
           : request,
       Effect.timeoutOrElse({
-        duration: isPeerAddress(address)
-          ? Math.max(timeoutMs ?? runtimeRequestTimeout(path, input), 35000)
-          : (timeoutMs ?? runtimeRequestTimeout(path, input)),
+        duration:
+          isPeerAddress(address) || !!connection?.internet
+            ? Math.max(timeoutMs ?? runtimeRequestTimeout(path, input), 35000)
+            : (timeoutMs ?? runtimeRequestTimeout(path, input)),
         orElse: () =>
           Effect.fail(
             (() =>

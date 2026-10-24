@@ -109,8 +109,11 @@ and snapshots from executable tests; generated-file attributes take precedence. 
 and does not parse source code or infer test coverage.
 
 Turn changed-file overviews use the same categories, including saved paths omitted from the diff.
-Mobile includes linked checkouts in the turn's total; desktop shows counts for each checkout.
-Partial PR file lists show how many files have loaded rather than implying complete counts.
+Mobile includes linked checkouts in the turn's total; desktop shows counts for each checkout. The
+turn's colored bar sizes categories by added plus removed lines rather than file count. Its labels
+include line totals, while the filter chips retain file counts. Binary, omitted and mode-only
+changes remain selectable; when no line counts are available, the bar uses file counts. Partial PR
+file lists show how many files have loaded rather than implying complete counts.
 
 Refreshes keep the selected file. While a new revision's files load, the previous diff remains
 visible and read-only for the same verified PR and account. Comments and viewed changes wait for the

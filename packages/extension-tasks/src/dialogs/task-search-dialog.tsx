@@ -74,11 +74,11 @@ export function TaskSearchDialog({
           tasks and messages.
         </DialogDescription>
         {(search.error || search.loading) && (
-          <p role="status" className="px-2 text-xs text-muted-foreground">
+          <p role="status" className="pl-2 pr-10 text-xs text-muted-foreground max-sm:pr-12">
             {search.error || 'Searching conversations…'}
           </p>
         )}
-        <div className="flex items-center gap-2 px-2">
+        <div className="flex min-h-8 items-center gap-2 pl-2 pr-10 max-sm:min-h-11 max-sm:pr-12">
           {mode === 'messages' ? (
             <MessageSquare className="size-4 text-muted-foreground" aria-hidden />
           ) : (
@@ -95,6 +95,7 @@ export function TaskSearchDialog({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault()
                 if (!results.length) return

@@ -1,3 +1,4 @@
+import { pipelineSignal } from './work-presentation.js'
 import type { ForgePipelineGraphNode, ForgePipelineJob } from '../forges/forge-work.js'
 
 /** Resolve dependency columns with bounded traversal for incomplete or cyclic definitions. */
@@ -50,4 +51,32 @@ export function pipelineGraphColumns(
   const columns: ForgePipelineGraphNode[][] = []
   for (const node of nodes) (columns[levels.get(node.id) ?? 0] ??= []).push(node)
   return columns.filter(Boolean)
+}
+
+/** Dependency emphasis uses reported failures; it never assumes dependent jobs are blocked. */
+export function pipelineFailureImpact(
+  graph: ForgePipelineGraphNode[] | undefined,
+  jobs: ForgePipelineJob[],
+) {
+  const nodes = pipelineGraphColumns(graph, jobs).flat()
+  const failedJobs = new Set(
+    jobs
+      .filter((job) => pipelineSignal(job.status).tone === 'danger' || job.errors?.length)
+      .map((job) => job.id),
+  )
+  const failed = new Set(
+    nodes.filter((node) => node.jobIds.some((id) => failedJobs.has(id))).map((node) => node.id),
+  )
+  const affected = new Set(failed)
+  for (let pass = 0; pass < nodes.length; pass++) {
+    let changed = false
+    for (const node of nodes) {
+      if (!affected.has(node.id) && node.needs.some((id) => affected.has(id))) {
+        affected.add(node.id)
+        changed = true
+      }
+    }
+    if (!changed) break
+  }
+  return { failed, affected }
 }

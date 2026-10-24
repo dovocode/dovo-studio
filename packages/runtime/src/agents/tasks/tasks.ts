@@ -9,6 +9,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'eff
 import { runClientEffect } from '@dovo/client-runtime'
 import {
   decode,
+  nextQueuedMessage,
   defaultTaskHarness,
   resolveTaskAgent,
   taskHarnessSchema,
@@ -948,7 +949,7 @@ export class Tasks {
         queue: [
           ...(task.queue ?? [])
             .filter((message) => message.id === messageId)
-            .map((message) => ({ ...message, steering: true })),
+            .map((message) => ({ ...message, steering: true, paused: undefined })),
           ...(task.queue ?? []).filter((message) => message.id !== messageId),
         ],
       }))
@@ -1060,9 +1061,17 @@ export class Tasks {
         return Effect.fail(new HttpError(409, 'This thread is being deleted.'))
       if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
+      if (admit && !admit()) return Effect.succeed({ completion: Effect.void })
       const next = this.store.taskSummary(id)
+      if (
+        next.queue?.length &&
+        !nextQueuedMessage(next) &&
+        next.restartRecovery?.kind !== 'turn' &&
+        next.runPhase !== 'finalizing'
+      )
+        return Effect.fail(new HttpError(409, 'Resume the first queued message to continue'))
       return (
-        next.queue?.[0]?.turnSettings || (continuingRunId && next.runAttempt?.turnSettings)
+        nextQueuedMessage(next)?.turnSettings || (continuingRunId && next.runAttempt?.turnSettings)
           ? Effect.void
           : this.resolveModel(id)
       ).pipe(
@@ -1165,6 +1174,13 @@ export class Tasks {
             )
           if (this.running.has(id))
             return Effect.fail(new HttpError(409, 'This task is already running'))
+          if (
+            task.queue?.length &&
+            !nextQueuedMessage(task) &&
+            task.restartRecovery?.kind !== 'turn' &&
+            task.runPhase !== 'finalizing'
+          )
+            return Effect.fail(new HttpError(409, 'Resume the first queued message to continue'))
           let recoveringQueue = task.restartRecovery?.kind === 'queue'
           const recoveringTurn = task.restartRecovery?.kind === 'turn'
           const pendingLinks =
@@ -1293,19 +1309,24 @@ export class Tasks {
               yield* this.drainChildren(id, run.id)
               yield* this.runner.finalizeEffect(id, cwd, hasGit)
               resumeInterruptedTurn = false
-              if (pauseQueue || !this.store.taskSummary(id).queue?.length) return
+              if (pauseQueue || !nextQueuedMessage(this.store.taskSummary(id))) return
             }
             let firstAttempt = true
             do {
               yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
-              if (recoveringQueue && !this.store.taskSummary(id).queue?.length) {
+              if (
+                (recoveringQueue && !nextQueuedMessage(this.store.taskSummary(id))) ||
+                (!resumeInterruptedTurn &&
+                  this.store.taskSummary(id).queue?.length &&
+                  !nextQueuedMessage(this.store.taskSummary(id)))
+              ) {
                 this.store.updateTask(id, (current) => ({
                   ...current,
-                  status: task.status,
+                  status: firstAttempt ? task.status : current.status,
                   runPhase: undefined,
                   preparation: undefined,
                   activity: undefined,
-                  queuePaused: true,
+                  queuePaused: recoveringQueue ? true : current.queuePaused,
                 }))
                 return
               }
@@ -1341,7 +1362,7 @@ export class Tasks {
               yield* this.drainChildren(id, run.id)
             } while (
               !this.store.taskSummary(id).queuePaused &&
-              this.store.taskSummary(id).queue?.length
+              nextQueuedMessage(this.store.taskSummary(id))
             )
           }).pipe(
             Effect.tapCause((cause) =>
@@ -1427,7 +1448,7 @@ export class Tasks {
                   !this.stopping &&
                   !run.controller.signal.aborted &&
                   !next.queuePaused &&
-                  next.queue?.length
+                  nextQueuedMessage(next)
                 ) {
                   // The chained turn persists its own outcome. A defect here would abort
                   // restart recovery for every later task and reach automation callers.
@@ -1900,13 +1921,13 @@ export class Tasks {
         id === finalizingId ||
         parent.queuePaused ||
         this.running.has(id) ||
-        !parent.queue?.length
+        !nextQueuedMessage(parent)
       )
         continue
       this.executor.runFork(
         this.startEffect(id, false, () => {
           const task = this.store.taskSummary(id)
-          return !task.queuePaused && !!task.queue?.length
+          return !task.queuePaused && !!nextQueuedMessage(task)
         }).pipe(
           Effect.catch((error) =>
             Effect.sync(() => {
@@ -2358,7 +2379,7 @@ export class Tasks {
             continue
           }
           const interruptedTurn = task.restartRecovery.kind === 'turn'
-          const pendingInput = task.queue?.[0]?.id
+          const pendingInput = nextQueuedMessage(task)?.id
           this.activity?.add('task', id, 'Continuing after runtime restart')
           yield* this.startEffect(
             id,

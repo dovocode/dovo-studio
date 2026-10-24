@@ -64,6 +64,11 @@ export type Runtime = {
   recovering: boolean
   error: string
   syncAccountSession: (session: string | null) => Promise<void>
+  recoverAccountConnection: (
+    previous: RuntimeProfile,
+    incoming: RuntimeConnection,
+    signal: AbortSignal,
+  ) => Promise<void>
   connectEffect: (
     value: RuntimeConnection,
     name?: string,
@@ -105,8 +110,12 @@ export type Runtime = {
   refreshRuntimeEffect: (profile: RuntimeProfile) => Effect.Effect<void, Error>
   pendingMessages: (task: Task) => PendingMessage[]
   pendingMessagesFor: (profile: RuntimeProfile, task: Task) => PendingMessage[]
-  mutationStatus: (profile: RuntimeProfile) => { pending: number; error: string | null }
-  retryMutations: (profile: RuntimeProfile) => Promise<void>
+  mutationStatus: (profile: RuntimeProfile) => {
+    pending: number
+    error: string | null
+    reviewRequired?: boolean
+  }
+  retryMutations: (profile: RuntimeProfile, confirmRenewalReplay?: boolean) => Promise<void>
   discardMutations: (profile: RuntimeProfile) => Promise<void>
   read: Call
   readRuntime: RuntimeRead

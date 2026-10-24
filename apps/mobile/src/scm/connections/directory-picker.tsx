@@ -369,25 +369,32 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
             />
           </View>
         )}
-        {busy && (
-          <Text style={styles.muted}>
-            {location.offset ? 'Loading more folders…' : 'Loading folders…'}
-          </Text>
-        )}
+        <Text
+          numberOfLines={1}
+          accessibilityLiveRegion="polite"
+          style={[
+            styles.muted,
+            {
+              paddingVertical: 4,
+            },
+          ]}
+        >
+          {!connected
+            ? 'Offline'
+            : error
+              ? 'Folder unavailable'
+              : busy
+                ? location.offset
+                  ? 'Loading more folders…'
+                  : 'Loading folders…'
+                : !page
+                  ? '\u00a0'
+                  : page.total === undefined
+                    ? `${page.entries.length} folders loaded`
+                    : `${page.entries.length} of ${page.total} ${page.total === 1 ? 'folder' : 'folders'}`}
+        </Text>
         {page && (
           <>
-            <Text
-              style={[
-                styles.muted,
-                {
-                  paddingVertical: 4,
-                },
-              ]}
-            >
-              {page.total === undefined
-                ? `${page.entries.length} folders loaded`
-                : `${page.entries.length} of ${page.total} ${page.total === 1 ? 'folder' : 'folders'}`}
-            </Text>
             {page.entries.map((entry) => (
               <Pressable
                 key={entry.path}

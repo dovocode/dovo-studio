@@ -69,6 +69,7 @@ function NativeIconButton({
             : (color ?? (prominent ? colors.action : selected ? colors.accent : colors.text)),
         ),
         frame({ width: size, height: size }),
+        ...(selected && variant === 'plain' ? [background(colors.selection, shapes.circle())] : []),
         contentShape(shapes.circle(), ['interaction', 'accessibility']),
         disabledModifier(disabled),
         accessibilityLabel(label),
@@ -145,11 +146,13 @@ export function IconButton(props: IconButtonProps) {
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor:
-          variant !== 'glass'
-            ? 'transparent'
-            : prominent && !disabled
-              ? colors.action
-              : colors.surface,
+          selected && variant === 'plain'
+            ? colors.selection
+            : variant !== 'glass'
+              ? 'transparent'
+              : prominent && !disabled
+                ? colors.action
+                : colors.surface,
         opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >

@@ -31,6 +31,31 @@
   --radius-md: var(--dovo-radius-control);
   --radius-sm: 4px;
 }
+/* Dialogs fade in place; shared by Studio and web surfaces without animation plugins. */
+@keyframes dovo-dialog-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes dovo-dialog-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-motion='reduce']) .dovo-dialog-fade[data-state='open'] {
+    animation: dovo-dialog-enter 120ms ease-out both;
+  }
+  :root:not([data-motion='reduce']) .dovo-dialog-fade[data-state='closed'] {
+    animation: dovo-dialog-exit 80ms ease-in both;
+  }
+}
 :root {
   color-scheme: dark;
   --background: var(--dovo-background);

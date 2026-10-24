@@ -430,6 +430,7 @@ export const queuedMessageSchema = mutableStruct({
     role: Schema.Literal('user'),
     createdAt: Schema.String,
     steering: Schema.optional(Schema.Boolean),
+    paused: Schema.optional(Schema.Boolean),
   },
 })
 export const linkedCheckoutSchema = mutableStruct({

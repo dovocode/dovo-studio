@@ -571,6 +571,7 @@ export function ComposerModelPicker({
                 }}
                 className="h-9 rounded-none border-0 bg-transparent pl-8 shadow-none focus-visible:ring-0"
                 onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return
                   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                     event.preventDefault()
                     const next =

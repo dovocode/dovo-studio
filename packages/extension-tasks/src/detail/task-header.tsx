@@ -23,6 +23,8 @@ import {
   Shapes,
   GitPullRequest,
   MessageSquare,
+  MessageCircleQuestion,
+  Smartphone,
   PanelRight,
   PanelBottom,
   Terminal,
@@ -30,7 +32,15 @@ import {
   ChevronDown,
   Info,
 } from 'lucide-react'
-import { HeaderContent, Button, IconButton, ProjectIcon, Popover, cn } from '@dovo/studio-ui'
+import {
+  HeaderContent,
+  Button,
+  IconButton,
+  ProjectIcon,
+  Popover,
+  DropdownMenu,
+  cn,
+} from '@dovo/studio-ui'
 import { taskPresentation } from '../list/task-presentation'
 import { retainTaskOwner } from '../list/task-collection'
 import { TaskContextMenu } from './task-context-menu'
@@ -157,6 +167,21 @@ export function TaskHeader({
   const terminals =
     snapshot?.terminals.filter((session) => session.taskId === task.id && !session.exited).length ??
     0
+  const surfaces = [
+    ['chat', 'Chat', MessageSquare, 0],
+    ['files', 'Files', Files, 0],
+    ['projects', 'Linked projects', FolderSymlink, task.linkedCheckouts?.length ?? 0],
+    ...(snapshot?.artifactsEnabled ? [['artifacts', 'Artifacts', Shapes, 0] as const] : []),
+    ...(hasDiff ? [['changes', 'Diff', FileCode2, task.files.length] as const] : []),
+    ...(linkedPulls.length
+      ? [['linked-pulls', 'Linked PRs', GitPullRequest, linkedPulls.length] as const]
+      : []),
+    ['agents', 'Agents', Bot, task.subagents?.length ?? 0],
+    ['terminal', 'Terminal', Terminal, terminals],
+    ['browser', 'Preview', Globe, 0],
+    ['devices', 'Devices', Smartphone, 0],
+    ['side-chats', 'Side chats', MessageCircleQuestion, task.sideChats?.length ?? 0],
+  ] as const
   const titleMenu = (
     <TaskContextMenu
       key={task.id}
@@ -171,6 +196,25 @@ export function TaskHeader({
       onDeselect={onDeselect}
       onProjectDeleted={onProjectDeleted}
       onError={setMenuError}
+      toolsMenu={
+        <>
+          <DropdownMenu.Label className="px-2.5 py-1.5 text-[0.625rem] font-medium text-muted-foreground">
+            Tools
+          </DropdownMenu.Label>
+          {surfaces.map(([id, label, Icon]) => (
+            <DropdownMenu.Item
+              key={id}
+              className="flex cursor-default items-center gap-2 rounded-lg px-2.5 py-2 text-xs outline-none data-[highlighted]:bg-accent/65"
+              aria-current={surface === id ? 'page' : undefined}
+              onSelect={() => onSurface(id)}
+            >
+              <Icon className="size-3.5 text-muted-foreground" />
+              {label}
+            </DropdownMenu.Item>
+          ))}
+          <DropdownMenu.Separator className="my-1 h-px bg-border/70" />
+        </>
+      }
     >
       <button
         type="button"
@@ -250,6 +294,12 @@ export function TaskHeader({
             </span>
           </nav>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.625rem] text-muted-foreground">
+            {displayProject && displayProject.kind !== 'scratch' && (
+              <span className="inline-flex min-w-0 max-w-36 items-center gap-1" title={projectName}>
+                <ProjectIcon repository={displayProject} className="size-3 shrink-0" />
+                <span className="truncate">{projectName}</span>
+              </span>
+            )}
             <span
               className={cn(
                 'truncate',
@@ -357,46 +407,32 @@ export function TaskHeader({
               aria-label="Task workspace"
               className="flex min-w-0 items-center overflow-x-auto rounded-md border border-border/70 bg-muted/20 p-0.5"
             >
-              {(
-                [
-                  ['chat', 'Chat', MessageSquare, 0],
-                  ['files', 'Files', Files, 0],
-                  ['projects', 'Linked projects', FolderSymlink, task.linkedCheckouts?.length ?? 0],
-                  ...(snapshot?.artifactsEnabled
-                    ? [['artifacts', 'Artifacts', Shapes, 0] as const]
-                    : []),
-                  ...(hasDiff ? [['changes', 'Diff', FileCode2, task.files.length] as const] : []),
-                  ...(linkedPulls.length
-                    ? [['linked-pulls', 'Linked PRs', GitPullRequest, linkedPulls.length] as const]
-                    : []),
-                  ['agents', 'Agents', Bot, task.subagents?.length ?? 0],
-                  ['terminal', 'Terminal', Terminal, terminals],
-                  ['browser', 'Preview', Globe, 0],
-                ] as const
-              ).map(([id, label, Icon, count]) => (
-                <Button
-                  key={id}
-                  size="sm"
-                  variant="ghost"
-                  aria-label={label}
-                  title={label}
-                  aria-pressed={surface === id}
-                  onClick={() => onSurface(id)}
-                  className={cn(
-                    'gap-1 rounded-sm text-[0.625rem]',
-                    compact ? 'size-7 px-1.5' : 'size-7 sm:h-7 sm:w-auto sm:px-2',
-                    surface === id && 'bg-background text-foreground shadow-sm',
-                  )}
-                >
-                  <Icon className="size-3.5" />
-                  {!compact && <span className="hidden sm:inline">{label}</span>}
-                  {count > 0 && (
-                    <span className="hidden text-[0.5625rem] tabular-nums text-muted-foreground md:inline">
-                      {count}
-                    </span>
-                  )}
-                </Button>
-              ))}
+              {surfaces
+                .filter(([id]) => id !== 'devices' && id !== 'side-chats')
+                .map(([id, label, Icon, count]) => (
+                  <Button
+                    key={id}
+                    size="sm"
+                    variant="ghost"
+                    aria-label={label}
+                    title={label}
+                    aria-pressed={surface === id}
+                    onClick={() => onSurface(id)}
+                    className={cn(
+                      'gap-1 rounded-sm text-[0.625rem]',
+                      compact ? 'size-7 px-1.5' : 'size-7 sm:h-7 sm:w-auto sm:px-2',
+                      surface === id && 'bg-background text-foreground shadow-sm',
+                    )}
+                  >
+                    <Icon className="size-3.5" />
+                    {!compact && <span className="hidden sm:inline">{label}</span>}
+                    {count > 0 && (
+                      <span className="hidden text-[0.5625rem] tabular-nums text-muted-foreground md:inline">
+                        {count}
+                      </span>
+                    )}
+                  </Button>
+                ))}
             </div>
           )}
           {compact && actions}

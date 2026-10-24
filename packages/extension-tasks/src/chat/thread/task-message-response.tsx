@@ -9,6 +9,7 @@ import {
   responses,
 } from '@dovo/protocol'
 import { TaskVisualization } from './task-visualization'
+import { EditChatImage } from '../composer/chat-image-edit-context'
 import { useEffect, useMemo, useState, useCallback, type ComponentProps } from 'react'
 import {
   MessageResponse,
@@ -72,9 +73,12 @@ function TaskImage({
       </span>
     )
   return current?.uri ? (
-    <button type="button" aria-label={`Preview ${alt}`} onClick={() => onPreview(path)}>
-      <img src={current.uri} alt={alt} className="max-h-96 max-w-full object-contain" />
-    </button>
+    <span className="inline-flex max-w-full flex-col items-start gap-1">
+      <button type="button" aria-label={`Preview ${alt}`} onClick={() => onPreview(path)}>
+        <img src={current.uri} alt={alt} className="max-h-96 max-w-full object-contain" />
+      </button>
+      <EditChatImage source={{ taskId, path }} label={alt} />
+    </span>
   ) : (
     <span role="status">Loading {alt}…</span>
   )
@@ -129,6 +133,7 @@ export function TaskMessageResponse({
       image: (path: string, alt: string) => (
         <TaskImage taskId={taskId} path={path} alt={alt} onPreview={openFile} />
       ),
+      remoteImage: (uri: string, alt: string) => <RemoteChatImage uri={uri} label={alt} />,
     }),
     [taskId, openFile],
   )
@@ -224,14 +229,7 @@ export function TaskMessageResponse({
             localMarkdownPath(part.path) !== undefined ? (
               <TaskImage taskId={taskId} path={part.path} alt={part.label} onPreview={openFile} />
             ) : (
-              <a href={part.path} target="_blank" rel="noreferrer">
-                <img
-                  loading="lazy"
-                  src={part.path}
-                  alt={part.label}
-                  className="max-h-96 max-w-full rounded-lg object-contain"
-                />
-              </a>
+              <RemoteChatImage uri={part.path} label={part.label} />
             )
           ) : part.kind === 'video' ? (
             <TaskVideo taskId={taskId} path={part.path} label={part.label} onPreview={openFile} />
@@ -246,6 +244,22 @@ export function TaskMessageResponse({
         </p>
       )}
     </div>
+  )
+}
+
+function RemoteChatImage({ uri, label }: { uri: string; label: string }) {
+  return (
+    <span className="inline-flex max-w-full flex-col items-start gap-1">
+      <a href={uri} target="_blank" rel="noreferrer">
+        <img
+          loading="lazy"
+          src={uri}
+          alt={label}
+          className="max-h-96 max-w-full rounded-lg object-contain"
+        />
+      </a>
+      <EditChatImage source={{ uri }} label={label} />
+    </span>
   )
 }
 
@@ -366,6 +380,13 @@ function TaskFileDialog({
       <DialogContent className="flex h-[85dvh] max-w-5xl flex-col" aria-describedby={undefined}>
         <div className="flex items-center justify-between gap-3 pr-6">
           <DialogTitle>{markdownFileName(path)}</DialogTitle>
+          {/\.(png|jpe?g|webp|gif|heic|heif)$/i.test(path) && (
+            <EditChatImage
+              source={{ taskId, path }}
+              label={markdownFileName(path)}
+              onEdit={onClose}
+            />
+          )}
           <Button
             variant="outline"
             size="sm"

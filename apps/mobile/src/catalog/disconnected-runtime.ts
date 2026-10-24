@@ -49,6 +49,9 @@ export const disconnectedRuntime = {
   registryLoaded: true,
   recovering: false,
   error: '',
+  recoverAccountConnection: async () => {
+    throw disabled('Account connection recovery')
+  },
   syncAccountSession: async () => {
     throw disabled('Account session changes')
   },

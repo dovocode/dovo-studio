@@ -1,3 +1,4 @@
+import { SearchField } from '@dovo/studio-ui/search-field'
 import { taskSnoozeOptions } from '@dovo/protocol'
 import { orderThreadSections, settledThreadPreviewLimit } from '@dovo/protocol'
 import { SectionOrderDialog } from './section-order-dialog'
@@ -17,7 +18,7 @@ import {
 import { compareTasks, isSnoozed } from '@dovo/studio-core'
 import { SidebarHeader, ChoicePicker } from '@dovo/studio-ui'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
-import { Plus, Search, ChevronDown, Monitor } from 'lucide-react'
+import { Plus, ChevronDown, Monitor } from 'lucide-react'
 import {
   useCallback,
   useDeferredValue,
@@ -28,7 +29,7 @@ import {
   useState,
   type MouseEvent,
 } from 'react'
-import { Button, Input, ContextMenu } from '@dovo/studio-ui'
+import { Button, ContextMenu } from '@dovo/studio-ui'
 import { responses } from '@dovo/studio-core'
 import { TaskListRow, type TaskListRowActions, type TaskListWindow } from './task-list-row'
 import {
@@ -797,19 +798,14 @@ export function TaskList({
       <SidebarHeader />
       <div className="shrink-0 space-y-1.5 border-b border-border/40 px-3 pt-3 pb-2">
         <div className="flex items-center gap-2">
-          <div className="relative min-w-0 flex-1">
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70"
-            />
-            <Input
-              aria-label="Search threads"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search threads…"
-              className="h-8 rounded-lg border-border/50 bg-background/40 pl-8 text-xs shadow-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus-visible:border-ring md:text-xs"
-            />
-          </div>
+          <SearchField
+            aria-label="Search threads"
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Search threads…"
+            containerClassName="flex-1"
+            className="h-8 rounded-lg border-border/50 bg-background/40 text-xs shadow-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus-visible:border-ring md:text-xs"
+          />
           <Button
             size="icon"
             variant="ghost"

@@ -4,6 +4,7 @@ import { Switch } from './components/ui/switch'
 import { PageHeader } from './page-header'
 import { useId, useRef, useState, useEffect, type ReactNode } from 'react'
 import { Button } from './components/ui/button'
+import { ChevronDown } from 'lucide-react'
 
 /** Settings page frame and row, in the label-left / control-right style of Codex and T3 Code. */
 export function SettingsPage({
@@ -33,14 +34,16 @@ export function SettingsPage({
         )}
         {headerActions}
       </PageHeader>
-      {toolbar}
+      {toolbar && (
+        <div className="shrink-0 overflow-y-hidden [scrollbar-gutter:stable]">{toolbar}</div>
+      )}
       <div
         role="region"
         aria-label={`${title} settings`}
         tabIndex={0}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-6"
       >
-        <div className={`mx-auto ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-4 pb-24`}>
+        <div className={`mx-auto ${wide ? 'max-w-6xl' : 'max-w-3xl'} space-y-6 pb-24`}>
           {children}
         </div>
       </div>
@@ -60,23 +63,29 @@ export function SettingsGroup({
 }) {
   const id = useId()
   const content = (
-    <Card asChild className="divide-y p-0">
+    <Card asChild className="divide-y divide-border/60 p-0">
       <div>{children}</div>
     </Card>
   )
   if (advanced)
     return (
-      <details className="group space-y-2 rounded-lg border p-3">
+      <details className="studio-settings-group group space-y-3">
         <summary
           data-setting-label={title}
-          className="cursor-pointer text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex cursor-pointer list-none items-center gap-3 rounded-lg px-1 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
         >
-          {title}
-          {description && (
-            <span className="mt-1 block text-xs font-normal leading-relaxed text-muted-foreground">
-              {description}
-            </span>
-          )}
+          <span className="min-w-0 flex-1">
+            {title}
+            {description && (
+              <span className="mt-1 block text-xs font-normal leading-relaxed text-muted-foreground">
+                {description}
+              </span>
+            )}
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-4 shrink-0 text-muted-foreground group-open:rotate-180"
+          />
         </summary>
         {content}
       </details>
@@ -86,7 +95,7 @@ export function SettingsGroup({
       data-setting-label={title}
       tabIndex={-1}
       aria-labelledby={id}
-      className="scroll-mt-4 space-y-2 outline-none"
+      className="studio-settings-group scroll-mt-4 space-y-3 outline-none"
     >
       <div>
         <h2 id={id} className="text-sm font-semibold tracking-tight">
@@ -213,11 +222,19 @@ export function SettingsSaveBar({
         : description
   return (
     <div
-      className={`flex flex-wrap items-center justify-between gap-3 rounded-xl p-3 ${dirty || saving ? 'sticky bottom-0 z-10 border bg-background/95 shadow-sm backdrop-blur' : 'border-t text-muted-foreground'}`}
+      className={`sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 bg-background/95 backdrop-blur ${dirty || saving ? 'border-border shadow-sm' : 'border-transparent border-t-border text-muted-foreground'}`}
       role="group"
       aria-label="Settings save actions"
+      aria-busy={saving}
     >
-      <div role="status" className="text-xs text-muted-foreground">
+      <div
+        role="status"
+        className="flex min-h-8 w-full min-w-0 items-center gap-2 text-xs text-muted-foreground sm:w-auto sm:flex-1"
+      >
+        <span
+          aria-hidden="true"
+          className={`size-1.5 shrink-0 rounded-full bg-status-warning ${dirty ? '' : 'invisible'}`}
+        />
         {dirty && changes.length > 0 ? (
           <button
             type="button"
@@ -231,7 +248,7 @@ export function SettingsSaveBar({
           status
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="ml-auto flex flex-wrap items-center gap-2">
         {children && (
           <details className="relative">
             <summary
@@ -255,7 +272,7 @@ export function SettingsSaveBar({
           Discard
         </Button>
         <Button type="button" disabled={!dirty || saving || disabled} onClick={onSave}>
-          {saving ? 'Saving…' : saveLabel}
+          {saveLabel}
         </Button>
       </div>
       {dirty && review && (
@@ -314,7 +331,11 @@ export function Segmented<T extends string>({
 }) {
   const buttons = useRef<Array<HTMLButtonElement | null>>([])
   return (
-    <div role="radiogroup" aria-label={label} className="flex rounded-md border p-0.5">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="inline-flex max-w-full flex-wrap gap-1 rounded-lg bg-muted/50 p-1"
+    >
       {options.map(([id, name], index) => (
         <button
           key={id}
@@ -349,10 +370,10 @@ export function Segmented<T extends string>({
           role="radio"
           aria-checked={value === id}
           onClick={() => onChange(id)}
-          className={`rounded px-3 py-1 text-xs transition-colors ${
+          className={`min-h-7 rounded-md border px-3 py-1 text-xs transition-colors pointer-coarse:min-h-11 ${
             value === id
-              ? 'bg-accent font-medium text-foreground'
-              : 'text-muted-foreground hover:text-foreground'
+              ? 'border-border bg-background font-medium text-foreground'
+              : 'border-transparent text-muted-foreground hover:bg-background/50 hover:text-foreground'
           }`}
         >
           {name}

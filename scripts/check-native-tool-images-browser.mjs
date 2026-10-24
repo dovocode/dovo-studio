@@ -13,8 +13,8 @@ export const View=({children,style})=><div style={css(style)}>{children}</div>;
 export const ScrollView=View;
 export const Text=({children})=><span>{children}</span>;
 export const ActivityIndicator=({accessibilityLabel})=><span>{accessibilityLabel}</span>;
-export const Pressable=({children,onPress,accessibilityLabel})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;
-export const Image=({source,accessibilityLabel,onError})=><img src={source.uri} alt={accessibilityLabel} onError={onError}/>;
+export const Pressable=({children,onPress,accessibilityLabel,style})=><button aria-label={accessibilityLabel} onClick={onPress} style={{display:'block',border:0,padding:0,width:'100%',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Image=({source,accessibilityLabel,onError,style})=><img src={source.uri} alt={accessibilityLabel} onError={onError} style={css(style)}/>;
 export const IconButton=({label,onPress})=><button aria-label={label} onClick={onPress}>×</button>;
 export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
@@ -26,6 +26,11 @@ try {
   for (const mobile of [false, true]) {
     const stubs = mobile
       ? [
+          {
+            path: '../../tasks/composer/chat-image-edit-context',
+            importer: `${mobileDir}/src/ui/content`,
+            contents: 'export const EditChatImage=()=>null;',
+          },
           ...[
             'react-native',
             '../theme',
@@ -123,6 +128,13 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           (img) => img.complete && img.naturalWidth === 120,
         ),
     )
+    if (mobile) {
+      for (const image of await page.locator('img').all()) {
+        const bounds = await image.boundingBox()
+        assert.equal(bounds.height, 96, 'Tool images stay compact in the conversation')
+        assert.equal(bounds.width, 128)
+      }
+    }
     const viewedLabel = 'View view.png image 1'
     await page
       .getByRole('button', { name: `${mobile ? 'Open' : 'Preview'} ${viewedLabel}`, exact: true })

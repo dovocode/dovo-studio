@@ -138,6 +138,7 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
     update,
     ready: loadedKey === key,
     submission: loadedKey === key ? submission : undefined,
+    appendEffect: (value: string) => drafts.appendEffect(key, value, text),
     stageEffect: (attempt: SendAttempt) =>
       drafts
         .stageEffect(key, attempt, text)

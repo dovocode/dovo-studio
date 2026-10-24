@@ -35,7 +35,7 @@ export function HookSettings({
   save: (update: (value: ResourceSettings) => ResourceSettings) => Promise<void>
 }) {
   const { styles } = useSettingsTheme()
-  const { act, busy, error, fieldError } = useAction()
+  const { act, busy, error, fieldError, validationAttempt } = useAction()
   const [editing, setEditing] = useApplicationState<{
     value: AgentHook
     previousName?: string
@@ -134,6 +134,7 @@ export function HookSettings({
         <Sheet
           title={editing.previousName ? `Edit hook · ${editing.previousName}` : 'New hook'}
           busy={busy}
+          validationAttempt={validationAttempt}
           onClose={() => setEditing(null)}
         >
           <Field

@@ -16,10 +16,10 @@ export const Text=({children,accessibilityRole,numberOfLines,style})=>{const val
 export const Image=()=>null;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
 export const ScrollView=View;
-export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style})=><button style={window.rowLayout?{display:'flex',position:'relative',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
-export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,testID},ref){
+export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style})=><button style={window.rowLayout?{display:'flex',position:'relative',boxSizing:'border-box',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
+export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,testID,contentContainerStyle},ref){
   useImperativeHandle(ref,()=>({scrollToOffset:()=>{}}),[]);
-  return <div data-testid={testID}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}</div>
+  return <div data-testid={testID} style={window.rowLayout?{boxSizing:'border-box',display:'flex',flexDirection:'column',...nativeStyle(contentContainerStyle)}:undefined}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}</div>
 });
 export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};
 export const Platform={OS:'ios'};
@@ -134,7 +134,7 @@ export const startRuntimeSync=(connection,options)=>{
   {
     path: '../../agents/harness-icon',
     importer: mobile + 'tasks/list/task-list-row.tsx',
-    contents: `export const HarnessIcon=({provider})=><span data-harness={provider} aria-hidden/>;`,
+    contents: `export const HarnessIcon=({provider,size})=><span data-harness={provider} aria-hidden style={{display:'block',width:size,height:size,flexShrink:0}}/>;`,
   },
   {
     path: '../../agents/use-model-catalog',
@@ -166,6 +166,8 @@ for (const [path, importer] of [
   ['../ui/layout/screen-header', 'screens/tasks.tsx'],
   ['../ui/theme', 'screens/tasks.tsx'],
   ['../../ui/theme', 'runtime/connection/fleet-overview.tsx'],
+  ['../../ui/theme', 'runtime/connection/connection-progress.tsx'],
+  ['../../ui/content/text', 'runtime/connection/connection-progress.tsx'],
   ['../../ui/content/text', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/controls/icon', 'runtime/connection/fleet-overview.tsx'],
   ['../../ui/controls/action', 'runtime/connection/fleet-overview.tsx'],
@@ -174,6 +176,9 @@ for (const [path, importer] of [
   ['../../ui/controls/icon', 'tasks/list/task-list-row.tsx'],
   ['../../ui/theme', 'tasks/list/'],
   ['../theme', 'ui/content/pull-request-icon.tsx'],
+  ['../theme', 'ui/content/empty-state.tsx'],
+  ['./text', 'ui/content/empty-state.tsx'],
+  ['../controls/icon', 'ui/content/empty-state.tsx'],
 ])
   stubs.push({ path, importer: mobile + importer, contents: controls })
 stubs.push({
@@ -188,7 +193,8 @@ const built = await bundleBrowser(
       resolveDir: root,
       loader: 'tsx',
       contents: `
-import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
+import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';
+import {TaskPanesContext} from './apps/mobile/src/shell/task-panes';
 import {runtimeProfile} from '@dovo/protocol';
 import {studioThemes} from './packages/studio-core/src/themes.ts';
 window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['light','dark'].map(mode=>({name:name+'/'+mode,...theme[mode]})));
@@ -218,7 +224,8 @@ window.publish=changes=>flushSync(()=>{
   window.pushSnapshot(window.snapshot);
 });
 function Probe(){window.runtime=useRuntime();return null}
-createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><TasksScreen/></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider>);
+function PaneProbe({children}){const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider>}
+createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><PaneProbe><TasksScreen/></PaneProbe></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider>);
 `,
     },
     conditions: ['development'],
@@ -282,8 +289,12 @@ try {
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[0]), 'issues')
   if (process.env.DOVO_MOBILE_DENSITY_LAYOUT) {
     const ids = ['running', 'parent', 'task-0', 'task-1', 'task-2', 'task-3']
-    for (const width of [320, 390, 430]) {
+    for (const width of [320, 390, 430, 544, 768, 1024, 1366]) {
       await page.setViewportSize({ width, height: 844 })
+      const list = await page.getByTestId('Task list').boundingBox()
+      assert.ok(list.width <= 1024 && list.width <= width, JSON.stringify({ width, list }))
+      assert.ok(Math.abs(list.x - (width - list.width) / 2) < 1, JSON.stringify({ width, list }))
+
       for (const scale of [1, 1.5, 2]) {
         await page.evaluate((scale) => {
           window.rowFontScale = scale
@@ -321,6 +332,32 @@ try {
           JSON.stringify({ width, scale, sizes }),
         )
         assert.ok(sizes[0].height >= 44)
+        for (const id of ids) {
+          const row = page.getByTestId('Task ' + id)
+          const title = await row
+            .getByText(
+              id === 'task-0'
+                ? 'Long project and checkout ' + scale
+                : id === 'task-1'
+                  ? 'General ' + scale
+                  : id === 'task-2'
+                    ? 'Settled ' + scale
+                    : id === 'task-3'
+                      ? 'Draft ' + scale
+                      : id === 'parent'
+                        ? 'Has several subagents ' + scale
+                        : 'Short ' + scale,
+              { exact: true },
+            )
+            .boundingBox()
+          const project = await row
+            .getByText(id === 'task-1' ? 'General' : 'Project', { exact: true })
+            .boundingBox()
+          assert.ok(
+            project.y + project.height <= title.y,
+            JSON.stringify({ id, width, scale, project, title }),
+          )
+        }
         const toggle = await page
           .getByRole('button', {
             name: 'Subthreads for Has several subagents ' + scale,
@@ -328,6 +365,27 @@ try {
           })
           .boundingBox()
         const menu = await page.getByTestId('Task parent actions').boundingBox()
+        const parentRow = page.getByTestId('Task parent')
+        assert.equal(await parentRow.locator('[data-harness]').count(), 1)
+        assert.equal(
+          await parentRow
+            .locator('[data-harness]')
+            .evaluate((icon) => icon.parentElement.textContent.includes('Project')),
+          true,
+          'Provider belongs beside project and status in the header',
+        )
+        const provider = await parentRow.locator('[data-harness]').boundingBox()
+        const glyph = await page
+          .getByRole('button', {
+            name: 'Subthreads for Has several subagents ' + scale,
+            exact: true,
+          })
+          .locator('svg')
+          .boundingBox()
+        assert.ok(
+          Math.abs(provider.y + provider.height / 2 - glyph.y - glyph.height / 2) < 1,
+          'Subthread icon aligns with header indicators',
+        )
         assert.ok(toggle && menu && toggle.width === 44 && toggle.height === 44)
         assert.ok(toggle.x + toggle.width <= menu.x, 'Subthread and menu touch targets overlap')
         assert.ok(
@@ -344,10 +402,40 @@ try {
         }
       }
     }
+    await page.evaluate(() => {
+      window.rowFontScale = 1
+      window.setListPreferences({ threadDensity: 'comfortable' })
+    })
+    for (const width of [320, 390, 768]) {
+      await page.setViewportSize({ width, height: 844 })
+      for (const scale of [1, 1.5, 2]) {
+        await page.evaluate((scale) => {
+          window.rowFontScale = scale
+          window.publish({ parent: { title: 'Has several subagents ' + scale } })
+        }, scale)
+        await page
+          .getByTestId('Task parent')
+          .getByText('Has several subagents ' + scale, { exact: true })
+          .waitFor()
+        const row = page.getByTestId('Task parent')
+        const provider = await row.locator('[data-harness]').boundingBox()
+        const project = await row.getByText('Project', { exact: true }).boundingBox()
+        const toggle = page.getByRole('button', { name: /^Subthreads for Has several subagents/ })
+        const icon = await toggle.locator('svg').boundingBox()
+        const menu = await page.getByTestId('Task parent actions').boundingBox()
+        const touch = await toggle.boundingBox()
+        assert.ok(Math.abs(provider.y + provider.height / 2 - icon.y - icon.height / 2) < 1)
+        assert.ok(provider.y >= project.y - 1 && provider.y <= project.y + project.height)
+        assert.equal(touch.width, 44)
+        assert.equal(touch.height, 44)
+        assert.ok(touch.x + touch.width <= menu.x)
+        assert.ok(provider.x + provider.width <= touch.x)
+      }
+    }
     await page.screenshot({ path: '/tmp/dovo-compact-uniform-rows.png' })
     assert.deepEqual(errors, [])
     console.log(
-      'Compact row heights match across regular, General, settled, draft, long-checkout and subagent threads at 320/390/430px widths and 1/1.5/2x text sizes.',
+      'Compact row heights match across regular, General, settled, draft, long-checkout and subagent threads at phone, Split View, portrait and landscape iPad widths and 1/1.5/2x text sizes.',
     )
     await browser.close()
     process.exit(0)
@@ -385,13 +473,13 @@ try {
   }
   assert.equal(
     await densityTitle.evaluate((el) => el.parentElement.parentElement.children.length),
-    2,
-    'Compact uses title/status and a single context row',
+    3,
+    'Compact preserves project/status, title and checkout context',
   )
   assert.equal(
     await densityTitle.evaluate((el) => el.parentElement.children.length),
-    2,
-    'Compact keeps status beside the title',
+    1,
+    'Compact title has its own row',
   )
   const filters = page.getByRole('button', { name: 'Filters', exact: true })
   assert.equal(await page.getByRole('textbox', { name: 'Search tasks' }).count(), 0)
@@ -663,11 +751,13 @@ try {
   console.log(
     `Mobile task titles: opaque read text and unread weight emphasis verified across 28 shipped palette/mode combinations; read/unread contrast >= ${minimumContrast.toFixed(2)}:1.`,
   )
-  // Settled rows keep only the project icon and title, with details on the icon.
+  // Settled rows retain project/status above the title, with details on the icon.
   await page.evaluate(() => window.publish({ 'task-1': { archived: true } }))
   const settled = page.getByTestId('Task task-1')
   await settled.waitFor()
-  assert.equal(await settled.textContent(), 'Task 1')
+  assert.equal(await settled.getByText('Project', { exact: true }).count(), 1)
+  assert.equal(await settled.getByText('Settled', { exact: true }).count(), 1)
+  assert.equal(await settled.getByText('Task 1', { exact: true }).count(), 1)
   assert.equal(await page.getByTestId('Task task-1 actions').count(), 0)
   assert.equal(
     await settled
@@ -745,6 +835,25 @@ try {
   await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('')
   await allHistory.waitFor()
   await filterSheet.getByRole('button', { name: 'Close details' }).click()
+  await page.evaluate(() =>
+    window.setPanes({
+      expanded: true,
+      detailWidth: 640,
+      selected: { runtimeId: window.runtime.activeId, taskId: 'running' },
+    }),
+  )
+  assert.equal(await page.getByTestId('Task running').getAttribute('aria-pressed'), 'true')
+  assert.equal(await page.getByTestId('Task parent').getAttribute('aria-pressed'), 'false')
+  await page.getByRole('button', { name: 'New thread', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.routes.at(-1)), '/new')
+  await page.evaluate(() =>
+    window.setPanes({
+      expanded: true,
+      detailWidth: 640,
+      selected: { runtimeId: 'another-computer', taskId: 'running' },
+    }),
+  )
+  assert.equal(await page.getByTestId('Task running').getAttribute('aria-pressed'), 'false')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',

@@ -590,6 +590,7 @@ function PrimaryReviewPane({
                 <FileTree
                   files={files}
                   stats={stats}
+                  weightBy={selectedTurn ? 'lines' : 'files'}
                   selected={file.path}
                   onSelect={chooseFile}
                   groups={review.progress?.groups ?? []}

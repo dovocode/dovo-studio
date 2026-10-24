@@ -7,16 +7,19 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from './utils.js'
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-[0.8125rem] font-medium transition-[color,background-color,border-color,opacity,transform] duration-150 ease-out motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
+  "group/button inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-[0.8125rem] font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150 ease-out motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 aria-invalid:border-destructive aria-invalid:ring-[3px] aria-invalid:ring-destructive/20 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: 'bg-action text-action-foreground hover:bg-action/95',
-        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/95',
+        default:
+          'bg-action text-action-foreground shadow-xs hover:bg-action/90 active:bg-action/85',
+        destructive:
+          'bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 active:bg-destructive/85',
         outline:
-          'border border-input bg-background hover:bg-accent/45 hover:text-accent-foreground',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/90',
-        ghost: 'hover:bg-accent/45 hover:text-accent-foreground',
+          'border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground active:bg-accent/80 dark:bg-input/20 dark:hover:bg-input/40',
+        secondary:
+          'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80 active:bg-secondary/70',
+        ghost: 'hover:bg-accent/60 hover:text-accent-foreground active:bg-accent',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {

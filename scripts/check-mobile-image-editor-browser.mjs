@@ -8,10 +8,10 @@ const built = await bundleBrowser(
       resolveDir: mobile,
       loader: 'tsx',
       contents: `
-import {useScreenshotAttachment} from './src/tasks/preview/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';
+import {ChatImageEditProvider} from './src/tasks/composer/chat-image-edit';import {EditChatImage} from './src/tasks/composer/chat-image-edit-context';import {useState} from 'react';import {useScreenshotAttachment} from './src/tasks/preview/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';
 window.data={};window.deleted=[];window.calls=[];window.rows=[];window.stored={};window.fail=false;
-window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(window.fail)throw Error('Mobile upload rejected');const attachment={id:input.id,name:input.name,mime:input.name.endsWith('.png')?'image/png':'application/octet-stream',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:1}};
-function App(){const picker=useAttachmentPicker('task');const screenshots=useScreenshotAttachment('task');window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.captureError=screenshots.error;window.upload=picker.upload;window.edit=picker.edit;window.busy=picker.busy;return <>{picker.editor}{screenshots.editor}<div role="alert">{picker.error}</div><textarea aria-label="Message" defaultValue="Keep mobile draft"/></>};createRoot(document.getElementById('app')).render(<App/>);`,
+window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(path==='/api/tasks/images/read')return {uri:'data:image/png;base64,'+window.data['photo.png']};if(window.fail)throw Error('Mobile upload rejected');const attachment={id:input.id,name:input.name,mime:input.name.endsWith('.png')?'image/png':'application/octet-stream',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:1}};
+function App(){const[revision,setRevision]=useState(0);window.refresh=()=>setRevision(v=>v+1);const[loading,setLoading]=useState(false);const picker=useAttachmentPicker('task');const screenshots=useScreenshotAttachment('task');window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.captureError=screenshots.error;window.upload=picker.upload;window.edit=picker.edit;window.busy=picker.busy;return <ChatImageEditProvider upload={picker.upload} busy={loading||picker.busy} onBusy={setLoading} disabled={false}><EditChatImage source={{taskId:"source-thread",attachmentId:"sent"}} label="Sent image"/><EditChatImage source={{taskId:"source-thread",eventId:"generated",index:0}} label="Tool image"/><EditChatImage source={{taskId:"source-thread",path:"/output/chart.png"}} label="Inline image"/>{picker.editor}{screenshots.editor}<div role="alert">{picker.error}</div><textarea aria-label="Message" defaultValue="Keep mobile draft"/></ChatImageEditProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -24,6 +24,13 @@ function App(){const picker=useAttachmentPicker('task');const screenshots=useScr
     },
   },
   [
+    { path: 'expo/fetch', contents: 'export const fetch=(...args)=>window.fetch(...args);' },
+    {
+      path: '../../ui/controls/icon-button',
+      importer: mobile + '/src/tasks/composer',
+      contents:
+        'export const IconButton=({label,onPress,disabled})=><button aria-label={label} onClick={onPress} disabled={disabled}/>;',
+    },
     {
       path: './optimize-attachment-image',
       importer: mobile,
@@ -32,7 +39,7 @@ function App(){const picker=useAttachmentPicker('task');const screenshots=useScr
     {
       path: '../../runtime/connection/provider',
       importer: mobile,
-      contents: `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,snapshot:{workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}},callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`,
+      contents: `import {Effect} from 'effect';export const useRuntime=()=>({connected:true,snapshot:{workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}},readEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error}),callEffect:(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error})});`,
     },
     {
       path: '../../ui/controls/use-action',
@@ -267,9 +274,78 @@ try {
   })
   await page.waitForFunction(() => window.captureError.includes('Could not read the screenshot'))
   assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
+  // Reuse a sent image without changing the original message or composer text.
+  await page.evaluate(() => {
+    window.rows = []
+    window.stored.sent = {
+      attachment: { id: 'sent', name: 'sent.png', mime: 'image/png', size: 100 },
+      data: window.data['photo.png'],
+    }
+  })
+  await page.getByRole('button', { name: 'Edit and attach Sent image', exact: true }).click()
+  await editor.getByRole('button', { name: 'Use original', exact: true }).click()
+  await page.waitForFunction(() => !window.busy && window.rows.length === 1)
+  assert.equal(await page.evaluate(() => window.calls.at(-1).path), '/api/attachments/upload')
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.replaceId), undefined)
+  assert.equal(
+    await page.evaluate(() => window.stored.sent.data === window.data['photo.png']),
+    true,
+  )
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message' }).inputValue(),
+    'Keep mobile draft',
+  )
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
+  await page.getByRole('button', { name: 'Edit and attach Inline image', exact: true }).click()
+  await editor.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.waitForFunction(() => !window.busy)
+  assert.equal(await page.evaluate(() => window.rows.length), 1)
+  assert.deepEqual(
+    await page.evaluate(
+      () => window.calls.filter((c) => c.path === '/api/tasks/images/read').at(-1).input,
+    ),
+    { taskId: 'source-thread', path: '/output/chart.png' },
+  )
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
+  await page.getByRole('button', { name: 'Edit and attach Tool image', exact: true }).click()
+  await editor.getByRole('button', { name: 'Draw', exact: true }).click()
+  const chatDrawing = await editor.getByLabel('Image drawing area').boundingBox()
+  await page.mouse.move(
+    chatDrawing.x + chatDrawing.width * 0.2,
+    chatDrawing.y + chatDrawing.height * 0.5,
+  )
+  await page.mouse.down()
+  await page.mouse.move(
+    chatDrawing.x + chatDrawing.width * 0.8,
+    chatDrawing.y + chatDrawing.height * 0.5,
+    { steps: 8 },
+  )
+  await page.mouse.up()
+  await editor.getByRole('button', { name: 'Done', exact: true }).click()
+  await page.waitForFunction(() => !window.busy && window.rows.length === 2)
+  assert.match(await page.evaluate(() => window.rows.at(-1).name), /-edited\.png$/)
+  assert.deepEqual(
+    await page.evaluate(
+      () => window.calls.filter((c) => c.path === '/api/tasks/images/read').at(-1).input,
+    ),
+    { taskId: 'source-thread', eventId: 'generated', index: 0 },
+  )
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
+  await page.evaluate(() => {
+    window.rows = Array.from({ length: 5 }, (_, i) => ({
+      id: 'full-' + i,
+      name: 'full.png',
+      mime: 'image/png',
+      size: 1,
+    }))
+    window.refresh()
+  })
+  await page.getByRole('button', { name: 'Edit and attach Sent image', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'attach up to 5 files' }).waitFor()
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile image editor: real native picker/editor with SVG and touch adapters, drawing pixels, all tools, crop bounds, undo/redo/reset, composer replacement, asynchronous writes, export/upload failures, cancellation, screenshot edit/attach/cancel/validation and cache cleanup passed.',
+    'Mobile image editor: real native picker/editor with SVG and touch adapters, drawing pixels, all tools, crop bounds, undo/redo/reset, composer replacement, asynchronous writes, export/upload failures, cancellation, screenshot edit/attach/cancel/validation, chat-image reuse/drawing/cancel/limits, original preservation and cache cleanup passed.',
   )
 } finally {
   await browser.close()

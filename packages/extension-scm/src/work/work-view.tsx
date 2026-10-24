@@ -1,4 +1,11 @@
-import { hasJiraIssueFilters, type ForgeWorkOptions, type JiraIssueFilters } from '@dovo/protocol'
+import { SearchField } from '@dovo/studio-ui/search-field'
+import {
+  pipelineSignal,
+  pipelineStatusSummary,
+  hasJiraIssueFilters,
+  type ForgeWorkOptions,
+  type JiraIssueFilters,
+} from '@dovo/protocol'
 import { JiraToolbar } from './jira-toolbar'
 import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -9,7 +16,6 @@ import {
   GitBranch,
   Monitor,
   RefreshCw,
-  Search,
   SlidersHorizontal,
   Plus,
   AlertCircle,
@@ -25,7 +31,7 @@ import {
   matchesWorkItem,
   type StudioViewProps,
 } from '@dovo/studio-core'
-import { Button, ChoicePicker, Input, useCompactLayout } from '@dovo/studio-ui'
+import { Button, ChoicePicker, useCompactLayout } from '@dovo/studio-ui'
 import { JiraSourcesDialog } from '../connections/jira-binding'
 import {
   useIssueSources,
@@ -262,7 +268,7 @@ function WorkView({
   const projectSource = sources.find((source) => source.key === project)
   const projectRemote = projectSource ? workRemoteKey(projectSource) : project
   const visiblePages = pages.filter((page) => matchesWorkSource(page.source, projectRemote))
-  const rows = visiblePages
+  const matchingRows = visiblePages
     .flatMap((page) =>
       page.items.map((item) => ({
         source: page.source,
@@ -275,7 +281,10 @@ function WorkView({
     )
     .filter(
       ({ source, item, serverMatched }) =>
-        (isJira || state === 'all' || ('state' in item ? item.state : item.status) === state) &&
+        (mode === 'pipelines' ||
+          isJira ||
+          state === 'all' ||
+          ('state' in item && item.state === state)) &&
         (linked === 'all' ||
           (linked === 'unlinked'
             ? source.jira && !source.projectLinks?.[item.id]
@@ -294,6 +303,17 @@ function WorkView({
             ? b.item.updatedAt.localeCompare(a.item.updatedAt)
             : 0,
     )
+  const rows =
+    mode === 'pipelines' && state !== 'all'
+      ? matchingRows.filter(
+          ({ item }) =>
+            'status' in item && pipelineSignal(item.status).label === pipelineSignal(state).label,
+        )
+      : matchingRows
+  const pipelineStatuses = pipelineStatusSummary(
+    matchingRows.flatMap(({ item }) => ('status' in item ? [item.status] : [])),
+    state,
+  )
   const states = [
     ...new Set(
       visiblePages.flatMap((page) =>
@@ -445,7 +465,9 @@ function WorkView({
               onClick={() => void chooseSource('create')}
             >
               <Plus className="size-3.5" />
-              {mode === 'issues' ? 'New issue' : 'Run pipeline'}
+              <span className={selected ? 'sr-only' : 'sr-only sm:not-sr-only'}>
+                {mode === 'issues' ? 'New issue' : 'Run pipeline'}
+              </span>
             </Button>
           </PageHeader>
           <div className="studio-page-toolbar shrink-0 space-y-3 border-b">
@@ -479,24 +501,23 @@ function WorkView({
 
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">
-                {rows.length} loaded · {visibleSources.length}{' '}
-                {visibleSources.length === 1 ? 'source' : 'sources'}
+                {rows.length === matchingRows.length
+                  ? `${rows.length} loaded`
+                  : `${rows.length} of ${matchingRows.length} loaded`}{' '}
+                · {visibleSources.length} {visibleSources.length === 1 ? 'source' : 'sources'}
               </span>
-              <div className="relative ml-auto min-w-40 max-w-full flex-1 sm:max-w-72">
-                <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
-                <Input
-                  className="h-9 w-full pl-9 text-sm"
-                  aria-label={`Search ${mode}`}
-                  placeholder={
-                    mode === 'issues'
-                      ? 'Search issue titles, keys, text…'
-                      : 'Search runs, branches, projects…'
-                  }
-                  value={search}
-                  maxLength={300}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-              </div>
+              <SearchField
+                containerClassName="ml-auto min-w-40 max-w-full flex-1 sm:max-w-72"
+                aria-label={`Search ${mode}`}
+                placeholder={
+                  mode === 'issues'
+                    ? 'Search issue titles, keys, text…'
+                    : 'Search runs, branches, projects…'
+                }
+                value={search}
+                maxLength={300}
+                onValueChange={setSearch}
+              />
             </div>
             {isJira ? (
               <JiraToolbar
@@ -543,7 +564,7 @@ function WorkView({
             ) : (
               <div className="flex flex-wrap gap-2">
                 <ChoicePicker
-                  aria-label="Issue source"
+                  aria-label={mode === 'issues' ? 'Issue source' : 'Pipeline source'}
                   className="h-8 w-auto max-w-72 text-xs"
                   value={project}
                   onValueChange={(value) => {
@@ -563,30 +584,32 @@ function WorkView({
                     </option>
                   ))}
                 </ChoicePicker>
-                <ChoicePicker
-                  aria-label={mode === 'issues' ? 'Issue state' : 'Pipeline status'}
-                  className="h-8 w-auto text-xs"
-                  value={state}
-                  onValueChange={(value) => {
-                    setState(value)
-                    if (isJira) setSelected(null)
-                  }}
-                >
-                  {isJira ? (
-                    <>
-                      <option value="open">Open issues</option>
-                      <option value="all">All issues</option>
-                      <option value="closed">Done issues</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="all">All states</option>
-                      {states.map((state) => (
-                        <option key={state}>{state}</option>
-                      ))}
-                    </>
-                  )}
-                </ChoicePicker>
+                {mode === 'issues' && (
+                  <ChoicePicker
+                    aria-label="Issue state"
+                    className="h-8 w-auto text-xs"
+                    value={state}
+                    onValueChange={(value) => {
+                      setState(value)
+                      if (isJira) setSelected(null)
+                    }}
+                  >
+                    {isJira ? (
+                      <>
+                        <option value="open">Open issues</option>
+                        <option value="all">All issues</option>
+                        <option value="closed">Done issues</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="all">All states</option>
+                        {states.map((state) => (
+                          <option key={state}>{state}</option>
+                        ))}
+                      </>
+                    )}
+                  </ChoicePicker>
+                )}
                 {mode === 'issues' && (
                   <ChoicePicker
                     aria-label="Project links"
@@ -639,24 +662,68 @@ function WorkView({
                 )}
               </div>
             )}
+            {mode === 'pipelines' && (matchingRows.length > 0 || state !== 'all') && (
+              <div role="group" aria-label="Filter loaded runs by status" className="space-y-2">
+                <p className="text-[0.6875rem] text-muted-foreground">
+                  In loaded, searched results
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant={state === 'all' ? 'secondary' : 'ghost'}
+                    aria-pressed={state === 'all'}
+                    aria-label={`All runs: ${matchingRows.length}`}
+                    onClick={() => setState('all')}
+                    className="h-9 gap-2 text-xs"
+                  >
+                    All runs <span className="tabular-nums">{matchingRows.length}</span>
+                  </Button>
+                  {pipelineStatuses.map(({ status, label, count }) => (
+                    <Button
+                      key={label}
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Filter ${label}: ${count} runs`}
+                      aria-pressed={state !== 'all' && pipelineSignal(state).label === label}
+                      onClick={() =>
+                        setState(
+                          state !== 'all' && pipelineSignal(state).label === label ? 'all' : status,
+                        )
+                      }
+                      className="h-9 min-w-0 max-w-full gap-2 px-2 aria-pressed:bg-muted aria-pressed:ring-1 aria-pressed:ring-ring"
+                    >
+                      <PipelineState status={status} />
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {count}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
-        {opening && (
-          <p role="status" className="px-5 py-2 text-xs text-muted-foreground">
-            Opening on its computer…
-          </p>
-        )}
         {error && (
           <p role="alert" className="px-5 py-2 text-xs text-destructive">
             {error}
           </p>
         )}
         <div ref={list} tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-3">
-          {busy && (
-            <p role="status" className="py-2 text-xs text-muted-foreground">
-              Refreshing {mode}…
-            </p>
-          )}
+          <p
+            role="status"
+            aria-live="polite"
+            className="mb-2 min-h-4 text-xs text-muted-foreground"
+          >
+            {opening
+              ? 'Opening on its computer…'
+              : busy
+                ? `${visiblePages.some((page) => page.items.length) ? 'Updating' : 'Loading'} ${mode}…`
+                : visiblePages.length && !visiblePages.some((page) => page.reader.connected)
+                  ? visiblePages.some((page) => page.items.length)
+                    ? 'Offline · showing saved results.'
+                    : `Connect to load ${mode}.`
+                  : ''}
+          </p>
           {!sources.length && (
             <div className="space-y-3 py-8 text-sm text-muted-foreground">
               <p>

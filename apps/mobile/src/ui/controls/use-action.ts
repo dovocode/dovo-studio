@@ -14,36 +14,39 @@ export function useAction() {
     busy: boolean
     error: string
     issues: readonly { path: string; message: string }[]
-  }>({ busy: false, error: '', issues: [] })
+    validationAttempt: number
+  }>({ busy: false, error: '', issues: [], validationAttempt: 0 })
   const run = (work: () => Promise<unknown> | Effect.Effect<unknown, unknown>) =>
     runClientEffect(
       permit
         .withPermitsIfAvailable(1)(
           Effect.gen(function* () {
-            setState({ busy: true, error: '', issues: [] })
+            setState((current) => ({ ...current, busy: true, error: '', issues: [] }))
             const operation = yield* Effect.try({ try: work, catch: (error) => error })
             yield* Effect.isEffect(operation)
               ? operation
               : Effect.tryPromise({ try: () => operation, catch: (error) => error })
           }).pipe(
             Effect.catch((error) =>
-              Effect.sync(() =>
+              Effect.sync(() => {
+                const issues =
+                  error instanceof ValidationError
+                    ? safeValidationIssues(error)
+                    : error instanceof RuntimeRequestError
+                      ? (error.issues ?? [])
+                      : []
                 setState((current) => ({
                   ...current,
-                  issues:
-                    error instanceof ValidationError
-                      ? safeValidationIssues(error)
-                      : error instanceof RuntimeRequestError
-                        ? (error.issues ?? [])
-                        : [],
+                  issues,
+                  validationAttempt: current.validationAttempt + (issues.length ? 1 : 0),
                   error:
                     error instanceof ValidationError
                       ? safeValidationMessage(error)
                       : error instanceof Error
                         ? error.message
                         : String(error),
-                })),
-              ),
+                }))
+              }),
             ),
             Effect.ensuring(
               Effect.sync(() => setState((current) => ({ ...current, busy: false }))),

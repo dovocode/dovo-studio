@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
 import { useForegroundInterval } from '../../../runtime/state/app-active'
 import { useApplicationState } from '../../../runtime/state/application-state'
-import { Pressable, ScrollView, View } from 'react-native'
+import { Pressable, View } from 'react-native'
 import {
   pipelineGraphColumns,
+  pipelineFailureImpact,
   type ForgePipelineDetail,
   pipelineDuration,
   pipelineSignal,
@@ -383,6 +384,7 @@ export function PipelineJobs({
   const { styles, colors } = useTheme()
   const [selected, setSelected] = useApplicationState<string | null>(null)
   const columns = pipelineGraphColumns(graph, jobs)
+  const impact = pipelineFailureImpact(graph, jobs)
 
   const now = usePipelineNow(
     jobs.some(
@@ -407,13 +409,9 @@ export function PipelineJobs({
           <Text style={styles.text}>Workflow</Text>
           {graphNotice && <Text style={styles.muted}>{graphNotice}</Text>}
           {!graph && <Text style={styles.muted}>Jobs · dependencies not provided</Text>}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 16, paddingVertical: 8 }}
-          >
+          <View style={{ gap: 16, paddingVertical: 8 }}>
             {columns.map((column, index) => (
-              <View key={index} style={{ width: 240, gap: 12 }}>
+              <View key={index} style={{ gap: 12 }}>
                 {columns.length > 1 && (
                   <Text
                     style={[styles.muted, { fontSize: 11, fontWeight: '600', letterSpacing: 1 }]}
@@ -422,8 +420,27 @@ export function PipelineJobs({
                   </Text>
                 )}
                 {column.map((node) => (
-                  <View key={node.id} style={[styles.card, { gap: 8 }]}>
+                  <View
+                    key={node.id}
+                    style={[
+                      styles.card,
+                      {
+                        gap: 8,
+                        borderLeftWidth: impact.affected.has(node.id) ? 3 : 0,
+                        borderLeftColor: impact.failed.has(node.id) ? colors.error : colors.warning,
+                      },
+                    ]}
+                  >
                     <Text style={[styles.text, { fontWeight: '600' }]}>{node.name}</Text>
+                    {impact.affected.has(node.id) && (
+                      <Text
+                        style={{
+                          color: impact.failed.has(node.id) ? colors.error : colors.warning,
+                        }}
+                      >
+                        {impact.failed.has(node.id) ? 'Failed stage' : 'Depends on failed stage'}
+                      </Text>
+                    )}
                     {!!node.needs.length && (
                       <Text style={styles.muted}>After {node.needs.join(', ')}</Text>
                     )}
@@ -435,12 +452,13 @@ export function PipelineJobs({
                             key={id}
                             accessibilityRole="button"
                             accessibilityLabel={`View job ${job.name}`}
+                            accessibilityState={{ selected: selected === id }}
                             onPress={() => setSelected(id)}
                             style={{
                               padding: 10,
                               gap: 8,
                               minHeight: 44,
-                              backgroundColor: colors.elevated,
+                              backgroundColor: selected === id ? colors.selection : colors.elevated,
                               borderRadius: 8,
                               borderWidth: 1,
                               borderColor: selected === id ? colors.accent : colors.border,
@@ -460,7 +478,7 @@ export function PipelineJobs({
                 ))}
               </View>
             ))}
-          </ScrollView>
+          </View>
         </View>
       )}
       {!columns.length && graphNotice && <Text style={styles.muted}>{graphNotice}</Text>}

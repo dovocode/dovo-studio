@@ -1,3 +1,4 @@
+import type { AcpClient } from './acp-client.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { legacyAcpModels } from './acp-models.js'
 import { mutableStruct, nativeAgentWorking, type Subagent } from '@dovo/protocol'
@@ -9,13 +10,12 @@ import { formQuestions } from '../shared/form-questions.js'
 import { Schema } from 'effect'
 import {
   methods,
-  type Client,
   type NewSessionResponse,
   type ResumeSessionResponse,
   type LoadSessionResponse,
   type PromptRequest,
   type SubagentUpdate,
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { executableAvailable } from '../../../process.js'
 import {
@@ -32,7 +32,7 @@ type AcpConnection = ReturnType<typeof openAcpConnection>
 type AcpSession = NewSessionResponse | ResumeSessionResponse | LoadSessionResponse
 type WarmAcp = {
   connection: AcpConnection
-  client: Client
+  client: AcpClient
   initialization: AcpInitialization
   session: AcpSession
   sessionId: string
@@ -152,7 +152,7 @@ export function createAcpAdapter(): AgentAdapter {
           (id) => (id === sessionId && (nativeState?.prompting ?? prompting)) || ownsChild(id),
         ))
       let prompting = false
-      const handlers: Client = {
+      const handlers: AcpClient = {
         ...tools.client,
         createElicitation: async (params) => {
           const owner =

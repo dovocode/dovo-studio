@@ -27,10 +27,12 @@ export function GithubConnectionStatus({
   const [attempt, setAttempt] = useState(0)
   const [lastVerifiedAt, setLastVerifiedAt] = useState<string | null>(null)
   const pending = useRef(false)
-  useEffect(() => setLastVerifiedAt(null), [read, connectionId, repositoryId])
+  useEffect(() => {
+    setResult(null)
+    setLastVerifiedAt(null)
+  }, [read, connectionId, repositoryId])
   useEffect(() => {
     let current = true
-    setResult(null)
     setError('')
     setBusy(false)
     pending.current = false
@@ -68,25 +70,43 @@ export function GithubConnectionStatus({
       current = false
     }
   }, [read, connected, connectionId, repositoryId, attempt])
+  const status = !connected
+    ? 'Computer offline · Reconnect to verify this connection.'
+    : busy
+      ? 'Checking GitHub connection…'
+      : error ||
+        (!result
+          ? repositoryId
+            ? 'Repository and Actions access have not been tested.'
+            : 'Account has not been verified.'
+          : '')
   return (
-    <View accessibilityLabel="GitHub connection status" style={{ gap: 8, padding: 16 }}>
+    <View
+      accessibilityLabel="GitHub connection status"
+      accessibilityState={{ busy }}
+      style={{ gap: 8, padding: 16 }}
+    >
       <Text
-        accessibilityRole={error || result?.status === 'failed' ? 'alert' : undefined}
+        accessibilityRole={error ? 'alert' : undefined}
         accessibilityLiveRegion="polite"
-        style={error || result?.status === 'failed' ? styles.error : styles.muted}
+        accessibilityElementsHidden={!status}
+        importantForAccessibility={status ? 'auto' : 'no-hide-descendants'}
+        style={[error ? styles.error : styles.muted, { minHeight: 16, opacity: status ? 1 : 0 }]}
       >
-        {!connected
-          ? 'Computer offline · Reconnect to verify this connection.'
-          : busy
-            ? 'Checking GitHub connection…'
-            : result
-              ? `${result.login ? `@${result.login} · ${result.host}\n` : ''}${result.repository ? `${result.repository}\n` : ''}${result.message}\nChecked ${new Date(result.checkedAt).toLocaleString()}`
-              : error ||
-                (repositoryId
-                  ? 'Repository and Actions access have not been tested.'
-                  : 'Account has not been verified.')}
+        {status || 'Checking GitHub connection…'}
       </Text>
-      {lastVerifiedAt && result?.status !== 'verified' && (
+      {result && (
+        <Text
+          accessibilityLiveRegion="polite"
+          accessibilityRole={
+            connected && !busy && !error && result.status === 'failed' ? 'alert' : undefined
+          }
+          style={result.status === 'failed' ? styles.error : styles.muted}
+        >
+          {`${result.login ? `@${result.login} · ${result.host}\n` : ''}${result.repository ? `${result.repository}\n` : ''}${result.message}\nChecked ${new Date(result.checkedAt).toLocaleString()}`}
+        </Text>
+      )}
+      {lastVerifiedAt && (error || result?.status !== 'verified') && (
         <Text style={styles.muted}>
           Last successful check {new Date(lastVerifiedAt).toLocaleString()}
         </Text>
@@ -95,8 +115,8 @@ export function GithubConnectionStatus({
         <Text style={styles.muted}>Account checked in the runtime default context.</Text>
       )}
       <Action
-        secondary
-        label={busy ? 'Testing…' : repositoryId ? 'Test project connection' : 'Test connection'}
+        variant="outline"
+        label={repositoryId ? 'Test project connection' : 'Test connection'}
         disabled={!connected || busy}
         onPress={() => {
           if (pending.current) return

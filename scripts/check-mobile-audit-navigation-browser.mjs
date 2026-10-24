@@ -16,7 +16,7 @@ export const Text=({children,style,accessibilityRole})=>{const v=css(style);retu
 export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><button role="switch" aria-label={accessibilityLabel} aria-checked={value} disabled={disabled} onClick={()=>onValueChange(!value)} style={{width:51,height:31,flexShrink:0}}>●</button>;
 export const Modal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const TextInput=()=>null;
-export const Platform={get OS(){return window.os}};
+export const Platform={get OS(){return window.os}};export const Keyboard={dismiss:()=>window.events.push('keyboard-dismiss')};
 `
 const theme = `export const useTheme=()=>({colors:{text:'#111',muted:'#666',border:'#ddd',accent:'#005cc5'},styles:{row:{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:6}}});`
 const icons = `import {Pressable} from 'react-native';export const IconButton=({label,onPress,disabled,size=44})=><Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} style={{width:size,height:size,flexShrink:0}}/>;`
@@ -27,11 +27,12 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
-import {ScreenHeader,ScreenBackContext} from './src/ui/layout/screen-header';
+import {backToCollection} from './src/shell/source-route';window.goBackToTasks=()=>backToCollection('/');
+import {ScreenHeader,ScreenBackContext,InlineScreenHeaderContext} from './src/ui/layout/screen-header';
 import {MobileFileReview} from './src/scm/review/file-review';
 const root=createRoot(document.getElementById('app'));
 window.events=[];
-window.renderHeader=options=>flushSync(()=>root.render(<ScreenBackContext.Provider value={options.context?()=>window.events.push('context'):null}><ScreenHeader title="Start a task" onBack={options.explicit?()=>window.events.push('explicit'):undefined} leading={options.leading?<button>Custom leading</button>:undefined} hidden={options.hidden} buttons={window.headerButtons} collapsedMenuGroups={['Project','Tools','Advanced']}/></ScreenBackContext.Provider>));
+window.renderHeader=options=>flushSync(()=>root.render(<InlineScreenHeaderContext.Provider value={!!options.inline}><ScreenBackContext.Provider value={options.context?()=>window.events.push('context'):null}><ScreenHeader title="Start a task" onBack={options.explicit?()=>window.events.push('explicit'):undefined} leading={options.leading?<button>Custom leading</button>:undefined} hidden={options.hidden} buttons={window.headerButtons} collapsedMenuGroups={['Project','Advanced']}/></ScreenBackContext.Provider></InlineScreenHeaderContext.Provider>));
 const files=[{path:'first.ts',viewed:false},{path:'second.ts',viewed:true},{path:'last.ts',viewed:false}];
 function Review(){const [selected,setSelected]=useState('second.ts'),[wrap,setWrap]=useState(false);return <MobileFileReview files={files} groups={[]} selected={selected} onSelect={path=>{window.events.push(path);setSelected(path)}} related={false} onRelatedChange={()=>{}} onViewed={value=>window.events.push(value)} navigationDisabled={window.navigationDisabled} wrapLines={wrap} onWrapLinesChange={setWrap} onRetry={()=>{}}/>}
 window.renderReview=()=>flushSync(()=>root.render(<Review/>));
@@ -49,7 +50,7 @@ window.renderReview=()=>flushSync(()=>root.render(<Review/>));
     { path: 'react-native', contents: native },
     {
       path: 'expo-router',
-      contents: `import {Pressable} from 'react-native';export const Stack={Screen:({options})=>{window.stackOptions=options;return null},Toolbar:({children})=><div>{children}</div>};Stack.Toolbar.Button=({accessibilityLabel,onPress})=><Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress}/>;Stack.Toolbar.Menu=({children,title,accessibilityLabel,inline})=><div role="group" aria-label={title??accessibilityLabel} data-inline={String(!!inline)}>{children}</div>;Stack.Toolbar.MenuAction=({children,onPress,disabled,isOn,destructive})=><button disabled={disabled} aria-pressed={isOn} data-destructive={String(!!destructive)} onClick={onPress}>{children}</button>;`,
+      contents: `import {Pressable} from 'react-native';export const router={canGoBack:()=>window.canGoBack,back:()=>window.events.push('router-back'),replace:path=>window.events.push('replace:'+path)};export const Stack={Screen:({options})=>{window.stackOptions=options;return null},Toolbar:({children})=><div>{children}</div>};Stack.Toolbar.Button=({accessibilityLabel,onPress})=><Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress}/>;Stack.Toolbar.Menu=({children,title,accessibilityLabel,inline})=><div role="group" aria-label={title??accessibilityLabel} data-inline={String(!!inline)}>{children}</div>;Stack.Toolbar.MenuAction=({children,onPress,disabled,isOn,destructive})=><button disabled={disabled} aria-pressed={isOn} data-destructive={String(!!destructive)} onClick={onPress}>{children}</button>;`,
     },
     {
       path: '../../runtime/preferences/app-build',
@@ -69,7 +70,7 @@ window.renderReview=()=>flushSync(()=>root.render(<Review/>));
     {
       path: './sheet',
       importer: mobile + 'src/ui/layout/',
-      contents: `export const useInsideSheet=()=>window.inSheet;export const Sheet=({children})=>children;`,
+      contents: `import {useImperativeHandle} from 'react';export const useInsideSheet=()=>window.inSheet;export const Sheet=({children,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose?.();queueMicrotask(()=>after?.())}}));return children};`,
     },
     {
       path: '../../ui/controls/icon',
@@ -157,13 +158,53 @@ try {
   await back.click()
   assert.equal(await page.evaluate(() => window.events.at(-1)), 'explicit')
   await page.evaluate(() => window.renderHeader({ context: true }))
+  assert.equal(await page.evaluate(() => window.stackOptions.headerBackVisible), false)
+  await back.click()
+  assert.equal(await page.evaluate(() => window.events.at(-1)), 'context')
+  assert.equal(await page.evaluate(() => window.stackOptions.gestureEnabled), true)
+  await page.evaluate(() => {
+    window.stackOptions = { sentinel: true }
+    window.renderHeader({ inline: true, explicit: true })
+  })
+  await page.getByTestId('Screen header').waitFor()
+  assert.deepEqual(
+    await page.evaluate(() => window.stackOptions),
+    { sentinel: true },
+    'Sidebar header must not change the detail navigator toolbar',
+  )
+  await back.click()
+  assert.equal(await page.evaluate(() => window.events.at(-1)), 'explicit')
+
+  await page.evaluate(() => window.renderHeader({}))
   assert.equal(await page.evaluate(() => window.stackOptions.headerBackVisible), true)
-  assert.equal(await back.count(), 0, 'iOS keeps native context back navigation')
+  assert.equal(
+    await back.count(),
+    0,
+    'Routes without a custom action retain native back navigation',
+  )
+  for (const canGoBack of [true, false]) {
+    await page.evaluate((canGoBack) => {
+      window.canGoBack = canGoBack
+      window.events = []
+      window.goBackToTasks()
+    }, canGoBack)
+    assert.deepEqual(await page.evaluate(() => window.events), [
+      'keyboard-dismiss',
+      canGoBack ? 'router-back' : 'replace:/',
+    ])
+  }
 
   // Both menu renderers preserve groups, selection, guards and callbacks.
   await page.evaluate(() => {
     window.os = 'android'
     window.headerButtons = [
+      {
+        label: 'Devices',
+        icon: 'device',
+        group: 'Tools',
+        overflow: true,
+        onPress: () => window.events.push('devices'),
+      },
       {
         label: 'Chat',
         icon: 'chat',
@@ -215,10 +256,14 @@ try {
   await page.getByRole('button', { name: 'More actions', exact: true }).click()
   assert.deepEqual(await page.getByRole('heading').allTextContents(), [
     'Start a task',
+    'Tools',
     'Navigate',
     'Thread',
     'Delete',
   ])
+  await page.getByRole('button', { name: 'Devices', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.events.at(-1)), 'devices')
+  await page.getByRole('button', { name: 'More actions', exact: true }).click()
   assert.equal(
     await page.getByRole('button', { name: 'Chat', exact: true }).getAttribute('aria-pressed'),
     'true',
@@ -254,6 +299,7 @@ try {
       })),
     ),
     [
+      { name: 'Tools', inline: 'true' },
       { name: 'Navigate', inline: 'true' },
       { name: 'Thread', inline: 'true' },
       { name: 'Project', inline: 'false' },
@@ -322,7 +368,7 @@ try {
     assert.ok(await page.getByRole('button', { name: label, exact: true }).isDisabled())
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile audit navigation: explicit/context Android Back, precedence, leading/hidden/sheet guards, iOS toolbar contract; review bounds at 320/390px and 1/2/3x text, file navigation and disabled state passed. Native geometry remains unverified.',
+    'Mobile audit navigation: explicit/context iOS and Android Back, direct-entry fallback, precedence, leading/hidden/sheet guards, iOS toolbar contract; review bounds at 320/390px and 1/2/3x text, file navigation and disabled state passed. Native geometry remains unverified.',
   )
 } finally {
   await browser.close()

@@ -149,3 +149,82 @@ it('rejects a fallback whose persistent runtime identity or peer address does no
     'another computer',
   )
 })
+
+it('allows fallback setup to exceed the LAN deadline without replaying a write', async () => {
+  vi.useFakeTimers()
+  const connection = mergeAccountInternetConnection(
+    { ...direct, token: 'slow-fallback-primary' },
+    { ...internet, token: 'slow-fallback-token' },
+  )
+  registerPeerTransport({
+    address: () => undefined,
+    resolve: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 12000))
+      return 'http://127.0.0.1:4999'
+    },
+  })
+  const writes: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      const target = requestUrl(url)
+      if (target.pathname === '/health') throw new Error('LAN offline')
+      writes.push(new Headers(init?.headers).get('Authorization') ?? '')
+      return Response.json({ ok: true })
+    }),
+  )
+  const result = runtimeRequest(
+    connection,
+    connection.address,
+    '/api/tasks/run',
+    {},
+    Schema.Struct({ ok: Schema.Boolean }),
+    'POST',
+    5000,
+  )
+  await vi.advanceTimersByTimeAsync(12010)
+  expect(await result).toEqual({ ok: true })
+  expect(writes).toEqual(['Bearer slow-fallback-token'])
+})
+
+it('keeps mutation receipt retries on the first endpoint and credential', async () => {
+  const connection = mergeAccountInternetConnection(
+    { ...direct, token: 'pinned-primary' },
+    { ...internet, token: 'pinned-fallback' },
+  )
+  let lan = true
+  const peerResolve = vi.fn<() => Promise<string>>(async () => 'http://127.0.0.1:4998')
+  registerPeerTransport({ address: () => undefined, resolve: peerResolve })
+  const tokens: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url, init) => {
+      if (requestUrl(url).pathname === '/health') {
+        if (!lan) throw new Error('LAN left')
+        return Response.json({ service: 'dovo-runtime', runtimeId: 'runtime' })
+      }
+      tokens.push(new Headers(init?.headers).get('Authorization') ?? '')
+      lan = false
+      throw new Error('Response lost after commit')
+    }),
+  )
+  await expect(
+    runtimeRequest(
+      connection,
+      connection.address,
+      '/api/tasks/lifecycle',
+      {},
+      Schema.Unknown,
+      'POST',
+      undefined,
+      undefined,
+      { mutationId: 'one-receipt' },
+    ),
+  ).rejects.toThrow('Cannot reach')
+  expect(tokens).toEqual([
+    'Bearer pinned-primary',
+    'Bearer pinned-primary',
+    'Bearer pinned-primary',
+  ])
+  expect(peerResolve).not.toHaveBeenCalled()
+})

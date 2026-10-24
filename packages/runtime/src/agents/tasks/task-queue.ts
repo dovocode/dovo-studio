@@ -1,5 +1,6 @@
 import {
   MAX_ATTACHMENTS,
+  nextQueuedMessage,
   sameTurnSettings,
   turnSettingsKey,
   applyTurnSettings,
@@ -220,7 +221,10 @@ export class TaskQueue {
     this.store.updateTaskHistory(
       id,
       (t) => {
-        const [message, ...queue] = t.queue ?? []
+        const message = nextQueuedMessage(t)
+        if (t.queue?.length && !message)
+          throw new HttpError(409, 'Resume the first queued message to continue')
+        const queue = t.queue?.filter((item) => item.id !== message?.id) ?? []
         return {
           ...t,
           status: 'running',
@@ -240,6 +244,24 @@ export class TaskQueue {
         ? { id: `start:${attemptId}`, taskId: id, attemptId, kind: 'start', state: 'pending' }
         : undefined,
     )
+  }
+  setPaused(id: string, messageId: string, paused: boolean) {
+    const task = this.store.taskSummary(id)
+    if (task.archived || task.archivedAt)
+      throw new HttpError(400, 'Restore this task before changing its queue')
+    const message = task.queue?.find((item) => item.id === messageId)
+    if (!message) throw new HttpError(409, 'This message already started or was removed')
+    if (message.steering) throw new HttpError(409, 'This message is being delivered to the agent')
+    if (!!message.paused === paused) return
+    this.store.updateTask(id, (task) => ({
+      ...task,
+      queue: task.queue?.map((item) =>
+        item.id === messageId ? { ...item, paused: paused || undefined } : item,
+      ),
+    }))
+    this.activity?.add('queue', id, paused ? 'Queued message paused' : 'Queued message resumed', {
+      messageId,
+    })
   }
   move(id: string, messageId: string, beforeMessageId: string | null) {
     const queue = [...(this.store.taskSummary(id).queue ?? [])]

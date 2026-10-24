@@ -50,6 +50,19 @@ export function NativeTodos({
             )}
           </button>
         )}
+        <div
+          role="progressbar"
+          aria-label="Checklist completion"
+          aria-valuemin={0}
+          aria-valuemax={summary.total}
+          aria-valuenow={summary.completed}
+          className="mt-2 h-1 overflow-hidden rounded-full bg-muted"
+        >
+          <div
+            className="h-full rounded-full bg-status-success"
+            style={{ width: `${(summary.completed / summary.total) * 100}%` }}
+          />
+        </div>
         {(open || embedded) && (
           <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto" aria-label="Checklist items">
             {todos.map((todo, index) => (

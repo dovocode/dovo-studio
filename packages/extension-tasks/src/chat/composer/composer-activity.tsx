@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pause, CircleAlert } from 'lucide-react'
 import { useWorkspace } from '@dovo/studio-core'
 import { nativeTodoSummary, responses, type PendingMessage, type Task } from '@dovo/protocol'
 import { MessageQueue } from '../thread/message-queue'
@@ -31,6 +31,9 @@ export function ComposerActivity({
   }, [task.id, snapshot?.questions, snapshot?.approvals])
   const id = useId()
   const summary = nativeTodoSummary(task)
+  const pausedCount = task.queuePaused
+    ? (task.queue?.length ?? 0)
+    : (task.queue?.filter((message) => message.paused).length ?? 0)
   const hasQueue = !!task.queue?.length
   const both = hasQueue && !!summary
   const active = hasQueue ? (summary ? selected : 'queue') : 'checklist'
@@ -40,33 +43,64 @@ export function ComposerActivity({
       aria-label="Composer activity"
       className="relative mx-auto -mb-3 w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] rounded-t-xl border border-b-0 bg-muted/15 pb-3 text-xs"
     >
-      <div className="flex items-center px-2 py-1">
+      <div className="flex min-w-0 items-center px-2 py-1">
         <div
           role={both ? 'tablist' : undefined}
           aria-label={both ? 'Queue and checklist' : undefined}
           className="flex min-w-0 items-center gap-1"
         >
           {[
-            ...(hasQueue ? [{ value: 'queue', label: `Queue · ${task.queue?.length ?? 0}` }] : []),
+            ...(hasQueue
+              ? [
+                  {
+                    value: 'queue',
+                    title: 'Queue',
+                    count: String(task.queue?.length ?? 0),
+                    notice: pausedCount ? `${pausedCount} queued messages paused` : '',
+                    label: `Queue · ${task.queue?.length ?? 0}${pausedCount ? (pausedCount === task.queue?.length ? ' · Paused' : ` · ${pausedCount} paused`) : ''}`,
+                  },
+                ]
+              : []),
             ...(summary
               ? [
                   {
                     value: 'checklist',
+                    title: 'Checklist',
+                    count: `${summary.completed}/${summary.total}`,
+                    notice: summary.unfinished ? 'Checklist unfinished' : '',
                     label: `Checklist · ${summary.completed}/${summary.total}${summary.unfinished ? ' · Unfinished' : ''}`,
                   },
                 ]
               : []),
-          ].map(({ value, label }) =>
-            both ? (
+          ].map(({ value, label, title, count, notice }) => {
+            const content = (
+              <>
+                <span className="min-w-0 truncate">{title}</span>
+                <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium tabular-nums text-foreground">
+                  {count}
+                </span>
+                <span aria-hidden className="flex size-3 shrink-0 items-center justify-center">
+                  {notice &&
+                    (value === 'queue' ? (
+                      <Pause className="size-3 text-status-warning" />
+                    ) : (
+                      <CircleAlert className="size-3 text-status-warning" />
+                    ))}
+                </span>
+              </>
+            )
+            return both ? (
               <button
                 key={value}
                 type="button"
                 role="tab"
                 id={`${id}-${value}`}
+                aria-label={label}
+                title={notice || label}
                 aria-controls={`${id}-${value}-panel`}
                 aria-selected={active === value}
                 tabIndex={active === value ? 0 : -1}
-                className="rounded-md px-2 py-1 text-muted-foreground aria-selected:bg-muted aria-selected:text-foreground"
+                className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring aria-selected:bg-muted aria-selected:text-foreground"
                 onClick={() => {
                   setSelected(value)
                   setCollapsed(false)
@@ -87,14 +121,19 @@ export function ComposerActivity({
                   document.getElementById(`${id}-${next}`)?.focus()
                 }}
               >
-                {label}
+                {content}
               </button>
             ) : (
-              <span key={value} className="px-2 py-1 font-medium">
-                {label}
+              <span
+                key={value}
+                aria-label={label}
+                title={label}
+                className="inline-flex min-w-0 items-center gap-1.5 px-2 py-1 font-medium"
+              >
+                {content}
               </span>
-            ),
-          )}
+            )
+          })}
         </div>
         <button
           type="button"
@@ -112,6 +151,21 @@ export function ComposerActivity({
           )}
         </button>
       </div>
+      {collapsed && summary && (
+        <div
+          role="progressbar"
+          aria-label="Checklist completion"
+          aria-valuemin={0}
+          aria-valuemax={summary.total}
+          aria-valuenow={summary.completed}
+          className="mx-3 h-1 rounded-full bg-muted"
+        >
+          <div
+            className="h-full rounded-full bg-status-success"
+            style={{ width: `${(summary.completed / summary.total) * 100}%` }}
+          />
+        </div>
+      )}
       {hasQueue && (
         <div
           role={both ? 'tabpanel' : undefined}

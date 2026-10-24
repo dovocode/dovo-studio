@@ -5,8 +5,10 @@ const root = new URL('../', import.meta.url).pathname.replace(/\/$/, '')
 const mocks = {
   'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert(){}};`,
   'expo-router': 'export const router={navigate(){}};',
-  '@dovo/protocol': `export const runtimeSyncStatus=c=>c.status;export const runtimeReachability=e=>e.connected?'online':'offline';export const retryRuntimeSync=()=>{};export const runtimeComputerName=e=>e.profile.id;`,
+  '@dovo/protocol': `export const connectionProgress=e=>[{label:e.connected?'Ready':'Connect',state:e.connected?'done':'failed'}];export const runtimeSyncStatus=c=>c.status;export const runtimeReachability=e=>e.connected?'online':'offline';export const retryRuntimeSync=()=>{};export const runtimeComputerName=e=>e.profile.id;`,
   '../state/application-state': "export {useState as useApplicationState} from 'react';",
+  './connection-type': 'export const useConnectionTypes=()=>()=>({label:"Private · LAN / VPN"});',
+  './account-context': 'export const useOptionalMobileAccount=()=>null;',
   './provider': `import {useEffect,useSyncExternalStore} from 'react';let state={id:'host',connected:true,status:'live',pending:0,error:null};const listeners=new Set();window.connectionState=next=>{state={...state,...next};listeners.forEach(fn=>fn())};export const useRuntime=()=>{const current=useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>state);useEffect(()=>{window.renderedConnection=current.status+':'+current.id+':'+current.connected+':'+current.pending},[current]);return {ready:true,overviews:[{profile:{id:current.id,connection:{address:'http://host',status:current.status}},connected:current.connected}],mutationStatus:()=>({pending:current.pending,error:current.error}),refreshAll:async()=>{}}};`,
   '../../ui/content/text': 'export const Text=({children})=><span>{children}</span>;',
   '../../ui/controls/action':
@@ -16,7 +18,7 @@ const mocks = {
   '../../ui/layout/sheet': 'export const Sheet=({children})=><div>{children}</div>;',
   '../../ui/controls/use-action': 'export const useAction=()=>({busy:false,act:work=>work()});',
   '../../ui/content/format-date': 'export const formatDateTime=value=>value;',
-  '../../ui/theme': 'export const useTheme=()=>({styles:{}});',
+  '../../ui/theme': `export const useTheme=()=>({styles:{},colors:{text:"#222",muted:"#666",error:"#b00020"}});`,
 }
 const bundle = await build({
   stdin: {

@@ -39,6 +39,7 @@ const built = await build({
       import {ChatThread} from '../extension-tasks/src/chat/thread/chat-thread';
       import {Composer} from '../extension-tasks/src/chat/composer/composer';
       import {MessageQueue} from '../extension-tasks/src/chat/thread/message-queue';
+      import {ComposerActivity} from '../extension-tasks/src/chat/composer/composer-activity';
       const repositories=[
         {id:'scratch',kind:'scratch',name:'Thread folder',path:'/private/thread',branch:''},
         {id:'git',name:'dovo-studio',path:'/repo',branch:'main',gitIdentity:'github.com/dovo/studio'},
@@ -54,6 +55,7 @@ const built = await build({
         const [id,setId]=useState(null);
         const [pending,setPending]=useState(null);
         const [multiple,setMultiple]=useState(false);window.setMultiple=setMultiple;
+        const [activity,setActivity]=useState(false);window.setActivity=setActivity;const [activityPaused,setActivityPaused]=useState(true);window.setActivityPaused=setActivityPaused;
         const [settings,setSettings]=useState(false);window.showSettings=()=>setSettings(true);
         const task=workspace.tasks.find(task=>task.id===id);
         window.task=task;window.reset=()=>{setId(null);setPending(null);setWorkspace({repositories,agents:[],tasks:[],automations:[]})};
@@ -75,7 +77,7 @@ const built = await build({
         const value={workspace,setWorkspace,snapshot:{workspace,defaults,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{}};
         const visiblePending=pending?[pending]:[];
         const displayed=task&&{...task,messages:pending?.destination==='thread'&&!task.messages.some(m=>m.id===pending.message.id)?[...task.messages,pending.message]:task.messages};
-        return <Context.Provider value={value}>{settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?<><ChatThread task={displayed} pending={visiblePending}/><Composer key={task.id} task={task} onPending={setPending} queuedMessages={<MessageQueue task={task}/>}/></>:<StartupDraft onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
+        return <Context.Provider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?<><ChatThread task={displayed} pending={visiblePending}/><Composer key={task.id} task={task} onPending={setPending} queuedMessages={<MessageQueue task={task}/>}/></>:<StartupDraft onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
       }
       createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
     `,
@@ -231,7 +233,10 @@ try {
         {
           id: 'queued-layout',
           role: 'user',
-          text: 'Review the remaining files and verify the changes',
+          text:
+            'Review the remaining files and verify the changes. '.repeat(8) +
+            '\nCheck the second paragraph too',
+          turnSettings: { model: 'review-model' },
           createdAt: new Date().toISOString(),
         },
       ],
@@ -261,6 +266,23 @@ try {
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
       false,
     )
+    const summary = page.locator('[aria-label="Queued follow-ups"] summary')
+    await summary.click()
+    const queuedRow = page.locator('[aria-label="Queued follow-ups"] li').first()
+    const rowBounds = await queuedRow.boundingBox()
+    assert.ok(rowBounds.height <= 36, JSON.stringify(rowBounds))
+    const preview = queuedRow.locator('span[title]').first()
+    assert.equal(
+      await preview.evaluate((element) => getComputedStyle(element).whiteSpace),
+      'nowrap',
+    )
+    assert.ok(await preview.evaluate((element) => element.scrollWidth > element.clientWidth))
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+      false,
+    )
+    if (screenshots) await page.screenshot({ path: screenshots + '/queue-row-' + width + '.png' })
+    await summary.click()
     assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: 'Steer agent', exact: true }).count(), 0)
     await page.getByRole('button', { name: 'More message actions', exact: true }).click()
@@ -410,6 +432,59 @@ try {
         ?.textContent.includes('Linux workstation'),
     )
     await page.screenshot({ path: screenshots + '/desktop-project-default-server.png' })
+  }
+  // Keep counts, status indicators and collapse reachable in the narrow header.
+  await page.evaluate(() => window.setActivity(true))
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const fontSize of [16, 20]) {
+      await page.evaluate((size) => {
+        document.documentElement.style.fontSize = size + 'px'
+      }, fontSize)
+      const queue = page.getByRole('tab', { name: 'Queue · 1 · Paused', exact: true })
+      const checklist = page.getByRole('tab', { name: 'Checklist · 0/1 · Unfinished', exact: true })
+      const collapse = page.getByRole('button', { name: 'Collapse composer activity', exact: true })
+      await queue.waitFor()
+      for (const control of [queue, checklist, collapse]) {
+        const box = await control.boundingBox()
+        assert.ok(
+          box.width > 0 && box.x >= 0 && box.x + box.width <= width,
+          JSON.stringify({ width, fontSize, box }),
+        )
+      }
+      const header = page
+        .getByLabel('Composer activity', { exact: true })
+        .locator(':scope > div')
+        .first()
+      const geometry = () =>
+        header.locator('button').evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const { x, y, width, height } = node.getBoundingClientRect()
+            return { x, y, width, height }
+          }),
+        )
+      const pausedGeometry = await geometry()
+      await page.evaluate(() => window.setActivityPaused(false))
+      await page.getByRole('tab', { name: 'Queue · 1', exact: true }).waitFor()
+      assert.deepEqual(
+        await geometry(),
+        pausedGeometry,
+        'Pause and unfinished indicators do not shift the activity header',
+      )
+      await page.evaluate(() => window.setActivityPaused(true))
+      await queue.waitFor()
+      assert.deepEqual(await geometry(), pausedGeometry)
+      await collapse.click()
+      const progress = page.getByRole('progressbar', { name: 'Checklist completion', exact: true })
+      await progress.waitFor()
+      assert.equal(await progress.getAttribute('aria-valuenow'), '0')
+      if (screenshots)
+        await page.screenshot({
+          path: screenshots + '/activity-' + width + '-' + fontSize + '.png',
+        })
+      await checklist.click()
+      await collapse.waitFor()
+    }
   }
   assert.deepEqual(errors, [])
   console.log(

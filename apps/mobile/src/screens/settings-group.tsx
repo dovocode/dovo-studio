@@ -32,7 +32,7 @@ export function SettingsGroup({
   footer?: string
   children: ReactNode
 }) {
-  const { colors, styles } = useTheme()
+  const { colors, styles, highContrast } = useTheme()
   const target = useContext(SettingsSearchContext)
   const searchMatch = !!target && (target === title || searchLabels.includes(target))
   const [expanded, setExpanded] = useState(searchMatch)
@@ -43,18 +43,23 @@ export function SettingsGroup({
 
   return (
     <SettingsAnchor label={title}>
-      <View style={{ gap: 6 }}>
+      <View style={{ gap: 10 }}>
         {advanced && (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`${open ? 'Hide' : 'Show'} ${title}`}
             accessibilityState={{ expanded: open }}
             onPress={() => setExpanded(!expanded)}
-            style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: 'center' }}
+            style={{
+              minHeight: 44,
+              paddingHorizontal: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+            }}
           >
-            <Text style={styles.text}>
-              {title} {open ? '−' : '+'}
-            </Text>
+            <Text style={[styles.text, { flex: 1, fontSize: 14, fontWeight: '600' }]}>{title}</Text>
+            <Icon name={open ? 'down' : 'next'} size={16} color={colors.muted} />
           </Pressable>
         )}
         {title && !advanced && (
@@ -62,7 +67,13 @@ export function SettingsGroup({
             accessibilityRole="header"
             style={[
               styles.muted,
-              { paddingHorizontal: 12, fontSize: 13, lineHeight: 18, fontWeight: '600' },
+              {
+                paddingHorizontal: 12,
+                fontSize: 13,
+                lineHeight: 18,
+                fontWeight: '600',
+                color: colors.text,
+              },
             ]}
           >
             {title}
@@ -77,6 +88,8 @@ export function SettingsGroup({
               backgroundColor: colors.surface,
               borderRadius: 16,
               overflow: 'hidden',
+              borderWidth: highContrast ? 1 : 0,
+              borderColor: colors.border,
             }}
           >
             <GroupContext.Provider value>
@@ -161,7 +174,7 @@ export function SettingsRow({
           gap: 10,
           minHeight: subtitle ? 60 : 48,
           opacity: disabled ? 0.45 : 1,
-          backgroundColor: pressed ? colors.selection : 'transparent',
+          backgroundColor: pressed || selected ? colors.selection : 'transparent',
         })}
       >
         <View

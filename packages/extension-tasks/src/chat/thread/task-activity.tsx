@@ -256,7 +256,10 @@ export function TaskActivity({
   const Icon =
     !expanded && current ? icons[current.presentation.kind] : icons[summaryKind ?? 'tool']
   return (
-    <section className="min-w-0 text-xs" aria-label="Task tool activity">
+    <section
+      className="min-w-0 border-l border-border/60 pl-3 text-xs"
+      aria-label="Task tool activity"
+    >
       {tools.length ? (
         <div className="min-w-0">
           <button
@@ -271,6 +274,7 @@ export function TaskActivity({
               className={`size-3.5 shrink-0 ${current ? 'animate-pulse motion-reduce:animate-none' : ''}`}
             />
             <span className="min-w-0 flex-1 truncate" title={headline}>
+              <span className="mr-2 font-medium">Activity</span>
               {headline}
             </span>
             {turn && turn.status !== 'running' && (

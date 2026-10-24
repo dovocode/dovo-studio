@@ -178,7 +178,11 @@ function TaskRowView({
     status,
     Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
     queue ? `${queue} queued` : '',
-    task.queuePaused ? 'Queue paused' : '',
+    task.queuePaused
+      ? 'Queue paused'
+      : task.queue?.some((message) => message.paused)
+        ? `${task.queue.filter((message) => message.paused).length} paused`
+        : '',
   ]
     .filter(Boolean)
     .join(' · ')
@@ -197,7 +201,7 @@ function TaskRowView({
         grouped && 'mb-0.5 rounded-xl border transition-colors',
         grouped &&
           (highlighted
-            ? 'border-border/50 bg-accent/70 hover:bg-accent/80'
+            ? 'border-transparent bg-accent/70 hover:bg-accent/80'
             : 'border-border/30 bg-accent/15 hover:bg-accent/30'),
       )}
     >
@@ -211,59 +215,61 @@ function TaskRowView({
               className={cn(
                 'mb-0.5 h-auto w-full min-w-0 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
                 compact
-                  ? 'min-h-9 flex-row items-center gap-2 py-1.5'
+                  ? 'min-h-[52px] flex-col items-stretch gap-0.5 py-1.5'
                   : 'min-h-[68px] flex-col items-stretch gap-0.5 py-1.5',
                 grouped
                   ? 'mb-0 rounded-b-none border-0 bg-transparent hover:bg-accent/30'
                   : highlighted
-                    ? 'border-border/50 bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
+                    ? 'border-transparent bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
                     : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
               )}
               onClick={onSelect}
               disabled={disabled}
             >
-              {compact ? (
-                <span className="shrink-0">{projectIcon}</span>
-              ) : (
-                <span
-                  className={cn(
-                    'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
-                    editable &&
-                      'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
-                  )}
-                >
-                  {projectIcon}
-                  <span
-                    className="min-w-0 flex-1 truncate"
-                    title={`${statusDetail} · ${agentDetail}`}
-                  >
-                    {projectName}
-                  </span>
-                  {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-                  {!general && task.execution === 'worktree' && (
-                    <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
-                  )}
-                  <span
-                    className={cn(
-                      'flex shrink-0 items-center gap-1 text-xs',
-                      !offline && presentation.state === 'Working' && 'text-primary',
-                      !offline &&
-                        ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
-                        'text-status-success',
-                      !offline && presentation.state === 'Failed' && 'text-destructive',
-                    )}
-                  >
-                    {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
-                    {compactStatus}
-                  </span>
-                </span>
-              )}
               <span
                 className={cn(
-                  'block min-w-0 truncate text-sm font-medium leading-5',
-                  compact ? 'flex-1' : 'w-full',
-                  compact && !!childCount && 'pr-7',
-                  unread ? 'text-foreground' : 'text-foreground/65',
+                  'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
+                  !!childCount && 'pr-7',
+                  editable &&
+                    'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
+                )}
+              >
+                {projectIcon}
+                <span
+                  className="min-w-0 flex-1 truncate"
+                  title={`${statusDetail} · ${agentDetail}`}
+                >
+                  {projectName}
+                </span>
+                {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
+                {!general && task.execution === 'worktree' && (
+                  <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
+                )}
+                <span
+                  className={cn(
+                    'flex shrink-0 items-center gap-1 text-xs',
+                    !offline && presentation.state === 'Working' && 'text-primary',
+                    !offline &&
+                      ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
+                      'text-status-success',
+                    !offline && presentation.state === 'Failed' && 'text-destructive',
+                  )}
+                >
+                  {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
+                  {compactStatus}
+                </span>
+                {provider && (
+                  <AgentAvatar
+                    provider={provider}
+                    customIcon={customIcon}
+                    className="size-3.5 shrink-0"
+                  />
+                )}
+              </span>
+              <span
+                className={cn(
+                  'block w-full min-w-0 truncate text-sm font-medium leading-5',
+                  unread ? 'text-foreground font-semibold' : 'text-foreground',
                   editable &&
                     'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                 )}
@@ -271,12 +277,7 @@ function TaskRowView({
                 {task.title}
               </span>
               {!compact && (
-                <span
-                  className={cn(
-                    'studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4',
-                    !!childCount && 'pr-7',
-                  )}
-                >
+                <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                   {!general && (
                     <>
                       <GitBranch className="size-3 shrink-0" />
@@ -321,9 +322,6 @@ function TaskRowView({
                     className="size-3 shrink-0"
                     aria-label={host ?? 'Unknown host'}
                   />
-                  {provider && (
-                    <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5" />
-                  )}
                 </span>
               )}
             </Button>
@@ -401,7 +399,7 @@ function TaskRowView({
           <button
             type="button"
             className={cn(
-              'absolute bottom-1.5 right-2.5 flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground',
+              'absolute top-1 right-2.5 flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground',
               open && 'bg-accent text-foreground',
               summary.attention > 0 && 'text-status-warning',
               summary.failed > 0 && 'text-destructive',
@@ -469,7 +467,12 @@ function TaskRowView({
         </div>
       )}
       {editable && (
-        <div className="pointer-events-none absolute right-2 top-1.5 flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none">
+        <div
+          className={cn(
+            'pointer-events-none absolute top-1.5 flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none',
+            childCount ? 'right-9' : 'right-2',
+          )}
+        >
           <TaskLifecycleActions key={owner.runtimeId ?? 'local'} task={task} owner={owner} />
         </div>
       )}

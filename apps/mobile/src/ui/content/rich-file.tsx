@@ -7,14 +7,10 @@ import {
   markdownFileName,
   artifactTemplatePrompt,
   type ArtifactTemplate,
-  responses,
-  repositoryOpenTargets,
   createRuntimeClient,
-  isRepositoryOpenTarget,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../theme'
-import { useAction } from '../controls/use-action'
 import { Action } from '../controls/action'
 import { Text } from './text'
 import { MobileFileTypeIcon } from './file-tree'
@@ -69,10 +65,6 @@ export function RichFile({
 }) {
   const { read, connected, connection } = useRuntime()
   const { colors, styles } = useTheme()
-  const action = useAction()
-  const [applications, setApplications] = useState<Array<{ target: string; name: string }> | null>(
-    null,
-  )
   const [opened, setOpened] = useState(previewOnly)
   const [revision, setRevision] = useState(0)
   const [result, setResult] = useState<{ key: string; url?: string; error?: string }>()
@@ -194,7 +186,6 @@ export function RichFile({
                 onPress={() => setRevision((value) => value + 1)}
               />
             )}
-            {!!action.error && <Text style={styles.muted}>{action.error}</Text>}
             <Action
               label="Open preview in browser"
               secondary
@@ -202,56 +193,6 @@ export function RichFile({
               onPress={() => launch(false)}
             />
             <Action label="Download original" disabled={!url} onPress={() => launch(true)} />
-            {local && (
-              <Action
-                label="Open on runtime computer…"
-                secondary
-                disabled={!connected || action.busy}
-                onPress={() =>
-                  action.act(async () => {
-                    const { targets } = await read(
-                      '/api/scm/open-targets',
-                      {},
-                      responses.repositoryOpenTargets,
-                    )
-                    const folder = targets.includes('explorer')
-                      ? 'explorer'
-                      : targets.includes('file-manager')
-                        ? 'file-manager'
-                        : 'finder'
-                    setApplications(
-                      repositoryOpenTargets(folder)
-                        .filter(([target]) => targets.includes(target))
-                        .map(([target, name]) => ({ target, name })),
-                    )
-                  })
-                }
-              />
-            )}
-            {applications && (
-              <View style={{ gap: 8 }}>
-                <Text style={styles.muted}>Applications on the runtime computer</Text>
-                {!applications.length && (
-                  <Text style={styles.muted}>
-                    No supported applications found on the runtime computer.
-                  </Text>
-                )}
-                {applications.map(({ target, name }) => (
-                  <Action
-                    key={target}
-                    label={`Open in ${name}`}
-                    secondary
-                    disabled={action.busy}
-                    onPress={() =>
-                      action.act(async () => {
-                        if (!taskId || !isRepositoryOpenTarget(target)) return
-                        await read('/api/tasks/files/open', { taskId, path, target }, responses.ok)
-                      })
-                    }
-                  />
-                ))}
-              </View>
-            )}
           </View>
         </Sheet>
       )}

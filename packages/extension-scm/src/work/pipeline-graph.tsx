@@ -1,5 +1,11 @@
 import { useLayoutEffect, useMemo, useRef, useState, useId } from 'react'
-import { pipelineGraphColumns, pipelineDuration, type ForgePipelineDetail } from '@dovo/protocol'
+import {
+  pipelineGraphColumns,
+  pipelineFailureImpact,
+  pipelineSignal,
+  pipelineDuration,
+  type ForgePipelineDetail,
+} from '@dovo/protocol'
 import { PipelineState } from './pipeline-state'
 
 export function PipelineGraph({
@@ -15,6 +21,10 @@ export function PipelineGraph({
 }) {
   const columns = useMemo(
     () => pipelineGraphColumns(detail.graph, detail.jobs),
+    [detail.graph, detail.jobs],
+  )
+  const impact = useMemo(
+    () => pipelineFailureImpact(detail.graph, detail.jobs),
     [detail.graph, detail.jobs],
   )
   const surface = useRef<HTMLDivElement>(null)
@@ -100,9 +110,14 @@ export function PipelineGraph({
                 <div
                   key={node.id}
                   data-graph-node={node.id}
-                  className="relative space-y-3 rounded-xl border bg-card p-3 shadow-sm"
+                  className={`relative space-y-3 rounded-xl border p-3 ${impact.failed.has(node.id) ? 'border-status-error/40 bg-status-error/5' : impact.affected.has(node.id) ? 'border-status-warning/40 bg-card' : 'border-border/50 bg-card'}`}
                 >
                   <p className="text-sm font-medium break-words">{node.name}</p>
+                  {impact.failed.has(node.id) ? (
+                    <p className="text-xs text-status-error">Failed stage</p>
+                  ) : impact.affected.has(node.id) ? (
+                    <p className="text-xs text-status-warning">Depends on failed stage</p>
+                  ) : null}
                   {!!node.needs.length && (
                     <p className="text-xs text-muted-foreground">After {node.needs.join(', ')}</p>
                   )}
@@ -115,7 +130,8 @@ export function PipelineGraph({
                           type="button"
                           onClick={() => onSelect(id)}
                           aria-label={`View job ${job.name}`}
-                          className={`flex w-full items-center justify-between gap-2 rounded-lg border p-2 text-left transition-colors hover:bg-muted ${selectedJob === id ? 'border-primary/50 bg-primary/5' : 'border-transparent bg-muted/30'}`}
+                          aria-pressed={selectedJob === id}
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg border p-2 text-left transition-colors hover:bg-muted ${selectedJob === id ? 'border-primary/50 bg-primary/5' : pipelineSignal(job.status).tone === 'danger' ? 'border-transparent bg-status-error/10' : pipelineSignal(job.status).tone === 'success' ? 'border-transparent bg-transparent' : 'border-transparent bg-muted/30'}`}
                         >
                           <span className="min-w-0 space-y-2 text-xs">
                             {job.name !== node.name && (

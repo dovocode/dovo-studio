@@ -169,7 +169,14 @@ export function SettingSource({
           accessibilityHint={sourceLabel}
           accessibilityState={{ expanded: open }}
           onPress={() => setOpen(!open)}
-          style={({ pressed }) => [sourceButtonStyle, { opacity: pressed ? 0.6 : 1 }]}
+          style={({ pressed }) => [
+            sourceButtonStyle,
+            {
+              opacity: pressed ? 0.6 : 1,
+              borderRadius: 10,
+              backgroundColor: overridden ? colors.selection : 'transparent',
+            },
+          ]}
         >
           <Icon
             name={overridden ? 'settings' : 'stack'}
@@ -251,6 +258,12 @@ export function SettingSource({
                         key={row.scope}
                         style={[
                           styles.muted,
+                          {
+                            borderLeftWidth: 1,
+                            borderLeftColor: colors.border,
+                            paddingLeft: 10,
+                            paddingVertical: 4,
+                          },
                           row.effective && {
                             color: colors.text,
                             backgroundColor: colors.selection,

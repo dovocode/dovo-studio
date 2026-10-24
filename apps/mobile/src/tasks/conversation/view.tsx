@@ -18,6 +18,7 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  ScrollView,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -121,20 +122,20 @@ function CheckpointRow({
         ? [
             ...checkpointFiles(turn.checkpoint),
             ...(turn.checkpoint.linked ?? []).flatMap(checkpointFiles),
-          ]
+          ].map((file) => ({ ...file, ...(file.preview ? {} : fileStats(file)) }))
         : [],
     [turn?.checkpoint],
   )
   const totals = useMemo(
     () =>
-      (turn?.checkpoint?.files ?? []).map(fileStats).reduce(
+      changedFiles.reduce(
         (sum, file) => ({
-          additions: sum.additions + file.additions,
-          deletions: sum.deletions + file.deletions,
+          additions: sum.additions + (file.additions ?? 0),
+          deletions: sum.deletions + (file.deletions ?? 0),
         }),
         { additions: 0, deletions: 0 },
       ),
-    [turn?.checkpoint?.files],
+    [changedFiles],
   )
   return (
     <View
@@ -169,7 +170,7 @@ function CheckpointRow({
           >
             {checkpoint.files} {checkpoint.files === 1 ? 'file' : 'files'} changed
           </Text>
-          {!!turn?.checkpoint?.files.some((file) => !file.preview) && (
+          {!!changedFiles.some((file) => !file.preview) && (
             <>
               <Text style={{ color: colors.success, fontSize: 12 }}>+{totals.additions}</Text>
               <Text style={{ color: colors.error, fontSize: 12 }}>-{totals.deletions}</Text>
@@ -188,6 +189,7 @@ function CheckpointRow({
       {!!changedFiles.length && (
         <ChangeTypeFilters
           files={changedFiles}
+          weightBy="lines"
           value={kind}
           onChange={(next) => {
             setKind(next)
@@ -349,8 +351,9 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
             ))}
           </WorkGroup>,
         )
-      } else
+      } else {
         elements.push(<MessagePrimitive.PartByIndex key={index} index={index} components={parts} />)
+      }
     }
     return elements
   }
@@ -590,7 +593,13 @@ export function Conversation({
       }}
     >
       {!!bookmarks.length && (
-        <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingVertical: 5 }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0, flexShrink: 0 }}
+          accessibilityLabel="Bookmarked replies"
+          contentContainerStyle={{ gap: 6, paddingHorizontal: 12, paddingVertical: 5 }}
+        >
           {bookmarks.map(({ message, index }, position) => (
             <Pressable
               key={message.id}
@@ -607,6 +616,8 @@ export function Conversation({
                 })
               }}
               style={{
+                minHeight: 44,
+                justifyContent: 'center',
                 paddingHorizontal: 8,
                 paddingVertical: 5,
                 borderRadius: 8,
@@ -616,7 +627,7 @@ export function Conversation({
               <Text style={styles.muted}>★ {position + 1}</Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
       )}
       <FlatList
         key={task.id}
@@ -675,9 +686,9 @@ export function Conversation({
           styles.content,
           emptyDraft && { flexGrow: 1 },
           {
-            paddingTop: !connected || !following ? 44 : 8,
+            // Status pills float over the list. Toggling them must not resize its content.
+            paddingTop: 44,
             paddingHorizontal: 20,
-            // Reserve overlay space only when a status pill is actually shown.
             paddingBottom: 12,
           },
         ]}
@@ -690,7 +701,7 @@ export function Conversation({
           ) : undefined
         }
         ListFooterComponent={
-          <View style={{ padding: 12, alignItems: 'center' }}>
+          <View style={{ padding: 12, minHeight: 44, alignItems: 'center' }}>
             {task.autoProjectFallback && (
               <Text style={[styles.muted, { fontSize: 12 }]}>
                 Scope found no matching project; continued in General.

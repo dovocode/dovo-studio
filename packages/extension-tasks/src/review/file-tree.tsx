@@ -11,6 +11,7 @@ export function FileTree({
   related = false,
   onRelatedChange = () => {},
   disabled = false,
+  weightBy = 'files',
 }: {
   files: ChangedFile[]
   stats: { path: string; additions: number; deletions: number }[]
@@ -20,6 +21,7 @@ export function FileTree({
   related?: boolean
   onRelatedChange?: (value: boolean) => void
   disabled?: boolean
+  weightBy?: 'files' | 'lines'
 }) {
   const amounts = new Map(stats.map((stat) => [stat.path, stat]))
   return (
@@ -47,6 +49,7 @@ export function FileTree({
             deletions: file.preview ? undefined : (stats?.deletions ?? 0),
           }
         })}
+        weightBy={weightBy}
         groups={groups}
         related={related}
         onRelatedChange={onRelatedChange}

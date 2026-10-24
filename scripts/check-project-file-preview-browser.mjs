@@ -37,7 +37,7 @@ createRoot(document.getElementById('app')).render(<TaskFiles task={{id:'task',fi
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export const FileTypeIcon=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const IconButton=({children,label,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileBrowserTree=({files,onSelect})=><nav>{files.map(file=><button key={file.path} onClick={()=>onSelect(file.path)}>{file.path}</button>)}</nav>;`,
+      contents: `export {SearchField} from '${root}/packages/studio-ui/src/search-field.tsx';export const FileTypeIcon=()=>null;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const IconButton=({children,label,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileBrowserTree=({files,onSelect})=><nav>{files.map(file=><button key={file.path} onClick={()=>onSelect(file.path)}>{file.path}</button>)}</nav>;`,
     },
     {
       path: '@dovo/studio-ui/code-themes',
@@ -73,6 +73,18 @@ try {
   )
   await page.goto('http://studio.test/')
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
+  const search = page.getByRole('searchbox', { name: 'Search project files', exact: true })
+  await page.getByRole('button', { name: 'small.txt', exact: true }).waitFor()
+  await search.fill('large')
+  await page.getByRole('button', { name: 'small.txt', exact: true }).waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: 'large.txt', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Clear file search', exact: true }).click()
+  assert.equal(await search.inputValue(), '')
+  assert.equal(
+    await search.evaluate((node) => node === document.activeElement),
+    true,
+    'Clearing file search retains focus',
+  )
   await page.getByRole('button', { name: 'small.txt', exact: true }).click()
   await page.getByRole('alert').getByText('Cannot preview this file', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Edit', exact: true }).count(), 0)
@@ -98,17 +110,24 @@ try {
   await page.getByRole('alert').getByText('File listing unavailable', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor()
   assert.equal(await page.getByTestId('file-preview').count(), 1)
-  await page.evaluate(() => {
-    window.failListing = false
-  })
+  const listingsBeforeSelection = await page.evaluate(
+    () => window.requests.filter((item) => item.path.endsWith('/list')).length,
+  )
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await page.getByRole('button', { name: 'large.txt', exact: true }).click()
   await page
     .getByText('Read-only preview · Files over 1 MB must be edited externally', { exact: true })
     .waitFor()
   assert.equal(await page.getByRole('button', { name: 'Edit', exact: true }).isDisabled(), true)
+  assert.equal(
+    await page.evaluate(() => window.requests.filter((item) => item.path.endsWith('/list')).length),
+    listingsBeforeSelection,
+  )
+  await page.evaluate(() => {
+    window.failListing = false
+  })
   await page.getByRole('button', { name: 'binary.txt', exact: true }).click()
-  await page.getByRole('alert').waitFor()
+  await page.getByRole('alert').getByText('Cannot preview this file', { exact: true }).waitFor()
   assert.equal(await page.getByTestId('file-preview').count(), 0)
   await page.evaluate(() => {
     window.failImage = true
@@ -162,6 +181,33 @@ try {
   await page.getByRole('button', { name: 'small.txt', exact: true }).click()
   await page.getByTestId('file-preview').getByText('Small file', { exact: true }).waitFor()
   assert.equal(await page.locator('img').count(), 0)
+  await page.evaluate(() => {
+    const original = window.runtime.request
+    let first = true
+    window.runtime.request = (path, input) => {
+      if (path.endsWith('/read') && input.path === 'small.txt') {
+        if (first) {
+          first = false
+          return new Promise((resolve) => {
+            window.resolveOldRead = () => resolve({ path: 'small.txt', contents: 'Stale A' })
+          })
+        }
+        return Promise.resolve({ path: 'small.txt', contents: 'Fresh A' })
+      }
+      return original(path, input)
+    }
+  })
+  await page.getByRole('button', { name: 'large.txt', exact: true }).click()
+  await page.getByRole('button', { name: 'small.txt', exact: true }).click()
+  await page.waitForFunction(() => !!window.resolveOldRead)
+  await page.getByRole('button', { name: 'large.txt', exact: true }).click()
+  await page.getByRole('button', { name: 'small.txt', exact: true }).click()
+  await page.getByTestId('file-preview').getByText('Fresh A', { exact: true }).waitFor()
+  await page.evaluate(() => window.resolveOldRead())
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(await page.getByTestId('file-preview').textContent(), 'Fresh A')
   assert.deepEqual(errors, [])
   console.log(
     'Project text/image previews, retry, format switching, external opening and read-only checks passed.',

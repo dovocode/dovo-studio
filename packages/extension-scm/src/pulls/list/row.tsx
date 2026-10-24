@@ -119,42 +119,41 @@ export function PullRow({
               className="min-w-0 flex-1 rounded-md px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-primary"
             >
               <div className="flex gap-3">
-                <Icon aria-hidden className={`mt-0.5 size-4 shrink-0 ${stateColor}`} />
-                <span className="sr-only">{pullState(pull).label}</span>
                 <div
-                  className={`grid min-w-0 flex-1 gap-x-3 ${compact ? '' : hasStatus ? '@4xl/pr-list:grid-cols-[minmax(0,1fr)_11rem_5.5rem]' : '@4xl/pr-list:grid-cols-[minmax(0,1fr)_5.5rem]'}`}
+                  className={`grid min-w-0 flex-1 gap-x-3 ${compact ? '' : '@4xl/pr-list:grid-cols-[minmax(0,1fr)_11rem_5.5rem]'}`}
                 >
                   <div className="min-w-0">
-                    <div className="flex items-start gap-2">
-                      <p
-                        className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-medium leading-5"
-                        title={pull.title}
-                      >
-                        {pull.title}
-                      </p>
-                      {(pull.draft || pull.state !== 'open') && (
-                        <Badge
-                          variant="outline"
-                          className={`shrink-0 text-[0.625rem] ${stateColor}`}
-                        >
-                          {pullState(pull).label}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-muted-foreground">
-                      <span>#{pull.number}</span>
+                    <div className="mb-1 flex min-w-0 items-center gap-2 text-[0.6875rem] text-muted-foreground">
                       <span
-                        className="max-w-52 truncate"
-                        title={`${repository} · ${pull.head} → ${pull.base}`}
+                        className={`inline-flex shrink-0 items-center gap-1.5 font-medium ${stateColor}`}
                       >
+                        <Icon aria-hidden className="size-3.5" />
+                        {pullState(pull).label}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate" title={repository}>
                         {repository}
                       </span>
+                      <span className="shrink-0">#{pull.number}</span>
+                    </div>
+                    <p
+                      className="line-clamp-2 break-words text-sm font-medium leading-5 [overflow-wrap:anywhere]"
+                      title={pull.title}
+                    >
+                      {pull.title}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-muted-foreground">
                       <span
                         className="inline-flex min-w-0 items-center gap-1.5"
                         title={pull.author}
                       >
                         <AuthorAvatar author={pull.author} url={pull.authorAvatarUrl} />
                         <span className="max-w-32 truncate">{pull.author}</span>
+                      </span>
+                      <span
+                        className="min-w-0 max-w-full truncate"
+                        title={`${pull.head} → ${pull.base}`}
+                      >
+                        {pull.head} → {pull.base}
                       </span>
                       <time
                         className={compact ? '' : '@4xl/pr-list:hidden'}
@@ -252,19 +251,17 @@ export function PullRow({
                       )}
                     </div>
                   </div>
-                  {hasStatus && (
-                    <div
-                      className={`mt-2 flex flex-wrap gap-x-3 gap-y-1 ${compact ? '' : '@4xl/pr-list:mt-0 @4xl/pr-list:flex-col @4xl/pr-list:justify-center'}`}
-                      title={pullNextStep(pull).label}
-                    >
-                      {(pull.checksState !== undefined || pull.statusError) && (
-                        <Signal signal={pullChecks(pull)} />
-                      )}
-                      {(pull.reviewDecision !== undefined || pull.statusError) && (
-                        <Signal signal={pullReview(pull)} />
-                      )}
-                    </div>
-                  )}
+                  <div
+                    className={`${hasStatus ? 'mt-2 flex' : 'hidden'} flex-wrap gap-x-3 gap-y-1 ${compact ? '' : '@4xl/pr-list:mt-0 @4xl/pr-list:flex @4xl/pr-list:flex-col @4xl/pr-list:justify-center'}`}
+                    title={hasStatus ? pullNextStep(pull).label : undefined}
+                  >
+                    {(pull.checksState !== undefined || pull.statusError) && (
+                      <Signal signal={pullChecks(pull)} />
+                    )}
+                    {(pull.reviewDecision !== undefined || pull.statusError) && (
+                      <Signal signal={pullReview(pull)} />
+                    )}
+                  </div>
                   {!compact && (
                     <time
                       className="hidden self-center text-right text-xs text-muted-foreground @4xl/pr-list:block"

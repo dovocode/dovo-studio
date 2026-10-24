@@ -1,3 +1,4 @@
+import { SearchField } from '@dovo/studio-ui/search-field'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
   artifactFormatLabels,
@@ -9,13 +10,13 @@ import {
   type RuntimeSnapshot,
 } from '@dovo/protocol'
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
-import { useWorkspace, WorkspaceScope } from '@dovo/studio-core'
+import { useWorkspace, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
 import {
   Button,
   EmptyState,
   IconButton,
-  Input,
   PageHeader,
+  ChoicePicker,
   SidebarHeader,
   cn,
   useLeftSidebar,
@@ -24,9 +25,10 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Layers,
+  LayoutGrid,
+  List,
   LoaderCircle,
   RotateCw,
-  Search,
   WifiOff,
 } from 'lucide-react'
 import { ArtifactSnapshot } from './chat/artifact-snapshot'
@@ -54,6 +56,7 @@ type Source = {
 type Entry = { source: Source; artifact: ArtifactLibraryEntry }
 type ThreadStateFilter = 'all' | ArtifactLibraryEntry['threadState']
 type FormatFilter = 'all' | ArtifactLibraryEntry['format']
+type Sort = 'updated' | 'oldest' | 'title'
 type Selection = { owner: ArtifactOwnerKey; taskId: string; artifactId: string }
 const threadStates: ReadonlyArray<{ value: ThreadStateFilter; label: string }> = [
   { value: 'all', label: 'All threads' },
@@ -67,8 +70,10 @@ const remembered: {
   search: string
   state: ThreadStateFilter
   format: FormatFilter
+  sort: Sort
+  layout: 'preview' | 'list'
   selection: Selection | null
-} = { search: '', state: 'all', format: 'all', selection: null }
+} = { search: '', state: 'all', format: 'all', sort: 'updated', layout: 'preview', selection: null }
 const sameArtifact = (a: ArtifactLibraryEntry, b: Pick<ArtifactLibraryEntry, 'taskId' | 'id'>) =>
   a.taskId === b.taskId && a.id === b.id
 const shortDate = (value: string) =>
@@ -87,11 +92,13 @@ export default function ArtifactsView() {
   const [search, setSearch] = useState(remembered.search)
   const [state, setState] = useState(remembered.state)
   const [format, setFormat] = useState(remembered.format)
+  const [sort, setSort] = useState(remembered.sort)
+  const [layout, setLayout] = useState(remembered.layout)
   const [selection, setSelection] = useState(remembered.selection)
   const [reload, setReload] = useState(0)
   useEffect(() => {
-    Object.assign(remembered, { search, state, format, selection })
-  }, [search, state, format, selection])
+    Object.assign(remembered, { search, state, format, sort, layout, selection })
+  }, [search, state, format, sort, layout, selection])
   const sources: Source[] = runtimes
     .filter((runtime) => runtime.snapshot?.artifactsEnabled)
     .map((runtime) => ({
@@ -180,8 +187,18 @@ export default function ArtifactsView() {
   )
   const visible = matching
     .filter(({ artifact }) => format === 'all' || artifact.format === format)
-    .sort((a, b) => Date.parse(b.artifact.updatedAt) - Date.parse(a.artifact.updatedAt))
+    .sort((a, b) =>
+      sort === 'title'
+        ? a.artifact.title.localeCompare(b.artifact.title, undefined, { numeric: true })
+        : (Date.parse(b.artifact.updatedAt) - Date.parse(a.artifact.updatedAt)) *
+          (sort === 'oldest' ? -1 : 1),
+    )
   const filtered = !!query || state !== 'all' || format !== 'all'
+  const clearFilters = () => {
+    setSearch('')
+    setFormat('all')
+    setState('all')
+  }
   const selected =
     selection &&
     entries.find(
@@ -259,28 +276,20 @@ export default function ArtifactsView() {
               )}
             >
               <div className={cn('flex flex-wrap items-center gap-3', selection ? 'mb-3' : 'mb-5')}>
-                <div className="relative min-w-48 flex-1">
-                  <Search
-                    aria-hidden="true"
-                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                  />
-                  <Input
-                    aria-label="Search artifacts"
-                    placeholder="Search artifacts, threads or computers…"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    className="h-10 rounded-lg bg-card pl-9"
-                  />
-                </div>
-                <select
+                <SearchField
+                  containerClassName="min-w-0 flex-1 basis-48"
+                  aria-label="Search artifacts"
+                  placeholder="Search artifacts, threads or computers…"
+                  value={search}
+                  onValueChange={setSearch}
+                  className="bg-card"
+                />
+                <ChoicePicker
                   aria-label="Artifact thread state"
-                  className="h-10 rounded-lg border bg-card px-3 text-sm"
+                  className="w-auto max-w-full bg-card"
                   value={state}
-                  onChange={(event) =>
-                    setState(
-                      threadStates.find((item) => item.value === event.target.value)?.value ??
-                        'all',
-                    )
+                  onValueChange={(value) =>
+                    setState(threadStates.find((item) => item.value === value)?.value ?? 'all')
                   }
                 >
                   {threadStates.map((item) => (
@@ -288,7 +297,7 @@ export default function ArtifactsView() {
                       {item.label}
                     </option>
                   ))}
-                </select>
+                </ChoicePicker>
               </div>
               <div
                 className={cn('flex flex-wrap items-center gap-1.5', selection ? 'mb-3' : 'mb-6')}
@@ -303,8 +312,8 @@ export default function ArtifactsView() {
                     aria-pressed={format === value}
                     onClick={() => setFormat(value)}
                     className={cn(
-                      'rounded-full px-3',
-                      format === value ? 'bg-accent text-foreground' : 'text-muted-foreground',
+                      'studio-filter-chip',
+                      format === value ? 'text-foreground' : 'text-muted-foreground',
                     )}
                   >
                     {value === 'all' ? 'All' : artifactFormatLabels[value]}
@@ -365,15 +374,7 @@ export default function ArtifactsView() {
                   }
                   action={
                     filtered && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSearch('')
-                          setState('all')
-                          setFormat('all')
-                        }}
-                      >
+                      <Button variant="outline" size="sm" onClick={clearFilters}>
                         Clear filters
                       </Button>
                     )
@@ -381,10 +382,63 @@ export default function ArtifactsView() {
                 />
               )}
               {!!visible.length && (
-                <p className="mb-3 text-xs text-muted-foreground">
-                  {visible.length} {visible.length === 1 ? 'artifact' : 'artifacts'} · Recently
-                  updated
-                </p>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <p role="status" aria-live="polite">
+                    {visible.length} {visible.length === 1 ? 'artifact' : 'artifacts'}
+                    {filtered && ` of ${entries.length}`}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ChoicePicker
+                      aria-label="Sort artifacts"
+                      className="w-auto max-w-full bg-card"
+                      value={sort}
+                      onValueChange={(value) =>
+                        setSort(
+                          value === 'title' ? 'title' : value === 'oldest' ? 'oldest' : 'updated',
+                        )
+                      }
+                    >
+                      <option value="updated">Recently updated</option>
+                      <option value="oldest">Oldest updated</option>
+                      <option value="title">Title A–Z</option>
+                    </ChoicePicker>
+                    {!selection && (
+                      <div
+                        role="group"
+                        aria-label="Artifact layout"
+                        className="flex rounded-lg bg-muted/40 p-0.5"
+                      >
+                        <IconButton
+                          label="Preview view"
+                          aria-pressed={layout === 'preview'}
+                          onClick={() => setLayout('preview')}
+                          className={cn(
+                            'size-8 rounded-md',
+                            layout === 'preview' && 'bg-card shadow-sm',
+                          )}
+                        >
+                          <LayoutGrid className="size-4" />
+                        </IconButton>
+                        <IconButton
+                          label="List view"
+                          aria-pressed={layout === 'list'}
+                          onClick={() => setLayout('list')}
+                          className={cn(
+                            'size-8 rounded-md',
+                            layout === 'list' && 'bg-card shadow-sm',
+                          )}
+                        >
+                          <List className="size-4" />
+                        </IconButton>
+                      </div>
+                    )}
+                    {filtered && (
+                      <Button variant="ghost" size="sm" onClick={clearFilters}>
+                        Clear filters
+                      </Button>
+                    )}
+                  </div>
+                </div>
               )}
               {selection ? (
                 <div className="flex flex-col gap-0.5">
@@ -427,59 +481,84 @@ export default function ArtifactsView() {
                   })}
                 </div>
               ) : (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-4">
+                <div
+                  className={cn(
+                    'grid',
+                    layout === 'preview'
+                      ? 'grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-4'
+                      : 'grid-cols-1 gap-2',
+                  )}
+                >
                   {visible.map((entry) => {
                     const { source, artifact } = entry
                     return (
                       <div
-                        key={`${source.owner}:${artifact.taskId}:${artifact.id}:${reload}`}
-                        className="min-w-0 overflow-hidden rounded-xl border bg-card"
+                        key={`${source.owner}:${artifact.taskId}:${artifact.id}`}
+                        className={cn(
+                          'min-w-0 overflow-hidden rounded-xl border border-border/50 bg-card',
+                          layout === 'list' && 'flex flex-wrap items-center',
+                        )}
                       >
                         <button
                           type="button"
                           aria-label={`Open artifact ${artifact.title}`}
                           onClick={() => open(entry)}
-                          className="group flex w-full min-w-0 flex-col overflow-hidden text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {source.connected ? (
-                            <ArtifactSnapshot profile={source.profile} artifact={artifact} />
-                          ) : (
-                            <div
-                              aria-hidden="true"
-                              className="flex h-36 items-center justify-center border-b bg-muted/30 text-muted-foreground"
-                            >
-                              <ArtifactIcon format={artifact.format} className="size-6" />
-                            </div>
+                          className={cn(
+                            'group flex w-full min-w-0 overflow-hidden text-left transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                            layout === 'preview' ? 'flex-col' : 'flex-1 items-center gap-3 p-3',
                           )}
-                          <div className="flex flex-1 flex-col gap-3 p-4">
+                        >
+                          {layout === 'list' ? (
+                            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40">
+                              <ArtifactIcon format={artifact.format} className="size-5" />
+                            </span>
+                          ) : (
+                            <ArtifactSnapshot
+                              profile={source.profile}
+                              artifact={artifact}
+                              connected={source.connected}
+                              refreshKey={reload}
+                            />
+                          )}
+                          <div
+                            className={cn(
+                              'flex min-w-0 flex-1 flex-col',
+                              layout === 'preview' ? 'gap-2.5 p-4' : 'gap-1',
+                            )}
+                          >
                             <div className="flex items-start gap-2">
                               <h2
-                                className="min-w-0 flex-1 truncate text-sm font-medium"
+                                className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-semibold leading-5"
                                 title={artifact.title}
                               >
                                 {artifact.title}
                               </h2>
-                              <ArrowUpRight
-                                aria-hidden="true"
-                                className="size-4 shrink-0 text-muted-foreground/60 group-hover:text-foreground"
-                              />
+                              {layout === 'preview' && (
+                                <ArrowUpRight
+                                  aria-hidden="true"
+                                  className="size-4 shrink-0 text-muted-foreground/60 group-hover:text-foreground"
+                                />
+                              )}
                             </div>
+                            <ArtifactSharedBadge artifact={artifact} />
                             <p
                               className="truncate text-xs text-muted-foreground"
                               title={artifact.threadTitle}
                             >
                               {artifact.threadTitle}
                             </p>
-                            <div className="mt-auto flex items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
+                            <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
                               <span className="flex items-center gap-1.5">
-                                <ArtifactIcon format={artifact.format} className="size-3.5" />
+                                {layout === 'preview' && (
+                                  <ArtifactIcon format={artifact.format} className="size-3.5" />
+                                )}
                                 {artifactLabel(artifact)} · v{artifact.revision}
                               </span>
-                              <time dateTime={artifact.updatedAt}>
+                              <time className="shrink-0" dateTime={artifact.updatedAt}>
                                 {shortDate(artifact.updatedAt)}
                               </time>
                             </div>
-                            <div className="flex items-center justify-between gap-2 border-t pt-3 text-[0.6875rem] text-muted-foreground">
+                            <div className="flex items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
                               <span className="flex min-w-0 items-center gap-1.5">
                                 <RuntimeIcon
                                   icon={source.icon}
@@ -491,21 +570,19 @@ export default function ArtifactsView() {
                                   {!source.connected && ' · Offline'}
                                 </span>
                               </span>
-                              <span className="rounded-full bg-muted px-2 py-0.5 capitalize">
-                                {artifact.threadState}
-                              </span>
+                              <span className="shrink-0 capitalize">{artifact.threadState}</span>
                             </div>
                             {artifact.deleteAt && (
                               <p className="text-[0.6875rem] text-destructive">
                                 Scheduled deletion: {new Date(artifact.deleteAt).toLocaleString()}
                               </p>
                             )}
-                            <ArtifactSharedBadge artifact={artifact} />
                           </div>
                         </button>
                         <ArtifactLibraryActions
                           profile={source.profile}
                           artifact={artifact}
+                          compact={layout === 'list'}
                           onDeleted={() => removed(entry)}
                         />
                       </div>
@@ -520,6 +597,11 @@ export default function ArtifactsView() {
           <div className="min-h-0 min-w-0 flex-1">
             {selected ? (
               <ArtifactDetail
+                key={JSON.stringify([
+                  selected.source.owner,
+                  selected.artifact.taskId,
+                  selected.artifact.id,
+                ])}
                 entry={selected}
                 back={backButton}
                 onDeleted={() => removed(selected)}
@@ -569,6 +651,38 @@ function ArtifactDetail({
   back: ReactNode
   onDeleted: () => void
 }) {
+  const { switchRuntime } = useWorkspace()
+  const host = useStudioHost()
+  const [error, setError] = useState('')
+  const [opening, setOpening] = useState(false)
+  const sourceKey = `${source.owner}:${artifact.taskId}:${artifact.id}`
+  const activeSource = useRef(sourceKey)
+  activeSource.current = sourceKey
+  const attempt = useRef(0)
+  useEffect(
+    () => () => {
+      attempt.current++
+    },
+    [],
+  )
+  const openSource = async () => {
+    const openingAttempt = ++attempt.current
+    const navigationCurrent = host.taskNavigationGuard?.() ?? (() => true)
+    const current = () =>
+      openingAttempt === attempt.current &&
+      activeSource.current === sourceKey &&
+      navigationCurrent()
+    setOpening(true)
+    setError('')
+    try {
+      await switchRuntime(source.profile.id)
+      if (current()) host.navigate({ viewId: 'tasks', entityId: artifact.taskId })
+    } catch (cause) {
+      if (current()) setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      if (openingAttempt === attempt.current) setOpening(false)
+    }
+  }
   return (
     <section aria-label="Artifact details" className="flex h-full min-h-0 min-w-0 flex-col">
       <PageHeader
@@ -581,7 +695,16 @@ function ArtifactDetail({
           </>
         }
         leading={back}
-      />
+      >
+        <Button variant="outline" size="sm" disabled={opening} onClick={() => void openSource()}>
+          Open source thread
+        </Button>
+      </PageHeader>
+      {error && (
+        <p role="alert" className="px-4 py-2 text-xs text-destructive">
+          {error}
+        </p>
+      )}
       <div className="min-h-0 flex-1">
         {source.connected ? (
           <WorkspaceScope profile={source.profile}>

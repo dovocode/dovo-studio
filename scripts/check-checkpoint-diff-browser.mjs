@@ -67,8 +67,25 @@ try {
   const draft = page.getByLabel('Draft attachments', { exact: true })
   const draftImage = draft.locator('img')
   await draftImage.evaluate((image) => image.decode())
-  assert.equal(await draftImage.evaluate((image) => image.getBoundingClientRect().width), 20)
-  assert.ok((await draft.boundingBox()).height <= 40)
+  assert.equal(await draftImage.evaluate((image) => image.getBoundingClientRect().width), 24)
+  assert.ok((await draft.boundingBox()).height <= 84)
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    const row = await draftImage.evaluate((image) => {
+      const box = image.closest('button').parentElement.getBoundingClientRect()
+      return {
+        width: box.width,
+        height: box.height,
+        available: image.closest('button').parentElement.parentElement.clientWidth,
+      }
+    })
+    assert.equal(row.width, row.available, 'Attachment rows use the full available width')
+    assert.ok(row.height <= 36)
+    assert.equal(
+      await draft.getByRole('button', { name: 'Remove notes.txt', exact: true }).innerText(),
+      '',
+    )
+  }
   const name = 'A very long screenshot attachment filename.png'
   await draft.getByRole('button', { name: `Preview ${name}`, exact: true }).click()
   const attachment = page.getByRole('dialog', { name })
@@ -87,7 +104,7 @@ try {
   await sent.locator('img').waitFor()
   assert.equal(
     await sent.locator('img').evaluate((image) => image.getBoundingClientRect().width),
-    40,
+    28,
   )
   await page.screenshot({ path: '/tmp/dovo-compact-attachments.png' })
   await page
@@ -174,7 +191,7 @@ try {
           ...['src/greeting.test.ts', '__mocks__/client.ts', 'docs/review.md'].map((path) => ({
             path,
             before: '',
-            after: 'change',
+            after: path.endsWith('.test.ts') ? 'change\n'.repeat(100) : 'change',
             viewed: false,
           })),
         ],
@@ -184,6 +201,30 @@ try {
   )
   const breakdown = page.getByLabel('Changed file breakdown', { exact: true })
   await breakdown.filter({ hasText: /All 8Code 4Tests 1Mocks 1Docs 1Generated 1/ }).waitFor()
+  const distribution = breakdown.getByLabel('Changed line distribution', { exact: true })
+  const codeSegment = distribution.getByRole('button', {
+    name: 'Filter Code: 4 files, 4 of 106 changed lines',
+    exact: true,
+  })
+  const testSegment = distribution.getByRole('button', {
+    name: 'Filter Tests: 1 files, 100 of 106 changed lines',
+    exact: true,
+  })
+  const codeWidth = (await codeSegment.boundingBox()).width
+  const testWidth = (await testSegment.boundingBox()).width
+  assert.ok(
+    Math.abs(testWidth / codeWidth - 25) < 0.2,
+    'The large test diff occupies 25 times the code segment',
+  )
+  assert.equal(await distribution.getByRole('button', { name: /Generated/ }).count(), 0)
+  // A file with no line evidence remains selectable through its category chip.
+  await breakdown.getByRole('button', { name: 'Generated 1', exact: true }).click()
+  assert.equal(
+    await breakdown
+      .getByRole('button', { name: 'Generated 1', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  )
   await breakdown.getByRole('button', { name: 'Tests 1', exact: true }).click()
   assert.equal(
     await page

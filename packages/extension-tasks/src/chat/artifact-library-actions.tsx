@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   artifactDeleteResponseSchema,
   artifactWriteResponseSchema,
@@ -14,17 +14,21 @@ import {
   DialogTitle,
   DialogDescription,
   Input,
+  cn,
+  DropdownMenu,
 } from '@dovo/studio-ui'
-import { MessageSquarePlus, Trash2 } from 'lucide-react'
+import { Ellipsis, MessageSquarePlus, Trash2 } from 'lucide-react'
 
 export function ArtifactLibraryActions({
   profile,
   artifact,
   onDeleted,
+  compact = false,
 }: {
   profile: RuntimeProfile
   artifact: ArtifactMetadata
   onDeleted: () => void
+  compact?: boolean
 }) {
   const { runtimes, readRuntime, switchRuntime } = useWorkspace()
   const host = useStudioHost()
@@ -35,6 +39,7 @@ export function ArtifactLibraryActions({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [added, setAdded] = useState('')
+  const menuButton = useRef<HTMLButtonElement>(null)
   const tasks = (runtime?.snapshot?.workspace.tasks ?? []).filter(
     (task) =>
       task.id !== artifact.taskId &&
@@ -44,6 +49,17 @@ export function ArtifactLibraryActions({
         'read-only' &&
       task.title.toLowerCase().includes(query.trim().toLowerCase()),
   )
+  const add = () => {
+    setError('')
+    setAdded('')
+    setQuery('')
+    setTarget('')
+    setAction('add')
+  }
+  const remove = () => {
+    setError('')
+    setAction('delete')
+  }
   const run = async () => {
     setBusy(true)
     setError('')
@@ -79,37 +95,74 @@ export function ArtifactLibraryActions({
   }
   return (
     <>
-      <div className="flex items-center gap-2 border-t p-3">
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!runtime?.connected}
-          onClick={() => {
-            setError('')
-            setAdded('')
-            setQuery('')
-            setTarget('')
-            setAction('add')
-          }}
-        >
-          <MessageSquarePlus className="size-3.5" />
-          Add to thread
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          aria-label={`Delete artifact ${artifact.title}`}
-          disabled={!runtime?.connected}
-          onClick={() => {
-            setError('')
-            setAction('delete')
-          }}
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
+      <div className={cn('flex items-center gap-2', compact ? 'shrink-0 pr-2' : 'border-t p-3')}>
+        {compact ? (
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button
+                ref={menuButton}
+                variant="ghost"
+                size="icon"
+                aria-label={`Artifact actions ${artifact.title}`}
+              >
+                <Ellipsis className="size-4" />
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="end"
+                sideOffset={4}
+                onCloseAutoFocus={(event) => {
+                  if (action) event.preventDefault()
+                }}
+                className="z-50 min-w-44 rounded-xl border bg-popover p-1 text-popover-foreground shadow-md"
+              >
+                <DropdownMenu.Item
+                  disabled={!runtime?.connected}
+                  onSelect={add}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none focus:bg-accent data-[disabled]:opacity-40"
+                >
+                  <MessageSquarePlus className="size-4" /> Add to thread
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  disabled={!runtime?.connected}
+                  onSelect={remove}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-destructive outline-none focus:bg-accent data-[disabled]:opacity-40"
+                >
+                  <Trash2 className="size-4" /> Delete artifact
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Add to thread"
+              disabled={!runtime?.connected}
+              onClick={add}
+            >
+              <MessageSquarePlus className="size-3.5" />
+              Add to thread
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label={`Delete artifact ${artifact.title}`}
+              disabled={!runtime?.connected}
+              onClick={remove}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </>
+        )}
       </div>
       {added && (
-        <p role="status" className="px-4 pb-3 text-xs text-muted-foreground">
+        <p
+          role="status"
+          className={cn('px-4 pb-3 text-xs text-muted-foreground', compact && 'basis-full')}
+        >
           Added to thread.{' '}
           <button
             className="underline"
@@ -124,7 +177,10 @@ export function ArtifactLibraryActions({
         </p>
       )}
       {!action && error && (
-        <p role="alert" className="px-4 pb-3 text-xs text-destructive">
+        <p
+          role="alert"
+          className={cn('px-4 pb-3 text-xs text-destructive', compact && 'basis-full')}
+        >
           {error}
         </p>
       )}
@@ -134,7 +190,14 @@ export function ArtifactLibraryActions({
           if (!open && !busy) setAction(undefined)
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            if (compact && menuButton.current) {
+              event.preventDefault()
+              menuButton.current.focus()
+            }
+          }}
+        >
           <DialogTitle>
             {action === 'delete' ? 'Delete artifact?' : 'Add artifact to a thread'}
           </DialogTitle>

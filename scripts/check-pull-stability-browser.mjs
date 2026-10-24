@@ -360,7 +360,8 @@ try {
   const filters = list.locator('[aria-label="Pull request filters"]')
   assert.equal(await filters.evaluate((e) => e.scrollHeight > e.clientHeight), true)
   const rows = list.locator('[aria-label="Pull request rows"]')
-  assert.ok((await rows.evaluate((e) => e.clientHeight)) >= 100)
+  const rowsHeight = await rows.evaluate((element) => element.clientHeight)
+  assert.ok(rowsHeight >= 100, `Short-window PR rows retain a usable viewport: ${rowsHeight}px`)
   await rows.evaluate((e) => {
     e.scrollTop = e.scrollHeight
   })

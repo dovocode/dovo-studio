@@ -1,18 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import { Effect } from 'effect'
 import { randomUUID } from 'expo-crypto'
 import {
   indexTaskSubagents,
   subagentMetadata,
-  canChangeTaskCheckout,
-  repositoryOpenTargets,
-  responses,
   runtimeComputerName,
-  taskPullLinks,
   workspacePatchResultSchema,
   type ProjectAction,
-  type RepositoryOpenTarget,
   type Task,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -91,65 +86,19 @@ export function TaskProjectSheet({
   onAgents?: () => void
   onClose: () => void
 }) {
-  const { snapshot, profile, connected, read, callEffect } = useRuntime()
+  const { snapshot, profile, connected, callEffect } = useRuntime()
   const { colors, styles } = useTheme()
   const { act, busy, error } = useAction()
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
-  const [targets, setTargets] = useState<string[]>([])
-  const [openers, setOpeners] = useState(false)
   const [git, setGit] = useState(false)
   const [editingScripts, setEditingScripts] = useState(false)
   const [drafts, setDrafts] = useState<ProjectAction[]>(() => repository?.actions ?? [])
-  const [detectionError, setDetectionError] = useState('')
   const [icons, setIcons] = useState(false)
-  const [detected, setDetected] = useState(false)
-  useEffect(() => {
-    let active = true
-    if (!connected) return
-    setDetected(false)
-    setDetectionError('')
-    void read('/api/scm/open-targets', {}, responses.repositoryOpenTargets)
-      .then((result) => {
-        if (active) {
-          setTargets(result.targets)
-          setDetected(true)
-        }
-      })
-      .catch((cause) => {
-        if (active) {
-          setDetectionError(String(cause))
-          setDetected(true)
-        }
-      })
-    return () => {
-      active = false
-    }
-  }, [connected, read])
-  const folder = targets.includes('explorer')
-    ? 'explorer'
-    : targets.includes('file-manager')
-      ? 'file-manager'
-      : 'finder'
-  const applications = repositoryOpenTargets(folder).filter(([target]) => targets.includes(target))
-  const open = (target: RepositoryOpenTarget) =>
-    act(() =>
-      callEffect(
-        '/api/scm/open-folder',
-        { repositoryId: task.repositoryId, taskId: task.id, target },
-        responses.ok,
-      ).pipe(Effect.tap(() => Effect.sync(() => setOpeners(false)))),
-    )
-  const checkoutReady =
-    !!repository && !task.example && !(task.execution === 'worktree' && canChangeTaskCheckout(task))
-  const primary =
-    applications.find(([target]) => !['finder', 'explorer', 'file-manager'].includes(target)) ??
-    applications[0]
   const indexed = useMemo(
     () => indexTaskSubagents(snapshot?.workspace.tasks ?? []),
     [snapshot?.workspace.tasks],
   )
   const agents = indexed(task, true)
-  const pulls = taskPullLinks(task)
   const sheet = useRef<SheetHandle>(null)
   const dismissThen = (action: () => void) => (inline ? action() : sheet.current?.dismiss(action))
   return (
@@ -167,43 +116,7 @@ export function TaskProjectSheet({
         <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
           {repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'No project')}
         </Text>
-        <View style={styles.row}>
-          <ProjectRow
-            secondary
-            icon="code"
-            label={
-              primary
-                ? `Open in ${primary[1]}`
-                : detected
-                  ? 'No installed editors'
-                  : 'Looking for editors…'
-            }
-            disabled={!connected || busy || !checkoutReady || !primary}
-            onPress={() => primary && open(primary[0])}
-          />
-          <Action
-            secondary
-            icon="down"
-            label="Choose editor"
-            disabled={!connected || busy || !checkoutReady || !applications.length}
-            onPress={() => setOpeners((value) => !value)}
-          />
-        </View>
-        {openers &&
-          applications.map(([target, name]) => (
-            <ProjectRow
-              key={target}
-              secondary
-              label={`Open in ${name}`}
-              disabled={!connected || busy || !checkoutReady}
-              onPress={() => open(target)}
-            />
-          ))}
-        {!!detectionError && (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {detectionError}
-          </Text>
-        )}
+        <PullStatus task={task} inline onOpen={(url) => dismissThen(() => onPulls(url))} />
         {scripts.map((action) => (
           <ProjectRow
             key={action.label}
@@ -241,19 +154,6 @@ export function TaskProjectSheet({
             onPress={() => dismissThen(action.onPress)}
           />
         ))}
-        <PullStatus
-          task={task}
-          showLinked={false}
-          onOpen={(url) => dismissThen(() => onPulls(url))}
-        />
-        {!!pulls.length && (
-          <ProjectRow
-            secondary
-            label={`Linked PRs (${pulls.length})`}
-            icon="pulls"
-            onPress={() => dismissThen(() => onPulls())}
-          />
-        )}
         {!repository?.kind && (
           <ProjectRow
             secondary

@@ -10,6 +10,7 @@ import { Action } from '../controls/action'
 import { IconButton } from '../controls/icon-button'
 import { useAction } from '../controls/use-action'
 import { SafeModal } from '../layout/safe-modal'
+import { EditChatImage } from '../../tasks/composer/chat-image-edit-context'
 
 type Source =
   | { taskId: string; path: string }
@@ -19,10 +20,14 @@ export function ServerImage({
   source,
   label = 'Image',
   onOpenOriginal,
+  compact = false,
+  taskId,
 }: {
   source: Source
   label?: string
   onOpenOriginal?: () => Promise<void>
+  compact?: boolean
+  taskId?: string
 }) {
   const original = useAction()
   const { readEffect, connected, connection } = useRuntime(),
@@ -122,7 +127,7 @@ export function ServerImage({
         : current,
     )
   return (
-    <View style={{ width: '100%', gap: 8 }}>
+    <View style={{ width: compact ? 128 : '100%', gap: compact ? 4 : 8 }}>
       {error ? (
         <View style={{ gap: 6 }}>
           <Text style={styles.muted}>{error}</Text>
@@ -150,19 +155,30 @@ export function ServerImage({
           accessibilityRole="button"
           accessibilityLabel={`Open ${label}`}
           onPress={() => setPreview(true)}
+          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
         >
           <Image
             source={{ uri }}
             accessibilityLabel={label}
-            style={{ width: '100%', height: 280, borderRadius: 10 }}
+            style={{
+              width: '100%',
+              height: compact ? 96 : 280,
+              borderRadius: 10,
+              backgroundColor: colors.surface,
+            }}
             resizeMode="contain"
             onError={fail}
           />
         </Pressable>
       ) : (
-        <View style={{ height: 80, justifyContent: 'center' }}>
+        <View style={{ height: compact ? 96 : 80, justifyContent: 'center' }}>
           <ActivityIndicator color={colors.muted} accessibilityLabel={`Loading ${label}`} />
         </View>
+      )}
+      {compact && !error && (
+        <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
+          {label}
+        </Text>
       )}
       <SafeModal
         visible={preview && !!uri}
@@ -209,7 +225,32 @@ export function ServerImage({
               />
             )}
           </ScrollView>
-          <View style={{ position: 'absolute', top: 12, right: 16, zIndex: 1 }}>
+          <View
+            style={{
+              position: 'absolute',
+              top: 12,
+              right: 16,
+              zIndex: 1,
+              flexDirection: 'row',
+              gap: 8,
+            }}
+          >
+            {(taskId || 'taskId' in source) && (
+              <EditChatImage
+                glass
+                source={
+                  'reference' in source
+                    ? {
+                        taskId: source.taskId,
+                        eventId: source.reference.eventId,
+                        index: source.reference.index,
+                      }
+                    : source
+                }
+                label={label}
+                onEdit={() => setPreview(false)}
+              />
+            )}
             <IconButton
               label="Close image"
               icon="close"

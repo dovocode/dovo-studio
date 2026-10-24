@@ -122,6 +122,12 @@ export function pendingMessageQueue(
   ]
 }
 
+/** A paused message blocks the queue when it reaches the front. */
+export function nextQueuedMessage(task: Pick<Task, 'queue'>) {
+  const first = task.queue?.[0]
+  return first?.paused ? undefined : first
+}
+
 /** The first accepted input is the conversation starter while its checkout is prepared. */
 export function startingConversationMessage(
   task: Pick<Task, 'messages' | 'turns' | 'queue' | 'queuePaused' | 'status' | 'runPhase'>,
@@ -133,5 +139,5 @@ export function startingConversationMessage(
     (task.status !== 'draft' && !(task.status === 'running' && task.runPhase === 'preparing'))
   )
     return undefined
-  return task.queue?.[0]
+  return nextQueuedMessage(task)
 }

@@ -50,7 +50,7 @@ export function createMobileTheme(
     highContrast: !!accessibility.highContrast,
     reduceMotion: false,
     colors,
-    styles: createStyles(colors),
+    styles: createStyles(colors, !!accessibility.highContrast),
     syntaxTheme: code?.theme ?? studioSyntaxTheme(palette, mode),
     code: code
       ? {
@@ -76,7 +76,7 @@ export type MobileTheme = ReturnType<typeof createMobileTheme>
 export const MobileThemeContext = createContext(createMobileTheme('dovo', 'dark'))
 export const useTheme = () => useContext(MobileThemeContext)
 
-function createStyles(colors: MobileColors) {
+function createStyles(colors: MobileColors, highContrast: boolean) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: colors.background },
     content: { padding: 16, gap: 12 },
@@ -85,7 +85,7 @@ function createStyles(colors: MobileColors) {
       backgroundColor: colors.surface,
       borderRadius: 12,
       padding: 12,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderWidth: highContrast ? 1 : StyleSheet.hairlineWidth,
       borderColor: colors.border,
       gap: 8,
     },
@@ -101,7 +101,7 @@ function createStyles(colors: MobileColors) {
       borderTopColor: colors.border,
       backgroundColor: colors.surface,
     },
-    empty: { paddingHorizontal: 20, paddingVertical: 32, alignItems: 'center', gap: 8 },
+    empty: { paddingHorizontal: 24, paddingVertical: 40, alignItems: 'center', gap: 12 },
     listItem: {
       paddingVertical: 8,
       gap: 3,

@@ -5,7 +5,16 @@ export function IconButton({ label, ...props }: ComponentProps<typeof Button> & 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={label} {...props} />
+        <Button
+          variant={
+            props['aria-pressed'] === true || props['aria-pressed'] === 'true'
+              ? 'secondary'
+              : 'ghost'
+          }
+          size="icon"
+          aria-label={label}
+          {...props}
+        />
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

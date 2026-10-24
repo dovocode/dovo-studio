@@ -54,7 +54,7 @@ export function ResourceEditor({
   const { styles } = useTheme()
 
   const { connected, callEffect } = useRuntime(),
-    { act, busy, error, fieldError } = useAction()
+    { act, busy, error, fieldError, validationAttempt } = useAction()
   const [server, setServer] = useApplicationState<McpServer>(
     editing.kind === 'mcp' && editing.value
       ? editing.value
@@ -104,7 +104,12 @@ export function ResourceEditor({
   }
   const value = editing.kind === 'skill' ? skill : server
   return (
-    <Sheet title={editing.kind === 'mcp' ? 'MCP server' : 'Skill'} busy={busy} onClose={onClose}>
+    <Sheet
+      title={editing.kind === 'mcp' ? 'MCP server' : 'Skill'}
+      busy={busy}
+      validationAttempt={validationAttempt}
+      onClose={onClose}
+    >
       <Text style={styles.muted}>{scope}</Text>
       {value.sourceUrl && (
         <Action

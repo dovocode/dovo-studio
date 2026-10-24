@@ -757,3 +757,70 @@ it('includes full turn settings in stable submission receipts', () => {
     db.close()
   }
 })
+
+it('persists pauses through editing and dragging and never skips a paused queue head', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'paused-queue',
+          title: 'Queue',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    queue.add('paused-queue', 'first', 'First')
+    queue.add('paused-queue', 'second', 'Second')
+    queue.add('paused-queue', 'third', 'Third')
+    queue.setPaused('paused-queue', 'first', true)
+    queue.setPaused('paused-queue', 'third', true)
+    queue.edit('paused-queue', 'first', 'Edited first', 'First')
+    queue.move('paused-queue', 'third', 'first')
+    const reloaded = new WorkspaceStore(db)
+    expect(
+      reloaded.taskSummary('paused-queue').queue?.map(({ id, paused }) => ({ id, paused })),
+    ).toEqual([
+      { id: 'third', paused: true },
+      { id: 'first', paused: true },
+      { id: 'second', paused: undefined },
+    ])
+    expect(() => queue.take('paused-queue')).toThrow('Resume the first queued message')
+    expect(store.task('paused-queue').messages).toEqual([])
+    // Resuming a later message leaves the head blocking all following input.
+    queue.setPaused('paused-queue', 'first', false)
+    expect(() => queue.take('paused-queue')).toThrow('Resume the first queued message')
+    // Moving the paused head behind other input makes the new front runnable.
+    queue.move('paused-queue', 'third', null)
+    queue.take('paused-queue')
+    expect(store.task('paused-queue').messages.map((message) => message.id)).toEqual(['first'])
+    expect(() => queue.setPaused('paused-queue', 'first', true)).toThrow('already started')
+    queue.take('paused-queue')
+    expect(store.task('paused-queue').messages.map((message) => message.id)).toEqual([
+      'first',
+      'second',
+    ])
+    expect(() => queue.take('paused-queue')).toThrow('Resume the first queued message')
+    expect(store.taskSummary('paused-queue').queue?.[0]).toMatchObject({
+      id: 'third',
+      paused: true,
+    })
+    store.updateTask('paused-queue', (task) => ({
+      ...task,
+      queue: task.queue?.map((message) => ({ ...message, steering: true })),
+    }))
+    expect(() => queue.setPaused('paused-queue', 'third', true)).toThrow('being delivered')
+  } finally {
+    db.close()
+  }
+})

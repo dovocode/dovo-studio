@@ -532,16 +532,10 @@ export function startRuntimeSync(
         error &&
         typeof error === 'object' &&
         'status' in error &&
-        [401, 403, 404].includes(Number(error.status))
+        [401, 404].includes(Number(error.status))
       ) {
         unsupported = true
-        setStatus(
-          Number(error.status) === 401
-            ? 'unauthorized'
-            : Number(error.status) === 403
-              ? 'forbidden'
-              : 'unsupported',
-        )
+        setStatus(Number(error.status) === 401 ? 'unauthorized' : 'unsupported')
       }
       reconnect()
     } finally {

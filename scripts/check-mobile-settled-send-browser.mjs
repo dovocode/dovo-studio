@@ -53,7 +53,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../draft/use-draft',
       importer: actions,
-      contents: `import {useState} from 'react';import {Effect} from 'effect';export const useDraft=()=>{const[text,setText]=useState('');return {text,ready:true,revision:text,update:setText,stageEffect:()=>Effect.void,confirmEffect:(_attempt,clear)=>Effect.sync(()=>{if(clear)setText('')})}};`,
+      contents: `import {useState} from 'react';import {Effect} from 'effect';export const useDraft=()=>{const[text,setText]=useState('');return {key:'computer:settled',text,ready:true,revision:text,update:setText,appendEffect:value=>Effect.sync(()=>setText(text=>[text,value].filter(Boolean).join('\\n\\n'))),stageEffect:()=>Effect.void,confirmEffect:(_attempt,clear)=>Effect.sync(()=>{if(clear)setText('')})}};`,
     },
     {
       path: '../../composer/attachment-picker',
@@ -182,6 +182,23 @@ try {
     window.finish()
   })
   await page.waitForFunction(() => !window.actions.busy && window.actions.turnSettings === null)
+
+  // Restore uses the real action hook, locks the composer and keeps newer text.
+  await input.fill('Latest draft')
+  await page.evaluate(() => {
+    window.finish = null
+    void window.actions.restoreQueuedMessage({
+      id: 'restore',
+      role: 'user',
+      text: 'Queued restore',
+    })
+  })
+  await page.waitForFunction(() => window.actions.busy && window.finish !== null)
+  assert.equal(await input.isDisabled(), true)
+  assert.equal(await page.evaluate(() => window.requests.at(-1).input.action), 'restore')
+  await page.evaluate(() => window.finish())
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.equal(await input.inputValue(), 'Latest draft\n\nQueued restore')
 
   await input.fill('Draft kept while editing')
   await page.evaluate(() =>

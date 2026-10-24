@@ -78,7 +78,7 @@ const mocks = {
   '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
   '../../ui/layout/sheet': `import {useImperativeHandle} from 'react';export const Sheet=({children,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section>{children}</section>};export const useSheetNavigation=()=>navigate=>navigate();`,
   '../../ui/theme': `export const useTheme=()=>({colors:{},styles:{}});`,
-  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,titleContent,buttons,leading,hidden,onBack,gestureEnabled})=>{const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;window.headerActions=buttons;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{titleContent??title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
+  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,titleContent,buttons,leading,hidden,onBack,gestureEnabled,collapsedMenuGroups})=>{window.headerCollapsedMenuGroups=collapsedMenuGroups;const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;window.headerActions=buttons;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{titleContent??title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
   '../../ui/content/markdown': `export const Markdown=({text})=><p data-native-prose>{text}</p>;`,
   '../files/task-files': 'export const TaskFiles=()=>null;',
   './task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
@@ -233,6 +233,7 @@ const built = await build({
         window.publish=(runtimeId,task,detailed=true)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],detailTaskIds:detailed?[task.id]:[],workspace:{...s[runtimeId].workspace,tasks:[task]}}}));
         window.online=setOnline;
         window.selectRuntime=setActiveId;
+        window.setLinkedProject=(present)=>setSnapshots(s=>({...s,a:{...s.a,workspace:{...s.a.workspace,repositories:[s.a.workspace.repositories[0],...(present?[{id:'repo',name:'Linked project',path:'/linked',branch:'main'}]:[])]}}}));
         window.makeGit=(runtimeId,kind)=>setSnapshots(s=>({...s,[runtimeId]:{...s[runtimeId],workspace:{...s[runtimeId].workspace,repositories:s[runtimeId].workspace.repositories.map(repo=>({...repo,id:window.created.repositoryId,kind}))}}}));
         const overviews=profiles.map(profile=>({profile,connected:online,snapshot:snapshots[profile.id]}));
         const request=(runtimeId,path,input)=>Effect.tryPromise({try:async()=>{
@@ -363,7 +364,27 @@ try {
       window.headerActions.filter((action) => action.overflow).map((action) => action.group),
     ),
   ])
-  assert.deepEqual(menuGroups, ['Navigate', 'Thread', 'Project', 'Tools', 'Advanced', 'Delete'])
+  assert.deepEqual(menuGroups, ['Tools', 'Navigate', 'Thread', 'Project', 'Advanced', 'Delete'])
+  assert.deepEqual(await page.evaluate(() => window.headerCollapsedMenuGroups), [
+    'Project',
+    'Advanced',
+  ])
+  assert.equal(
+    await page.evaluate(
+      () => window.headerActions.find((a) => a.label === 'Project information').overflow,
+    ),
+    true,
+  )
+  // General threads show their linked project's information directly when it is available.
+  await page.evaluate(() => window.setLinkedProject(true))
+  await page.waitForFunction(
+    () => window.headerActions.find((a) => a.label === 'Project information').overflow === false,
+  )
+  assert.ok((await page.locator('header').innerText()).includes('Linked project'))
+  await page.evaluate(() => window.setLinkedProject(false))
+  await page.waitForFunction(
+    () => window.headerActions.find((a) => a.label === 'Project information').overflow === true,
+  )
   const threadActions = await page.evaluate(() =>
     window.headerActions
       .filter((action) => action.group === 'Thread')
@@ -470,6 +491,12 @@ try {
       files: [{ path: 'changed.ts', before: 'old', after: 'new', viewed: false }],
     })
   })
+  await page.waitForFunction(
+    () => window.headerActions.find((a) => a.label === 'Project information').overflow === false,
+  )
+  await page.getByRole('button', { name: 'Project information', exact: true }).click()
+  await projectClose.waitFor()
+  await projectClose.click()
   // The real thread header exposes checkout copying for Git and plain-folder threads.
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
   for (const kind of [undefined, 'folder']) {
@@ -566,10 +593,16 @@ try {
   assert.equal(await input.inputValue(), 'Fresh draft')
 
   // A rewind invalidates cached history instead of mounting an empty conversation as loaded.
+  const loadedHeader = await page.locator('header').boundingBox()
   await page.evaluate(() =>
     window.publish('b', { ...window.cacheSummary, historyRevision: 1 }, false),
   )
   await page.getByText('Loading conversation…', { exact: true }).waitFor()
+  assert.equal(
+    (await page.locator('header').boundingBox()).y,
+    loadedHeader.y,
+    'Loading keeps navigation at the top',
+  )
   assert.equal(await page.getByText('Decoded reply', { exact: true }).count(), 0)
   assert.equal(await input.count(), 0)
   await page.evaluate(() =>

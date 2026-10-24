@@ -11,6 +11,7 @@ import { Text } from '../ui/content/text'
 import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { useRuntime } from '../runtime/connection/provider'
 import { ScreenHeader } from '../ui/layout/screen-header'
+import { backToCollection } from '../shell/source-route'
 import { SettingsAction as Action } from './settings-controls'
 import { useEffect } from 'react'
 import { clearLastCrash, readLastCrash, type CrashRecord } from '../runtime/diagnostics/crash-log'
@@ -362,7 +363,11 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
     .filter((group) => group.items.length)
   return (
     <SettingsPage>
-      <ScreenHeader title={category?.title ?? 'Settings'} testID="Settings heading" />
+      <ScreenHeader
+        title={category?.title ?? 'Settings'}
+        testID="Settings heading"
+        onBack={categorySlug ? undefined : () => backToCollection('/')}
+      />
       <SettingsScrollView
         contentContainerStyle={[styles.content, { paddingTop: 4, gap: 20 }]}
         keyboardShouldPersistTaps="handled"

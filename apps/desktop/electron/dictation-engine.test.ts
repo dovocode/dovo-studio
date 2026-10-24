@@ -1,3 +1,4 @@
+/// <reference lib="es2024" />
 import { it, expect, afterEach, vi } from 'vite-plus/test'
 import { mkdtemp, writeFile, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

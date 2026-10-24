@@ -64,7 +64,11 @@ export const MessageResponse = memo(function MessageResponse({
   isStreaming?: boolean
   baseURL?: string
   fileBaseURL?: string
-  localFiles?: { open: (path: string) => void; image: (path: string, alt: string) => ReactNode }
+  localFiles?: {
+    open: (path: string) => void
+    image: (path: string, alt: string) => ReactNode
+    remoteImage?: (uri: string, alt: string) => ReactNode
+  }
 }) {
   const { themePalette } = useAppPreferences()
   const markdownPlugins = useMemo(
@@ -114,6 +118,8 @@ export const MessageResponse = memo(function MessageResponse({
               const path = typeof src === 'string' ? markdownURLLocalPath(src) : undefined
               return path !== undefined ? (
                 localFiles.image(path, alt ?? 'Image')
+              ) : typeof src === 'string' && localFiles.remoteImage ? (
+                localFiles.remoteImage(src, alt ?? 'Image')
               ) : (
                 <defaultComponents.img src={src} alt={alt} />
               )

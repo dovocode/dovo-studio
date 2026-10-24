@@ -20,10 +20,12 @@ export function PipelineState({ status }: { status: string }) {
   }[signal.tone]
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium leading-none ${color}`}
+      className={`inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium leading-none ${color}`}
     >
-      <Icon className="size-3.5" />
-      {signal.label}
+      <Icon className="size-3.5 shrink-0" />
+      <span className="truncate" title={signal.label}>
+        {signal.label}
+      </span>
     </span>
   )
 }

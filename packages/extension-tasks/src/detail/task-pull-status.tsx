@@ -65,9 +65,15 @@ export function TaskPullStatus({
         }}
         target="_blank"
         rel="noreferrer"
-        title={
-          status.failedChecks?.length ? `Failing: ${status.failedChecks.join(', ')}` : status.url
+        aria-label={
+          title ? `Open PR #${status.number}: ${title}. ${pullStatusLabel(status)}` : undefined
         }
+        title={[
+          title,
+          status.failedChecks?.length ? `Failing: ${status.failedChecks.join(', ')}` : status.url,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         className={cn(
           panel
             ? 'studio-project-row min-w-0 flex-1 items-start'

@@ -2,10 +2,9 @@ import { turnSettingsLabel, type PendingMessage } from '@dovo/protocol'
 import { useQueueEdit } from '../composer/queue-edit'
 import type { DragEvent } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { ArrowUp, ArrowDown, CornerUpRight, GripVertical, Pencil, X } from 'lucide-react'
+import { CornerUpRight, GripVertical, Pencil, Pause, Play, X } from 'lucide-react'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import {
-  Button,
   IconButton,
   Queue,
   QueueSectionTrigger,
@@ -37,7 +36,11 @@ export function MessageQueue({
   const pendingIds = new Set(pending?.map((item) => item.message.id))
   const confirmed = queue.filter((message) => !pendingIds.has(message.id))
   const canMove = (id: string) =>
-    connected && !busy && confirmed.length > 1 && confirmed.some((message) => message.id === id)
+    connected &&
+    !busy &&
+    !task.archived &&
+    confirmed.length > 1 &&
+    confirmed.some((message) => message.id === id)
   const draggingHere = dragging?.taskId === task.id && canMove(dragging.messageId)
   const clearDrag = () => {
     setDragging(null)
@@ -84,7 +87,7 @@ export function MessageQueue({
       aria-label="Queued follow-ups"
     >
       <Queue
-        open={embedded || undefined}
+        embedded={embedded}
         className={
           embedded
             ? 'rounded-none border-0 bg-transparent p-0 shadow-none'
@@ -101,7 +104,7 @@ export function MessageQueue({
                   : queuedPending.state === 'saved'
                     ? 'Saved for reconnect'
                     : 'Sending…'
-                : task.queuePaused
+                : task.queuePaused || queue[0]?.paused
                   ? 'Paused'
                   : 'Runs after this turn'}
             </span>
@@ -125,7 +128,7 @@ export function MessageQueue({
             <QueueItem
               key={message.id}
               className={[
-                'relative',
+                'relative ml-2 min-w-0 gap-1 rounded-none border-l border-border/60 sm:gap-2',
                 draggingHere && dragging.messageId === message.id ? 'opacity-40' : '',
                 draggingHere && dropTarget?.messageId === message.id
                   ? dropTarget.edge === 'before'
@@ -162,31 +165,56 @@ export function MessageQueue({
                 void act('move', dragging.messageId, { beforeMessageId })
               }}
             >
-              <IconButton
-                type="button"
-                label={`Drag queued message ${index + 1} to reorder`}
-                className="size-5 cursor-grab text-muted-foreground/60 active:cursor-grabbing"
-                disabled={!canMove(message.id)}
-                draggable={canMove(message.id)}
-                onDragStart={(event) => {
-                  if (!canMove(message.id)) {
-                    event.preventDefault()
-                    return
-                  }
-                  event.dataTransfer.effectAllowed = 'move'
-                  event.dataTransfer.setData('application/x-dovo-queued-message', message.id)
-                  event.dataTransfer.setDragImage(
-                    event.currentTarget.closest('li') ?? event.currentTarget,
-                    12,
-                    12,
-                  )
-                  setDragging({ taskId: task.id, messageId: message.id })
-                }}
-                onDragEnd={clearDrag}
+              <span
+                aria-hidden="true"
+                className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] tabular-nums"
               >
-                <GripVertical size={12} />
-              </IconButton>
-              <QueueItemContent title={message.text}>
+                {index + 1}
+              </span>
+              {queue.length > 1 && (
+                <IconButton
+                  type="button"
+                  label={`Drag queued message ${index + 1} to reorder`}
+                  className="size-5 cursor-grab text-muted-foreground/60 active:cursor-grabbing"
+                  disabled={!canMove(message.id)}
+                  draggable={canMove(message.id)}
+                  onDragStart={(event) => {
+                    if (!canMove(message.id)) {
+                      event.preventDefault()
+                      return
+                    }
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.setData('application/x-dovo-queued-message', message.id)
+                    event.dataTransfer.setDragImage(
+                      event.currentTarget.closest('li') ?? event.currentTarget,
+                      12,
+                      12,
+                    )
+                    setDragging({ taskId: task.id, messageId: message.id })
+                  }}
+                  aria-keyshortcuts="ArrowUp ArrowDown"
+                  onKeyDown={(event) => {
+                    const source = confirmed.findIndex((item) => item.id === message.id)
+                    if (!canMove(message.id)) return
+                    if (event.key === 'ArrowUp' && source > 0) {
+                      event.preventDefault()
+                      void act('move', message.id, { beforeMessageId: confirmed[source - 1].id })
+                    }
+                    if (event.key === 'ArrowDown' && source < confirmed.length - 1) {
+                      event.preventDefault()
+                      void act('move', message.id, {
+                        beforeMessageId: confirmed[source + 2]?.id ?? null,
+                      })
+                    }
+                  }}
+                  onDragEnd={clearDrag}
+                >
+                  <GripVertical size={12} />
+                </IconButton>
+              )}
+              <QueueItemContent
+                title={message.text || message.attachments?.map((file) => file.name).join(', ')}
+              >
                 {message.text || message.attachments?.map((f) => f.name).join(', ')}
                 {message.text && message.attachments?.length
                   ? ` · ${message.attachments.length} files`
@@ -201,12 +229,39 @@ export function MessageQueue({
                 )}
               </QueueItemContent>
               {pending?.some((item) => item.message.id === message.id) && (
-                <span role="status" className="shrink-0 text-muted-foreground">
+                <span
+                  role="status"
+                  className="max-w-[30%] shrink truncate text-muted-foreground"
+                  title={
+                    pending?.find((item) => item.message.id === message.id)?.state === 'failed'
+                      ? 'Retry from composer'
+                      : 'Waiting for confirmation'
+                  }
+                >
                   {pending?.find((item) => item.message.id === message.id)?.state === 'failed'
                     ? 'Retry from composer'
                     : 'Waiting for confirmation'}
                 </span>
               )}
+              <IconButton
+                label={`${message.paused || task.queuePaused ? 'Resume' : 'Pause'} queued message ${index + 1}`}
+                className={`size-6 ${message.paused || task.queuePaused ? 'text-primary' : ''}`}
+                disabled={
+                  !connected ||
+                  busy ||
+                  task.archived ||
+                  !!message.steering ||
+                  pendingIds.has(message.id)
+                }
+                onClick={() =>
+                  void act(
+                    message.paused || task.queuePaused ? 'resume-message' : 'pause-message',
+                    message.id,
+                  )
+                }
+              >
+                {message.paused || task.queuePaused ? <Play size={12} /> : <Pause size={12} />}
+              </IconButton>
               <IconButton
                 label={`Edit queued message ${index + 1}`}
                 className="size-6"
@@ -236,33 +291,6 @@ export function MessageQueue({
                 <CornerUpRight size={12} />
               </IconButton>
               <IconButton
-                label={`Move queued message ${index + 1} up`}
-                className="size-6"
-                disabled={
-                  !connected ||
-                  busy ||
-                  pending?.some((item) => item.message.id === message.id) ||
-                  index === 0
-                }
-                onClick={() => void act('up', message.id)}
-              >
-                <ArrowUp size={12} />
-              </IconButton>
-              <IconButton
-                label={`Move queued message ${index + 1} down`}
-                className="size-6"
-                disabled={
-                  !connected ||
-                  busy ||
-                  pending?.some((item) => item.message.id === message.id) ||
-                  index === queue.length - 1 ||
-                  pending?.some((item) => item.message.id === queue[index + 1]?.id)
-                }
-                onClick={() => void act('down', message.id)}
-              >
-                <ArrowDown size={12} />
-              </IconButton>
-              <IconButton
                 label={`Cancel queued message ${index + 1} and return it to the composer`}
                 className="size-6"
                 disabled={
@@ -278,20 +306,6 @@ export function MessageQueue({
             </QueueItem>
           ))}
         </QueueList>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 text-[0.6875rem]"
-          disabled={
-            !connected ||
-            busy ||
-            task.archived ||
-            (queue.length === 1 && pending?.some((item) => item.message.id === queue[0]?.id))
-          }
-          onClick={() => void act(task.queuePaused ? 'resume' : 'pause')}
-        >
-          {task.queuePaused ? 'Resume queue' : 'Pause queue'}
-        </Button>
         {error && (
           <p role="alert" className="px-2 py-1 text-destructive">
             {error}

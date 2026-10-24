@@ -53,6 +53,25 @@ export function NativeTodos({
           )}
         </Pressable>
       )}
+      <View
+        accessibilityRole="progressbar"
+        accessibilityLabel="Checklist completion"
+        accessibilityValue={{ min: 0, max: summary.total, now: summary.completed }}
+        style={{
+          height: 4,
+          backgroundColor: colors.selection,
+          borderRadius: 2,
+          overflow: 'hidden',
+        }}
+      >
+        <View
+          style={{
+            height: 4,
+            width: `${(summary.completed / summary.total) * 100}%`,
+            backgroundColor: colors.success,
+          }}
+        />
+      </View>
       {(open || embedded) && (
         <ScrollView
           style={{ maxHeight: 180 }}
@@ -83,6 +102,7 @@ export function NativeTodos({
                 }
               />
               <Text
+                accessibilityLabel={`${todo.text}, ${todo.status !== 'completed' && summary.unfinished ? 'unfinished' : todo.status.replace('-', ' ')}`}
                 style={[
                   styles.text,
                   { flex: 1 },

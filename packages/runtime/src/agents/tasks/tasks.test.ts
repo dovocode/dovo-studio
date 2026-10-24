@@ -2324,3 +2324,100 @@ it('runs queued turns with their own model and reasoning without changing the ac
   expect(finished.agentOverrides).toEqual(original.agentOverrides)
   expect(s.store.get().agents[0].model).toBe('')
 })
+
+it('runs input before a paused message, waits there, and drains later input only after resuming', async () => {
+  const s = await setup(),
+    prompts: string[] = []
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      prompts.push(run.prompt)
+      run.onSession('individual-pauses')
+      if (prompts.length === 1) await gate
+      run.onText('Done')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Paused input',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'First',
+  })
+  const execution = await s.tasks.start(task.id)
+  await waitForTask(() => expect(prompts).toHaveLength(1))
+  await s.tasks.send(task.id, 'before', 'Run before the pause')
+  await s.tasks.send(task.id, 'held', 'Hold this message')
+  await s.tasks.send(task.id, 'ready', 'Run this message')
+  s.tasks.queue.setPaused(task.id, 'held', true)
+  release()
+  await execution.done
+  expect(prompts).toEqual(['user: First', 'user: Run before the pause'])
+  expect(s.store.taskSummary(task.id).queue?.map((message) => message.id)).toEqual([
+    'held',
+    'ready',
+  ])
+  expect(s.store.taskSummary(task.id).queuePaused).toBeFalsy()
+  await expect(s.tasks.start(task.id)).rejects.toThrow('Resume the first queued message')
+  expect(prompts).toHaveLength(2)
+  s.tasks.queue.setPaused(task.id, 'held', false)
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(prompts).toEqual([
+    'user: First',
+    'user: Run before the pause',
+    'user: Hold this message',
+    'user: Run this message',
+  ])
+  expect(s.store.taskSummary(task.id).queue).toEqual([])
+})
+
+it('honors a message paused while its checkout is still being prepared', async () => {
+  const s = await setup()
+  const task = s.tasks.create({
+    title: 'Pause during preparation',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  s.tasks.queue.add(task.id, 'held', 'Run when resumed')
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const directory = s.checkouts.directory.bind(s.checkouts)
+  let preparing = false
+  vi.spyOn(s.checkouts, 'directory').mockImplementation(async (...args) => {
+    preparing = true
+    await gate
+    return directory(...args)
+  })
+  const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Done'))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const starting = s.tasks.start(task.id)
+  try {
+    await waitForTask(() => expect(preparing).toBe(true))
+    s.tasks.queue.setPaused(task.id, 'held', true)
+  } finally {
+    release()
+  }
+  await (
+    await starting
+  ).done
+  expect(run).not.toHaveBeenCalled()
+  expect(s.store.taskSummary(task.id)).toMatchObject({
+    status: 'draft',
+    queue: [{ id: 'held', paused: true }],
+  })
+  expect(s.store.taskSummary(task.id).queuePaused).toBeFalsy()
+  expect(s.store.taskSummary(task.id).activeRunId).toBeUndefined()
+  s.tasks.queue.setPaused(task.id, 'held', false)
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(run).toHaveBeenCalledTimes(1)
+})

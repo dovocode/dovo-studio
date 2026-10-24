@@ -211,3 +211,15 @@ it('keeps an in-flight steering handoff in chat across devices, then restores fa
   expect(pendingMessageQueue(failed, null)).toEqual(failed.queue)
   expect(pendingMessageQueue({ ...task, status: 'cancelled' }, null)).toEqual(task.queue)
 })
+
+it('waits at a paused starter and only shows runnable input at the front', () => {
+  const paused = { id: 'held', role: 'user' as const, text: 'Held', createdAt: '', paused: true }
+  const ready = { id: 'ready', role: 'user' as const, text: 'Ready', createdAt: '' }
+  const task = { messages: [], status: 'draft' as const, queue: [paused, ready] }
+  expect(startingConversationMessage(task)).toBeUndefined()
+  expect(startingConversationMessage({ ...task, queue: [paused] })).toBeUndefined()
+  expect(startingConversationMessage({ ...task, queue: [ready, paused] })).toBe(ready)
+  expect(
+    startingConversationMessage({ ...task, queue: [{ ...paused, paused: false }, ready] })?.id,
+  ).toBe('held')
+})

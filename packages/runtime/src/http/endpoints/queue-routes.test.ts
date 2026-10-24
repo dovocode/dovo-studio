@@ -1,4 +1,5 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
+import { Effect } from 'effect'
 import { startRuntime } from '../../index'
 
 it('validates and applies a drag move in one queue request', async () => {
@@ -245,3 +246,98 @@ it('edits all turn settings and attachments while preserving queue position and 
     await runtime.close()
   }
 })
+
+it('pauses and resumes one queued message, validates stale ids, and preserves other pauses', async () => {
+  const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { store, tasks } = runtime.services
+    const task = tasks.create({
+      title: 'Individual pauses',
+      repositoryId: '',
+      agentId: '',
+      objective: '',
+    })
+    store.updateTask(task.id, (current) => ({ ...current, status: 'running' }))
+    tasks.queue.add(task.id, 'first', 'First')
+    tasks.queue.add(task.id, 'second', 'Second')
+    const change = (action: string, messageId?: string) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.id, action, messageId }),
+      })
+    expect((await change('pause-message', 'first')).status).toBe(200)
+    expect((await change('pause-message', 'second')).status).toBe(200)
+    expect((await change('pause-message', 'first')).status).toBe(200)
+    expect(store.taskSummary(task.id).queuePaused).toBeFalsy()
+    expect((await change('resume-message', 'first')).status).toBe(200)
+    expect(store.taskSummary(task.id).queue?.map((message) => !!message.paused)).toEqual([
+      false,
+      true,
+    ])
+    expect((await change('pause-message')).status).toBe(400)
+    expect((await change('resume-message')).status).toBe(400)
+    expect((await change('pause-message', 'gone')).status).toBe(409)
+    expect((await change('resume-message', 'gone')).status).toBe(409)
+    expect((await change('pause-message', 'first')).status).toBe(200)
+    expect((await change('resume')).status).toBe(200)
+    expect(store.taskSummary(task.id).queue?.every((message) => message.paused)).toBe(true)
+    expect(store.task(task.id).messages).toEqual([])
+  } finally {
+    await runtime.close()
+  }
+})
+
+it.each(['move', 'up', 'down', 'remove', 'restore'] as const)(
+  'continues a queue unblocked by %s without overriding safety pauses',
+  async (action) => {
+    const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+    const { store, tasks } = runtime.services
+    const start = vi.spyOn(tasks, 'startEffect').mockImplementation((_id, _pause, admit) => {
+      expect(admit?.()).toBe(true)
+      return Effect.succeed({ completion: Effect.void })
+    })
+    try {
+      for (const blocked of ['none', 'global', 'running', 'archived', 'recovery'] as const) {
+        const task = tasks.create({
+          title: 'Blocked queue',
+          repositoryId: '',
+          agentId: '',
+          objective: '',
+        })
+        tasks.queue.add(task.id, 'held', 'Held')
+        tasks.queue.add(task.id, 'ready', 'Ready')
+        tasks.queue.setPaused(task.id, 'held', true)
+        store.updateTask(task.id, (current) => ({
+          ...current,
+          status: blocked === 'running' ? 'running' : 'done',
+          queuePaused: blocked === 'global',
+          archived: blocked === 'archived',
+          ...(blocked === 'recovery'
+            ? { restartRecovery: { kind: 'queue', automatic: false } }
+            : {}),
+        }))
+        start.mockClear()
+        const response = await fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: task.id,
+            action,
+            messageId: action === 'up' ? 'ready' : 'held',
+            ...(action === 'move' ? { beforeMessageId: null } : {}),
+          }),
+        })
+        expect(response.status).toBe(200)
+        expect(store.taskSummary(task.id).queue?.[0]?.id).toBe('ready')
+        expect(start).toHaveBeenCalledTimes(blocked === 'none' ? 1 : 0)
+        expect(store.taskSummary(task.id).queuePaused).toBe(blocked === 'global')
+      }
+    } finally {
+      start.mockRestore()
+      await runtime.close()
+    }
+  },
+)

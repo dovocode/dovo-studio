@@ -1,5 +1,10 @@
 import { expect, it } from 'vite-plus/test'
-import { changedFileBreakdown, checkpointFileBreakdown, pullFileKind } from './file-breakdown'
+import {
+  changedFileBreakdown,
+  checkpointFileBreakdown,
+  pullFileKind,
+  changeTypeDistribution,
+} from './file-breakdown'
 
 it.each([
   ['src/contest.ts', 'normal'],
@@ -83,4 +88,47 @@ it('includes omitted checkpoint paths and counts shared filenames separately acr
   )
   expect(checkpointFileBreakdown({ files: [], omitted: [] })).toBe('')
   expect(checkpointFileBreakdown(undefined)).toBe('')
+})
+
+it('weights turn categories by added and removed lines while retaining all file counts', () => {
+  const result = changeTypeDistribution(
+    [
+      { path: 'src/app.ts', additions: 9, deletions: 1 },
+      { path: 'src/other.ts', additions: 0, deletions: 10 },
+      { path: 'app.test.ts', additions: 80, deletions: 100 },
+      { path: 'docs/omitted.md' },
+      { path: 'omitted.generated.ts' },
+    ],
+    'lines',
+  )
+  expect(result.unit).toBe('lines')
+  expect(result.total).toBe(200)
+  expect([...result.weights]).toEqual([
+    ['normal', 20],
+    ['tests', 180],
+    ['docs', 0],
+    ['generated', 0],
+  ])
+  expect([...result.counts]).toEqual([
+    ['normal', 2],
+    ['tests', 1],
+    ['docs', 1],
+    ['generated', 1],
+  ])
+})
+
+it('falls back to file counts when lines are unavailable and ignores invalid counts', () => {
+  const files = [{ path: 'image.png' }, { path: 'README.md', additions: 0, deletions: 0 }]
+  expect(changeTypeDistribution(files, 'lines')).toMatchObject({ unit: 'files', total: 2 })
+  expect(changeTypeDistribution([], 'lines')).toMatchObject({ unit: 'files', total: 0 })
+  expect(
+    changeTypeDistribution([{ path: 'app.ts', additions: Infinity, deletions: -1 }], 'lines').unit,
+  ).toBe('files')
+  expect(changeTypeDistribution([{ path: 'app.ts', additions: 1, deletions: 9 }]).total).toBe(1)
+  expect(
+    changeTypeDistribution(
+      [{ path: 'app.ts', changeKind: 'docs', additions: 2 }],
+      'lines',
+    ).weights.get('docs'),
+  ).toBe(2)
 })

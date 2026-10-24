@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { decode, mcpServerSchema } from '@dovo/protocol'
 import { spawnMspConnection } from '@muse-code/sdk'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
@@ -122,6 +123,34 @@ it('resumes without replaying history, applies native approval mode, and compact
     mode: 'promptUnmatched',
   })
   expect(f.events.map((event) => event.name)).toContain('dovo/compaction/completed')
+})
+it('uses bounded tool schemas only for the managed Dovo MCP server', async () => {
+  const f = await fixture()
+  const managed = decode(mcpServerSchema, {
+    name: 'dovo_task',
+    transport: 'stdio',
+    command: 'node',
+    args: [],
+    env: {},
+    envValues: { DOVO_TASK_ID: 'thread' },
+    enabled: true,
+  })
+  const external = { ...managed, name: 'external', envValues: { EXTERNAL: 'kept' } }
+  await f.adapter.run({
+    ...f.run,
+    agent: { ...f.run.agent, resources: { skills: [], mcpServers: [managed, external] } },
+  })
+  expect(
+    (await f.messages()).find((frame) => frame.method === 'session/start')?.params,
+  ).toMatchObject({
+    config: {
+      mcpServers: {
+        dovo_task: { env: { DOVO_TASK_ID: 'thread', DOVO_TASK_SCHEMA_PROFILE: 'muse' } },
+        external: { env: { EXTERNAL: 'kept' } },
+      },
+    },
+  })
+  expect(external.envValues).not.toHaveProperty('DOVO_TASK_SCHEMA_PROFILE')
 })
 it('starts with a provider-qualified model and applies it on resume as a nested model selection', async () => {
   const f = await fixture()

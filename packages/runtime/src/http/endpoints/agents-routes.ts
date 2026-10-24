@@ -1,4 +1,4 @@
-import { agentTodosSchema, turnSettingsSchema } from '@dovo/protocol'
+import { agentTodosSchema, turnSettingsSchema, nextQueuedMessage } from '@dovo/protocol'
 import { acknowledgeSubagentFailure } from '../../studio/subagent-failures.js'
 import type { Services } from '../../services.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
@@ -658,6 +658,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               'move',
               'pause',
               'resume',
+              'pause-message',
+              'resume-message',
             ]),
             messageId: Schema.optional(idSchema),
             beforeMessageId: Schema.optional(Schema.NullOr(idSchema)),
@@ -671,6 +673,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
+        const wasBlockedByMessage = !!s.store.taskSummary(input.id).queue?.[0]?.paused
         if (input.action === 'edit') {
           if (!input.messageId || input.text === undefined || input.expectedText === undefined)
             throw new HttpError(
@@ -699,11 +702,18 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             )
           if (!input.messageId) throw new HttpError(400, 'Choose a queued message to steer')
           yield* s.tasks.steerQueuedEffect(input.id, input.messageId, input.runId)
-        } else if (input.action === 'resume') {
-          if (!s.store.taskSummary(input.id).queue?.length)
-            return yield* serviceResult({
-              ok: true,
-            })
+        } else if (input.action === 'pause-message') {
+          if (!input.messageId) throw new HttpError(400, 'Choose a queued message to pause')
+          s.tasks.queue.setPaused(input.id, input.messageId, true)
+        } else if (input.action === 'resume' || input.action === 'resume-message') {
+          if (input.action === 'resume-message') {
+            if (!input.messageId) throw new HttpError(400, 'Choose a queued message to resume')
+            s.tasks.queue.setPaused(input.id, input.messageId, false)
+          }
+          if (!nextQueuedMessage(s.store.taskSummary(input.id))) {
+            s.store.updateTask(input.id, (task) => ({ ...task, queuePaused: false }))
+            return yield* serviceResult({ ok: true })
+          }
           if (s.store.taskSummary(input.id).status === 'running')
             s.store.updateTask(input.id, (t) => ({
               ...t,
@@ -711,6 +721,24 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             }))
           else yield* s.tasks.startEffect(input.id)
         } else s.tasks.queue.change(input.id, input.action, input.messageId)
+        if (
+          wasBlockedByMessage &&
+          ['move', 'up', 'down', 'remove', 'restore'].includes(input.action)
+        ) {
+          const canContinue = () => {
+            const task = s.store.taskSummary(input.id)
+            return (
+              !task.queuePaused &&
+              !task.archived &&
+              !task.archivedAt &&
+              !task.restartRecovery &&
+              task.status !== 'running' &&
+              !s.tasks.hasWorkingFamily(input.id) &&
+              !!nextQueuedMessage(task)
+            )
+          }
+          if (canContinue()) yield* s.tasks.startEffect(input.id, false, canContinue)
+        }
         return yield* serviceResult({
           ok: true,
         })

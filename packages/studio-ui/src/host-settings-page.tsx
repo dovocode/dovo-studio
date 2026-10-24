@@ -3,6 +3,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   useConfirmSettingsNavigation,
+  useOptionalSettingsTarget,
   useRuntimeSources,
   useWorkspace,
   WorkspaceScope,
@@ -27,14 +28,20 @@ export function HostSettingsPage({
 }) {
   const sources = useRuntimeSources()
   const confirmNavigation = useConfirmSettingsNavigation()
+  const settingsTarget = useOptionalSettingsTarget()
   const { activeRuntimeId, refreshRuntime } = useWorkspace()
   const [chosen, setChosen] = useApplicationState(initialRuntimeId ?? '')
   const [refreshing, setRefreshing] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const generation = useRef(0)
-  useEffect(() => setChosen(initialRuntimeId ?? ''), [initialRuntimeId, setChosen])
+  const setSettingsTarget = settingsTarget?.setTarget
+  useEffect(() => {
+    setChosen(initialRuntimeId ?? '')
+    if (initialRuntimeId) setSettingsTarget?.({ environmentId: initialRuntimeId, projectId: '' })
+  }, [initialRuntimeId, setChosen, setSettingsTarget])
+  const selectedId = initialRuntimeId ? chosen : settingsTarget?.target.environmentId || chosen
   const source =
-    sources.find((entry) => entry.profile.id === chosen) ??
+    sources.find((entry) => entry.profile.id === selectedId) ??
     sources.find((entry) => entry.profile.id === activeRuntimeId) ??
     sources[0]
   useEffect(() => {
@@ -79,7 +86,16 @@ export function HostSettingsPage({
                 value={source.profile.id}
                 disabled={refreshing}
                 onValueChange={(value) => {
-                  if (confirmNavigation()) setChosen(value)
+                  const accepted = settingsTarget
+                    ? settingsTarget.setTarget({
+                        environmentId: value,
+                        projectId:
+                          settingsTarget.target.environmentId === value
+                            ? settingsTarget.target.projectId
+                            : '',
+                      })
+                    : confirmNavigation()
+                  if (accepted) setChosen(value)
                 }}
               >
                 {sources.map((entry) => (

@@ -4,6 +4,36 @@ import { checkpointFiles } from '../repositories/file-previews.js'
 
 type File = Pick<PullDetail['files'][number], 'path' | 'attributes'>
 export type FileKind = 'normal' | 'mocks' | 'tests' | 'docs' | 'generated'
+export type ChangeTypeFile = File & {
+  changeKind?: FileKind
+  additions?: number | null
+  deletions?: number | null
+}
+
+/** Keep missing/binary line counts selectable without inventing changed lines for them. */
+export function changeTypeDistribution(
+  files: readonly ChangeTypeFile[],
+  weightBy: 'files' | 'lines' = 'files',
+) {
+  const counts = new Map<FileKind, number>(),
+    lines = new Map<FileKind, number>()
+  const count = (value: number | null | undefined) =>
+    value != null && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+  for (const file of files) {
+    const kind = file.changeKind ?? pullFileKind(file)
+    counts.set(kind, (counts.get(kind) ?? 0) + 1)
+    lines.set(kind, (lines.get(kind) ?? 0) + count(file.additions) + count(file.deletions))
+  }
+  const totalLines = [...lines.values()].reduce((sum, value) => sum + value, 0)
+  const unit = weightBy === 'lines' && totalLines > 0 ? 'lines' : 'files'
+  return {
+    counts,
+    lines,
+    weights: unit === 'lines' ? lines : counts,
+    unit,
+    total: unit === 'lines' ? totalLines : files.length,
+  }
+}
 const lockfiles = new Set([
   'bun.lock',
   'bun.lockb',

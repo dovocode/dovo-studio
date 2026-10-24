@@ -8,10 +8,10 @@ const built = await bundleBrowser(
       resolveDir,
       loader: 'tsx',
       contents: `
-import {useScreenshotAttachment} from './src/browser/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useState} from 'react';import {useAttachments} from './src/chat/composer/use-attachments';
+import {ChatImageEditProvider} from './src/chat/composer/chat-image-edit';import {EditChatImage,useChatImageUploader} from './src/chat/composer/chat-image-edit-context';import {useScreenshotAttachment} from './src/browser/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useState} from 'react';import {useAttachments} from './src/chat/composer/use-attachments';
 window.calls=[];window.rows=[];window.stored={};window.failed=false;window.revision=1;
-window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(window.failed)throw Error('Upload rejected');const attachment={id:input.id,name:input.name,mime:'image/png',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};if(!input.queuedMessageId)window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:++window.revision}};
-function App(){const [snapshot,setSnapshot]=useState({revision:1,workspace:{tasks:[{id:'task',draftAttachments:[]}]}});window.snapshot=snapshot;window.publish=()=>setSnapshot({revision:window.revision,workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}});const [editing,setEditing]=useState(null);window.beginEdit=()=>setEditing({messageId:'queued',files:window.files.slice(0,1)});window.cancelEdit=()=>setEditing(null);window.editing=editing;const a=useAttachments(snapshot.workspace.tasks[0],editing?{...editing,uploaded:(file,replaceId)=>setEditing(current=>({...current,files:[...current.files.filter(item=>item.id!==replaceId),file]})),remove:id=>setEditing(current=>({...current,files:current.files.filter(file=>file.id!==id)}))}:undefined);window.remove=a.remove;const screenshots=useScreenshotAttachment("task");window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.upload=a.upload;window.edit=a.edit;window.files=a.files;window.working=a.busy;return <>{a.editor}{screenshots.editor}<textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{a.error}</div>{a.files.map(f=><button key={f.id} disabled={a.busy} onClick={()=>void a.edit(f.id)}>{f.name}</button>)}</>};createRoot(document.getElementById('app')).render(<App/>);`,
+window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(path==='/api/tasks/images/read')return {uri:window.source};if(window.failed)throw Error('Upload rejected');const attachment={id:input.id,name:input.name,mime:'image/png',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data};if(!input.queuedMessageId)window.rows=input.replaceId?window.rows.map(f=>f.id===input.replaceId?attachment:f):[...window.rows,attachment];return {attachment,revision:++window.revision}};
+function Contents(){const [snapshot,setSnapshot]=useState({revision:1,workspace:{tasks:[{id:'task',draftAttachments:[]}]}});window.snapshot=snapshot;window.publish=()=>setSnapshot({revision:window.revision,workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}});const [editing,setEditing]=useState(null);window.beginEdit=()=>setEditing({messageId:'queued',files:window.files.slice(0,1)});window.cancelEdit=()=>setEditing(null);window.editing=editing;const a=useAttachments(snapshot.workspace.tasks[0],editing?{...editing,uploaded:(file,replaceId)=>setEditing(current=>({...current,files:[...current.files.filter(item=>item.id!==replaceId),file]})),remove:id=>setEditing(current=>({...current,files:current.files.filter(file=>file.id!==id)}))}:undefined);useChatImageUploader(file=>a.upload([file],undefined,true),true);window.remove=a.remove;const screenshots=useScreenshotAttachment("task");window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.upload=a.upload;window.edit=a.edit;window.files=a.files;window.working=a.busy;return <>{a.editor}{screenshots.editor}<EditChatImage source={{taskId:"source-thread",attachmentId:"sent"}} label="Sent image"/><EditChatImage source={{taskId:"source-thread",eventId:"generated",index:0}} label="Tool image"/><EditChatImage source={{taskId:"source-thread",path:"/output/chart.png"}} label="Inline image"/><textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{a.error}</div>{a.files.map(f=><button key={f.id} disabled={a.busy} onClick={()=>void a.edit(f.id)}>{f.name}</button>)}</>};createRoot(document.getElementById('app')).render(<ChatImageEditProvider><Contents/></ChatImageEditProvider>);`,
     },
     bundle: true,
     write: false,
@@ -31,7 +31,7 @@ function App(){const [snapshot,setSnapshot]=useState({revision:1,workspace:{task
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export const Dialog=({open,children})=>open?<section role="dialog">{children}</section>:null;export const DialogContent=({children})=><div style={{height:700}}>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;`,
+      contents: `export const Button=({children,...props})=><button {...props}>{children}</button>;export const Dialog=({open,children})=>open?<section role="dialog">{children}</section>:null;export const DialogContent=({children})=><div style={{height:700}}>{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;`,
     },
   ],
 )
@@ -186,9 +186,88 @@ try {
   )
   await page.evaluate(() => window.cancelEdit())
   assert.deepEqual(await page.evaluate(() => window.files.map((file) => file.id)), ordinaryFiles)
+  // Sent images create new attachments through the active composer; never replace the source.
+  await page.evaluate(() => {
+    window.stored.sent = {
+      attachment: { id: 'sent', name: 'sent.png', mime: 'image/png', size: 100 },
+      data: window.source.split(',')[1],
+    }
+    window.rows = []
+    window.publish()
+  })
+  await page.getByRole('button', { name: 'Edit and attach Sent image', exact: true }).click()
+  await editor.getByRole('button', { name: 'Pen', exact: true }).click()
+  const chatBox = await canvas.boundingBox()
+  await page.mouse.move(chatBox.x + chatBox.width * 0.2, chatBox.y + chatBox.height * 0.5)
+  await page.mouse.down()
+  await page.mouse.move(chatBox.x + chatBox.width * 0.8, chatBox.y + chatBox.height * 0.5, {
+    steps: 8,
+  })
+  await page.mouse.up()
+  await editor.getByRole('button', { name: 'Attach image', exact: true }).click()
+  await page.waitForFunction(() => !window.working && window.rows.length === 1)
+  const chatUpload = await page.evaluate(() => window.calls.at(-1))
+  assert.equal(chatUpload.path, '/api/attachments/upload')
+  assert.equal(chatUpload.input.replaceId, undefined)
+  assert.match(chatUpload.input.name, /-edited\.png$/)
+  assert.equal(
+    await page.evaluate(() => window.stored.sent.data === window.source.split(',')[1]),
+    true,
+  )
+  assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Keep draft')
+  await page.evaluate(() => window.publish())
+  await page.getByRole('button', { name: 'Edit and attach Inline image', exact: true }).click()
+  await editor.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.waitForFunction(() => !window.working)
+  assert.equal(await page.evaluate(() => window.rows.length), 1)
+  assert.deepEqual(
+    await page.evaluate(
+      () => window.calls.filter((c) => c.path === '/api/tasks/images/read').at(-1).input,
+    ),
+    { taskId: 'source-thread', path: '/output/chart.png' },
+  )
+  await page.evaluate(() => window.beginEdit())
+  await page.getByRole('button', { name: 'Edit and attach Tool image', exact: true }).click()
+  await editor.getByRole('button', { name: 'Use original', exact: true }).click()
+  await page.waitForFunction(() => !window.working)
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.queuedMessageId), 'queued')
+  assert.deepEqual(
+    await page.evaluate(
+      () => window.calls.filter((c) => c.path === '/api/tasks/images/read').at(-1).input,
+    ),
+    { taskId: 'source-thread', eventId: 'generated', index: 0 },
+  )
+  assert.equal(await page.evaluate(() => window.rows.length), 1)
+  await page.evaluate(() => {
+    window.cancelEdit()
+    window.rows = Array.from({ length: 5 }, (_, i) => ({
+      id: 'full-' + i,
+      name: 'full.png',
+      mime: 'image/png',
+      size: 1,
+    }))
+    window.publish()
+  })
+  await page.getByRole('button', { name: 'Edit and attach Sent image', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'attach up to 5 files' }).waitFor()
+  assert.equal(await page.locator('iframe').count(), 0)
+  // Chat GIFs enter the editor as a still frame; ordinary GIF attachments remain untouched.
+  await page.evaluate(() => {
+    window.rows = []
+    window.publish()
+    window.stored.sent = {
+      attachment: { id: 'sent', name: 'sent.gif', mime: 'image/gif', size: 34 },
+      data: 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+    }
+  })
+  await page.getByRole('button', { name: 'Edit and attach Sent image', exact: true }).click()
+  await editor.locator('#attach:enabled').waitFor()
+  await editor.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.waitForFunction(() => !window.working)
+  assert.equal(await page.evaluate(() => window.rows.length), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'Image attachments: real desktop editor uploads, cropped replacement before snapshot acknowledgement, cancel, failed replacement, screenshot edit/attach/cancel, input validation and draft preservation passed.',
+    'Image attachments: real desktop editor uploads, cropped replacement before snapshot acknowledgement, cancel, failed replacement, screenshot edit/attach/cancel, input validation, chat-image editing into draft/queue, source preservation, limits, GIF still frames and draft preservation passed.',
   )
 } finally {
   await browser.close()

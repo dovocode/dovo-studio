@@ -30,7 +30,7 @@ function BadgeContent({
   if (!account.directory || !latest) return null
   return (
     <span
-      className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+      className={`inline-flex w-fit items-center gap-1 rounded-md px-2 py-1 text-xs ${current ? 'bg-accent text-foreground' : 'bg-muted text-status-warning'}`}
       title={
         current
           ? `Version ${artifact.revision} is shared on ${account.publicationOrigin}`
@@ -38,7 +38,11 @@ function BadgeContent({
       }
     >
       <Share2 aria-hidden="true" className="size-3" />
-      {current ? 'Shared' : `Shared v${latest} · This version is local`}
+      {current
+        ? `Shared · v${artifact.revision}`
+        : latest < artifact.revision
+          ? `Shared version is older · v${latest}`
+          : `Shared v${latest} · This version is local`}
     </span>
   )
 }

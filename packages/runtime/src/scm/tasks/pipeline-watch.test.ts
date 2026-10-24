@@ -65,6 +65,44 @@ async function setup(persistent = false) {
   const status = () => s.pipelineWatch.command({ taskId: task.id, action: 'status' })
   return { f, runtime, s, taskId: task.id, read, watch, status }
 }
+it('shows only active pipelines in project info without erasing watch history', async () => {
+  const f = await setup()
+  f.read.mockImplementation(async (_repo, _operation, input) => {
+    const id = runId(input)
+    return detail(id, id === '7' ? 'success' : 'in_progress')
+  })
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    status: 'review',
+    workItem: {
+      kind: 'pipeline',
+      provider: 'github',
+      id: '7',
+      title: 'Build',
+      url: detail('7').run.url,
+      ref: 'fix',
+      sha: 'a'.repeat(40),
+    },
+  }))
+  await f.watch(['7', '8', '9'])
+  await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'stop', runIds: ['9'] })
+  const { taskWaiting } = await import('../../http/endpoints/task-waiting.js')
+  expect(await taskWaiting(f.s, { taskId: f.taskId })).toMatchObject({
+    related: [],
+    dependencies: [{ kind: 'pipeline', target: '8' }],
+  })
+  expect((await f.status()).watches.map((watch) => [watch.runId, watch.status])).toEqual([
+    ['7', 'completed'],
+    ['8', 'watching'],
+    ['9', 'stopped'],
+  ])
+  await f.s.pipelineWatch.command({ taskId: f.taskId, action: 'stop', runIds: ['8'] })
+  expect(await taskWaiting(f.s, { taskId: f.taskId })).toMatchObject({
+    related: [],
+    dependencies: [],
+  })
+})
+
 it('skips watch scans during streaming and restores ownership after a rolled-back archive', async () => {
   const f = await setup()
   f.s.store.updateTask(f.taskId, (task) => ({ ...task, status: 'review' }))

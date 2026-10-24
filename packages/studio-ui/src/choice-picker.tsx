@@ -1,8 +1,8 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Children, isValidElement, useId, type ReactNode } from 'react'
-import { Check, ChevronsUpDown, Search } from 'lucide-react'
+import { Check, ChevronsUpDown } from 'lucide-react'
 import { Button } from './components/ui/button'
-import { Input } from './components/ui/input'
+import { SearchField } from './search-field'
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,16 @@ function choices(children: ReactNode): {
   })
 }
 
+// Scroll only the results, keeping the dialog and its search field anchored.
+function revealOption(node: HTMLButtonElement | null) {
+  const list = node?.parentElement
+  if (!node || !list) return
+  const row = node.getBoundingClientRect()
+  const viewport = list.getBoundingClientRect()
+  if (row.top < viewport.top) list.scrollTop -= viewport.top - row.top
+  else if (row.bottom > viewport.bottom) list.scrollTop += row.bottom - viewport.bottom
+}
+
 /** Searchable selection with the same option markup used by simple form fields. */
 export function ChoicePicker({
   value,
@@ -69,7 +79,7 @@ export function ChoicePicker({
 }) {
   const [open, setOpen] = useApplicationState(false)
   const [query, setQuery] = useApplicationState('')
-  const [active, setActive] = useApplicationState('')
+  const [active, setActive] = useApplicationState<string | null>(null)
   const id = useId()
   const options = choices(children)
   const filtered = options.filter((option) =>
@@ -116,53 +126,54 @@ export function ChoicePicker({
         <DialogDescription className="sr-only">
           Search options. Use arrow keys and Enter to select.
         </DialogDescription>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            autoFocus
-            role="combobox"
-            aria-label={`Search ${label.toLowerCase()}`}
-            aria-expanded="true"
-            aria-controls={id}
-            aria-autocomplete="list"
-            aria-activedescendant={current ? `${id}-${options.indexOf(current)}` : undefined}
-            className="pl-9"
-            placeholder="Search…"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value)
-              setActive('')
-            }}
-            onKeyDown={(event) => {
-              if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-                event.preventDefault()
-                const index = current ? available.indexOf(current) : 0
-                const next =
-                  event.key === 'Home'
-                    ? 0
-                    : event.key === 'End'
-                      ? available.length - 1
-                      : (index + (event.key === 'ArrowDown' ? 1 : -1) + available.length) %
-                        available.length
-                const option = available[next]
-                if (option) {
-                  setActive(option.value)
-                  document.getElementById(`${id}-${options.indexOf(option)}`)?.scrollIntoView({
-                    block: 'nearest',
-                  })
-                }
+        <SearchField
+          autoFocus
+          role="combobox"
+          aria-label={`Search ${label.toLowerCase()}`}
+          aria-expanded="true"
+          aria-controls={id}
+          aria-autocomplete="list"
+          aria-activedescendant={current ? `${id}-${options.indexOf(current)}` : undefined}
+          placeholder="Search…"
+          value={query}
+          onValueChange={(next) => {
+            setQuery(next)
+            setActive(null)
+          }}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return
+            if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+              event.preventDefault()
+              const index = current ? available.indexOf(current) : 0
+              const next =
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? available.length - 1
+                    : (index + (event.key === 'ArrowDown' ? 1 : -1) + available.length) %
+                      available.length
+              const option = available[next]
+              if (option) {
+                setActive(option.value)
               }
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                if (current) choose(current.value)
-              }
-            }}
-          />
-        </div>
-        <div id={id} role="listbox" aria-label={label} className="max-h-72 overflow-y-auto">
+            }
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              if (current) choose(current.value)
+            }
+          }}
+        />
+        <div
+          id={id}
+          role="listbox"
+          aria-label={label}
+          className="overflow-y-auto"
+          style={{ height: `min(${Math.max(44, Math.min(288, options.length * 44))}px, 50dvh)` }}
+        >
           {filtered.map((option) => (
             <button
               key={option.value}
+              ref={current === option ? revealOption : undefined}
               id={`${id}-${options.indexOf(option)}`}
               type="button"
               role="option"

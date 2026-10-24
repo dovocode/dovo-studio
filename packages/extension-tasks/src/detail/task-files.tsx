@@ -12,9 +12,9 @@ import {
   type EditorFactory,
   type FileOptions,
 } from '@pierre/diffs/react'
-import { RefreshCw, Search, X } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
-import { Button, IconButton, FileBrowserTree } from '@dovo/studio-ui'
+import { Button, IconButton, FileBrowserTree, SearchField } from '@dovo/studio-ui'
 import { ResizableSidebar } from './resizable-sidebar'
 import { useLiveRefresh } from './live-refresh'
 import { formatCodeReference } from './code-reference'
@@ -249,12 +249,22 @@ export function TaskFiles({
   const { request, connected, connection } = useWorkspace()
   const { openExternalLink } = useStudioHost()
   const [readError, setReadError] = useApplicationState('')
-  const [loadedPath, setLoadedPath] = useApplicationState('')
   const [paths, setPaths] = useApplicationState<string[]>([])
   const [selected, setSelected] = useApplicationState('')
   const imageFile = markdownMediaKind(selected) === 'image'
   const selectedRef = useRef(selected)
   selectedRef.current = selected
+  const sourceRef = useRef({ request, taskId: task.id })
+  sourceRef.current = { request, taskId: task.id }
+  const reads = useRef(0)
+  const listings = useRef(0)
+  useEffect(
+    () => () => {
+      reads.current++
+      listings.current++
+    },
+    [],
+  )
   const [contents, setContents] = useApplicationState('')
   const readOnly = useMemo(
     () => new TextEncoder().encode(contents).byteLength > 1024 * 1024,
@@ -277,56 +287,60 @@ export function TaskFiles({
   useEffect(() => {
     setContents('')
     setReadError('')
-    setLoadedPath('')
     setLoading(!!selected)
   }, [selected])
+  const refreshListing = useCallback(async () => {
+    const attempt = ++listings.current
+    const listing = await request(
+      '/api/tasks/files/list',
+      { id: task.id },
+      responses.projectFileList,
+    )
+    if (
+      attempt !== listings.current ||
+      sourceRef.current.request !== request ||
+      sourceRef.current.taskId !== task.id
+    )
+      return
+    setPaths((previous) =>
+      previous.length === listing.files.length &&
+      previous.every((path, index) => path === listing.files[index])
+        ? previous
+        : listing.files,
+    )
+  }, [request, task.id, revision])
   const refresh = useCallback(async () => {
+    const attempt = ++reads.current
+    if (!selected || editing.current) return
+    const generation = editGeneration.current
+    const current = () =>
+      attempt === reads.current &&
+      selectedRef.current === selected &&
+      sourceRef.current.request === request &&
+      sourceRef.current.taskId === task.id
     try {
-      const listing = await request(
-        '/api/tasks/files/list',
-        { id: task.id },
-        responses.projectFileList,
-      )
-      setPaths((previous) =>
-        previous.length === listing.files.length &&
-        previous.every((path, index) => path === listing.files[index])
-          ? previous
-          : listing.files,
-      )
-      if (selected && imageFile && selectedRef.current === selected) {
-        setLoadedPath(selected)
+      if (imageFile) {
         setReadError('')
-      } else if (selected && !editing.current) {
-        const generation = editGeneration.current
-        try {
-          const result = await request(
-            '/api/tasks/files/read',
-            { id: task.id, path: selected },
-            responses.projectFile,
-          )
-          if (
-            selectedRef.current === selected &&
-            !editing.current &&
-            generation === editGeneration.current
-          ) {
-            setContents(result.contents)
-            setLoadedPath(selected)
-            setReadError('')
-          }
-        } catch (cause: unknown) {
-          if (
-            selectedRef.current === selected &&
-            !editing.current &&
-            generation === editGeneration.current
-          )
-            setReadError(cause instanceof Error ? cause.message : String(cause))
-        }
+        return
       }
+      const result = await request(
+        '/api/tasks/files/read',
+        { id: task.id, path: selected },
+        responses.projectFile,
+      )
+      if (current() && !editing.current && generation === editGeneration.current) {
+        setContents(result.contents)
+        setReadError('')
+      }
+    } catch (cause: unknown) {
+      if (current() && !editing.current && generation === editGeneration.current)
+        setReadError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      if (selectedRef.current === selected) setLoading(false)
+      if (current()) setLoading(false)
     }
   }, [request, task.id, selected, revision, imageFile])
-  const refreshError = useLiveRefresh(connected, refresh)
+  const listingError = useLiveRefresh(connected, refreshListing)
+  useLiveRefresh(connected, refresh)
   const openOriginal = () => {
     const preview = openExternalLink ? null : window.open('about:blank', '_blank')
     if (preview) preview.opener = null
@@ -364,18 +378,18 @@ export function TaskFiles({
           <RefreshCw size={14} />
         </IconButton>
       </header>
-      {refreshError && (!selected || loadedPath === selected) && (
+      {listingError && (
         <p role="alert" className="border-b px-3 py-2 text-xs text-destructive">
-          {refreshError}
+          {listingError}
         </p>
       )}
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {selected ? (
             <>
-              {readError || (refreshError && loadedPath !== selected) ? (
+              {readError ? (
                 <div role="alert" className="space-y-3 p-4 text-sm">
-                  <p>{readError || refreshError}</p>
+                  <p>{readError}</p>
                   <div className="flex gap-2">
                     <Button
                       disabled={!connected || loading}
@@ -430,29 +444,16 @@ export function TaskFiles({
           aria-label="Project file tree"
           className="flex min-h-0 flex-col border-l bg-sidebar"
         >
-          <div className="relative border-b p-2">
-            <Search
-              aria-hidden
-              className="pointer-events-none absolute left-4 top-5 size-3.5 text-muted-foreground"
-            />
-            <input
-              type="search"
+          <div className="border-b p-2">
+            <SearchField
+              role="searchbox"
               aria-label="Search project files"
               placeholder="Search files…"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="h-9 w-full rounded-md border border-border/60 bg-background pl-8 pr-8 text-xs outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+              onValueChange={setQuery}
+              clearLabel="Clear file search"
+              className="text-xs"
             />
-            {query && (
-              <button
-                type="button"
-                aria-label="Clear file search"
-                onClick={() => setQuery('')}
-                className="absolute right-3 top-3 flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-accent"
-              >
-                <X aria-hidden className="size-3.5" />
-              </button>
-            )}
           </div>
           <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-1.5">
             {filter && !root.length && (

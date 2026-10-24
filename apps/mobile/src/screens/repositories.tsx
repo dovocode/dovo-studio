@@ -1,3 +1,6 @@
+import { contentColumn } from '../ui/layout/content-column'
+import { EmptyState } from '../ui/content/empty-state'
+import { useNavigation } from '../shell/navigation'
 import { runtimeComputerName } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { Effect } from 'effect'
@@ -5,7 +8,7 @@ import { useApplicationState } from '../runtime/state/application-state'
 import { validationMessages } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
 import { Sheet } from '../ui/layout/sheet'
-import { useNavigation } from '../shell/navigation'
+import { backToCollection } from '../shell/source-route'
 import { RepositoryCheckouts } from '../scm/connections/repository-checkouts'
 import { DirectoryPicker } from '../scm/connections/directory-picker'
 import { GithubRepositoryPicker } from '../scm/connections/github-repository-picker'
@@ -21,36 +24,29 @@ import { useAction } from '../ui/controls/use-action'
 import { CreationTarget } from '../runtime/connection/creation-target'
 import { clientScopeKey } from '@dovo/client-runtime'
 import { ScreenHeader } from '../ui/layout/screen-header'
-import { IconButton } from '../ui/controls/icon-button'
 import { DeleteProjectAction } from '../scm/connections/project-deletion'
 export default function RepositoriesScreen() {
   const { styles } = useTheme()
 
-  const { navigate } = useNavigation()
   const { overviews } = useRuntime()
+  const { navigate } = useNavigation()
   const [adding, setAdding] = useApplicationState(false)
   return (
     <View style={styles.screen}>
       <ScreenHeader
         title="Projects"
-        leading={
-          <IconButton
-            label="Back to tasks"
-            icon="back"
-            variant="glass"
-            onPress={() => navigate('tasks')}
-          />
-        }
+        onBack={() => backToCollection('/')}
         buttons={[
           {
             label: 'Add project',
             icon: 'add',
+            disabled: !overviews.some((entry) => entry.connected && entry.snapshot),
             onPress: () => setAdding(true),
           },
         ]}
       />
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, contentColumn.collection]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
@@ -60,12 +56,47 @@ export default function RepositoriesScreen() {
           </CreationTarget>
         )}
 
+        {!overviews.length && (
+          <EmptyState
+            icon="projects"
+            title="Connect a computer"
+            description="Link a computer to see its projects and start working with files and threads."
+            action={<Action label="Open computer settings" onPress={() => navigate('settings')} />}
+          />
+        )}
+
         {overviews.map((entry) => (
           <RuntimeScope key={clientScopeKey(entry.profile.connection)} runtimeId={entry.profile.id}>
-            <Text style={styles.muted}>
+            <Text accessibilityRole="header" style={styles.muted}>
               {runtimeComputerName(entry)}
               {entry.connected ? '' : ' · Offline'}
             </Text>
+            {!entry.snapshot?.workspace.repositories.length && (
+              <EmptyState
+                icon="projects"
+                title={
+                  entry.connected
+                    ? entry.snapshot
+                      ? 'No projects yet'
+                      : 'Loading projects…'
+                    : 'Projects unavailable'
+                }
+                description={
+                  entry.connected && entry.snapshot
+                    ? 'Add a project to start working with files and threads on this computer.'
+                    : entry.connected
+                      ? 'Loading projects from this computer.'
+                      : 'Connect this computer to load its projects.'
+                }
+                action={
+                  entry.connected &&
+                  !!entry.snapshot &&
+                  overviews.length === 1 && (
+                    <Action label="Add project" onPress={() => setAdding(true)} />
+                  )
+                }
+              />
+            )}
             {entry.snapshot?.workspace.repositories.map((repository) => (
               <View key={repository.id} style={{ gap: 8 }}>
                 <RepositoryCheckouts repository={repository} />

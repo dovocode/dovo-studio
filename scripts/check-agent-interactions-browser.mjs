@@ -123,7 +123,7 @@ function App(){const[status,setStatus]=useState('running');window.taskStatus=set
     await page.getByRole('alert').waitFor()
     assert.equal(await page.evaluate(() => window.submissions.length), 0)
     const choice = mobile
-      ? page.getByRole('radio', { name: 'Small change', exact: true })
+      ? page.getByRole('radio', { name: 'Small change. Keep it focused', exact: true })
       : page.getByRole('button', { name: /Small change/ })
     await choice.click()
     const checks = (label) =>

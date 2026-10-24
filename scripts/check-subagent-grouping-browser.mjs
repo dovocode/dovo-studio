@@ -7,7 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,set]=useState(initial);const ref=useRef(value);ref.current=value;return [value,set,ref]}`
 const controls = `
 import {useImperativeHandle} from 'react';
-export const SidebarHeader=()=>null;export const HeaderContent=({children})=>children;
+export const EmptyState=({title,description,action})=><div>{title}{description}{action}</div>;export const SidebarHeader=()=>null;export const HeaderContent=({children})=>children;
 export const Conversation=({children,...props})=><div role="log" {...props}>{children}</div>;export const ConversationContent=({children,...props})=><div {...props}>{children}</div>;export const ConversationScrollButton=()=>null;
 export const Message=({children,from})=><div data-native-role={from}>{children}</div>;export const MessageContent=({children})=><div>{children}</div>;
 export const Button=({children,onClick,disabled,...props})=><button disabled={disabled} onClick={onClick} {...props}>{children}</button>;
@@ -105,6 +105,7 @@ async function bundle(contents) {
             if (mocks[path]) return { path, namespace: 'mock' }
             if (/ui\/content\/pull-request-icon$/.test(path))
               return { path: root + '/apps/mobile/src/ui/content/pull-request-icon.tsx' }
+            if (/content-column$/.test(path)) return
             if (path === '../theme' && importer.endsWith('/ui/content/pull-request-icon.tsx'))
               return { path: 'controls', namespace: 'mock' }
             if (/runtime\/state\/application-state$/.test(path))

@@ -24,10 +24,15 @@ export function useImageEditor() {
       pending.current = null
     }
   }, [])
-  const edit = async (asset: AttachmentAsset): Promise<AttachmentAsset | null> => {
+  const edit = async (
+    asset: AttachmentAsset,
+    stillFrame = false,
+  ): Promise<AttachmentAsset | null> => {
     const format = attachmentImageFormat(asset.name, asset.mimeType ?? '')
-    if (!format || format === 'heic') return asset
+    const gif = stillFrame && asset.mimeType === 'image/gif'
+    if ((!format && !gif) || format === 'heic') return asset
     if (
+      !stillFrame &&
       (format === 'png' || format === 'webp') &&
       isAnimatedAttachmentImage(await new File(asset.uri).bytes(), format)
     )

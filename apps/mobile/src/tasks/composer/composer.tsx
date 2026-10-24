@@ -1,3 +1,4 @@
+import { contentColumn } from '../../ui/layout/content-column'
 import { TurnModelControls } from './turn-model-controls'
 import { applyTurnSettings } from '@dovo/protocol'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
@@ -624,6 +625,7 @@ export function Composer({
       testID="Composer"
       style={[
         styles.content,
+        contentColumn.conversation,
         {
           paddingHorizontal: 12,
           paddingTop: 6,
@@ -778,13 +780,18 @@ export function Composer({
                 trailingControlCount={2 + Number(hasSideQuestion)}
               />
             </View>
-            {focused && (
-              <IconButton
-                label="Dismiss keyboard"
-                variant="plain"
-                icon="keyboard"
-                onPress={() => Keyboard.dismiss()}
-              />
+            {showOptions && (
+              // Keep a draft's line width unchanged when the keyboard is dismissed.
+              <View style={{ width: 44, minHeight: 44, flexShrink: 0 }}>
+                {focused && (
+                  <IconButton
+                    label="Dismiss keyboard"
+                    variant="plain"
+                    icon="keyboard"
+                    onPress={() => Keyboard.dismiss()}
+                  />
+                )}
+              </View>
             )}
             {/* Stay at the row's trailing edge when the keyboard button disappears on blur. */}
             {showFollowupActions && sideQuestionAction}

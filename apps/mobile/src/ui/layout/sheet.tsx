@@ -1,3 +1,5 @@
+import { contentColumn } from './content-column'
+import { ValidationFields } from '../controls/validation-fields'
 import { SafeModal } from './safe-modal'
 import { NativeIcon, NativeMenuButton } from '../controls/native-icon'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -32,7 +34,6 @@ import {
 } from '@expo/ui/swift-ui/modifiers'
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../content/text'
-import { Action } from '../controls/action'
 import { IconButton } from '../controls/icon-button'
 import type { IconName } from '../controls/icon'
 import { useTheme } from '../theme'
@@ -58,6 +59,7 @@ export function Sheet({
   footer,
   headerAction,
   presentation = 'sheet',
+  validationAttempt,
 }: {
   title: string
   ref?: Ref<SheetHandle>
@@ -66,6 +68,7 @@ export function Sheet({
   busy?: boolean
   scrollable?: boolean
   presentation?: 'sheet' | 'dialog'
+  validationAttempt?: number
   footer?: ReactNode
   headerAction?: { label: string; icon: IconName; onPress: () => void; disabled?: boolean }
 }) {
@@ -112,7 +115,9 @@ export function Sheet({
   }
   const content = (
     <SheetContext.Provider value>
-      <SheetNavigationContext.Provider value={navigate}>{children}</SheetNavigationContext.Provider>
+      <SheetNavigationContext.Provider value={navigate}>
+        <ValidationFields validationAttempt={validationAttempt}>{children}</ValidationFields>
+      </SheetNavigationContext.Provider>
     </SheetContext.Provider>
   )
   if (presentation === 'dialog')
@@ -126,7 +131,10 @@ export function Sheet({
         onDismiss={finishClose}
         contentStyle={{ backgroundColor: 'transparent' }}
       >
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}
+        >
           <Pressable
             accessibilityLabel={`Dismiss ${title}`}
             accessibilityRole="button"
@@ -152,19 +160,25 @@ export function Sheet({
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Text accessibilityRole="header" style={[styles.title, { flex: 1 }]}>
+              <Text accessibilityRole="header" style={[styles.title, { flex: 1, minWidth: 0 }]}>
                 {title}
               </Text>
               {headerAction && (
                 <IconButton {...headerAction} disabled={busy || !!headerAction.disabled} />
               )}
-              <Action label="Close" secondary disabled={busy} onPress={close} />
+              <IconButton
+                label="Close"
+                icon="close"
+                variant="glass"
+                disabled={busy}
+                onPress={close}
+              />
             </View>
             {scrollable ? (
               <ScrollView
                 style={{ flexGrow: 0, flexShrink: 1 }}
                 keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ gap: 12 }}
+                contentContainerStyle={[contentColumn.form, { gap: 12 }]}
               >
                 {content}
               </ScrollView>
@@ -173,7 +187,7 @@ export function Sheet({
             )}
             {footer}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </SafeModal>
     )
   if (Platform.OS === 'ios')
@@ -217,6 +231,7 @@ export function Sheet({
                         keyboardShouldPersistTaps="handled"
                         contentContainerStyle={[
                           styles.content,
+                          contentColumn.form,
                           {
                             paddingTop: 12,
                             paddingBottom: 24,
@@ -234,7 +249,9 @@ export function Sheet({
                         {content}
                       </View>
                     )}
-                    {footer && <View style={styles.sheetFooter}>{footer}</View>}
+                    {footer && (
+                      <View style={[styles.sheetFooter, contentColumn.form]}>{footer}</View>
+                    )}
                   </View>
                 </RNHostView>
                 <Toolbar.Content>
@@ -295,14 +312,21 @@ export function Sheet({
                 styles.title,
                 {
                   flex: 1,
+                  minWidth: 0,
                 },
               ]}
             >
               {title}
             </Text>
-            {keyboard && (
-              <Action label="Dismiss keyboard" secondary onPress={() => Keyboard.dismiss()} />
-            )}
+            <View style={{ width: 44, height: 44, flexShrink: 0 }}>
+              {keyboard && (
+                <IconButton
+                  label="Dismiss keyboard"
+                  icon="keyboard"
+                  onPress={() => Keyboard.dismiss()}
+                />
+              )}
+            </View>
             {headerAction && (
               <IconButton
                 label={headerAction.label}
@@ -311,7 +335,13 @@ export function Sheet({
                 disabled={busy || !!headerAction.disabled}
               />
             )}
-            <Action label="Close" secondary disabled={busy} onPress={() => close()} />
+            <IconButton
+              label="Close"
+              icon="close"
+              variant="glass"
+              disabled={busy}
+              onPress={close}
+            />
           </View>
           {scrollable ? (
             <ScrollView
@@ -319,6 +349,7 @@ export function Sheet({
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={[
                 styles.content,
+                contentColumn.form,
                 {
                   paddingTop: 4,
                 },
@@ -335,7 +366,7 @@ export function Sheet({
               {content}
             </View>
           )}
-          {footer && <View style={styles.sheetFooter}>{footer}</View>}
+          {footer && <View style={[styles.sheetFooter, contentColumn.form]}>{footer}</View>}
         </KeyboardAvoidingView>
       </View>
     </SafeModal>

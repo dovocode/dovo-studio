@@ -1,4 +1,5 @@
 import { useConversationHistory } from './use-conversation-history'
+import { ChatImageEditProvider } from '../../composer/chat-image-edit'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import {
   createContext,
@@ -313,7 +314,23 @@ export function ConversationProvider({
   return (
     <Context.Provider value={atom}>
       <PendingContext.Provider value={pendingMessages}>
-        <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+        <AssistantRuntimeProvider runtime={runtime}>
+          <ChatImageEditProvider
+            key={task.id}
+            upload={actions.attachmentPicker.upload}
+            busy={actions.attaching}
+            onBusy={actions.setAttaching}
+            disabled={
+              !actions.connected ||
+              !!task.archivedAt ||
+              !!task.example ||
+              actions.busy ||
+              (!!actions.editing && !actions.snapshot?.fullTurnSettingsSupported)
+            }
+          >
+            {children}
+          </ChatImageEditProvider>
+        </AssistantRuntimeProvider>
       </PendingContext.Provider>
     </Context.Provider>
   )

@@ -36,7 +36,6 @@ const mocks = {
   '../../ui/content/open-link': `export const openAppLink=async url=>window.opened=url;export const useOpenAppLink=()=>openAppLink;`,
   '../../scm/pulls/detail/pull-detail': `export const PullDetail=({repositoryId,number,onBack})=><div>Native PR #{number} {repositoryId}<button onClick={onBack}>Back to linked PRs</button></div>;`,
   './task-source': `export const TaskSource=()=>null;`,
-  './pull-status': `export const PullStatus=()=>null;`,
   './commit-section': `export const CommitSection=()=> <p>Commit controls</p>;`,
   '../../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
   '../../../runtime/state/app-active': `export const useForegroundInterval=()=>{};`,
@@ -51,11 +50,12 @@ import {TaskProjectSheet} from '${mobile}/tasks/detail/task-project-sheet';impor
 window.calls=[];window.alerts=[];window.refreshes=0;
 const repo={id:'repo',name:'Dovo Studio',path:'/studio',branch:'main',gitIdentity:'github.com/dovocode/dovo-studio',actions:[]};
 const task={id:'thread',title:'Fix sync',repositoryId:'repo',agentId:'',status:'done',createdAt:'',execution:'local',files:[],messages:[],example:false,pullRequest:{number:7,url:'https://github.com/dovocode/dovo-studio/pull/7',repositoryUrl:'https://github.com/dovocode/dovo-studio',title:'Fix reconnection'},linkedPullRequests:[{number:8,url:'https://github.com/foreign/project/pull/8',repositoryUrl:'https://github.com/foreign/project',title:'Foreign project'}]};
+window.setPullStatuses=()=>{task.pullStatus={number:7,url:task.pullRequest.url,state:'open',checks:'failed',checkedAt:'',title:'Fix reconnection',failedChecks:['Browser tests']};task.pullStatuses=[{number:8,url:task.linkedPullRequests[0].url,state:'merged',checks:'passed',checkedAt:''}]};
 const read=async(path,input)=>{window.calls.push({path,input});if(path==='/api/scm/open-targets')return{targets:['zed','finder']};if(path==='/api/tasks/waiting')return{dependencies:[{kind:'pipeline',repositoryId:'repo',target:'run-1',url:'https://github.com/dovocode/dovo-studio/actions/runs/1',project:'Studio',label:'Pipeline 1'}],related:[]};return{ok:true}};
 window.runtime={connected:true,profile:{id:'mac',name:'MacBook',connection:{address:'http://mac.local',token:'paired'}},snapshot:{workspace:{repositories:[repo],tasks:[task]}},read,call:read,refresh:async()=>window.refreshes++,callEffect:(path,input)=>Effect.promise(()=>read(path,input))};
 const jobs=[{id:'test',name:'Tests',status:'success',url:'https://github.com/o/r/actions/runs/1',steps:[{id:'1',name:'Run tests',status:'success'}]},{id:'release',name:'Release',status:'in_progress',url:'https://github.com/o/r/actions/runs/1',steps:[{id:'1',name:'Sign app',status:'in_progress'}]}];
 const graph=[{id:'check',name:'Tests',needs:[],jobIds:['test']},{id:'publish',name:'Release',needs:['check'],jobIds:['release']}];
-function App(){const[page,setPage]=useState('project');window.show=setPage;return page==='inline'?<div style={{height:'100vh',display:'flex',flexDirection:'column',background:'#101014',color:'#efeff2'}}><header style={{padding:12}}>Thread · Project information <button onClick={()=>setPage('project')}>i</button></header><TaskProjectSheet onProjects={()=>window.projectsLinked=true} inline task={task} scripts={[]} branchActions={[]} onChanges={()=>window.inlineChanged=true} onPulls={()=>setPage('pulls')} onClose={()=>setPage('project')}/><p style={{padding:16}}>Conversation remains available</p></div>:page==='project'?<TaskProjectSheet onProjects={()=>window.projectsLinked=true} task={task} scripts={[]} branchActions={[]} onChanges={()=>window.changed=true} onPulls={()=>setPage('pulls')} onClose={()=>{}}/>:page==='pulls'?<TaskLinkedPullSheet task={task} onClose={()=>setPage('project')}/>:page==='behavior'?<TaskThreadBehavior task={task} onClose={()=>setPage('project')}/>:page==='icons'?<ProjectIconSettings repository={repo}/>:<PipelineJobs graph={graph} jobs={jobs} hasMore={false} onOpen={url=>window.opened=url}/>}
+function App(){const[page,setPage]=useState('project');window.show=setPage;return page==='inline'?<div style={{height:'100vh',display:'flex',flexDirection:'column',background:'#101014',color:'#efeff2'}}><header style={{padding:12}}>Thread · Project information <button onClick={()=>setPage('project')}>i</button></header><TaskProjectSheet onProjects={()=>window.projectsLinked=true} inline task={task} scripts={[]} branchActions={[]} onChanges={()=>window.inlineChanged=true} onPulls={url=>{window.selectedPull=url;setPage('pulls')}} onClose={()=>setPage('project')}/><p style={{padding:16}}>Conversation remains available</p></div>:page==='project'?<TaskProjectSheet onProjects={()=>window.projectsLinked=true} task={task} scripts={[]} branchActions={[]} onChanges={()=>window.changed=true} onPulls={url=>{window.selectedPull=url;setPage('pulls')}} onClose={()=>{}}/>:page==='pulls'?<TaskLinkedPullSheet task={task} onClose={()=>setPage('project')}/>:page==='behavior'?<TaskThreadBehavior task={task} onClose={()=>setPage('project')}/>:page==='icons'?<ProjectIconSettings repository={repo}/>:<PipelineJobs graph={graph} jobs={jobs} hasMore={false} onOpen={url=>window.opened=url}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
   },
   bundle: true,
@@ -99,10 +99,32 @@ try {
     '<style>body{margin:0;background:#101014;color:#efeff2;font-family:system-ui}button{color:inherit;background:#26262d;border:1px solid #40404a;border-radius:8px;min-height:36px;padding:8px}input,select{display:block;max-width:100%}#app{width:100vw}</style><div id="app"></div>',
   )
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
-  await page.getByRole('button', { name: 'Open in Zed', exact: true }).click()
-  await page.waitForFunction(() =>
-    window.calls.some((c) => c.path === '/api/scm/open-folder' && c.input.taskId === 'thread'),
+  const linked = page.getByLabel('Linked pull requests', { exact: true })
+  await linked.waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: /Open in|Choose editor|Looking for editors/ }).count(),
+    0,
   )
+  assert.equal(
+    await page.evaluate(() => window.calls.some((c) => c.path === '/api/scm/open-targets')),
+    false,
+  )
+  const first = linked.getByRole('button', { name: 'Open PR #7: Source pull request', exact: true })
+  const second = linked.getByRole('button', { name: 'Open PR #8: Foreign project', exact: true })
+  const boxes = await Promise.all([first.boundingBox(), second.boundingBox()])
+  assert.ok(boxes.every(Boolean))
+  assert.equal(boxes[0].y, boxes[1].y)
+  assert.ok(
+    boxes[0].y <
+      (await page.getByRole('button', { name: 'Add project script', exact: true }).boundingBox()).y,
+  )
+  await second.click()
+  await page.getByRole('button', { name: 'Open PR #8: Foreign project', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.selectedPull),
+    'https://github.com/foreign/project/pull/8',
+  )
+  await page.evaluate(() => window.show('project'))
   await page.getByText('Watching · Dovo monitors these for updates', { exact: true }).waitFor()
   await page.screenshot({ path: '/tmp/dovo-native-project.png' })
   await page.getByRole('button', { name: 'Add project script', exact: true }).click()
@@ -148,6 +170,34 @@ try {
   assert.equal(await page.evaluate(() => window.inlineChanged), true)
   await page.screenshot({ path: '/tmp/dovo-native-project-sticky.png' })
   await page.evaluate(() => {
+    window.setPullStatuses()
+    window.show('project')
+  })
+  await page
+    .getByRole('button', { name: 'Open PR #7: Fix reconnection. PR #7 · 1 failing', exact: true })
+    .waitFor()
+  assert.equal(await page.getByText('PR #7 · 1 failing', { exact: true }).count(), 1)
+  await page.getByText('PR #8 merged', { exact: true }).waitFor()
+  await page
+    .getByRole('button', { name: 'Ask the agent to fix the failing checks', exact: true })
+    .click()
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (c) =>
+        c.path === '/api/tasks/message' &&
+        c.input.id === 'thread' &&
+        c.input.text.includes('Browser tests'),
+    ),
+  )
+  for (const width of [320, 390, 768]) {
+    await page.setViewportSize({ width, height: 900 })
+    assert.ok(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth))
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: '/tmp/dovo-native-project-pr-status.png' })
+  await page.evaluate(() => window.show('inline'))
+
+  await page.evaluate(() => {
     window.runtime.snapshot.workspace.repositories[0].kind = 'scratch'
     window.show('project')
   })
@@ -156,7 +206,7 @@ try {
   assert.equal(await page.evaluate(() => window.projectsLinked), true)
   assert.deepEqual(errors, [])
   console.log(
-    'React Native project panel: editor, scripts, linked PRs, lifecycle overrides, PNG emoji picker, refresh, watchers and pipeline graph passed.',
+    'React Native project panel: hidden editor controls, inline PR links, scripts, linked PRs, lifecycle overrides, PNG emoji picker, refresh, watchers and pipeline graph passed.',
   )
 } finally {
   await browser.close()

@@ -1,4 +1,5 @@
 export { ChoicePicker } from './choice-picker'
+export { SearchField } from './search-field'
 export { FileBrowserTree, FileTypeIcon, FileChangeCounts } from './file-tree'
 export * from './lib/utils'
 export * from './components/icon-button'

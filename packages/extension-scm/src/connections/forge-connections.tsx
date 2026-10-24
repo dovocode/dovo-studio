@@ -4,7 +4,7 @@ import { decodeResult, decode } from '@dovo/protocol'
 import { CliProfilePicker } from './cli-profile-picker'
 import { GithubConnectionStatus } from './github-connection-status'
 import { useEffect, useRef } from 'react'
-import { Link2, Plus } from 'lucide-react'
+import { Link2, LoaderCircle, Plus, Save } from 'lucide-react'
 import {
   forgeConnectionInputSchema,
   forgeConnectionSchema,
@@ -445,14 +445,29 @@ function ConnectionForm({
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit">{busy ? 'Saving…' : 'Save connection'}</Button>
+          <Button type="submit" aria-busy={busy}>
+            {busy ? (
+              <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />
+            ) : (
+              <Save aria-hidden="true" />
+            )}
+            Save connection
+          </Button>
         </div>
       </fieldset>
-      {error && (
-        <p role="alert" className="break-words text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      <p
+        role={error ? 'alert' : 'status'}
+        className={`min-h-5 break-words text-sm ${error ? 'text-destructive' : 'text-muted-foreground'}`}
+      >
+        {error ||
+          (busy ? (
+            'Saving connection…'
+          ) : (
+            <span aria-hidden="true" className="invisible">
+              Saving connection…
+            </span>
+          ))}
+      </p>
     </form>
   )
 }

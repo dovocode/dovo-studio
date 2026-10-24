@@ -21,9 +21,9 @@
     "@dovo/client-runtime": "workspace:*",
     "@dovo/design": "workspace:*",
     "@dovo/protocol": "workspace:*",
-    "@effect/atom-react": "4.0.5",
+    "@effect/atom-react": "4.0.6",
     "@noble/hashes": "2.4.0",
-    "effect": "4.0.5",
+    "effect": "4.0.6",
     "fflate": "0.8.3",
     "jsonc-parser": "3.3.1",
     "react": "^19.3.1"

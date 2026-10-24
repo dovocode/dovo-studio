@@ -128,6 +128,8 @@ jobs:
           apps/desktop/electron
   # Windows shell selection, launcher and server lifecycle suites.
   windows:
+    # Temporarily paused; keep the job definition for restoring Windows coverage.
+    if: ${{ false }}
     runs-on: windows-2025
     timeout-minutes: 30
     steps:

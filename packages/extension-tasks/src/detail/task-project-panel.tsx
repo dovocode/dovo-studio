@@ -38,8 +38,6 @@ import {
   ChevronDown,
   Download,
   GitCommitHorizontal,
-  Plus,
-  ChevronUp,
   GitPullRequest,
   FileDiff,
 } from 'lucide-react'
@@ -128,7 +126,6 @@ export function TaskProjectPanel({
       .finally(() => setOpenBusy(false))
   }
 
-  const [showAllPulls, setShowAllPulls] = useApplicationState(false)
   const linkedPulls = taskPullLinks(task)
   const displayedPulls: { number: number; url: string; title: string }[] = [...linkedPulls]
   if (task.pullStatus && !displayedPulls.some((pull) => pull.url === task.pullStatus?.url))
@@ -486,6 +483,37 @@ export function TaskProjectPanel({
               )}
             </div>
           </div>
+          {!!displayedPulls.length && (
+            <div
+              aria-label="Linked pull requests"
+              className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+            >
+              {displayedPulls.map((pull) =>
+                taskPullStatusFor(task, pull.url) ? (
+                  <TaskPullStatus
+                    key={pull.url}
+                    title={pull.title}
+                    task={task}
+                    url={pull.url}
+                    onPullLink={onPullLink}
+                  />
+                ) : (
+                  <Button
+                    key={pull.url}
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 min-w-0 gap-1.5 px-1.5 text-xs"
+                    onClick={() => openPull(pull.url)}
+                    title={pull.title}
+                    aria-label={`Open PR #${pull.number}: ${pull.title}`}
+                  >
+                    <GitPullRequest size={14} className="shrink-0 text-muted-foreground" />#
+                    {pull.number}
+                  </Button>
+                ),
+              )}
+            </div>
+          )}
           {repo && !repo.kind && (
             <div className="studio-project-checkout mb-3">
               <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -511,44 +539,8 @@ export function TaskProjectPanel({
         </div>
         <div className="studio-project-section border-t border-border/60">
           <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Pull requests & changes
+            Changes
           </h3>
-          {(showAllPulls ? displayedPulls : displayedPulls.slice(0, 1)).map((pull) =>
-            taskPullStatusFor(task, pull.url) ? (
-              <TaskPullStatus
-                key={pull.url}
-                panel
-                title={pull.title}
-                task={task}
-                url={pull.url}
-                onPullLink={onPullLink}
-              />
-            ) : (
-              <button
-                type="button"
-                key={pull.url}
-                className="studio-project-row studio-project-pull"
-                onClick={() => openPull(pull.url)}
-                title={pull.title}
-              >
-                <GitPullRequest size={18} className="shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{pull.title}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">#{pull.number}</span>
-                </span>
-              </button>
-            ),
-          )}
-          {displayedPulls.length > 1 && (
-            <Button
-              variant="ghost"
-              className="studio-project-row text-muted-foreground"
-              onClick={() => setShowAllPulls((value) => !value)}
-            >
-              {showAllPulls ? <ChevronUp size={18} /> : <Plus size={18} />}{' '}
-              {showAllPulls ? 'Show less' : `Show ${displayedPulls.length - 1} more`}
-            </Button>
-          )}
           {!displayedPulls.length && (
             <Button
               variant="ghost"

@@ -2,7 +2,13 @@
 import type { ComponentProps } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
-export function Queue({ className, ...props }: ComponentProps<'details'>) {
+export function Queue({
+  embedded = false,
+  className,
+  children,
+  ...props
+}: ComponentProps<'details'> & { embedded?: boolean }) {
+  if (embedded) return <div className={className}>{children}</div>
   return (
     <details
       className={cn(
@@ -10,7 +16,9 @@ export function Queue({ className, ...props }: ComponentProps<'details'>) {
         className,
       )}
       {...props}
-    />
+    >
+      {children}
+    </details>
   )
 }
 export function QueueSectionTrigger({ className, children, ...props }: ComponentProps<'summary'>) {

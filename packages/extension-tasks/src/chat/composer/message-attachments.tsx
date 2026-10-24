@@ -1,7 +1,13 @@
 import { useApplicationState } from '@dovo/studio-core/state'
+import { EditChatImage } from './chat-image-edit-context'
 import { useEffect, useRef } from 'react'
-import { Paperclip, X, Pencil } from 'lucide-react'
-import { attachmentReadSchema, isImageAttachment, type Attachment } from '@dovo/studio-core'
+import { File, FileImage, X, Pencil } from 'lucide-react'
+import {
+  attachmentReadSchema,
+  isImageAttachment,
+  fileSizeLabel,
+  type Attachment,
+} from '@dovo/studio-core'
 import { useWorkspace } from '@dovo/studio-core'
 import { Button, Dialog, DialogContent, DialogTitle, DialogDescription } from '@dovo/studio-ui'
 export function MessageAttachments({
@@ -51,70 +57,79 @@ export function MessageAttachments({
   if (!files.length) return null
   return (
     <div
-      className="flex flex-wrap gap-1.5 py-1"
+      className="flex min-w-0 flex-col gap-1 py-0.5"
       aria-label={remove ? 'Draft attachments' : 'Message attachments'}
     >
-      {files.map((file) => (
-        <div
-          key={file.id}
-          className={`flex min-w-0 items-center rounded-md border bg-secondary/40 text-[0.6875rem] ${compact ? 'max-w-52' : 'max-w-full'}`}
-        >
-          <button
-            type="button"
-            className={`flex min-w-0 items-center gap-1.5 ${compact ? 'h-7 px-1.5' : 'px-2 py-1.5'}`}
-            disabled={!connected || busy || disabled}
-            onClick={() => void open(file.id)}
-            aria-label={`Preview ${file.name}`}
-            title={file.name}
+      <div className="flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto overscroll-contain">
+        {files.map((file) => (
+          <div
+            key={file.id}
+            className="flex w-full min-w-0 shrink-0 items-center rounded-lg border border-border/60 bg-muted/30 px-1"
           >
-            {isImageAttachment(file) ? (
-              previews?.get(file.id) ? (
-                <img
-                  src={previews.get(file.id)}
-                  alt={file.name}
-                  className={`${compact ? 'size-5' : 'size-10'} shrink-0 rounded object-cover`}
-                />
-              ) : (
-                <AttachmentThumbnail taskId={taskId} file={file} compact={compact} />
-              )
-            ) : (
-              <Paperclip className="size-3 shrink-0" />
-            )}
-            <span className="truncate">{file.name}</span>
-            {!compact && (
-              <span className="shrink-0 text-muted-foreground">
-                {Math.ceil(file.size / 1024)} KB
-              </span>
-            )}
-          </button>
-          {edit && ['image/png', 'image/jpeg', 'image/webp'].includes(file.mime) && (
-            <Button
+            <button
               type="button"
-              size="icon"
-              variant="ghost"
-              className="size-6 shrink-0"
-              aria-label={`Edit ${file.name}`}
+              className="flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1 [@media(pointer:coarse)]:min-h-11 text-left transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
               disabled={!connected || busy || disabled}
-              onClick={() => void edit(file.id)}
+              onClick={() => void open(file.id)}
+              aria-label={`Preview ${file.name}`}
+              title={file.name}
             >
-              <Pencil className="size-3" />
-            </Button>
-          )}
-          {remove && (
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="size-6 shrink-0"
-              aria-label={`Remove ${file.name}`}
-              disabled={!connected || disabled}
-              onClick={() => void remove(file.id)}
-            >
-              <X className="size-3" />
-            </Button>
-          )}
-        </div>
-      ))}
+              {isImageAttachment(file) ? (
+                previews?.get(file.id) ? (
+                  <img
+                    src={previews.get(file.id)}
+                    alt={file.name}
+                    className={`${compact ? 'size-6' : 'size-7'} shrink-0 rounded-md object-cover`}
+                  />
+                ) : (
+                  <AttachmentThumbnail taskId={taskId} file={file} compact={compact} />
+                )
+              ) : (
+                <span
+                  className={`flex ${compact ? 'size-6' : 'size-7'} shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground`}
+                >
+                  <File className="size-4" />
+                </span>
+              )}
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-xs font-medium">{file.name}</span>
+                <span className="shrink-0 text-[0.625rem] text-muted-foreground">
+                  {fileSizeLabel(file.size)}
+                </span>
+              </span>
+            </button>
+            {edit && ['image/png', 'image/jpeg', 'image/webp'].includes(file.mime) && (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-7 shrink-0 rounded-md text-muted-foreground [@media(pointer:coarse)]:size-11"
+                aria-label={`Edit ${file.name}`}
+                disabled={!connected || busy || disabled}
+                onClick={() => void edit(file.id)}
+              >
+                <Pencil className="size-3.5" />
+              </Button>
+            )}
+            {!remove && isImageAttachment(file) && (
+              <EditChatImage compact source={{ taskId, attachmentId: file.id }} label={file.name} />
+            )}
+            {remove && (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-7 shrink-0 rounded-md text-muted-foreground [@media(pointer:coarse)]:size-11"
+                aria-label={`Remove ${file.name}`}
+                disabled={!connected || busy || disabled}
+                onClick={() => void remove(file.id)}
+              >
+                <X className="size-3.5" />
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
       {!!error && (
         <p role="alert" className="text-destructive">
           {error}
@@ -138,6 +153,13 @@ export function MessageAttachments({
                 {textPreview(preview.data)}
               </pre>
             )
+          )}
+          {preview && !remove && isImageAttachment(preview.attachment) && (
+            <EditChatImage
+              source={{ taskId, attachmentId: preview.attachment.id }}
+              label={preview.attachment.name}
+              onEdit={() => setPreview(null)}
+            />
           )}
           <Button
             type="button"
@@ -211,13 +233,13 @@ function AttachmentThumbnail({
   return (
     <span
       ref={ref}
-      className={`flex ${compact ? 'size-5' : 'size-10'} shrink-0 items-center justify-center overflow-hidden rounded bg-muted`}
+      className={`flex ${compact ? 'size-6' : 'size-7'} shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground`}
     >
       {src ? (
         <img src={src} alt={file.name} className="size-full object-cover" />
       ) : (
-        <Paperclip
-          className="size-3"
+        <FileImage
+          className="size-4"
           aria-label={failed ? 'Preview unavailable; click to retry' : 'Loading image preview'}
         />
       )}

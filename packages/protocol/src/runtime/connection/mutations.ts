@@ -53,6 +53,9 @@ export const mutationOutboxSchema = mutableArray(
     input: Schema.Unknown,
     /** Failed domain checks require an explicit retry or discard; reconnect cannot fix them. */
     blocked: Schema.optional(Schema.Boolean),
+    /** Credential renewal lost the original receipt namespace. Never replay without consent. */
+    reviewAfterRenewal: Schema.optional(Schema.Boolean),
+    receiptToken: Schema.optional(Schema.String),
   }),
 )
 export type MutationOutbox = Schema.Schema.Type<typeof mutationOutboxSchema>
@@ -81,9 +84,18 @@ type State = {
   confirmedMessages: MutationOutbox
   error: string | null
   lock: Semaphore.Semaphore
+  replaced?: boolean
+  renewedCredential?: string
 }
 const connectionKey = (connection: RuntimeConnection) =>
   JSON.stringify([new URL(connection.address).origin, connection.token])
+const accountCredential = (connection: RuntimeConnection) =>
+  JSON.stringify([
+    connection.accountSession,
+    connection.token,
+    connection.internet?.session,
+    connection.internet?.token,
+  ])
 const transient = (error: unknown) =>
   error instanceof RuntimeRequestError &&
   (error.kind === 'connection' ||
@@ -91,6 +103,9 @@ const transient = (error: unknown) =>
     [502, 503, 504].includes(error.status ?? 0))
 const transientMutation = (item: { path: string }, error: unknown) =>
   transient(error) ||
+  (error instanceof RuntimeRequestError &&
+    error.status === 403 &&
+    error.message === 'Account access requires an authorized Dovo Connect tunnel') ||
   (item.path === '/api/workspace' &&
     error instanceof RuntimeRequestError &&
     [500, 426].includes(error.status ?? 0))
@@ -136,7 +151,11 @@ export class RuntimeMutations {
   }
   status(connection: RuntimeConnection) {
     const state = this.state(connection)
-    return { pending: state.pending.length, error: state.error }
+    return {
+      pending: state.pending.length,
+      error: state.error,
+      reviewRequired: state.pending.some((item) => item.reviewAfterRenewal),
+    }
   }
   workspaceRefreshCheckpoint(connection: RuntimeConnection) {
     const state = this.state(connection)
@@ -376,12 +395,16 @@ export class RuntimeMutations {
         // One retry identity per original operation, even if the host changes again.
         // A changed payload must collide with the receipt rather than repeat a write.
         const retryId = bytesToHex(sha256(utf8ToBytes(JSON.stringify({ id, workspaceRetry: 1 }))))
-        const response = yield* this.sendRaw(connection, {
-          id: retryId,
-          path: '/api/workspace',
-          method: 'PATCH',
-          input: rebased,
-        }).pipe(
+        const response = yield* this.sendRaw(
+          connection,
+          {
+            id: retryId,
+            path: '/api/workspace',
+            method: 'PATCH',
+            input: rebased,
+          },
+          id,
+        ).pipe(
           Effect.catch((error) =>
             error instanceof RuntimeRequestError &&
             error.status === 409 &&
@@ -460,10 +483,53 @@ export class RuntimeMutations {
       ? this.workspaceEffect(connection, item.input, item.id)
       : this.sendRaw(connection, item)
   }
-  private sendRaw(connection: RuntimeConnection, item: MutationOutbox[number]) {
+  private bindReceipt(connection: RuntimeConnection, id: string, token: string | undefined) {
+    const state = this.state(connection)
+    return Effect.gen({ self: this }, function* () {
+      const item = state.pending.find((entry) => entry.id === id)
+      if (item?.reviewAfterRenewal)
+        return yield* Effect.fail(
+          new Error('Review saved actions before retrying; some may already have run.'),
+        )
+      if (!item || !token || item.receiptToken === token) return
+      const safe =
+        (item.path === '/api/tasks/message' || item.path === '/api/tasks/steer') &&
+        item.input !== null &&
+        typeof item.input === 'object' &&
+        'messageId' in item.input &&
+        typeof item.input.messageId === 'string' &&
+        !!item.input.messageId
+      if (item.receiptToken && !safe) {
+        yield* this.save(connection, state, (pending) =>
+          pending.map((entry) =>
+            entry.id === id ? { ...entry, reviewAfterRenewal: true } : entry,
+          ),
+        )
+        return yield* Effect.fail(
+          new Error(
+            'The connection credential changed. Some saved actions may already have run. Review them before retrying.',
+          ),
+        )
+      }
+      yield* this.save(connection, state, (pending) =>
+        pending.map((entry) => (entry.id === id ? { ...entry, receiptToken: token } : entry)),
+      )
+    }).pipe(
+      Effect.mapError(
+        (error) =>
+          new RuntimeRequestError({ kind: 'request', message: error.message, cause: error }),
+      ),
+    )
+  }
+  private sendRaw(
+    connection: RuntimeConnection,
+    item: MutationOutbox[number],
+    receiptId = item.id,
+  ) {
     return createRuntimeClient(connection).requestEffect(item.path, item.input, Schema.Unknown, {
       method: item.method,
       mutationId: item.id,
+      beforeMutation: (token) => this.bindReceipt(connection, receiptId, token),
     })
   }
   private acknowledge(connection: RuntimeConnection, state: State, id: string) {
@@ -492,6 +558,15 @@ export class RuntimeMutations {
           (entry) => !skipped.has(entry.id) && (!blockedError || entry.path === '/api/workspace'),
         )
         if (!item || item.id === stopBefore) break
+        if (item.reviewAfterRenewal) {
+          blockedError = new Error(
+            'Computer access was renewed. Some saved actions may already have run. Review them before retrying.',
+          )
+          state.error = blockedError.message
+          this.changed()
+          skipped.add(item.id)
+          continue
+        }
         // A saved workspace validation failure can safely be resolved from its receipt,
         // including journals created by older clients that retained rejected edits.
         if (
@@ -542,12 +617,25 @@ export class RuntimeMutations {
       }
     })
   }
-  recoverEffect(connection: RuntimeConnection, retry = false) {
+  recoverEffect(connection: RuntimeConnection, retry = false, confirmRenewalReplay = false) {
     const state = this.state(connection)
     return state.lock
       .withPermits(1)(
         Effect.gen({ self: this }, function* () {
+          if (
+            state.replaced ||
+            (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+          )
+            return
           yield* this.load(connection, state)
+          if (confirmRenewalReplay)
+            yield* this.save(connection, state, (pending) =>
+              pending.map((item) =>
+                item.reviewAfterRenewal
+                  ? { ...item, reviewAfterRenewal: undefined, receiptToken: undefined }
+                  : item,
+              ),
+            )
           if (!state.pending.length) {
             if (state.error !== null) {
               state.error = null
@@ -586,6 +674,15 @@ export class RuntimeMutations {
     const state = this.state(connection)
     return state.lock.withPermits(1)(
       Effect.gen({ self: this }, function* () {
+        if (
+          state.replaced ||
+          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+        )
+          return yield* Effect.fail(
+            new Error(
+              'Computer connection changed. Review its saved actions before discarding them.',
+            ),
+          )
         yield* operation(() => this.storage.clear(connection))
         state.pending = []
         state.confirmedMessages = []
@@ -598,14 +695,123 @@ export class RuntimeMutations {
     const state = this.state(connection)
     return state.lock.withPermits(1)(
       Effect.gen({ self: this }, function* () {
-        yield* this.load(connection, state)
-        if (state.pending.length)
+        if (
+          state.replaced ||
+          (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+        )
           return yield* Effect.fail(
             new Error(
-              'This computer has saved actions waiting to sync. Retry or discard them before forgetting it.',
+              'Computer connection changed. Review its saved actions before forgetting it.',
             ),
           )
+        yield* this.load(connection, state)
+        if (state.pending.length) {
+          const error =
+            'This computer has saved actions waiting to sync. Retry or discard them before forgetting it.'
+          if (state.error !== error) {
+            state.error = error
+            this.changed()
+          }
+          return yield* Effect.fail(new Error(state.error))
+        }
       }),
+    )
+  }
+  /** Preserve the journal before publishing a verified replacement credential. Copying first
+   * leaves the source intact on failure; IDs make an interrupted handoff safe to repeat.
+   * Only task submissions have domain-level deduplication across device credentials. */
+  renewConnectionEffect<E>(
+    previous: RuntimeConnection,
+    next: RuntimeConnection,
+    commit: Effect.Effect<void, E>,
+  ) {
+    if (
+      connectionKey(previous) === connectionKey(next) &&
+      accountCredential(previous) === accountCredential(next)
+    )
+      return commit
+    const source = this.state(previous),
+      destination = this.state(next)
+    const states =
+      connectionKey(previous) < connectionKey(next) ? [source, destination] : [destination, source]
+    const transfer = Effect.gen({ self: this }, function* () {
+      if (
+        !previous.runtimeId ||
+        previous.runtimeId !== next.runtimeId ||
+        !(previous.accountSession ?? next.internet?.session) ||
+        (previous.accountSession ?? previous.internet?.session ?? next.internet?.session) !==
+          (next.accountSession ?? next.internet?.session)
+      )
+        return yield* Effect.fail(
+          new Error('Cannot move saved actions to a different computer or account'),
+        )
+      if (
+        source.replaced ||
+        (source.renewedCredential && source.renewedCredential !== accountCredential(previous))
+      )
+        return yield* Effect.fail(new Error('Computer connection already changed'))
+      yield* this.load(previous, source)
+      const pending = source.pending.map((item) => {
+        const input = item.input
+        const safe =
+          (item.path === '/api/tasks/message' || item.path === '/api/tasks/steer') &&
+          input !== null &&
+          typeof input === 'object' &&
+          'messageId' in input &&
+          typeof input.messageId === 'string' &&
+          !!input.messageId
+        return safe ? { ...item, blocked: undefined } : { ...item, reviewAfterRenewal: true }
+      })
+      yield* this.save(next, destination, (saved) => {
+        const result = [...saved]
+        for (const item of pending) {
+          const existing = result.find((entry) => entry.id === item.id)
+          if (
+            existing &&
+            (existing.path !== item.path ||
+              existing.method !== item.method ||
+              JSON.stringify(existing.input) !== JSON.stringify(item.input))
+          )
+            throw new Error('Saved action identity conflict. Original actions were preserved.')
+          if (!existing) result.push(item)
+          else result[result.indexOf(existing)] = { ...existing, ...item }
+        }
+        return result
+      })
+      if (
+        source !== destination &&
+        this.storage.workspaceRecoveries &&
+        this.storage.recoverWorkspaceEdit
+      ) {
+        const edits = yield* operation(() => this.storage.workspaceRecoveries!(previous))
+        for (const edit of edits)
+          yield* operation(() => this.storage.recoverWorkspaceEdit!(next, edit))
+      }
+      yield* commit
+      destination.renewedCredential = accountCredential(next)
+      source.replaced = source !== destination
+      // The replacement already owns a durable copy. A failed cleanup must not undo it.
+      if (source !== destination) yield* this.discardTransferredSource(previous, source)
+      destination.error = pending.some((item) => item.reviewAfterRenewal)
+        ? 'Computer access was renewed. Review saved actions before retrying; some may already have run.'
+        : null
+      this.changed()
+    }).pipe(Effect.uninterruptible)
+    return source === destination
+      ? source.lock.withPermits(1)(transfer)
+      : states[0]!.lock.withPermits(1)(states[1]!.lock.withPermits(1)(transfer))
+  }
+  private discardTransferredSource(connection: RuntimeConnection, state: State) {
+    return operation(() => this.storage.clear(connection)).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          state.pending = []
+          state.confirmedMessages = []
+          state.error = null
+        }),
+      ),
+      // Old credentials are no longer selected. Keep their journal if cleanup is unavailable.
+      Effect.catch(() => Effect.void),
     )
   }
   requestEffect<T extends Schema.Codec<unknown, unknown>>(
@@ -625,6 +831,11 @@ export class RuntimeMutations {
     return state.lock
       .withPermits(1)(
         Effect.gen({ self: this }, function* () {
+          if (
+            state.replaced ||
+            (state.renewedCredential && state.renewedCredential !== accountCredential(connection))
+          )
+            return yield* Effect.fail(new Error('Computer access changed. Try this action again.'))
           yield* this.load(connection, state)
           // Resolve old rejected settings before accepting a new edit, without replaying
           // unrelated commands or discarding conflicts with an uncertain outcome.

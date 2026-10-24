@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import {
   artifactDeleteResponseSchema,
@@ -16,15 +16,19 @@ import { Choice } from '../controls/choice'
 import { SearchField } from '../controls/field'
 import { Text } from './text'
 import { useTheme } from '../theme'
+import { Sheet, type SheetHandle } from '../layout/sheet'
+import { IconButton } from '../controls/icon-button'
 
 export function ArtifactLibraryActions({
   profile,
   artifact,
   onDeleted,
+  onOpenSource,
 }: {
   profile: RuntimeProfile
   artifact: ArtifactMetadata
   onDeleted: () => void
+  onOpenSource?: () => void
 }) {
   const { overviews, readRuntime } = useRuntime()
   const { navigate } = useNavigation()
@@ -36,6 +40,8 @@ export function ArtifactLibraryActions({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [added, setAdded] = useState('')
+  const [menu, setMenu] = useState(false)
+  const sheet = useRef<SheetHandle>(null)
   const tasks = (runtime?.snapshot?.workspace.tasks ?? []).filter(
     (task) =>
       task.id !== artifact.taskId &&
@@ -80,29 +86,52 @@ export function ArtifactLibraryActions({
   }
   return (
     <>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, padding: 12 }}>
-        <Action
-          secondary
-          label="Add to thread"
-          disabled={!runtime?.connected}
-          onPress={() => {
-            setError('')
-            setAdded('')
-            setQuery('')
-            setTarget('')
-            setAction('add')
-          }}
-        />
-        <Action
-          secondary
-          label="Delete artifact"
-          disabled={!runtime?.connected}
-          onPress={() => {
-            setError('')
-            setAction('delete')
-          }}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          paddingHorizontal: 12,
+          paddingBottom: 4,
+        }}
+      >
+        {onOpenSource && <Action secondary label="Open source thread" onPress={onOpenSource} />}
+        <IconButton
+          label={`Artifact actions ${artifact.title}`}
+          icon="more"
+          onPress={() => setMenu(true)}
         />
       </View>
+      {menu && (
+        <Sheet ref={sheet} title={artifact.title} onClose={() => setMenu(false)}>
+          <Action
+            secondary
+            label="Add to thread"
+            disabled={!runtime?.connected}
+            onPress={() => {
+              sheet.current?.dismiss(() => {
+                setError('')
+                setAdded('')
+                setQuery('')
+                setTarget('')
+                setAction('add')
+              })
+            }}
+          />
+          <Action
+            secondary
+            label="Delete artifact"
+            disabled={!runtime?.connected}
+            onPress={() => {
+              sheet.current?.dismiss(() => {
+                setError('')
+                setAction('delete')
+              })
+            }}
+          />
+        </Sheet>
+      )}
       {!!added && (
         <View style={{ paddingHorizontal: 16, paddingBottom: 12, gap: 8 }}>
           <Text style={styles.muted}>Added to thread.</Text>

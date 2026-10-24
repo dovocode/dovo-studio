@@ -95,6 +95,64 @@ it('clears a revoked session instead of treating account login as runtime pairin
   expect(f.client.snapshot().directory).toBeNull()
   expect(f.calls.every((call) => call.path.startsWith('/v1/'))).toBe(true)
 })
+it('refreshes directory presence without starting an account operation or fetching publications', async () => {
+  const f = fixture()
+  await f.client.signIn()
+  const updated = {
+    ...directory,
+    servers: [{ ...directory.servers[0], internet: { online: true, publicKey: 'b'.repeat(64) } }],
+  }
+  const fetch = vi.fn<() => Promise<Response>>(async () => Response.json(updated))
+  vi.stubGlobal('fetch', fetch)
+  expect(await f.client.refreshDirectory(new AbortController().signal)).toEqual(updated)
+  expect(f.client.snapshot().directory).toEqual(updated)
+  expect(f.client.snapshot().busy).toBe(false)
+  expect(fetch).toHaveBeenCalledTimes(1)
+})
+it('ignores a directory response arriving after cancellation or sign-out', async () => {
+  const f = fixture()
+  await f.client.signIn()
+  let respond: (response: Response) => void = () => {
+    throw new Error('No pending request')
+  }
+  vi.stubGlobal('fetch', (url: string) =>
+    new URL(url).pathname === '/v1/servers'
+      ? new Promise<Response>((resolve) => {
+          respond = resolve
+        })
+      : Promise.resolve(Response.json({ ok: true })),
+  )
+  const controller = new AbortController()
+  const refresh = f.client.refreshDirectory(controller.signal)
+  controller.abort()
+  respond(Response.json(directory))
+  await expect(refresh).rejects.toThrow('cancelled')
+  const afterSignOut = f.client.refreshDirectory()
+  await f.client.signOut()
+  respond(Response.json(directory))
+  await expect(afterSignOut).rejects.toThrow('cancelled')
+  expect(f.client.snapshot().directory).toBeNull()
+  expect(f.client.sessionId()).toBeNull()
+})
+it('does not replace account authorization when the broker denies renewed computer access', async () => {
+  const f = fixture()
+  await f.client.signIn()
+  const session = f.client.sessionId()
+  const request = vi.fn<() => Promise<Response>>(async () =>
+    Response.json({ error: 'revoked' }, { status: 403 }),
+  )
+  vi.stubGlobal('fetch', request)
+  await expect(
+    f.client.connectInternet(
+      { ...directory.servers[0]!, internet: { online: true, publicKey: 'key' } },
+      new Uint8Array(32).fill(3),
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow('Account service is unavailable')
+  expect(request).toHaveBeenCalledTimes(1)
+  expect(f.client.sessionId()).toBe(session)
+  expect(f.saved()).toBe(token)
+})
 it('does not commit an account when cancelled during secure storage', async () => {
   const f = fixture()
   let saved: string | null = null,

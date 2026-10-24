@@ -28,11 +28,11 @@ for (const [path, name] of [
 const built = await build({
   stdin: {
     contents: `
-import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {ComposerActivity} from './src/chat/composer/composer-activity.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';import {formatCodeReference} from './src/detail/code-reference';
+import {createRoot} from 'react-dom/client';import {useState,useCallback} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';import {ComposerActivity} from './src/chat/composer/composer-activity.tsx';import {RunControls} from './src/chat/actions/run-controls.tsx';import {pendingMessageQueue,visiblePendingMessages} from '@dovo/protocol';import {formatCodeReference} from './src/detail/code-reference';
 const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[],queue:[],draft:'',files:[],example:false};
 window.editorMounts=0;window.dropped=[];window.requests=[];window.navigations=[];window.pending=null;window.fail=false;window.response=null;window.asides=[];window.sideResponse=null;
-const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
-function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{...inputs,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
+const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.current.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask(task=>({...task,nativeTodos:undefined}));return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(path==='/api/tasks/side-chat/save'){if(window.failSideSave)throw Error('Side save failed');return new Promise(resolve=>{window.sideSaved=()=>resolve({id:'side-'+window.asides.length})})};if(path==='/api/tasks/side-chat/ask')return new Promise((resolve,reject)=>{window.sideResponse=()=>window.failSideAsk?reject(Error('Side ask failed')):resolve({answer:'Side answer'})});if(path==='/api/tasks/projects/select'){if(window.failAuto)throw Error('Scope needs a project choice');return {...window.current,repositoryId:'selected-project',autoProject:undefined,linkedCheckouts:[{id:'linked',repositoryId:'api',execution:'worktree',access:'read-only'}]}};if(path==='/api/tasks/title')return{title:'Generated title'};if(path==='/api/tasks/queue'&&['pause-message','resume-message'].includes(input.action)){window.setTask(task=>({...task,queue:task.queue.map(message=>message.id===input.messageId?{...message,paused:input.action==='pause-message'}:message)}));return {ok:true}};if(path==='/api/tasks/queue'&&input.action==='move'){if(window.failMove)throw Error('Move rejected');window.setTask(task=>{const queue=task.queue.filter(message=>message.id!==input.messageId);const message=task.queue.find(message=>message.id===input.messageId);const index=input.beforeMessageId===null?queue.length:queue.findIndex(message=>message.id===input.beforeMessageId);queue.splice(index,0,message);return {...task,queue}});return {ok:true}};if(path==='/api/tasks/message'||path==='/api/tasks/steer'||path==='/api/tasks/start-fork')return new Promise((resolve,reject)=>{window.response=()=>window.fail?reject(new Error('Network failure')):resolve(path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true})});return {ok:true}};
+function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[connected,setConnected]=useState(true);window.setConnected=setConnected;const[inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;const[insertion,setInsertion]=useState(null);const[mount,setMount]=useState(0);window.addReference=(id,text)=>setInsertion({taskId:'task',id,text});window.remount=()=>setMount(value=>value+1);window.pendingInsertion=insertion;window.reference=formatCodeReference('src/example.ts',1,1,'const answer = 42;','new');const[pendingQueue,setPendingQueue]=useState([]);window.setPendingQueue=setPendingQueue;const[workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});const onPending=useCallback(pending=>{window.pending=pending},[]);window.current=workspace.tasks[0];window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));const value={workspace,setWorkspace,request,connected,runtimes:[],activeRuntimeId:'runtime',connection:{address:'http://runtime',token:'token'},flush:async()=>{},snapshot:{...inputs,queuedTurnSettingsSupported:true,fullTurnSettingsSupported:full,permissionPolicySupported:true}};return <WorkspaceHarness value={value}><><RunControls task={workspace.tasks[0]}/><Composer key={mount} composerInsert={insertion?.taskId===workspace.tasks[0].id?insertion:null} onComposerInsertApplied={()=>setInsertion(null)} task={workspace.tasks[0]} onAside={id=>window.asides.push(id??null)} onPending={onPending} queuedMessages={<ComposerActivity task={{...workspace.tasks[0],queue:pendingMessageQueue(workspace.tasks[0],pendingQueue)}} pending={visiblePendingMessages(workspace.tasks[0],pendingQueue)}/>}/></></WorkspaceHarness>};createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -408,6 +408,24 @@ try {
     .getByRole('button', { name: 'Drag queued message 1 to reorder', exact: true })
     .dragTo(input)
   if ((await moves()).length !== 4) throw Error('Canceled drag sent a mutation')
+  assert.equal(await page.getByRole('button', { name: 'Pause queue', exact: true }).count(), 0)
+  assert.equal(await queued.getByRole('button', { name: /Move queued message/ }).count(), 0)
+  await queued.getByRole('button', { name: 'Pause queued message 2', exact: true }).click()
+  await queued.getByRole('button', { name: 'Resume queued message 2', exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.current.queue[1].paused), true)
+  assert.equal(await page.evaluate(() => window.current.queue[0].paused ?? false), false)
+  await queued.getByRole('button', { name: 'Resume queued message 2', exact: true }).click()
+  await queued.getByRole('button', { name: 'Pause queued message 2', exact: true }).waitFor()
+  const keyboardHandle = queued.getByRole('button', {
+    name: 'Drag queued message 3 to reorder',
+    exact: true,
+  })
+  await keyboardHandle.focus()
+  await page.keyboard.press('ArrowUp')
+  await page.waitForFunction(
+    () => window.current.queue.map((item) => item.id).join(',') === 'first,second,third,fourth',
+  )
+
   await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
   await submit('Fork continuation', 'Fork')
   const forkId = await page.evaluate(() => window.requests.at(-1).input.forkId)
@@ -456,19 +474,22 @@ try {
       `Drag queued message ${index} to reorder`,
       `Edit queued message ${index}`,
       `Steer with queued message ${index}`,
-      `Move queued message ${index} up`,
-      `Move queued message ${index} down`,
+      `Pause queued message ${index}`,
       `Cancel queued message ${index} and return it to the composer`,
     ])
       if (!(await page.getByRole('button', { name, exact: true }).isDisabled()))
         throw new Error('Unconfirmed queue item exposed an authoritative action: ' + name)
   }
-  if (
-    !(await page
-      .getByRole('button', { name: 'Move queued message 1 down', exact: true })
-      .isDisabled())
+  assert.equal(
+    await page.getByRole('button', { name: /Move queued message .* (up|down)/ }).count(),
+    0,
   )
-    throw new Error('Accepted queue item can be moved into a local-only row')
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Drag queued message 1 to reorder', exact: true })
+      .isDisabled(),
+    true,
+  )
   if (await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).isDisabled())
     throw new Error('Accepted queue item lost its actions')
   await page.evaluate(() => {
@@ -636,6 +657,21 @@ try {
   const queueTab = page.getByRole('tab', { name: 'Queue · 1', exact: true })
   const checklistTab = page.getByRole('tab', { name: /Checklist · 1\/2/ })
   await queueTab.waitFor()
+  assert.equal(await queueTab.textContent(), 'Queue1')
+  assert.equal(await checklistTab.textContent(), 'Checklist1/2')
+  await page.evaluate(() =>
+    window.setTask((task) => ({ ...task, queuePaused: true, status: 'completed' })),
+  )
+  const pausedTab = page.getByRole('tab', { name: 'Queue · 1 · Paused', exact: true })
+  const unfinishedTab = page.getByRole('tab', { name: 'Checklist · 1/2 · Unfinished', exact: true })
+  await pausedTab.waitFor()
+  await unfinishedTab.waitFor()
+  assert.equal(await pausedTab.locator('svg').count(), 1)
+  assert.equal(await unfinishedTab.locator('svg').count(), 1)
+  await page.evaluate(() =>
+    window.setTask((task) => ({ ...task, queuePaused: false, status: 'running' })),
+  )
+  await queueTab.waitFor()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   const queuedEdit = page.getByRole('textbox', { name: 'Message', exact: true })
   await queuedEdit.fill('Unsaved queue edit')
@@ -786,6 +822,55 @@ try {
   assert.equal(fullEdit.expectedText, 'Preserve queued message')
   assert.equal(await input.inputValue(), 'Preserve my draft')
   assert.equal(await page.evaluate(() => window.current.harness ?? null), null)
+  // Approval shortcuts only operate within the focused approval card.
+  await page.evaluate(() =>
+    window.setInputs({
+      questions: [],
+      approvals: [
+        { id: 'approve-one', taskId: 'task', title: 'Apply changes', detail: 'First' },
+        { id: 'approve-two', taskId: 'task', title: 'Run command', detail: 'Second' },
+      ],
+    }),
+  )
+  await page.locator('[data-approval-id="approve-two"]').waitFor()
+  const approvalsBefore = await page.evaluate(
+    () => window.requests.filter((item) => item.path === '/api/approvals').length,
+  )
+  await input.focus()
+  await page.keyboard.press('y')
+  await page.locator('body').evaluate((body) => {
+    body.tabIndex = -1
+    body.focus()
+  })
+  await page.keyboard.press('n')
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((item) => item.path === '/api/approvals').length,
+    ),
+    approvalsBefore,
+  )
+  await page.locator('[data-approval-id="approve-two"]').focus()
+  await page.keyboard.press('y')
+  await page.waitForFunction(
+    (count) =>
+      window.requests.filter((item) => item.path === '/api/approvals').length === count + 1,
+    approvalsBefore,
+  )
+  assert.deepEqual(await page.evaluate(() => window.requests.at(-1).input), {
+    id: 'approve-two',
+    allow: true,
+  })
+  await page.locator('[data-approval-id="approve-one"]').focus()
+  await page.keyboard.press('n')
+  await page.waitForFunction(
+    (count) =>
+      window.requests.filter((item) => item.path === '/api/approvals').length === count + 2,
+    approvalsBefore,
+  )
+  assert.deepEqual(await page.evaluate(() => window.requests.at(-1).input), {
+    id: 'approve-one',
+    allow: false,
+  })
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch and immediate side-chat sending via icon and shortcut passed.',

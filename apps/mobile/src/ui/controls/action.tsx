@@ -3,95 +3,6 @@ import { Text } from '../content/text'
 import { IconButton } from './icon-button'
 import type { IconName } from './icon'
 import { useTheme } from '../theme'
-const actionIcons: Readonly<Partial<Record<string, IconName>>> = {
-  'New terminal': 'add',
-  'Create PR': 'add',
-  'Close shell': 'close',
-  'Reconnect terminal': 'refresh',
-  Terminal: 'terminal',
-  'Refresh details': 'refresh',
-  'Retry connection': 'refresh',
-  'PR filters': 'filters',
-  'Back to PRs': 'back',
-  'Attach files': 'add',
-  Send: 'send',
-  Stop: 'stop',
-  Close: 'close',
-  Back: 'back',
-  'Dismiss keyboard': 'keyboard',
-  'Close preview': 'close',
-  Artifacts: 'artifact',
-  'Latest version': 'history',
-  Preview: 'web',
-  Source: 'artifact',
-  'View source': 'artifact',
-  Share: 'share',
-  'Share file': 'share',
-  Expand: 'expand',
-  'Agent & model': 'settings',
-  'Device controls': 'settings',
-  'Review diff': 'changes',
-  'Commit & push': 'changes',
-  'Commit all': 'changes',
-  'Commit staged changes': 'changes',
-  Branches: 'changes',
-  'New task': 'newChat',
-  'New side chat': 'newChat',
-  'Open chat': 'chat',
-  'Open task': 'tasks',
-  'Open linked task': 'tasks',
-  'Go to tasks': 'tasks',
-  'Open Settings': 'settings',
-  'Open computer settings': 'settings',
-  'Manage computers': 'device',
-  'All computers': 'device',
-  'Write message': 'edit',
-  'Send answers': 'send',
-  'Send to agent': 'send',
-  'Stack a PR': 'stack',
-  'Ask agent to update stack': 'stack',
-  'Approve review': 'check',
-  'Reject review': 'close',
-  'Clear filters': 'filters',
-  'Reset filters': 'filters',
-  'Reset PR filters': 'filters',
-  Duplicate: 'copy',
-  'Newer activity': 'moveDown',
-  'Older activity': 'history',
-  'Browse folders': 'folder',
-  'Browse runtime folders…': 'folder',
-  'Browse repositories': 'projects',
-  'Browse skills.sh': 'external',
-  'Browse MCP Registry': 'external',
-  'View tasks on this device': 'tasks',
-  'View pipeline runs for this commit': 'jobs',
-  'Show issues': 'issues',
-  'Show pull requests': 'pulls',
-  'Show pending questions': 'chat',
-  'Add task': 'newChat',
-  'Add review': 'add',
-  'Add comment': 'chat',
-  'Add a new computer': 'add',
-  'Add MCP server': 'add',
-  'Add skill': 'add',
-  'Add credential': 'add',
-  'New configuration': 'add',
-  'New session': 'newChat',
-  'New global preset': 'add',
-}
-function actionIcon(label: string): IconName | undefined {
-  if (actionIcons[label]) return actionIcons[label]
-  if (/^(Refresh|Retry|Reconnect|Reload)\b/.test(label) || label === 'Try again') return 'refresh'
-  if (/^Back\b/.test(label)) return 'back'
-  if (/^Cancel\b/.test(label)) return 'close'
-  if (/^Save\b/.test(label)) return 'save'
-  if (/^(Delete|Remove|Forget|Discard)\b/.test(label)) return 'trash'
-  if (/^Stop\b/.test(label)) return 'stop'
-  if (/^Changes \(/.test(label)) return 'changes'
-  if (/^Version \d+$/.test(label)) return 'history'
-  if (/^(Load more|More comments|More jobs|More pipelines)\b/.test(label)) return 'down'
-  return undefined
-}
 // Irreversible actions read differently from navigation-style links.
 const destructive = /^(Forget|Delete|Remove|Revoke|Discard)\b/
 type ActionProps = {
@@ -99,14 +10,17 @@ type ActionProps = {
   onPress: () => void
   disabled?: boolean
   secondary?: boolean
+  /** Text actions share the web button hierarchy; icon actions keep native styling. */
+  variant?: 'default' | 'outline' | 'ghost'
   /** Full-width primary call to action, e.g. the one decision on a form. */
   wide?: boolean
   icon?: IconName
 }
 export function Action(props: ActionProps) {
   const { colors } = useTheme()
+  const secondary = props.variant ? props.variant !== 'default' : props.secondary
 
-  const icon = props.icon ?? (props.wide ? undefined : actionIcon(props.label))
+  const icon = props.icon
   if (icon)
     return (
       <IconButton
@@ -118,11 +32,11 @@ export function Action(props: ActionProps) {
         variant={
           props.label === 'Back' || props.label === 'Back to PRs'
             ? 'glass'
-            : props.secondary
+            : secondary
               ? 'plain'
               : 'filled'
         }
-        prominent={!props.secondary}
+        prominent={!secondary}
         size={props.label === 'Send' || props.label === 'Stop' ? 48 : 44}
       />
     )
@@ -133,11 +47,13 @@ function TextAction({
   onPress,
   disabled = false,
   secondary = false,
+  variant = secondary ? 'ghost' : 'default',
   wide = false,
 }: ActionProps) {
   const { colors } = useTheme()
 
   const danger = destructive.test(label)
+  const filled = variant === 'default'
   return (
     <Pressable
       testID={label}
@@ -149,16 +65,26 @@ function TextAction({
       style={({ pressed }) => ({
         minWidth: 44,
         maxWidth: '100%',
-        flexShrink: 0,
+        flexShrink: 1,
         alignSelf: wide ? 'stretch' : 'flex-start',
         minHeight: wide ? 50 : 44,
         // Text-only actions align with the content they belong to; the hit area stays 44pt.
-        paddingHorizontal: secondary && !wide ? 0 : 16,
+        paddingHorizontal: variant === 'ghost' && !wide ? 0 : 16,
         paddingVertical: 10,
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 12,
-        backgroundColor: secondary ? 'transparent' : danger ? colors.error : colors.action,
+        borderWidth: variant === 'outline' ? 1 : 0,
+        borderColor: colors.border,
+        backgroundColor: filled
+          ? danger
+            ? colors.error
+            : colors.action
+          : variant === 'outline'
+            ? pressed
+              ? colors.selection
+              : colors.background
+            : 'transparent',
         opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >
@@ -166,10 +92,12 @@ function TextAction({
         style={{
           fontSize: 15,
           fontWeight: '600',
-          color: secondary
+          color: !filled
             ? danger
               ? colors.error
-              : colors.accent
+              : variant === 'outline'
+                ? colors.text
+                : colors.accent
             : danger
               ? colors.onError
               : colors.onAccent,

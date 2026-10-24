@@ -84,7 +84,7 @@ export function SettingsSearchField(props: ComponentProps<typeof SearchField>) {
   const settings = useInsideSettings()
   const theme = useTheme()
   const { colors } = theme
-  if (!settings) return <SearchField {...props} />
+  if (!settings || theme.highContrast) return <SearchField {...props} />
   // The existing search control is reused inside a borderless settings surface.
   return (
     <MobileThemeContext.Provider

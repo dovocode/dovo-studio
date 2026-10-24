@@ -10,7 +10,7 @@ const built = await bundleBrowser(
 import React,{useState} from 'react';import {internetPublicKey,sealInternet,peerAddress} from '${root}/packages/protocol/src/index.ts';import {createRoot} from 'react-dom/client';
 import {AccountPanel as Desktop} from '${root}/packages/extension-runtime/src/account-panel';
 import {PairingClient} from '${root}/packages/extension-runtime/src/pairing-client';
-import {MobileAccountProvider} from '${root}/apps/mobile/src/runtime/connection/account-provider';
+import {MobileAccountProvider,useMobileAccount} from '${root}/apps/mobile/src/runtime/connection/account-provider';
 import {AccountPanel as Mobile} from '${root}/apps/mobile/src/runtime/connection/account-panel';
 window.internetRequests=[];window.connects=[];window.boxSecret=new Uint8Array(32).fill(7);window.internetStatus={enabled:false,connected:false,error:''};window.syncSession=async session=>{window.session=session};window.runtimeRequest=async(path,body)=>{window.internetRequests.push({path,body});window.internetStatus={enabled:body.enabled,connected:body.enabled,error:''};window.hosted(body.enabled);return window.internetStatus};window.saved=null;window.calls=[];window.ready=false;window.unavailable=false;
 window.sources=[{name:'Mac Studio',profile:{id:'local',name:'Mac Studio',connection:{address:'http://127.0.0.1:51464',token:'runtime-token-never-upload',runtimeId:'mac'}},snapshot:{runtimeId:'mac',releaseVersion:'0.0.9',releaseDistribution:'archive',releaseCanUpdate:true,runtimeHost:'mac',desktopApp:{version:'0.0.9',canUpdate:true},workspace:{tasks:[]},runs:[],runtimeAddresses:['http://lan:51464','http://vpn:51464']},connected:true}];
@@ -18,9 +18,9 @@ window.overviews=window.sources;
 window.storage={read:async()=>window.saved,write:async token=>{window.saved=token}};
 window.open=async url=>{window.browserOpened=url};window.host={accountStorage:window.storage,openExternalLink:window.open};
 let servers=[{id:'server',name:'My Server',address:'http://server.internal:51464'}];window.hosted=enabled=>{servers=servers.filter(s=>s.id!=='internet');if(enabled)servers.push({id:'internet',name:'Internet Computer',address:'',internet:{publicKey:internetPublicKey(window.boxSecret),online:true}})};
-window.fetch=async(url,init={})=>{const path=new URL(url).pathname;window.calls.push({path,method:init.method,body:init.body?JSON.parse(init.body):null});if(new URL(url).hostname==='api.github.com')return Response.json(path.endsWith('/latest')?{tag_name:'v0.0.10',html_url:'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.10'}:[]);if(path.endsWith('/status'))return Response.json({status:'idle'});if(path==='/v1/internet/connections'){if(init.method==='POST'){const input=JSON.parse(init.body);window.connectionRequest={id:'encrypted-request',publicKey:input.publicKey};return Response.json({id:'encrypted-request'})}const peer={origin:'https://connect.dovo.studio',secret:'f'.repeat(64)};return Response.json({publicKey:internetPublicKey(window.boxSecret),box:sealInternet({requestId:'encrypted-request',runtimeId:'internet',connection:{address:peerAddress(peer),token:'internet-private-token-stays-on-device',peer,runtimeId:'internet'}},window.connectionRequest.publicKey,window.boxSecret,new Uint8Array(24).fill(8))})}if(window.unavailable)return Response.json({error:'unavailable'},{status:503});if(path==='/v1/login'&&init.method==='POST')return Response.json({token:'a'.repeat(43),code:'ABCD1234',url:'https://connect.dovo.studio/auth/start?id=test',expiresAt:Date.now()+300000});if(path==='/v1/login')return Response.json({ready:window.ready});if(path==='/v1/servers'&&init.method==='GET')return Response.json({user:{id:'person',name:'Dominic'},servers});if(init.method==='PUT')servers=servers.filter(server=>server.id!==JSON.parse(init.body).id).concat(JSON.parse(init.body));if(init.method==='DELETE'&&path.startsWith('/v1/servers/'))servers=servers.filter(server=>server.id!==decodeURIComponent(path.split('/').at(-1)));return Response.json({ok:true})};
-function App(){const [address,setAddress]=useState('');return <><MobileAccountProvider><window.Panel onPair={setAddress}/>{window.Panel===Desktop&&<PairingClient onManage={profile=>window.managed=profile.id}/>}</MobileAccountProvider><input aria-label='Pairing address' value={address} readOnly/><p>Pairing code required</p></>}
-const app=createRoot(document.getElementById('app'));window.show=kind=>{window.Panel=kind==='desktop'?Desktop:Mobile;app.render(<App key={kind}/>)};window.show('desktop');
+window.fetch=async(url,init={})=>{const path=new URL(url).pathname;window.calls.push({path,method:init.method,body:init.body?JSON.parse(init.body):null});if(new URL(url).hostname==='api.github.com')return Response.json(path.endsWith('/latest')?{tag_name:'v0.0.10',html_url:'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.10'}:[]);if(path.endsWith('/status'))return Response.json({status:'idle'});if(path==='/v1/internet/connections'){if(init.method==='POST'){const input=JSON.parse(init.body);if(window.holdInternet)return new Promise((_,reject)=>{window.internetHeld=true;init.signal.addEventListener('abort',()=>{window.internetAborted=true;reject(new DOMException('Aborted','AbortError'))},{once:true})});window.connectionRequest={runtimeId:input.runtimeId,id:'encrypted-request',publicKey:input.publicKey};return Response.json({id:'encrypted-request'})}const peer={origin:'https://connect.dovo.studio',secret:'f'.repeat(64)};return Response.json({publicKey:internetPublicKey(window.boxSecret),box:sealInternet({requestId:'encrypted-request',runtimeId:window.connectionRequest.runtimeId,connection:{address:peerAddress(peer),token:'internet-private-token-stays-on-device',peer,runtimeId:window.connectionRequest.runtimeId}},window.connectionRequest.publicKey,window.boxSecret,new Uint8Array(24).fill(8))})}if(window.unavailable)return Response.json({error:'unavailable'},{status:503});if(path==='/v1/login'&&init.method==='POST')return Response.json({token:'a'.repeat(43),code:'ABCD1234',url:'https://connect.dovo.studio/auth/start?id=test',expiresAt:Date.now()+300000});if(path==='/v1/login')return Response.json({ready:window.ready});if(path==='/v1/servers'&&init.method==='GET')return Response.json({user:{id:'person',name:'Dominic'},servers});if(init.method==='PUT')servers=servers.filter(server=>server.id!==JSON.parse(init.body).id).concat(JSON.parse(init.body));if(init.method==='DELETE'&&path.startsWith('/v1/servers/'))servers=servers.filter(server=>server.id!==decodeURIComponent(path.split('/').at(-1)));return Response.json({ok:true})};
+function AccountProbe(){window.accountState=useMobileAccount();return null}function App(){const [address,setAddress]=useState('');return <><MobileAccountProvider><AccountProbe/><window.Panel onPair={setAddress}/>{window.Panel===Desktop&&<PairingClient onManage={profile=>window.managed=profile.id}/>}</MobileAccountProvider><input aria-label='Pairing address' value={address} readOnly/><p>Pairing code required</p></>}
+const app=createRoot(document.getElementById('app'));window.renderApp=()=>app.render(<App key={window.kind}/>);window.show=kind=>{window.kind=kind;window.Panel=kind==='desktop'?Desktop:Mobile;window.renderApp()};window.show('desktop');
 `,
       loader: 'tsx',
       resolveDir: root,
@@ -42,7 +42,7 @@ const app=createRoot(document.getElementById('app'));window.show=kind=>{window.P
       path: '../preferences/app-preferences',
       importer: root + '/apps/mobile/src/runtime/connection',
       contents:
-        "export const useMobilePreferences=()=>({connectOrigin:'',artifactsOrigin:'',ready:true});",
+        "export const useMobilePreferences=()=>({connectOrigin:'',artifactsOrigin:'',ready:true,computerRefresh:window.refreshMode??'normal'});",
     },
     {
       path: '@dovo/studio-core',
@@ -60,7 +60,11 @@ const app=createRoot(document.getElementById('app'));window.show=kind=>{window.P
       path: 'react-native',
       contents:
         controls +
-        `export const Linking={openURL:url=>window.open(url)};export const Alert={alert:(title,message,buttons)=>{if(window.confirm(title+"\\n"+message))buttons.find(button=>button.style==='destructive').onPress();}};`,
+        `const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,fn)=>{listeners.add(fn);return {remove:()=>listeners.delete(fn)}}};window.setAppState=state=>{AppState.currentState=state;for(const fn of listeners)fn(state)};export const Linking={openURL:url=>window.open(url)};export const Alert={alert:(title,message,buttons)=>{if(window.confirm(title+"\\n"+message))buttons.find(button=>button.style==='destructive').onPress();}};`,
+    },
+    {
+      path: 'expo-network',
+      contents: `export const getNetworkStateAsync=async()=>({type:window.networkType??'wifi'});export const NetworkStateType={CELLULAR:'cellular'};const listeners=new Set();export const addNetworkStateListener=fn=>{listeners.add(fn);return {remove:()=>listeners.delete(fn)}};window.networkChanged=()=>{for(const fn of listeners)fn({isConnected:true})};`,
     },
     {
       path: 'expo-crypto',
@@ -78,7 +82,7 @@ const app=createRoot(document.getElementById('app'));window.show=kind=>{window.P
     {
       path: './provider',
       importer: root + '/apps/mobile/src/runtime/connection',
-      contents: `export const useRuntime=()=>({overviews:window.overviews,registryLoaded:true,syncAccountSession:window.syncSession,connect:async(connection,name)=>{window.connects.push({connection,name})}});`,
+      contents: `export const useRuntime=()=>({mutationStatus:()=>({pending:0}),overviews:window.overviews,registryLoaded:true,recovering:false,recoverAccountConnection:async(previous,incoming,signal)=>{signal.throwIfAborted();window.recoveries??=[];window.recoveries.push({previous,incoming});window.overviews=window.overviews.map(entry=>entry.profile.id===previous.id?{...entry,connected:true,error:null,profile:{...entry.profile,connection:{...entry.profile.connection,internet:{address:incoming.address,token:incoming.token,peer:incoming.peer,runtimeId:incoming.runtimeId,session:incoming.accountSession}}}}:entry);window.renderApp()},syncAccountSession:window.syncSession,connect:async(connection,name)=>{window.connects.push({connection,name})}});`,
     },
     {
       path: '../../ui/content/text',
@@ -227,9 +231,155 @@ try {
         false,
       )
     }
+    if (kind === 'mobile') {
+      // The management list may be collapsed: saved computers still gain account fallback.
+      await page.getByRole('button', { name: 'Hide linked computers', exact: true }).click()
+      await page.evaluate(() => {
+        window.overviews = [
+          {
+            ...window.sources[0],
+            profile: {
+              ...window.sources[0].profile,
+              connection: { ...window.sources[0].profile.connection, runtimeId: 'internet' },
+            },
+          },
+        ]
+        window.renderApp()
+      })
+      await page.waitForFunction(() => window.recoveries?.length === 1)
+      const recovery = await page.evaluate(() => window.recoveries[0])
+      assert.equal(recovery.previous.id, 'local')
+      assert.equal(recovery.incoming.runtimeId, 'internet')
+      assert.equal(recovery.incoming.accountSession, await page.evaluate(() => window.session))
+      // An expired internet credential renews automatically, retaining no-TURN consent.
+      await page.evaluate(() => {
+        window.overviews = window.overviews.map((entry) => ({
+          ...entry,
+          connected: false,
+          error: 'Device not authorized',
+          profile: {
+            ...entry.profile,
+            connection: {
+              ...entry.profile.connection,
+              internet: {
+                ...entry.profile.connection.internet,
+                token: 'expired-account-device-token',
+                peer: { ...entry.profile.connection.internet.peer, relay: undefined },
+              },
+            },
+          },
+        }))
+        window.renderApp()
+      })
+      await page.waitForFunction(() => window.recoveries.length === 2)
+      assert.equal(await page.evaluate(() => window.recoveries[1].incoming.peer.relay), undefined)
+      // Backgrounding suspends recovery; foregrounding retries the failed saved computer.
+      await page.evaluate(() => {
+        window.setAppState('background')
+        window.overviews = window.overviews.map((entry) => ({
+          ...entry,
+          connected: false,
+          error: 'Offline',
+          profile: {
+            ...entry.profile,
+            connection: {
+              ...entry.profile.connection,
+              internet: {
+                ...entry.profile.connection.internet,
+                token: 'second-expired-device-token',
+              },
+            },
+          },
+        }))
+        window.renderApp()
+      })
+      await page.evaluate(() => window.networkChanged())
+      assert.equal(await page.evaluate(() => window.recoveries.length), 2)
+      await page.evaluate(() => window.setAppState('active'))
+      await page.waitForFunction(() => window.recoveries.length === 3)
+      // Saved stale access also recovers after a provider restart.
+      await page.evaluate(() => {
+        window.overviews = window.overviews.map((entry) => ({
+          ...entry,
+          connected: false,
+          error: 'Offline',
+        }))
+        window.kind = 'mobile-restarted'
+        window.renderApp()
+      })
+      await page.waitForFunction(() => window.recoveries.length === 4)
+      assert.equal(await page.evaluate(() => window.overviews.length), 1)
+      // In-flight access requests are cancelled when the app backgrounds.
+      await page.evaluate(() => {
+        window.holdInternet = true
+        window.overviews = window.overviews.map((entry) => ({
+          ...entry,
+          connected: false,
+          error: 'Offline',
+        }))
+        window.renderApp()
+      })
+      await page.waitForFunction(() => window.internetHeld)
+      await page.evaluate(() => window.setAppState('background'))
+      await page.waitForFunction(() => window.internetAborted)
+      assert.equal(await page.evaluate(() => window.recoveries.length), 4)
+      await page.evaluate(() => {
+        window.holdInternet = false
+        window.setAppState('active')
+      })
+      await page.waitForFunction(() => window.recoveries.length === 5)
+      // Refresh preferences suppress automatic recovery but preserve an explicit retry.
+      for (const mode of ['manual', 'reduced']) {
+        const before = await page.evaluate(() => window.recoveries.length)
+        await page.evaluate((mode) => {
+          window.refreshMode = mode
+          window.networkType = 'cellular'
+          window.overviews = window.overviews.map((entry) => ({
+            ...entry,
+            connected: false,
+            error: 'Offline',
+          }))
+          window.renderApp()
+        }, mode)
+        await page.evaluate(
+          () =>
+            new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+        )
+        await page.evaluate(() => window.networkChanged())
+        assert.equal(await page.evaluate(() => window.recoveries.length), before)
+        await page.evaluate(() => window.accountState.retryRecovery())
+        await page.waitForFunction((count) => window.recoveries.length === count, before + 1)
+      }
+      await page.evaluate(() => {
+        window.refreshMode = 'normal'
+        window.networkType = 'wifi'
+        window.renderApp()
+      })
+      // Signing out also aborts pending renewal instead of saving old account access.
+      await page.evaluate(() => {
+        window.holdInternet = true
+        window.internetHeld = false
+        window.internetAborted = false
+        window.overviews = window.overviews.map((entry) => ({
+          ...entry,
+          connected: false,
+          error: 'Offline',
+        }))
+        window.renderApp()
+      })
+      await page.waitForFunction(() => window.internetHeld)
+    }
     await page.getByRole('button', { name: 'Sign out', exact: true }).click()
     await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor()
     assert.equal(await page.evaluate(() => window.saved), null)
+    if (kind === 'mobile') {
+      await page.waitForFunction(() => window.internetAborted)
+      assert.equal(await page.evaluate(() => window.recoveries.length), 7)
+      await page.evaluate(() => {
+        window.holdInternet = false
+        window.overviews = window.sources
+      })
+    }
     await page.getByRole('button', { name: 'Sign in', exact: true }).click()
     await page.getByText('Signed in as Dominic', { exact: true }).waitFor()
     if (kind === 'mobile')
@@ -269,7 +419,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Desktop computer list; desktop/mobile collapsed account directories, optional accounts, private metadata linking, pairing discovery, encrypted account setup, sign-out and confirmed account deletion passed.',
+    'Desktop computer list; desktop/mobile collapsed account directories, optional accounts, private metadata linking, pairing discovery, encrypted account setup, automatic saved-access recovery, relay opt-out, restart recovery, cancellation, sign-out and confirmed account deletion passed.',
   )
 } finally {
   await browser.close()

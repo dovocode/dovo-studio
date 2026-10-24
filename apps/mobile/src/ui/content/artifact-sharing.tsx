@@ -17,6 +17,12 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
   const existing = account.publications?.find(
     (item) => item.sourceId === artifact.id && item.revision === artifact.revision,
   )
+  const otherVersion =
+    account.directory && origin === account.publicationOrigin
+      ? account.publications
+          ?.filter((item) => item.sourceId === artifact.id && item.revision !== artifact.revision)
+          .sort((a, b) => b.revision - a.revision)[0]
+      : undefined
   const published =
     account.directory && existing && origin && origin === account.publicationOrigin
       ? {
@@ -78,6 +84,25 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
         account invitations and optional expiring links in your browser.
       </Text>
       {!!origin && <Text style={styles.muted}>Destination: {origin}</Text>}
+      {!published && otherVersion && (
+        <View style={{ gap: 8 }}>
+          <Text style={styles.muted}>
+            Version {otherVersion.revision} is already shared. Publishing version{' '}
+            {artifact.revision} creates a separate link. Existing links and invitations stay with
+            the shared version.
+          </Text>
+          <Action
+            secondary
+            label={`Manage shared v${otherVersion.revision}`}
+            onPress={() => {
+              void account.client
+                .artifactManagementUrl(otherVersion.id, origin)
+                .then((url) => Linking.openURL(url))
+                .catch((cause: unknown) => setError(String(cause)))
+            }}
+          />
+        </View>
+      )}
       {!account.directory ? (
         <>
           <Action

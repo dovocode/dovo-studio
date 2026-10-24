@@ -112,7 +112,12 @@ const built = await bundleBrowser(
       contents:
         'export const Choice=({label,value,onChange,items,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;',
     },
-    { path: '../theme', importer: mobile, contents: 'export const useTheme=()=>({styles:{}});' },
+    {
+      path: '../theme',
+      importer: mobile,
+      contents:
+        'export const useTheme=()=>({styles:{},colors:{selection: "#eef",text: "#111",warning: "#864500"}});',
+    },
   ],
 )
 const browser = await chromium.launch()
@@ -128,6 +133,18 @@ try {
       await page.getByRole('button', { name: 'Share artifact', exact: true }).click()
     await page.getByText('https://artifacts.example.com', { exact: false }).waitFor()
     assert.equal(await page.evaluate(() => window.uploads.length), 0)
+    await page.evaluate(() => {
+      window.account.publications = [
+        { id: 'older-publication', sourceId: window.artifact.id, revision: 6 },
+      ]
+      window.render()
+    })
+    await page.getByText(/Publishing version 7 creates a separate link/).waitFor()
+    await page.getByRole('button', { name: 'Manage shared v6', exact: true }).click()
+    await page.waitForFunction(() => window.opened.length === 1)
+    await page.evaluate(() => {
+      window.opened = []
+    })
     await page.getByRole('button', { name: 'Publish private copy', exact: true }).click()
     if (kind === 'mobile') {
       assert.equal(await page.evaluate(() => window.uploads.length), 0)
@@ -235,7 +252,7 @@ try {
       ]
       window.render()
     })
-    await page.getByText('Shared v6 · This version is local', { exact: true }).waitFor()
+    await page.getByText('Shared version is older · v6', { exact: true }).waitFor()
     assert.equal(
       await page.getByRole('button', { name: 'Publish private copy', exact: true }).count(),
       1,
@@ -246,7 +263,7 @@ try {
       ]
       window.render()
     })
-    await page.getByText('Shared', { exact: true }).waitFor()
+    await page.getByText('Shared · v7', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Manage invitations and links', exact: true }).waitFor()
     assert.equal(
       await page.getByRole('button', { name: 'Publish private copy', exact: true }).count(),
@@ -258,7 +275,7 @@ try {
       window.account.publications = null
       window.render()
     })
-    assert.equal(await page.getByText('Shared', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('Shared · v7', { exact: true }).count(), 0)
     assert.equal(
       await page.getByRole('button', { name: 'Manage invitations and links', exact: true }).count(),
       0,

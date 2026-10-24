@@ -216,34 +216,32 @@ try {
     if (!mobile) await page.getByRole('button', { name: 'Stop watching', exact: true }).click()
     await page.waitForFunction(() => document.getElementById('app').textContent === '')
     assert.equal(await page.evaluate(() => window.calls.at(-1).taskId), 'second')
-    // Finished watches disappear from the thread row; related links remain in the project panel.
+    // Finished pipeline watches are absent from related links; unrelated PR links remain.
     await page.evaluate(() => {
       window.related = [
         {
-          label: 'Pipeline run 9',
+          label: 'PR #9',
           project: 'Other',
-          url: 'https://github.com/other/repo/actions/runs/9',
+          url: 'https://github.com/other/repo/pull/9',
         },
       ]
     })
     await page.clock.fastForward(15000)
     if (!mobile) {
-      assert.equal(await page.getByRole('link', { name: 'Other · Pipeline run 9' }).count(), 0)
+      assert.equal(await page.getByRole('link', { name: 'Other · PR #9' }).count(), 0)
       await page.evaluate(() => {
         window.panel = true
         window.render()
       })
     }
+    assert.equal(await page.getByRole('link', { name: /Pipeline run 9/ }).count(), 0)
     await page
       .getByRole('link', {
-        name: mobile ? 'Open Pipeline run 9' : 'Other · Pipeline run 9',
+        name: mobile ? 'Open PR #9' : 'Other · PR #9',
         exact: true,
       })
       .click()
-    assert.equal(
-      await page.evaluate(() => window.opened),
-      'https://github.com/other/repo/actions/runs/9',
-    )
+    assert.equal(await page.evaluate(() => window.opened), 'https://github.com/other/repo/pull/9')
     assert.equal(
       await page.getByRole('button', { name: 'Stop watching Pipeline run 9', exact: true }).count(),
       0,

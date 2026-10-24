@@ -32,6 +32,7 @@ export const request=async(path,input)=>{
   return progress;
  }
 
+ if(path.endsWith('/set') && window.holdReviewSave)await new Promise(resolve=>window.finishReviewSave=resolve);
  const current=files.map(file=>{const fingerprint=changedFileFingerprint(file);let row=marks.get(file.path);if(!row||row.fingerprint!==fingerprint){row={path:file.path,fingerprint,viewed:false,version:(row?.version??0)+1};marks.set(file.path,row)}return row});
  if(path.endsWith('/set')){const row=marks.get(input.path);if(!row||row.fingerprint!==input.fingerprint||row.version!==input.version)throw new Error('This file changed. Refresh before marking it again.');marks.set(input.path,{...row,viewed:input.viewed,version:row.version+1})}
  return {files:files.map(file=>marks.get(file.path)),groups:[]};
@@ -317,6 +318,69 @@ try {
     0,
   )
   await organizer.getByRole('button', { name: 'Close organizer', exact: true }).click()
+  // Hold actual review mutations to measure the saving state before the response arrives.
+  for (const client of [desktop, mobile]) {
+    const viewed = client.getByRole('checkbox', { name: 'File viewed', exact: true })
+    const geometry = async () => {
+      const origin = await client.boundingBox()
+      const controls = {
+        viewed: await (client === desktop ? viewed.locator('..') : viewed).boundingBox(),
+        previous: await client
+          .getByRole('button', { name: 'Previous file', exact: true })
+          .boundingBox(),
+        next: await client.getByRole('button', { name: 'Next file', exact: true }).boundingBox(),
+      }
+      return Object.fromEntries(
+        Object.entries(controls).map(([key, box]) => [
+          key,
+          {
+            x: box.x - origin.x,
+            y: box.y - origin.y,
+            width: box.width,
+            height: box.height,
+          },
+        ]),
+      )
+    }
+    await page.waitForFunction(
+      (selector) => !document.querySelector(selector).disabled,
+      client === desktop
+        ? '[data-client=desktop] [aria-label="File viewed"]'
+        : '[data-client=mobile] [aria-label="File viewed"]',
+    )
+    const before = await geometry()
+    await page.evaluate(() => {
+      window.holdReviewSave = true
+      window.finishReviewSave = null
+    })
+    await viewed.click()
+    await page.waitForFunction(() => !!window.finishReviewSave)
+    assert.equal(await viewed.isDisabled(), true)
+    assert.deepEqual(
+      await geometry(),
+      before,
+      'Saving review progress preserves control widths and navigation positions',
+    )
+    await page.evaluate(() => {
+      window.holdReviewSave = false
+      window.finishReviewSave()
+    })
+    await page.waitForFunction(
+      (selector) => !document.querySelector(selector).disabled,
+      client === desktop
+        ? '[data-client=desktop] [aria-label="File viewed"]'
+        : '[data-client=mobile] [aria-label="File viewed"]',
+    )
+    assert.deepEqual(await geometry(), before)
+  }
+  const changedSearch = desktop.getByRole('searchbox', {
+    name: 'Search changed files',
+    exact: true,
+  })
+  await changedSearch.fill('view.test')
+  await desktop.getByRole('button', { name: 'Clear file search', exact: true }).click()
+  assert.equal(await changedSearch.inputValue(), '')
+  assert.equal(await changedSearch.evaluate((node) => node === document.activeElement), true)
   assert.deepEqual(errors, [])
   console.log(
     'Review controls: paired progress, reopen, per-file reset, folder order, search, unviewed filter, draft guard, narrow mobile layout, ephemeral organizer selection/default, feature summaries, reset, errors and stale result guard passed',

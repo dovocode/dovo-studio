@@ -69,6 +69,8 @@ export function FileBrowserTree({
   defaultExpandedDepth?: number
 }) {
   const container = useRef<HTMLDivElement>(null)
+  const lastFocused = useRef<HTMLButtonElement | null>(null)
+  const [focused, setFocused] = useState(selected)
   const [expanded, setExpanded] = useState(
     () => new Map(ancestors(selected).map((path) => [path, true])),
   )
@@ -91,19 +93,43 @@ export function FileBrowserTree({
       return next
     })
   }, [selected])
+  const isOpen = (node: FileTreeNode, depth: number) =>
+    search
+      ? searchClosed.query !== search || !searchClosed.paths.has(node.path)
+      : (expanded.get(node.path) ??
+        (depth < defaultExpandedDepth || selected.startsWith(`${node.path}/`)))
+  const visible: string[] = []
+  const collect = (items: FileTreeNode[], depth = 0) => {
+    for (const node of items) {
+      if (node.kind === 'directory' || !disabled) visible.push(node.path)
+      if (node.kind === 'directory' && isOpen(node, depth)) collect(node.children, depth + 1)
+    }
+  }
+  collect(nodes)
+  const tabPath = [focused, ...ancestors(focused).reverse(), selected, visible[0]].find((path) =>
+    visible.includes(path),
+  )
+  useEffect(() => {
+    if (
+      lastFocused.current &&
+      !lastFocused.current.isConnected &&
+      document.activeElement === document.body
+    )
+      container.current
+        ?.querySelector<HTMLButtonElement>('[data-file-tree-row][tabindex="0"]')
+        ?.focus()
+  }, [tabPath, nodes])
   const render = (nodes: FileTreeNode[], depth = 0, parent = '') =>
     nodes.map((node) => {
       if (node.kind === 'directory') {
-        const open = search
-          ? searchClosed.query !== search || !searchClosed.paths.has(node.path)
-          : (expanded.get(node.path) ??
-            (depth < defaultExpandedDepth || selected.startsWith(`${node.path}/`)))
+        const open = isOpen(node, depth)
         const FolderIcon = open ? FolderOpen : Folder
         return (
           <div key={node.path}>
             <button
               type="button"
               data-file-tree-row
+              tabIndex={tabPath === node.path ? 0 : -1}
               data-path={node.path}
               data-parent={parent}
               aria-label={node.path}
@@ -147,6 +173,7 @@ export function FileBrowserTree({
           key={node.path}
           type="button"
           data-file-tree-row
+          tabIndex={tabPath === node.path ? 0 : -1}
           data-path={node.path}
           data-parent={parent}
           aria-current={selected === node.path ? 'true' : undefined}
@@ -194,6 +221,19 @@ export function FileBrowserTree({
   return (
     <div
       ref={container}
+      onFocusCapture={(event) => {
+        if (event.target instanceof HTMLButtonElement && event.target.dataset.path) {
+          lastFocused.current = event.target
+          setFocused(event.target.dataset.path)
+        }
+      }}
+      onBlurCapture={(event) => {
+        if (
+          event.relatedTarget instanceof Node &&
+          !container.current?.contains(event.relatedTarget)
+        )
+          lastFocused.current = null
+      }}
       className="min-w-0"
       onKeyDown={(event) => {
         if (

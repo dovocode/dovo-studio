@@ -1,3 +1,4 @@
+import { nextQueuedMessage } from '@dovo/protocol'
 import {
   acpInstallationHarness,
   changeAgentProvider,
@@ -105,8 +106,10 @@ export class ModelSelection {
             JSON.stringify({
               request:
                 text ??
-                (before.queue?.[0] ?? before.messages.find((message) => message.role === 'user'))
-                  ?.text ??
+                (
+                  nextQueuedMessage(before) ??
+                  before.messages.find((message) => message.role === 'user')
+                )?.text ??
                 before.draft,
               project: this.store.get().repositories.find((repo) => repo.id === before.repositoryId)
                 ?.name,
