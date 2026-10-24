@@ -98,6 +98,9 @@ try {
   await owner.getByRole('heading', { name: 'Sharing settings', exact: true }).waitFor()
   await owner.getByRole('dialog', { name: 'Share artifact', exact: true }).waitFor()
   await owner.getByRole('button', { name: 'Close', exact: true }).click()
+  await owner
+    .getByRole('dialog', { name: 'Share artifact', exact: true })
+    .waitFor({ state: 'hidden' })
   assert.equal(new URL(owner.url()).hash, '')
   assert.equal(await owner.locator('header img').count(), 0)
   assert.equal(

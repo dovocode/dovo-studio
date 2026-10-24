@@ -279,8 +279,10 @@ try {
     .fill('Saved locally while offline')
   assert.ok(await page.getByRole('button', { name: 'Send preview', exact: true }).isDisabled())
   await openStory('dovo-mobile-conversation-controls--multiple-choice')
-  await page.getByRole('checkbox', { name: 'Layout and navigation', exact: true }).click()
-  await page.getByRole('checkbox', { name: 'Accessibility', exact: true }).click()
+  const layoutChoice = 'Layout and navigation. Check small screens and long labels.'
+  const accessibilityChoice = 'Accessibility. Check focus, contrast and touch targets.'
+  await page.getByRole('checkbox', { name: layoutChoice, exact: true }).click()
+  await page.getByRole('checkbox', { name: accessibilityChoice, exact: true }).click()
   await page
     .getByRole('textbox', { name: 'Answer: Review scope', exact: true })
     .fill('Also check the settings editor')
@@ -289,14 +291,12 @@ try {
     .filter({ hasText: 'layout, accessibility, Also check the settings editor' })
     .waitFor()
   await openStory('dovo-mobile-conversation-controls--single-choice')
-  await page.getByRole('radio', { name: 'Layout and navigation', exact: true }).click()
+  await page.getByRole('radio', { name: layoutChoice, exact: true }).click()
   await page
     .getByRole('textbox', { name: 'Answer: Review scope', exact: true })
     .fill('Custom scope only')
   assert.equal(
-    await page
-      .getByRole('radio', { name: 'Layout and navigation', exact: true })
-      .getAttribute('aria-checked'),
+    await page.getByRole('radio', { name: layoutChoice, exact: true }).getAttribute('aria-checked'),
     'false',
   )
   await page.getByRole('status').filter({ hasText: 'Local answer: Custom scope only' }).waitFor()
@@ -453,8 +453,8 @@ try {
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await openStory('dovo-button-playground--loading-prevents-duplicate-activation')
-  await page.getByRole('button', { name: 'Save preferences', exact: true }).click()
-  const saving = page.getByRole('button', { name: 'Saving…', exact: true })
+  const saving = page.getByRole('button', { name: 'Save preferences', exact: true })
+  await saving.click()
   assert.ok(await saving.isDisabled())
   assert.equal(await saving.getAttribute('aria-busy'), 'true')
   assert.ok(
@@ -518,9 +518,10 @@ try {
   await page.getByRole('button', { name: 'Save changes', exact: true }).click()
   await page.getByTitle('Edited local follow-up', { exact: true }).waitFor()
   assert.equal(await queueComposer.inputValue(), 'Keep my ordinary draft')
-  await page.getByRole('button', { name: 'Move queued message 2 up', exact: true }).click()
-  await page.getByRole('button', { name: 'Pause queue', exact: true }).click()
-  await page.getByRole('button', { name: 'Resume queue', exact: true }).click()
+  await page.getByRole('button', { name: 'Drag queued message 2 to reorder', exact: true }).focus()
+  await page.keyboard.press('ArrowUp')
+  await page.getByRole('button', { name: 'Pause queued message 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Resume queued message 1', exact: true }).click()
   await page.getByRole('button', { name: 'Steer with queued message 1', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: 'not available in this local preview' }).waitFor()
 

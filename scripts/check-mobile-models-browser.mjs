@@ -9,6 +9,7 @@ const mocks = {
   '../screens/settings-group': 'export const SettingsGroup=({children})=>children;',
   '../../ui/layout/sheet': `export const Sheet=({title,children,onClose})=><section>{title&&<h2>{title}</h2>}{children}</section>;`,
   'expo-router': `export const router={navigate:()=>{}};`,
+  './peer-native': `export const openPeerTunnel=async()=>{throw Error('Model settings fixture must not open a native peer tunnel')};`,
   '../ui/content/format-date': `export const formatDateTime=value=>value;`,
   '../ui/controls/pill': `export const Pill=({label,onPress})=><button onClick={onPress}>{label}</button>;`,
   '../screens/settings-controls': `export {Choice as SettingsChoice} from '../ui/controls/choice';export {Field as SettingsField} from '../ui/controls/field';export {Action as SettingsAction} from '../ui/controls/action';`,

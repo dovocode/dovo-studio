@@ -46,6 +46,8 @@ overrides:
   h3-v2: npm:h3@2.0.1-rc.20
   # OpenCode protocol/schema still pin a v4 RC; keep their codecs on the application runtime.
   effect: 4.0.6
+  # Shiki grammars and editor state must share the same TextMate INITIAL identity.
+  '@shikijs/vscode-textmate': 10.1.0
   # Runtime hosts install Claude CLI themselves; retain only the Agent SDK.
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-arm64': '-'
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-x64': '-'

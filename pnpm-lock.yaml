@@ -122,6 +122,7 @@ overrides:
   katex@<0.18.2: 0.18.2
   h3-v2: npm:h3@2.0.1-rc.20
   effect: 4.0.6
+  '@shikijs/vscode-textmate': 10.1.0
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-arm64': '-'
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-x64': '-'
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-linux-arm64-musl': '-'
@@ -4574,9 +4575,6 @@ packages:
   '@shikijs/types@4.5.0':
     resolution: {integrity: sha512-drtPrtD8N0DENyD2cyt6Ajy+IWsiCLgMxODwLTpvH1UsN6a9jf90tNTPjqwHvA+0Lzu9e0txk8DjfqH1p9UJRw==}
     engines: {node: '>=20'}
-
-  '@shikijs/vscode-textmate@10.0.2':
-    resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==}
 
   '@shikijs/vscode-textmate@10.1.0':
     resolution: {integrity: sha512-cVBuhDQjBZaNMTwBquYfPydrUP+E3hE6oYGasx8h6ZrODIM7/r+gxLDXdd66oszbrggZHEntdE6j+5gYIVyMWQ==}
@@ -9177,7 +9175,7 @@ packages:
     peerDependencies:
       '@shikijs/core': ^4.0.0
       '@shikijs/types': ^4.0.0
-      '@shikijs/vscode-textmate': ^10.0.0
+      '@shikijs/vscode-textmate': 10.1.0
       react: '>=19.0.0'
       react-native: '>=0.73.0'
     peerDependenciesMeta:
@@ -13877,7 +13875,7 @@ snapshots:
   '@shikijs/engine-javascript@4.5.0':
     dependencies:
       '@shikijs/types': 4.5.0
-      '@shikijs/vscode-textmate': 10.0.2
+      '@shikijs/vscode-textmate': 10.1.0
       oniguruma-to-es: 4.3.6
 
   '@shikijs/engine-oniguruma@4.5.0':
@@ -13903,8 +13901,6 @@ snapshots:
     dependencies:
       '@shikijs/vscode-textmate': 10.1.0
       '@types/hast': 3.0.5
-
-  '@shikijs/vscode-textmate@10.0.2': {}
 
   '@shikijs/vscode-textmate@10.1.0': {}
 
@@ -19898,7 +19894,7 @@ snapshots:
       '@shikijs/langs': 4.5.0
       '@shikijs/themes': 4.5.0
       '@shikijs/types': 4.5.0
-      '@shikijs/vscode-textmate': 10.0.2
+      '@shikijs/vscode-textmate': 10.1.0
       '@types/hast': 3.0.5
 
   side-channel-list@1.0.1:

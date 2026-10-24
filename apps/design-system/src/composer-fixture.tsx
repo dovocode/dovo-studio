@@ -177,9 +177,18 @@ export function ComposerFixtureProvider({ children }: { children: ReactNode }) {
       if (path === '/api/tasks/queue') {
         const action = payload.action
         if (
-          !['pause', 'resume', 'edit', 'move', 'up', 'down', 'restore', 'steer'].includes(
-            String(action),
-          )
+          ![
+            'pause',
+            'resume',
+            'pause-message',
+            'resume-message',
+            'edit',
+            'move',
+            'up',
+            'down',
+            'restore',
+            'steer',
+          ].includes(String(action))
         )
           throw new Error(`Queue action ${String(action)} is not supported in this preview.`)
         const editedText = payload.text
@@ -201,6 +210,14 @@ export function ComposerFixtureProvider({ children }: { children: ReactNode }) {
           if (action === 'pause' || action === 'resume')
             return { ...current, queuePaused: action === 'pause' }
           if (index < 0) return current
+          if (action === 'pause-message' || action === 'resume-message') {
+            queue[index] = { ...queue[index], paused: action === 'pause-message' || undefined }
+            return {
+              ...current,
+              queuePaused: action === 'resume-message' ? false : current.queuePaused,
+              queue,
+            }
+          }
           if (action === 'move') {
             const [message] = queue.splice(index, 1)
             const beforeMessageId = payload.beforeMessageId

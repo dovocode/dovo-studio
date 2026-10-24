@@ -116,7 +116,7 @@ function QueueStory() {
 export const EditableQueuedFollowUps: StoryObj = {
   render: () => <QueueStory />,
   parameters: story(
-    'Mounts the production MessageQueue inside its Composer with synthetic task data and an in-memory workspace adapter. Edit confirmed items in the main composer, save or cancel changes, reorder items, pause or resume the queue, and switch a queued delivery through sending/saved/failed states. Steering is explicitly unsupported and visible in both the component error and request log; reset restores the initial queue.',
+    'Mounts the production MessageQueue inside its Composer with synthetic task data and an in-memory workspace adapter. Edit confirmed items in the main composer, save or cancel changes, drag or use arrow keys to reorder items, pause or resume individual messages, and switch a queued delivery through sending/saved/failed states. Steering is explicitly unsupported and visible in both the component error and request log; reset restores the initial queue.',
   ),
 }
 

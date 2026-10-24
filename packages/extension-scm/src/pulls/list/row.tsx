@@ -20,12 +20,14 @@ export function PullRow({
   selected,
   onSelect,
   compact = false,
+  statusColumn,
   onClick,
   onAddToThread,
   selectionCount = 1,
 }: {
   pull: PullSummary
   compact?: boolean
+  statusColumn: boolean
   repository: string
   selected: boolean
   onSelect: () => void
@@ -120,7 +122,7 @@ export function PullRow({
             >
               <div className="flex gap-3">
                 <div
-                  className={`grid min-w-0 flex-1 gap-x-3 ${compact ? '' : '@4xl/pr-list:grid-cols-[minmax(0,1fr)_11rem_5.5rem]'}`}
+                  className={`grid min-w-0 flex-1 gap-x-3 ${compact ? '' : statusColumn ? '@4xl/pr-list:grid-cols-[minmax(0,1fr)_11rem_5.5rem]' : '@4xl/pr-list:grid-cols-[minmax(0,1fr)_5.5rem]'}`}
                 >
                   <div className="min-w-0">
                     <div className="mb-1 flex min-w-0 items-center gap-2 text-[0.6875rem] text-muted-foreground">
@@ -252,7 +254,7 @@ export function PullRow({
                     </div>
                   </div>
                   <div
-                    className={`${hasStatus ? 'mt-2 flex' : 'hidden'} flex-wrap gap-x-3 gap-y-1 ${compact ? '' : '@4xl/pr-list:mt-0 @4xl/pr-list:flex @4xl/pr-list:flex-col @4xl/pr-list:justify-center'}`}
+                    className={`${hasStatus ? 'mt-2 flex' : 'hidden'} flex-wrap gap-x-3 gap-y-1 ${compact || !statusColumn ? '' : '@4xl/pr-list:mt-0 @4xl/pr-list:flex @4xl/pr-list:flex-col @4xl/pr-list:justify-center'}`}
                     title={hasStatus ? pullNextStep(pull).label : undefined}
                   >
                     {(pull.checksState !== undefined || pull.statusError) && (

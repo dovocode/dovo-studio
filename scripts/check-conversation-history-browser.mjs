@@ -533,6 +533,8 @@ return <div>{h.task.messages.map(message=><div data-pending-message={message.id}
             else if (args.path.endsWith('/composer'))
               contents =
                 'export const Composer=({onPending})=>{window.pushProductionPending=onPending;return null}'
+            else if (args.path.endsWith('chat-image-edit'))
+              contents = 'export const ChatImageEditProvider=({children})=>children'
             else if (args.path.endsWith('use-task-viewed'))
               contents = "export const useTaskViewed=()=>({error:'',retry:()=>{}})"
             else {

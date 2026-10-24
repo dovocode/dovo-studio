@@ -353,6 +353,75 @@ it('pipelines high-RTT viewers but bounds bytes and contracts when their decoder
   expect(received).toHaveLength(17)
 })
 
+it('does not mistake source pacing for link serialization in a high-RTT window', async () => {
+  vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  const attach = vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
+  const input = vi.spyOn(RemoteBrowsers.prototype, 'input').mockResolvedValue()
+  const token = 'paced-browser-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      {
+        id: 'task',
+        title: 'Browser',
+        repositoryId: '',
+        agentId: '',
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+      },
+    ],
+  }))
+  const ticket = runtime.services.browserTickets.issue(token, 'task', 'task')
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${runtime.port}/ws/browser?ticket=${ticket}&frames=binary-v1`,
+  )
+  cleanups.unshift(async () => {
+    socket.terminate()
+  })
+  const received: number[] = []
+  socket.on('message', (raw, binary) => {
+    if (!binary) return
+    const data = Array.isArray(raw)
+      ? Buffer.concat(raw)
+      : Buffer.isBuffer(raw)
+        ? raw
+        : Buffer.from(raw)
+    received.push(decodeBrowserFrame(Uint8Array.from(data).buffer).data[0]!)
+  })
+  await once(socket, 'open')
+  await vi.waitFor(() => expect(attach).toHaveBeenCalledOnce())
+  const now = vi.spyOn(performance, 'now').mockReturnValue(1000)
+  const publish = (time: number, value: number) => {
+    now.mockReturnValue(time)
+    attach.mock.calls[0][1]({ type: 'frame', width: 390, height: 844, data: Buffer.from([value]) })
+  }
+  const ack = async (time: number, sequence: number) => {
+    now.mockReturnValue(time)
+    socket.send(JSON.stringify({ type: 'frameAck', sequence, decodeMs: 0 }))
+    socket.send(JSON.stringify({ type: 'status' }))
+    await vi.waitFor(() => expect(input).toHaveBeenCalledTimes(sequence))
+  }
+  publish(1000, 1)
+  publish(1032, 2)
+  await vi.waitFor(() => expect(received).toEqual([1, 2]))
+  await ack(1080, 1)
+  publish(1080, 3)
+  publish(1112, 4)
+  await vi.waitFor(() => expect(received).toEqual([1, 2, 3, 4]))
+  // Both frames took 80ms to arrive. Their 32ms ACK gap comes entirely
+  // from the source; treating it as link capacity would shrink the window.
+  await ack(1112, 2)
+  publish(1112, 5)
+  publish(1128, 6)
+  await vi.waitFor(() => expect(received).toEqual([1, 2, 3, 4, 5, 6]))
+})
+
 it('bounds a high-RTT window by frame delivery spacing on a narrow link', async () => {
   vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
   const attach = vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})

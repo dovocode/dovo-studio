@@ -162,11 +162,10 @@ export function attachBrowserSocket(
             const deliveredGap = now - previousDelivery.receivedAt
             if (sentGap > 0 && sentGap <= 32 && deliveredGap > 0) {
               deliveryMeasuredAt = now
-              deliveryIntervalMs = Math.max(
-                16,
-                deliveredGap,
-                deliveryIntervalMs * 0.8 + deliveredGap * 0.2,
-              )
+              // Source pacing also spaces ACKs on an uncongested link. Only
+              // excess delivery spacing should reduce the 60Hz frame window.
+              const interval = 16 + deliveredGap - sentGap
+              deliveryIntervalMs = Math.max(16, interval, deliveryIntervalMs * 0.8 + interval * 0.2)
             }
           }
           previousDelivery = { sentAt: sent.sentAt, receivedAt: now }

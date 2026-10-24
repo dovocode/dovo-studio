@@ -54,7 +54,5 @@ it('keeps related PRs linked and hides completed pipelines from project info', a
   vi.spyOn(s.pipelineWatch, 'manage').mockResolvedValue({ watches: [pipeline] })
   const result = await taskWaiting(s, { taskId: task.id })
   expect(result.dependencies).toEqual([])
-  expect(result.related).toEqual([
-    { label: 'PR #7', project: 'Test', url },
-  ])
+  expect(result.related).toEqual([{ label: 'PR #7', project: 'Test', url }])
 })

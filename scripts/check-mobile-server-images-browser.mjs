@@ -17,6 +17,7 @@ export const SafeModal=({visible,children})=>visible?<div role="dialog" style={{
 export const useAction=()=>({busy:false,error:'',act:fn=>void fn()});
 export const useTheme=()=>({styles:{screen:{position:'relative',width:'100%',height:'100%'}},colors:{}});
 export const taskImageReadSchema={};
+export const EditChatImage=()=>null;
 const readEffect=(path,input)=>Effect.tryPromise({try:signal=>window.call(path,input,signal),catch:reason=>reason});
 export const useRuntime=()=>({connected:true,connection:{address:'http://paired-runtime',token:'paired-token'},readEffect,callEffect:()=>{throw Error('Image reads must not refresh the workspace')}});
 `
@@ -46,6 +47,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           '../controls/icon-button',
           '../controls/use-action',
           '../layout/safe-modal',
+          '../../tasks/composer/chat-image-edit-context',
         ])
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
           paths.has(path) ? { path, namespace: 'mock' } : undefined,

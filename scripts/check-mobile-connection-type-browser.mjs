@@ -20,6 +20,16 @@ export const useTheme=()=>({styles:{row:{flexDirection:'row',gap:6},muted:{fontS
 const stubs = [
   { path: 'react-native', contents: controls },
   {
+    path: '../../ui/content/text',
+    importer: mobile + 'runtime/connection/connection-progress.tsx',
+    contents: controls,
+  },
+  {
+    path: '../../ui/theme',
+    importer: mobile + 'runtime/connection/connection-progress.tsx',
+    contents: controls,
+  },
+  {
     path: '@dovo/protocol',
     contents: `export * from '${root}packages/protocol/src/index.ts';export const runtimeSyncStatus=()=>window.liveUpdates?'live':undefined;`,
   },
@@ -117,7 +127,13 @@ try {
   await page.evaluate(() => window.changeRoute('relay'))
   await label('Dovo Connect · TURN')
   await page.getByRole('button', { name: /dovo-agent, Online, Dovo Connect/ }).click()
-  await page.getByRole('dialog').getByText('Dovo Connect · TURN', { exact: true }).waitFor()
+  const relayLabels = page.getByRole('dialog').getByText('Dovo Connect · TURN', { exact: true })
+  await relayLabels.first().waitFor()
+  assert.equal(
+    await relayLabels.count(),
+    2,
+    'Summary and connection progress show the active route',
+  )
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.evaluate(() => window.changeRoute('custom'))
   await label('Custom relay · TURN')
