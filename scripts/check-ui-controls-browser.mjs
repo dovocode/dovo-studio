@@ -33,6 +33,7 @@ const built = await bundleBrowser(
         <button onClick={()=>setSearchMode('tasks')}>Search threads</button>
         <TaskSearchDialog mode={searchMode} onModeChange={setSearchMode} entries={[{key:'test-thread',projectName:'Studio',source:{name:'Mac Studio'},task:{id:'test-thread',title:'Repair connection',createdAt:'2026-10-23',messages:[]}}]} onSelect={entry=>window.openedThreads.push(entry.key)} onClose={()=>setSearchMode(null)}/>
         <PageHeader title="Artifacts" description="Saved work across computers"><Button>Refresh artifacts</Button><Button>Manage sharing</Button></PageHeader>
+        <section id="read-only-header"><PageHeader title="Settings"><span>{'Saved computer settings · '.repeat(8)}</span><Button disabled>Save settings</Button></PageHeader></section>
         <Input aria-label="Path" className="font-mono text-xs md:text-xs" defaultValue="/work/project"/>
         <Button className="font-medium">Medium weight</Button>
         <section id="button-styles" aria-label="Button styles" className="flex flex-wrap gap-2">
@@ -132,6 +133,26 @@ try {
       await heading.evaluate((el) => el.scrollWidth <= el.clientWidth),
       true,
       'Page actions must leave room for the page title',
+    )
+    await page.getByRole('button', { name: 'Manage sharing', exact: true }).focus()
+    await page.keyboard.press('Tab')
+    const readOnlyActions = page.locator('#read-only-header .studio-page-actions')
+    assert.equal(
+      await readOnlyActions.evaluate((element) => element === document.activeElement),
+      true,
+      'Keyboard users can reach overflowing labels and disabled header actions',
+    )
+    assert.equal(
+      await readOnlyActions.evaluate((element) => getComputedStyle(element).outlineWidth),
+      '2px',
+    )
+    assert.equal(
+      await readOnlyActions.evaluate((element) => getComputedStyle(element).outlineOffset),
+      '-2px',
+    )
+    await page.keyboard.press('ArrowRight')
+    await page.waitForFunction(
+      () => document.querySelector('#read-only-header .studio-page-actions').scrollLeft > 0,
     )
     await page.getByRole('radio', { name: 'Comfortable', exact: true }).focus()
     await page.keyboard.press('ArrowRight')

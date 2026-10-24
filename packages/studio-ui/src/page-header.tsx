@@ -28,7 +28,11 @@ export function PageHeader({
           <h1>{title}</h1>
           {description && <p className="studio-page-description">{description}</p>}
         </div>
-        {children && <div className="studio-page-actions">{children}</div>}
+        {children && (
+          <div className="studio-page-actions" role="group" aria-label="Page actions" tabIndex={0}>
+            {children}
+          </div>
+        )}
       </header>
     </HeaderContent>
   )

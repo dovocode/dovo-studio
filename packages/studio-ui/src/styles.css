@@ -805,6 +805,9 @@ textarea {
 .studio-page-actions > * {
   flex-shrink: 0;
 }
+.studio-page-header .studio-page-actions:focus-visible {
+  outline-offset: -2px;
+}
 .studio-page-actions :is(button, [role='combobox']) {
   height: 28px;
   font-size: 12px;
