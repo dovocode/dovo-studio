@@ -1,3 +1,5 @@
+'use client'
+
 // Adapted from Vercel AI Elements (MIT). Shared by Studio and hosted thread readers.
 import { ArrowDown } from 'lucide-react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
