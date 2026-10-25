@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 // Exercise the real route, startup controller, creation runtime and TaskDetail. Native
 // controls/conversation content are boundaries; their mount counts expose page replacement.
 const mocks = {
+  '../../runtime/connection/account-context': `import {useSyncExternalStore} from 'react';window.sharingAccount={directory:{},deletionPending:false};window.setSharingAccount=account=>{window.sharingAccount=account;window.dispatchEvent(new Event('sharing-account'))};const subscribe=notify=>{window.addEventListener('sharing-account',notify);return()=>window.removeEventListener('sharing-account',notify)};export const useOptionalMobileAccount=()=>useSyncExternalStore(subscribe,()=>window.sharingAccount);`,
   // Encrypted sharing is exercised by the dedicated sharing controls suite.
   './thread-sharing':
     'export const ThreadSharing=({onClose})=><section role="dialog" aria-label="Share thread"><button onClick={onClose}>Close sharing</button></section>;export const InlineThreadSuggestions=()=>null;',
@@ -373,6 +374,13 @@ try {
   await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
   await page.getByRole('button', { name: 'Share thread', exact: true }).click()
   await page.getByRole('dialog', { name: 'Share thread' }).waitFor()
+  await page.evaluate(() => window.setSharingAccount(null))
+  await page.getByRole('dialog', { name: 'Share thread' }).waitFor({ state: 'hidden' })
+  assert.equal(await page.getByRole('button', { name: 'Share thread', exact: true }).count(), 0)
+  await page.evaluate(() => window.setSharingAccount({ directory: {}, deletionPending: true }))
+  assert.equal(await page.getByRole('button', { name: 'Share thread', exact: true }).count(), 0)
+  await page.evaluate(() => window.setSharingAccount({ directory: {}, deletionPending: false }))
+  await page.getByRole('button', { name: 'Share thread', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Close sharing', exact: true }).click()
   assert.equal(await page.getByRole('dialog', { name: 'Share thread' }).count(), 0)
   assert.deepEqual(await page.evaluate(() => window.headerCollapsedMenuGroups), [
