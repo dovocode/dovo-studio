@@ -4,6 +4,9 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  // Sharing is verified separately from draft, selection and route continuity.
+  '../chat/thread-sharing':
+    'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]}`,
   '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
