@@ -6,10 +6,17 @@ import { Button } from '@dovo/studio-ui'
 import { createSharingFixture } from './sharing-fixture'
 const meta = { title: 'Dovo/Patterns/Encrypted sharing', tags: ['autodocs'] } satisfies Meta
 export default meta
-function Preview({ published = true }: { published?: boolean }) {
-  const [fixture] = useState(createSharingFixture),
+function Preview({
+  published = true,
+  kind = 'thread',
+  offline = false,
+}: {
+  published?: boolean
+  kind?: 'thread' | 'artifact'
+  offline?: boolean
+}) {
+  const [fixture] = useState(() => createSharingFixture({ kind, withKey: published })),
     [ready, setReady] = useState(false),
-    [draft, setDraft] = useState(''),
     [failed, setFailed] = useState(false)
   useEffect(() => {
     void fixture.ready(published).then(() => setReady(true))
@@ -17,7 +24,7 @@ function Preview({ published = true }: { published?: boolean }) {
   if (!ready) return <p role="status">Preparing synthetic sharing example…</p>
   return (
     <section className="mx-auto max-w-xl space-y-4">
-      <h1 className="text-lg font-semibold">Share thread</h1>
+      <h1 className="text-lg font-semibold">Share {kind}</h1>
       <p className="text-sm text-muted-foreground">
         Production sharing controls with encrypted synthetic data. All actions stay in memory.
       </p>
@@ -34,15 +41,10 @@ function Preview({ published = true }: { published?: boolean }) {
       <SharingPanel
         client={fixture.client}
         sourceId={fixture.sourceId}
-        kind="thread"
-        runtime={fixture.runtime}
-        onUseSuggestion={setDraft}
+        kind={kind}
+        content={kind === 'artifact' ? fixture.content : undefined}
+        runtime={offline ? undefined : fixture.runtime}
       />
-      {draft && (
-        <p role="status" className="rounded-xl border p-3">
-          Composer draft: {draft}
-        </p>
-      )}
     </section>
   )
 }
@@ -52,12 +54,14 @@ export const Published: StoryObj = {
     docs: {
       description: {
         story:
-          'The production manager owns invitations, expiring links, revocation, recovery and the private prompt inbox. This adapter makes no network requests.',
+          'Compact sharing with people, general access and a reusable link. Advanced holds expiry, updates, recovery and deletion. This adapter makes no network requests.',
       },
     },
   },
 }
 export const BeforePublishing: StoryObj = { render: () => <Preview published={false} /> }
+export const Artifact: StoryObj = { render: () => <Preview kind="artifact" /> }
+export const Offline: StoryObj = { render: () => <Preview offline /> }
 
 function InlinePreview() {
   const [fixture] = useState(createSharingFixture)

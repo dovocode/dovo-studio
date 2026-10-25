@@ -7,3 +7,5 @@ export default meta
 export const Published: StoryObj<typeof meta> = {}
 
 export const BeforePublishing: StoryObj<typeof meta> = { args: { published: false } }
+export const Artifact: StoryObj<typeof meta> = { args: { kind: 'artifact' } }
+export const Offline: StoryObj<typeof meta> = { args: { offline: true } }

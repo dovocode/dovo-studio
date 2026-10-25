@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile, readdir, mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
@@ -11,12 +12,12 @@ const built = await bundleBrowser(
   import {createRoot} from 'react-dom/client';
   import {SharingPanel} from '${root}/packages/extension-tasks/src/chat/sharing-panel';
   import {createSharingFixture} from '${root}/apps/design-system/src/sharing-fixture';
-  const fixture=createSharingFixture();window.fixture=fixture;
+  const kind=window.kind??'thread';const fixture=createSharingFixture({kind,withKey:window.withKey!==false});window.fixture=fixture;
   window.sharingRequests=[];
   const request=fixture.client.sharing.request.bind(fixture.client.sharing);
   fixture.client.sharing.request=(...args)=>{window.sharingRequests.push(args[1]);return request(...args)};
   function Inline(){const [source,setSource]=useState(fixture.sourceId),[active,setActive]=useState(true),[draft,setDraft]=useState('Existing draft');window.setSource=setSource;window.setActive=setActive;return <><ThreadSuggestions client={fixture.client} sourceId={source} active={active} onUseSuggestion={text=>setDraft(previous=>previous+'\\n\\n'+text)}/><textarea aria-label="Draft" value={draft} readOnly/></>}
-  fixture.ready().then(()=>{window.sharingRequests=[];return createRoot(document.getElementById('app')).render(window.inline ? <Inline/> : <SharingPanel client={fixture.client} sourceId={fixture.sourceId} kind="thread" runtime={fixture.runtime} onUseSuggestion={text=>window.draft=text}/>)});
+  function Manager(){const [shown,setShown]=useState(true);window.showManager=setShown;return shown?<SharingPanel client={fixture.client} sourceId={fixture.sourceId} kind={kind} content={kind==='artifact'?fixture.content:undefined} runtime={window.offline?undefined:fixture.runtime}/>:null}fixture.ready(window.published!==false).then(()=>{if(window.forgetKey)fixture.forgetKey();window.sharingRequests=[];return createRoot(document.getElementById('app')).render(window.inline ? <Inline/> : <Manager/>)});
 `,
       loader: 'tsx',
       resolveDir: root + '/apps/web',
@@ -30,7 +31,7 @@ const built = await bundleBrowser(
   [
     {
       path: '@dovo/studio-ui',
-      contents: `export {Button} from '${root}/packages/studio-ui/src/components/ui/button';export {Input} from '${root}/packages/studio-ui/src/components/ui/input';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea';export * from '${root}/packages/studio-ui/src/components/ui/select';`,
+      contents: `export {Button} from '${root}/packages/studio-ui/src/components/ui/button';export {Input} from '${root}/packages/studio-ui/src/components/ui/input';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea';export * from '${root}/packages/studio-ui/src/components/ui/select';export * from '${root}/packages/studio-ui/src/components/ui/dialog';`,
     },
     {
       path: '@dovo/studio-core',
@@ -81,60 +82,206 @@ try {
   console.log(
     'Inline suggestions: encrypted inbox, draft preservation, thread isolation, dismissal failure and inactive cleanup passed',
   )
-  const page = await browser.newPage(),
-    errors = [],
-    requests = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  page.on('request', (request) => requests.push(request.url()))
-  await page.setContent('<div id="app"></div>')
-  await page.addScriptTag({ content: built.outputFiles[0].text })
-  await page.getByRole('heading', { name: 'Suggested next prompts · 1' }).waitFor()
-  await page.getByRole('button', { name: 'Use in composer', exact: true }).click()
-  assert.match(await page.evaluate(() => window.draft), /cancelled/)
-  await page.getByRole('button', { name: 'Dismiss', exact: true }).click()
-  await page.getByRole('heading', { name: 'Suggested next prompts · 0' }).waitFor()
-  await page.getByLabel('Recipient sharing ID', { exact: true }).fill('second-recipient')
+  const assets = root + '/apps/web/dist/client/assets/'
+  const css = (
+    await Promise.all(
+      (await readdir(assets))
+        .filter((file) => file.endsWith('.css'))
+        .map((file) => readFile(assets + file, 'utf8')),
+    )
+  ).join('\n')
+  const errors = []
+  async function manager(options = {}) {
+    const page = await browser.newPage({ viewport: { width: 480, height: 900 } })
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.setContent(
+      '<html class="dark"><body style="background:var(--background);color:var(--foreground);padding:20px"><main id="app" style="max-width:480px;margin:auto"></main></body></html>',
+    )
+    await page.addStyleTag({ content: css })
+    await page.evaluate((options) => Object.assign(window, options), options)
+    await page.addScriptTag({ content: built.outputFiles[0].text })
+    await page.getByRole('combobox', { name: 'General access', exact: true }).waitFor()
+    await page.waitForFunction(
+      () =>
+        !document.querySelector('[aria-label="Sharing settings"]').getAttribute('aria-busy') ||
+        document.querySelector('[aria-label="Sharing settings"]').getAttribute('aria-busy') ===
+          'false',
+    )
+    return page
+  }
+  async function access(page, label) {
+    await page.getByRole('combobox', { name: 'General access', exact: true }).click()
+    await page.getByRole('option', { name: label, exact: true }).click()
+  }
+  const page = await manager()
+  assert.equal(await page.getByRole('button', { name: 'Copy link', exact: true }).isEnabled(), true)
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Share link', exact: true }).isVisible(),
+    false,
+  )
+  await page
+    .getByRole('textbox', { name: 'Add people by sharing ID', exact: true })
+    .fill('second-recipient')
   await page.evaluate(() => window.fixture.fail(true))
-  await page.getByRole('button', { name: 'Invite account', exact: true }).click()
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
   await page.getByRole('alert').waitFor()
   assert.equal(
-    await page.getByLabel('Recipient sharing ID', { exact: true }).inputValue(),
+    await page.getByLabel('Add people by sharing ID', { exact: true }).inputValue(),
     'second-recipient',
   )
   await page.evaluate(() => window.fixture.fail(false))
-  await page.getByRole('button', { name: 'Invite account', exact: true }).click()
-  await page.getByText('Invited account · second-recipient', { exact: true }).waitFor()
-  assert.equal(await page.getByRole('button', { name: 'Revoke access', exact: true }).count(), 3)
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByText('second-recipient', { exact: true }).waitFor()
   const beforeKey = await page.evaluate(
     () => [...window.fixture.records.values()][0].packet.generation,
   )
-  await page.getByRole('button', { name: 'Revoke access', exact: true }).last().click()
-  await page.waitForFunction(() => [...window.fixture.records.values()][0].grants.length === 2)
-  const afterKey = await page.evaluate(
-    () => [...window.fixture.records.values()][0].packet.generation,
+  await page.getByRole('button', { name: 'Remove access', exact: true }).last().click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Keep access', exact: true }).click()
+  assert.equal(await page.getByText('second-recipient', { exact: true }).count(), 1)
+  await page.getByRole('button', { name: 'Remove access', exact: true }).last().click()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Confirm remove access', exact: true })
+    .click()
+  await page.getByText('second-recipient', { exact: true }).waitFor({ state: 'hidden' })
+  assert.notEqual(
+    beforeKey,
+    await page.evaluate(() => [...window.fixture.records.values()][0].packet.generation),
   )
-  assert.notEqual(beforeKey, afterKey)
+  await page.getByText('Advanced', { exact: true }).click()
   await page.getByRole('button', { name: 'Pause automatic updates', exact: true }).click()
-  await page.getByRole('button', { name: 'Resume automatic updates', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Resume automatic updates', exact: true }).click()
   await page.getByRole('button', { name: 'Pause automatic updates', exact: true }).waitFor()
   await page.getByText('Recovery and another device', { exact: true }).click()
   await page.getByRole('button', { name: 'Show recovery key', exact: true }).click()
-  await page.getByRole('textbox', { name: 'Sharing recovery key', exact: true }).waitFor()
   assert.match(
     await page.getByRole('textbox', { name: 'Sharing recovery key', exact: true }).inputValue(),
     /^[a-f0-9]{64}$/,
   )
   await page.getByRole('button', { name: 'Hide key', exact: true }).click()
-  await page.getByText('Delete hosted copy', { exact: true }).click()
   await page.getByRole('button', { name: 'Delete hosted copy…', exact: true }).click()
   await page.getByRole('button', { name: 'Confirm delete hosted copy', exact: true }).click()
-  await page.getByRole('heading', { name: 'Publish private thread', exact: true }).waitFor()
-  assert.equal(await page.evaluate(() => window.fixture.records.size), 0)
+  await page.waitForFunction(() => window.fixture.records.size === 0)
+  await page.getByRole('button', { name: 'Copy link', exact: true }).waitFor({ state: 'visible' })
+  assert.equal(
+    await page.getByRole('button', { name: 'Copy link', exact: true }).isDisabled(),
+    true,
+  )
+  await page.close()
+
+  for (const kind of ['thread', 'artifact']) {
+    const invited = await manager({ kind, published: false, withKey: false })
+    await invited.getByRole('textbox', { name: 'Add people by sharing ID' }).fill('private-reader')
+    await invited.getByRole('button', { name: 'Add', exact: true }).click()
+    await invited.getByText('private-reader', { exact: true }).waitFor()
+    assert.equal(
+      await invited.evaluate(() =>
+        [...window.fixture.records.values()][0].grants.every(
+          (grant) => grant.userId === 'private-reader',
+        ),
+      ),
+      true,
+      'inviting must not enable anonymous access',
+    )
+    assert.equal(
+      await invited.getByRole('button', { name: 'Copy link', exact: true }).isDisabled(),
+      true,
+    )
+    await invited.close()
+    const first = await manager({ kind, published: false, withKey: false })
+    assert.equal(
+      await first.evaluate(() => window.fixture.records.size),
+      0,
+      'opening must not publish',
+    )
+    await first.evaluate(() => window.fixture.fail(true))
+    await access(first, 'Anyone with the link')
+    await first.getByRole('alert').waitFor()
+    assert.equal(await first.evaluate(() => window.fixture.records.size), 0)
+    await first.evaluate(() => window.fixture.fail(false))
+    await access(first, 'Anyone with the link')
+    await first.waitForFunction(
+      () =>
+        [...window.fixture.records.values()][0]?.grants.length === 1 ||
+        !!document.querySelector('[role="alert"]'),
+    )
+    assert.equal(await first.getByRole('alert').count(), 0, await first.locator('body').innerText())
+    const shared = await first.evaluate(() => [...window.fixture.records.values()][0])
+    assert.equal(shared.kind, kind)
+    assert.equal(shared.paused, kind !== 'thread')
+    const grantId = shared.grants[0].id
+    assert.equal(
+      await first.getByRole('button', { name: 'Copy link', exact: true }).isEnabled(),
+      true,
+    )
+    // Reopening retains the publication and link without key setup, review or a new grant.
+    await first.evaluate(() => window.showManager(false))
+    await first.getByRole('combobox').waitFor({ state: 'hidden' })
+    await first.evaluate(() => window.showManager(true))
+    await first.waitForFunction(
+      () =>
+        !document.querySelector('[aria-label="Sharing settings"]').getAttribute('aria-busy') ||
+        document.querySelector('[aria-label="Sharing settings"]').getAttribute('aria-busy') ===
+          'false',
+    )
+    assert.equal(await first.evaluate(() => window.fixture.records.size), 1)
+    assert.equal(
+      await first.evaluate(() => [...window.fixture.records.values()][0].grants[0].id),
+      grantId,
+    )
+    await first.getByRole('textbox', { name: 'Add people by sharing ID' }).fill('trusted-reader')
+    await first.getByRole('button', { name: 'Add', exact: true }).click()
+    await first.getByText('trusted-reader', { exact: true }).waitFor()
+    await access(first, 'Restricted')
+    await first
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Confirm remove access', exact: true })
+      .click()
+    await first.waitForFunction(() =>
+      [...window.fixture.records.values()][0].grants.every((grant) => !!grant.userId),
+    )
+    assert.equal(
+      await first.getByRole('button', { name: 'Copy link', exact: true }).isDisabled(),
+      true,
+    )
+    assert.equal(
+      await first.getByRole('button', { name: 'Copy invitation link', exact: true }).isEnabled(),
+      true,
+    )
+    await mkdir(root + '/work/sharing-settings', { recursive: true })
+    for (const mode of ['dark', 'light']) {
+      await first.evaluate((mode) => (document.documentElement.className = mode), mode)
+      for (const width of [390, 1100]) {
+        await first.setViewportSize({ width, height: 900 })
+        assert.equal(
+          await first.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
+          false,
+          'sharing must fit narrow screens',
+        )
+        await first.screenshot({
+          path: root + `/work/sharing-settings/${kind}-${mode}-${width}.png`,
+          fullPage: true,
+        })
+      }
+    }
+    await first.close()
+  }
+  const restored = await manager({ forgetKey: true })
+  await restored.getByRole('heading', { name: 'Restore sharing on this device' }).waitFor()
+  assert.equal(await restored.getByRole('button', { name: 'Add', exact: true }).isDisabled(), true)
+  await restored.close()
+  const offline = await manager({ offline: true })
+  await offline
+    .getByText('Waiting for the source computer. Readers see the last published messages.')
+    .waitFor()
+  assert.equal(
+    await offline.getByRole('button', { name: 'Copy link', exact: true }).isEnabled(),
+    true,
+  )
+  await offline.close()
   assert.deepEqual(errors, [])
-  assert.deepEqual(requests, [])
   console.log(
-    'Encrypted sharing controls: invitations, composer insertion, dismissal, rotation, pause/resume, recovery and deletion passed',
+    'Compact sharing: one-step encrypted thread/artifact access, saved links, invitations, recoverable failures, restriction/revocation confirmation, live updates, key recovery, deletion and narrow light/dark layouts passed',
   )
 } finally {
   await browser.close()

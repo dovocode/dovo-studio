@@ -179,6 +179,7 @@ export function ArtifactBrowser({
   const [exportDraft, setExportDraft] = useState<{ key: string; content: string }>()
   const [editingExport, setEditingExport] = useState<{ key: string; content: string }>()
   const [preparingEditor, setPreparingEditor] = useState(false)
+  const [sharingArtifact, setSharingArtifact] = useState<Artifact>()
   const editorRequest = useRef(false)
   const exportKey = JSON.stringify([taskId, id, artifact?.revision])
   const draftHtml = exportDraft?.key === exportKey ? exportDraft.content : undefined
@@ -383,6 +384,12 @@ export function ArtifactBrowser({
                   ` · Version ${artifact.revision}${revision === undefined ? ' · Latest' : ''}`}
               </Text>
             </View>
+            <IconButton
+              label="Share artifact"
+              icon="share"
+              disabled={!artifact}
+              onPress={() => setSharingArtifact(artifact)}
+            />
           </View>
           <View
             style={{
@@ -468,6 +475,12 @@ export function ArtifactBrowser({
             </View>
           )}
         </View>
+        {sharingArtifact && (
+          <ArtifactSharing
+            artifact={sharingArtifact}
+            onClose={() => setSharingArtifact(undefined)}
+          />
+        )}
         {picker === 'export' ? (
           <ScrollView
             keyboardShouldPersistTaps="handled"
@@ -525,9 +538,6 @@ export function ArtifactBrowser({
                   onPress={() => void share('folder')}
                 />
               </>
-            )}
-            {artifact && (
-              <ArtifactSharing key={`${artifact.id}:${artifact.revision}`} artifact={artifact} />
             )}
             <Action
               label="Share source"

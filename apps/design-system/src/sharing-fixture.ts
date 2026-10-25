@@ -9,11 +9,15 @@ import {
   type AccountState,
   type AccountStorage,
   type ShareRecord,
+  type SharedContent,
 } from '@dovo/protocol'
 
 /** Synthetic, in-memory adapter for the production sharing manager. Never contacts a service. */
-export function createSharingFixture() {
-  let key: string | null = newSharingKey()
+export function createSharingFixture({
+  kind = 'thread',
+  withKey = true,
+}: { kind?: 'thread' | 'artifact'; withKey?: boolean } = {}) {
+  let key: string | null = withKey ? newSharingKey() : null
   const storage: AccountStorage = {
     read: async () => null,
     write: async () => {
@@ -28,22 +32,34 @@ export function createSharingFixture() {
   let fail = false
   const sourceId = 'catalog-computer:catalog-thread',
     origin = 'https://share.example.invalid'
-  const content = {
-    kind: 'thread' as const,
-    title: 'Investigate the checkout flow',
-    messages: [
-      {
-        id: 'catalog-prompt',
-        role: 'user' as const,
-        text: 'Can we investigate why checkout stalls on mobile?',
-      },
-      {
-        id: 'catalog-answer',
-        role: 'assistant' as const,
-        text: 'The payment request is waiting for a response. I will trace its timeout and retry behavior.',
-      },
-    ],
-  }
+  const content: SharedContent =
+    kind === 'artifact'
+      ? {
+          kind: 'artifact',
+          artifact: {
+            sourceId: 'f6ce1ce1-f4c3-4000-8000-000000000001',
+            revision: 3,
+            title: 'Checkout notes',
+            format: 'markdown',
+            content: '# Checkout notes\nInspect the payment timeout.',
+          },
+        }
+      : {
+          kind: 'thread' as const,
+          title: 'Investigate the checkout flow',
+          messages: [
+            {
+              id: 'catalog-prompt',
+              role: 'user' as const,
+              text: 'Can we investigate why checkout stalls on mobile?',
+            },
+            {
+              id: 'catalog-answer',
+              role: 'assistant' as const,
+              text: 'The payment request is waiting for a response. I will trace its timeout and retry behavior.',
+            },
+          ],
+        }
   class LocalSharing extends SharingClient {
     override async request(
       _origin: string,
@@ -135,17 +151,21 @@ export function createSharingFixture() {
     let share = await client.sharing.publish(origin, sourceId, content)
     share = await client.sharing.invite(origin, share, 'catalog-recipient')
     share = await client.sharing.invite(origin, share, undefined, 604800)
-    suggestions = [
-      encryptSuggestion(
-        {
-          shareId: share.record.id,
-          revision: share.record.packet.revision,
-          name: 'Alex',
-          text: 'Could we check whether the request is cancelled when the app goes into the background?',
-        },
-        sharingReaderKeys(share.vault).suggestionKey,
-      ),
-    ]
+    suggestions =
+      kind === 'thread'
+        ? [
+            encryptSuggestion(
+              {
+                shareId: share.record.id,
+                revision: share.record.packet.revision,
+                name: 'Alex',
+                text: 'Could we check whether the request is cancelled when the app goes into the background?',
+              },
+              sharingReaderKeys(share.vault).suggestionKey,
+            ),
+          ]
+        : []
+    if (kind !== 'thread') return
     const resumed = await client.sharing.setPaused(origin, share, false)
     enabled = true
     // Keep fixture identity and permissions local; these values never authorize a real service.
@@ -155,10 +175,14 @@ export function createSharingFixture() {
     client,
     runtime,
     sourceId,
+    content,
     ready,
     fail: (value: boolean) => {
       fail = value
     },
     records,
+    forgetKey: () => {
+      key = null
+    },
   }
 }

@@ -1,7 +1,7 @@
 import { useId, useState, type ReactNode } from 'react'
 import { Schema } from 'effect'
 import { useEncryptedSharing, type SharingRuntime } from '@dovo/studio-core'
-import { LockKeyhole, Link2, Users, MessageSquare } from 'lucide-react'
+import { LockKeyhole, Link2, Users } from 'lucide-react'
 import {
   Button,
   Input,
@@ -11,6 +11,10 @@ import {
   SelectValue,
   SelectContent,
   SelectItem,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
 } from '@dovo/studio-ui'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import {
@@ -29,7 +33,6 @@ export function SharingPanel({
   kind,
   content,
   runtime,
-  onUseSuggestion,
   legacy = [],
   renderFeed,
 }: {
@@ -38,52 +41,51 @@ export function SharingPanel({
   kind: 'artifact' | 'thread'
   content?: SharedContent
   runtime?: SharingRuntime
-  onUseSuggestion?: (text: string) => void
   renderFeed?: (share: OpenShare, origin: string, update: (share: OpenShare) => void) => ReactNode
   legacy?: ArtifactSourcePublication[]
 }) {
   const sharing = useEncryptedSharing({ client, sourceId, kind, content, runtime })
   const [recipient, setRecipient] = useState(''),
     [restore, setRestore] = useState(''),
-    [seconds, setSeconds] = useState(604800)
-  const [copied, setCopied] = useState(''),
+    [seconds, setSeconds] = useState('604800')
+  const [notice, setNotice] = useState(''),
     [copyError, setCopyError] = useState(''),
+    [removing, setRemoving] = useState<string>(),
     [confirmDelete, setConfirmDelete] = useState(false)
-  const lifetimeId = useId()
-  const account = client.snapshot()
+  const id = useId(),
+    account = client.snapshot()
+  const links = sharing.share?.record.grants.filter((grant) => !grant.userId) ?? []
+  const people = sharing.share?.record.grants.filter((grant) => !!grant.userId) ?? []
+  const activeLink = links.find((grant) => (grant.expiresAt ?? 0) > Date.now())
+  const needsRecovery = sharing.loaded && !sharing.hasKey && sharing.hasShares
+  const unavailable =
+    sharing.busy ||
+    !sharing.loaded ||
+    needsRecovery ||
+    (!sharing.share && kind === 'thread' && !runtime)
   const copy = async (text: string) => {
+    setNotice('')
+    setCopyError('')
     try {
       await copyTextToClipboard(text)
-      setCopied('Copied')
-      setCopyError('')
+      setNotice('Link copied')
     } catch {
-      setCopyError('Could not copy. Select and copy the link manually.')
+      setCopyError('Could not copy. Open Advanced to select and copy the link.')
     }
   }
-  const section = 'min-w-0 space-y-3 rounded-xl border border-border bg-card p-4'
   const disclosure =
     'cursor-pointer rounded-md font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
   return (
     <div
-      className="min-w-0 space-y-4 text-sm"
+      className="min-w-0 space-y-5 text-sm"
       aria-label="Sharing settings"
       aria-busy={sharing.busy}
     >
-      <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-3">
-        <LockKeyhole aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <div className="space-y-1">
-          <p className="font-medium">End-to-end encrypted</p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Only you and your readers can decrypt shared content. Review messages and files for
-            secrets before sharing.
-          </p>
-        </div>
-      </div>
-      {!!sharing.origin && (
-        <p className="break-all text-xs text-muted-foreground">Hosted at {sharing.origin}</p>
-      )}
       {!account.directory ? (
-        <>
+        <div className="space-y-3">
+          <p className="text-muted-foreground">
+            Sign in to manage sharing. People you share a link with can read without an account.
+          </p>
           <Button disabled={account.busy} onClick={() => void client.signIn()}>
             {account.busy ? 'Signing in…' : 'Sign in to publish'}
           </Button>
@@ -95,73 +97,219 @@ export function SharingPanel({
               </Button>
             </p>
           )}
-        </>
+        </div>
       ) : (
         <>
-          <details className="text-xs text-muted-foreground">
-            <summary className={disclosure}>Publishing as {account.directory.user.name}</summary>
-            <p className="mt-2 break-all">
-              Your sharing ID: <span className="select-all">{account.directory.user.id}</span>
-            </p>
-          </details>
           {!sharing.loaded && !sharing.error && <p role="status">Loading sharing settings…</p>}
-          <fieldset disabled={sharing.busy || !sharing.loaded} className="space-y-4">
-            {!sharing.hasKey && (
-              <section className={section}>
-                <h2 className="font-medium">Set up encrypted sharing</h2>
-                <p>
-                  Keep your recovery key in a password manager. Use it to restore access on another
-                  device. Signing in alone cannot decrypt your publications.
-                </p>
-                {!sharing.hasShares && (
-                  <Button onClick={() => void sharing.createKey()}>
-                    Create sharing recovery key
-                  </Button>
-                )}
-                {sharing.hasShares && (
-                  <p>
-                    Your account already has encrypted publications. Restore their recovery key.
+          {needsRecovery && (
+            <section
+              className="space-y-3 rounded-xl border p-3"
+              aria-label="Restore sharing access"
+            >
+              <h2 className="font-medium">Restore sharing on this device</h2>
+              <p className="text-muted-foreground">
+                Enter your recovery key to manage your existing shared content.
+              </p>
+              <label className="block space-y-1">
+                Recovery key
+                <Input
+                  type="password"
+                  autoComplete="off"
+                  value={restore}
+                  onChange={(event) => setRestore(event.target.value)}
+                />
+              </label>
+              <Button
+                disabled={sharing.busy || !restore.trim()}
+                onClick={() => {
+                  void sharing.restore(restore).then((ok) => {
+                    if (ok) setRestore('')
+                  })
+                }}
+              >
+                Restore sharing key
+              </Button>
+            </section>
+          )}
+          <section className="space-y-3" aria-label="People with access">
+            <form
+              className="flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (recipient.trim() && !unavailable)
+                  void sharing.invite(recipient.trim()).then((ok) => {
+                    if (ok) {
+                      setRecipient('')
+                      setNotice('Person added. Copy their invitation link to send it to them.')
+                    }
+                  })
+              }}
+            >
+              <Input
+                aria-label="Add people by sharing ID"
+                placeholder="Add people by sharing ID"
+                value={recipient}
+                maxLength={500}
+                onChange={(event) => setRecipient(event.target.value)}
+                disabled={unavailable}
+                className="min-w-0 flex-1"
+              />
+              <Button type="submit" disabled={unavailable || !recipient.trim()}>
+                Add
+              </Button>
+            </form>
+            <p className="text-xs text-muted-foreground">
+              Use their sharing ID from Studio. You send the invitation link yourself.
+            </p>
+            <div className="flex items-center gap-3 py-1">
+              <Users aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{account.directory.user.name} (you)</p>
+                <p className="text-xs text-muted-foreground">Owner</p>
+              </div>
+            </div>
+            {people.map((grant) => (
+              <div
+                key={grant.id}
+                className="space-y-2 border-t pt-3"
+                aria-label={`Access for ${grant.userId}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="min-w-0 break-all font-medium">{grant.userId}</p>
+                  <p className="shrink-0 text-xs text-muted-foreground">
+                    {kind === 'thread' ? 'Reader · Can suggest' : 'Reader'}
                   </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={sharing.busy}
+                    onClick={() => void copy(sharing.link(grant.id))}
+                  >
+                    Copy invitation link
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={sharing.busy}
+                    onClick={() => setRemoving(grant.id)}
+                  >
+                    Remove access
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </section>
+          <section className="space-y-3 border-t pt-4" aria-label="General access">
+            <h2 className="font-medium">General access</h2>
+            <div className="flex items-start gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted">
+                {activeLink ? (
+                  <Link2 aria-hidden="true" className="size-5" />
+                ) : (
+                  <LockKeyhole aria-hidden="true" className="size-5" />
                 )}
-                <label className="block">
-                  Recovery key
-                  <Input
-                    autoComplete="off"
-                    type="password"
-                    value={restore}
-                    onChange={(event) => setRestore(event.target.value)}
-                  />
-                </label>
-                <Button
-                  variant="outline"
-                  disabled={!restore.trim()}
-                  onClick={() => {
-                    void sharing.restore(restore).then((ok) => {
-                      if (ok) setRestore('')
-                    })
+              </div>
+              <div className="min-w-0 flex-1 space-y-2">
+                <Select
+                  value={activeLink ? 'anyone' : 'restricted'}
+                  disabled={unavailable}
+                  onValueChange={(value) => {
+                    setNotice('')
+                    if (value === 'restricted') setRemoving('links')
+                    else void sharing.setLinkAccess(true, Number(seconds))
                   }}
                 >
-                  Restore sharing key
-                </Button>
-              </section>
-            )}
-            {sharing.hasKey && !sharing.share && (
-              <section className={section}>
-                <h2 className="font-medium">
-                  Publish private {kind === 'thread' ? 'thread' : 'artifact'}
-                </h2>
-                {kind === 'thread' && (
-                  <p>
-                    New user and agent messages will be shared automatically. Tool logs, attachment
-                    contents and unsent drafts are excluded.
+                  <SelectTrigger aria-label="General access">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="restricted">Restricted</SelectItem>
+                    <SelectItem value="anyone">Anyone with the link</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {activeLink
+                    ? `Anyone with the link can read${kind === 'thread' ? ' and suggest a prompt' : ''}. No sign-in required.`
+                    : 'Only people you add can open their personal invitation link.'}
+                </p>
+                {activeLink && (
+                  <p className="text-xs text-muted-foreground">
+                    Link expires {new Date(activeLink.expiresAt ?? 0).toLocaleDateString()}
                   </p>
                 )}
-                <Button variant="outline" onClick={() => void sharing.review()}>
-                  Review content to share
-                </Button>
-                {sharing.preview && (
-                  <>
-                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl border bg-muted p-3 text-xs">
+              </div>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {kind === 'thread'
+                ? 'New replies update automatically; tools, files and drafts stay private.'
+                : 'Shares this saved version and its files. Later edits stay private.'}
+            </p>
+            {!!sharing.share &&
+              kind === 'thread' &&
+              (sharing.share.record.paused || !runtime || sharing.sync?.enabled === false) && (
+                <p role="status" className="rounded-lg bg-muted p-2 text-xs">
+                  {sharing.share.record.paused
+                    ? 'Updates paused. Readers see the last published messages.'
+                    : 'Waiting for the source computer. Readers see the last published messages.'}
+                </p>
+              )}
+          </section>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            <Button
+              disabled={unavailable || !activeLink}
+              onClick={() => {
+                if (activeLink) void copy(sharing.link(activeLink.id))
+              }}
+            >
+              <Link2 aria-hidden="true" className="size-4" />
+              Copy link
+            </Button>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <LockKeyhole aria-hidden="true" className="size-3.5" />
+              End-to-end encrypted
+            </p>
+          </div>
+          {!activeLink && (
+            <p className="text-xs text-muted-foreground">
+              Choose Anyone with the link to copy a general link.
+            </p>
+          )}
+          {!!legacy.length && (
+            <p className="text-xs text-muted-foreground">
+              An older unencrypted copy is still hosted. Manage it in Advanced.
+            </p>
+          )}
+          {!sharing.share && kind === 'thread' && !runtime && (
+            <p className="text-xs text-muted-foreground">
+              Reconnect to the source computer to share this thread.
+            </p>
+          )}
+          <details
+            className="border-t pt-3"
+            onToggle={(event) => {
+              if (!event.currentTarget.open) sharing.hideRecovery()
+            }}
+          >
+            <summary className={disclosure}>Advanced</summary>
+            <div className="space-y-4 pt-4">
+              <details>
+                <summary className={disclosure}>Review shared content</summary>
+                <div className="space-y-3 pt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={unavailable || (kind === 'thread' && !runtime)}
+                    onClick={() => void sharing.review()}
+                  >
+                    Load content preview
+                  </Button>
+                  {sharing.preview && (
+                    <pre
+                      aria-label="Content to share"
+                      className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs"
+                    >
                       {sharing.preview.kind === 'thread'
                         ? sharing.preview.messages
                             .map(
@@ -171,283 +319,291 @@ export function SharingPanel({
                             .join('\n\n')
                         : `${sharing.preview.artifact.title}\n\n${sharing.preview.artifact.content}${sharing.preview.artifact.files?.map((file) => `\n\n${file.path}\n${file.content}`).join('') ?? ''}`}
                     </pre>
-                    <Button onClick={() => void sharing.publish()}>
-                      {kind === 'thread'
-                        ? 'Publish and enable automatic updates'
-                        : 'Publish encrypted private copy'}
-                    </Button>
-                  </>
-                )}
-              </section>
-            )}
-            {sharing.share && (
-              <>
-                <section className={section}>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="font-medium">Shared · End-to-end encrypted</h2>
-                    <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
-                      {kind === 'thread'
-                        ? sharing.share.record.paused
-                          ? 'Paused'
-                          : 'Automatic updates'
-                        : 'Private copy'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Last published {new Date(sharing.share.record.updatedAt).toLocaleString()}
-                  </p>
-                  {kind === 'thread' && (
-                    <>
-                      <p>
-                        {sharing.share.record.paused
-                          ? 'Automatic updates paused'
-                          : 'Automatic updates enabled'}
-                        {sharing.sync && !sharing.sync.enabled && !sharing.share.record.paused
-                          ? ' · Source is not syncing'
-                          : ''}
-                      </p>
-                      <Button
-                        variant="outline"
-                        onClick={() =>
-                          void (sharing.share?.record.paused ? sharing.resume() : sharing.pause())
-                        }
-                      >
-                        {sharing.share.record.paused
-                          ? 'Resume automatic updates'
-                          : 'Pause automatic updates'}
-                      </Button>
-                      {sharing.sync?.error && <p role="alert">{sharing.sync.error}</p>}
-                    </>
                   )}
-                </section>
-                <section className={section}>
-                  <h2 className="flex items-center gap-2 font-medium">
-                    <Users aria-hidden="true" className="size-4 text-muted-foreground" />
-                    Private invitations
-                  </h2>
-                  <p className="text-muted-foreground">
-                    Invite an exact sharing ID, then send that person their invitation link. They
-                    need both the link and the invited account.
+                </div>
+              </details>
+              <div className="space-y-2">
+                <p id={id} className="font-medium">
+                  New link lifetime
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Used when you enable link access or create another link. Existing links keep their
+                  expiry.
+                </p>
+                <Select value={seconds} onValueChange={setSeconds} disabled={sharing.busy}>
+                  <SelectTrigger aria-labelledby={id}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="3600">1 hour</SelectItem>
+                    <SelectItem value="86400">1 day</SelectItem>
+                    <SelectItem value="604800">7 days</SelectItem>
+                    <SelectItem value="2592000">30 days</SelectItem>
+                  </SelectContent>
+                </Select>
+                {!!activeLink && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={unavailable}
+                    onClick={() => void sharing.createLink(Number(seconds))}
+                  >
+                    Create another link
+                  </Button>
+                )}
+              </div>
+              {sharing.share?.record.grants.map((grant) => (
+                <div key={grant.id} className="space-y-2 rounded-xl border p-3">
+                  <p className="break-all text-xs">
+                    {grant.userId
+                      ? `Invitation · ${grant.userId}`
+                      : `${(grant.expiresAt ?? 0) > Date.now() ? 'Expires' : 'Expired'} · ${new Date(grant.expiresAt ?? 0).toLocaleString()}`}
                   </p>
-                  <label className="block">
-                    Recipient sharing ID
-                    <Input
-                      value={recipient}
-                      maxLength={500}
-                      onChange={(event) => setRecipient(event.target.value)}
-                    />
-                  </label>
+                  <Input
+                    readOnly
+                    aria-label={grant.userId ? 'Private invitation link' : 'Share link'}
+                    value={sharing.link(grant.id)}
+                    className="font-mono text-xs"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        sharing.busy || (!grant.userId && (grant.expiresAt ?? 0) <= Date.now())
+                      }
+                      onClick={() => void copy(sharing.link(grant.id))}
+                    >
+                      Copy this link
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={sharing.busy}
+                      onClick={() => setRemoving(grant.id)}
+                    >
+                      Remove this link
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {sharing.share && kind === 'thread' && (
+                <div className="space-y-2">
+                  <p className="font-medium">Automatic updates</p>
+                  <p className="text-xs text-muted-foreground">
+                    Pausing keeps the current hosted copy available. Suggestions appear inline in
+                    your thread.
+                  </p>
                   <Button
                     variant="outline"
-                    disabled={!recipient.trim()}
-                    onClick={() => {
-                      void sharing.invite(recipient.trim()).then((ok) => {
-                        if (ok) setRecipient('')
-                      })
-                    }}
+                    disabled={sharing.busy || (!runtime && sharing.share.record.paused)}
+                    onClick={() =>
+                      void (sharing.share?.record.paused ? sharing.resume() : sharing.pause())
+                    }
                   >
-                    Invite account
+                    {sharing.share.record.paused
+                      ? 'Resume automatic updates'
+                      : 'Pause automatic updates'}
                   </Button>
-                </section>
-                <section className={section}>
-                  <h2 className="flex items-center gap-2 font-medium">
-                    <Link2 aria-hidden="true" className="size-4 text-muted-foreground" />
-                    Anyone with the link
-                  </h2>
-                  <p className="text-muted-foreground">
-                    No sign-in needed. Anyone holding the complete link can read
-                    {kind === 'thread' ? ' and suggest a prompt' : ''} until it expires or is
-                    revoked.
-                  </p>
-                  <div className="space-y-2">
-                    <p id={lifetimeId} className="text-xs font-medium">
-                      Link lifetime
-                    </p>
-                    <Select
-                      value={String(seconds)}
-                      onValueChange={(value) => setSeconds(Number(value))}
+                  {!sharing.share.record.paused && sharing.sync?.enabled === false && runtime && (
+                    <Button
+                      variant="outline"
                       disabled={sharing.busy}
+                      onClick={() => void sharing.resume()}
                     >
-                      <SelectTrigger aria-labelledby={lifetimeId}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="3600">1 hour</SelectItem>
-                        <SelectItem value="86400">1 day</SelectItem>
-                        <SelectItem value="604800">7 days</SelectItem>
-                        <SelectItem value="2592000">30 days</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button variant="outline" onClick={() => void sharing.createLink(seconds)}>
-                    Create anyone-with-link access
-                  </Button>
-                </section>
-                {!!sharing.share.record.grants.length && (
-                  <section className={section} aria-label="People and links">
-                    <h2 className="font-medium">People and links</h2>
-                    {sharing.share.record.grants.map((grant) => (
-                      <div key={grant.id} className="space-y-2 rounded-xl border p-3">
-                        <p className="break-all">
-                          {grant.userId
-                            ? `Invited account · ${grant.userId}`
-                            : `Anyone with link · ${new Date(grant.expiresAt ?? 0).toLocaleString()}`}
-                        </p>
-                        <Input
-                          className="min-w-0 font-mono text-xs"
-                          readOnly
-                          aria-label={grant.userId ? 'Private invitation link' : 'Share link'}
-                          value={sharing.link(grant.id)}
-                        />
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => void copy(sharing.link(grant.id))}
-                          >
-                            Copy link
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => void sharing.revoke(grant.id)}
-                          >
-                            Revoke access
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </section>
-                )}
-                {kind === 'thread' && (
-                  <section className={section}>
-                    <h2 className="flex items-center gap-2 font-medium">
-                      <MessageSquare aria-hidden="true" className="size-4 text-muted-foreground" />
-                      Suggested next prompts · {sharing.suggestions.length}
-                    </h2>
-                    <p className="text-muted-foreground">
-                      Suggestions stay private to you. Use one in the composer to review and edit it
-                      before sending.
+                      Reconnect automatic updates
+                    </Button>
+                  )}
+                  {!runtime && (
+                    <p className="text-xs text-muted-foreground">
+                      Reconnect to the source computer to start or resume updates.
                     </p>
-                    {!sharing.suggestions.length && (
-                      <p className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
-                        No suggestions yet. Readers can suggest a next prompt from the shared
-                        thread.
-                      </p>
+                  )}
+                  {!!sharing.sync?.error && (
+                    <p role="alert" className="text-destructive">
+                      {sharing.sync.error}
+                    </p>
+                  )}
+                </div>
+              )}
+              {sharing.share && renderFeed?.(sharing.share, sharing.origin, sharing.setShare)}
+              {sharing.hasKey && (
+                <details
+                  open={sharing.recovery ? true : undefined}
+                  onToggle={(event) => {
+                    if (!event.currentTarget.open) sharing.hideRecovery()
+                  }}
+                >
+                  <summary className={disclosure}>Recovery and another device</summary>
+                  <div className="space-y-3 pt-3">
+                    <p className="text-xs text-muted-foreground">
+                      Your key is saved securely on this device. Back it up to a password manager to
+                      restore sharing on another device. It unlocks all your shared content.
+                    </p>
+                    {sharing.recovery ? (
+                      <>
+                        <Textarea
+                          readOnly
+                          aria-label="Sharing recovery key"
+                          value={sharing.recovery}
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() =>
+                            void copyTextToClipboard(sharing.recovery).then(
+                              () => setNotice('Recovery key copied'),
+                              () =>
+                                setCopyError('Could not copy. Select and copy the key manually.'),
+                            )
+                          }
+                        >
+                          Copy recovery key
+                        </Button>
+                        <Button variant="ghost" onClick={sharing.hideRecovery}>
+                          Hide key
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        disabled={sharing.busy}
+                        onClick={() => void sharing.showRecovery()}
+                      >
+                        Show recovery key
+                      </Button>
                     )}
-                    {sharing.suggestions.map((item) => (
-                      <div key={item.id} className="space-y-2 rounded-xl border p-3">
-                        <p className="text-xs text-muted-foreground">
-                          {item.value?.name || 'Reader'}
-                          {item.value &&
-                          item.value.revision !== sharing.share?.record.packet.revision
-                            ? ' · Suggested on an earlier published version'
-                            : ''}
-                        </p>
-                        <p className="whitespace-pre-wrap break-words">
-                          {item.value?.text ?? item.error}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {item.value && onUseSuggestion && (
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                if (item.value) onUseSuggestion(item.value.text)
-                              }}
-                            >
-                              Use in composer
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => void sharing.dismiss(item.id)}
-                          >
-                            Dismiss
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </section>
-                )}
-                {renderFeed?.(sharing.share, sharing.origin, sharing.setShare)}
-                <details className={section}>
-                  <summary className={disclosure}>Delete hosted copy</summary>
-                  <p className="text-muted-foreground">
-                    Removes the publication, invitations, links and suggestions. Your local {kind}{' '}
-                    stays available. Downloaded copies cannot be recalled.
+                  </div>
+                </details>
+              )}
+              <details>
+                <summary className={disclosure}>Account and destination</summary>
+                <div className="space-y-2 pt-3 text-xs text-muted-foreground">
+                  <p>Publishing as {account.directory.user.name}</p>
+                  <p className="break-all">
+                    Your sharing ID: <span className="select-all">{account.directory.user.id}</span>
+                  </p>
+                  <p className="break-all">Hosted at {sharing.origin || 'Loading…'}</p>
+                </div>
+              </details>
+              {sharing.share && (
+                <div className="space-y-2 border-t pt-3">
+                  <p className="text-xs text-muted-foreground">
+                    Delete the hosted copy to stop all sharing. Your local {kind} stays available.
+                    Saved reader copies cannot be recalled.
                   </p>
                   {confirmDelete ? (
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="destructive" onClick={() => void sharing.remove()}>
+                      <Button
+                        variant="destructive"
+                        disabled={sharing.busy}
+                        onClick={() => {
+                          void sharing.remove().then((ok) => {
+                            if (ok) setConfirmDelete(false)
+                          })
+                        }}
+                      >
                         Confirm delete hosted copy
                       </Button>
-                      <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+                      <Button
+                        variant="outline"
+                        disabled={sharing.busy}
+                        onClick={() => setConfirmDelete(false)}
+                      >
                         Cancel
                       </Button>
                     </div>
                   ) : (
-                    <Button variant="outline" onClick={() => setConfirmDelete(true)}>
+                    <Button
+                      variant="outline"
+                      disabled={sharing.busy}
+                      onClick={() => setConfirmDelete(true)}
+                    >
                       Delete hosted copy…
                     </Button>
                   )}
-                </details>
-              </>
-            )}
-            {sharing.hasKey && (
-              <details className={section} open={sharing.recovery ? true : undefined}>
-                <summary className={disclosure}>Recovery and another device</summary>
-                <p className="my-3">
-                  Your recovery key grants access to all your encrypted publications. Keep it
-                  private and store a backup. Enter it in Studio on your other device to restore
-                  access.
+                </div>
+              )}
+              {legacy.map((publication) => (
+                <LegacySharing
+                  key={publication.id}
+                  client={client}
+                  origin={account.publicationOrigin}
+                  publication={publication}
+                />
+              ))}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={sharing.busy}
+                onClick={() => void sharing.refresh()}
+              >
+                Refresh sharing
+              </Button>
+            </div>
+          </details>
+          <Dialog
+            open={!!removing}
+            onOpenChange={(open) => {
+              if (!open) setRemoving(undefined)
+            }}
+          >
+            <DialogContent>
+              <DialogTitle>
+                {removing === 'links' ? 'Restrict link access?' : 'Remove this access?'}
+              </DialogTitle>
+              <DialogDescription>
+                {removing === 'links'
+                  ? 'All anyone-with-link URLs will stop working. People you invited keep access.'
+                  : 'This person or link will lose access. Other readers keep access.'}{' '}
+                Saved copies cannot be recalled.
+                {kind === 'artifact'
+                  ? ' A live data feed must be approved again after access changes.'
+                  : ''}
+              </DialogDescription>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  disabled={sharing.busy}
+                  onClick={() => setRemoving(undefined)}
+                >
+                  Keep access
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={sharing.busy}
+                  onClick={() => {
+                    if (removing)
+                      void (
+                        removing === 'links'
+                          ? sharing.setLinkAccess(false)
+                          : sharing.revoke(removing)
+                      ).then((ok) => {
+                        if (ok) setRemoving(undefined)
+                      })
+                  }}
+                >
+                  Confirm remove access
+                </Button>
+              </div>
+              {sharing.error && (
+                <p role="alert" className="text-destructive">
+                  {sharing.error}
                 </p>
-                {sharing.recovery ? (
-                  <>
-                    <Textarea readOnly aria-label="Sharing recovery key" value={sharing.recovery} />
-                    <Button variant="outline" onClick={() => void copy(sharing.recovery)}>
-                      Copy recovery key
-                    </Button>
-                    <Button variant="ghost" onClick={sharing.hideRecovery}>
-                      Hide key
-                    </Button>
-                  </>
-                ) : (
-                  <Button variant="outline" onClick={() => void sharing.showRecovery()}>
-                    Show recovery key
-                  </Button>
-                )}
-              </details>
-            )}
-          </fieldset>
-          {legacy.map((publication) => (
-            <LegacySharing
-              key={publication.id}
-              client={client}
-              origin={account.publicationOrigin}
-              publication={publication}
-            />
-          ))}
+              )}
+            </DialogContent>
+          </Dialog>
         </>
       )}
-      {(sharing.error || account.error || copyError) && (
+      {!removing && !!(sharing.error || account.error || copyError) && (
         <p role="alert" className="text-destructive">
           {sharing.error || account.error || copyError}
         </p>
       )}
-      {copied && (
+      {!!notice && (
         <p role="status" className="text-muted-foreground">
-          {copied}
+          {notice}
         </p>
       )}
-      <Button
-        variant="ghost"
-        size="sm"
-        disabled={sharing.busy}
-        onClick={() => void sharing.refresh()}
-      >
-        {sharing.busy ? 'Working…' : 'Refresh sharing'}
-      </Button>
     </div>
   )
 }

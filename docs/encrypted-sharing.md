@@ -1,10 +1,16 @@
 # Encrypted threads and artifacts
 
 Studio manages shared threads and artifacts directly. Open **Share thread**, or **Share** on a saved
-artifact. On mobile, **Share thread** is in the thread’s menu. Review the destination, account and
-content, then publish. Publishing creates a private copy with no readers until you invite someone or
-create a link. Local runtime access still supports HTTP LAN/VPN addresses, pairing codes and device
+artifact. On mobile, **Share thread** is in the thread’s menu and artifacts have a direct Share
+button. Add someone by sharing ID, or change **General access** from **Restricted** to **Anyone with
+the link** and choose **Copy link**. Studio creates the encrypted copy and device key on the first
+sharing action; opening settings alone does not publish anything. Reopening reuses the existing copy
+and links. Local runtime access still supports HTTP LAN/VPN addresses, pairing codes and device
 tokens without an account.
+
+**Advanced** holds optional content previews, link expiry, update controls, recovery and deletion.
+The usual sharing flow needs no repeated setup. Restoring existing encrypted content on a new device
+still requires its recovery key.
 
 Threads automatically publish new user and assistant message text while the source runtime is
 online. Tools, attachments and unsent drafts are excluded. Readers see updates without refreshing.
@@ -15,18 +21,21 @@ remain separate copies; an approved live MCP feed can update their encrypted das
 
 - **Private invitations** require both the recipient's exact sharing ID and their invitation link.
   Send the full link to the intended person. Studio does not send invitation emails.
-- **Anyone with the link** requires no sign-in. Choose an expiry of 1 hour, 1 day, 7 days or 30
-  days. Treat the complete URL as a secret. Its fragment contains the reader's decryption material
-  and is not included in HTTP requests. Studio can copy active links again after unlocking its owner
-  vault.
+- **Anyone with the link** requires no sign-in. New links last 7 days by default; Advanced offers 1
+  hour, 1 day, 7 days or 30 days for new links. Treat the complete URL as a secret. Its fragment
+  contains the reader's decryption material and is not included in HTTP requests. Studio can copy
+  active links again after unlocking its owner vault.
 - **Revoke access** rotates the content key and removes the selected reader. Remaining readers keep
   their URLs. Revocation cannot recall downloaded content. An artifact feed must be reviewed and
   approved again after rotation.
+- Changing General access back to **Restricted** confirms removal of every anyone-with-link URL;
+  invited accounts keep their personal invitation links. Individual links can also be removed in
+  Advanced. Expired links cannot be copied as active reader links.
 - Thread readers can suggest a next prompt. Suggestions are encrypted for the publisher, and other
   readers cannot see them. **Use in composer** inserts a draft for review and editing; it never
   sends the prompt or starts an agent. Suggestions appear inline at the end of the owner’s thread on
-  desktop and mobile, refresh while the thread is visible, and can be dismissed there or from
-  sharing settings. Insertion preserves the existing draft.
+  desktop and mobile, refresh while the thread is visible, and can be dismissed there. Insertion
+  preserves the existing draft.
 
 **Delete hosted copy** removes the publication, invitations, links and suggestions. It preserves the
 local thread or artifact. Deleting local content alone does not delete its hosted copy.
@@ -38,12 +47,12 @@ vaults; suggestions use the owner's public encryption key. The host cannot decry
 artifact files, feed values or prompt suggestions. It can see account and recipient IDs, publication
 kind, sizes, timestamps, access metadata and request traffic.
 
-Studio stores the recovery key in its platform credential storage. When creating a key, copy it to a
-password manager. Under **Recovery and another device**, reveal or copy the key. On another device,
-sign in to the same Connect account and select **Restore sharing key**. Account sign-in alone cannot
-recover encrypted publications. There is no hosting-service recovery or automatic device-to-device
-key transfer. Anyone holding the recovery key and owner access can unlock all that account's
-publications for that Connect origin.
+Studio creates the recovery key once and stores it in its platform credential storage. Under
+**Advanced → Recovery and another device**, reveal or copy it to a password manager. On another
+device, sign in to the same Connect account and select **Restore sharing key**. Account sign-in
+alone cannot recover encrypted publications. There is no hosting-service recovery or automatic
+device-to-device key transfer. Anyone holding the recovery key and owner access can unlock all that
+account's publications for that Connect origin.
 
 End-to-end encryption relies on the reader application delivered by the host, as with other web
 cryptography. A compromised reader application or recipient device can expose decrypted content.
