@@ -184,6 +184,10 @@ contextBridge.exposeInMainWorld('dovo', {
   runtimeNetwork: (address: string, enabled?: boolean, port?: number): Promise<unknown> =>
     ipcRenderer.invoke('runtime:network', address, enabled, port),
   accountStorage: {
+    readSharingKey: (origin: string, userId: string): Promise<string | null> =>
+      ipcRenderer.invoke('sharing-key:read', origin, userId),
+    writeSharingKey: (key: string, origin: string, userId: string): Promise<void> =>
+      ipcRenderer.invoke('sharing-key:write', key, origin, userId),
     read: (origin?: string): Promise<string | null> => ipcRenderer.invoke('account:read', origin),
     write: (token: string | null, origin?: string): Promise<void> =>
       ipcRenderer.invoke('account:write', token, origin),

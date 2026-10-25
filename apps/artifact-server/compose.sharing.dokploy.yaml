@@ -1,0 +1,23 @@
+# Keep the environment file and persistent data outside the GitHub checkout.
+services:
+  sharing:
+    build:
+      context: ../..
+      dockerfile: apps/artifact-server/Dockerfile
+    restart: unless-stopped
+    init: true
+    user: '1000:1000'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=32m,mode=1777']
+    env_file: [/etc/dokploy/secrets/dovo-sharing/sharing.env]
+    expose: ['8080']
+    volumes: [sharing-data:/data]
+    networks: [default, dokploy-network]
+volumes:
+  sharing-data:
+    name: dovo-sharing-data
+networks:
+  dokploy-network:
+    external: true

@@ -10,6 +10,7 @@ import {
 import { connectionSchema, type RuntimeConnection } from '../runtime/connection/runtime.js'
 import { peerAddress } from '../runtime/connection/peer.js'
 import { Schema } from 'effect'
+import { SharingClient } from './sharing-client.js'
 import { Base64Url } from 'effect/encoding'
 import {
   managedPushGrantSchema,
@@ -64,6 +65,7 @@ class AccountError extends Error {
   }
 }
 export class AccountClient {
+  readonly sharing: SharingClient
   private token: string | null = null
   private controller: AbortController | null = null
   private listeners = new Set<() => void>()
@@ -88,6 +90,18 @@ export class AccountClient {
     private readonly artifactsOrigin = '',
   ) {
     this.origin = connectServiceOrigin(origin)
+    this.sharing = new SharingClient(
+      storage,
+      this.origin,
+      () => {
+        const sessionId = this.sessionId(),
+          user = this.state.directory?.user
+        return sessionId && user && !this.state.deletionPending
+          ? { sessionId, userId: user.id }
+          : null
+      },
+      this.sharingGrant,
+    )
   }
   snapshot = () => this.state
   subscribe = (listener: () => void) => {
@@ -120,6 +134,27 @@ export class AccountClient {
         'The artifact URL does not match Connect. Configure the same artifact origin on your Connect broker and artifact server, or clear the override in Settings.',
       )
     return origin
+  }
+  sharingService = async () => {
+    const service = decode(artifactServiceSchema, await this.request('/v1/sharing/service'))
+    return artifactServiceOrigin(service.origin)
+  }
+  private sharingGrant = async (expectedOrigin: string) => {
+    const token = this.token
+    if (!token || !this.state.directory || this.state.deletionPending)
+      throw new Error('Sign in to manage sharing')
+    const grant = decode(
+      artifactGrantSchema,
+      await this.request('/v1/sharing/session', 'POST', undefined, undefined, token),
+    )
+    if (
+      this.token !== token ||
+      artifactServiceOrigin(grant.origin) !== expectedOrigin ||
+      !/^[A-Za-z0-9_-]{43}$/.test(grant.token) ||
+      grant.expiresAt <= Date.now()
+    )
+      throw new Error('Sharing account or destination changed. Refresh and try again')
+    return grant.token
   }
   refreshPublications = (): Promise<void> => {
     if (this.publicationsRequest) return this.publicationsRequest
@@ -160,6 +195,31 @@ export class AccountClient {
   artifactManagementUrl = async (publicationId: string, expectedOrigin: string) => {
     const grant = await this.artifactGrant(expectedOrigin)
     return expectedOrigin + '/manage/' + publicationId + '#session=' + grant
+  }
+  artifactAccessRequest = async (origin: string, path: string, method = 'GET', data?: unknown) => {
+    if (
+      !/^\/v1\/publications\/[a-f0-9-]{36}(?:\/(?:access|invites|links)(?:\/[a-f0-9-]{36})?)?$/.test(
+        path,
+      )
+    )
+      throw new Error('Invalid artifact management action')
+    const token = this.token,
+      grant = await this.artifactGrant(origin)
+    const response = await fetch(origin + path, {
+      method,
+      redirect: 'error',
+      credentials: 'omit',
+      signal: AbortSignal.timeout(15000),
+      headers: {
+        Authorization: 'Bearer ' + grant,
+        ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      body: data === undefined ? undefined : JSON.stringify(data),
+    })
+    if (token !== this.token) throw new Error('Sharing account changed')
+    if (!response.ok)
+      throw new Error('Could not manage the existing hosted artifact. Refresh and try again.')
+    return (await response.json()) as unknown
   }
   private artifactGrant = async (expectedOrigin: string) => {
     const token = this.token
@@ -485,7 +545,7 @@ export class AccountClient {
       if (!response.ok)
         throw new AccountError(
           response.status,
-          path.startsWith('/v1/artifacts/')
+          /^\/v1\/(?:artifacts|sharing)\//.test(path)
             ? response.status === 401
               ? 'Sign in to use hosted artifact sharing.'
               : 'Hosted artifact sharing is not configured or is unavailable on this Connect broker.'

@@ -248,3 +248,11 @@ export { useAccount } from './use-account'
 export { useArtifactFeed } from './use-artifact-feed'
 
 export * from './accessibility'
+export {
+  useEncryptedSharing,
+  sharingStatusSchema,
+  sharedContentSchema,
+  type SharingRuntime,
+} from './use-encrypted-sharing'
+export { useEncryptedPublication } from './use-encrypted-publication'
+export { useThreadSuggestions } from './use-thread-suggestions'

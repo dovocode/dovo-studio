@@ -1,3 +1,4 @@
+import { ThreadSharing, InlineThreadSuggestions } from './thread-sharing'
 import { useTaskPanes } from '../../shell/task-panes'
 import { contentColumn } from '../../ui/layout/content-column'
 import {
@@ -977,6 +978,7 @@ function TaskDetailContent({
               display: pane === 'chat' ? 'flex' : 'none',
             }}
           >
+            {!startup?.temporary && <ThreadSharing />}
             <Composer
               queuedMessages={<ComposerActivity task={task} />}
               renderAbove={(setup) => (
@@ -1116,6 +1118,7 @@ function TaskDetailContent({
                   />
                   <ReviewFindings task={task} onOpen={() => setPane('diff')} />
                   <ReviewComments task={task} />
+                  {!startup?.temporary && <InlineThreadSuggestions />}
                 </Conversation>
               )}
               key={task.id}

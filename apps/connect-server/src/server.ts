@@ -31,6 +31,7 @@ export function createConnectServer(
     peerRelayAdmission?: PeerRelayAdmission
     organizations?: readonly Organization[]
     artifacts?: ArtifactService
+    sharing?: ArtifactService
   } & IdentityProvider,
 ) {
   const origin = new URL(options.origin).origin
@@ -42,6 +43,7 @@ export function createConnectServer(
   const identityOrigin = new URL(options.authorizationOrigin).origin
   const authenticate = browserAuth({ ...options, origin })
   const artifacts = artifactApi(options.store, origin, options.artifacts)
+  const sharing = artifactApi(options.store, origin, options.sharing ?? options.artifacts)
   const pushStore = new PushStore(options.store)
   const push = pushApi(options.store, pushStore, options.push)
   const internetStore = new InternetStore(options.store, origin)
@@ -79,11 +81,15 @@ export function createConnectServer(
     const internetHost = url.pathname.startsWith('/v1/internet/host')
       ? internetStore.host(token)
       : undefined
-    const artifactUser = url.pathname.startsWith('/v1/artifacts/')
+    const artifactUser = /^\/v1\/(?:artifacts|sharing)\//.test(url.pathname)
       ? (options.store.artifactSession(token) ?? options.store.artifactSession(token, true))?.user
           .id
       : undefined
-    if (url.pathname === '/v1/artifacts/owners' && artifactServiceToken(token, options.artifacts))
+    if (
+      (url.pathname === '/v1/artifacts/owners' && artifactServiceToken(token, options.artifacts)) ||
+      (url.pathname === '/v1/sharing/owners' &&
+        artifactServiceToken(token, options.sharing ?? options.artifacts))
+    )
       artifactLimit('artifact-service')
     else
       limit(
@@ -98,6 +104,11 @@ export function createConnectServer(
                 : `ip:${address(req)}`,
       )
     if (await authenticate(req, res, url)) return
+    if (url.pathname.startsWith('/v1/sharing/')) {
+      const mapped = new URL(url)
+      mapped.pathname = mapped.pathname.replace('/v1/sharing/', '/v1/artifacts/')
+      if (await sharing(req, res, mapped)) return
+    }
     if (await artifacts(req, res, url)) return
     if (await push(req, res, url)) return
     if (url.pathname.startsWith('/v1/internet/')) return internet(req, res, url)

@@ -20,10 +20,15 @@ import {
   artifactFeedGuestScript,
   ARTIFACT_FEED_MAX_BYTES,
   uuidSchema,
+  shareWriteSchema,
+  sharePacketSchema,
+  encryptedSuggestionSchema,
+  SHARE_MAX_BYTES,
 } from '@dovo/protocol'
 import { marked } from 'marked'
 import { ArtifactStore, ShareError } from './store.js'
 import { artifactPage } from './pages.js'
+import { EncryptedShareStore } from './encrypted-store.js'
 
 const ownersSchema = mutableArray(mutableStruct({ id: Schema.String, active: Schema.Boolean }))
 const okSchema = mutableStruct({ ready: Schema.Boolean })
@@ -60,8 +65,11 @@ export function createArtifactServer(options: {
   connectOrigin: string
   serviceKey: string
   viewerScript?: string
+  sharingScript?: string
+  brokerNamespace?: 'artifacts' | 'sharing'
 }) {
   const { store } = options
+  const shares = new EncryptedShareStore(store)
   const origin = artifactServiceOrigin(options.origin),
     connectOrigin = artifactServiceOrigin(options.connectOrigin)
   if (origin === connectOrigin) throw new Error('Host artifacts on a separate origin from Connect')
@@ -69,6 +77,11 @@ export function createArtifactServer(options: {
     throw new Error('Configure a 32-byte base64url artifact service key')
   const script =
     options.viewerScript ?? readFileSync(new URL('./viewer.js', import.meta.url), 'utf8')
+  const sharingScript =
+    options.sharingScript ??
+    (options.viewerScript !== undefined
+      ? ''
+      : readFileSync(new URL('./sharing-viewer.js', import.meta.url), 'utf8'))
   const cookieName = origin.startsWith('https:') ? '__Host-dovo-artifacts' : 'dovo-artifacts'
   const cookie = (res: ServerResponse, token: string, seconds = 28800) =>
     res.setHeader(
@@ -88,16 +101,22 @@ export function createArtifactServer(options: {
   const broker = async (path: string, token: string, method = 'GET', data?: unknown) => {
     let response: Response
     try {
-      response = await fetch(connectOrigin + path, {
-        method,
-        redirect: 'error',
-        signal: AbortSignal.timeout(10_000),
-        headers: {
-          ...(token ? { Authorization: 'Bearer ' + token } : {}),
-          ...(data !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      response = await fetch(
+        connectOrigin +
+          (options.brokerNamespace === 'sharing'
+            ? path.replace('/v1/artifacts/', '/v1/sharing/')
+            : path),
+        {
+          method,
+          redirect: 'error',
+          signal: AbortSignal.timeout(10_000),
+          headers: {
+            ...(token ? { Authorization: 'Bearer ' + token } : {}),
+            ...(data !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          },
+          body: data !== undefined ? JSON.stringify(data) : undefined,
         },
-        body: data !== undefined ? JSON.stringify(data) : undefined,
-      })
+      )
     } catch {
       throw new ShareError(503, 'Account service unavailable. Try again later')
     }
@@ -135,10 +154,13 @@ export function createArtifactServer(options: {
     return owners
   }
   const pruneOwners = async () => {
-    const ids = store.owners()
+    const ids = [...new Set([...store.owners(), ...shares.owners()])]
     for (let n = 0; n < ids.length; n += 100)
       for (const owner of await checkOwners(ids.slice(n, n + 100)))
-        if (!owner.active) store.removeOwner(owner.id)
+        if (!owner.active) {
+          store.removeOwner(owner.id)
+          shares.removeOwner(owner.id)
+        }
     store.prune()
   }
   const windows = new Map<string, { count: number; until: number }>()
@@ -166,7 +188,7 @@ export function createArtifactServer(options: {
     )
     const url = new URL(req.url ?? '/', origin),
       path = url.pathname
-    if (path.startsWith('/v1/')) {
+    if (path.startsWith('/v1/') || path.startsWith('/v2/')) {
       res.setHeader('Access-Control-Allow-Origin', '*')
       res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
@@ -179,6 +201,22 @@ export function createArtifactServer(options: {
       res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' })
       return res.end(script)
     }
+    if (req.method === 'GET' && path === '/sharing-viewer.js') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' })
+      return res.end(sharingScript)
+    }
+    if (
+      req.method === 'GET' &&
+      (/^\/e\/[a-f0-9-]{36}$/.test(path) || (path === '/' && options.brokerNamespace === 'sharing'))
+    ) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      return res.end(
+        artifactPage
+          .replace('src="/viewer.js"', 'src="/sharing-viewer.js"')
+          .replaceAll('Dovo Artifacts', 'Dovo Share')
+          .replace('Loading artifact…', 'Loading encrypted share…'),
+      )
+    }
     if (req.method === 'GET' && (path === '/' || /^\/(?:s|manage)\/[a-f0-9-]{36}$/.test(path))) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       return res.end(artifactPage)
@@ -187,7 +225,9 @@ export function createArtifactServer(options: {
     if (
       req.method !== 'GET' &&
       (path.startsWith('/auth/') ||
-        !/^Bearer [A-Za-z0-9_-]{43}$/.test(req.headers.authorization ?? '')) &&
+        !/^(?:Bearer [A-Za-z0-9_-]{43}|DovoWriter [a-f0-9]{64})$/.test(
+          req.headers.authorization ?? '',
+        )) &&
       req.headers.origin !== origin
     )
       throw new ShareError(403, 'Start this action from Dovo Artifacts')
@@ -226,6 +266,87 @@ export function createArtifactServer(options: {
     if (req.method === 'GET' && path === '/v1/me') {
       const session = await identity(req)
       return json(res, 200, session)
+    }
+    if (path === '/v2/shares' && req.method === 'GET') {
+      const session = await identity(req)
+      if (!session) throw new ShareError(401, 'Sign in')
+      return json(res, 200, { shares: shares.list(session.user.id) })
+    }
+    const shared =
+      /^\/v2\/shares\/([a-f0-9-]{36})(?:\/(read|writer|suggestions)(?:\/([a-f0-9-]{36}))?)?$/.exec(
+        path,
+      )
+    if (shared) {
+      const [, id, action, suggestionId] = shared
+      if (req.method === 'PUT' && !action) {
+        const session = await identity(req)
+        if (!session) throw new ShareError(401, 'Sign in')
+        limit('share-write:' + session.user.id, 60)
+        const input = decode(shareWriteSchema, await body(req, SHARE_MAX_BYTES))
+        if (input.record.id !== id) throw new ShareError(400, 'Sharing ID does not match')
+        const current = await identity(req)
+        if (current?.user.id !== session.user.id) throw new ShareError(401, 'Sharing cancelled')
+        return json(res, 200, shares.save(session.user.id, input.expectedVersion, input.record))
+      }
+      const saved = shares.get(id)
+      const owners = await checkOwners([saved.owner])
+      if (!owners.some((owner) => owner.id === saved.owner && owner.active)) {
+        shares.removeOwner(saved.owner)
+        throw new ShareError(404, 'Shared content unavailable')
+      }
+      if (action === 'writer' && (req.method === 'GET' || req.method === 'PUT')) {
+        const writer = req.headers.authorization?.match(/^DovoWriter ([a-f0-9]{64})$/)?.[1] ?? ''
+        shares.writer(id, writer)
+        limit('writer:' + id, 60)
+        if (req.method === 'GET')
+          return json(res, 200, {
+            version: saved.record.version,
+            generation: saved.record.packet.generation,
+          })
+        const input = decode(
+          mutableStruct({ expectedVersion: Schema.Int, packet: sharePacketSchema }),
+          await body(req, SHARE_MAX_BYTES),
+        )
+        return json(res, 200, {
+          version: shares.update(id, writer, input.expectedVersion, input.packet).version,
+        })
+      }
+      if (
+        (action === 'read' && req.method === 'GET') ||
+        (action === 'suggestions' && req.method === 'POST')
+      ) {
+        const session = await identity(req, false)
+        const token = req.headers.authorization?.match(/^DovoShare ([a-f0-9]{64})$/)?.[1]
+        const viewed = shares.read(
+          id,
+          url.searchParams.get('access') ?? '',
+          session?.user.id,
+          token,
+        )
+        if (req.method === 'GET') return json(res, 200, viewed)
+        limit('suggestion:' + id + ':' + (req.socket.remoteAddress ?? ''), 5)
+        const input = decode(encryptedSuggestionSchema, await body(req, 100000))
+        // Revocation during upload must also block the write.
+        const current = await identity(req, false)
+        shares.read(id, url.searchParams.get('access') ?? '', current?.user.id, token)
+        shares.suggest(id, input)
+        return json(res, 200, { ok: true })
+      }
+      const session = await identity(req)
+      if (!session) throw new ShareError(401, 'Sign in')
+      shares.own(id, session.user.id)
+      if (!action && req.method === 'GET') return json(res, 200, saved.record)
+      if (!action && req.method === 'DELETE') {
+        shares.remove(id, session.user.id)
+        return json(res, 200, { ok: true })
+      }
+      if (action === 'suggestions' && req.method === 'GET')
+        return json(res, 200, { suggestions: shares.suggestions(id, session.user.id) })
+      if (action === 'suggestions' && suggestionId && req.method === 'DELETE') {
+        shares.dismiss(id, session.user.id, suggestionId)
+        return json(res, 200, { ok: true })
+      }
+      throw new ShareError(404, 'Not found')
     }
     if (path === '/v1/publications/sources' && req.method === 'GET') {
       const session = await identity(req)

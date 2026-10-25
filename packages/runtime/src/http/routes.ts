@@ -1,4 +1,5 @@
 import { peerConfigSchema } from '@dovo/protocol'
+import { sharingWriterConfigSchema } from '@dovo/protocol'
 import { remoteDesktopRequestSchema, remoteDesktopUnlockSchema } from '@dovo/protocol'
 import { serveRetrieval } from '../retrieval/host.js'
 import { retrievalRequestSchema } from '../retrieval/request.js'
@@ -381,6 +382,13 @@ export function route(
             const { previewId, credential } = decode(artifactFeedEnableSchema, input)
             return yield* serviceResult(s.artifactFeeds.enable(previewId, credential, device.id))
           }
+          if (path.endsWith('/enable-encrypted')) {
+            const { previewId, config } = decode(
+              mutableStruct({ previewId: feedUuidSchema, config: sharingWriterConfigSchema }),
+              input,
+            )
+            return yield* serviceResult(s.sharedThreads.enableFeed(previewId, config, device.id))
+          }
           const ref = decode(
             mutableStruct({ ...artifactReadSchema.fields, publicationId: feedUuidSchema }),
             input,
@@ -711,6 +719,8 @@ export function route(
           device.id,
           `${method} ${path}`,
           !path.startsWith('/api/memory/') &&
+            !path.startsWith('/api/sharing/') &&
+            !path.endsWith('/enable-encrypted') &&
             !path.startsWith('/api/scm/project-transfer/') &&
             ![
               '/api/tasks/answer',
@@ -1050,6 +1060,24 @@ export function route(
         if (!page)
           throw new HttpError(409, 'Reload this conversation before loading older messages')
         return page
+      }
+      if (method === 'POST' && path.startsWith('/api/sharing/')) {
+        if (agentDeviceAccess || s.peers.internet.contains(device.id))
+          throw new HttpError(403, 'A separately paired human client must manage sharing')
+        const raw = yield* serviceResult(body(request, 16384))
+        if (path === '/api/sharing/enable')
+          return yield* serviceResult(
+            s.sharedThreads.enable(decode(sharingWriterConfigSchema, raw), device.id),
+          )
+        const input = decode(
+          mutableStruct({ taskId: idSchema, id: Schema.optional(uuidSchema) }),
+          raw,
+        )
+        if (path === '/api/sharing/preview') return s.sharedThreads.preview(input.taskId)
+        if (!input.id) throw new HttpError(400, 'Choose a shared thread')
+        if (path === '/api/sharing/status') return s.sharedThreads.status(input.taskId, input.id)
+        if (path === '/api/sharing/stop') return s.sharedThreads.stop(input.taskId, input.id)
+        throw new HttpError(404, 'Unknown sharing action')
       }
       if (method === 'POST' && path === '/api/tasks/search') {
         const { query, id } = decode(

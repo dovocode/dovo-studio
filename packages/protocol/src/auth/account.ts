@@ -32,6 +32,8 @@ export type AccountLogin = typeof accountLoginSchema.Type
 export interface AccountStorage {
   read(origin?: string): Promise<string | null>
   write(token: string | null, origin?: string): Promise<void>
+  readSharingKey?(origin: string, userId: string): Promise<string | null>
+  writeSharingKey?(key: string, origin: string, userId: string): Promise<void>
 }
 
 /** Directory addresses must be usable by another device; HTTP LAN/VPN routes stay valid. */

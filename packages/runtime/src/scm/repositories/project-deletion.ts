@@ -105,6 +105,7 @@ export function deleteProjectEffect(s: Services, value: unknown) {
           }))
 
         yield* serviceResult(s.artifactFeeds.stopTasks([...deletedTaskIds]))
+        yield* serviceResult(s.sharedThreads.stopTasks([...deletedTaskIds]))
         try {
           const reservedTasks = taskReservation
           for (const task of roots) yield* taskLifecycle(s, task.id, 'delete', false, reservedTasks)

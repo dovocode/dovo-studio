@@ -1,5 +1,10 @@
 import type { ArtifactReference } from '@dovo/protocol'
-import { useAccount, useAppPreferences, useStudioHost } from '@dovo/studio-core'
+import {
+  useAccount,
+  useAppPreferences,
+  useStudioHost,
+  useEncryptedPublication,
+} from '@dovo/studio-core'
 import { Share2 } from 'lucide-react'
 
 export function ArtifactSharedBadge({
@@ -24,10 +29,25 @@ function BadgeContent({
 }) {
   const services = useAppPreferences()
   const account = useAccount(storage, open, services)
+  const encrypted = useEncryptedPublication(
+    account.client,
+    `${artifact.id}:${artifact.revision}`,
+    !!account.directory,
+  )
   const versions = account.publications?.filter((item) => item.sourceId === artifact.id) ?? []
   const current = versions.find((item) => item.revision === artifact.revision)
   const latest = versions.reduce((max, item) => Math.max(max, item.revision), 0)
-  if (!account.directory || !latest) return null
+  if (!account.directory || (!latest && !encrypted.shared)) return null
+  if (encrypted.shared)
+    return (
+      <span
+        className="inline-flex w-fit items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs text-foreground"
+        title="End-to-end encrypted hosted copy"
+      >
+        <Share2 aria-hidden="true" className="size-3" />
+        Shared · Encrypted
+      </span>
+    )
   return (
     <span
       className={`inline-flex w-fit items-center gap-1 rounded-md px-2 py-1 text-xs ${current ? 'bg-accent text-foreground' : 'bg-muted text-status-warning'}`}

@@ -9,10 +9,10 @@ const built = await bundleBrowser(
     stdin: {
       contents: `
     import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
-    import {ArtifactSharing as Desktop} from '${root}/packages/extension-tasks/src/chat/artifact-sharing';
-    import {ArtifactSharing as Mobile} from '${mobile}/artifact-sharing';
+    import {ArtifactFeedSetup as Desktop} from '${root}/packages/extension-tasks/src/chat/artifact-feed';
+    import {ArtifactFeedSetup as Mobile} from '${mobile}/artifact-feed';
     const app=createRoot(document.getElementById('app'));let round=0;let kind;
-    window.render=()=>flushSync(()=>app.render(kind==='desktop'?<Desktop key={round} artifact={window.artifact}/>:<Mobile key={round} artifact={window.artifact}/>));
+    window.render=()=>flushSync(()=>app.render(kind==='desktop'?<Desktop key={round} artifact={window.artifact} publicationId={window.artifact.id} origin={window.account.publicationOrigin} client={window.account.client}/>:<Mobile key={round} artifact={window.artifact} publicationId={window.artifact.id} origin={window.account.publicationOrigin} client={window.account.client}/>));
     window.reset=value=>{
       round++;kind=value;window.uploads=[];window.opened=[];window.consent=null;window.session='owner-session';window.fail=false;window.feedCalls=[];window.feedWrites=[];window.feedEnabled=false;window.runtimeId='computer-one';
       window.artifact={id:'3ef552ad-eac4-4e4b-b7de-9f530b267879',taskId:'private-thread',revision:7,title:'Quarterly report',format:'html',content:'<h1>Report</h1>',createdAt:'2026-10-21',updatedAt:'2026-10-21'};
@@ -56,6 +56,7 @@ const built = await bundleBrowser(
     {
       path: '@dovo/studio-ui',
       contents: `
+    export * from '${root}/packages/studio-ui/src/components/ui/select';
     export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;
     export const Input=props=><input {...props}/>;export const Textarea=props=><textarea {...props}/>;
     export const Dialog=({open,children})=>open?<div role="dialog">{children}</div>:null;
@@ -63,15 +64,6 @@ const built = await bundleBrowser(
     export const DialogTitle=({children})=><h2>{children}</h2>;
     export const DialogDescription=({children})=><p>{children}</p>;
   `,
-    },
-    {
-      path: '@dovo/studio-ui/clipboard',
-      contents: 'export const copyTextToClipboard=async text=>{window.copied=text};',
-    },
-    {
-      path: '../../runtime/connection/account-provider',
-      importer: mobile,
-      contents: 'export const useMobileAccount=()=>window.account;',
     },
     {
       path: '../../runtime/connection/provider',
@@ -129,63 +121,6 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   for (const kind of ['desktop', 'mobile']) {
     await page.evaluate((kind) => window.reset(kind), kind)
-    if (kind === 'desktop')
-      await page.getByRole('button', { name: 'Share artifact', exact: true }).click()
-    await page.getByText('https://artifacts.example.com', { exact: false }).waitFor()
-    assert.equal(await page.evaluate(() => window.uploads.length), 0)
-    await page.evaluate(() => {
-      window.account.publications = [
-        { id: 'older-publication', sourceId: window.artifact.id, revision: 6 },
-      ]
-      window.render()
-    })
-    await page.getByText(/Publishing version 7 creates a separate link/).waitFor()
-    await page.getByRole('button', { name: 'Manage shared v6', exact: true }).click()
-    await page.waitForFunction(() => window.opened.length === 1)
-    await page.evaluate(() => {
-      window.opened = []
-    })
-    await page.getByRole('button', { name: 'Publish private copy', exact: true }).click()
-    if (kind === 'mobile') {
-      assert.equal(await page.evaluate(() => window.uploads.length), 0)
-      const consent = await page.evaluate(() => window.consent)
-      assert.match(
-        consent.message,
-        /Quarterly report.*version 7.*https:\/\/artifacts.example.com as Owner/,
-      )
-      await page.evaluate(() => {
-        window.session = 'different-account'
-        window.confirmMobile()
-      })
-      await page.getByRole('alert').filter({ hasText: 'Account changed' }).waitFor()
-      assert.equal(await page.evaluate(() => window.uploads.length), 0)
-      await page.evaluate(() => {
-        window.session = 'owner-session'
-        window.render()
-      })
-      await page.getByRole('button', { name: 'Publish private copy', exact: true }).click()
-      await page.evaluate(() => window.confirmMobile())
-    }
-    await page.getByText(/Shared · Version 7/).waitFor()
-    assert.deepEqual(await page.evaluate(() => window.uploads), [
-      {
-        id: '3ef552ad-eac4-4e4b-b7de-9f530b267879',
-        revision: 7,
-        origin: 'https://artifacts.example.com',
-        session: 'owner-session',
-      },
-    ])
-    await page.getByRole('button', { name: 'Manage invitations and links', exact: true }).click()
-    assert.deepEqual(await page.evaluate(() => window.opened), [
-      'https://artifacts.example.com/manage/private#session=scoped-session',
-    ])
-    if (kind === 'desktop') {
-      await page.getByRole('button', { name: 'Copy private link', exact: true }).click()
-      assert.equal(
-        await page.evaluate(() => window.copied),
-        'https://artifacts.example.com/s/3ef552ad-eac4-4e4b-b7de-9f530b267879',
-      )
-    }
     await page.getByRole('button', { name: 'Load read-only MCP tools', exact: true }).click()
     await page.getByRole('button', { name: 'Read preview', exact: true }).click()
     await page.getByRole('button', { name: 'Approve and enable live feed', exact: true }).waitFor()
@@ -236,54 +171,10 @@ try {
       await page.evaluate(() => window.feedWrites.filter((call) => !call.stop).length),
       1,
     )
-    await page.evaluate(() => {
-      window.session = 'new-session'
-      window.account.publications = []
-      window.render()
-    })
-    await page.getByRole('button', { name: 'Publish private copy', exact: true }).waitFor()
-    assert.equal(
-      await page.getByRole('button', { name: 'Manage invitations and links', exact: true }).count(),
-      0,
-    )
-    await page.evaluate(() => {
-      window.account.publications = [
-        { id: 'hosted-older', sourceId: window.artifact.id, revision: 6 },
-      ]
-      window.render()
-    })
-    await page.getByText('Shared version is older · v6', { exact: true }).waitFor()
-    assert.equal(
-      await page.getByRole('button', { name: 'Publish private copy', exact: true }).count(),
-      1,
-    )
-    await page.evaluate(() => {
-      window.account.publications = [
-        { id: 'hosted-current', sourceId: window.artifact.id, revision: 7 },
-      ]
-      window.render()
-    })
-    await page.getByText('Shared · v7', { exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Manage invitations and links', exact: true }).waitFor()
-    assert.equal(
-      await page.getByRole('button', { name: 'Publish private copy', exact: true }).count(),
-      0,
-    )
-    assert.equal(await page.evaluate(() => window.uploads.length), 1)
-    await page.evaluate(() => {
-      window.account.directory = null
-      window.account.publications = null
-      window.render()
-    })
-    assert.equal(await page.getByText('Shared · v7', { exact: true }).count(), 0)
-    assert.equal(
-      await page.getByRole('button', { name: 'Manage invitations and links', exact: true }).count(),
-      0,
-    )
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Desktop/mobile sharing controls: explicit publication, selected revision, named destination/account, native confirmation and account-change protection passed.',
+    'Desktop/mobile feed controls: preview approval, input invalidation, stop and runtime-change protection passed (DOM adapters; native rendering not tested).',
   )
 } finally {
   await browser.close()

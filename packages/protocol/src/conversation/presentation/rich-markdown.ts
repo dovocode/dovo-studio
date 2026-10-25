@@ -74,6 +74,9 @@ function parse(text: string) {
     mdastExtensions: [gfmFromMarkdown(), directiveFromMarkdown()],
   })
 }
+/** Hosted thread readers render this AST as React nodes, without HTML or remote media. */
+export const parseSharedMarkdown = parse
+export type SharedMarkdownNode = Nodes
 function citation(node: Nodes): string | undefined {
   if (node.type !== 'textDirective' || node.name !== 'codex-file-citation') return
   const path = node.attributes?.path?.trim()

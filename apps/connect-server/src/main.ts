@@ -33,6 +33,7 @@ const server = createConnectServer({
     process.env.DOVO_ARTIFACTS_ORIGIN,
     process.env.DOVO_ARTIFACTS_SERVICE_KEY,
   ),
+  sharing: artifactService(process.env.DOVO_SHARING_ORIGIN, process.env.DOVO_SHARING_SERVICE_KEY),
   organizations: process.env.DOVO_ORGANIZATIONS_FILE
     ? organizations(JSON.parse(readFileSync(process.env.DOVO_ORGANIZATIONS_FILE, 'utf8')), origin)
     : [],

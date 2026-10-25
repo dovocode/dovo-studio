@@ -1,5 +1,5 @@
 import { Alert, ScrollView, View } from 'react-native'
-import type { AccountClient, Artifact } from '@dovo/protocol'
+import type { AccountClient, Artifact, OpenShare } from '@dovo/protocol'
 import { useArtifactFeed } from '@dovo/studio-core'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../controls/action'
@@ -13,11 +13,15 @@ export function ArtifactFeedSetup({
   publicationId,
   origin,
   client,
+  encryptedShare,
+  onShareChange,
 }: {
   artifact: Artifact
   publicationId: string
   origin: string
   client: AccountClient
+  encryptedShare?: OpenShare
+  onShareChange?: (share: OpenShare) => void
 }) {
   const { call, connected, activeId } = useRuntime(),
     { styles } = useTheme()
@@ -29,10 +33,14 @@ export function ArtifactFeedSetup({
     runtimeId: activeId,
     request: call,
     connected,
+    encryptedShare,
+    onShareChange,
   })
   return (
-    <View style={{ gap: 10, paddingVertical: 12 }} accessibilityLabel="Live MCP data feed">
-      <Text style={styles.title}>Live MCP data</Text>
+    <View style={{ ...styles.card, gap: 12, padding: 16 }} accessibilityLabel="Live MCP data feed">
+      <Text accessibilityRole="header" style={{ ...styles.text, fontWeight: '600' }}>
+        Live MCP data
+      </Text>
       <Text style={styles.muted}>
         Approve one fixed read query for this published version. This computer supplies the data;
         viewers cannot call tools or change the query. Read-only declarations are not a security
