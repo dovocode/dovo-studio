@@ -95,3 +95,29 @@ Live publication writers connect outbound from the source runtime. Their credent
 one publication and generation, and grant no runtime access. Pausing, revocation, deletion or owner
 deactivation invalidates the writer. A separately paired human must approve runtime sharing and live
 feeds; agents and account-derived internet sessions cannot enable them.
+
+### Production deployment, 25 October 2026
+
+`share.dovo.studio` runs as the separate **Dovo Studio Share** Compose service in Dokploy. Both
+sharing and Connect were built on the production host through the existing **Dokploy Dovocode**
+GitHub connector from commit `d4d4f913` on
+`dovo/investigate-shareable-dovo-threads-with-next-prompt-suggesti-fb2d55f7`. Automatic deployment
+is disabled. No prebuilt image was uploaded. Move the configured branch to `main` after the feature
+is merged; a repository push alone does not redeploy these services.
+
+Sharing keeps its private environment in `/etc/dokploy/secrets/dovo-sharing/sharing.env` and its
+data in `dovo-sharing-data`. Connect retains its existing operator Compose overlay, private push
+network, TURN configuration and persistent volume. Its overlay additionally loads
+`/etc/dokploy/secrets/dovo-sharing/connect-preserved.env`, which preserves the previously active
+Connect settings and adds the matching sharing origin and service key. Keep both service-key values
+aligned when rotating credentials. Production environment files are never committed. The previous
+Connect container configuration, Compose file, environment file and a consistent SQLite backup are
+retained privately at `/var/backups/dovo-sharing-94a71e22` on the deployment host. Dokploy
+configuration snapshots are retained privately on dovo-admin.
+
+Verified public HTTPS, desktop/mobile landing rendering, private API rejection, invalid-link
+rejection, dedicated origin discovery, matching service authentication and healthy sharing, Connect
+and relay containers. All original active Connect settings were compared against the saved container
+configuration; the relay kept its original start time. Authenticated publishing and reader
+interactions were exercised by the local end-to-end browser suite, not with a production user
+session. Desktop/mobile application binaries were not released as part of this deployment.
