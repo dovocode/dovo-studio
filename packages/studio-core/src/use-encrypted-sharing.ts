@@ -223,6 +223,11 @@ export function useEncryptedSharing({
         const next = await ensureShare()
         setShare(await client.sharing.invite(origin, next, recipient))
       }),
+    inviteOrganization: (organizationId: string) =>
+      act(async () => {
+        const next = await ensureShare()
+        setShare(await client.sharing.invite(origin, next, undefined, undefined, organizationId))
+      }),
     createLink: (seconds: number) =>
       act(async () => {
         const next = await ensureShare()
@@ -233,7 +238,10 @@ export function useEncryptedSharing({
         if (enabled) {
           const next = await ensureShare()
           if (
-            next.record.grants.some((grant) => !grant.userId && (grant.expiresAt ?? 0) > Date.now())
+            next.record.grants.some(
+              (grant) =>
+                !grant.userId && !grant.organizationId && (grant.expiresAt ?? 0) > Date.now(),
+            )
           )
             return
           setShare(await client.sharing.invite(origin, next, undefined, seconds))
@@ -241,7 +249,9 @@ export function useEncryptedSharing({
         }
         if (!share) return
         let next = share
-        for (const grant of share.record.grants.filter((grant) => !grant.userId)) {
+        for (const grant of share.record.grants.filter(
+          (grant) => !grant.userId && !grant.organizationId,
+        )) {
           next = await client.sharing.revoke(origin, next, grant.id)
           setShare(next)
         }

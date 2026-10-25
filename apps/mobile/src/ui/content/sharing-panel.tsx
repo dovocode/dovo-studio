@@ -1,7 +1,7 @@
 import { Schema } from 'effect'
 import { useState, type ReactNode } from 'react'
 import { AccessibilityInfo, Alert, Pressable, ScrollView, View } from 'react-native'
-import { useEncryptedSharing, type SharingRuntime } from '@dovo/studio-core'
+import { useEncryptedSharing, useSharingPeople, type SharingRuntime } from '@dovo/studio-core'
 import {
   artifactAccessSchema,
   decode,
@@ -16,6 +16,7 @@ import { Field } from '../controls/field'
 import { Choice } from '../controls/choice'
 import { Icon } from '../controls/icon'
 import { Text } from './text'
+import { SharingPeopleManager } from './sharing-people'
 import { useTheme } from '../theme'
 import { copyText } from './clipboard'
 
@@ -37,14 +38,22 @@ export function SharingPanel({
   const account = useMobileAccount(),
     { styles, colors } = useTheme()
   const sharing = useEncryptedSharing({ client: account.client, sourceId, kind, content, runtime })
+  const contacts = useSharingPeople(account.client)
+  const [managePeople, setManagePeople] = useState(false)
+  const organizationName = (id: string) =>
+    contacts.directory?.organizations.find((org) => org.id === id)?.name ?? id
+  const personName = (id: string) =>
+    contacts.directory?.friends.find((person) => person.id === id)?.name ?? id
   const [recipient, setRecipient] = useState(''),
     [restore, setRestore] = useState(''),
     [seconds, setSeconds] = useState('604800')
   const [notice, setNotice] = useState(''),
     [copyError, setCopyError] = useState(''),
     [showRecovery, setShowRecovery] = useState(false)
-  const links = sharing.share?.record.grants.filter((grant) => !grant.userId) ?? []
-  const people = sharing.share?.record.grants.filter((grant) => !!grant.userId) ?? []
+  const links =
+    sharing.share?.record.grants.filter((grant) => !grant.userId && !grant.organizationId) ?? []
+  const people =
+    sharing.share?.record.grants.filter((grant) => !!grant.userId || !!grant.organizationId) ?? []
   const activeLink = links.find((grant) => (grant.expiresAt ?? 0) > Date.now())
   const needsRecovery = sharing.loaded && !sharing.hasKey && sharing.hasShares
   const unavailable =
@@ -142,6 +151,45 @@ export function SharingPanel({
             </View>
           )}
           <View style={{ gap: 12 }} accessibilityLabel="People with access">
+            {!!contacts.directory &&
+              (contacts.directory.friends.some((person) => person.status === 'accepted') ||
+                contacts.directory.organizations.some((org) => org.status === 'member')) && (
+                <Choice
+                  label="Add friends or organisations"
+                  hideLabel
+                  value=""
+                  items={[
+                    { id: '', name: 'Add friends or organisations…' },
+                    ...contacts.directory.friends
+                      .filter(
+                        (person) =>
+                          person.status === 'accepted' &&
+                          !people.some((grant) => grant.userId === person.id),
+                      )
+                      .map((person) => ({ id: 'friend:' + person.id, name: person.name })),
+                    ...contacts.directory.organizations
+                      .filter(
+                        (org) =>
+                          org.status === 'member' &&
+                          !people.some((grant) => grant.organizationId === org.id),
+                      )
+                      .map((org) => ({
+                        id: 'organization:' + org.id,
+                        name: org.name + ' (organisation)',
+                      })),
+                  ]}
+                  disabled={unavailable || contacts.busy}
+                  onChange={(value) => {
+                    if (!value) return
+                    const [type, ...parts] = value.split(':')
+                    const id = parts.join(':')
+                    void (type === 'organization'
+                      ? sharing.inviteOrganization(id)
+                      : sharing.invite(id))
+                  }}
+                />
+              )}
+
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <View style={{ flex: 1 }}>
                 <Field
@@ -186,10 +234,15 @@ export function SharingPanel({
               <View
                 key={grant.id}
                 style={divider}
-                accessibilityLabel={`Access for ${grant.userId}`}
+                accessibilityLabel={`Access for ${grant.userId ?? grant.organizationId}`}
               >
+                {grant.organizationId && (
+                  <Text style={styles.muted}>Organisation · access follows membership</Text>
+                )}
                 <Text selectable style={styles.text}>
-                  {grant.userId}
+                  {grant.organizationId
+                    ? organizationName(grant.organizationId)
+                    : personName(grant.userId ?? '')}
                 </Text>
                 <Text style={styles.muted}>
                   {kind === 'thread' ? 'Reader · Can suggest' : 'Reader'}
@@ -233,7 +286,7 @@ export function SharingPanel({
             <Text style={styles.muted}>
               {activeLink
                 ? `Anyone with the link can read${kind === 'thread' ? ' and suggest a prompt' : ''}. No sign-in required.`
-                : 'Only people you add can open their personal invitation link.'}
+                : 'Only people and organisations you add can open their invitation links.'}
             </Text>
             {activeLink && (
               <Text style={styles.muted}>
@@ -283,6 +336,14 @@ export function SharingPanel({
             <Text style={styles.muted}>
               An older unencrypted copy is still hosted. Manage it in Advanced.
             </Text>
+          )}
+          <Action
+            secondary
+            label={managePeople ? 'Hide friends and organisations' : 'Friends and organisations'}
+            onPress={() => setManagePeople((value) => !value)}
+          />
+          {managePeople && (
+            <SharingPeopleManager people={contacts} userId={account.directory.user.id} />
           )}
           <SharingDisclosure
             title="Advanced"
@@ -346,19 +407,26 @@ export function SharingPanel({
             {sharing.share?.record.grants.map((grant) => (
               <View key={grant.id} style={{ ...styles.card, gap: 10 }}>
                 <Text style={styles.muted}>
-                  {grant.userId
-                    ? `Invitation · ${grant.userId}`
-                    : `${(grant.expiresAt ?? 0) > Date.now() ? 'Expires' : 'Expired'} · ${new Date(grant.expiresAt ?? 0).toLocaleString()}`}
+                  {grant.organizationId
+                    ? `Organisation · ${organizationName(grant.organizationId)}`
+                    : grant.userId
+                      ? `Invitation · ${grant.userId}`
+                      : `${(grant.expiresAt ?? 0) > Date.now() ? 'Expires' : 'Expired'} · ${new Date(grant.expiresAt ?? 0).toLocaleString()}`}
                 </Text>
                 <Field
-                  label={grant.userId ? 'Private invitation link' : 'Share link'}
+                  label={
+                    grant.userId || grant.organizationId ? 'Private invitation link' : 'Share link'
+                  }
                   value={sharing.link(grant.id)}
                   editable={false}
                 />
                 <Action
                   variant="outline"
                   label="Copy this link"
-                  disabled={sharing.busy || (!grant.userId && (grant.expiresAt ?? 0) <= Date.now())}
+                  disabled={
+                    sharing.busy ||
+                    (!grant.userId && !grant.organizationId && (grant.expiresAt ?? 0) <= Date.now())
+                  }
                   onPress={() => void copy(sharing.link(grant.id))}
                 />
                 <Action

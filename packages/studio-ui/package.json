@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./clipboard": "./src/clipboard.ts",
+    "./sharing-people": "./src/sharing-people.tsx",
     "./code-themes": "./src/code-themes.ts",
     "./styles.css": "./src/styles.css",
     "./runtime-icon": "./src/runtime-icon.tsx",

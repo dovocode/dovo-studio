@@ -167,3 +167,13 @@ it('returns a conflict when two publications target the same owner and source', 
   ).toThrow('Sharing changed')
   expect(f.store.list('owner')).toHaveLength(1)
 })
+
+it('keeps expired links inaccessible while allowing the owner to manage other readers and resume updates', () => {
+  const f = fixture()
+  f.advance(3600001)
+  expect(() => f.store.read(f.id, f.link, undefined, f.token)).toThrow('unavailable')
+  const saved = f.store.save('owner', f.saved.version, { ...f.saved, paused: true })
+  expect(saved.paused).toBe(true)
+  expect(f.store.read(f.id, f.invitation, 'recipient').id).toBe(f.id)
+  expect(() => f.store.read(f.id, f.link, undefined, f.token)).toThrow('unavailable')
+})

@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react'
 import { Schema } from 'effect'
-import { useEncryptedSharing, type SharingRuntime } from '@dovo/studio-core'
+import { useEncryptedSharing, useSharingPeople, type SharingRuntime } from '@dovo/studio-core'
 import { LockKeyhole, Link2, Users } from 'lucide-react'
 import {
   Button,
@@ -16,6 +16,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@dovo/studio-ui'
+import { SharingPeopleManager } from '@dovo/studio-ui/sharing-people'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import {
   artifactAccessSchema,
@@ -45,6 +46,11 @@ export function SharingPanel({
   legacy?: ArtifactSourcePublication[]
 }) {
   const sharing = useEncryptedSharing({ client, sourceId, kind, content, runtime })
+  const contacts = useSharingPeople(client)
+  const organizationName = (id: string) =>
+    contacts.directory?.organizations.find((org) => org.id === id)?.name ?? id
+  const personName = (id: string) =>
+    contacts.directory?.friends.find((person) => person.id === id)?.name ?? id
   const [recipient, setRecipient] = useState(''),
     [restore, setRestore] = useState(''),
     [seconds, setSeconds] = useState('604800')
@@ -54,8 +60,10 @@ export function SharingPanel({
     [confirmDelete, setConfirmDelete] = useState(false)
   const id = useId(),
     account = client.snapshot()
-  const links = sharing.share?.record.grants.filter((grant) => !grant.userId) ?? []
-  const people = sharing.share?.record.grants.filter((grant) => !!grant.userId) ?? []
+  const links =
+    sharing.share?.record.grants.filter((grant) => !grant.userId && !grant.organizationId) ?? []
+  const people =
+    sharing.share?.record.grants.filter((grant) => !!grant.userId || !!grant.organizationId) ?? []
   const activeLink = links.find((grant) => (grant.expiresAt ?? 0) > Date.now())
   const needsRecovery = sharing.loaded && !sharing.hasKey && sharing.hasShares
   const unavailable =
@@ -132,6 +140,50 @@ export function SharingPanel({
             </section>
           )}
           <section className="space-y-3" aria-label="People with access">
+            {!!contacts.directory &&
+              (contacts.directory.friends.some((person) => person.status === 'accepted') ||
+                contacts.directory.organizations.some((org) => org.status === 'member')) && (
+                <Select
+                  value=""
+                  disabled={unavailable || contacts.busy}
+                  onValueChange={(value) => {
+                    const [type, ...parts] = value.split(':')
+                    const id = parts.join(':')
+                    void (type === 'organization'
+                      ? sharing.inviteOrganization(id)
+                      : sharing.invite(id))
+                  }}
+                >
+                  <SelectTrigger aria-label="Add friends or organisations">
+                    <SelectValue placeholder="Add friends or organisations" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {contacts.directory.friends
+                      .filter(
+                        (person) =>
+                          person.status === 'accepted' &&
+                          !people.some((grant) => grant.userId === person.id),
+                      )
+                      .map((person) => (
+                        <SelectItem key={person.id} value={'friend:' + person.id}>
+                          {person.name}
+                        </SelectItem>
+                      ))}
+                    {contacts.directory.organizations
+                      .filter(
+                        (org) =>
+                          org.status === 'member' &&
+                          !people.some((grant) => grant.organizationId === org.id),
+                      )
+                      .map((org) => (
+                        <SelectItem key={org.id} value={'organization:' + org.id}>
+                          {org.name} (organisation)
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
+
             <form
               className="flex gap-2"
               onSubmit={(event) => {
@@ -172,10 +224,19 @@ export function SharingPanel({
               <div
                 key={grant.id}
                 className="space-y-2 border-t pt-3"
-                aria-label={`Access for ${grant.userId}`}
+                aria-label={`Access for ${grant.userId ?? grant.organizationId}`}
               >
+                {grant.organizationId && (
+                  <p className="text-xs text-muted-foreground">
+                    Organisation · access follows membership
+                  </p>
+                )}
                 <div className="flex items-center justify-between gap-3">
-                  <p className="min-w-0 break-all font-medium">{grant.userId}</p>
+                  <p className="min-w-0 break-all font-medium">
+                    {grant.organizationId
+                      ? organizationName(grant.organizationId)
+                      : personName(grant.userId ?? '')}
+                  </p>
                   <p className="shrink-0 text-xs text-muted-foreground">
                     {kind === 'thread' ? 'Reader · Can suggest' : 'Reader'}
                   </p>
@@ -232,7 +293,7 @@ export function SharingPanel({
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   {activeLink
                     ? `Anyone with the link can read${kind === 'thread' ? ' and suggest a prompt' : ''}. No sign-in required.`
-                    : 'Only people you add can open their personal invitation link.'}
+                    : 'Only people and organisations you add can open their invitation links.'}
                 </p>
                 {activeLink && (
                   <p className="text-xs text-muted-foreground">
@@ -286,6 +347,12 @@ export function SharingPanel({
               Reconnect to the source computer to share this thread.
             </p>
           )}
+          <details className="border-t pt-3">
+            <summary className={disclosure}>Friends and organisations</summary>
+            <div className="pt-4">
+              <SharingPeopleManager people={contacts} userId={account.directory.user.id} />
+            </div>
+          </details>
           <details
             className="border-t pt-3"
             onToggle={(event) => {
@@ -355,13 +422,19 @@ export function SharingPanel({
               {sharing.share?.record.grants.map((grant) => (
                 <div key={grant.id} className="space-y-2 rounded-xl border p-3">
                   <p className="break-all text-xs">
-                    {grant.userId
-                      ? `Invitation · ${grant.userId}`
-                      : `${(grant.expiresAt ?? 0) > Date.now() ? 'Expires' : 'Expired'} · ${new Date(grant.expiresAt ?? 0).toLocaleString()}`}
+                    {grant.organizationId
+                      ? `Organisation · ${organizationName(grant.organizationId)}`
+                      : grant.userId
+                        ? `Invitation · ${grant.userId}`
+                        : `${(grant.expiresAt ?? 0) > Date.now() ? 'Expires' : 'Expired'} · ${new Date(grant.expiresAt ?? 0).toLocaleString()}`}
                   </p>
                   <Input
                     readOnly
-                    aria-label={grant.userId ? 'Private invitation link' : 'Share link'}
+                    aria-label={
+                      grant.userId || grant.organizationId
+                        ? 'Private invitation link'
+                        : 'Share link'
+                    }
                     value={sharing.link(grant.id)}
                     className="font-mono text-xs"
                   />
@@ -370,7 +443,10 @@ export function SharingPanel({
                       size="sm"
                       variant="outline"
                       disabled={
-                        sharing.busy || (!grant.userId && (grant.expiresAt ?? 0) <= Date.now())
+                        sharing.busy ||
+                        (!grant.userId &&
+                          !grant.organizationId &&
+                          (grant.expiresAt ?? 0) <= Date.now())
                       }
                       onClick={() => void copy(sharing.link(grant.id))}
                     >

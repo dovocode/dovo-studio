@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { createHash, randomBytes } from 'node:crypto'
 import type { AccountDirectory, AccountServer } from '@dovo/protocol'
 import type { AccountIdentity } from './oidc.js'
+import { PeopleStore } from './people-store.js'
 export const secret = () => randomBytes(32).toString('base64url')
 export const hash = (value: string) => createHash('sha256').update(value).digest('base64url')
 export type Login = {
@@ -19,6 +20,7 @@ export type Login = {
 export class AccountStore {
   private organizations: ReadonlyMap<string, string> = new Map()
   readonly db: DatabaseSync
+  readonly people: PeopleStore
   constructor(
     path: string,
     readonly now = Date.now,
@@ -41,6 +43,7 @@ export class AccountStore {
         .some((row) => row.name === 'verified')
     )
       this.db.exec('ALTER TABLE deleted_accounts ADD COLUMN verified INTEGER NOT NULL DEFAULT 0')
+    this.people = new PeopleStore(this)
   }
   cleanup() {
     this.db.prepare('DELETE FROM logins WHERE expires<=?').run(this.now())
@@ -254,6 +257,7 @@ export class AccountStore {
     return {
       audience: row.audience,
       expiresAt: row.expires,
+      sharingOrganizations: this.people.memberships(row.user),
       user: { id: row.user, name: row.name, ...(organization ? { organization } : {}) },
       ...(typeof row.publication === 'string' ? { publicationId: row.publication } : {}),
     }
@@ -309,6 +313,7 @@ export class AccountStore {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       this.beginDeletion(user)
+      this.people.deleteAccount(user)
       this.db.prepare('DELETE FROM sessions WHERE user=?').run(user)
       this.db.prepare('DELETE FROM servers WHERE user=?').run(user)
       // Internet tables are optional for stores opened by offline maintenance tools.

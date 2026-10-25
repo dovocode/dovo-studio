@@ -19,6 +19,26 @@ remain separate copies; an approved live MCP feed can update their encrypted das
 
 ## Readers and suggested prompts
 
+### Friends and organisations
+
+Open **Friends and organisations** in sharing settings or your Dovo account settings. Add a friend
+using their sharing ID once; they accept the request in Studio. Accepted friends appear by name in
+the sharing picker. Removing a friend removes the contact relationship; remove their access on a
+shared thread or artifact to revoke an existing invitation.
+
+Create an organisation, invite people by sharing ID (or choose a friend), and let them accept in
+Studio. The creator is its owner and manages membership. Members can leave; the owner can delete the
+organisation. These sharing organisations are separate from administrator-configured SSO and relay
+organisations, and never grant computer access or change runtime pairing.
+
+Choose an organisation in the sharing picker, then send its invitation link. Readers need both the
+complete encrypted link and an account that is currently a member. Membership is checked through
+Connect on every read and suggestion, including existing browser sessions: accepted new members can
+use the same link, while removed members and deleted organisations lose hosted access immediately.
+Public link access and personal invitations remain separate. Downloaded copies cannot be recalled.
+Organisation membership gates access to encrypted packets; it does not rotate keys on every member
+change. The hosting service never receives the link's decryption key.
+
 - **Private invitations** require both the recipient's exact sharing ID and their invitation link.
   Send the full link to the intended person. Studio does not send invitation emails.
 - **Anyone with the link** requires no sign-in. New links last 7 days by default; Advanced offers 1

@@ -39,6 +39,15 @@ const app=createRoot(document.getElementById('app'));window.renderApp=()=>app.re
   },
   [
     {
+      path: '@dovo/studio-ui/sharing-people',
+      contents: 'export const SharingPeoplePanel=()=>null;',
+    },
+    {
+      path: '../../ui/content/sharing-people',
+      importer: root + '/apps/mobile/src/runtime/connection',
+      contents: 'export const SharingPeoplePanel=()=>null;',
+    },
+    {
       path: '../preferences/app-preferences',
       importer: root + '/apps/mobile/src/runtime/connection',
       contents:

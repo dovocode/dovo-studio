@@ -35,7 +35,7 @@ const built = await bundleBrowser(
     },
     {
       path: '@dovo/studio-core',
-      contents: `export {useThreadSuggestions} from '${root}/packages/studio-core/src/use-thread-suggestions';export {useEncryptedSharing} from '${root}/packages/studio-core/src/use-encrypted-sharing';`,
+      contents: `export {useThreadSuggestions} from '${root}/packages/studio-core/src/use-thread-suggestions';export {useEncryptedSharing} from '${root}/packages/studio-core/src/use-encrypted-sharing';export {useSharingPeople} from '${root}/packages/studio-core/src/use-sharing-people';`,
     },
   ],
 )
@@ -131,19 +131,19 @@ try {
   )
   await page.evaluate(() => window.fixture.fail(false))
   await page.getByRole('button', { name: 'Add', exact: true }).click()
-  await page.getByText('second-recipient', { exact: true }).waitFor()
+  await page.getByLabel('Access for second-recipient', { exact: true }).waitFor()
   const beforeKey = await page.evaluate(
     () => [...window.fixture.records.values()][0].packet.generation,
   )
   await page.getByRole('button', { name: 'Remove access', exact: true }).last().click()
   await page.getByRole('dialog').getByRole('button', { name: 'Keep access', exact: true }).click()
-  assert.equal(await page.getByText('second-recipient', { exact: true }).count(), 1)
+  assert.equal(await page.getByLabel('Access for second-recipient', { exact: true }).count(), 1)
   await page.getByRole('button', { name: 'Remove access', exact: true }).last().click()
   await page
     .getByRole('dialog')
     .getByRole('button', { name: 'Confirm remove access', exact: true })
     .click()
-  await page.getByText('second-recipient', { exact: true }).waitFor({ state: 'hidden' })
+  await page.getByLabel('Access for second-recipient', { exact: true }).waitFor({ state: 'hidden' })
   assert.notEqual(
     beforeKey,
     await page.evaluate(() => [...window.fixture.records.values()][0].packet.generation),
@@ -279,6 +279,53 @@ try {
     true,
   )
   await offline.close()
+  const social = await manager({ published: false, withKey: false })
+  await social.getByRole('combobox', { name: 'Add friends or organisations' }).click()
+  await social.getByRole('option', { name: 'Sam', exact: true }).click()
+  await social.getByLabel('Access for second-recipient', { exact: true }).waitFor()
+  await social.getByRole('combobox', { name: 'Add friends or organisations' }).click()
+  await social.getByRole('option', { name: 'Dovo team (organisation)', exact: true }).click()
+  await social
+    .getByLabel('Access for d3d97ead-0292-448d-bdf8-1260fd675d10', { exact: true })
+    .waitFor()
+  assert.equal(
+    await social.getByRole('combobox', { name: 'General access', exact: true }).textContent(),
+    'Restricted',
+  )
+  assert.equal(
+    await social.evaluate(() =>
+      [...window.fixture.records.values()][0].grants.some((grant) => grant.tokenHash),
+    ),
+    false,
+    'friends and organisations never enable public access',
+  )
+  await social.getByText('Friends and organisations', { exact: true }).click()
+  const managerPanel = social.getByLabel('Friends and organisations', { exact: true })
+  await managerPanel.getByRole('button', { name: 'Accept friend', exact: true }).click()
+  await managerPanel.getByText('new-friend · Friend', { exact: true }).waitFor()
+  await managerPanel
+    .getByRole('textbox', { name: 'Organisation name', exact: true })
+    .fill('Design team')
+  await managerPanel.getByRole('button', { name: 'Create', exact: true }).click()
+  const organization = managerPanel.getByLabel('Organisation Design team', { exact: true })
+  await organization.waitFor()
+  await organization.getByLabel('Invite to Design team', { exact: true }).fill('second-recipient')
+  await organization.getByRole('button', { name: 'Invite', exact: true }).click()
+  await organization.getByText('Sam').waitFor()
+  await social.getByText('Friends and organisations', { exact: true }).first().click()
+  await access(social, 'Anyone with the link')
+  await access(social, 'Restricted')
+  await social
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Confirm remove access', exact: true })
+    .click()
+  await social.getByRole('dialog').waitFor({ state: 'hidden' })
+  assert.equal(
+    await social.evaluate(() => [...window.fixture.records.values()][0].grants.length),
+    2,
+    'restriction preserves friends and organisation grants',
+  )
+  await social.close()
   assert.deepEqual(errors, [])
   console.log(
     'Compact sharing: one-step encrypted thread/artifact access, saved links, invitations, recoverable failures, restriction/revocation confirmation, live updates, key recovery, deletion and narrow light/dark layouts passed',

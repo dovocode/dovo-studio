@@ -4,12 +4,15 @@ import {
   decode,
   shareWriteSchema,
   newSharingKey,
+  sharingUUID,
   encryptSuggestion,
   sharingReaderKeys,
   type AccountState,
   type AccountStorage,
   type ShareRecord,
   type SharedContent,
+  type PeopleDirectory,
+  type PeopleAction,
 } from '@dovo/protocol'
 
 /** Synthetic, in-memory adapter for the production sharing manager. Never contacts a service. */
@@ -108,7 +111,80 @@ export function createSharingFixture({
     }
   }
   let suggestions: ReturnType<typeof encryptSuggestion>[] = []
+  let people: PeopleDirectory = {
+    friends: [
+      { id: 'catalog-recipient', name: 'Alex', status: 'accepted' },
+      { id: 'second-recipient', name: 'Sam', status: 'accepted' },
+      { id: 'new-friend', name: 'Jamie', status: 'incoming' },
+    ],
+    organizations: [
+      {
+        id: 'd3d97ead-0292-448d-bdf8-1260fd675d10',
+        name: 'Dovo team',
+        ownerId: 'catalog-owner',
+        status: 'member',
+        members: [
+          { id: 'catalog-owner', name: 'Preview owner', status: 'member' },
+          { id: 'catalog-recipient', name: 'Alex', status: 'member' },
+        ],
+      },
+    ],
+  }
   class LocalAccount extends AccountClient {
+    override people = async () => structuredClone(people)
+    override updatePeople = async (input: PeopleAction) => {
+      if (fail) throw new Error('Simulated connection failure. Try again.')
+      switch (input.action) {
+        case 'requestFriend':
+          people.friends.push({ id: input.userId, name: input.userId, status: 'outgoing' })
+          break
+        case 'acceptFriend':
+          people.friends = people.friends.map((person) =>
+            person.id === input.userId ? { ...person, status: 'accepted' } : person,
+          )
+          break
+        case 'removeFriend':
+          people.friends = people.friends.filter((person) => person.id !== input.userId)
+          break
+        case 'createOrganization':
+          people.organizations.push({
+            id: sharingUUID(),
+            name: input.name,
+            ownerId: 'catalog-owner',
+            status: 'member',
+            members: [{ id: 'catalog-owner', name: 'Preview owner', status: 'member' }],
+          })
+          break
+        case 'deleteOrganization':
+          people.organizations = people.organizations.filter(
+            (org) => org.id !== input.organizationId,
+          )
+          break
+        case 'acceptOrganization':
+          people.organizations = people.organizations.map((org) =>
+            org.id === input.organizationId ? { ...org, status: 'member' } : org,
+          )
+          break
+        case 'inviteMember':
+          people.organizations
+            .find((org) => org.id === input.organizationId)
+            ?.members.push({
+              id: input.userId,
+              name:
+                people.friends.find((person) => person.id === input.userId)?.name ?? input.userId,
+              status: 'invited',
+            })
+          break
+        case 'removeMember':
+          people.organizations = people.organizations.map((org) =>
+            org.id === input.organizationId
+              ? { ...org, members: org.members.filter((member) => member.id !== input.userId) }
+              : org,
+          )
+          break
+      }
+      return structuredClone(people)
+    }
     override readonly sharing = new LocalSharing(
       storage,
       'https://connect.example.invalid',
