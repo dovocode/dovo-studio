@@ -8,6 +8,7 @@ const mocks = {
   'react-native-view-shot': `export const captureRef=async()=>"c2NyZWVu";`,
   './screenshot-attachment': `export const useScreenshotAttachment=()=>({editor:null,error:'',busy:false,attach:async()=>{}});`,
   'expo-router': 'export const router={push:path=>window.settingsRoute=path};',
+  'react-native-screens/experimental': `export {View as SafeAreaView} from 'react-native';`,
   'react-native': `
     const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style??{};
     const css=style=>{const value=flat(style);return {...value,paddingLeft:value.paddingHorizontal,paddingRight:value.paddingHorizontal,paddingTop:value.paddingVertical,paddingBottom:value.paddingVertical}};
@@ -18,6 +19,7 @@ const mocks = {
     export const Image=View;export const Platform={OS:"web"};
     export const ScrollView=View;
     export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
+    export const Keyboard={isVisible:()=>false,addListener:()=>({remove(){}})};
     export const Alert={alert:(title,message,actions)=>actions.find(action=>action.style==='destructive')?.onPress()};
   `,
   'expo-crypto': `export const randomUUID=()=> 'host-new';`,
@@ -42,6 +44,8 @@ Object.assign(mocks, {
   '../../runtime/state/application-state': mocks['../runtime/state/application-state'],
   '../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
   '../../ui/content/text': mocks['../ui/content/text'],
+  '../../ui/controls/icon': mocks['../ui/controls/icon'],
+  '../../ui/layout/glass': `export {View as Glass} from 'react-native';`,
   '../../screens/settings-theme': mocks['./settings-theme'],
   '../../screens/settings-controls': mocks['./settings-controls'],
   '../../ui/theme': `export const useTheme=()=>({styles:{},colors:{}});`,
