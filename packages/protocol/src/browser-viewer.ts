@@ -1,6 +1,7 @@
 import { decode } from './shared/schema.js'
 // Browser-only entry point, bundled into a self-contained canvas viewer by build-browser-viewer.mjs.
 import {
+  remoteBrowserInputSchema,
   remoteBrowserMessageSchema,
   type RemoteBrowserInput,
 } from './runtime/previews/remote-browser'
@@ -22,6 +23,7 @@ const context = canvas.getContext('2d', { alpha: false, desynchronized: true })
 if (!context) throw new Error('Canvas rendering is unavailable')
 const drawing = context
 const viewport = element('viewport', HTMLDivElement)
+const linkPreview = element('linkPreview', HTMLDivElement)
 const address = element('address', HTMLInputElement)
 const status = element('status', HTMLDivElement)
 const empty = element('empty', HTMLDivElement)
@@ -56,8 +58,11 @@ document.addEventListener(
     event.preventDefault()
     event.stopPropagation()
     if (key === 'l') {
-      address.focus()
-      address.select()
+      if (externalNavigation) bridge('focusAddress')
+      else {
+        address.focus()
+        address.select()
+      }
     } else send({ type: 'reload' })
   },
   true,
@@ -133,6 +138,7 @@ let fitTimer: ReturnType<typeof setTimeout> | undefined
 let currentUrl = '',
   online = false
 let addressEdited = false
+address.onfocus = () => address.select()
 address.oninput = () => {
   addressEdited = true
 }
@@ -159,12 +165,24 @@ function scheduleReconnect() {
 }
 let keyboardOpen = false,
   composing = false
+let keyboardGestureUntil = 0
+let primaryModifier: 'Control' | 'Meta' | undefined
+function editableFocus(editable: boolean) {
+  if (editable && performance.now() < keyboardGestureUntil && document.activeElement === canvas) {
+    keyboardGestureUntil = 0
+    setKeyboard(true)
+  } else if (!editable && document.activeElement === editor) setKeyboard(false)
+}
 const sentinel = '\u200b'
-const bridge = (type: 'ready' | 'reconnect' | 'close' | 'screenshot', image?: string) => {
+const bridge = (
+  type: 'ready' | 'reconnect' | 'close' | 'screenshot' | 'focusAddress',
+  image?: string,
+) => {
   const message = { channel: 'dovo-browser', type, ...(image ? { image } : {}) }
   if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(message))
   else window.parent.postMessage(message, '*')
 }
+let externalNavigation = false
 let screenshotReady = false
 element('screenshot', HTMLButtonElement).onclick = () => {
   element('more', HTMLDetailsElement).open = false
@@ -190,6 +208,12 @@ function notice(message: string, error = false) {
 function enabled(value: boolean) {
   online = value
   connectionStatus(value ? 'online' : 'offline')
+  if (window.ReactNativeWebView)
+    window.ReactNativeWebView.postMessage(
+      JSON.stringify({ channel: 'dovo-browser', type: 'connection', online: value }),
+    )
+  else
+    window.parent.postMessage({ channel: 'dovo-browser', type: 'connection', online: value }, '*')
   for (const button of starters.querySelectorAll('button')) button.disabled = !value
   clearInterval(performanceTimer)
   performanceTimer = undefined
@@ -209,6 +233,10 @@ function enabled(value: boolean) {
   element('close', HTMLButtonElement).disabled = !value
   reconnect.hidden = value
   if (!value) {
+    primaryModifier = undefined
+    keyboardGestureUntil = 0
+    canvas.style.cursor = ''
+    linkPreview.hidden = true
     activePointer = undefined
     pointerPosition = undefined
     touch = undefined
@@ -338,6 +366,7 @@ function connect(url: string) {
   requestedSize = ''
   target.searchParams.set('frames', 'binary-v1')
   if (!simulator) target.searchParams.set('metrics', '1')
+  if (!simulator) target.searchParams.set('interaction', '1')
   const previous = socket
   socket = undefined
   previous?.close()
@@ -456,9 +485,15 @@ function connect(url: string) {
       } else if (message.type === 'streamStats') {
         transportMs = message.transportMs
         transportAt = performance.now()
+      } else if (message.type === 'interaction') {
+        canvas.style.cursor = message.cursor
+        linkPreview.textContent = message.href
+        linkPreview.hidden = !message.href
+        editableFocus(message.editable)
       } else if (message.type === 'state') {
         reload.setAttribute('aria-busy', String(message.loading))
         nativeTouch = message.touch === true
+        primaryModifier = message.primaryModifier
         currentUrl = message.url
         if (!addressEdited && document.activeElement !== address)
           address.value = currentUrl === 'about:blank' ? '' : currentUrl
@@ -468,9 +503,13 @@ function connect(url: string) {
         canvas.hidden = !empty.hidden || !hasFrame
         if (!canvas.hidden) layoutCanvas()
         keyboard.title = message.editable ? 'Type into focused field' : 'Keyboard'
+        editableFocus(message.editable)
         document.title = message.title || 'Host browser'
-        if (!window.ReactNativeWebView)
-          window.parent.postMessage({ channel: 'dovo-browser', ...message }, '*')
+        if (window.ReactNativeWebView)
+          window.ReactNativeWebView.postMessage(
+            JSON.stringify({ channel: 'dovo-browser', ...message }),
+          )
+        else window.parent.postMessage({ channel: 'dovo-browser', ...message }, '*')
       } else if (message.type === 'error' || message.type === 'closed') {
         if (message.type === 'closed') enabled(false)
         notice(message.message, true)
@@ -504,7 +543,47 @@ window.addEventListener('message', (event) => {
     return
   }
   if ('type' in message && message.type === 'presentation') {
+    externalNavigation = 'externalNavigation' in message && message.externalNavigation === true
     document.body.classList.toggle('expanded', 'expanded' in message && message.expanded === true)
+    return
+  }
+  if ('type' in message && message.type === 'input' && 'input' in message) {
+    try {
+      if (online) send(decode(remoteBrowserInputSchema, message.input))
+    } catch {
+      notice('Invalid browser input.', true)
+    }
+    return
+  }
+  if ('type' in message && message.type === 'performance') {
+    const data = {
+      channel: 'dovo-browser',
+      type: 'performance',
+      summary: performanceSummary.textContent,
+      details: `${performanceSummary.textContent}\n\n${performanceDetails.textContent}`,
+    }
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(data))
+    else window.parent.postMessage(data, '*')
+    return
+  }
+  if ('type' in message && message.type === 'keyboard') {
+    keyboard.click()
+    return
+  }
+  if ('type' in message && message.type === 'screenshot') {
+    element('screenshot', HTMLButtonElement).click()
+    return
+  }
+  if (
+    'type' in message &&
+    message.type === 'viewport' &&
+    'preset' in message &&
+    previewPresets.some((item) => item.id === message.preset)
+  ) {
+    presetChosen = true
+    preset.value = String(message.preset)
+    landscape = 'landscape' in message && message.landscape === true
+    fit()
     return
   }
   if (
@@ -516,6 +595,14 @@ window.addEventListener('message', (event) => {
     visible = message.visible
     visibilityConfigured = true
     if (online && !simulator) send({ type: 'visibility', visible })
+    return
+  }
+  if ('type' in message && message.type === 'reconnect') {
+    reconnect.click()
+    return
+  }
+  if ('type' in message && message.type === 'close') {
+    element('close', HTMLButtonElement).click()
     return
   }
   if ('type' in message && message.type === 'reload') {
@@ -615,6 +702,16 @@ const button = (event: PointerEvent) =>
     : event.button === 1
       ? ('middle' as const)
       : ('left' as const)
+function modifiers(event: PointerEvent): ('Control' | 'Meta' | 'Alt' | 'Shift')[] {
+  const values: ('Control' | 'Meta' | 'Alt' | 'Shift')[] = []
+  if (event.ctrlKey) values.push('Control')
+  if (event.metaKey) values.push('Meta')
+  if (event.altKey) values.push('Alt')
+  if (event.shiftKey) values.push('Shift')
+  return values
+}
+let lastClick: { at: number; x: number; y: number; button: string; count: 1 | 2 | 3 } | undefined
+let clickCount: 1 | 2 | 3 = 1
 let touch: { id: number; x: number; y: number; moved: boolean } | undefined
 let move: RemoteBrowserInput | undefined
 let moveFrame = 0
@@ -663,6 +760,20 @@ canvas.onpointerdown = (event) => {
   flushMovement()
   canvas.setPointerCapture(event.pointerId)
   canvas.focus({ preventScroll: true })
+  if (!simulator && event.pointerType === 'touch') keyboardGestureUntil = performance.now() + 2000
+  const point = position(event)
+  clickCount =
+    lastClick &&
+    performance.now() - lastClick.at < 500 &&
+    Math.hypot(point.x - lastClick.x, point.y - lastClick.y) < 5 &&
+    lastClick.button === button(event)
+      ? lastClick.count === 1
+        ? 2
+        : lastClick.count === 2
+          ? 3
+          : 1
+      : 1
+  lastClick = { at: performance.now(), ...point, button: button(event), count: clickCount }
   if (event.pointerType === 'touch' && !simulator && !nativeTouch)
     touch = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
   else
@@ -671,6 +782,8 @@ canvas.onpointerdown = (event) => {
       phase: 'down',
       button: button(event),
       pointerType: event.pointerType === 'touch' ? 'touch' : 'mouse',
+      clickCount,
+      modifiers: modifiers(event),
       ...position(event),
     })
 }
@@ -704,6 +817,7 @@ function movePointer(event: PointerEvent) {
       phase: 'move',
       button: button(event),
       pointerType: event.pointerType === 'touch' ? 'touch' : 'mouse',
+      modifiers: modifiers(event),
       ...position(event),
     })
 }
@@ -729,6 +843,8 @@ canvas.onpointerup = (event) => {
       phase: 'up',
       button: button(event),
       pointerType: event.pointerType === 'touch' ? 'touch' : 'mouse',
+      clickCount,
+      modifiers: modifiers(event),
       ...position(event),
     })
 }
@@ -755,6 +871,12 @@ canvas.onpointercancel = cancelPointer
 // every later swipe is ignored until the viewer reconnects.
 canvas.onlostpointercapture = cancelPointer
 canvas.oncontextmenu = (event) => event.preventDefault()
+canvas.onpointerleave = () => {
+  linkPreview.hidden = true
+}
+canvas.onpointerenter = () => {
+  linkPreview.hidden = !linkPreview.textContent
+}
 canvas.addEventListener(
   'wheel',
   (event) => {
@@ -799,12 +921,15 @@ function keydown(event: KeyboardEvent) {
   ) {
     event.preventDefault()
     const modifiers = [
-      event.ctrlKey && 'Control',
-      event.metaKey && 'Meta',
+      event.ctrlKey &&
+        (primaryModifier === 'Meta' && !/Mac|iPhone|iPad/.test(navigator.platform)
+          ? 'Meta'
+          : 'Control'),
+      event.metaKey && (primaryModifier ?? 'Meta'),
       event.altKey && 'Alt',
       event.shiftKey && 'Shift',
     ].filter(Boolean)
-    send({ type: 'key', key: [...modifiers, event.key].join('+') })
+    send({ type: 'key', key: [...new Set(modifiers), event.key].join('+') })
   } else if (event.target === canvas && event.key.length === 1) {
     event.preventDefault()
     send({ type: 'text', text: event.key })

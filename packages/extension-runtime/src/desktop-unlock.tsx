@@ -9,22 +9,28 @@ export function DesktopUnlock({
   id,
   onClose,
   unlockUrl,
+  username,
 }: {
   id: string
   onClose: () => void
   unlockUrl: (id: string) => Promise<string>
+  username?: string
 }) {
   const currentUnlockUrl = useRef(unlockUrl)
   currentUnlockUrl.current = unlockUrl
   const target = useRef<HTMLDivElement>(null)
   const client = useRef<RFB | null>(null)
+  const deadline = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [attempt, setAttempt] = useState(0)
   const [credentials, setCredentials] = useState(false)
+  const [authenticating, setAuthenticating] = useState(false)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
     if (!target.current) return
     setError('')
     setCredentials(false)
+    setAuthenticating(false)
     setReady(false)
     if (!globalThis.crypto?.subtle) {
       setError(
@@ -37,16 +43,25 @@ export function DesktopUnlock({
     let socket: WebSocket | undefined
     let rfb: RFB | undefined
     let failed = false
+    deadline.current = setTimeout(() => {
+      if (disposed) return
+      failed = true
+      setError(
+        'Screen Sharing did not finish connecting. Check this Mac’s Screen Sharing access, then retry.',
+      )
+      rfb?.disconnect()
+      socket?.close()
+    }, 15000)
     void (async () => {
       const { default: RFB } = await import('@novnc/novnc')
-      if (disposed) return
+      if (disposed || failed) return
       const url = await currentUnlockUrl.current(id)
-      if (disposed) return
+      if (disposed || failed) return
       socket = new WebSocket(url)
       socket.addEventListener('close', (event) => {
         if (!disposed && event.code !== 1000 && event.reason && !failed) {
           failed = true
-          setError(event.reason)
+          setError((previous) => previous || event.reason)
         }
       })
       rfb = new RFB(element, socket, { shared: true })
@@ -55,34 +70,49 @@ export function DesktopUnlock({
       rfb.resizeSession = false
       rfb.clipViewport = false
       rfb.addEventListener('credentialsrequired', () => {
-        if (!disposed) setCredentials(true)
+        clearTimeout(deadline.current)
+        if (!disposed) {
+          setAuthenticating(false)
+          setCredentials(true)
+        }
       })
       rfb.addEventListener('connect', () => {
         if (disposed) return
+        clearTimeout(deadline.current)
         setCredentials(false)
+        setAuthenticating(false)
         setReady(true)
         rfb?.focus()
       })
-      rfb.addEventListener('securityfailure', () => {
+      rfb.addEventListener('securityfailure', (event) => {
         if (disposed) return
+        clearTimeout(deadline.current)
         failed = true
         setCredentials(false)
+        setAuthenticating(false)
+        const reason =
+          typeof event.detail.reason === 'string' ? event.detail.reason.slice(0, 500) : ''
         setError(
-          'macOS refused authentication. Check the account’s Screen Sharing access, then close and try again.',
+          `macOS refused authentication.${reason ? ` ${reason}.` : ''} Use this Mac’s account short name and login password, and check its Screen Sharing access.`,
         )
       })
       rfb.addEventListener('disconnect', () => {
         if (disposed) return
+        clearTimeout(deadline.current)
         client.current = null
         setReady(false)
         setCredentials(false)
+        setAuthenticating(false)
         if (!failed)
           setError(
-            'Screen Sharing disconnected. Close this panel to check the desktop or try again.',
+            (previous) =>
+              previous ||
+              'Screen Sharing disconnected. Retry the connection or close this panel to check the desktop.',
           )
       })
     })().catch((cause: unknown) => {
       failed = true
+      clearTimeout(deadline.current)
       rfb?.disconnect()
       socket?.close()
       if (!disposed) {
@@ -92,11 +122,12 @@ export function DesktopUnlock({
     })
     return () => {
       disposed = true
+      clearTimeout(deadline.current)
       client.current = null
       rfb?.disconnect()
       socket?.close()
     }
-  }, [id])
+  }, [id, attempt])
   return (
     <section aria-label="Unlock desktop" className="space-y-3 rounded-lg border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -125,11 +156,28 @@ export function DesktopUnlock({
             client.current?.sendCredentials({ username, password, target: '' })
             form.reset()
             setCredentials(false)
+            setAuthenticating(true)
+            clearTimeout(deadline.current)
+            deadline.current = setTimeout(() => {
+              setError(
+                'macOS did not complete authentication. Check the account’s Screen Sharing access and retry.',
+              )
+              client.current?.disconnect()
+            }, 15000)
           }}
         >
           <label className="space-y-1 text-xs">
             <span>Mac username</span>
-            <Input name="username" autoComplete="off" required maxLength={63} />
+            <Input
+              name="username"
+              defaultValue={username ?? ''}
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              required
+              maxLength={63}
+            />
           </label>
           <label className="space-y-1 text-xs">
             <span>Mac password</span>
@@ -139,16 +187,23 @@ export function DesktopUnlock({
         </form>
       )}
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <div className="space-y-2">
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+          <Button variant="outline" onClick={() => setAttempt((value) => value + 1)}>
+            Retry connection
+          </Button>
+        </div>
       ) : (
         <p role="status" className="text-xs text-muted-foreground">
           {ready
             ? 'Use the Mac’s lock screen below. Viewing resumes automatically after unlock.'
-            : credentials
-              ? 'Waiting for macOS credentials.'
-              : 'Connecting to macOS Screen Sharing…'}
+            : authenticating
+              ? 'Authenticating with macOS…'
+              : credentials
+                ? 'Waiting for macOS credentials.'
+                : 'Connecting to macOS Screen Sharing…'}
         </p>
       )}
       {ready && (

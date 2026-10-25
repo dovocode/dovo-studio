@@ -9,6 +9,7 @@ import {
 import type { BrowserFrame, BrowserOutput } from '../../previews/browser.js'
 import type { Services } from '../../services.js'
 import { errorMessage } from '../../errors.js'
+import { BrowserFrameEncoder } from './browser-frame-encoder.js'
 export function attachBrowserSocket(
   client: WebSocket,
   taskId: string,
@@ -19,6 +20,7 @@ export function attachBrowserSocket(
   browserId = taskId,
   foreignAuthorize?: () => void,
   metrics = false,
+  interactive = false,
 ) {
   const source = simulatorId
     ? foreignAuthorize
@@ -26,6 +28,8 @@ export function attachBrowserSocket(
       : services.simulators
     : services.browsers
   const resourceId = simulatorId ?? browserId
+  const encoder = interactive && binary && !simulatorId ? new BrowserFrameEncoder() : undefined
+  let encoding = false
   let visible = true
   let closed = false
   let detach: (() => void) | undefined
@@ -47,6 +51,7 @@ export function attachBrowserSocket(
   const inFlight = new Map<number, { sentAt: number; bytes: number }>()
   const send = (message: BrowserOutput) => {
     if (closed || client.readyState !== WebSocket.OPEN) return
+    if (message.type === 'interaction' && !interactive) return
     if (message.type === 'frame') {
       // Keep enough frames in transit for the measured round trip, but never
       // build an unbounded queue in a slow network or decoder. Only the latest
@@ -86,9 +91,57 @@ export function attachBrowserSocket(
     if (message.type === 'closed') client.close(1000, 'Browser session closed')
   }
   const drain = () => {
+    if (encoding || closed || !frame) return
+    if (binary && inFlight.size >= frameWindow) return
+    const budget = encoder?.budget() ?? Infinity
+    const expectedBytes = Math.min(frame.data.byteLength, budget * (frame.detail ? 3 : 1) * 1.15)
+    if (binary && inFlight.size && inFlightBytes + expectedBytes > 256 * 1024) return
+    if (client.bufferedAmount > 0) {
+      if (!flush)
+        flush = setTimeout(() => {
+          flush = undefined
+          drain()
+        }, 4)
+      return
+    }
     const next = frame
     frame = undefined
-    if (next) send(next)
+    if (!encoder || next.data.byteLength <= budget * (next.detail ? 3 : 1) * 1.15) {
+      send(next)
+      return
+    }
+    // Only encode a frame when it has delivery credit. While encoding, retain
+    // one newest pending source image instead of filling the worker pool.
+    encoding = true
+    let attempted: BrowserFrame | undefined
+    void encoder
+      .encode(next, budget)
+      .then(
+        (encoded) => {
+          attempted = encoded
+          if (!closed && visible) {
+            const latest = frame
+            send(encoded)
+            if (latest) frame = latest
+          }
+        },
+        (error) => {
+          send({ type: 'error', message: `Could not encode browser frame: ${errorMessage(error)}` })
+          client.close(1011, 'Browser frame encoding failed')
+        },
+      )
+      .finally(() => {
+        encoding = false
+        if (frame !== attempted) drain()
+      })
+  }
+  const receive = (message: BrowserOutput) => {
+    if (closed) return
+    if (message.type !== 'frame' || !encoder) send(message)
+    else {
+      frame = message
+      drain()
+    }
   }
   const watchdog = binary
     ? setInterval(() => {
@@ -111,7 +164,7 @@ export function attachBrowserSocket(
   client.on('close', cleanup)
   client.on('error', cleanup)
   void source
-    .attach(resourceId, send)
+    .attach(resourceId, receive)
     .then((dispose) => {
       if (closed) dispose()
       else detach = dispose
@@ -148,6 +201,7 @@ export function attachBrowserSocket(
         inFlightBytes -= sent.bytes
         if (ack.data.decodeMs !== undefined && !ack.data.dropped) {
           const now = performance.now()
+          encoder?.observe(sent, now, ack.data.decodeMs)
           const sample = Math.max(0, now - sent.sentAt - ack.data.decodeMs)
           transportMs = transportMs === undefined ? sample : transportMs * 0.8 + sample * 0.2
           // Closely sent frames reveal link serialization through their ACK
@@ -226,7 +280,7 @@ export function attachBrowserSocket(
       }
       const operation =
         input.type === 'visibility' && !simulatorId
-          ? services.browsers.visibility(resourceId, send, input.visible)
+          ? services.browsers.visibility(resourceId, receive, input.visible)
           : simulatorId
             ? (foreignAuthorize ? services.hostSimulators : services.simulators).input(
                 resourceId,

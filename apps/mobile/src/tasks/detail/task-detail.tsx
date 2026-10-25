@@ -591,7 +591,6 @@ function TaskDetailContent({
         (pane === 'browser' || pane === 'devices') &&
           expandedPreview && {
             paddingTop: insets.top,
-            paddingBottom: insets.bottom,
           },
       ]}
     >

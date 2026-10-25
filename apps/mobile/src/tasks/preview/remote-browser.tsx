@@ -5,13 +5,15 @@ import {
   mutableStruct,
   decodeResult,
   remoteBrowserTicketSchema,
+  remoteBrowserMessageSchema,
+  type RemoteBrowserMessage,
   responses,
 } from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { useEffect, useLayoutEffect, useRef } from 'react'
-import { AppState, View } from 'react-native'
+import { type ComponentRef, useEffect, useLayoutEffect, useRef } from 'react'
+import { type TextInput, Alert, AppState, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Schema, Effect } from 'effect'
 import { remoteBrowserHtml } from '@dovo/protocol/browser-viewer'
@@ -19,6 +21,8 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { useTheme } from '../../ui/theme'
 import { deviceHostMessage } from '../../screens/device-host-form'
 import { usePreviewActive } from './use-preview-active'
+import { BrowserToolbar, type BrowserMode } from './browser-toolbar'
+import { useOpenAppLink } from '../../ui/content/open-link'
 const bridgeSchema = mutableStruct({
   channel: Schema.Literal('dovo-browser'),
   type: Schema.Literals(['ready', 'reconnect', 'close', 'screenshot']),
@@ -30,16 +34,33 @@ export function RemoteBrowser({
   devicePlatform,
   expanded = false,
   reloadToken,
+  initialUrl,
+  onMode,
+  onExpand,
 }: {
   taskId: string
   deviceId?: string
   devicePlatform?: 'ios' | 'android'
   expanded?: boolean
   reloadToken?: number
+  initialUrl?: string
+  onMode?: (mode: BrowserMode, address?: string) => void
+  onExpand?: () => void
 }) {
   const { styles, mode } = useTheme()
   const appearance = useRef(mode)
   const screenshots = useScreenshotAttachment(taskId)
+  const openLink = useOpenAppLink(taskId)
+  const [browserState, setBrowserState] = useApplicationState<
+    Extract<RemoteBrowserMessage, { type: 'state' }> | undefined
+  >(undefined)
+  const [online, setOnline] = useApplicationState(false)
+  const [address, setAddress] = useApplicationState(initialUrl ?? '')
+  const lastAddress = useRef(initialUrl ?? '')
+  const editing = useRef(false)
+  const addressField = useRef<ComponentRef<typeof TextInput>>(null)
+  const [preset, setPreset] = useApplicationState('fill')
+  const [landscape, setLandscape] = useApplicationState(false)
 
   const { connection, profiles, readEffect } = useRuntime()
   const active = usePreviewActive()
@@ -52,7 +73,7 @@ export function RemoteBrowser({
   const presentation = useRef(expanded)
   useEffect(() => {
     presentation.current = expanded
-  }, [expanded])
+  }, [expanded, deviceId])
   const post = (message: object) =>
     web.current?.injectJavaScript(
       `window.dispatchEvent(new MessageEvent('message',{data:${JSON.stringify({
@@ -97,6 +118,7 @@ export function RemoteBrowser({
             {
               taskId,
               id: deviceId,
+              ...(!deviceId && lastAddress.current ? { url: lastAddress.current } : {}),
             },
             remoteBrowserTicketSchema,
           )
@@ -117,7 +139,8 @@ export function RemoteBrowser({
           })
           post({
             type: 'presentation',
-            expanded: presentation.current,
+            expanded: !deviceId || presentation.current,
+            externalNavigation: !deviceId,
           })
         }).pipe(
           Effect.catch((error) =>
@@ -145,9 +168,13 @@ export function RemoteBrowser({
     if (ready.current)
       post({
         type: 'presentation',
-        expanded,
+        expanded: !deviceId || expanded,
+        externalNavigation: !deviceId,
       })
-  }, [expanded])
+  }, [expanded, deviceId])
+  useEffect(() => {
+    if (ready.current && online && !deviceId) post({ type: 'viewport', preset, landscape })
+  }, [preset, landscape, online, deviceId])
   const resume = useRef(connect)
   useLayoutEffect(() => {
     resume.current = connect
@@ -200,12 +227,14 @@ export function RemoteBrowser({
           current.current++
           pending.current = false
           ready.current = false
+          setOnline(false)
           setGeneration((value) => value + 1)
         }}
         onRenderProcessGone={() => {
           current.current++
           pending.current = false
           ready.current = false
+          setOnline(false)
           setGeneration((value) => value + 1)
         }}
         onMessage={(event) => {
@@ -214,6 +243,43 @@ export function RemoteBrowser({
             message = JSON.parse(event.nativeEvent.data)
           } catch {
             return
+          }
+          if (
+            !deviceId &&
+            message &&
+            typeof message === 'object' &&
+            'channel' in message &&
+            message.channel === 'dovo-browser'
+          ) {
+            if ('type' in message && message.type === 'focusAddress') {
+              addressField.current?.focus()
+              return
+            }
+            if (
+              'type' in message &&
+              message.type === 'performance' &&
+              'details' in message &&
+              typeof message.details === 'string'
+            ) {
+              Alert.alert('Browser connection', message.details.slice(0, 2000))
+              return
+            }
+            const state = decodeResult(remoteBrowserMessageSchema, message)
+            if (state.success && state.data.type === 'state') {
+              setBrowserState(state.data)
+              lastAddress.current = state.data.url === 'about:blank' ? '' : state.data.url
+              if (!editing.current) setAddress(lastAddress.current)
+              return
+            }
+            if (
+              'type' in message &&
+              message.type === 'connection' &&
+              'online' in message &&
+              typeof message.online === 'boolean'
+            ) {
+              setOnline(message.online)
+              return
+            }
           }
           const parsed = decodeResult(bridgeSchema, message)
           if (!parsed.success) return
@@ -257,6 +323,50 @@ export function RemoteBrowser({
           }
         }}
       />
+      {!deviceId && !expanded && (
+        <BrowserToolbar
+          addressRef={addressField}
+          address={address}
+          mode="remote"
+          onMode={onMode ? (next) => onMode(next, lastAddress.current) : undefined}
+          onExpand={onExpand}
+          onExternal={
+            /^https?:\/\//i.test(lastAddress.current)
+              ? () => {
+                  void runClientEffect(
+                    nativeEffect(() => openLink(lastAddress.current, true)).pipe(
+                      Effect.catch((error) =>
+                        nativeEffect(() => Alert.alert('Could not open browser', String(error))),
+                      ),
+                    ),
+                  )
+                }
+              : undefined
+          }
+          onAddress={setAddress}
+          onEditing={(value) => {
+            editing.current = value
+          }}
+          available={online}
+          back={browserState?.back ?? false}
+          forward={browserState?.forward ?? false}
+          onNavigate={() => post({ type: 'input', input: { type: 'navigate', url: address } })}
+          onBack={() => post({ type: 'input', input: { type: 'back' } })}
+          onForward={() => post({ type: 'input', input: { type: 'forward' } })}
+          onReload={() => post({ type: 'reload' })}
+          onReconnect={() => post({ type: 'reconnect' })}
+          onCloseSession={() => post({ type: 'close' })}
+          onDiagnostics={() => post({ type: 'performance' })}
+          onKeyboard={() => post({ type: 'keyboard' })}
+          onScreenshot={() => post({ type: 'screenshot' })}
+          screenshotDisabled={
+            screenshots.busy || !browserState?.url || browserState.url === 'about:blank'
+          }
+          preset={preset}
+          onPreset={setPreset}
+          onRotate={() => setLandscape((value) => !value)}
+        />
+      )}
     </View>
   )
 }

@@ -22,6 +22,7 @@ export function DesktopViewer({ request, connected, enabled, unlockUrl }: Deskto
   const [frame, setFrame] = useState<RemoteDesktopFrame | null>(null)
   const [locked, setLocked] = useState(false)
   const [unlocking, setUnlocking] = useState(false)
+  const [unlockUsername, setUnlockUsername] = useState<string | undefined>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [stopping, setStopping] = useState(false)
@@ -78,7 +79,8 @@ export function DesktopViewer({ request, connected, enabled, unlockUrl }: Deskto
       if (version !== state.generation) return
       const locked = result.session?.locked === true
       setLocked(locked)
-      if (!locked) setUnlocking(false)
+      setUnlockUsername(result.session?.unlockUsername)
+      if (!locked && result.frame) setUnlocking(false)
       state.control = !locked && (result.session?.control ?? false)
       setControl(state.control)
       if (locked) {
@@ -361,8 +363,13 @@ export function DesktopViewer({ request, connected, enabled, unlockUrl }: Deskto
           )}
         </div>
       )}
-      {locked && unlocking && id && connected && !stopping && (
-        <DesktopUnlock id={id} unlockUrl={unlockUrl} onClose={() => setUnlocking(false)} />
+      {unlocking && id && connected && !stopping && (
+        <DesktopUnlock
+          id={id}
+          username={unlockUsername}
+          unlockUrl={unlockUrl}
+          onClose={() => setUnlocking(false)}
+        />
       )}
       {error && (
         <p role="alert" className="text-sm text-destructive">

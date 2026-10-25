@@ -386,6 +386,7 @@ export function createRuntimeServer(
             ticket.resourceId,
             undefined,
             url.searchParams.get('metrics') === '1',
+            url.searchParams.get('interaction') === '1',
           )
         })
         return

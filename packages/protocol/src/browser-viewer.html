@@ -134,12 +134,19 @@
         min-width: 0;
         order: 4;
         align-items: center;
-        height: 36px;
-        padding: 0 3px 0 10px;
+        height: 38px;
+        padding: 0 3px;
         margin: 0 5px;
-        border: 1px solid transparent;
-        border-radius: 11px;
-        background: var(--field);
+        border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+        border-radius: 999px;
+        background:
+          linear-gradient(165deg, #ffffff18, #ffffff03 58%),
+          color-mix(in srgb, var(--field) 78%, transparent);
+        -webkit-backdrop-filter: blur(20px) saturate(1.35);
+        backdrop-filter: blur(20px) saturate(1.35);
+        box-shadow:
+          inset 0 1px 0 #ffffff20,
+          0 2px 8px #0000000a;
       }
       #navigation:focus-within {
         border-color: var(--accent);
@@ -147,6 +154,8 @@
       }
       #navigation > svg {
         width: 15px;
+        padding: 0 9px;
+        box-sizing: content-box;
         height: 15px;
         color: var(--muted);
         flex-shrink: 0;
@@ -156,6 +165,14 @@
         width: 0;
         height: 100%;
         outline: none;
+        text-align: center;
+        padding: 6px 0;
+      }
+      #address:focus {
+        text-align: left;
+      }
+      #go {
+        border-radius: 50%;
       }
       #address::placeholder {
         color: var(--muted);
@@ -303,6 +320,22 @@
         background: white;
         flex-shrink: 0;
         outline-offset: -2px;
+      }
+      #linkPreview {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        max-width: min(640px, 100%);
+        padding: 4px 8px;
+        border: 1px solid var(--border);
+        border-radius: 0 6px 0 0;
+        background: var(--bar);
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        pointer-events: none;
       }
       #empty {
         max-width: 380px;
@@ -479,6 +512,23 @@
       #reload[aria-busy='true'] svg {
         animation: spin 1s linear infinite;
       }
+      @media (prefers-reduced-transparency: reduce),
+        (prefers-contrast: more),
+        (forced-colors: active) {
+        #navigation {
+          background: var(--field);
+          -webkit-backdrop-filter: none;
+          backdrop-filter: none;
+          border-color: var(--text);
+          box-shadow: none;
+        }
+      }
+      @media (prefers-contrast: more), (forced-colors: active) {
+        #navigation:focus-within {
+          outline: 2px solid Highlight;
+          outline-offset: 2px;
+        }
+      }
       @keyframes spin {
         to {
           transform: rotate(360deg);
@@ -500,7 +550,7 @@
           order: -1;
           flex-basis: 100%;
           margin: 0 0 4px;
-          height: 40px;
+          height: 44px;
         }
         #sessionState {
           flex: 1;
@@ -541,7 +591,10 @@
           height: 44px;
         }
         #navigation {
-          height: 44px;
+          height: 48px;
+        }
+        #navigation > svg {
+          padding: 0 14px;
         }
         #address {
           font-size: 16px;
@@ -584,7 +637,7 @@
           autocomplete="off"
           autocorrect="off"
           spellcheck="false"
-          placeholder="Enter a URL or localhost:3000"
+          placeholder="Enter website address"
         />
         <button id="go" type="submit" aria-label="Go" title="Go">
           <svg
@@ -672,6 +725,7 @@
         aria-label="Remote browser page. Tap to interact, swipe to scroll. Use Keyboard to type."
         hidden
       ></canvas>
+      <div id="linkPreview" hidden></div>
       <div id="empty">
         <div class="empty-icon">__HOME_ICON__</div>
         <h1 id="emptyTitle">Your project, live.</h1>

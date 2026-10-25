@@ -3,7 +3,14 @@ import { chromium } from './browser/harness.mjs'
 import { fileURLToPath } from 'node:url'
 import { readFileSync, readdirSync, mkdirSync } from 'node:fs'
 const root = fileURLToPath(new URL('../', import.meta.url))
-const viewer = `<html><body><script>window.addEventListener('message',event=>{const m=event.data;if(m.type==='connect'){const tab=new URL(m.url).searchParams.get('ticket');window.parent.postMessage({channel:'dovo-browser',type:'state',url:'http://localhost:3000/'+tab,title:'Page '+tab,back:false,forward:false,loading:false,editable:false},'*')}})</script></body></html>`
+const viewer = `<html><body><script>
+let tab='',url='',back=true;
+function state(){window.parent.postMessage({channel:'dovo-browser',type:'state',url,title:'Page '+tab,back,forward:false,loading:false,editable:false},'*')}
+window.addEventListener('message',event=>{const m=event.data;
+if(m.type==='connect'){tab=new URL(m.url).searchParams.get('ticket');url='http://localhost:3000/'+tab;window.parent.postMessage({channel:'dovo-browser',type:'connection',online:true},'*');state()}
+if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:m.input},'*');if(m.input.type==='navigate')url=m.input.url;state()}
+if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},'*');
+});</script></body></html>`
 const built = await build({
   stdin: {
     contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import {TooltipProvider} from '@dovo/studio-ui';createRoot(document.getElementById('app')).render(<TooltipProvider><BrowserPane taskId="task"/></TooltipProvider>);`,
@@ -53,6 +60,7 @@ export {browserModelCatalogCache} from '${root}packages/studio-core/src/workspac
 export {useSettingsDraft,useConfirmSettingsNavigation,useOptionalSettingsTarget} from '${root}packages/studio-core/src/settings-target.tsx';
 export const providers=[];export const useResolvedTheme=()=> 'dark';export const reducedMotion=()=>false;
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
+window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return {ok:true,ticket:body.tabId,tabId:body.tabId,profileId:body.profileId}};
 const browser=async(command)=>{window.calls.push(command)};
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
@@ -232,7 +240,7 @@ try {
     beforeStreaming
   )
     throw new Error('Unrelated streaming mutations resent native browser bounds')
-  await page.getByRole('button', { name: 'Reload preview', exact: true }).click()
+  await page.getByRole('button', { name: 'Reload', exact: true }).click()
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'reload'))
   await page.getByLabel('Browser options', { exact: true }).click()
   await page.getByRole('button', { name: 'Hard reload', exact: true }).click()
@@ -247,6 +255,43 @@ try {
   await page.getByRole('button', { name: 'New browser tab', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New remote tab · Remote Work', exact: true }).click()
   await page.getByRole('tab', { name: /Page/ }).waitFor()
+  if ((await toolbar.count()) !== 1)
+    throw new Error('Remote browser must use the shared navigation toolbar')
+  await page.getByRole('button', { name: 'Reload', exact: true }).click()
+  await page.waitForFunction(() => window.browserInputs.some((input) => input.type === 'reload'))
+  await page.evaluate(() => {
+    const frame = [...document.querySelectorAll('iframe')].find(
+      (frame) => frame.getBoundingClientRect().height > 0,
+    )
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: { channel: 'dovo-browser', type: 'focusAddress' },
+      }),
+    )
+  })
+  if (
+    !(await input.evaluate(
+      (node) =>
+        node === document.activeElement &&
+        node.selectionStart === 0 &&
+        node.selectionEnd === node.value.length,
+    ))
+  )
+    throw new Error('Remote address shortcut did not select the shared address field')
+  await input.fill('http://localhost:4321/shared-ui')
+  await input.press('Enter')
+  await page.waitForFunction(() =>
+    window.browserInputs.some(
+      (input) => input.type === 'navigate' && input.url === 'http://localhost:4321/shared-ui',
+    ),
+  )
+  await page.getByLabel('Browser options', { exact: true }).click()
+  await page.getByRole('combobox', { name: 'Viewport', exact: true }).selectOption('tablet')
+  await page.waitForFunction(() =>
+    window.browserViewports.some((viewport) => viewport.preset === 'tablet'),
+  )
+  await page.getByLabel('Browser options', { exact: true }).click()
   if (await page.getByText('Choose a device', { exact: true }).count())
     throw new Error('Device panel leaked into remote browser')
   const first = await page.getByRole('tab', { name: /Page/ }).textContent()
