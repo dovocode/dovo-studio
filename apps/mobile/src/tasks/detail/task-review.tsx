@@ -5,7 +5,7 @@ import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { pendingReviewComments } from '@dovo/protocol'
 import {
   changedFileFingerprint,
-  reviewFileState,
+  createReviewFileLookup,
   orderReviewFiles,
   pullFileKind,
 } from '@dovo/protocol'
@@ -153,6 +153,7 @@ export function TaskReview({
     () => new Map(sourceFiles.map((file) => [file.path, changedFileFingerprint(file)])),
     [sourceFiles],
   )
+  const reviewVersion = useMemo(() => JSON.stringify([...fingerprints]), [fingerprints])
   const review = useFileReview(
     {
       kind: 'task',
@@ -161,9 +162,10 @@ export function TaskReview({
       turnId: checkpoint || undefined,
       checkoutId: checkoutId || undefined,
     },
-    JSON.stringify([...fingerprints]),
+    reviewVersion,
     !since,
   )
+  const fileState = useMemo(() => createReviewFileLookup(review.progress), [review.progress?.files])
   const [related, setRelated] = useState(true),
     [toolsOpen, setToolsOpen] = useState(false),
     [wrapLines, setWrapLines] = useState(false)
@@ -175,13 +177,12 @@ export function TaskReview({
           viewed:
             !checkpoint && !checkoutId && scope === 'working'
               ? file.viewed
-              : (reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
-                  ?.viewed ?? false),
+              : (fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed ?? false),
         })),
         review.progress?.groups ?? [],
         related,
       ),
-    [sourceFiles, fingerprints, review.progress, related, checkpoint, checkoutId, scope],
+    [sourceFiles, fingerprints, fileState, review.progress, related, checkpoint, checkoutId, scope],
   )
   const stats = useMemo(
     () => new Map(sourceFiles.map((file) => [file.path, fileStats(file)])),
@@ -514,7 +515,7 @@ export function TaskReview({
                 !!edit ||
                 !!task.example ||
                 !file ||
-                !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+                !fileState(file.path, fingerprints.get(file.path) ?? '')
               }
               busy={review.busy}
               navigationDisabled={!!edit}

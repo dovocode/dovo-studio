@@ -175,3 +175,86 @@ it('replicates only public hub readings for offline Limits and clears unsupporte
   })
   expect(publishHubs).toHaveBeenLastCalledWith([])
 })
+
+it('publishes hub readings while a local provider is blocked, and refreshes local state without waiting for hubs', async () => {
+  for (const blocked of ['local', 'hubs']) {
+    const { profile, cache } = fixture()
+    let release: (value: unknown) => void = () => {},
+      published: () => void = () => {}
+    const gate = new Promise<unknown>((resolve) => (release = resolve))
+    const visible = new Promise<void>((resolve) => (published = resolve))
+    const hubs = [{ id: 'hub', label: 'Hub', url: 'http://hub/', enabled: true, limits: [] }]
+    const read: UsageRead = async (_, __, input, schema) => {
+      const section = decodeSections(input)
+      if (section === blocked) await gate
+      return decode(schema, {
+        checkedAt: new Date().toISOString(),
+        accounts: [],
+        ...(section === 'hubs' ? { hubs } : {}),
+      })
+    }
+    const pending = refreshUsageEntry({
+      profile,
+      cache,
+      read,
+      kind: 'limits',
+      force: false,
+      connected: true,
+      publish: () => {},
+      publishHubs: () => {
+        if (blocked === 'local') published()
+      },
+      refresh: async () => {
+        if (blocked === 'hubs') published()
+      },
+    })
+    await visible
+    release(undefined)
+    expect(await pending).toEqual([])
+  }
+})
+function decodeSections(input: unknown) {
+  return input && typeof input === 'object' && 'section' in input ? input.section : undefined
+}
+
+it('marks cached hub account health unavailable on a transport failure without deleting the last safe cache', async () => {
+  const { profile, cache } = fixture()
+  const hubs: UsageHub[] = [
+    {
+      id: 'hub',
+      label: 'Hub',
+      url: 'http://hub/',
+      enabled: true,
+      limits: [],
+      accounts: [
+        {
+          id: 'auth',
+          provider: 'codex',
+          account: { id: 'account', label: 'Account' },
+          status: 'ok',
+        },
+      ],
+    },
+  ]
+  await cache.write('usage-hubs', hubs)
+  const publishHubs = vi.fn<(value: UsageHub[]) => void>()
+  const read: UsageRead = async (_, __, input, schema) => {
+    if (decodeSections(input) === 'hubs') throw new Error('Connection lost')
+    return decode(schema, { checkedAt: new Date().toISOString(), accounts: [] })
+  }
+  const notices = await refreshUsageEntry({
+    profile,
+    cache,
+    read,
+    publishHubs,
+    publish: () => {},
+    refresh: async () => {},
+    kind: 'limits',
+    force: false,
+    connected: true,
+  })
+  expect(notices).toContain('Connection lost')
+  expect(publishHubs.mock.lastCall?.[0][0]?.accounts?.[0]?.status).toBe('failed')
+  const { usageHubsSchema } = await import('../workflow/plan-limits')
+  expect((await cache.read('usage-hubs', usageHubsSchema))?.value).toEqual(hubs)
+})

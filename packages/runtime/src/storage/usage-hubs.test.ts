@@ -321,3 +321,75 @@ it('bounds the whole hub refresh so queued hubs cannot outlive the client reques
     await remote.close()
   }
 })
+
+it('retains failed account windows, publishes healthy siblings, and drops removed/disabled auth files', async () => {
+  const db = openDatabase(':memory:'),
+    hubs = new UsageHubs(db)
+  let failure = false,
+    hideFailed = false
+  const remote = await hub(async (path, request) => {
+    if (path.endsWith('auth-files'))
+      return {
+        files: [
+          { id: 'healthy', auth_index: 'good', provider: 'codex', email: 'healthy@example.com' },
+          ...(!hideFailed
+            ? [
+                {
+                  id: 'failing',
+                  auth_index: 'bad',
+                  provider: 'codex',
+                  email: 'failing@example.com',
+                },
+              ]
+            : []),
+        ],
+      }
+    const input = await json(request)
+    if (failure && input.auth_index === 'bad') return { status_code: 429, body: 'private response' }
+    return {
+      status_code: 200,
+      body: JSON.stringify({
+        rate_limit: {
+          primary_window: {
+            used_percent: input.auth_index === 'good' ? 20 : 30,
+            limit_window_seconds: 18000,
+          },
+        },
+      }),
+    }
+  })
+  try {
+    hubs.save({ label: 'Hub', url: remote.url, managementKey: 'key', enabled: true })
+    const [before] = await hubs.read()
+    const previous = before!.limits.find((limit) => limit.account?.label === 'failing@example.com')!
+    failure = true
+    const [after] = await hubs.read(true)
+    expect(after!.accounts?.map((account) => account.status).sort()).toEqual(['failed', 'ok'])
+    expect(after!.limits.find((limit) => limit.account?.label === 'failing@example.com')).toEqual(
+      previous,
+    )
+    const { hubPlanLimitSources, accountPlanLimits, pooledPlanLimits, quotaReadingState } =
+      await import('@dovo/protocol')
+    const windows = accountPlanLimits(
+      hubPlanLimitSources(after!, { computer: 'Host · Hub', sourceId: 'hub', connected: true }),
+    )
+    expect(
+      quotaReadingState(
+        windows.find((window) => window.accountLabel === 'failing@example.com')!,
+        true,
+      ),
+    ).toBe('unavailable')
+    const pool = pooledPlanLimits(windows, Date.now(), after!.accounts)[0]!
+    expect(pool.available).toBe(1)
+    expect(pool.unknown).toBe(1)
+    hideFailed = true
+    const [removed] = await hubs.read(true)
+    expect(removed!.accounts).toHaveLength(1)
+    expect(removed!.limits).toHaveLength(1)
+    expect(removed!.error).toBeUndefined()
+  } finally {
+    await hubs.dispose()
+    db.close()
+    await remote.close()
+  }
+})

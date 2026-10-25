@@ -105,3 +105,48 @@ it('keeps hub management authenticated and never adds management credentials to 
     await f.cleanup()
   }
 })
+
+it('refreshes local providers and external hubs independently while retaining combined responses for older clients', async () => {
+  const token = randomBytes(32).toString('base64url'),
+    f = await fixture()
+  const runtime = await startRuntime({
+    databasePath: join(f.directory, 'independent.sqlite'),
+    ownerToken: token,
+    port: 0,
+  })
+  let release: () => void = () => {}
+  try {
+    runtime.services.store.update(() => f.workspace)
+    let entered: () => void = () => {}
+    const started = new Promise<void>((resolve) => (entered = resolve)),
+      gate = new Promise<void>((resolve) => (release = resolve))
+    const hubs = vi.spyOn(runtime.services.store.usageHubs, 'read').mockImplementation(async () => {
+      entered()
+      await gate
+      return []
+    })
+    vi.mocked(readUsageLimits).mockResolvedValue({ account: undefined, limits: [] })
+    const call = (section?: 'local' | 'hubs') =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/usage/limits/read`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: true, section }),
+      })
+    const pending = call('hubs')
+    await started
+    expect(await (await call('local')).json()).toMatchObject({
+      accounts: [{ status: 'unsupported' }],
+    })
+    expect(hubs).toHaveBeenCalledOnce()
+    release()
+    expect(await (await pending).json()).toMatchObject({ hubs: [], accounts: [] })
+    expect(await (await call()).json()).toMatchObject({
+      hubs: [],
+      accounts: [{ status: 'unsupported' }],
+    })
+  } finally {
+    release()
+    await runtime.close()
+    await f.cleanup()
+  }
+})

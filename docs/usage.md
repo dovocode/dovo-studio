@@ -91,13 +91,22 @@ Enabled Codex and Claude auth files are queried through CLIProxyAPI's management
 endpoint; unsupported or disabled files are skipped. Claude model-scoped weekly windows are
 retained. Verified Codex identities deduplicate with the same locally reported workspace/plan.
 Without a reliable workspace/organisation identity, accounts are kept separate rather than merged by
-email alone. Partial failures are displayed explicitly and that hub's readings do not count as fresh
-availability. A failed hub read preserves its last reading. Credential-scoped safe client replicas
-remain visible offline. Older runtimes without hub support continue showing their normal local
-account limits. Hub reset-credit redemption is not included; existing verified local-account
-redemption is unchanged.
+email alone. Partial failures mark only the affected accounts unavailable; healthy accounts still
+contribute to pooled availability. Failed accounts retain their previous windows and original
+reading timestamps. Known accounts without a successful reading appear as unknown segments, while
+unsupported accounts are excluded. Removed or disabled auth files lose their previous windows on the
+next successful discovery. A failed whole-hub read preserves its last reading and marks its accounts
+unavailable. Credential-scoped safe client replicas remain visible offline. Older runtimes without
+hub support continue showing their normal local account limits. Hub reset-credit redemption is not
+included; existing verified local-account redemption is unchanged.
 
 Costs and Tokens read history and pricing without probing subscription accounts or hubs. Limits
 reads account windows without downloading usage history, scanning CLI transcripts or loading prices.
 The CLI ownership exclusion scan projects only session identities in yielding 256-row pages instead
 of decoding the complete history a second time.
+
+Local account limits and hub readings refresh independently, so a slow hub does not block local
+availability (or vice versa). The usage endpoint accepts an optional `section` of `local` or `hubs`;
+omitting it retains the combined response. Older runtimes still provide their combined response.
+Transport failures mark cached hub accounts unavailable without replacing the last successful disk
+cache.

@@ -73,7 +73,7 @@ const hubRead=(path,input)=>{
   window.hubEntries=[...window.hubEntries.filter(h=>h.id!==value.id),value];return window.hubEntries;
  }
 };
-const cache={read:async()=>null,write:async()=>{}};const readRuntime=async(profile,path,input)=>{(window.usageReads??=[]).push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);return path==='/api/usage/limits/read'?{checkedAt:new Date().toISOString(),accounts:[],hubs:window.hubEntries}:{sourceId:profile.id,records:[],notices:[]}};let overviews;const listeners=new Set();const subscribe=callback=>{listeners.add(callback);return ()=>listeners.delete(callback)};const current=()=>overviews??=[window.usageHost];window.changeUsageScenario=scenario=>{overviews=(scenario==='unpaired'?[]:[{...window.usageHost,snapshot:{workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[{...window.missingTurn,tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[window.missingTurn]}]:window.usageHost.snapshot.workspace.tasks,planLimits:[]}}}]);listeners.forEach(callback=>callback())};export const useRuntime=()=>({overviews:useSyncExternalStore(subscribe,current),readRuntime,refreshRuntime:async()=>{},cacheForRuntime:()=>cache});`,
+const cache={read:async()=>null,write:async()=>{}};const readRuntime=async(profile,path,input)=>{(window.usageReads??=[]).push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);return path==='/api/usage/limits/read'?{checkedAt:new Date().toISOString(),accounts:[],hubs:window.hubEntries.map(hub=>window.partialHub?{...hub,error:'1 of 2 accounts could not report limits.',accounts:[{id:'good',provider:'claude',account:{id:'hub-account',label:'Hub account'},status:'ok'},{id:'bad',provider:'claude',account:{id:'unreported',label:'Failed hub account'},status:'failed'}]}:hub)}:{sourceId:profile.id,records:[],notices:[]}};let overviews;const listeners=new Set();const subscribe=callback=>{listeners.add(callback);return ()=>listeners.delete(callback)};const current=()=>overviews??=[window.usageHost];window.changeUsageScenario=scenario=>{overviews=(scenario==='unpaired'?[]:[{...window.usageHost,snapshot:{workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[{...window.missingTurn,tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[window.missingTurn]}]:window.usageHost.snapshot.workspace.tasks,planLimits:[]}}}]);listeners.forEach(callback=>callback())};export const useRuntime=()=>({overviews:useSyncExternalStore(subscribe,current),readRuntime,refreshRuntime:async()=>{},cacheForRuntime:()=>cache});`,
     },
   ],
 )
@@ -177,6 +177,18 @@ try {
   )
   await page.getByText('Pooled availability', { exact: true }).waitFor()
   assert.ok(await page.getByRole('img', { name: /Hub account: 75% left/ }).count())
+  await page.evaluate(() => (window.partialHub = true))
+  await page.getByRole('button', { name: 'Refresh usage', exact: true }).click()
+  await page.getByText(/1 of 2 accounts available/).waitFor()
+  assert.equal(
+    await page.getByRole('img', { name: 'Failed hub account: unknown', exact: true }).count(),
+    1,
+  )
+  assert.ok(
+    await page.getByRole('img', { name: /Hub account: 75% left/ }).count(),
+    'A failed sibling must not disable healthy quota',
+  )
+  await page.evaluate(() => (window.partialHub = false))
   await page.getByRole('button', { name: 'Edit Home hub', exact: true }).click()
   assert.equal(
     await page.getByLabel('Management key', { exact: true }).inputValue(),

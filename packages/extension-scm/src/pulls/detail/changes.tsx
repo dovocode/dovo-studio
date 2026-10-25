@@ -1,6 +1,7 @@
+import { pullCommentsByFile } from '@dovo/protocol'
 import {
   pullFileFingerprint,
-  reviewFileState,
+  createReviewFileLookup,
   orderReviewFiles,
   pullFileKind,
   type FileKind,
@@ -52,11 +53,13 @@ export function PullChanges({
       ),
     [visibleFiles, headSha, baseSha],
   )
+  const reviewVersion = useMemo(() => JSON.stringify([...fingerprints]), [fingerprints])
   const review = useFileReview(
     { kind: 'pull', repositoryId, number: detail.pull.number },
-    JSON.stringify([...fingerprints]),
+    reviewVersion,
     active,
   )
+  const fileState = useMemo(() => createReviewFileLookup(review.progress), [review.progress?.files])
   const [kind, setKind] = useState<FileKind>()
   const [related, setRelated] = useApplicationState(true)
   const files = useMemo(
@@ -72,26 +75,16 @@ export function PullChanges({
     () =>
       new Set(
         files
-          .filter(
-            (file) =>
-              reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
-                ?.viewed,
-          )
+          .filter((file) => fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed)
           .map((file) => file.path),
       ),
-    [files, fingerprints, review.progress],
+    [files, fingerprints, fileState],
   )
   const { request, connected } = useWorkspace()
-  const commentsByPath = useMemo(() => {
-    const byPath = new Map<string, PullDetail['comments']>()
-    for (const comment of detail.comments) {
-      if (comment.kind !== 'inline' || !comment.path) continue
-      const comments = byPath.get(comment.path) ?? []
-      comments.push(comment)
-      byPath.set(comment.path, comments)
-    }
-    return byPath
-  }, [detail.comments])
+  const commentsByPath = useMemo(
+    () => pullCommentsByFile(detail.files, detail.comments),
+    [detail.files, detail.comments],
+  )
   const [selected, setSelected] = useApplicationState(files[0]?.path ?? ''),
     [split, setSplit] = useApplicationState(
       !embedded && readAppPreferences().diffLayout === 'split',
@@ -192,11 +185,7 @@ export function PullChanges({
           disabled={
             !review.ready ||
             !selectedFile ||
-            !reviewFileState(
-              review.progress,
-              selectedFile.path,
-              fingerprints.get(selectedFile.path) ?? '',
-            )
+            !fileState(selectedFile.path, fingerprints.get(selectedFile.path) ?? '')
           }
           busy={review.busy}
           error={review.error}
@@ -207,13 +196,7 @@ export function PullChanges({
         <div className="min-w-0 flex-1 space-y-4 py-3">
           {!files.length && <p className="p-4 text-xs text-muted-foreground">No matching files.</p>}
           {files.map((file) => {
-            const comments = file.previousPath
-              ? detail.comments.filter(
-                  (comment) =>
-                    comment.kind === 'inline' &&
-                    (comment.path === file.path || comment.path === file.previousPath),
-                )
-              : (commentsByPath.get(file.path) ?? [])
+            const comments = commentsByPath.get(file.path) ?? []
             return (
               <article
                 key={file.path}
@@ -243,11 +226,7 @@ export function PullChanges({
                         disabled={
                           !review.ready ||
                           review.busy ||
-                          !reviewFileState(
-                            review.progress,
-                            file.path,
-                            fingerprints.get(file.path) ?? '',
-                          )
+                          !fileState(file.path, fingerprints.get(file.path) ?? '')
                         }
                         aria-label={`Viewed ${file.path}`}
                         onCheckedChange={(checked) =>

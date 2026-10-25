@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   type TitleGenerationSettings,
   type ReviewProgress,
@@ -45,8 +45,10 @@ export function useFileReview(context: ReviewContext, version: string, enabled =
     null,
   )
   const state = value?.key === key ? value.state : null
-  const evidence = JSON.stringify(
-    state?.progress?.files.map(({ path, fingerprint }) => [path, fingerprint]),
+  const evidence = useMemo(
+    () =>
+      JSON.stringify(state?.progress?.files.map(({ path, fingerprint }) => [path, fingerprint])),
+    [state?.progress?.files],
   )
   const analysisKey = `${key}:${version}:${evidence}`
   const analysisRef = useRef(analysisKey)

@@ -221,3 +221,23 @@ Run `node scripts/benchmark-usage-history.mjs` after building runtime dependenci
 versus **46.64 ms** for identity projection (**62.0% lower scan time**), returning the same 2,500
 owned session IDs. It uses a warm-up plus nine samples per path and asserts identical identity sets.
 This measures the ownership scan, not complete dashboard/network latency or physical-device speed.
+
+## Independent usage refresh and indexed PR review
+
+Local provider and external hub reads now publish independently on desktop and mobile. Partial hub
+failures retain the affected account's last verified windows and timestamps without hiding healthy
+siblings. Known accounts that have never reported a window appear as unknown segments; unsupported
+accounts do not inflate the pool. Failed observations never count as available.
+
+PR and thread review viewers build a memoized path/fingerprint lookup instead of searching the full
+review progress array for each file. Inline PR comments are indexed by current and previous paths
+once, preserving timeline order and rename handling. Revision evidence and fingerprint serialization
+are memoized so draft edits and unrelated renders do not repeat them.
+
+Run `node scripts/benchmark-review-lookups.mjs` (default baseline `4cd3f3b5`). A warm Node run with
+2,000 files and 10,000 comments measured median review-state bookkeeping at **13.464 ms before /
+1.083 ms after**, and renamed-comment grouping at **58.728 / 1.126 ms**. Index construction is
+included in each sample. The script checks identical results and comment order, warms both
+implementations, and takes 11 samples. These are isolated CPU measurements, not total PR-opening or
+device speed. The 120-file browser stability check additionally verifies drafts, viewed marks, focus
+and selection.

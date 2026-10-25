@@ -1,7 +1,7 @@
 import { useTaskReview } from './use-task-review'
 import { CodeReviewReport, type ReviewTab } from './code-review-report'
 import type { CodeFinding } from '@dovo/protocol'
-import { changedFileFingerprint, reviewFileState, orderReviewFiles } from '@dovo/protocol'
+import { changedFileFingerprint, createReviewFileLookup, orderReviewFiles } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
 import { OrganizeReview, FileReviewControls } from '@dovo/studio-ui'
 import { useAppPreferences, whitespaceOnlyFile } from '@dovo/studio-core'
@@ -146,6 +146,7 @@ function PrimaryReviewPane({
     () => new Map(visibleFiles.map((file) => [file.path, changedFileFingerprint(file)])),
     [visibleFiles],
   )
+  const reviewVersion = useMemo(() => JSON.stringify([...fingerprints]), [fingerprints])
   const review = useFileReview(
     {
       kind: 'task',
@@ -158,9 +159,10 @@ function PrimaryReviewPane({
             : 'turn',
       turnId: selectedTurn?.id,
     },
-    JSON.stringify([...fingerprints]),
+    reviewVersion,
     source.kind !== 'review',
   )
+  const fileState = useMemo(() => createReviewFileLookup(review.progress), [review.progress?.files])
   const [related, setRelated] = useApplicationState(true)
   const files = useMemo(
     () =>
@@ -170,13 +172,12 @@ function PrimaryReviewPane({
           viewed:
             source.kind === 'working'
               ? file.viewed
-              : (reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
-                  ?.viewed ?? false),
+              : (fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed ?? false),
         })),
         review.progress?.groups ?? [],
         related,
       ),
-    [visibleFiles, fingerprints, review.progress, related, source.kind],
+    [visibleFiles, fingerprints, review.progress, related, source.kind, fileState],
   )
   const file = files.find((item) => item.path === selected) ?? files[0]
   displayedPath.current = file?.path ?? ''
@@ -465,7 +466,7 @@ function PrimaryReviewPane({
               editing ||
               !!task.example ||
               !file ||
-              !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+              !fileState(file.path, fingerprints.get(file.path) ?? '')
             }
             busy={review.busy}
             navigationDisabled={editing}

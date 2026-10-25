@@ -34,12 +34,16 @@ export async function refreshUsageEntry(input: {
           return null
         })
   if (cached) publish(cached.value)
+  let savedHubs: UsageHub[] = []
   if (input.kind !== 'history' && input.publishHubs) {
     const saved = await cache.read('usage-hubs', usageHubsSchema).catch((cause) => {
       notices.push(`Hub cache: ${error(cause)}`)
       return null
     })
-    if (saved) input.publishHubs(saved.value)
+    if (saved) {
+      savedHubs = saved.value
+      input.publishHubs(saved.value)
+    }
   }
   if (!input.connected) return notices
   const history =
@@ -64,16 +68,10 @@ export async function refreshUsageEntry(input: {
       : read(
           profile,
           '/api/usage/limits/read',
-          { force: input.force },
+          { force: input.force, ...(input.publishHubs ? { section: 'local' } : {}) },
           usageLimitsReadSchema,
           'POST',
         ).then(async (limits) => {
-          if (input.publishHubs) {
-            input.publishHubs(limits.hubs ?? [])
-            await cache
-              .write('usage-hubs', limits.hubs ?? [])
-              .catch((cause) => notices.push(`Hub cache: ${error(cause)}`))
-          }
           notices.push(
             ...limits.accounts.flatMap((account) =>
               account.status === 'ok'
@@ -85,7 +83,37 @@ export async function refreshUsageEntry(input: {
           )
           await input.refresh()
         })
-  const results = await Promise.allSettled([history, limits])
+  // Old runtimes ignore the optional section and keep returning their combined result.
+  const hubs =
+    input.kind === 'history' || !input.publishHubs
+      ? Promise.resolve()
+      : read(
+          profile,
+          '/api/usage/limits/read',
+          { force: input.force, section: 'hubs' },
+          usageLimitsReadSchema,
+          'POST',
+        )
+          .then(async (result) => {
+            input.publishHubs?.(result.hubs ?? [])
+            await cache
+              .write('usage-hubs', result.hubs ?? [])
+              .catch((cause) => notices.push(`Hub cache: ${error(cause)}`))
+          })
+          .catch((cause) => {
+            input.publishHubs?.(
+              savedHubs.map((hub) => ({
+                ...hub,
+                accounts: hub.accounts?.map((account) => ({
+                  ...account,
+                  status: 'failed' as const,
+                })),
+                error: 'Hub readings could not be refreshed.',
+              })),
+            )
+            throw cause
+          })
+  const results = await Promise.allSettled([history, limits, hubs])
   for (const result of results) if (result.status === 'rejected') notices.push(error(result.reason))
   return [...new Set(notices)]
 }

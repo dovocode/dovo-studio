@@ -10,6 +10,7 @@ import {
   usageHubSchema,
   type UsageHub,
   type UsageHubInput,
+  type UsageHubAccount,
   type PlanLimit,
 } from '@dovo/protocol'
 import { reportedUsageAccount } from '../agents/tasks/usage-account.js'
@@ -213,18 +214,36 @@ export class UsageHubs {
       throw new Error('Hub request failed. Check its address, management key and connectivity.')
     }
   }
-  private async probe(entry: Stored, signal: AbortSignal): Promise<UsageHub> {
+  private async probe(entry: Stored, signal: AbortSignal, previous: UsageHub): Promise<UsageHub> {
     const accounts = decode(
       authSchema,
       await this.management(entry, 'auth-files', undefined, signal),
     ).files.filter((account) => !account.disabled && ['codex', 'claude'].includes(account.provider))
     const limits: PlanLimit[] = [],
-      failures: string[] = []
+      readings: UsageHubAccount[] = []
+    const oldAccounts = new Map((previous.accounts ?? []).map((account) => [account.id, account]))
+    const oldLimits = new Map<string, PlanLimit[]>()
+    for (const limit of previous.limits) {
+      if (!limit.account) continue
+      const rows = oldLimits.get(limit.account.id) ?? []
+      rows.push(limit)
+      oldLimits.set(limit.account.id, rows)
+    }
+    let failures = 0
     const iterator = accounts.values()
     await Promise.all(
       Array.from({ length: Math.min(4, accounts.length) }, async () => {
         for (let next = iterator.next(); !next.done; next = iterator.next()) {
           const account = next.value
+          const provider = account.provider === 'codex' ? 'codex' : 'claude'
+          const id = createHash('sha256')
+            .update(JSON.stringify([entry.url, provider, account.id]))
+            .digest('hex')
+          const old = oldAccounts.get(id)
+          let identity: PlanLimit['account'] = old?.account ?? {
+            id,
+            label: account.email ?? account.id,
+          }
           try {
             const codex = account.provider === 'codex'
             const response = decode(
@@ -258,7 +277,7 @@ export class UsageHubs {
             )
             if (response.status_code < 200 || response.status_code >= 300)
               throw new Error('Provider refused hub request')
-            let reading: PlanLimit[], identity: PlanLimit['account']
+            let reading: PlanLimit[]
             if (codex) {
               const usage = decode(codexSchema, JSON.parse(response.body))
               const window = (value: Schema.Schema.Type<typeof codexWindow> | undefined) =>
@@ -289,7 +308,7 @@ export class UsageHubs {
                 workspaceRouting: account.id_token?.chatgpt_account_id
                   ? { chatgptAccountId: account.id_token.chatgpt_account_id }
                   : undefined,
-              })
+              }) ?? { id, label: account.email ?? account.id }
             } else {
               const usage = decode(claudeSchema, JSON.parse(response.body))
               reading = reportedPlanLimits('claude', 'account/usage/read', {
@@ -309,16 +328,18 @@ export class UsageHubs {
                 ),
               })
             }
-            // Without a verified workspace identity, only deduplicate the same hub/auth file.
-            identity ??= {
-              id: createHash('sha256')
-                .update(JSON.stringify([entry.url, account.provider, account.id]))
-                .digest('hex'),
-              label: account.email ?? account.id,
-            }
+            readings.push({
+              id,
+              provider,
+              account: identity,
+              status: reading.length ? 'ok' : 'unsupported',
+            })
             limits.push(...reading.map((limit) => ({ ...limit, account: identity })))
           } catch {
-            failures.push('An account could not report limits.')
+            failures++
+            readings.push({ id, provider, account: identity, status: 'failed' })
+            // Retain only this auth file's prior observation; removed/disabled files never enter this loop.
+            limits.push(...(oldLimits.get(identity.id) ?? []))
           }
         }
       }),
@@ -326,9 +347,10 @@ export class UsageHubs {
     return {
       ...this.public(entry),
       limits,
+      accounts: readings.sort((a, b) => a.id.localeCompare(b.id)),
       checkedAt: new Date().toISOString(),
-      ...(failures.length
-        ? { error: `${failures.length} of ${accounts.length} accounts could not report limits.` }
+      ...(failures
+        ? { error: `${failures} of ${accounts.length} accounts could not report limits.` }
         : {}),
     }
   }
@@ -363,9 +385,13 @@ export class UsageHubs {
             value: saved,
             pending: undefined as Promise<UsageHub> | undefined,
           }
-          const pending = this.probe(entry, signal)
+          const pending = this.probe(entry, signal, saved)
             .catch(() => ({
               ...saved,
+              accounts: saved.accounts?.map((account) => ({
+                ...account,
+                status: 'failed' as const,
+              })),
               error:
                 'The hub could not report usage. Check its address, management key and connectivity.',
             }))

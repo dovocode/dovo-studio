@@ -209,8 +209,13 @@ export function mergePlanLimits(
   }
   return [...merged.values()]
 }
-export function quotaReadingState(limit: PlanLimit, connected: boolean, now = Date.now()) {
+export function quotaReadingState(
+  limit: PlanLimit & { readError?: boolean },
+  connected: boolean,
+  now = Date.now(),
+) {
   if (!connected) return 'offline'
+  if (limit.readError) return 'unavailable'
   if (!Number.isFinite(Date.parse(limit.updatedAt))) return 'stale'
   if (limit.resetsAt && limit.resetsAt * 1000 <= now) return 'awaiting'
   return now - Date.parse(limit.updatedAt) > 5 * 60_000 ? 'stale' : 'fresh'
@@ -222,6 +227,7 @@ export function accountPlanLimits(
     computer: string
     sourceId?: string
     connected?: boolean
+    readError?: boolean
     limits: readonly PlanLimit[]
   }[],
   now = Date.now(),
@@ -235,6 +241,7 @@ export function accountPlanLimits(
       accountKey: string
       sourceId?: string
       connected: boolean
+      readError: boolean
     }
   >()
   for (const source of sources)
@@ -253,7 +260,10 @@ export function accountPlanLimits(
       const reading =
         previous &&
         (Date.parse(previous.updatedAt) > Date.parse(limit.updatedAt) ||
-          (previous.updatedAt === limit.updatedAt && previous.connected && !source.connected))
+          (previous.updatedAt === limit.updatedAt &&
+            previous.connected &&
+            !previous.readError &&
+            (!source.connected || source.readError)))
           ? previous
           : limit
       windows.set(key, {
@@ -263,6 +273,7 @@ export function accountPlanLimits(
         sourceId: reading === previous ? previous?.sourceId : source.sourceId,
         computers,
         connected: reading === previous ? previous.connected : (source.connected ?? true),
+        readError: reading === previous ? previous.readError : (source.readError ?? false),
         accountLabel: limit.account
           ? `${limit.account.label}${limit.account.subscription ? ` · ${limit.account.subscription}` : ''}`
           : `Unidentified account · ${source.computer}`,
@@ -331,7 +342,15 @@ export const resetCreditsSchema = mutableStruct({
 })
 export const resetCreditResultSchema = mutableStruct({ outcome: Schema.String })
 
+export const usageHubAccountSchema = mutableStruct({
+  id: Schema.String,
+  provider: Schema.Literals(['codex', 'claude']),
+  account: usageAccountSchema,
+  status: Schema.Literals(['ok', 'failed', 'unsupported']),
+})
+export type UsageHubAccount = Schema.Schema.Type<typeof usageHubAccountSchema>
 export const usageHubSchema = mutableStruct({
+  accounts: Schema.optional(mutableArray(usageHubAccountSchema)),
   id: Schema.String,
   label: Schema.String,
   url: Schema.String,
@@ -375,7 +394,11 @@ export const usageLimitsReadSchema = mutableStruct({
 })
 
 /** One equally sized segment per account, never a sum of different subscription capacities. */
-export function pooledPlanLimits(windows: ReturnType<typeof accountPlanLimits>, now = Date.now()) {
+export function pooledPlanLimits(
+  windows: ReturnType<typeof accountPlanLimits>,
+  now = Date.now(),
+  knownAccounts: readonly UsageHubAccount[] = [],
+) {
   const accounts = new Map<string, typeof windows>()
   for (const window of windows) {
     const key = JSON.stringify([window.provider, window.bucketId ?? window.provider])
@@ -400,6 +423,15 @@ export function pooledPlanLimits(windows: ReturnType<typeof accountPlanLimits>, 
       account.windows.set(row.windowId ?? row.window, row)
       if (row.window === 'Weekly') account.weekly = row
       byAccount.set(row.accountKey, account)
+    }
+    for (const account of knownAccounts) {
+      if (
+        account.status === 'unsupported' ||
+        JSON.stringify([account.provider, account.provider]) !== bucket ||
+        byAccount.has(account.account.id)
+      )
+        continue
+      byAccount.set(account.account.id, { label: account.account.label, windows: new Map() })
     }
     const identities = [...byAccount.keys()].sort()
     const definitions = new Map(readings.map((row) => [row.windowId ?? row.window, row]))
@@ -463,4 +495,31 @@ export function pooledPlanLimits(windows: ReturnType<typeof accountPlanLimits>, 
       }
     })
   })
+}
+
+/** Per-account health prevents one failed auth file from disabling healthy accounts. */
+export function hubPlanLimitSources(
+  hub: UsageHub,
+  source: { computer: string; sourceId: string; connected: boolean },
+) {
+  if (!hub.accounts)
+    return [{ ...source, connected: source.connected && !hub.error, limits: hub.limits }]
+  const status = new Map<string, boolean>()
+  for (const account of hub.accounts)
+    status.set(
+      account.account.id,
+      (status.get(account.account.id) ?? false) || account.status === 'ok',
+    )
+  const grouped = new Map<string, PlanLimit[]>()
+  for (const limit of hub.limits) {
+    const id = limit.account?.id ?? ''
+    const limits = grouped.get(id) ?? []
+    limits.push(limit)
+    grouped.set(id, limits)
+  }
+  return [...grouped].map(([id, limits]) => ({
+    ...source,
+    readError: status.get(id) !== true,
+    limits,
+  }))
 }

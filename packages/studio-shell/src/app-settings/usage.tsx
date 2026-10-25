@@ -1,3 +1,4 @@
+import { hubPlanLimitSources } from '@dovo/protocol'
 import { UsageHubs } from './usage-hubs'
 import { UsagePool } from './usage-pool'
 import { runtimeComputerName } from '@dovo/protocol'
@@ -189,12 +190,13 @@ export default function UsageSettings() {
       },
       ...(hubs[entry.profile.id] ?? [])
         .filter((hub) => hub.enabled)
-        .map((hub) => ({
-          computer: `${runtimeComputerName(entry)} · ${hub.label}`,
-          sourceId: `${entry.profile.id}:hub:${hub.id}`,
-          connected: entry.connected && !hub.error,
-          limits: hub.limits,
-        })),
+        .flatMap((hub) =>
+          hubPlanLimitSources(hub, {
+            computer: `${runtimeComputerName(entry)} · ${hub.label}`,
+            sourceId: `${entry.profile.id}:hub:${hub.id}`,
+            connected: entry.connected,
+          }),
+        ),
     ]),
     now,
   )
@@ -393,7 +395,15 @@ export default function UsageSettings() {
                 </p>
               )),
           )}
-          <UsagePool limits={limits} now={now} />
+          <UsagePool
+            limits={limits}
+            now={now}
+            accounts={hosts.flatMap((entry) =>
+              (hubs[entry.profile.id] ?? [])
+                .filter((hub) => hub.enabled)
+                .flatMap((hub) => hub.accounts ?? []),
+            )}
+          />
           <div>
             <h2 className="text-sm font-medium">Account limits</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">

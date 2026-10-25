@@ -61,7 +61,7 @@ const hubRead=(path,input)=>{
  }
 };
 
-const readRuntime=async(profile,path,input)=>{window.usageReads.push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);if(path==='/api/usage/limits/read'){window.usageProbes++;return {checkedAt:new Date().toISOString(),accounts:[{agentId:'agent',provider:'codex',status:'ok'}],hubs:window.hubEntries}};if(path==='/api/usage/prices/write'){window.usageWrites.push(input);return {ok:true}};return {sourceId:'stable',records:[],notices:[]}};
+const readRuntime=async(profile,path,input)=>{window.usageReads.push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);if(path==='/api/usage/limits/read'){window.usageProbes++;return {checkedAt:new Date().toISOString(),accounts:[{agentId:'agent',provider:'codex',status:'ok'}],hubs:window.hubEntries.map(hub=>window.partialHub?{...hub,error:'1 of 2 accounts could not report limits.',accounts:[{id:'good',provider:'claude',account:{id:'hub-account',label:'Hub account'},status:'ok'},{id:'bad',provider:'claude',account:{id:'unreported',label:'Failed hub account'},status:'failed'}]}:hub)}};if(path==='/api/usage/prices/write'){window.usageWrites.push(input);return {ok:true}};return {sourceId:'stable',records:[],notices:[]}};
 const listeners=new Set();const subscribe=callback=>{listeners.add(callback);return ()=>listeners.delete(callback)};
 window.changeUsageScenario=scenario=>{runtimes=scenario==='unpaired'?[]:initialRuntimes.map(entry=>({...entry,snapshot:{workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...tasks[0],turns:[{...turn('zero',1),tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...tasks[0],turns:[turn('missing',1)]}]:tasks,planLimits:[]}}}));listeners.forEach(callback=>callback())};
 export const useWorkspace=()=>{useSyncExternalStore(subscribe,()=>runtimes);return {runtimes,readRuntime,refreshRuntime:async()=>{},runtimeReadCache:()=>cache}};`,
@@ -104,7 +104,7 @@ try {
     () => window.usageReads.filter((path) => path === '/api/usage/history/read').length,
   )
   await page.getByRole('radio', { name: 'Limits', exact: true }).click()
-  await page.waitForFunction(() => window.usageProbes === 1)
+  await page.waitForFunction(() => window.usageProbes === 2)
   assert.equal(
     await page.evaluate(
       () => window.usageReads.filter((path) => path === '/api/usage/history/read').length,
@@ -233,6 +233,18 @@ try {
   )
   await page.getByText('Pooled availability', { exact: true }).waitFor()
   assert.ok(await page.getByRole('img', { name: /Hub account: 75% left/ }).count())
+  await page.evaluate(() => (window.partialHub = true))
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await page.getByText(/1 of 2 accounts available/).waitFor()
+  assert.equal(
+    await page.getByRole('img', { name: 'Failed hub account: unknown', exact: true }).count(),
+    1,
+  )
+  assert.ok(
+    await page.getByRole('img', { name: /Hub account: 75% left/ }).count(),
+    'A failed sibling must not disable healthy quota',
+  )
+  await page.evaluate(() => (window.partialHub = false))
   await page.screenshot({ path: root + 'work/usage-preview/hubs-narrow.png', fullPage: true })
   await page.getByRole('button', { name: 'Edit Home hub', exact: true }).click()
   assert.equal(

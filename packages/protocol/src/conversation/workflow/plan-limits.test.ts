@@ -268,3 +268,52 @@ it('waits for all depleted account windows and treats an expired weekly gate as 
   expect(project(now / 1000 + 3600).nextReset).toBe(now / 1000 + 7200)
   expect(project(now / 1000 - 1).unknown).toBe(1)
 })
+
+it('keeps never-reported hub accounts visible as unknown without counting unsupported subscriptions', async () => {
+  const { pooledPlanLimits, hubPlanLimitSources } = await import('./plan-limits')
+  const accounts = [
+    {
+      id: 'a',
+      provider: 'codex' as const,
+      account: { id: 'good', label: 'Good' },
+      status: 'ok' as const,
+    },
+    {
+      id: 'b',
+      provider: 'codex' as const,
+      account: { id: 'bad', label: 'Bad' },
+      status: 'failed' as const,
+    },
+    {
+      id: 'c',
+      provider: 'codex' as const,
+      account: { id: 'api', label: 'API' },
+      status: 'unsupported' as const,
+    },
+  ]
+  const hub = {
+    id: 'hub',
+    label: 'Hub',
+    url: 'http://hub/',
+    enabled: true,
+    error: '1 account failed',
+    accounts,
+    limits: [
+      {
+        provider: 'codex' as const,
+        window: 'Session',
+        account: accounts[0]!.account,
+        usedPercent: 25,
+        updatedAt: new Date().toISOString(),
+      },
+    ],
+  }
+  const windows = accountPlanLimits(
+    hubPlanLimitSources(hub, { computer: 'Host', sourceId: 'hub', connected: true }),
+  )
+  const pool = pooledPlanLimits(windows, Date.now(), accounts)[0]!
+  expect(pool.segments).toHaveLength(2)
+  expect(pool.available).toBe(1)
+  expect(pool.unknown).toBe(1)
+  expect(pool.segments.find((segment) => segment.accountKey === 'bad')?.remaining).toBeNull()
+})

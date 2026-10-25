@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import {
   changedFileFingerprint,
   checkpointFiles,
-  reviewFileState,
+  createReviewFileLookup,
   orderReviewFiles,
 } from '@dovo/protocol'
 import { useFileReview } from '@dovo/studio-core'
@@ -32,6 +32,7 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
     () => new Map(sourceFiles.map((file) => [file.path, changedFileFingerprint(file)])),
     [sourceFiles],
   )
+  const reviewVersion = useMemo(() => JSON.stringify([...fingerprints]), [fingerprints])
   const review = useFileReview(
     {
       kind: 'task',
@@ -40,22 +41,21 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
       source: turnId ? 'turn' : 'working',
       turnId: turnId || undefined,
     },
-    JSON.stringify([...fingerprints]),
+    reviewVersion,
   )
+  const fileState = useMemo(() => createReviewFileLookup(review.progress), [review.progress?.files])
   const [related, setRelated] = useState(true)
   const files = useMemo(
     () =>
       orderReviewFiles(
         sourceFiles.map((file) => ({
           ...file,
-          viewed:
-            reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
-              ?.viewed ?? false,
+          viewed: fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed ?? false,
         })),
         review.progress?.groups ?? [],
         related,
       ),
-    [sourceFiles, fingerprints, review.progress, related],
+    [sourceFiles, fingerprints, review.progress, related, fileState],
   )
   const file = files.find((item) => item.path === path) ?? files[0]
   const link = task.linkedCheckouts?.find((item) => item.id === checkoutId)
@@ -154,9 +154,7 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
           if (file) review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
         }}
         disabled={
-          !review.ready ||
-          !file ||
-          !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
+          !review.ready || !file || !fileState(file.path, fingerprints.get(file.path) ?? '')
         }
         busy={review.busy}
         error={review.error}

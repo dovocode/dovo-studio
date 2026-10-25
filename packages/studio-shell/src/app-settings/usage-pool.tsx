@@ -1,12 +1,19 @@
-import { pooledPlanLimits, formatQuotaReset, type accountPlanLimits } from '@dovo/protocol'
+import {
+  pooledPlanLimits,
+  formatQuotaReset,
+  type UsageHubAccount,
+  type accountPlanLimits,
+} from '@dovo/protocol'
 export function UsagePool({
   limits,
   now,
+  accounts = [],
 }: {
   limits: ReturnType<typeof accountPlanLimits>
   now: number
+  accounts?: UsageHubAccount[]
 }) {
-  const pools = pooledPlanLimits(limits, now)
+  const pools = pooledPlanLimits(limits, now, accounts)
   if (!pools.length) return null
   return (
     <section aria-label="Pooled account availability" className="space-y-3">
@@ -24,7 +31,7 @@ export function UsagePool({
               {pool.provider === 'codex' ? 'Codex' : 'Claude'} · {pool.window}
             </h3>
             <p className="text-xs text-muted-foreground">
-              {pool.available} of {pool.segments.length} reported accounts available
+              {pool.available} of {pool.segments.length} accounts available
               {pool.unknown ? ` · ${pool.unknown} without a fresh reading` : ''}
             </p>
             <div className="flex gap-1">

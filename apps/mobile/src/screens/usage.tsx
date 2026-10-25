@@ -1,3 +1,4 @@
+import { hubPlanLimitSources } from '@dovo/protocol'
 import { UsageHubs } from './usage-hubs'
 import { UsagePool } from './usage-pool'
 import { runtimeComputerName } from '@dovo/protocol'
@@ -136,12 +137,13 @@ export default function UsageScreen() {
       },
       ...(hubs[entry.profile.id] ?? [])
         .filter((hub) => hub.enabled)
-        .map((hub) => ({
-          computer: `${runtimeComputerName(entry)} · ${hub.label}`,
-          sourceId: `${entry.profile.id}:hub:${hub.id}`,
-          connected: entry.connected && !hub.error,
-          limits: hub.limits,
-        })),
+        .flatMap((hub) =>
+          hubPlanLimitSources(hub, {
+            computer: `${runtimeComputerName(entry)} · ${hub.label}`,
+            sourceId: `${entry.profile.id}:hub:${hub.id}`,
+            connected: entry.connected,
+          }),
+        ),
     ]),
     now,
   )
@@ -375,7 +377,15 @@ export default function UsageScreen() {
                       </Text>
                     )),
                 )}
-                <UsagePool limits={limits} now={now} />
+                <UsagePool
+                  limits={limits}
+                  now={now}
+                  accounts={hosts.flatMap((entry) =>
+                    (hubs[entry.profile.id] ?? [])
+                      .filter((hub) => hub.enabled)
+                      .flatMap((hub) => hub.accounts ?? []),
+                  )}
+                />
                 <SettingsGroup
                   title="Account limits"
                   footer="Limits are reported by Codex and Claude agents on connected computers. API-key usage may not have subscription windows."

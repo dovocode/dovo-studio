@@ -136,9 +136,19 @@ export const usageLimits = (request: IncomingMessage) =>
   Effect.gen(function* () {
     const s = yield* RuntimeServices
     const input = decode(
-      mutableStruct({ force: Schema.optional(Schema.Boolean) }),
+      mutableStruct({
+        force: Schema.optional(Schema.Boolean),
+        section: Schema.optional(Schema.Literals(['local', 'hubs'])),
+      }),
       yield* serviceResult(body(request)),
     )
+    if (input.section === 'local') return yield* serviceResult(read(s, input.force ?? false))
+    if (input.section === 'hubs')
+      return {
+        checkedAt: new Date().toISOString(),
+        accounts: [],
+        hubs: yield* serviceResult(s.store.usageHubs.read(input.force ?? false)),
+      }
     const [local, hubs] = yield* serviceResult(
       Promise.all([read(s, input.force ?? false), s.store.usageHubs.read(input.force ?? false)]),
     )

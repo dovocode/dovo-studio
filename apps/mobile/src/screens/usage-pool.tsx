@@ -1,16 +1,23 @@
 import { View } from 'react-native'
-import { pooledPlanLimits, formatQuotaReset, type accountPlanLimits } from '@dovo/protocol'
+import {
+  pooledPlanLimits,
+  formatQuotaReset,
+  type UsageHubAccount,
+  type accountPlanLimits,
+} from '@dovo/protocol'
 import { Text } from '../ui/content/text'
 import { useSettingsTheme } from './settings-theme'
 export function UsagePool({
   limits,
   now,
+  accounts = [],
 }: {
   limits: ReturnType<typeof accountPlanLimits>
   now: number
+  accounts?: UsageHubAccount[]
 }) {
   const { colors, styles } = useSettingsTheme()
-  const pools = pooledPlanLimits(limits, now)
+  const pools = pooledPlanLimits(limits, now, accounts)
   if (!pools.length) return null
   return (
     <View style={{ gap: 12 }}>
@@ -24,7 +31,7 @@ export function UsagePool({
             {pool.provider === 'codex' ? 'Codex' : 'Claude'} · {pool.window}
           </Text>
           <Text style={styles.muted}>
-            {pool.available} of {pool.segments.length} reported accounts available
+            {pool.available} of {pool.segments.length} accounts available
             {pool.unknown ? ` · ${pool.unknown} without a fresh reading` : ''}
           </Text>
           <View style={{ flexDirection: 'row', gap: 4 }}>
