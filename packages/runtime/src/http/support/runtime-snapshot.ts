@@ -250,6 +250,7 @@ export function runtimeSnapshot(
       threadBehaviorSupported: true,
       queuedTurnSettingsSupported: true,
       fullTurnSettingsSupported: true,
+      persistentTurnModelsSupported: true,
       projectTransfersSupported: true,
       projectWorktreeTransfersSupported: true,
       projectTransfers: s.projectTransfers.list(),

@@ -38,6 +38,7 @@ import {useState,useEffect} from 'react';import {createRoot} from 'react-dom/cli
 window.requests=[];window.finishes=[];
 const readRuntime=async(profile,path,input)=>path==='/api/agents/models/cached'?null:new Promise(resolve=>{window.requests.push({host:profile.id,path,input});window.finishes.push(resolve)});
 function App(){
+ const[persistent,setPersistent]=useState(true);window.setPersistent=setPersistent;
  const[turn,setTurn]=useState(undefined);window.turn=turn;window.openTurn=()=>{setTurn(null);setTask(old=>({...old,status:'running',messages:[{id:'first',role:'user',text:'Started'}]}));setEditing(true)};
  const[queueStatus,setQueueStatus]=useState({pending:0,error:null});window.queueStatus=setQueueStatus;
  const[task,setTask]=useState(null),[editing,setEditing]=useState(false),[pending,setPending]=useState([]),[revision,setRevision]=useState(1);
@@ -45,7 +46,7 @@ function App(){
  const[host,setHost]=useState('one');const[agent,setAgent]=useState({...defaultTaskHarness('codex'),id:'agent',name:'Agent',model:''});const[online,setOnline]=useState(true);
  window.host=setHost;window.harness=provider=>setAgent({...defaultTaskHarness(provider),id:'agent',name:'Agent',model:''});window.online=setOnline;
  const profile={id:host,name:host,connection:{address:'http://'+host,token:'private-token'}};
- const snapshot={permissionPolicySupported:true,fullTurnSettingsSupported:true,smartModelSelectionEnabled:true,revision,runtimeInstanceId:host,defaults:{},workspace:{agents:[],repositories:[],tasks:task?[task]:[]},acpInstallations:[]};
+ const snapshot={permissionPolicySupported:true,persistentTurnModelsSupported:persistent,fullTurnSettingsSupported:true,smartModelSelectionEnabled:true,revision,runtimeInstanceId:host,defaults:{},workspace:{agents:[],repositories:[],tasks:task?[task]:[]},acpInstallations:[]};
  const entry={profile,snapshot};const visible=previewTasks(entry,pending).snapshot.workspace.tasks[0];window.visibleTask=visible;window.rawTask=task;
  window.publishTask=(nextRevision,nextTask)=>{setRevision(nextRevision);if(nextTask)setTask(nextTask)};
  useEffect(()=>setPending(items=>{const next=items.filter(item=>!optimisticTaskConfirmed(item,entry,items));return next.length===items.length?items:next}),[task,revision]);
@@ -576,6 +577,15 @@ try {
 
   const defaultsBeforeTurn = await page.evaluate(() => window.rawTask.harness)
   await page.evaluate(() => window.openTurn())
+  await page
+    .getByText(
+      'Model and reasoning stay selected for following turns. Other settings apply only to this message.',
+      { exact: true },
+    )
+    .waitFor()
+  await page.evaluate(() => window.setPersistent(false))
+  await page.getByText('Applies to this message only.', { exact: true }).waitFor()
+  await page.evaluate(() => window.setPersistent(true))
   const more = page.getByRole('button', { name: 'More settings', exact: true })
   await more.click()
   const access = page.getByRole('combobox', { name: 'Access mode', exact: true })
@@ -589,6 +599,21 @@ try {
     throw new Error('Next-turn settings changed the thread defaults')
   await page.getByRole('button', { name: 'Use thread defaults', exact: true }).click()
   await page.waitForFunction(() => window.turn === null)
+  await page.evaluate(() =>
+    window.publishTask(100, {
+      ...window.rawTask,
+      queue: [
+        {
+          id: 'upcoming',
+          role: 'user',
+          text: 'Queued model choice',
+          turnSettings: { provider: 'codex', model: 'queued-model', reasoning: 'high' },
+        },
+      ],
+    }),
+  )
+  await page.getByRole('button', { name: 'Back to models', exact: true }).click()
+  await page.getByLabel(/Selected on two: .*queued-model/).waitFor()
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Mobile picker: host and harness switches, late responses, cache reuse, real refresh, offline names, Hermes/Copilot/Grok/Muse/Cursor model selection, reasoning, OpenCode v1/v2 labels, and task model/reasoning saves with unavailable provider discovery passed.',

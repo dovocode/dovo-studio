@@ -33,6 +33,7 @@ const boundaries = new Map([
     `import {createContext,useContext} from 'react';export const RuntimeContext=createContext(null);export const useRuntime=()=>useContext(RuntimeContext);`,
   ],
   [mobile + 'scm/pulls/list/create-pull', 'export const CreatePull=()=>null;'],
+  [mobile + 'scm/pulls/detail/linked-threads', 'export const PullLinkedThreads=()=>null;'],
   [mobile + 'scm/pulls/detail/pull-comments', 'export const PullComments=()=>null;'],
   [
     mobile + 'scm/pulls/detail/pull-changes',

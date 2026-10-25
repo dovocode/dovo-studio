@@ -858,7 +858,14 @@ try {
     await page.getByRole('button', { name: /^Task details for /, exact: true }).count(),
     5,
   )
-  await page.waitForFunction(() => window.settledPath().includes('settled=25'))
+  for (const sort of ['newest', 'oldest', 'title', 'project']) {
+    await page.evaluate((taskSort) => window.setListPreferences({ taskSort }), sort)
+    await page.waitForFunction(() => !window.settledPath().includes('settled='))
+  }
+  for (const sort of ['activity', 'priority']) {
+    await page.evaluate((taskSort) => window.setListPreferences({ taskSort }), sort)
+    await page.waitForFunction(() => window.settledPath().includes('settled=25'))
+  }
   await page.evaluate(() => {
     window.snapshot = {
       ...window.snapshot,

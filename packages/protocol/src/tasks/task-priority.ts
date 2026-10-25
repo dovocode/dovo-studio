@@ -31,7 +31,7 @@ function promptTime(task: Task) {
   }
   return latest
 }
-export function compareTaskActivity(a: Task, b: Task, _needsInput: ReadonlySet<string>) {
+export function compareTaskActivity(a: Task, b: Task, _needsInput?: ReadonlySet<string>) {
   return promptTime(b).localeCompare(promptTime(a)) || a.id.localeCompare(b.id)
 }
 

@@ -1,4 +1,8 @@
-import { watchRuntimeSettled, settledSummaryPageSize } from '@dovo/protocol'
+import {
+  watchRuntimeSettled,
+  settledSummaryPageSize,
+  supportsSettledSummaryPaging,
+} from '@dovo/protocol'
 import { useTaskSearch } from '../tasks/list/use-task-search'
 import { EmptyState } from '../ui/content/empty-state'
 import { useTaskPanes } from '../shell/task-panes'
@@ -138,7 +142,14 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     [overviews, source],
   )
   const listLimit =
-    archived || project || query || selecting || source !== 'all' ? undefined : settledLimit
+    archived ||
+    project ||
+    query ||
+    selecting ||
+    source !== 'all' ||
+    !supportsSettledSummaryPaging(sort)
+      ? undefined
+      : settledLimit
   const pagingConnections = JSON.stringify(overviews.map((entry) => entry.profile.connection))
   const listConnections = useEffectEvent(() => overviews.map((entry) => entry.profile.connection))
   useEffect(() => {

@@ -275,8 +275,30 @@ export class TaskQueue {
         if (t.queue?.length && !message)
           throw new HttpError(409, 'Resume the first queued message to continue')
         const queue = t.queue?.filter((item) => item.id !== message?.id) ?? []
+        const settings = message?.turnSettings
+        const agent = settings && resolveTaskAgent(t, this.store.get().agents)
+        const selected =
+          settings && agent && turnSettingsMatchHarness(settings, agent)
+            ? applyTurnSettings(agent, settings)
+            : undefined
         return {
           ...t,
+          // Adopt model choices at the queue boundary: earlier turns keep their model,
+          // later turns inherit it, and removal/reordering never changes defaults early.
+          // Permissions and other full-harness overrides remain scoped to this message.
+          ...(selected
+            ? {
+                agentOverrides: {
+                  ...t.agentOverrides,
+                  model: selected.model,
+                  reasoning: selected.reasoning ?? '',
+                  serviceTier: selected.serviceTier ?? null,
+                  cyberAccessProgram: selected.cyberAccessProgram ?? null,
+                },
+                harnessCustomized: true,
+                modelSelection: undefined,
+              }
+            : {}),
           status: 'running',
           runPhase: 'preparing',
           ...(attemptId ? { activeRunId: attemptId } : {}),

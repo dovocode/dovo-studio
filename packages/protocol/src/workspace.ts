@@ -311,7 +311,10 @@ const turnHarnessSchema: Schema.Codec<
   TaskHarness,
   Schema.Codec.Encoded<typeof taskHarnessSchema>
 > = taskHarnessSchema
-/** One-turn settings, bound to the thread's provider and ACP installation. */
+/** Queued settings, bound to the thread's provider and ACP installation.
+ * Model/reasoning become thread defaults on admission on supporting runtimes;
+ * other harness settings remain scoped to the message.
+ */
 export const turnSettingsSchema = strictStruct({
   provider: providerSchema,
   acpInstallationId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
@@ -361,6 +364,27 @@ export function applyTurnSettings<T extends TaskHarness>(agent: T, settings?: Tu
     selected.cyberAccessProgram = undefined
   }
   return { ...selected, model: settings.model, reasoning: settings.reasoning }
+}
+/** Preview the inherited model at a queue position without inheriting one-turn permissions. */
+export function queuedModelAgent<T extends TaskHarness>(
+  agent: T,
+  queue: readonly Pick<Task['messages'][number], 'id' | 'turnSettings'>[] = [],
+  beforeMessageId?: string,
+): T {
+  let selected = agent
+  for (const message of queue) {
+    if (message.id === beforeMessageId) break
+    if (!message.turnSettings || !turnSettingsMatchHarness(message.turnSettings, selected)) continue
+    const next = applyTurnSettings(selected, message.turnSettings)
+    selected = {
+      ...selected,
+      model: next.model,
+      reasoning: next.reasoning,
+      serviceTier: next.serviceTier,
+      cyberAccessProgram: next.cyberAccessProgram,
+    }
+  }
+  return selected
 }
 export function turnSettingsLabel(settings: TurnSettings) {
   return `${settings.model || 'Provider default'} · ${settings.reasoning || 'Default reasoning'}`

@@ -55,6 +55,7 @@ it.each(['full', 'overview', 'paged'] as const)(
     const next = await read(true)
     const phone = await read(false)
     expect(first.permissionPolicySupported).toBe(true)
+    expect(first.persistentTurnModelsSupported).toBe(true)
     expect(phone.permissionPolicySupported).toBe(true)
     expect(next.workspace).toBe(first.workspace)
     expect(phone.workspace).toBe(first.workspace)
@@ -215,4 +216,12 @@ it('opts into bounded settled summaries, keeps selected old threads and leaves l
   expect(selected.detailTaskIds).toContain('settled-0')
   expect((await read(50)).workspace.tasks).toHaveLength(40)
   expect((await read()).workspace.tasks).toHaveLength(40)
+  runtime.services.store.updateTask('settled-0', (task) => ({
+    ...task,
+    lastPromptAt: '2026-10-25T00:00:00Z',
+    settledAt: '2026-10-01T00:00:00Z',
+  }))
+  const reordered = await read(25)
+  expect(reordered.workspace.tasks.some((task) => task.id === 'settled-0')).toBe(true)
+  expect(reordered.olderSettled).toEqual({ limit: 25, omitted: 15 })
 })

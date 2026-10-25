@@ -8,8 +8,10 @@ Reviewed T3 Code at `d0b9e9d3c72b` on 2026-10-25. T3 measurements are not Dovo m
   the mounted screen. Abandoned selections expire, and paired credentials remain isolated.
 - Thread lists request 25 eligible settled summaries initially, increasing by 25 on demand. Running,
   pinned, snoozed, feedback, selected, approval/question and subagent-family rows remain available.
-  Search, filtered lists, bulk selection and explicit full-list consumers request complete
-  summaries. Older runtimes remain compatible. Archive summaries are unchanged.
+  Paging follows Latest prompt / Latest input order rather than settlement dates. Other sorts,
+  global search, filtered lists, bulk selection and explicit full-list consumers request complete
+  summaries. Search retains unresolved history hits until their summaries arrive. Older runtimes
+  remain compatible. Archive summaries are unchanged.
 - Unchanged snapshots update a small freshness record instead of rewriting the payload. The record
   is tied to a committed cache ID; interrupted/new payload writes cannot inherit another payload's
   freshness.

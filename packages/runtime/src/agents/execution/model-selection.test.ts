@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
+  agentTurnSettings,
   decode,
   defaultTaskHarness,
   resolveTaskAgent,
@@ -109,6 +110,95 @@ it.each(['harness', 'custom agent'] as const)(
       await waitForRuntime(() => expect(runtime.services.store.task(task.id).status).toBe('review'))
       expect((await selectedModel()).draft).toBe('')
       expect(runtime.services.store.get().agents[0]?.model).toBe('default')
+    } finally {
+      complete()
+      await runtime.close()
+      await f.cleanup()
+    }
+  },
+)
+
+it.each(['harness', 'custom agent'] as const)(
+  'uses a model chosen during a run for following turns with a %s',
+  async (selection) => {
+    const f = await fixture()
+    const token = 'test-owner-token-with-at-least-32-characters'
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    let complete = () => {}
+    const completion = new Promise<void>((resolve) => (complete = resolve))
+    try {
+      const configured = {
+        ...defaultTaskHarness('codex'),
+        model: 'original',
+        reasoning: 'low',
+        permission: 'read-only' as const,
+        instructions: 'Thread instructions',
+      }
+      const custom = { ...configured, id: 'agent', name: 'Custom Codex' }
+      runtime.services.store.update(() => ({ ...f.workspace, agents: [custom] }))
+      const run = vi.fn<AgentAdapter['run']>(async (input) => {
+        input.onText('Response')
+        if (run.mock.calls.length === 1) await completion
+      })
+      vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
+        run,
+        probe: vi.fn<AgentAdapter['probe']>(),
+      })
+      const task = runtime.services.tasks.create({
+        title: 'Model changes',
+        objective: '',
+        repositoryId: 'repo',
+        agentId: selection === 'custom agent' ? custom.id : '',
+        harness: configured,
+        execution: 'main',
+      })
+      const send = async (
+        messageId: string,
+        turnSettings?: ReturnType<typeof agentTurnSettings>,
+      ) => {
+        const response = await fetch(`http://127.0.0.1:${runtime.port}/api/tasks/message`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: task.id, messageId, text: messageId, turnSettings }),
+        })
+        expect(response.status).toBe(200)
+      }
+      await send('first')
+      await waitForRuntime(() => expect(run).toHaveBeenCalledOnce())
+      await send(
+        'chosen',
+        agentTurnSettings(
+          { ...configured, model: 'large', reasoning: 'high', instructions: 'Only this turn' },
+          true,
+        ),
+      )
+      await send('inherited')
+      await send('reset', { provider: 'codex', model: '', reasoning: '' })
+      await send('inherited-reset')
+      expect(resolveTaskAgent(runtime.services.store.task(task.id), [custom])?.model).toBe(
+        'original',
+      )
+      expect(run.mock.calls[0]![0].agent.model).toBe('original')
+      complete()
+      await waitForRuntime(() => expect(run).toHaveBeenCalledTimes(5))
+      await waitForRuntime(() =>
+        expect(runtime.services.tasks.hasWorkingFamily(task.id)).toBe(false),
+      )
+      expect(run.mock.calls.map(([input]) => [input.agent.model, input.agent.reasoning])).toEqual([
+        ['original', 'low'],
+        ['large', 'high'],
+        ['large', 'high'],
+        ['', ''],
+        ['', ''],
+      ])
+      expect(run.mock.calls.map(([input]) => input.agent.instructions.split('\n')[0])).toEqual([
+        'Thread instructions',
+        'Only this turn',
+        'Thread instructions',
+        'Thread instructions',
+        'Thread instructions',
+      ])
+      expect(runtime.services.store.get().agents).toEqual([custom])
     } finally {
       complete()
       await runtime.close()

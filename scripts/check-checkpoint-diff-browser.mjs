@@ -37,7 +37,7 @@ function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;con
   [
     {
       path: '@dovo/studio-core',
-      contents: `export * from '@dovo/protocol';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useWorkspace=()=>window.store;export const whitespaceOnlyFile=()=>false;export const useAppPreferences=()=>({collapseChangedFiles:false,hideWhitespaceChanges:false,importedCodeThemes:[]});export const readAppPreferences=()=>({importedCodeThemes:[]});export const useDiffOptions=()=>({defaultSplit:false,options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'scroll'}});`,
+      contents: `export * from '@dovo/protocol';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useWorkspace=()=>window.store;export const whitespaceOnlyFile=()=>false;export const useAppPreferences=()=>({collapseChangedFiles:false,hideWhitespaceChanges:false,importedCodeThemes:[]});export const readAppPreferences=()=>({theme:'dark',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useDiffOptions=()=>({defaultSplit:false,options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'scroll'}});`,
     },
     {
       path: '@dovo/studio-core/state',

@@ -13,13 +13,13 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {flushSync} from 'react-dom';
 import {TaskSearchDialog} from './packages/extension-tasks/src/dialogs/task-search-dialog';
-window.calls=[];window.opened=[];window.activeCalls=0;
-const readRuntime=(profile,path,input)=>new Promise(resolve=>window.calls.push({owner:profile.id,token:profile.connection.token,query:input.query,reply:snippet=>resolve({taskIds:['shared'],hits:[{taskId:'shared',messageId:'remote',snippet,role:'assistant'}]})}));
-function App(){const[cfg,setCfg]=useState({owners:['a','b'],token:'first',online:true,missing:false}),[tick,setTick]=useState(0),[mode,setMode]=useState(null);window.change=patch=>flushSync(()=>setCfg(old=>({...old,...patch})));window.stream=()=>flushSync(()=>setTick(n=>n+1));
+window.calls=[];window.opened=[];window.activeCalls=0;window.watches=[];window.stops=[];
+const readRuntime=(profile,path,input)=>new Promise(resolve=>window.calls.push({owner:profile.id,token:profile.connection.token,query:input.query,reply:(snippet,taskId='shared')=>resolve({taskIds:[taskId],hits:[{taskId,messageId:'remote',snippet,role:'assistant'}]})}));
+function App(){const[cfg,setCfg]=useState({owners:['a','b'],token:'first',online:true,missing:false,older:false}),[tick,setTick]=useState(0),[mode,setMode]=useState(null);window.change=patch=>flushSync(()=>setCfg(old=>({...old,...patch})));window.stream=()=>flushSync(()=>setTick(n=>n+1));
 const profiles=['a','b'].filter(id=>id!=='b'||!cfg.missing).map(id=>({id,name:id,connection:{address:'http://'+id+'.lan',token:id==='b'?cfg.token:'first'}}));
 window.workspace={activeRuntimeId:'a',connection:profiles[0].connection,runtimeRegistry:{profiles},readRuntime,request:async()=>{window.activeCalls++;return {taskIds:[],hits:[]}}};
-const entries=cfg.owners.map(id=>({key:JSON.stringify([id,'shared']),projectName:'Studio',source:{runtimeId:id,name:'Computer '+id,online:id==='a'||cfg.online},task:{id:'shared',title:'Thread '+id,createdAt:'2026-10-24',draft:String(tick),messages:cfg.online?[]:[{id:'local',role:'user',text:'needle in saved messages'}]}}));
-return <><button onClick={()=>setMode('messages')}>Search conversations</button><TaskSearchDialog mode={mode} entries={entries} onModeChange={setMode} onClose={()=>setMode(null)} onSelect={(entry,messageId)=>window.opened.push({key:entry.key,messageId})}/></>}
+const entries=cfg.owners.flatMap(id=>['shared',...(cfg.older?['older']:[])].map(taskId=>({key:JSON.stringify([id,taskId]),projectName:'Studio',source:{runtimeId:id,name:'Computer '+id,online:id==='a'||cfg.online},task:{id:taskId,title:(taskId==='older'?'Older settled thread ':'Thread ')+id,createdAt:'2026-10-24',draft:String(tick),messages:cfg.online?[]:[{id:'local',role:'user',text:'needle in saved messages'}]}})));
+return <><button onClick={()=>setMode('messages')}>Search conversations</button><button onClick={()=>setMode('tasks')}>Go to task</button><TaskSearchDialog mode={mode} entries={entries} onModeChange={setMode} onClose={()=>setMode(null)} onSelect={(entry,messageId)=>window.opened.push({key:entry.key,messageId})}/></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -33,8 +33,12 @@ createRoot(document.getElementById('app')).render(<App/>);`,
   [
     {
       path: '@dovo/studio-core',
-      importer: root + 'packages/extension-tasks/src/list/',
       contents: 'export const useWorkspace=()=>window.workspace;',
+    },
+    {
+      path: '@dovo/protocol',
+      importer: root + 'packages/extension-tasks/src/dialogs/',
+      contents: `export * from '${root}packages/protocol/src/index.ts';import {watchRuntimeSettled as watch} from '${root}packages/protocol/src/index.ts';export const watchRuntimeSettled=(connection,limit)=>{window.watches.push({connection,limit:limit??null});const stop=watch(connection,limit);return()=>{window.stops.push(connection);stop()}};`,
     },
     {
       path: '@dovo/studio-ui',
@@ -127,6 +131,50 @@ try {
     assert.deepEqual(await page.evaluate(() => window.opened), [
       { key: '["b","shared"]', messageId: 'local' },
     ])
+    assert.equal(
+      await page.evaluate(() => window.watches.length - window.stops.length),
+      0,
+      'Closing global search releases its full-list subscriptions',
+    )
+    await page.evaluate(() => window.change({ owners: ['a', 'b'], missing: false, online: true }))
+    await page.getByRole('button', { name: 'Go to task', exact: true }).click()
+    await page.waitForFunction(() => window.watches.length - window.stops.length === 2)
+    assert.ok(
+      await page.evaluate(() => window.watches.every((watch) => watch.limit === null)),
+      'Global task and conversation search request complete summaries',
+    )
+    const taskInput = page.getByRole('combobox', { name: 'Go to task', exact: true })
+    await taskInput.fill('Older settled')
+    assert.equal(await page.getByRole('option').count(), 0)
+    await page.evaluate(() => window.change({ older: true }))
+    await page.getByText('Older settled thread a', { exact: true }).waitFor()
+    await page.getByText('Older settled thread b', { exact: true }).waitFor()
+    await taskInput.press('Escape')
+    await page.getByRole('dialog').waitFor({ state: 'detached' })
+    await page.evaluate(() => window.change({ older: false }))
+    await page.getByRole('button', { name: 'Search conversations', exact: true }).click()
+    const count = await page.evaluate(() => window.calls.length)
+    await input.fill('needle')
+    await page.waitForFunction((count) => window.calls.length === count + 2, count)
+    await page.evaluate((count) => {
+      window.calls[count].reply('Older result A', 'older')
+      window.calls[count + 1].reply('Older result B', 'older')
+    }, count)
+    await page.waitForFunction(
+      () => document.querySelector('[role="listbox"]').getAttribute('aria-busy') === 'false',
+    )
+    assert.equal(await page.getByRole('option').count(), 0)
+    await page.evaluate(() => window.change({ older: true }))
+    await page.getByText('Older result A', { exact: true }).waitFor()
+    await page.getByText('Older result B', { exact: true }).waitFor()
+    assert.equal(
+      await page.evaluate(() => window.calls.length),
+      count + 2,
+      'Late summaries resolve saved search hits without another request',
+    )
+    await input.press('Escape')
+    await page.getByRole('dialog').waitFor({ state: 'detached' })
+    assert.equal(await page.evaluate(() => window.watches.length - window.stops.length), 0)
     assert.deepEqual(errors, [])
     await page.close()
   }

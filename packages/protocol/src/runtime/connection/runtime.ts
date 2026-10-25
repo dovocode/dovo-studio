@@ -157,6 +157,8 @@ export const snapshotSchema = mutableStruct({
   threadBehaviorSupported: Schema.optional(Schema.Boolean),
   fullTurnSettingsSupported: Schema.optional(Schema.Boolean),
   queuedTurnSettingsSupported: Schema.optional(Schema.Boolean),
+  /** Queued model/reasoning choices become thread defaults when their turn starts. */
+  persistentTurnModelsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),
   projectWorktreeTransfersSupported: Schema.optional(Schema.Boolean),
   projectTransfers: Schema.optional(mutableArray(projectTransferSchema)),

@@ -1,5 +1,10 @@
 import { SearchField } from '@dovo/studio-ui/search-field'
-import { taskSnoozeOptions, watchRuntimeSettled, settledSummaryPageSize } from '@dovo/protocol'
+import {
+  taskSnoozeOptions,
+  watchRuntimeSettled,
+  settledSummaryPageSize,
+  supportsSettledSummaryPaging,
+} from '@dovo/protocol'
 import { orderThreadSections, settledThreadPreviewLimit } from '@dovo/protocol'
 import { SectionOrderDialog } from './section-order-dialog'
 import { useTaskSearch } from './use-task-search'
@@ -280,7 +285,9 @@ export function TaskList({
     [entries],
   )
   const listLimit =
-    projectId || query.trim() || selecting || !!environment ? undefined : settledLimit
+    projectId || query.trim() || selecting || !!environment || !supportsSettledSummaryPaging(sort)
+      ? undefined
+      : settledLimit
   const pagingConnections = JSON.stringify(
     sources.flatMap((source) => (source.connection ? [source.connection] : [])),
   )
