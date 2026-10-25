@@ -1,6 +1,7 @@
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { TaskEmptyState } from '../creation/task-empty-state'
-import { checkpointFiles, formatTurnDuration, type FileKind } from '@dovo/protocol'
+import { WatchMessageCard } from './components/watch-message'
+import { watchMessage, checkpointFiles, formatTurnDuration, type FileKind } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
 import { ChangeTypeFilters } from '../../ui/content/change-types'
 import { CheckpointFiles } from './components/checkpoint-files'
@@ -435,6 +436,8 @@ function Message() {
   const text = useAuiState((state) =>
     state.message.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n\n'),
   )
+  const taskId = useConversationSelector((value) => value.task.id)
+  const watch = user ? watchMessage({ id, text }) : null
   const car = useCarMode()
   const [showActions, setShowActions] = useApplicationState(false)
   const time = createdAt && formatTime(createdAt, { hour: '2-digit', minute: '2-digit' })
@@ -445,31 +448,35 @@ function Message() {
       style={{
         gap: 4,
         marginBottom: 10,
-        alignItems: user ? 'flex-end' : 'stretch',
+        alignItems: user && !watch ? 'flex-end' : 'stretch',
       }}
     >
-      <Pressable
-        onPress={() => setShowActions((value) => !value)}
-        accessibilityHint="Tap to show message actions and time"
-        style={
-          user
-            ? {
-                alignSelf: 'flex-end',
-                maxWidth: '88%',
-                paddingHorizontal: 13,
-                paddingVertical: 9,
-                borderRadius: 18,
-                backgroundColor: colors.elevated,
-                gap: 4,
-              }
-            : {
-                gap: 5,
-              }
-        }
-      >
-        {childResult && <Text style={[styles.muted, { fontSize: 11 }]}>Dovo child result</Text>}
-        {user ? <MessagePrimitive.Parts components={userParts} /> : <AssistantParts />}
-      </Pressable>
+      {watch ? (
+        <WatchMessageCard update={watch} taskId={taskId} />
+      ) : (
+        <Pressable
+          onPress={() => setShowActions((value) => !value)}
+          accessibilityHint="Tap to show message actions and time"
+          style={
+            user
+              ? {
+                  alignSelf: 'flex-end',
+                  maxWidth: '88%',
+                  paddingHorizontal: 13,
+                  paddingVertical: 9,
+                  borderRadius: 18,
+                  backgroundColor: colors.elevated,
+                  gap: 4,
+                }
+              : {
+                  gap: 5,
+                }
+          }
+        >
+          {childResult && <Text style={[styles.muted, { fontSize: 11 }]}>Dovo child result</Text>}
+          {user ? <MessagePrimitive.Parts components={userParts} /> : <AssistantParts />}
+        </Pressable>
+      )}
       {pendingMessage?.message.id === id && (
         <Text
           accessibilityRole="text"
@@ -482,7 +489,7 @@ function Message() {
               : 'Sending…'}
         </Text>
       )}
-      {showContent && showActions && !car && (user || !streaming) && (
+      {showContent && (showActions || !!watch) && !car && (user || !streaming) && (
         <View
           style={{
             flexDirection: 'row',

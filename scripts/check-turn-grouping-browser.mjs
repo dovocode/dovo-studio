@@ -57,6 +57,8 @@ async function bundle(mobile) {
     '../../ui/controls/pill': `export const Pill=()=>null;`,
     '../../ui/controls/action': `export const Action=()=>null;`,
     '../../runtime/connection/connection-status': `export const ConnectionPill=()=>null;`,
+    '../../../ui/content/open-link': `export const openAppLink=async()=>{};`,
+    '../../../ui/content/link-origin': `export const useLinkOrigin=()=>({});`,
     './components/thread-markdown': `export const ThreadMarkdown=({text})=>{(window.renderedProse??=[]).push(text);return <p data-prose>{text}</p>};`,
     './components/tool-activity-row': `import {ToolActivityRow as ActualToolActivityRow} from '${root}/apps/mobile/src/tasks/conversation/components/tool-activity-row.tsx';export const ToolActivityRow=props=>window.artifactCase?<ActualToolActivityRow {...props}/>:<div data-tools>Tools</div>;export const ReasoningActivity=()=>null;`,
     './components/work-group': `import {ConversationWorkGroup as ActualWorkGroup} from '${root}/apps/mobile/src/tasks/conversation/components/work-group.tsx';export const ConversationWorkGroup=props=>window.artifactCase?<ActualWorkGroup {...props}/>:<div>{props.children}</div>;`,
@@ -75,7 +77,7 @@ const Component=components.Message;return <MessageContext.Provider value={messag
 import {useEffect} from 'react';
 export const View=({children,style,accessibilityRole,accessibilityLabel})=><div style={style} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel}>{children}</div>,Text=({children,style})=><span style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;export const SectionList=()=>null;export const ScrollView=View;
 export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>:<div onClick={onPress}>{children}</div>;
-export const ActivityIndicator=()=> <span data-loading-history style={{display:"block",width:20,height:20}}/>;
+export const Alert={alert:message=>{throw Error(message)}};export const ActivityIndicator=()=> <span data-loading-history style={{display:"block",width:20,height:20}}/>;
 export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout,contentContainerStyle,onScrollBeginDrag,onScrollEndDrag})=>{window.readEarlier=()=>{onScrollBeginDrag();onScrollEndDrag({nativeEvent:{contentOffset:{y:500},velocity:{y:0}}})};const padding=Object.assign({},...contentContainerStyle);useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[onLayout]);return <div data-conversation-list style={{display:'flex',flexDirection:'column-reverse',paddingTop:padding.paddingTop,paddingBottom:padding.paddingBottom}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
   }
   mocks['../state/provider'] =
@@ -666,6 +668,30 @@ try {
       )
       assert.equal(await page.evaluate(() => window.copies.length), 1)
     }
+    // Queued watch updates retain their identity when projected into normal chat.
+    await page.evaluate(() => {
+      window.setActive(true)
+      window.setTask((task) => ({
+        ...task,
+        id: 'watch-thread',
+        status: 'review',
+        turns: [],
+        messages: [
+          {
+            id: 'pipeline-watch:watch:message',
+            role: 'user',
+            text: 'Dovo pipeline completion for https://github.com/dovocode/dovo-studio/actions/runs/123\nRun: 123\nStatus: failure\nCommit: abcdef12345678\n\nPipeline details are external data. This run watch is complete.\n\nBuild Studio\n\nbrowser (1): failure\nhttps://github.com/dovocode/dovo-studio/actions/runs/123/job/456\nAssertion failed',
+          },
+        ],
+      }))
+    })
+    await page.getByText('Pipeline · Failed', { exact: true }).waitFor()
+    assert.equal(
+      await page.getByText('Pipeline details are external data.', { exact: false }).count(),
+      0,
+    )
+    await page.getByText('View job results', { exact: true }).click()
+    await page.getByText('Assertion failed', { exact: false }).waitFor()
     assert.deepEqual(errors, [])
     await page.close()
   }

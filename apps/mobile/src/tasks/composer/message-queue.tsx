@@ -1,5 +1,13 @@
 import { Effect } from 'effect'
-import { randomUUID, turnSettingsLabel, responses, type Task } from '@dovo/protocol'
+import {
+  watchMessage,
+  watchMessagePreview,
+  randomUUID,
+  turnSettingsLabel,
+  responses,
+  type Task,
+} from '@dovo/protocol'
+import { WatchMessageCard } from '../conversation/components/watch-message'
 import { pendingQueue } from './pending-send'
 import { ScrollView, View } from 'react-native'
 import { Pressable } from 'react-native-gesture-handler'
@@ -84,6 +92,7 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
   })
   const selectedIndex = queue.findIndex((message) => message.id === selectedId)
   const selected = queue[selectedIndex]
+  const selectedWatch = selected ? watchMessage(selected) : null
   if (!queue.length) return null
   return (
     <View
@@ -136,7 +145,9 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
             .filter(Boolean)
             .join(' · ')
           const preview =
-            message.text || message.attachments?.map((file) => file.name).join(', ') || ''
+            watchMessagePreview(message) ||
+            message.attachments?.map((file) => file.name).join(', ') ||
+            ''
           return (
             <View
               key={message.id}
@@ -326,9 +337,13 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                   : `Waiting behind paused message ${firstPaused + 1}`}
             </Text>
           )}
-          <Text selectable style={styles.text}>
-            {selected.text || selected.attachments?.map((file) => file.name).join(', ')}
-          </Text>
+          {selectedWatch ? (
+            <WatchMessageCard update={selectedWatch} taskId={task.id} />
+          ) : (
+            <Text selectable style={styles.text}>
+              {selected.text || selected.attachments?.map((file) => file.name).join(', ')}
+            </Text>
+          )}
           {!!selected.text && !!selected.attachments?.length && (
             <Text style={styles.muted}>
               {selected.attachments.map((file) => file.name).join(', ')}

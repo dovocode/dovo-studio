@@ -307,3 +307,5 @@ export * from './runtime/connection/ssh-address.js'
 export * from './conversation/artifact-library.js'
 
 export { connectionProgress } from './runtime/connection/connection-progress.js'
+
+export * from './tasks/watch-message.js'

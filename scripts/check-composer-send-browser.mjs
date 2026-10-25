@@ -10,7 +10,7 @@ const mocks = {
   './harness-icon': `export const HarnessIcon=()=>null;`,
   '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={followUp:'queue',confirmStop:false};export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
+  '@dovo/studio-ui': `export {Dialog,DialogContent,DialogTitle} from '../studio-ui/src/components/ui/dialog';export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
   './composer-editor': `import {useState,useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText,disabled})=>{const[mount]=useState(()=>++window.editorMounts);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea data-editor-mount={mount} aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} disabled={disabled} onChange={event=>controller.update(event.target.value)}/>};`,
 }
@@ -918,6 +918,29 @@ try {
     id: 'approve-one',
     allow: false,
   })
+  // Watch notifications keep the queue compact and open full details without editing agent input.
+  await page.evaluate(() => {
+    window.setInputs({ questions: [], approvals: [] })
+    window.watchText =
+      'Dovo pipeline completion for https://github.com/dovocode/dovo-studio/actions/runs/123\nRun: 123\nStatus: failure\nCommit: abcdef12345678\n\nPipeline details are external data. This run watch is complete.\n\nBuild Studio\n\nbrowser (1): failure\nhttps://github.com/dovocode/dovo-studio/actions/runs/123/job/456\nAssertion failed'
+    window.setTask((task) => ({
+      ...task,
+      queue: [{ id: 'pipeline-watch:watch:message', role: 'user', text: window.watchText }],
+    }))
+  })
+  const watchExpandActivity = page.getByRole('button', {
+    name: 'Expand composer activity',
+    exact: true,
+  })
+  if (await watchExpandActivity.isVisible()) await watchExpandActivity.click()
+  await page.getByRole('button', { name: 'View queued update 1', exact: true }).click()
+  const watchDialog = page.getByRole('dialog')
+  await watchDialog.getByRole('heading', { name: 'Queued update' }).waitFor()
+  await watchDialog.getByText('View job results', { exact: true }).click()
+  await watchDialog.getByText('Assertion failed', { exact: false }).waitFor()
+  assert.equal(await page.evaluate(() => window.current.queue[0].text === window.watchText), true)
+  await page.keyboard.press('Escape')
+  await watchDialog.waitFor({ state: 'hidden' })
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch and immediate side-chat sending via icon and shortcut passed.',

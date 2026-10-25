@@ -10,11 +10,13 @@ import {
 } from '@dovo/studio-core'
 import {
   artifactReferences,
+  watchMessage,
   hasToolImages,
   turnSummary,
   type PendingMessage,
   type recentTools,
 } from '@dovo/protocol'
+import { WatchMessageCard } from './watch-message'
 import { Message, MessageContent, Button } from '@dovo/studio-ui'
 import { TaskMessageResponse } from './task-message-response'
 import { Star } from 'lucide-react'
@@ -91,6 +93,7 @@ export const ChatMessage = memo(function ChatMessage({
     !hasRichResults
   )
     return null
+  const watch = message.role === 'user' ? watchMessage(message) : null
   const ownsFooter = turn?.assistantId === message.id && (workOpen || footer)
   const showContent =
     !!message.text ||
@@ -113,7 +116,9 @@ export const ChatMessage = memo(function ChatMessage({
         </p>
       )}
       <div className="group/message flex min-w-0 flex-col gap-2">
-        {timeline ? (
+        {watch ? (
+          <WatchMessageCard update={watch} />
+        ) : timeline ? (
           <>
             {(message.file || message.attachments?.length || message.review || message.plan) && (
               <MessageContent>
