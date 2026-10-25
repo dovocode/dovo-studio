@@ -2,6 +2,7 @@ import {
   createRuntimeClient,
   startRuntimeSync,
   watchRuntimeTask,
+  watchRuntimeSettled,
   watchRuntimeActivity,
   runtimeSnapshotPath,
   snapshotSchema,
@@ -23,6 +24,7 @@ type Pool = {
   connection: RuntimeConnection
   subscribers: Map<string, Subscriber>
   tasks: Map<string, () => void>
+  settled?: { limit: number | undefined; stop: () => void }
   scopes: Map<string, { detailed: boolean; stop: () => void }>
   live?: ReturnType<typeof startRuntimeSync>
   status: RuntimeSyncStatus
@@ -122,7 +124,12 @@ export class RuntimeConnections {
       const cached = pool.activities.get(scope)
       if (cached) publish(cached)
     }
-    if (old && JSON.stringify(old.input.tasks) !== JSON.stringify(input.tasks)) this.poll(pool)
+    if (
+      old &&
+      (JSON.stringify(old.input.tasks) !== JSON.stringify(input.tasks) ||
+        old.input.settledLimit !== input.settledLimit)
+    )
+      this.poll(pool)
   }
   private covers(snapshot: RuntimeSnapshot, tasks: string[]) {
     return !snapshot.detailTaskIds || tasks.every((id) => snapshot.detailTaskIds?.includes(id))
@@ -174,6 +181,14 @@ export class RuntimeConnections {
   }
   private watch(pool: Pool) {
     const inputs = [...pool.subscribers.values()].map((item) => item.input)
+    const limit = inputs.some((input) => input.settledLimit === undefined)
+      ? undefined
+      : Math.max(...inputs.map((input) => input.settledLimit ?? 0))
+    if (!pool.settled || pool.settled.limit !== limit) {
+      const stop = watchRuntimeSettled(pool.connection, limit)
+      pool.settled?.stop()
+      pool.settled = { limit, stop }
+    }
     const tasks = new Set(inputs.flatMap((input) => input.tasks))
     const scopes = new Set(inputs.flatMap((input) => input.scopes))
     for (const [task, stop] of pool.tasks)
@@ -215,7 +230,7 @@ export class RuntimeConnections {
     if (pool.request || pool.live?.online()) return
     const controller = new AbortController()
     pool.request = controller
-    const tasks = JSON.stringify([...pool.tasks.keys()].sort())
+    const selection = runtimeSnapshotPath(pool.connection)
     const streamVersion = pool.streamVersion
     const superseded = () =>
       pool.stopped ||
@@ -225,7 +240,7 @@ export class RuntimeConnections {
     let failed = false
     void this.request(pool.connection, runtimeSnapshotPath(pool.connection), controller.signal)
       .then((snapshot) => {
-        if (superseded() || tasks !== JSON.stringify([...pool.tasks.keys()].sort())) return
+        if (superseded() || selection !== runtimeSnapshotPath(pool.connection)) return
         pool.reachable = true
         this.publishSnapshot(pool, snapshot)
       })
@@ -264,7 +279,7 @@ export class RuntimeConnections {
         if (!pool.stopped && !pool.live?.online())
           pool.timer = setTimeout(
             () => this.poll(pool),
-            tasks !== JSON.stringify([...pool.tasks.keys()].sort()) ? 0 : failed ? 10000 : 1000,
+            selection !== runtimeSnapshotPath(pool.connection) ? 0 : failed ? 10000 : 1000,
           )
       })
   }
@@ -290,6 +305,7 @@ export class RuntimeConnections {
     clearTimeout(pool.timer)
     pool.request?.abort()
     pool.live?.stop()
+    pool.settled?.stop()
     for (const stop of pool.tasks.values()) stop()
     for (const item of pool.scopes.values()) item.stop()
     this.pools.delete(key(pool.connection))

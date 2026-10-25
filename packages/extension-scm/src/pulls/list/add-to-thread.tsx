@@ -1,3 +1,5 @@
+import { useEffect, useEffectEvent } from 'react'
+import { watchRuntimeSettled } from '@dovo/protocol'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useWorkspace } from '@dovo/studio-core'
@@ -19,6 +21,16 @@ export function AddPullsToThread({
   onClose: () => void
 }) {
   const { runtimes, activeRuntimeId, workspace, readRuntime, refreshRuntime } = useWorkspace()
+  const connections = JSON.stringify(runtimes.map((runtime) => runtime.profile.connection))
+  const subscribe = useEffectEvent(() =>
+    runtimes
+      .map((runtime) => runtime.profile.connection)
+      .map((connection) => watchRuntimeSettled(connection)),
+  )
+  useEffect(() => {
+    const stops = subscribe()
+    return () => stops.forEach((stop) => stop())
+  }, [connections])
   const [search, setSearch] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')

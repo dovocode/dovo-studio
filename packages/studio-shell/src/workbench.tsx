@@ -1,5 +1,5 @@
 import { RemoteDesktopSharing } from './remote-desktop-sharing'
-import { taskParentReference, resolveThreadRuntime } from '@dovo/protocol'
+import { taskParentReference, resolveThreadRuntime, prepareRuntimeTask } from '@dovo/protocol'
 import { StudioToolsBridge } from './studio-tools-bridge'
 import { StudioPairedComputersBridge } from './studio-paired-computers-bridge'
 import { resolveLinkTargets, type LinkTarget, type LinkOrigin } from '@dovo/studio-core/links'
@@ -242,6 +242,12 @@ function WorkbenchContent({
         next = { ...next, viewId: 'pull-request-monitoring-settings' }
       const { target } = settingsNavigation.current
       if (!canLeave()) return
+      if (next.viewId === 'tasks' && next.entityId) {
+        const profile = runtimeRegistry.profiles.find(
+          (profile) => profile.id === currentRuntime.current,
+        )
+        if (profile) prepareRuntimeTask(profile.connection, next.entityId)
+      }
       navigationAttempt.current++
       if (
         !options?.replace &&
@@ -256,7 +262,7 @@ function WorkbenchContent({
       updateTarget(next)
       setNavigationKey((key) => key + 1)
     },
-    [updateTarget, canLeave],
+    [updateTarget, canLeave, runtimeRegistry.profiles],
   )
   const goBack = useCallback(() => {
     const previous = history.current.at(-1)

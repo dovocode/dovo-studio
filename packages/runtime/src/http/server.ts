@@ -278,6 +278,7 @@ export function createRuntimeServer(
             ticket.syncTasks,
             ticket.pagedHistory,
             ticket.resourceId === 'runtime-sync-5',
+            ticket.settledLimit,
           )
         })
         return

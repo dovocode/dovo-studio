@@ -161,6 +161,8 @@ export * from './runtime/connection/sync.js'
 export {
   startRuntimeSync,
   watchRuntimeTask,
+  prepareRuntimeTask,
+  watchRuntimeSettled,
   runtimeSnapshotPath,
   runtimeSyncOnline,
   watchRuntimeActivity,
@@ -248,7 +250,7 @@ export * from './runtime/connection/desktop-sync.js'
 
 export * from './runtime/connection/workspace-mutations.js'
 export { projectIconChoices } from './generated/project-icon-choices.js'
-export { taskPullLinks, taskPullStatusFor } from './tasks/task-pull-links.js'
+export { taskPullLinks, taskPullStatusFor, pullLinkedTasks } from './tasks/task-pull-links.js'
 
 export { pipelineGraphColumns, pipelineFailureImpact } from './scm/work/pipeline-graph.js'
 
@@ -309,3 +311,5 @@ export * from './conversation/artifact-library.js'
 export { connectionProgress } from './runtime/connection/connection-progress.js'
 
 export * from './tasks/watch-message.js'
+
+export * from './tasks/settled-page.js'

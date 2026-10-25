@@ -1026,6 +1026,14 @@ export function route(
       const owner = () => {
         if (!device.owner) throw new HttpError(403, 'Only the runtime host can manage device trust')
       }
+      const settledLimit = () => {
+        const raw = url.searchParams.get('settled')
+        if (raw === null) return undefined
+        const limit = Number(raw)
+        if (!Number.isInteger(limit) || limit < 1 || limit > 100000)
+          throw new HttpError(400, 'Invalid settled summary limit')
+        return limit
+      }
       if (method === 'POST' && path === '/api/sync/ticket') {
         const format =
           url.searchParams.get('format') === '4' && url.searchParams.get('subscriptions') === 'live'
@@ -1047,6 +1055,7 @@ export function route(
             undefined,
             tasks,
             url.searchParams.get('history') === 'paged',
+            settledLimit(),
           ),
           ...(format === '4' || format === '5' ? { format: Number(format) } : {}),
         }
@@ -1093,6 +1102,7 @@ export function route(
           url.searchParams.get('scope') === 'overview',
           url.searchParams.get('scope') === 'threads' ? syncTasks(url) : undefined,
           url.searchParams.get('history') === 'paged',
+          settledLimit(),
         )
       }
       if (method === 'POST' && path === '/api/runtime/prepare-restart') {

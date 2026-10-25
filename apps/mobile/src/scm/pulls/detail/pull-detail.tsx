@@ -1,3 +1,4 @@
+import { PullLinkedThreads } from './linked-threads'
 import { PullSectionStatus } from './section-status'
 import { PullRequestIcon } from '../../../ui/content/pull-request-icon'
 import {
@@ -365,6 +366,7 @@ export function PullDetail({
             }
           >
             <View ref={content} collapsable={false} style={{ gap: 8 }}>
+              <PullLinkedThreads pull={detail.pull} />
               {!!fragment && !destination?.comment && (
                 <Text style={styles.muted}>
                   This linked section is not available in the loaded PR. Use the server action to

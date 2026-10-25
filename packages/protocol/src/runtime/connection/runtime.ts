@@ -122,6 +122,18 @@ export const internetStatusSchema = mutableStruct({
   error: Schema.String,
 })
 export const snapshotSchema = mutableStruct({
+  olderSettled: Schema.optional(
+    mutableStruct({
+      limit: Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isBetween({ minimum: 1, maximum: 100000 })),
+      ),
+      omitted: Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
+    }),
+  ),
   internet: Schema.optional(internetStatusSchema),
   internetSetupSupported: Schema.optional(Schema.Boolean),
   relaySettings: Schema.optional(relaySettingsSchema),

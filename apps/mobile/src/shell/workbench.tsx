@@ -18,7 +18,7 @@ import {
 import { NewTask } from '../tasks/creation/new-task'
 import { CreationTarget } from '../runtime/connection/creation-target'
 import { TaskListViewProvider } from '../tasks/list/task-list-view'
-import { responses } from '@dovo/protocol'
+import { responses, prepareRuntimeTask } from '@dovo/protocol'
 import { NavigationContext, type StudioNavigation, type WorkTarget } from './navigation'
 import {
   createContext,
@@ -408,6 +408,8 @@ export function Workbench() {
       Keyboard.dismiss()
       if (view === 'tasks' && id) {
         const host = runtimeId
+        const profile = runtime.profiles.find((profile) => profile.id === host)
+        if (profile) prepareRuntimeTask(profile.connection, id)
         if (host)
           router.navigate(taskHref(host, id), {
             withAnchor: true,
@@ -436,7 +438,7 @@ export function Workbench() {
                 : 'tasks'
       router.navigate(routes[tab])
     },
-    [runtime.activeId],
+    [runtime.profiles],
   )
   const navigations = useMemo(() => {
     const value = (tab: Tab) => ({

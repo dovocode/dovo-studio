@@ -33,3 +33,25 @@ export function taskPullStatusFor(
     title: newest.title || primary.title || cached.title,
   }
 }
+
+/** Reverse links use explicit thread associations, never coincidental branch names or PR numbers. */
+export function pullLinkedTasks<
+  T extends Pick<Task, 'pullRequest' | 'linkedPullRequests' | 'example'>,
+>(tasks: readonly T[], url: string): T[] {
+  const identity = (value: string) => {
+    try {
+      const parsed = new URL(value)
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password)
+        return undefined
+      const path = parsed.pathname.replace(/\/$/, '')
+      return `${parsed.host.toLowerCase()}${parsed.hostname === 'github.com' ? path.toLowerCase() : path}`
+    } catch {
+      return undefined
+    }
+  }
+  const target = identity(url)
+  if (!target) return []
+  return tasks.filter(
+    (task) => !task.example && taskPullLinks(task).some((pull) => identity(pull.url) === target),
+  )
+}

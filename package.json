@@ -166,7 +166,9 @@
     "design:dev": "pnpm --filter @dovo/design-system^... -r build && pnpm --filter @dovo/design-system dev",
     "design:build": "pnpm --filter @dovo/design-system... -r build",
     "test:design-system:browser": "pnpm design:build && node scripts/check-design-system-browser.mjs",
-    "test:mermaid:browser": "pnpm --filter @dovo/desktop build && node scripts/build-mobile-mermaid.mjs && node scripts/check-mermaid-rendering-browser.mjs"
+    "test:mermaid:browser": "pnpm --filter @dovo/desktop build && node scripts/build-mobile-mermaid.mjs && node scripts/check-mermaid-rendering-browser.mjs",
+    "test:pull-thread-links:browser": "node scripts/check-pull-thread-links-browser.mjs",
+    "benchmark:syntax": "node scripts/benchmark-syntax.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

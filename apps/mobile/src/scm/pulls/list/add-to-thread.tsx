@@ -1,3 +1,5 @@
+import { useEffect, useEffectEvent } from 'react'
+import { watchRuntimeSettled } from '@dovo/protocol'
 import { projectDisplayName, runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { useRuntime } from '../../../runtime/connection/provider'
@@ -19,6 +21,16 @@ export function AddPullsToThread({
   const { colors } = useTheme()
 
   const { overviews, readRuntime, refreshRuntime } = useRuntime()
+  const connections = JSON.stringify(overviews.map((runtime) => runtime.profile.connection))
+  const subscribe = useEffectEvent(() =>
+    overviews
+      .map((runtime) => runtime.profile.connection)
+      .map((connection) => watchRuntimeSettled(connection)),
+  )
+  useEffect(() => {
+    const stops = subscribe()
+    return () => stops.forEach((stop) => stop())
+  }, [connections])
   const [search, setSearch] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')

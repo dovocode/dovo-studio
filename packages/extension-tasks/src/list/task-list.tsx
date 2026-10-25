@@ -1,5 +1,5 @@
 import { SearchField } from '@dovo/studio-ui/search-field'
-import { taskSnoozeOptions } from '@dovo/protocol'
+import { taskSnoozeOptions, watchRuntimeSettled, settledSummaryPageSize } from '@dovo/protocol'
 import { orderThreadSections, settledThreadPreviewLimit } from '@dovo/protocol'
 import { SectionOrderDialog } from './section-order-dialog'
 import { useTaskSearch } from './use-task-search'
@@ -23,6 +23,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -97,6 +98,7 @@ export function TaskList({
   const store = useTaskActionStore()
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
   const [showAllSettled, setShowAllSettled] = useApplicationState(false)
+  const [settledLimit, setSettledLimit] = useApplicationState(settledSummaryPageSize)
   const selecting = selected.size > 0
   const selectionAnchor = useRef<string | null>(null)
   const bulkLock = useRef(false)
@@ -277,6 +279,22 @@ export function TaskList({
     () => new Map(entries.map((entry) => [entry.projectKey, entry.projectName])),
     [entries],
   )
+  const listLimit =
+    projectId || query.trim() || selecting || !!environment ? undefined : settledLimit
+  const pagingConnections = JSON.stringify(
+    sources.flatMap((source) => (source.connection ? [source.connection] : [])),
+  )
+  const listConnections = useEffectEvent(() =>
+    sources.flatMap((source) => (source.connection ? [source.connection] : [])),
+  )
+  useEffect(() => {
+    const stops = listConnections().map((connection) => watchRuntimeSettled(connection, listLimit))
+    return () => stops.forEach((stop) => stop())
+  }, [pagingConnections, listLimit])
+  const omittedSettled =
+    listLimit === undefined
+      ? 0
+      : sources.reduce((sum, source) => sum + (source.snapshot?.olderSettled?.omitted ?? 0), 0)
   const deferredQuery = useDeferredValue(query)
   const search = useTaskSearch(allEntries, deferredQuery)
   const searchIdentity = JSON.stringify([...search.keys].sort())
@@ -509,10 +527,10 @@ export function TaskList({
           0,
           showAllSettled || query.trim() || selecting ? undefined : settledThreadPreviewLimit,
         ),
-        total: settledTasks.length,
+        total: settledTasks.length + omittedSettled,
         open: false,
       },
-    ].filter((group) => group.tasks.length)
+    ].filter((group) => group.tasks.length || (group.id === 'settled' && omittedSettled > 0))
     const collapsedGroups = statusGroups
       .filter(
         (group) =>
@@ -596,6 +614,7 @@ export function TaskList({
     preferences.collapsedThreadSections,
     revealedEntryKey,
     showAllSettled,
+    omittedSettled,
     query,
     selecting,
   ])
@@ -952,7 +971,13 @@ export function TaskList({
                   if (['working', 'waiting', 'snoozed', 'settled'].includes(group.id)) {
                     const collapsed = new Set(readAppPreferences().collapsedThreadSections)
                     if (open) collapsed.delete(group.id)
-                    else collapsed.add(group.id)
+                    else {
+                      collapsed.add(group.id)
+                      if (group.id === 'settled') {
+                        setShowAllSettled(false)
+                        setSettledLimit(settledSummaryPageSize)
+                      }
+                    }
                     updateAppPreferences({ collapsedThreadSections: [...collapsed] })
                   } else {
                     setExpanded((current) => ({ ...current, [group.id]: open }))
@@ -974,11 +999,23 @@ export function TaskList({
                     variant="ghost"
                     size="sm"
                     className="mx-2 text-xs text-muted-foreground"
-                    onClick={() => setShowAllSettled((value) => !value)}
+                    onClick={() => {
+                      if (!showAllSettled) setShowAllSettled(true)
+                      else if (omittedSettled)
+                        setSettledLimit((value) => Math.min(100000, value + settledSummaryPageSize))
+                      else {
+                        setShowAllSettled(false)
+                        setSettledLimit(settledSummaryPageSize)
+                      }
+                    }}
                   >
                     {showAllSettled
-                      ? 'Show fewer settled threads'
-                      : `Show all ${group.total} settled threads`}
+                      ? omittedSettled
+                        ? 'Load more settled threads'
+                        : 'Show fewer settled threads'
+                      : omittedSettled
+                        ? 'Show more settled threads'
+                        : `Show all ${group.total} settled threads`}
                   </Button>
                 )}
             </details>

@@ -1,3 +1,4 @@
+import { resolveCodeTheme } from '@dovo/studio-core/code-themes'
 import {
   studioSyntaxTheme,
   studioThemeIds,
@@ -33,12 +34,24 @@ export function useDiffOptions() {
   return useCoreDiffOptions()
 }
 
-/** Prepare every palette once so live theme changes preserve diff/editor state. */
+/** Prepare the active palette; Pierre resolves other registered palettes on theme changes. */
 export function preloadStudioHighlighter(language: SupportedLanguages) {
-  const { importedCodeThemes } = readAppPreferences()
-  registerImportedThemes(importedCodeThemes)
+  const preferences = readAppPreferences()
+  registerImportedThemes(preferences.importedCodeThemes)
+  const mode =
+    preferences.theme === 'system'
+      ? globalThis.matchMedia?.('(prefers-color-scheme: light)').matches
+        ? 'light'
+        : 'dark'
+      : preferences.theme
+  const theme = resolveCodeTheme(
+    preferences.codeTheme,
+    preferences.importedCodeThemes,
+    preferences.themePalette,
+    mode,
+  )
   return preloadHighlighter({
-    themes: [...themes, ...importedCodeThemes.map((theme) => theme.name)],
+    themes: [theme.name],
     langs: [language],
   })
 }

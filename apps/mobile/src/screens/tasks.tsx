@@ -1,3 +1,4 @@
+import { watchRuntimeSettled, settledSummaryPageSize } from '@dovo/protocol'
 import { useTaskSearch } from '../tasks/list/use-task-search'
 import { EmptyState } from '../ui/content/empty-state'
 import { useTaskPanes } from '../shell/task-panes'
@@ -30,7 +31,14 @@ import {
 } from '@dovo/protocol'
 import { useNavigation } from '../shell/navigation'
 import { useMoreActions } from '../shell/more-actions'
-import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import {
+  useDeferredValue,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react'
 import { Alert, FlatList, Pressable, ScrollView, View } from 'react-native'
 import { Schema } from 'effect'
 import { mutableStruct, responses } from '@dovo/protocol'
@@ -89,6 +97,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   const filterSheet = useRef<SheetHandle>(null)
   const filtersActive = !!(search.trim() || project || (!archived && source !== 'all'))
   const [showAllSettled, setShowAllSettled] = useApplicationState(false)
+  const [settledLimit, setSettledLimit] = useApplicationState(settledSummaryPageSize)
   const [details, setDetails] = useApplicationState(''),
     [now, setNow] = useApplicationState(Date.now())
   const [selected, setSelected] = useApplicationState<Set<string>>(() => new Set())
@@ -97,7 +106,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     setSelected((current) => {
       const next = new Set(current)
       if (next.has(key)) next.delete(key)
-      else next.add(key)
+      else {
+        next.add(key)
+        if (key === 'settled') {
+          setShowAllSettled(false)
+          setSettledLimit(settledSummaryPageSize)
+        }
+      }
       return next
     })
   const [bulkBusy, setBulkBusy] = useApplicationState(false)
@@ -122,6 +137,18 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     () => (source === 'all' ? overviews : overviews.filter((entry) => entry.profile.id === source)),
     [overviews, source],
   )
+  const listLimit =
+    archived || project || query || selecting || source !== 'all' ? undefined : settledLimit
+  const pagingConnections = JSON.stringify(overviews.map((entry) => entry.profile.connection))
+  const listConnections = useEffectEvent(() => overviews.map((entry) => entry.profile.connection))
+  useEffect(() => {
+    const stops = listConnections().map((connection) => watchRuntimeSettled(connection, listLimit))
+    return () => stops.forEach((stop) => stop())
+  }, [pagingConnections, listLimit])
+  const omittedSettled =
+    listLimit === undefined
+      ? 0
+      : overviews.reduce((sum, entry) => sum + (entry.snapshot?.olderSettled?.omitted ?? 0), 0)
   const historySearch = useTaskSearch(entries, query)
   const searchKeys = JSON.stringify([...historySearch.keys].sort())
   const projectGroups = useMemo(
@@ -302,26 +329,39 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             : snoozed.map((entry): TaskListItem => ({ kind: 'task', entry }))),
         ]
       : []
-    const settledItems: TaskListItem[] = settled.length
-      ? [
-          { kind: 'group', key: 'settled', name: 'Settled', count: settled.length },
-          ...(collapsed.has('settled')
-            ? []
-            : [
-                ...settled
-                  .slice(
-                    0,
-                    showAllSettled || query.trim() || selecting
-                      ? undefined
-                      : settledThreadPreviewLimit,
-                  )
-                  .map((entry): TaskListItem => ({ kind: 'task', entry })),
-                ...(settled.length > settledThreadPreviewLimit && !query.trim() && !selecting
-                  ? [{ kind: 'history', count: settled.length } satisfies TaskListItem]
-                  : []),
-              ]),
-        ]
-      : []
+    const settledItems: TaskListItem[] =
+      settled.length + omittedSettled
+        ? [
+            {
+              kind: 'group',
+              key: 'settled',
+              name: 'Settled',
+              count: settled.length + omittedSettled,
+            },
+            ...(collapsed.has('settled')
+              ? []
+              : [
+                  ...settled
+                    .slice(
+                      0,
+                      showAllSettled || query.trim() || selecting
+                        ? undefined
+                        : settledThreadPreviewLimit,
+                    )
+                    .map((entry): TaskListItem => ({ kind: 'task', entry })),
+                  ...(settled.length + omittedSettled > settledThreadPreviewLimit &&
+                  !query.trim() &&
+                  !selecting
+                    ? [
+                        {
+                          kind: 'history',
+                          count: settled.length + omittedSettled,
+                        } satisfies TaskListItem,
+                      ]
+                    : []),
+                ]),
+          ]
+        : []
     const otherSections = [
       { key: 'needs-input', items: attentionItems },
       { key: 'working', items: workingItems },
@@ -401,6 +441,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     archived,
     car,
     showAllSettled,
+    omittedSettled,
     query,
     selecting,
     preferences.workingSection,
@@ -766,10 +807,22 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             <Action
               label={
                 showAllSettled
-                  ? 'Show fewer settled threads'
-                  : `Show all ${item.count} settled threads`
+                  ? omittedSettled
+                    ? 'Load more settled threads'
+                    : 'Show fewer settled threads'
+                  : omittedSettled
+                    ? 'Show more settled threads'
+                    : `Show all ${item.count} settled threads`
               }
-              onPress={() => setShowAllSettled((value) => !value)}
+              onPress={() => {
+                if (!showAllSettled) setShowAllSettled(true)
+                else if (omittedSettled)
+                  setSettledLimit((value) => Math.min(100000, value + settledSummaryPageSize))
+                else {
+                  setShowAllSettled(false)
+                  setSettledLimit(settledSummaryPageSize)
+                }
+              }}
               secondary
             />
           ) : item.kind === 'group' ? (
@@ -800,7 +853,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                     ? item.key
                     : `${grouping}:${item.key}`
                 if (next.has(key)) next.delete(key)
-                else next.add(key)
+                else {
+                  next.add(key)
+                  if (key === 'settled') {
+                    setShowAllSettled(false)
+                    setSettledLimit(settledSummaryPageSize)
+                  }
+                }
                 updateMobilePreferences({ collapsedThreadSections: [...next] })
               }}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 }}

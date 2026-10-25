@@ -4,6 +4,8 @@ import {
   runtimeSyncOnline,
   retryRuntimeSync,
   watchRuntimeTask,
+  prepareRuntimeTask,
+  watchRuntimeSettled,
   watchRuntimeActivity,
   runtimeSnapshotPath,
 } from './live-sync.js'
@@ -837,4 +839,42 @@ it('aborts an old network ticket during explicit recovery and ignores its late r
   await Promise.resolve()
   expect(Socket.instances).toHaveLength(2)
   expect(Socket.instances[0]?.readyState).toBe(3)
+})
+
+it('loads selected threads early, hands off leases and releases abandoned or superseded selections', () => {
+  vi.useFakeTimers()
+  const connection = { address: 'http://prepare.local', token: 'device' }
+  expect(prepareRuntimeTask(connection, 'a')).toBe(true)
+  expect(runtimeSnapshotPath(connection)).toContain('task=a')
+  prepareRuntimeTask(connection, 'a')
+  const screen = watchRuntimeTask(connection, 'a')
+  vi.advanceTimersByTime(3000)
+  expect(runtimeSnapshotPath(connection)).toContain('task=a')
+  screen()
+  expect(runtimeSnapshotPath(connection)).not.toContain('task=')
+  prepareRuntimeTask(connection, 'b')
+  prepareRuntimeTask(connection, 'c')
+  expect(runtimeSnapshotPath(connection)).not.toContain('task=b')
+  expect(runtimeSnapshotPath(connection)).toContain('task=c')
+  vi.advanceTimersByTime(3000)
+  expect(runtimeSnapshotPath(connection)).not.toContain('task=')
+  const close = Array.from({ length: 8 }, (_, i) => watchRuntimeTask(connection, String(i)))
+  expect(prepareRuntimeTask(connection, 'overflow')).toBe(false)
+  expect(runtimeSnapshotPath({ ...connection, token: 'other' })).not.toContain('task=')
+  close.forEach((stop) => stop())
+})
+
+it('negotiates settled list limits and keeps a simultaneous complete-list consumer authoritative', () => {
+  const connection = { address: 'http://settled.local', token: 'device' }
+  const first = watchRuntimeSettled(connection, 25)
+  expect(runtimeSnapshotPath(connection)).toContain('settled=25')
+  const more = watchRuntimeSettled(connection, 50)
+  expect(runtimeSnapshotPath(connection)).toContain('settled=50')
+  const all = watchRuntimeSettled(connection)
+  expect(runtimeSnapshotPath(connection)).not.toContain('settled=')
+  all()
+  more()
+  expect(runtimeSnapshotPath(connection)).toContain('settled=25')
+  first()
+  expect(runtimeSnapshotPath(connection)).not.toContain('settled=')
 })

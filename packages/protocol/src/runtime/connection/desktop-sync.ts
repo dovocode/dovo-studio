@@ -15,6 +15,12 @@ export const desktopSyncSubscriptionSchema = mutableStruct({
   id,
   connection: connectionSchema,
   tasks: maxValue(mutableArray(id), 8),
+  settledLimit: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 1, maximum: 100000 })),
+    ),
+  ),
   scopes: maxValue(mutableArray(id), 8),
   detailScopes: maxValue(mutableArray(id), 8),
 })

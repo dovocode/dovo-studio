@@ -32,6 +32,7 @@ type View = {
   id: string
   taskIds?: readonly string[]
   pagedHistory: boolean
+  settledLimit?: number
   compact: boolean
   fieldUpdates: boolean
   device: { id: string; owner: boolean }
@@ -58,13 +59,14 @@ export function attachRuntimeSync(
   taskIds?: readonly string[],
   pagedHistory = false,
   taskUpdates = false,
+  settledLimit?: number,
 ) {
   let hub = hubs.get(services)
   if (!hub) {
     hub = new RuntimeSync(services)
     hubs.set(services, hub)
   }
-  hub.attach(socket, token, compact, fieldUpdates, taskIds, pagedHistory, taskUpdates)
+  hub.attach(socket, token, compact, fieldUpdates, taskIds, pagedHistory, taskUpdates, settledLimit)
 }
 export async function disposeRuntimeSync(services: Services) {
   const hub = hubs.get(services)
@@ -111,7 +113,11 @@ class RuntimeSync {
     { signature: string; checked: number; pending: Promise<RuntimeSnapshot> }
   >()
   private projectionKey(view: View) {
-    return JSON.stringify([view.taskIds && [...new Set(view.taskIds)].sort(), view.pagedHistory])
+    return JSON.stringify([
+      view.taskIds && [...new Set(view.taskIds)].sort(),
+      view.pagedHistory,
+      view.settledLimit,
+    ])
   }
   constructor(private services: Services) {}
   async dispose() {
@@ -141,6 +147,7 @@ class RuntimeSync {
     fieldUpdates: boolean,
     taskIds?: readonly string[],
     pagedHistory = false,
+    settledLimit?: number,
   ) {
     const device = this.services.devices.authenticate(token)
     const viewId = JSON.stringify([
@@ -148,6 +155,7 @@ class RuntimeSync {
       fieldUpdates ? 'fields' : compact ? 'lean' : 'legacy',
       taskIds ? [...taskIds].sort() : null,
       pagedHistory,
+      settledLimit,
     ])
     let view = this.views.get(viewId)
     if (!view || view.token !== token) {
@@ -156,6 +164,7 @@ class RuntimeSync {
         device,
         taskIds,
         pagedHistory,
+        settledLimit,
         compact,
         fieldUpdates,
         epoch: randomUUID(),
@@ -207,8 +216,9 @@ class RuntimeSync {
     taskIds?: readonly string[],
     pagedHistory = false,
     taskUpdates = false,
+    settledLimit?: number,
   ) {
-    let current = this.view(token, compact, fieldUpdates, taskIds, pagedHistory)
+    let current = this.view(token, compact, fieldUpdates, taskIds, pagedHistory, settledLimit)
     clearTimeout(current.expiry)
     const client: Client = {
       socket,
@@ -252,6 +262,7 @@ class RuntimeSync {
                 fieldUpdates,
                 [...new Set(input.tasks)],
                 pagedHistory,
+                settledLimit,
               )
               if (nextView !== current) {
                 client.ready = false
@@ -426,7 +437,14 @@ class RuntimeSync {
         signature,
         checked: Date.now(),
         pending: Effect.runPromise(
-          runtimeSnapshot(s, { id: 'owner', owner: true }, false, view.taskIds, view.pagedHistory),
+          runtimeSnapshot(
+            s,
+            { id: 'owner', owner: true },
+            false,
+            view.taskIds,
+            view.pagedHistory,
+            view.settledLimit,
+          ),
           {
             signal: this.controller.signal,
           },

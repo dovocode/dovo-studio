@@ -313,3 +313,20 @@ it.each(['success', 'failure'] as const)(
     expect(events).toHaveLength(count)
   },
 )
+
+it('combines paged window limits and restores complete summaries for a full-list window', async () => {
+  const f = fixture()
+  const main = { ...f.input('main'), settledLimit: 25 }
+  f.manager.subscribe('main', main, () => {})
+  await vi.advanceTimersByTimeAsync(500)
+  expect(f.read.mock.calls.at(-1)?.[1]).toContain('settled=25')
+  f.manager.subscribe('popout', { ...f.input('popout'), settledLimit: 50 }, () => {})
+  await vi.advanceTimersByTimeAsync(1500)
+  expect(f.read.mock.calls.at(-1)?.[1]).toContain('settled=50')
+  f.manager.subscribe('main', { ...main, settledLimit: undefined }, () => {})
+  await vi.advanceTimersByTimeAsync(1500)
+  expect(f.read.mock.calls.at(-1)?.[1]).not.toContain('settled=')
+  f.manager.unsubscribe('main')
+  await vi.advanceTimersByTimeAsync(1500)
+  expect(f.read.mock.calls.at(-1)?.[1]).toContain('settled=50')
+})

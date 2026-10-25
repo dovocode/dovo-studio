@@ -6,7 +6,11 @@ import {
   boundedSnapshotCache,
   writeRuntimeSnapshotCache,
 } from './thread-cache.js'
-import { createRuntimeReadCache, type CacheStorage } from './read-cache.js'
+import {
+  createRuntimeReadCache,
+  runtimeSnapshotCacheSchema,
+  type CacheStorage,
+} from './read-cache.js'
 import { Effect } from 'effect'
 import { decode } from '../../shared/schema.js'
 import { snapshotSchema } from '../connection/runtime.js'
@@ -340,4 +344,61 @@ it('invalidates cached content and its loaded marker when a summary reports remo
   expect(retained.detailTaskIds).toEqual([])
   expect(retained.workspace.tasks[0]?.messages).toEqual([])
   expect(retained.workspace.tasks[0]?.historyRevision).toBe(1)
+})
+
+it('refreshes unchanged snapshots with small metadata writes, retries failures and rejects stale stamps', async () => {
+  const entries = new Map<string, string>()
+  const writes: string[] = []
+  let fail = false
+  const storage: CacheStorage = {
+    async getItem(key) {
+      return entries.get(key) ?? null
+    },
+    async setItem(key, value) {
+      if (fail && key.endsWith('.snapshot-freshness')) throw new Error('Disk unavailable')
+      writes.push(key)
+      entries.set(key, value)
+    },
+    async removeItem(key) {
+      entries.delete(key)
+    },
+    async removePrefix(prefix) {
+      for (const key of entries.keys()) if (key.startsWith(prefix)) entries.delete(key)
+    },
+  }
+  const client = createRuntimeReadCache(
+    { address: 'http://freshness.local', token: 'device' },
+    storage,
+    async (value) => value,
+  )
+  const first = snapshot([task('a')], ['a'])
+  const save = (lastSeen: string, next = first) =>
+    Effect.runPromise(writeRuntimeSnapshotCache(client, { snapshot: next, lastSeen, pulls: null }))
+  try {
+    await save('2026-10-25T12:00:00Z')
+    const initial = writes.filter((key) => key.endsWith('.snapshot')).length
+    await save('2026-10-25T12:01:00Z')
+    expect(writes.filter((key) => key.endsWith('.snapshot'))).toHaveLength(initial)
+    expect((await client.read('snapshot', runtimeSnapshotCacheSchema))?.value.lastSeen).toBe(
+      '2026-10-25T12:01:00Z',
+    )
+    const count = writes.length
+    await save('2026-10-25T12:01:00Z')
+    expect(writes).toHaveLength(count)
+    fail = true
+    await expect(save('2026-10-25T12:02:00Z')).rejects.toThrow('Disk unavailable')
+    fail = false
+    await save('2026-10-25T12:02:00Z')
+    expect((await client.read('snapshot', runtimeSnapshotCacheSchema))?.value.lastSeen).toBe(
+      '2026-10-25T12:02:00Z',
+    )
+    const next = snapshot([{ ...task('a'), title: 'Changed' }], ['a'])
+    await save('2026-10-25T12:03:00Z', next)
+    const read = await client.read('snapshot', runtimeSnapshotCacheSchema)
+    expect(read?.value.lastSeen).toBe('2026-10-25T12:03:00Z')
+    expect(read?.value.snapshot.workspace.tasks[0]?.title).toBe('Changed')
+    expect(writes.filter((key) => key.endsWith('.snapshot'))).toHaveLength(initial + 1)
+  } finally {
+    await client.close()
+  }
 })
