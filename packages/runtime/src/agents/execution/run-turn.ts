@@ -1,3 +1,4 @@
+import { HookEvents, type HookTool } from './hook-events.js'
 import { noStudioTools, type StudioTools } from '@dovo/protocol'
 import { deviceHubAgentInstructions } from '../../agent-tools/device-guidance.js'
 import { runCredentials } from '../../auth/run-credentials.js'
@@ -72,7 +73,15 @@ export class TurnStoreFailure extends Error {
   }
 }
 
+export type CompletedCommand = { taskId: string; turnId: string; tool: HookTool }
 export class TaskTurnRunner {
+  private commandListeners = new Set<(event: CompletedCommand) => void>()
+  onCommandCompleted(listener: (event: CompletedCommand) => void) {
+    this.commandListeners.add(listener)
+    return () => {
+      this.commandListeners.delete(listener)
+    }
+  }
   private toolBindings = new Map<string, { id: string; fingerprint: string }>()
   private onNativeSession?: (
     taskId: string,
@@ -669,6 +678,7 @@ ${
               selectedAgent.sandboxMode
           )
         }
+        const commandEvents = new HookEvents(agent.provider, sessionId)
         const tokens = turnTokenCounter(agent.provider, () => this.store.taskSummary(id).sessionId)
         const tokenField = () => {
           const total = tokens.total()
@@ -1200,6 +1210,13 @@ ${
                     this.store.updateTask(id, (task) => ({ ...task, subagents }))
                   const reasoningOnly = reasoning.accept(name, payload)
                   const tool = toolEvent(agent.provider, name, payload)
+                  if (tool && this.commandListeners.size) {
+                    for (const event of commandEvents.accept(name, payload)) {
+                      if (event.event === 'tool-complete' && event.data.tool?.kind === 'command')
+                        for (const listener of this.commandListeners)
+                          listener({ taskId: id, turnId, tool: event.data.tool })
+                    }
+                  }
                   if (tool && buffer) flush()
                   if (reasoningOnly && !tool) return
                   const offset = textOffset()

@@ -149,9 +149,18 @@ Browser checks exercise real desktop/mobile hooks: advancing the clock leaves di
 unchanged while overview reads continue; explicit refresh and a new head reload changes. Mobile
 presentation/transport are mocked; these are not native-device measurements.
 
-A remaining difference is immediacy after shell commands: Dovo's watcher discovers branch PRs on its
-two-minute poll, and summary references come from chat text. T3 reacts to verified completed
-create/merge commands, including output-only PR links. Dovo has not adopted shell-command parsing in
-this pass. Doing so needs command provenance, multi-forge validation and lifecycle tests; merely
-scraping every tool-output URL would incorrectly link unrelated PRs. No new automatic PR watch or
-merge policy is introduced.
+Dovo now also adopts T3's command-driven PR handling. Successful, deduplicated shell-tool
+completions from the existing provider normalizer trigger refreshes. `gh pr create` and
+`glab mr create` output can link a PR before it is mentioned in chat; candidate URLs must appear
+alone on a line, match the create CLI, and pass the configured project's forge lookup. Quoted
+examples, heredoc bodies, list/API output and ambiguous extra URLs are rejected. Explicit unlinks
+and disabled smart linking are preserved.
+
+`gh pr merge/close`, `gh stack merge` and `glab mr merge/close` trigger fresh scoped lookups;
+merge/close commands are checked again after the run releases its lock, covering `--auto`.
+Previously unlinked PRs are verified before attachment. Numeric targets must already be linked or
+match the checkout branch. An explicit URL can establish a branchless association, which continues
+through ordinary polling and watcher restarts. Commands cannot settle an auxiliary PR instead of a
+known source/branch PR, bypass settlement preferences or discard protected work. The two-minute poll
+remains the fallback for later external changes and unsupported shell forms. No new automatic PR
+watch or merge policy is introduced.

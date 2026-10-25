@@ -1,5 +1,8 @@
+import { createdPulls, pullCommands, commandInput, commandOutput } from './pull-commands.js'
+import type { CompletedCommand } from '../../agents/execution/run-turn.js'
 import {
   pullStacks,
+  pullReference,
   stackSummary,
   taskFamilyIds,
   taskPullLinks,
@@ -69,6 +72,120 @@ const summaryChecks = (state: string | null | undefined) => {
 export class TaskPullWatcher {
   private poller?: ReturnType<typeof startPolling>
   private unwatch?: () => void
+  private unwatchCommands?: () => void
+  private commandWork = Promise.resolve()
+  private closingTasks = new Set<string>()
+  private commandPulls = new Map<string, { number: number; url: string }>()
+  private enqueueCommand(work: () => Promise<void>) {
+    const pending = this.commandWork
+      .then(async () => {
+        if (!this.stopping) await work()
+      })
+      .catch((error: unknown) => console.warn('Could not refresh PRs after a shell command', error))
+    this.commandWork = pending
+    this.pending.add(pending)
+    void pending.finally(() => this.pending.delete(pending))
+  }
+  private async completedCommand({ taskId, tool }: CompletedCommand) {
+    const input = commandInput(tool.input)
+    const commands = pullCommands(input)
+    if (!commands.length) return
+    const task = this.s.store.get().tasks.find((task) => task.id === taskId)
+    if (!task || task.example || task.archivedAt) return
+    const repo = this.s.store
+      .get()
+      .repositories.find((repo) => repo.id === task.repositoryId && !repo.kind)
+    const identity = repo && pullRepositoryIdentity(repo)
+    if (!repo || !identity) return
+    const sameProject = () => {
+      const current = this.s.store.get().repositories.find((value) => value.id === repo.id)
+      return (
+        !!current &&
+        current.path === repo.path &&
+        pullRepositoryIdentity(current) === identity &&
+        current.forge?.connectionId === repo.forge?.connectionId &&
+        current.forge?.repository === repo.forge?.repository &&
+        current.forge?.revision === repo.forge?.revision
+      )
+    }
+    const matching = commands.filter((command) => {
+      if (!command.repository) return true
+      const host = identity.slice(0, identity.indexOf('/'))
+      return (
+        gitRemoteIdentity(
+          command.repository.includes('://')
+            ? command.repository
+            : `https://${host}/${command.repository}`,
+        ) === identity
+      )
+    })
+    if (!matching.length) return
+    const closed = matching.filter((command) => command.action !== 'create')
+    if (closed.length && task.activeRunId) this.closingTasks.add(taskId)
+    const references = matching.some((command) => command.action === 'create')
+      ? createdPulls(input, commandOutput(tool.output))
+      : []
+    for (const command of closed) {
+      if (!command.target) continue
+      try {
+        const reference = pullReference(command.target)
+        references.push({ number: reference.number, url: reference.url ?? '' })
+      } catch {
+        // A branch target is resolved using the verified checkout association below.
+      }
+    }
+    for (const reference of references) {
+      if (this.stopping) return
+      if (reference.url) {
+        const link = threadPullLink(reference.url)
+        if (!link?.repositoryUrl || gitRemoteIdentity(link.repositoryUrl) !== identity) continue
+      }
+      try {
+        const detail = await this.s.pullCache.status(repo.path, reference.number, true, true)
+        if (detail.stale || detail.refreshError || detail.warnings.length) continue
+        verifyPullUrl(reference.url || undefined, detail.pull.url)
+        const link = threadPullLink(detail.pull.url)
+        if (!link?.repositoryUrl || gitRemoteIdentity(link.repositoryUrl) !== identity) continue
+        // A bare number from a different checkout cannot attach or settle this thread.
+        if (
+          !reference.url &&
+          !matchesBranch(detail.pull, task.checkoutBranch) &&
+          !taskPullLinks(task).some((link) => link.url === detail.pull.url)
+        )
+          continue
+        const current = this.s.store.get().tasks.find((task) => task.id === taskId)
+        if (
+          this.stopping ||
+          !current ||
+          current.ignoredPullRequestUrls?.includes(detail.pull.url) ||
+          !sameProject() ||
+          current.repositoryId !== task.repositoryId ||
+          current.checkoutBranch !== task.checkoutBranch
+        )
+          continue
+        this.attach(task, detail.pull)
+        if (
+          closed.length &&
+          (!task.checkoutBranch || matchesBranch(detail.pull, task.checkoutBranch)) &&
+          taskPullLinks(this.s.store.taskSummary(taskId)).some(
+            (link) => link.url === detail.pull.url,
+          )
+        )
+          this.commandPulls.set(taskId, { number: detail.pull.number, url: detail.pull.url })
+      } catch {
+        // A command's output is only a hint; unavailable or mismatched forge data cannot link it.
+      }
+    }
+    const currentTask = this.s.store.get().tasks.find((value) => value.id === taskId)
+    if (
+      this.stopping ||
+      !sameProject() ||
+      currentTask?.repositoryId !== task.repositoryId ||
+      currentTask.checkoutBranch !== task.checkoutBranch
+    )
+      return
+    await this.refreshTasks(taskId, true)
+  }
   private linkedRefresh?: ReturnType<typeof setTimeout>
   private linkedTasks = new Set<string>()
   private stopping = false
@@ -167,11 +284,40 @@ export class TaskPullWatcher {
   }
   start() {
     if (this.stopping || this.poller) return
+    this.unwatchCommands = this.s.tasks.onCommandCompleted((event) => {
+      if (!/\b(?:gh|glab)\b/.test(commandInput(event.tool.input))) return
+      this.enqueueCommand(() => this.completedCommand(event))
+    })
     this.unwatch = this.s.store.onCommitted((before, after) => {
       const previous = new Map(before.tasks.map((task) => [task.id, task]))
+      if (this.commandPulls.size || this.closingTasks.size) {
+        const currentTasks = new Map(after.tasks.map((task) => [task.id, task]))
+        for (const [id, hint] of this.commandPulls) {
+          const current = currentTasks.get(id)
+          const prior = previous.get(id)
+          if (
+            !current ||
+            current.archivedAt ||
+            current.repositoryId !== prior?.repositoryId ||
+            current.checkoutBranch !== prior?.checkoutBranch ||
+            !taskPullLinks(current).some((link) => link.url === hint.url)
+          ) {
+            this.commandPulls.delete(id)
+            this.closingTasks.delete(id)
+          }
+        }
+        for (const id of this.closingTasks)
+          if (!currentTasks.has(id) || currentTasks.get(id)?.archivedAt)
+            this.closingTasks.delete(id)
+      }
       for (const task of after.tasks) {
         if (task.example || task.archivedAt) continue
         const prior = previous.get(task.id)
+        if (prior?.activeRunId && !task.activeRunId && this.closingTasks.delete(task.id)) {
+          // releaseRun clears activeRunId before releasing its in-memory lock. The queued
+          // microtask runs after that lock is released, and rechecks --auto merges as well.
+          this.enqueueCommand(() => this.refreshTasks(task.id, true))
+        }
         if (
           prior &&
           prior.pullRequest === task.pullRequest &&
@@ -220,6 +366,9 @@ export class TaskPullWatcher {
   async dispose() {
     this.stopping = true
     this.unwatch?.()
+    this.unwatchCommands?.()
+    this.closingTasks.clear()
+    this.commandPulls.clear()
     clearTimeout(this.linkedRefresh)
     this.linkedTasks.clear()
     // Interrupting the polling fiber does not cancel its underlying refresh promise.
@@ -312,11 +461,13 @@ export class TaskPullWatcher {
         ),
       }))
   }
-  private async refreshTasks() {
+  private async refreshTasks(taskId?: string, force = false) {
     const workspace = this.s.store.get()
     const openPulls = new Map<string, Awaited<ReturnType<Services['pullCache']['list']>>>()
     const confirmations = new Map<string, Awaited<ReturnType<Services['pullCache']['status']>>>()
     for (const task of workspace.tasks) {
+      if (this.stopping) return
+      if (taskId && task.id !== taskId) continue
       if (
         !task.example &&
         !task.archivedAt &&
@@ -331,16 +482,29 @@ export class TaskPullWatcher {
           !this.s.preferences.get().archiveOnPullMerge)
       )
         continue
-      if (!task.pullRequest && !task.checkoutBranch && !task.history.pullReferences?.length)
+      if (
+        !task.pullRequest &&
+        !task.checkoutBranch &&
+        !task.history.pullReferences?.length &&
+        !this.commandPulls.has(task.id) &&
+        !task.pullStatus?.number
+      )
         continue
       const repo = workspace.repositories.find((item) => item.id === task.repositoryId)
       if (!repo || repo.kind) continue
       try {
         const mentioned = await this.linkMentions(task, repo)
-        if (!task.pullRequest && !task.checkoutBranch) continue
+        // A shell-linked branchless PR keeps following its verified association after restart.
+        const remembered = taskPullLinks(task).find(
+          (link) =>
+            link.url === task.pullStatus?.url &&
+            gitRemoteIdentity(link.repositoryUrl) === pullRepositoryIdentity(repo),
+        )
+        const commandPull = this.commandPulls.get(task.id) ?? remembered
+        if (!task.pullRequest && !task.checkoutBranch && !commandPull) continue
         let open = openPulls.get(repo.path)
         if (!open) {
-          open = await this.s.pullCache.list(repo.path, 'open', 1, false, true)
+          open = await this.s.pullCache.list(repo.path, 'open', 1, force, true)
           const preferences = this.s.preferences.get()
           if (open.stale && (this.shouldSettle(task) || preferences.archiveOnPullMerge))
             open = await this.s.pullCache.list(repo.path, 'open', 1, true, true)
@@ -353,7 +517,7 @@ export class TaskPullWatcher {
             open.hasMore &&
             !open.pulls.some((pull) => matchesBranch(pull, task.checkoutBranch))
           ) {
-            const next = await this.s.pullCache.list(repo.path, 'open', open.page + 1, false, true)
+            const next = await this.s.pullCache.list(repo.path, 'open', open.page + 1, force, true)
             open = { ...next, pulls: [...open.pulls, ...next.pulls] }
             openPulls.set(repo.path, open)
             if (!next.pulls.length) break
@@ -365,7 +529,8 @@ export class TaskPullWatcher {
           task.pullRequest?.number ??
           byBranch?.number ??
           (mentionedBranch.length === 1 ? mentionedBranch[0]?.number : undefined) ??
-          task.pullStatus?.number
+          task.pullStatus?.number ??
+          commandPull?.number
         if (!number) continue
         const summary = open.pulls.find((pull) => pull.number === number)
         const checks = summary ? summaryChecks(summary.checksState) : undefined
@@ -384,7 +549,7 @@ export class TaskPullWatcher {
         else {
           // Failing checks need their names; a pull request that left the open list was
           // merged or closed. Both come from the (cached) detail.
-          let detail = await this.s.pullCache.status(repo.path, number, false, true)
+          let detail = await this.s.pullCache.status(repo.path, number, force, true)
           const preferences = this.s.preferences.get()
           if (
             detail.pull.state !== 'open' &&
@@ -407,7 +572,9 @@ export class TaskPullWatcher {
           freshClosure =
             !detail.stale &&
             !detail.refreshError &&
-            (!!task.pullRequest || matchesBranch(detail.pull, task.checkoutBranch))
+            (!!task.pullRequest ||
+              matchesBranch(detail.pull, task.checkoutBranch) ||
+              commandPull?.url === detail.pull.url)
           this.attach(task, detail.pull)
           const outcomes = detail.checks.map((check) => ({
             name: check.name,

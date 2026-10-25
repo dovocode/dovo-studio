@@ -27,7 +27,12 @@ import {
   type SubagentSpawn,
 } from '@dovo/protocol'
 import type { Attachments } from '../../storage/attachments.js'
-import { TaskTurnRunner, FinalizationFailure, TurnStoreFailure } from '../execution/run-turn.js'
+import {
+  TaskTurnRunner,
+  FinalizationFailure,
+  TurnStoreFailure,
+  type CompletedCommand,
+} from '../execution/run-turn.js'
 import { TaskQueue } from './task-queue.js'
 import { safeFile } from '../../scm/repositories/paths.js'
 import type { Questions } from '../execution/questions.js'
@@ -150,6 +155,9 @@ export class Tasks {
           })
       }
     })
+  }
+  onCommandCompleted(listener: (event: CompletedCommand) => void) {
+    return this.runner.onCommandCompleted(listener)
   }
   private mcpApps?: McpApps
   private deletionReservations = new Map<string, symbol>()

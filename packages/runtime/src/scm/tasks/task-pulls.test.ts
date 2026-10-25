@@ -799,3 +799,195 @@ it('matches mentions to the configured PR target when it differs from the clone 
   expect(f.detail).toHaveBeenCalledTimes(1)
   expect(f.detail).toHaveBeenCalledWith(expect.any(String), 7, false, true)
 })
+
+async function commandFixture(state: 'closed' | 'merged' = 'closed') {
+  const f = await smartFixture(state)
+  let listener: Parameters<typeof f.s.tasks.onCommandCompleted>[0] | undefined
+  vi.spyOn(f.s.tasks, 'onCommandCompleted').mockImplementation((callback) => {
+    listener = callback
+    return () => {
+      listener = undefined
+    }
+  })
+  f.watcher.start()
+  cleanups.push(() => f.watcher.dispose())
+  const emit = (input: string, output = '') =>
+    listener?.({
+      taskId: f.task.id,
+      turnId: 'command-turn',
+      tool: { id: 'tool', name: 'bash', kind: 'command', status: 'completed', input, output },
+    })
+  return { ...f, emit }
+}
+it('links a shell-created PR before the agent mentions it and preserves explicit unlinking', async () => {
+  const f = await commandFixture()
+  f.emit('gh pr create --fill', 'https://github.com/o/r/pull/7')
+  await vi.waitFor(() =>
+    expect(f.s.store.task(f.task.id).linkedPullRequests?.[0]?.url).toBe(
+      'https://github.com/o/r/pull/7',
+    ),
+  )
+  expect(f.detail.mock.calls.some((call) => call[2] === true)).toBe(true)
+  f.s.store.updateTask(f.task.id, (task) => ({
+    ...task,
+    linkedPullRequests: [],
+    ignoredPullRequestUrls: ['https://github.com/o/r/pull/7'],
+  }))
+  f.emit('gh pr create --fill', 'https://github.com/o/r/pull/7')
+  await f.watcher.dispose()
+  expect(f.s.store.task(f.task.id).linkedPullRequests).toEqual([])
+})
+it('forces a fresh lookup and settles a previously unlinked PR merged through the shell', async () => {
+  const f = await commandFixture('merged')
+  f.s.preferences.save({ settleOnPullClose: true })
+  f.list.mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+  f.emit('gh pr merge 7 --squash')
+  await vi.waitFor(() => expect(f.s.store.task(f.task.id).archived).toBe(true))
+  expect(f.s.store.task(f.task.id).pullStatus).toMatchObject({ number: 7, state: 'merged' })
+  expect(f.list.mock.calls.some((call) => call[3] === true)).toBe(true)
+})
+it('rechecks --auto after the run releases its lock without settling a running thread', async () => {
+  const f = await commandFixture('merged')
+  f.s.preferences.save({ settleOnPullClose: true })
+  f.s.store.updateTask(f.task.id, (task) => ({ ...task, activeRunId: 'active', status: 'running' }))
+  const initial = await f.s.pullCache.status('/repo', 7)
+  f.detail.mockResolvedValue({ ...initial, pull: { ...initial.pull, state: 'open' } })
+  f.emit('gh pr merge 7 --auto')
+  await vi.waitFor(() => expect(f.s.store.task(f.task.id).linkedPullRequests).toHaveLength(1))
+  expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+  f.detail.mockResolvedValue(initial)
+  f.list.mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+  f.s.store.updateTask(f.task.id, (task) => ({ ...task, activeRunId: undefined, status: 'review' }))
+  await vi.waitFor(() => expect(f.s.store.task(f.task.id).archived).toBe(true))
+})
+it.each([
+  'foreign output',
+  'foreign repository',
+  'ambiguous output',
+  'ignored PR',
+  'disabled linking',
+] as const)('does not automatically attach %s', async (mode) => {
+  const f = await commandFixture()
+  // Isolate output-driven linking from the ordinary verified branch fallback.
+  f.s.store.updateTask(f.task.id, (task) => ({
+    ...task,
+    checkoutBranch: undefined,
+    ignoredPullRequestUrls: mode === 'ignored PR' ? ['https://github.com/o/r/pull/7'] : [],
+  }))
+  if (mode === 'disabled linking') f.s.preferences.save({ autoLinkPullRequests: false })
+  f.emit(
+    mode === 'foreign repository' ? 'gh pr create --repo other/r --fill' : 'gh pr create --fill',
+    mode === 'foreign output'
+      ? 'https://github.com/other/r/pull/7'
+      : mode === 'ambiguous output'
+        ? 'https://github.com/o/r/pull/7\nhttps://github.com/o/r/pull/8'
+        : 'https://github.com/o/r/pull/7',
+  )
+  // Disposal drains the already queued callback and prevents future command callbacks.
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  await f.watcher.dispose()
+  expect(f.s.store.task(f.task.id).linkedPullRequests ?? []).toEqual([])
+})
+
+it.each(['queue', 'draft', 'pinned'] as const)(
+  'keeps %s protected after a shell merge',
+  async (protection) => {
+    const f = await commandFixture('merged')
+    f.s.preferences.save({ settleOnPullClose: true })
+    f.list.mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+    f.s.store.updateTask(f.task.id, (task) => ({
+      ...task,
+      pinned: protection === 'pinned',
+      draft: protection === 'draft' ? 'Unsent draft' : '',
+      queue:
+        protection === 'queue'
+          ? [{ id: 'next', text: 'More work', role: 'user', createdAt: new Date().toISOString() }]
+          : [],
+    }))
+    f.emit('gh pr merge 7 --squash')
+    await vi.waitFor(() => expect(f.s.store.task(f.task.id).pullStatus?.state).toBe('merged'))
+    expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+  },
+)
+it('drains an in-flight command verification on disposal without applying its late link', async () => {
+  const f = await commandFixture()
+  const initial = await f.s.pullCache.status('/repo', 7)
+  const entered = deferred<void>()
+  const response = deferred<typeof initial>()
+  f.detail.mockImplementation(() => {
+    entered.resolve()
+    return response.promise
+  })
+  f.emit('gh pr create --fill', 'https://github.com/o/r/pull/7')
+  await entered.promise
+  let stopped = false
+  const closing = f.watcher.dispose().then(() => {
+    stopped = true
+  })
+  await Promise.resolve()
+  expect(stopped).toBe(false)
+  response.resolve(initial)
+  await closing
+  expect(f.s.store.task(f.task.id).linkedPullRequests ?? []).toEqual([])
+})
+it('does not attach a verification fetched under a replaced forge binding', async () => {
+  const f = await commandFixture()
+  const initial = await f.s.pullCache.status('/repo', 7)
+  const entered = deferred<void>(),
+    response = deferred<typeof initial>()
+  f.detail.mockImplementationOnce(() => {
+    entered.resolve()
+    return response.promise
+  })
+  f.emit('gh pr create --fill', 'https://github.com/o/r/pull/7')
+  await entered.promise
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repo) => ({
+      ...repo,
+      gitIdentity: 'github.com/other/r',
+    })),
+  }))
+  response.resolve(initial)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  await f.watcher.dispose()
+  expect(f.s.store.task(f.task.id).linkedPullRequests ?? []).toEqual([])
+})
+
+it('continues following a verified branchless auto-merge association after watcher restart', async () => {
+  const f = await commandFixture('merged')
+  f.s.preferences.save({ settleOnPullClose: true })
+  f.s.store.updateTask(f.task.id, (task) => ({ ...task, checkoutBranch: undefined }))
+  const merged = await f.s.pullCache.status('/repo', 7)
+  f.detail.mockResolvedValue({ ...merged, pull: { ...merged.pull, state: 'open' } })
+  f.emit('gh pr merge https://github.com/o/r/pull/7 --auto')
+  await vi.waitFor(() => expect(f.s.store.task(f.task.id).pullStatus?.state).toBe('open'))
+  await f.watcher.dispose()
+  f.detail.mockResolvedValue(merged)
+  f.list.mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+  const restarted = new TaskPullWatcher(f.s)
+  await restarted.refresh()
+  expect(f.s.store.task(f.task.id).archived).toBe(true)
+})
+
+it('does not settle the thread when a shell command closes a linked auxiliary PR', async () => {
+  const f = await commandFixture('merged')
+  f.s.preferences.save({ settleOnPullClose: true })
+  f.s.store.updateTask(f.task.id, (task) => ({
+    ...task,
+    linkedPullRequests: [
+      {
+        number: 7,
+        url: 'https://github.com/o/r/pull/7',
+        title: 'Auxiliary',
+        repositoryUrl: 'https://github.com/o/r',
+      },
+    ],
+  }))
+  const initial = await f.s.pullCache.status('/repo', 7)
+  f.detail.mockResolvedValue({ ...initial, pull: { ...initial.pull, head: 'other-branch' } })
+  f.list.mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+  f.emit('gh pr merge 7 --squash')
+  await vi.waitFor(() => expect(f.s.store.task(f.task.id).pullStatuses?.[0]?.state).toBe('merged'))
+  expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+})
