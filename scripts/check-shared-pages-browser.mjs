@@ -6,6 +6,8 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const ui = root + '/packages/studio-ui/src'
 const mocks = {
+  // This suite checks shared page layout; encrypted publication has its own suite.
+  './chat/artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-core': `export {useAccount} from '${root}/packages/studio-core/src/use-account';export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export * from '@dovo/client-runtime';export const useRepositorySources=()=>[];export const repositorySourceKey=(a,b)=>a+b;export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{version:'0.0.9',channel:'nightly'},windowPlatform:window.platform,navigate:()=>{}});export const useAppPreferences=()=>({showIssues:true,showJira:true});export const updateAppPreferences=()=>{};export const formatDateTime=value=>String(value);export const WorkspaceScope=({children})=>children;`,
   '@dovo/studio-ui': `export {PageHeader} from '${ui}/page-header';export * from '${ui}/sidebar-header';export {Button} from '${ui}/components/ui/button';export {Input} from '${ui}/components/ui/input';export * from '${ui}/components/ui/dialog';export {ChoicePicker} from '${ui}/choice-picker';export {cn} from '${ui}/lib/utils';export {IconButton} from '${ui}/components/icon-button';export {EmptyState} from '${ui}/components/empty-state';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';export const useCompactLayout=()=>innerWidth<1024;`,
