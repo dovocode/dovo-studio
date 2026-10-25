@@ -1,3 +1,4 @@
+import { ThreadSharing, InlineThreadSuggestions } from '../chat/thread-sharing'
 import { CodeReviewCard } from '../review/code-review-card'
 import type { CodeFinding } from '@dovo/protocol'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -203,6 +204,18 @@ export function TaskConversation({
       onEdit={() => setComposerCollapsed(false)}
     >
       <div data-task-conversation={task.id} className="flex h-full min-h-0 flex-col">
+        {!temporary && !task.example && (
+          <div className="flex justify-end px-4 py-1">
+            <ThreadSharing
+              taskId={task.id}
+              title={task.title}
+              onUseSuggestion={(text) => {
+                setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
+                setComposerCollapsed(false)
+              }}
+            />
+          </div>
+        )}
         {temporary ? (
           <TaskEmptyState />
         ) : (
@@ -210,6 +223,18 @@ export function TaskConversation({
             <ChatThread
               onUseTemplate={(text) =>
                 setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
+              }
+              footer={
+                !task.example && (
+                  <InlineThreadSuggestions
+                    taskId={task.id}
+                    active={visible}
+                    onUseSuggestion={(text) => {
+                      setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
+                      setComposerCollapsed(false)
+                    }}
+                  />
+                )
               }
               active={visible}
               onReadingHistory={readingHistory}

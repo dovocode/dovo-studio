@@ -88,6 +88,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.agents.dispose(),
         () => services.runCredentials.dispose(),
         () => services.artifactFeeds.dispose(),
+        () => services.sharedThreads.dispose(),
         () => services.mcpApps.dispose(),
         () => services.remoteDesktop.dispose(),
         () => services.backups.settle(),
@@ -234,6 +235,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         services.tasks.startScheduler()
         services.mcpApps.start()
         services.artifactFeeds.start()
+        services.sharedThreads.start()
         housekeeping.start()
         taskPulls.start()
         services.pullRequestWatch.start()

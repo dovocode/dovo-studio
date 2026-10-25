@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Schema } from 'effect'
 import {
   decode,
+  encryptSharedContent,
   ACCOUNT_DIRECTORY_URL,
   artifactFeedQuerySchema,
   artifactFeedToolsSchema,
@@ -9,6 +10,7 @@ import {
   artifactFeedStatusSchema,
   type AccountClient,
   type Artifact,
+  type OpenShare,
 } from '@dovo/protocol'
 import type { WorkspaceRequest } from './workspace/context'
 
@@ -20,6 +22,8 @@ export function useArtifactFeed({
   runtimeId,
   request,
   connected,
+  encryptedShare,
+  onShareChange,
 }: {
   artifact: Artifact
   publicationId: string
@@ -28,6 +32,8 @@ export function useArtifactFeed({
   runtimeId: string | null
   request: WorkspaceRequest
   connected: boolean
+  encryptedShare?: OpenShare
+  onShareChange?: (share: OpenShare) => void
 }) {
   const [tools, setTools] = useState<(typeof artifactFeedToolsSchema.Type)['tools']>()
   const [selection, setSelection] = useState(''),
@@ -104,8 +110,8 @@ export function useArtifactFeed({
       const value = await request('/api/artifacts/feed/tools', ref, artifactFeedToolsSchema)
       check()
       const next = await request(
-        '/api/artifacts/feed/status',
-        { ...ref, publicationId },
+        encryptedShare ? '/api/sharing/status' : '/api/artifacts/feed/status',
+        encryptedShare ? { taskId: artifact.taskId, id: publicationId } : { ...ref, publicationId },
         artifactFeedStatusSchema,
       )
       check()
@@ -145,6 +151,37 @@ export function useArtifactFeed({
         throw new Error(
           'This computer must use the same Connect URL. Update it and configure matching services before enabling a feed.',
         )
+      if (encryptedShare) {
+        const result = await client.sharing.setPaused(origin, encryptedShare, false)
+        onShareChange?.(result.share)
+        try {
+          if (!result.writer) throw new Error('Feed writer permission is missing')
+          setStatus(
+            await request(
+              '/api/artifacts/feed/enable-encrypted',
+              {
+                previewId: plan.previewId,
+                config: {
+                  taskId: artifact.taskId,
+                  id: publicationId,
+                  origin,
+                  writerSecret: result.writer,
+                  contentKey: result.share.vault.contentKey,
+                  signingSeed: result.share.vault.signingSeed,
+                  generation: result.share.record.packet.generation,
+                },
+              },
+              artifactFeedStatusSchema,
+            ),
+          )
+          setPreview(undefined)
+        } catch (cause) {
+          const paused = await client.sharing.setPaused(origin, result.share, true)
+          onShareChange?.(paused.share)
+          throw cause
+        }
+        return
+      }
       const result = await client.enableArtifactFeed(
         publicationId,
         origin,
@@ -167,6 +204,30 @@ export function useArtifactFeed({
     })
   const stop = () =>
     act(async () => {
+      if (encryptedShare) {
+        const result = await client.sharing.setPaused(origin, encryptedShare, true)
+        // Clearing the hosted encrypted value follows the same explicit stop action as legacy feeds.
+        if (result.share.content.kind === 'artifact') {
+          const { feed: _feed, ...content } = result.share.content
+          result.share.content = content
+          result.share.record.packet = encryptSharedContent(
+            result.share.record.id,
+            result.share.record.packet.generation,
+            content,
+            result.share.vault,
+          )
+        }
+        const cleared = await client.sharing.save(origin, result.share)
+        onShareChange?.(cleared)
+        setStatus(
+          await request(
+            '/api/sharing/stop',
+            { taskId: artifact.taskId, id: publicationId },
+            artifactFeedStatusSchema,
+          ),
+        )
+        return
+      }
       if (status.generation) await client.stopArtifactFeed(publicationId, origin, status.generation)
       check()
       setStatus(

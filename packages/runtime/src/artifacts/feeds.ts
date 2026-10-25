@@ -233,6 +233,23 @@ export class ArtifactFeeds {
     this.previews.delete(previewId)
     return { enabled: true, error: '' }
   }
+  async encryptedPreview(previewId: string, device: string) {
+    const preview = this.previews.get(previewId)
+    if (!preview || preview.expires <= Date.now() || preview.config.device !== device)
+      throw new HttpError(409, 'Preview expired or belongs to another device')
+    const config = preview.config
+    const authorize = () => this.authorize(config, device)
+    authorize()
+    await this.mcp.feedCheck(
+      config.taskId,
+      config.query,
+      config.fingerprint,
+      AbortSignal.timeout(30000),
+      authorize,
+    )
+    authorize()
+    return { ...config, data: preview.data }
+  }
   status(ref: Reference, publicationId: string, device: string) {
     this.authorize(ref, device)
     const row = decode(

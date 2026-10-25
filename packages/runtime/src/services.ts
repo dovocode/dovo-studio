@@ -25,6 +25,7 @@ import { MutationReceipts } from './storage/mutation-receipts.js'
 import { McpApps } from './mcp-apps/bridge.js'
 import { Artifacts } from './artifacts/artifacts.js'
 import { ArtifactFeeds } from './artifacts/feeds.js'
+import { SharedThreads } from './studio/shared-threads.js'
 import { ScratchWorkspaces } from './scm/repositories/scratch-workspaces.js'
 import { AcpInstallations } from './agents/configuration/acp-installations.js'
 import type { ExternalListener } from './http/external-listener.js'
@@ -439,6 +440,15 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         return peerConnections.internet.origin
       },
     ),
+    sharedThreads: new SharedThreads(
+      db,
+      store,
+      devices,
+      artifacts,
+      () => services.artifactFeeds,
+      mcpApps,
+      () => preferences.get().enableArtifacts,
+    ),
     memory,
     scratch,
     pushNotifications,
@@ -496,6 +506,7 @@ export interface Services {
   pullRequestWatch: PullRequestWatch
   artifacts: Artifacts
   artifactFeeds: ArtifactFeeds
+  sharedThreads: SharedThreads
   mutations: MutationReceipts
   mcpApps: McpApps
   instanceId: string

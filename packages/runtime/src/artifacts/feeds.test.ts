@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import {
   AccountClient,
+  artifactPublicationInput,
   decode,
   mcpServerSchema,
   artifactFeedPreviewResultSchema,
@@ -70,8 +71,16 @@ async function setup() {
   vi.stubEnv('DOVO_CONNECT_ORIGIN', connectOrigin)
   const login = accounts.createLogin()
   accounts.approve(login.login, { id: 'owner', name: 'Owner' })
+  let sharingKey: string | null = null
   const client = new AccountClient(
-    { read: async () => login.token, write: async () => {} },
+    {
+      read: async () => login.token,
+      write: async () => {},
+      readSharingKey: async () => sharingKey,
+      writeSharingKey: async (key) => {
+        sharingKey = key
+      },
+    },
     async () => {},
     connectOrigin,
   )
@@ -196,6 +205,7 @@ async function setup() {
   }
   return {
     runtime,
+    artifact,
     accounts,
     hosted,
     client,
@@ -464,4 +474,55 @@ it('bounds in-flight preview reads as well as saved previews', async () => {
   await expect(s.preview()).rejects.toThrow('Too many pending feed previews')
   release()
   expect(await Promise.all(pending)).toHaveLength(32)
+})
+
+it('encrypts approved live artifact data and stops MCP reads when its hosted writer is revoked', async () => {
+  const s = await setup()
+  await s.client.sharing.recoveryKey(true)
+  const shared = await s.client.sharing.publish(s.origin, s.artifact.id, {
+    kind: 'artifact',
+    artifact: artifactPublicationInput(s.artifact),
+  })
+  const result = await s.client.sharing.setPaused(s.origin, shared, false)
+  if (!result.writer) throw new Error('Missing test writer')
+  const plan = await s.preview()
+  expect(plan.data).toEqual({ count: 1 })
+  const writer = s.runtime.services.sharedThreads
+  await writer.enableFeed(
+    plan.previewId,
+    {
+      taskId: s.ref.taskId,
+      id: shared.record.id,
+      origin: s.origin,
+      writerSecret: result.writer,
+      contentKey: result.share.vault.contentKey,
+      signingSeed: result.share.vault.signingSeed,
+      generation: result.share.record.packet.generation,
+    },
+    s.device,
+  )
+  await vi.waitFor(async () => {
+    const opened = await s.client.sharing.refresh(s.origin, shared.record.id)
+    expect(opened.content).toMatchObject({ kind: 'artifact', feed: { data: { count: 2 } } })
+  })
+  const raw = JSON.stringify(s.hosted.db.prepare('SELECT * FROM encrypted_shares').all())
+  for (const secret of [
+    'must-never-upload',
+    'private-meta',
+    '<p>Report</p>',
+    result.share.vault.contentKey,
+    result.writer,
+  ])
+    expect(raw).not.toContain(secret)
+  expect(s.parameters).toEqual(
+    Array.from({ length: 2 }, () => ({ name: 'report', arguments: { team: 'approved' } })),
+  )
+  await s.client.sharing.setPaused(s.origin, result.share, true)
+  s.runtime.services.db.prepare('UPDATE shared_thread_writers SET fingerprint=?').run('0')
+  await writer.tick()
+  expect(s.parameters).toHaveLength(2)
+  expect(writer.status(s.ref.taskId, shared.record.id)).toMatchObject({
+    enabled: false,
+    error: expect.stringMatching(/paused|revoked/),
+  })
 })

@@ -83,3 +83,17 @@ runtime uses the production pure value provider so selector-based task rows rece
 atom as broad context readers; standalone stacks supply runtime context above native header
 renderers. Sending, speech recognition, physical-device behavior and every possible screen action
 were not established by this simulator review.
+
+## Encrypted sharing verification, 25 October 2026
+
+A separate iOS simulator app (`com.dovo.studio.sharingreview`) ran a freshly exported catalog bundle
+with the current native dependency versions. The production sharing sheet was reviewed in light and
+dark appearance. Verified pause/resume, native link-expiry selection, anonymous link creation,
+composer insertion, suggestion dismissal, recovery-key reveal and the deletion confirmation
+(cancelled). The inline suggestion card was reviewed in both appearances; insertion preserved an
+existing synthetic draft and dismissal removed the card without opening sharing settings. The
+catalog uses encrypted, synthetic in-memory publications and makes no production requests.
+
+Android, physical devices, complete Dynamic Type coverage, recovery-key hiding and confirmed native
+deletion were not established. Browser tests cover the full encrypted manager lifecycle and inline
+inbox isolation, draft preservation, dismissal failures and polling cleanup separately.

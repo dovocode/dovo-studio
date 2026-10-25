@@ -19,9 +19,10 @@ const store = new ArtifactStore(
 )
 const { server, pruneOwners } = createArtifactServer({
   store,
-  origin: process.env.DOVO_ARTIFACTS_ORIGIN ?? '',
+  origin: process.env.DOVO_SHARING_ORIGIN ?? process.env.DOVO_ARTIFACTS_ORIGIN ?? '',
   connectOrigin: process.env.DOVO_CONNECT_ORIGIN ?? 'https://connect.dovo.studio',
-  serviceKey: process.env.DOVO_ARTIFACTS_SERVICE_KEY ?? '',
+  serviceKey: process.env.DOVO_SHARING_SERVICE_KEY ?? process.env.DOVO_ARTIFACTS_SERVICE_KEY ?? '',
+  brokerNamespace: process.env.DOVO_SHARING_ORIGIN ? 'sharing' : 'artifacts',
 })
 server.listen(Number(process.env.PORT ?? 8080), '0.0.0.0')
 let pruning = false

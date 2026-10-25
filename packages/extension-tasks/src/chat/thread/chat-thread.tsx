@@ -61,6 +61,7 @@ export function ChatThread({
   onManagePulls,
   onReadingHistory,
   active = true,
+  footer,
 }: {
   task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'> & {
     archived?: Task['archived']
@@ -78,6 +79,7 @@ export function ChatThread({
   onRevealHandled?: () => void
   onManagePulls?: () => void
   onReadingHistory?: () => void
+  footer?: ReactNode
   active?: boolean
 }) {
   const { request, connected, workspace, connection, activeRuntimeId } = useWorkspace()
@@ -647,6 +649,7 @@ export function ChatThread({
                 }
                 error={activity.error}
               />
+              {footer}
             </ConversationContent>
           </ConversationHistory>
           <ConversationRail items={markers} />

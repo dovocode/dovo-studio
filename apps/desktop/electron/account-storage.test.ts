@@ -1,23 +1,18 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 type Event = { senderFrame: { url: string }; sender: { mainFrame: { url: string } } }
 const f = vi.hoisted(() => ({
   directory: '',
   available: true,
-  handlers: new Map<
-    string,
-    (event: Event, token?: unknown, origin?: unknown) => Promise<unknown>
-  >(),
+  handlers: new Map<string, (event: Event, ...args: unknown[]) => Promise<unknown>>(),
 }))
 vi.mock('./runtime-data-directory.js', () => ({ desktopRuntimeDirectory: () => f.directory }))
 vi.mock('electron', () => ({
   ipcMain: {
-    handle: (
-      name: string,
-      handler: (event: Event, token?: unknown, origin?: unknown) => Promise<unknown>,
-    ) => f.handlers.set(name, handler),
+    handle: (name: string, handler: (event: Event, ...args: unknown[]) => Promise<unknown>) =>
+      f.handlers.set(name, handler),
   },
   safeStorage: {
     isEncryptionAvailable: () => f.available,
@@ -76,4 +71,34 @@ it('isolates custom Connect credentials and preserves the existing hosted sessio
   await expect(
     f.handlers.get('account:read')!(event(), 'https://user:secret@host.test'),
   ).rejects.toThrow('Use an HTTPS Connect URL')
+})
+
+it('isolates sharing keys by account and Connect origin and preserves them on sign-out', async () => {
+  const origin = 'https://connect.company.test',
+    key = 'a'.repeat(64)
+  const readKey = (user: string, target = origin) =>
+    f.handlers.get('sharing-key:read')!(event(), target, user)
+  expect(await readKey('owner')).toBeNull()
+  await f.handlers.get('sharing-key:write')!(event(), key, origin, 'owner')
+  expect(await readKey('owner')).toBe(key)
+  expect(await readKey('another-owner')).toBeNull()
+  expect(await readKey('owner', 'https://other.test')).toBeNull()
+  await write(null)
+  expect(await readKey('owner')).toBe(key)
+  const files = await readdir(f.directory)
+  expect(files).toHaveLength(1)
+  const path = join(f.directory, files[0]!)
+  expect(await readFile(path, 'utf8')).toBe('encrypted:' + key)
+  expect((await stat(path)).mode & 0o777).toBe(0o600)
+})
+it('protects sharing key IPC with renderer, identity, format and keychain validation', async () => {
+  const save = (key: unknown, user: unknown = 'owner', source = event()) =>
+    f.handlers.get('sharing-key:write')!(source, key, 'https://connect.company.test', user)
+  expect(() => save('a'.repeat(64), 'owner', event('https://attacker.test'))).toThrow(
+    'Untrusted desktop request',
+  )
+  expect(() => save('invalid')).toThrow('Invalid sharing key')
+  expect(() => save('a'.repeat(64), '')).toThrow('Invalid sharing identity')
+  f.available = false
+  expect(() => save('a'.repeat(64))).toThrow('Unlock your system keychain')
 })

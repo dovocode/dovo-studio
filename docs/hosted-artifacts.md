@@ -1,4 +1,8 @@
-# Hosted artifact sharing
+# Legacy hosted artifact sharing
+
+New Studio publications use [end-to-end encrypted sharing](encrypted-sharing.md), including live
+threads and full management inside Studio. The instructions below describe existing unencrypted
+publications and their legacy web viewer. Studio also manages these older copies directly.
 
 Dovo's optional artifact service stores published copies separately from your computers. Publishing
 uploads one explicitly selected saved version; it does not publish the thread, runtime address,

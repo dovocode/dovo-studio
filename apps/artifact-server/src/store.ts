@@ -48,6 +48,22 @@ export class ArtifactStore {
       generation TEXT NOT NULL,writer TEXT NOT NULL,expires INTEGER NOT NULL,seconds INTEGER NOT NULL,
       data TEXT NOT NULL,bytes INTEGER NOT NULL,updated INTEGER NOT NULL);`)
   }
+  /** Encrypted copies share the same disk budget as legacy documents and live feeds. */
+  encryptedBytes(owner?: string) {
+    if (!this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='encrypted_shares'").get())
+      return 0
+    const scope = owner === undefined ? '' : ' WHERE owner=?'
+    const content = this.db
+      .prepare('SELECT coalesce(sum(bytes),0) AS n FROM encrypted_shares' + scope)
+      .get(...(owner === undefined ? [] : [owner]))
+    const suggestions = this.db
+      .prepare(
+        'SELECT coalesce(sum(length(s.body)),0) AS n FROM encrypted_suggestions s JOIN encrypted_shares p ON p.id=s.share' +
+          (owner === undefined ? '' : ' WHERE p.owner=?'),
+      )
+      .get(...(owner === undefined ? [] : [owner]))
+    return Number(content?.n) + Number(suggestions?.n)
+  }
   publish(owner: string, input: ArtifactPublicationInput) {
     const body = JSON.stringify(decode(artifactPublicationInputSchema, input)),
       bytes = Buffer.byteLength(body)
@@ -83,8 +99,9 @@ export class ArtifactStore {
         .get()
       if (
         Number(own?.count) >= 100 ||
-        Number(own?.bytes) + this.feedBytes(owner) + bytes > this.accountBytes ||
-        Number(total?.bytes) + this.feedBytes() + bytes > this.totalBytes
+        Number(own?.bytes) + this.feedBytes(owner) + this.encryptedBytes(owner) + bytes >
+          this.accountBytes ||
+        Number(total?.bytes) + this.feedBytes() + this.encryptedBytes() + bytes > this.totalBytes
       )
         throw new ShareError(
           413,
@@ -263,8 +280,9 @@ export class ArtifactStore {
       this.db.prepare('SELECT coalesce(sum(bytes),0) AS n FROM publications').get()?.n,
     )
     if (
-      own + this.feedBytes(owner) + bytes - previous > this.accountBytes ||
-      total + this.feedBytes() + bytes - previous > this.totalBytes
+      own + this.feedBytes(owner) + this.encryptedBytes(owner) + bytes - previous >
+        this.accountBytes ||
+      total + this.feedBytes() + this.encryptedBytes() + bytes - previous > this.totalBytes
     )
       throw new ShareError(413, 'Artifact storage quota reached')
     return { data, bytes }

@@ -1,17 +1,30 @@
-import type { AccountClient, Artifact } from '@dovo/protocol'
+import type { AccountClient, Artifact, OpenShare } from '@dovo/protocol'
 import { useArtifactFeed, useWorkspace } from '@dovo/studio-core'
-import { Button, Input, Textarea } from '@dovo/studio-ui'
+import {
+  Button,
+  Input,
+  Textarea,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@dovo/studio-ui'
 
 export function ArtifactFeedSetup({
   artifact,
   publicationId,
   origin,
   client,
+  encryptedShare,
+  onShareChange,
 }: {
   artifact: Artifact
   publicationId: string
   origin: string
   client: AccountClient
+  encryptedShare?: OpenShare
+  onShareChange?: (share: OpenShare) => void
 }) {
   const { request, connected, activeRuntimeId } = useWorkspace()
   const feed = useArtifactFeed({
@@ -22,10 +35,15 @@ export function ArtifactFeedSetup({
     runtimeId: activeRuntimeId,
     request,
     connected,
+    encryptedShare,
+    onShareChange,
   })
   return (
-    <section className="space-y-3 border-t pt-3" aria-label="Live MCP data feed">
-      <h3 className="font-medium">Live MCP data</h3>
+    <section
+      className="min-w-0 space-y-3 rounded-xl border bg-card p-4"
+      aria-label="Live MCP data feed"
+    >
+      <h2 className="font-medium">Live MCP data</h2>
       <p>
         Approve one fixed read query for this published version. Your computer supplies the data;
         viewers cannot call tools or change the query.
@@ -45,25 +63,26 @@ export function ArtifactFeedSetup({
       )}
       {!!feed.tools?.length && (
         <>
-          <label className="block">
-            MCP query
-            <select
-              aria-label="MCP query"
-              className="mt-1 w-full rounded border p-2"
-              value={feed.selection}
-              disabled={feed.busy}
-              onChange={(event) => feed.setSelection(event.target.value)}
-            >
-              {feed.tools.map((tool, index) => (
-                <option key={`${tool.server}:${tool.tool}`} value={index}>
-                  {tool.server} / {tool.tool}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="space-y-2">
+            <p className="text-xs font-medium">MCP query</p>
+            <Select value={feed.selection} disabled={feed.busy} onValueChange={feed.setSelection}>
+              <SelectTrigger aria-label="MCP query">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {feed.tools.map((tool, index) => (
+                  <SelectItem key={`${tool.server}:${tool.tool}`} value={String(index)}>
+                    {tool.server} / {tool.tool}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           {feed.target && (
             <details>
-              <summary>Tool description and argument schema</summary>
+              <summary className="cursor-pointer rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+                Tool description and argument schema
+              </summary>
               <p>{feed.target.description}</p>
               <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-xs">
                 {JSON.stringify(feed.target.inputSchema, null, 2)}
@@ -89,19 +108,23 @@ export function ArtifactFeedSetup({
               onChange={(event) => feed.setPointer(event.target.value)}
             />
           </label>
-          <label className="block">
-            Refresh interval
-            <select
-              aria-label="Refresh interval"
-              value={feed.seconds}
+          <div className="space-y-2">
+            <p className="text-xs font-medium">Refresh interval</p>
+            <Select
+              value={String(feed.seconds)}
               disabled={feed.busy}
-              onChange={(event) => feed.setSeconds(Number(event.target.value))}
+              onValueChange={(value) => feed.setSeconds(Number(value))}
             >
-              <option value={60}>1 minute</option>
-              <option value={300}>5 minutes</option>
-              <option value={900}>15 minutes</option>
-            </select>
-          </label>
+              <SelectTrigger aria-label="Refresh interval">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="60">1 minute</SelectItem>
+                <SelectItem value="300">5 minutes</SelectItem>
+                <SelectItem value="900">15 minutes</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Button
             variant="outline"
             disabled={feed.busy || !connected}

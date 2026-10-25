@@ -7,7 +7,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && esbuild src/viewer.tsx --bundle --platform=browser --format=iife --target=es2022 --minify --outfile=dist/viewer.js",
+    "build": "tsc -p tsconfig.build.json && esbuild src/viewer.tsx src/sharing-viewer.tsx --bundle --platform=browser --format=iife --target=es2022 --minify --outdir=dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/main.js"
   },
