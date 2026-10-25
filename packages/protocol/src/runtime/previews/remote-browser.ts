@@ -69,6 +69,12 @@ export const remoteBrowserInputSchema = Schema.Union([
     button: Schema.Literals(['left', 'middle', 'right']).pipe(
       Schema.withDecodingDefaultType(Effect.sync(() => 'left')),
     ),
+    clickCount: Schema.optional(Schema.Literals([1, 2, 3])),
+    modifiers: Schema.optional(
+      Schema.Array(Schema.Literals(['Control', 'Meta', 'Alt', 'Shift'])).pipe(
+        Schema.check(Schema.isMaxLength(4)),
+      ),
+    ),
     ...point,
   }),
   mutableStruct({
@@ -125,7 +131,50 @@ export const remoteBrowserDialogSchema = mutableStruct({
   message: Schema.String,
   defaultValue: Schema.String,
 })
+export const remoteBrowserInteractionSchema = mutableStruct({
+  type: Schema.Literal('interaction'),
+  cursor: Schema.Literals([
+    'auto',
+    'default',
+    'pointer',
+    'text',
+    'vertical-text',
+    'crosshair',
+    'move',
+    'grab',
+    'grabbing',
+    'not-allowed',
+    'wait',
+    'progress',
+    'help',
+    'cell',
+    'copy',
+    'alias',
+    'no-drop',
+    'all-scroll',
+    'col-resize',
+    'row-resize',
+    'n-resize',
+    'e-resize',
+    's-resize',
+    'w-resize',
+    'ne-resize',
+    'nw-resize',
+    'se-resize',
+    'sw-resize',
+    'ew-resize',
+    'ns-resize',
+    'nesw-resize',
+    'nwse-resize',
+    'zoom-in',
+    'zoom-out',
+    'none',
+  ]),
+  href: maxValue(Schema.String, 4096),
+  editable: Schema.Boolean,
+})
 export const remoteBrowserMessageSchema = Schema.Union([
+  remoteBrowserInteractionSchema,
   mutableStruct({
     type: Schema.Literal('streamStats'),
     transportMs: maxValue(minValue(Schema.Number.pipe(Schema.check(Schema.isFinite())), 0), 60000),
@@ -145,6 +194,7 @@ export const remoteBrowserMessageSchema = Schema.Union([
     loading: Schema.Boolean,
     editable: Schema.Boolean,
     touch: Schema.optional(Schema.Boolean),
+    primaryModifier: Schema.optional(Schema.Literals(['Control', 'Meta'])),
   }),
   mutableStruct({
     type: Schema.Literal('error'),

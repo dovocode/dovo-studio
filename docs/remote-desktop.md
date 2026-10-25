@@ -21,7 +21,10 @@ sending it. Browser/OS-reserved shortcuts may remain local.
 On macOS, a locked host is shown as **Desktop locked** instead of a black or frozen screenshot.
 Choose **Unlock in Studio** to open the Mac's native Screen Sharing session inside the viewer.
 Authenticate with a macOS account allowed to use Screen Sharing, then use the lock screen if macOS
-asks. The host must have **System Settings → General → Sharing → Screen Sharing** enabled (or Remote
+asks. Studio suggests the host account’s short name; it remains editable. Authentication failures
+show the server’s reason and offer **Retry connection** with a fresh, empty password field. A
+stalled connection or authentication attempt ends after 15 seconds; credentials are never replayed.
+The host must have **System Settings → General → Sharing → Screen Sharing** enabled (or Remote
 Management configured to permit screen sharing). Studio does not change those settings or bypass
 macOS authentication. This works with a running, locked macOS session; it cannot unlock FileVault
 before macOS starts.
@@ -33,8 +36,10 @@ secure browser page (HTTPS or localhost), or the iPhone app’s embedded viewer.
 can still use HTTP over LAN/VPN.
 
 Studio keeps checking while the viewer is visible and resumes the same session in view-only mode
-after unlock. The embedded Screen Sharing connection closes at that point. Locking the host discards
-its previous frame and queued input; enable control again to send new input.
+after unlock and a fresh desktop image is available. The embedded Screen Sharing connection stays
+open while capture is becoming ready, including after a transient capture failure, and closes only
+when that replacement image is ready. Locking the host discards its previous frame and queued input;
+enable control again to send new input.
 
 The first version sends periodic screenshots (at most one request every 750 ms while idle), capped
 at a 1600-pixel long edge and compressed to JPEG. Capture and native actions are serialized. Typing
@@ -79,17 +84,18 @@ by the iPhone app is checked for touch input, locked authentication, view-only r
 credentials out of the native bridge. Native bridge lifecycle checks cover background/close cleanup,
 late-start cancellation, session ownership and HTTP/WS socket tickets. The embedded client's
 authentication is also checked over a real local WebSocket, including encrypted ARD credentials,
-authentication rejection, cancellation and automatic handoff after unlock.
+authentication rejection, fresh retry without password replay, cancellation and automatic handoff
+after unlock. The native ARD fixture uses the physical Mac’s 4096-bit DH challenge.
 
 Runtime tests cover ownership, duplicate input rejection, stale captures, coordinate bounds,
-credential/flag revocation, cancellation during connection, idle expiry, and HTTP access without
-persisting typed text. A separate local test exercised Cua Driver 0.36.0 in a private Linux Xvfb
-desktop: real screenshot capture, text entry and Ctrl+A were verified against a test field; native
-mouse movement/click/drag/scroll and session shutdown completed successfully. On a locked physical
-Mac Studio with Cua Driver 0.36.0, native lock detection and suppression of unusable frames were
-verified. The production embedded client and relay reached its native ARD authentication prompt and
-closed cleanly without supplying credentials. An iOS 27 simulator WKWebView loaded the embedded
-production viewer from its localhost document origin, confirmed Web Crypto availability and reached
-the physical Mac Studio’s native ARD credential form over WS. No macOS credentials were supplied.
-Successful physical authentication/unlock, the complete installed iPhone app flow, Windows and
-Wayland behavior remain unverified.
+credential/flag revocation, cancellation during connection, idle expiry, slow or failed first
+capture after unlock, and HTTP access without persisting typed text. A separate local test exercised
+Cua Driver 0.36.0 in a private Linux Xvfb desktop: real screenshot capture, text entry and Ctrl+A
+were verified against a test field; native mouse movement/click/drag/scroll and session shutdown
+completed successfully. On a locked physical Mac Studio with Cua Driver 0.36.0, native lock
+detection and suppression of unusable frames were verified. The production embedded client and relay
+reached its native ARD authentication prompt and closed cleanly without supplying credentials. An
+iOS 27 simulator WKWebView loaded the embedded production viewer from its localhost document origin,
+confirmed Web Crypto availability and reached the physical Mac Studio’s native ARD credential form
+over WS. No macOS credentials were supplied. Successful physical authentication/unlock, the complete
+installed iPhone app flow, Windows and Wayland behavior remain unverified.

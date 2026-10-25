@@ -40,6 +40,11 @@ const site = createServer(async (request, response) => {
     await slowScript
     response.setHeader('Content-Type', 'text/javascript')
     response.end('window.scriptFinished=true')
+  } else if (request.url === '/frame-form') {
+    response.setHeader('Content-Type', 'text/html; charset=utf-8')
+    response.end(
+      "<style>body{margin:0}button{position:absolute;left:32px;top:48px;width:180px;height:44px}</style><button onclick=\"fetch('/capture',{method:'POST',body:'frame-button-clicked'})\">Embedded page action</button>",
+    )
   } else if (request.url === '/second') {
     response.setHeader('Content-Type', 'text/html; charset=utf-8')
     response.end('<h1>Second page</h1><a href="/">Home</a>')
@@ -295,6 +300,64 @@ try {
   const host = runtime.services.browsers
   const [sessionId, sessionPromise] = [...host.sessions.entries()][0]
   const session = await sessionPromise
+  await session.page.evaluate(() => {
+    scrollTo(0, 0)
+    const field = document.querySelector('input')
+    field.value = 'alpha beta gamma'
+    field.ondblclick = () => fetch('/capture', { method: 'POST', body: 'double-click' })
+    document.querySelector('button').onclick = (event) =>
+      fetch('/capture', {
+        method: 'POST',
+        body: event.shiftKey ? 'shift-click' : 'clicked',
+      })
+  })
+  await page.keyboard.down('Shift')
+  await clickAt(100, 140)
+  await page.keyboard.up('Shift')
+  await until(() => captured.includes('shift-click'))
+  const fieldBounds = await canvas.boundingBox()
+  const cssWidth = Number(await canvas.getAttribute('data-viewport-width'))
+  const cssHeight = Number(await canvas.getAttribute('data-viewport-height'))
+  await page.mouse.dblclick(
+    fieldBounds.x + (60 * fieldBounds.width) / cssWidth,
+    fieldBounds.y + (80 * fieldBounds.height) / cssHeight,
+  )
+  await until(() => captured.includes('double-click'))
+  assert.ok(
+    await session.page
+      .locator('input')
+      .evaluate((field) => field.selectionEnd > field.selectionStart),
+    'Double click selects a word in Chromium',
+  )
+  // A Mac client must select all on a Linux host too.
+  await canvas.evaluate((target) =>
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'a', metaKey: true, cancelable: true }),
+    ),
+  )
+  await until(async () =>
+    session.page
+      .locator('input')
+      .evaluate((field) => field.selectionStart === 0 && field.selectionEnd === field.value.length),
+  )
+  await clickAt(100, 195)
+  await until(
+    async () => (await viewer.getByLabel('Host browser URL').inputValue()) === `${base}/second`,
+  )
+  await viewer.getByRole('button', { name: 'Back', exact: true }).click()
+  await until(async () => (await viewer.getByLabel('Host browser URL').inputValue()) === `${base}/`)
+  const hoverBounds = await canvas.boundingBox()
+  await page.mouse.move(
+    hoverBounds.x + (100 * hoverBounds.width) / cssWidth,
+    hoverBounds.y + (195 * hoverBounds.height) / cssHeight,
+  )
+  await until(async () => (await canvas.evaluate((target) => target.style.cursor)) === 'pointer')
+  await until(async () => (await viewer.locator('#linkPreview').textContent()) === `${base}/second`)
+  await until(async () => viewer.locator('#linkPreview').isVisible())
+  console.log(
+    'Double-click selection, modifier clicks, cross-host shortcuts, cursor and link destination passed',
+  )
+
   const originalSend = session.cdp.send.bind(session.cdp)
   const messages = []
   const listener = (message) => messages.push(message)
@@ -326,24 +389,33 @@ try {
   await host.state(session)
   console.log('Navigation replacement retains state; unexpected failures remain visible')
 
+  await session.queue
+  await session.page.waitForURL(`${base}/`)
+  await session.page.waitForLoadState('load')
   // A slow optional detail capture after resize must not block the next input.
   await until(() => !session.capturingSharpFrame)
-  const originalScreenshot = session.page.screenshot.bind(session.page)
   let captureStarted = false,
     releaseCapture,
     inputTimeout
   const captureHeld = new Promise((resolve) => {
     releaseCapture = resolve
   })
-  session.page.screenshot = async (...args) => {
-    captureStarted = true
-    await captureHeld
-    return originalScreenshot(...args)
+  session.cdp.send = async (method, ...args) => {
+    if (method === 'Page.captureScreenshot') {
+      captureStarted = true
+      await captureHeld
+    }
+    return originalSend(method, ...args)
   }
+  let liveFrames = 0
+  const observeLive = (message) => {
+    if (message.type === 'frame' && !message.detail) liveFrames++
+  }
+  const detachLive = await host.attach(sessionId, observeLive)
   try {
     const input = (async () => {
       await host.input(sessionId, { type: 'resize', width: 620, height: 480 })
-      await host.input(sessionId, { type: 'key', key: 'Escape' })
+      await host.input(sessionId, { type: 'key', key: 'ArrowRight' })
     })()
     await until(() => captureStarted)
     await Promise.race([
@@ -355,13 +427,27 @@ try {
         )
       }),
     ])
+    const framesBefore = liveFrames
+    await session.page.evaluate(() => {
+      const layer = document.createElement('div')
+      Object.assign(layer.style, {
+        position: 'fixed',
+        inset: '0',
+        background: '#d7ffe0',
+        zIndex: '999999',
+      })
+      document.body.append(layer)
+    })
+    await until(() => liveFrames > framesBefore)
   } finally {
     clearTimeout(inputTimeout)
     releaseCapture()
-    session.page.screenshot = originalScreenshot
+    session.cdp.send = originalSend
+    detachLive()
   }
   await until(() => !session.capturingSharpFrame)
-  console.log('Resize detail capture does not block following input')
+  await session.page.evaluate(() => document.querySelector('body > div[style*="999999"]')?.remove())
+  console.log('Slow detail capture blocks neither following input nor live frames')
 
   await viewer.getByLabel('Browser options', { exact: true }).click()
   await viewer.getByLabel('Viewport', { exact: true }).selectOption('phone')
@@ -383,7 +469,8 @@ try {
   await mkdir('work/design/remote-browser', { recursive: true })
   await clickAt(350, 300)
   await page.mouse.wheel(0, -4000)
-  await until(() => captured.at(-1) === 'scroll:0')
+  await until(async () => await session.page.evaluate(() => scrollY === 0))
+  await viewer.getByLabel('Browser options', { exact: true }).click()
   await viewer.getByLabel('Viewport', { exact: true }).selectOption('fill')
   await until(async () => (await canvas.getAttribute('data-viewport-width')) === '1024')
   await viewer.getByLabel('Browser options', { exact: true }).click()
@@ -408,6 +495,47 @@ try {
     ),
   )
   await page.screenshot({ path: 'work/design/remote-browser/mobile-canvas.png' })
+  // A real touch at phone scale must reach an ordinary cross-origin embedded
+  // control at the same coordinates as its visible pixels.
+  await session.page.evaluate(
+    (url) => {
+      const frame = document.createElement('iframe')
+      frame.id = 'embedded-controls'
+      frame.src = url
+      Object.assign(frame.style, {
+        position: 'absolute',
+        left: '20px',
+        top: '260px',
+        width: '280px',
+        height: '160px',
+        border: '0',
+      })
+      document.body.append(frame)
+    },
+    `${base.replace('127.0.0.1', 'localhost')}/frame-form`,
+  )
+  await session.page
+    .frameLocator('#embedded-controls')
+    .getByRole('button', { name: 'Embedded page action' })
+    .waitFor()
+  const phoneBounds = await canvas.boundingBox()
+  const phoneWidth = Number(await canvas.getAttribute('data-viewport-width'))
+  const phoneHeight = Number(await canvas.getAttribute('data-viewport-height'))
+  const tapSession = await page.context().newCDPSession(page)
+  await tapSession.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [
+      {
+        id: 0,
+        x: phoneBounds.x + (142 * phoneBounds.width) / phoneWidth,
+        y: phoneBounds.y + (330 * phoneBounds.height) / phoneHeight,
+      },
+    ],
+  })
+  await tapSession.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await until(() => captured.includes('frame-button-clicked'))
+  await tapSession.detach()
+  console.log('Phone-scale touch reaches cross-origin embedded controls accurately')
   const navigationStart = performance.now()
   let navigationTimeout
   try {

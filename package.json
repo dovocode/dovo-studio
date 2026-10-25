@@ -105,7 +105,7 @@
     "test:mobile-appearance:browser": "node scripts/check-mobile-appearance-browser.mjs",
     "test:mobile-settings-layout:browser": "node scripts/check-mobile-settings-layout-browser.mjs",
     "test:mobile-energy:browser": "node scripts/check-mobile-energy-browser.mjs",
-    "test:mobile-previews:browser": "node scripts/check-mobile-previews-browser.mjs",
+    "test:mobile-previews:browser": "node scripts/check-mobile-previews-browser.mjs && node scripts/check-mobile-browser-toolbar-browser.mjs",
     "test:linked-projects:browser": "node scripts/check-linked-projects-browser.mjs",
     "test:computer-use:browser": "pnpm --filter @dovo/web build && node scripts/check-computer-use-browser.mjs",
     "test:settings-target:browser": "node scripts/check-settings-target-browser.mjs",

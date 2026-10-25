@@ -470,3 +470,36 @@ it('binds unlock to the locked session and viewer, and detaches it on completion
   expect(close).toHaveBeenCalledTimes(2)
   expect(() => f.desktop.authorizeUnlock(f.id, 'device', () => {})).toThrow('ended')
 })
+
+it('retains authenticated unlock while the first unlocked capture is slow or fails', async () => {
+  const f = await fixture()
+  f.isLocked.mockResolvedValue(true)
+  await f.start()
+  let detach = () => {}
+  const close = vi.fn<() => void>(() => detach())
+  detach = f.desktop.attachUnlock(f.id, 'device', () => {}, close)
+  const original = f.call.getMockImplementation()!
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  f.call.mockImplementationOnce(async () => {
+    await held
+    throw Error('WindowServer capture is not ready')
+  })
+  f.isLocked.mockResolvedValue(false)
+  const capture = f.request({ action: 'frame', id: f.id })
+  await vi.waitFor(() => expect(f.call).toHaveBeenCalledOnce())
+  expect(f.desktop.status()).toMatchObject({ unlocking: true, control: false })
+  expect(() => f.desktop.authorizeUnlock(f.id, 'device', () => {})).not.toThrow()
+  expect(() => f.desktop.authorizeUnlock(f.id, 'another', () => {})).toThrow('another device')
+  expect(close).not.toHaveBeenCalled()
+  release()
+  await expect(capture).rejects.toThrow('WindowServer capture is not ready')
+  expect(close).not.toHaveBeenCalled()
+  f.call.mockImplementation(original)
+  const resumed = await f.request({ action: 'frame', id: f.id })
+  expect(resumed.frame).toBeDefined()
+  expect(close).toHaveBeenCalledOnce()
+  expect(resumed.session?.unlocking).not.toBe(true)
+})

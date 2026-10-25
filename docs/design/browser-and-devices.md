@@ -12,10 +12,22 @@ a configured SSH device host, independently from the computer running the thread
    press **Go**. Loopback stays on the host: the phone only needs access to the Dovo runtime.
 3. Tap/click the page, swipe or wheel to scroll, and use **Keyboard** to type into a focused field.
    Hardware typing, paste, shortcuts, Back/Forward, Reload and website dialogs are supported.
+   Double/triple clicks, modifier clicks, page cursors and hovered link destinations are forwarded;
+   tapping an editable field on mobile opens the software keyboard.
 4. Choose Fit view, Phone, Tablet or Desktop; use Rotate for fixed viewport sizes.
 5. **Reconnect** resumes the page after a connection interruption. Closing the session clears its
    in-memory cookies and history. Without any viewers, streaming stops and the session expires after
    five minutes. Runtime shutdown closes all browser processes.
+
+Built-in and host browsers share the same address bar, Back/Forward, Reload, screenshot and viewport
+controls. Desktop uses one toolbar above either kind of tab; mobile uses the same native controls
+below either preview. Host browsers also offer Keyboard, Reconnect and Connection details. Device
+previews retain their hardware controls. Ctrl/Cmd+L focuses the visible address bar, including while
+the remote canvas has focus.
+
+Mobile previews protect bottom controls and the expanded-view restore button from the home
+indicator. The route handles landscape side insets; the preview adds the bottom inset once, removing
+it while the software keyboard is visible so the existing keyboard avoidance owns that space.
 
 On iOS, preview screens use an explicit Back button and disable app swipe-back, so edge swipes stay
 inside the browser or simulator. Live devices also have a Back to simulators button. Browser touch
@@ -68,7 +80,10 @@ window to the link’s delivery rate. Rising delay reduces the window to avoid q
 bandwidth-limited links; recovery is gradual. Older viewers retain the two-frame window. Browser
 movement sends immediately, coalescing only bursts within 4 ms. Native device gestures retain frame
 pacing. Lighter JPEGs carry motion, and sharp 2× stills restore detail after interaction settles.
-Resize detail capture does not block subsequent input.
+Resize detail capture runs separately from input and leaves live frames running. Each viewer learns
+its own JPEG budget from delivery spacing: limited links receive smaller motion frames and more
+detail when idle, while fast links retain original images. Slow decoders use backpressure rather
+than being mistaken for a bandwidth limit. Budgets recover gradually when a network route improves.
 
 The stream indicator shows painted frames per second, transport round-trip time, and image scale.
 Its disclosure also shows decode/draw time and image dimensions. Still pages show Idle; older
@@ -76,11 +91,12 @@ runtimes can stream without RTT diagnostics. Measurements exclude host capture a
 presentation. Telemetry is opt-in and sent at most once per second, preserving older viewers.
 
 `pnpm test:browser-stream-latency:browser` compares frame flow with simulated network delay,
-bandwidth limits and slow decoders. It measures transport and canvas rendering using a synthetic
-JPEG source. `node scripts/verify-remote-browser.mjs` (also with `--slow-decoder`) exercises real
-Chromium capture and interaction. These local checks do not establish latency over a physical
-network. Input-to-image latency includes network round trips, capture, decoding and display refresh;
-a 1–5 ms end-to-end guarantee across networks is not achievable through app optimization alone.
+bandwidth limits and slow decoders. It measures transport and canvas rendering using a timed JPEG
+source and detailed retina page captures for bandwidth-limited scenarios.
+`node scripts/verify-remote-browser.mjs` (also with `--slow-decoder`) exercises real Chromium
+capture and interaction. These local checks do not establish latency over a physical network.
+Input-to-image latency includes network round trips, capture, decoding and display refresh; a 1–5 ms
+end-to-end guarantee across networks is not achievable through app optimization alone.
 
 The canvas represents the remote page visually: it does not expose that page's DOM to the client's
 screen reader. Use Direct preview when local page accessibility is needed. This slice doesn't
@@ -384,6 +400,17 @@ service assertion errors trigger a retry through that same user's logged-in GUI 
 different desktop user is rejected. This preserves existing signing and provisioning and does not
 change accounts or require sudo. Keep real phones unlocked, trusted and connected for deployment.
 Installation alone does not verify startup: launch and inspect the app.
+
+Mobile browser navigation uses one bottom toolbar for host and direct pages. The address shows a
+single-line hostname while idle and keeps the full URL in its editable field. Mode switching,
+viewport options and page expansion live in the icon menu; expanded pages retain a floating control
+to restore navigation. Both modes can open the current page directly in the device's default
+browser. Host browser sessions run in managed Chromium on the selected computer. Sites may challenge
+or restrict that environment; opening locally uses the device's own network and browser session,
+without copying host cookies. No CAPTCHA handling or browser-identity spoofing is performed.
+
+The host re-arms its live screencast after viewport changes. Chromium can otherwise stop producing
+frames after device metrics change, leaving only delayed still captures after input.
 
 ### Reviewing this checkout on an iOS simulator
 

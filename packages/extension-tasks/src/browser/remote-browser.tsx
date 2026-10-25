@@ -4,8 +4,17 @@ import {
   decodeResult,
   remoteBrowserMessageSchema,
   type RemoteBrowserMessage,
+  type RemoteBrowserInput,
 } from '@dovo/protocol'
-import { useCallback, useEffect, useEffectEvent, useRef, useLayoutEffect } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useLayoutEffect,
+  useImperativeHandle,
+  type Ref,
+} from 'react'
 import {
   useWorkspace,
   useResolvedTheme,
@@ -14,6 +23,14 @@ import {
   responses,
   readAppPreferences,
 } from '@dovo/studio-core'
+export type RemoteBrowserControls = {
+  input: (input: RemoteBrowserInput) => void
+  keyboard: () => void
+  screenshot: () => void
+  viewport: (preset: string, landscape: boolean) => void
+  reconnect: () => void
+  performance: () => void
+}
 export function RemoteBrowser({
   taskId,
   active = true,
@@ -23,6 +40,11 @@ export function RemoteBrowser({
   tabId,
   onState,
   reloadToken,
+  ref,
+  externalNavigation = false,
+  onConnection,
+  onFocusAddress,
+  onPerformance,
 }: {
   taskId: string
   active?: boolean
@@ -32,6 +54,11 @@ export function RemoteBrowser({
   tabId?: string
   onState?: (state: Extract<RemoteBrowserMessage, { type: 'state' }>) => void
   reloadToken?: number
+  ref?: Ref<RemoteBrowserControls>
+  externalNavigation?: boolean
+  onConnection?: (online: boolean) => void
+  onFocusAddress?: () => void
+  onPerformance?: (details: string) => void
 }) {
   const { connection, request } = useWorkspace()
   const theme = useResolvedTheme()
@@ -41,25 +68,43 @@ export function RemoteBrowser({
   const reportState = useEffectEvent((state: Extract<RemoteBrowserMessage, { type: 'state' }>) =>
     onState?.(state),
   )
+  const reportConnection = useEffectEvent((online: boolean) => onConnection?.(online))
+  const reportPerformance = useEffectEvent((details: string) => onPerformance?.(details))
+  const focusAddress = useEffectEvent(() => onFocusAddress?.())
   const address = useRef(initialUrl === 'about:blank' ? '' : initialUrl)
   useEffect(() => {
     address.current = initialUrl === 'about:blank' ? '' : initialUrl
   }, [initialUrl])
   const visibility = useRef(active)
+  const online = useRef(false)
   const frame = useRef<HTMLIFrameElement>(null)
   const version = useRef(0)
   const pending = useRef(false)
   const post = useCallback((message: object) => {
     frame.current?.contentWindow?.postMessage({ channel: 'dovo-browser', ...message }, '*')
   }, [])
+  useImperativeHandle(
+    ref,
+    () => ({
+      input: (input) => post({ type: 'input', input }),
+      keyboard: () => post({ type: 'keyboard' }),
+      screenshot: () => post({ type: 'screenshot' }),
+      reconnect: () => post({ type: 'reconnect' }),
+      performance: () => post({ type: 'performance' }),
+      viewport: (preset, landscape) => post({ type: 'viewport', preset, landscape }),
+    }),
+    [post],
+  )
   useLayoutEffect(() => {
     appearance.current = theme
     post({ type: 'appearance', theme })
   }, [theme, post])
   useEffect(() => {
     visibility.current = active
+    if (active) reportConnection(online.current)
     if (tabId) post({ type: 'visibility', visible: active })
-  }, [active, tabId, post])
+    if (active && externalNavigation) post({ type: 'input', input: { type: 'status' } })
+  }, [active, tabId, post, externalNavigation])
   useEffect(() => {
     if (reloadToken) post({ type: 'reload' })
   }, [reloadToken, post])
@@ -68,6 +113,7 @@ export function RemoteBrowser({
     const generation = version.current
     pending.current = true
     post({ type: 'appearance', theme: appearance.current })
+    if (externalNavigation) post({ type: 'presentation', expanded: true, externalNavigation: true })
     if (!deviceId) post({ type: 'configure', viewport: readAppPreferences().browserViewport })
     if (deviceId)
       post({
@@ -97,7 +143,7 @@ export function RemoteBrowser({
     } finally {
       if (generation === version.current) pending.current = false
     }
-  }, [connection, request, taskId, deviceId, tabId, profileId, post])
+  }, [connection, request, taskId, deviceId, tabId, profileId, post, externalNavigation])
   useEffect(() => {
     const receive = (event: MessageEvent<unknown>) => {
       if (event.source !== frame.current?.contentWindow) return
@@ -127,6 +173,13 @@ export function RemoteBrowser({
           reportState(state.data)
         }
       }
+      if (data.type === 'connection' && 'online' in data && typeof data.online === 'boolean') {
+        online.current = data.online
+        reportConnection(data.online)
+      }
+      if (data.type === 'performance' && 'details' in data && typeof data.details === 'string')
+        reportPerformance(data.details.slice(0, 2000))
+      if (data.type === 'focusAddress') focusAddress()
       if (data.type === 'reconnect') void connect()
       if (data.type === 'close')
         void request(

@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { type CallToolResult, CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { randomUUID } from 'node:crypto'
+import { userInfo } from 'node:os'
 import sharp from 'sharp'
 import {
   decode,
@@ -116,6 +117,9 @@ export class RemoteDesktop {
           viewer: session.viewer,
           control: session.control,
           ...(session.locked ? { locked: true } : {}),
+          ...(session.locked && process.platform === 'darwin'
+            ? { unlockUsername: userInfo().username }
+            : {}),
           ...(session.unlock ? { unlocking: true } : {}),
         }
       : null
@@ -135,8 +139,6 @@ export class RemoteDesktop {
       if (locked) {
         session.control = false
         session.frame = undefined
-      } else {
-        session.unlock?.()
       }
       this.changed()
     }
@@ -149,7 +151,8 @@ export class RemoteDesktop {
     this.assert(session, authorize)
     if (session.deviceId !== deviceId)
       throw new HttpError(403, 'This desktop session belongs to another device.')
-    if (!session.locked) throw new HttpError(409, 'The desktop is no longer locked.')
+    if (!session.locked && !session.unlock)
+      throw new HttpError(409, 'The desktop is no longer locked.')
     return session
   }
   attachUnlock(id: string, deviceId: string, authorize: () => void, close: () => void) {
@@ -330,6 +333,9 @@ export class RemoteDesktop {
         height: metadata.height,
       }
       session.frame = { value: frame, captureId: capture.capture_id, time: Date.now() }
+      // WindowServer may report unlocked before capture is available. Keep the
+      // authenticated OS screen alive until its replacement is actually ready.
+      session.unlock?.()
       return { session: this.status(), frame }
     } catch (error) {
       failedStart = input.action === 'start'

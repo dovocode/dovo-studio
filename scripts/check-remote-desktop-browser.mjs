@@ -3,7 +3,7 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 import { fileURLToPath } from 'node:url'
 import { readFile, readdir, mkdir } from 'node:fs/promises'
-import { getDiffieHellman, createDecipheriv, createHash } from 'node:crypto'
+import { getDiffieHellman, createDiffieHellman, createDecipheriv, createHash } from 'node:crypto'
 import { WebSocketServer } from 'ws'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
@@ -100,7 +100,7 @@ try {
   let authenticated = false
   let acceptAuthentication = false
   let remoteKeys = 0
-  const dh = getDiffieHellman('modp14')
+  const dh = createDiffieHellman(getDiffieHellman('modp16').getPrime(), 5)
   dh.generateKeys()
   unlockServer.on('connection', (socket, request) => {
     assert.equal(request.url, '/ws/remote-desktop/unlock?ticket=single-use-demo-ticket')
@@ -115,9 +115,9 @@ try {
         socket.send(Buffer.from([1, 30]))
       } else if (phase === 2) {
         assert.deepEqual([...data], [30])
-        socket.send(Buffer.concat([Buffer.from([0, 2, 1, 0]), dh.getPrime(), dh.getPublicKey()]))
+        socket.send(Buffer.concat([Buffer.from([0, 5, 2, 0]), dh.getPrime(), dh.getPublicKey()]))
       } else if (phase === 3) {
-        assert.equal(data.length, 128 + 256)
+        assert.equal(data.length, 128 + 512)
         const secret = dh.computeSecret(data.subarray(128))
         const key = createHash('md5').update(secret).digest()
         const decipher = createDecipheriv('aes-128-ecb', key, null)
@@ -177,6 +177,14 @@ try {
   await password.fill('demo-mac-password')
   await unlockPanel.getByRole('button', { name: 'Authenticate', exact: true }).click()
   await unlockPanel.getByRole('alert').filter({ hasText: 'macOS refused authentication' }).waitFor()
+  assert.match(await unlockPanel.getByRole('alert').textContent(), /Test account denied/)
+  await unlockPanel.getByRole('button', { name: 'Retry connection', exact: true }).click()
+  await unlockPanel.getByLabel('Mac username', { exact: true }).waitFor()
+  assert.equal(
+    await unlockPanel.getByLabel('Mac password', { exact: true }).inputValue(),
+    '',
+    'Retry does not retain or replay credentials',
+  )
   assert.ok(authenticated)
   assert.deepEqual(await page.evaluate(() => window.unlockTicketInput), {
     id: await page.evaluate(() => window.session.id),

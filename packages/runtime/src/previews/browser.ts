@@ -1,6 +1,7 @@
 import { redact } from '../storage/activity.js'
 import { browserScript } from './browser-script.js'
-import { decode } from '@dovo/protocol'
+import { browserInteraction } from './browser-interaction.js'
+import { decode, decodeResult } from '@dovo/protocol'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { AgentBrowserCommand } from './agent-browser.js'
@@ -15,6 +16,7 @@ import {
   type ArtifactPdfOptions,
   type Artifact,
   remoteBrowserInputSchema,
+  remoteBrowserInteractionSchema,
   type RemoteBrowserInput,
   type RemoteBrowserMessage,
 } from '@dovo/protocol'
@@ -32,6 +34,7 @@ export type BrowserFrame = {
   data: Uint8Array
   width: number
   height: number
+  detail?: boolean
 }
 export type BrowserOutput =
   | Exclude<
@@ -65,7 +68,9 @@ type Session = {
   sharpTimer?: ReturnType<typeof setTimeout>
   sharpVersion: number
   capturingSharpFrame?: boolean
-  capturingFrames?: number
+  interaction?: Extract<RemoteBrowserMessage, { type: 'interaction' }>
+  interactionTimer?: ReturnType<typeof setTimeout>
+  mouseButtons: number
   stateTimer?: ReturnType<typeof setTimeout>
   listeners: Set<Listener>
   visibleListeners: Set<Listener>
@@ -76,6 +81,7 @@ type Session = {
   stream: Promise<void>
   idle?: ReturnType<typeof setTimeout>
   frame?: BrowserFrame
+  liveFrame?: Uint8Array
   dialog?: Dialog
 }
 const idleMs = 5 * 60 * 1000
@@ -456,9 +462,11 @@ export class RemoteBrowsers {
           forward: false,
           loading: false,
           touch: true,
+          primaryModifier: process.platform === 'darwin' ? 'Meta' : 'Control',
         },
         touching: false,
         sharpVersion: 0,
+        mouseButtons: 0,
         listeners: new Set(),
         visibleListeners: new Set(),
         queue: Promise.resolve(),
@@ -467,6 +475,19 @@ export class RemoteBrowsers {
         streaming: false,
         stream: Promise.resolve(),
       }
+      await page.exposeBinding('__dovoBrowserInteraction', (_source, value: unknown) => {
+        const result = decodeResult(remoteBrowserInteractionSchema, value)
+        if (!result.success) return
+        if (JSON.stringify(result.data) === JSON.stringify(session.interaction)) return
+        session.interaction = result.data
+        if (!session.interactionTimer)
+          session.interactionTimer = setTimeout(() => {
+            session.interactionTimer = undefined
+            if (session.interaction) this.emit(session, session.interaction)
+          }, 16)
+      })
+      await page.addInitScript(browserInteraction)
+      await page.evaluate(browserInteraction)
       const log = (kind: string, message: string) => {
         session.logs.push({
           time: new Date().toISOString(),
@@ -539,6 +560,7 @@ export class RemoteBrowsers {
         clearTimeout(session.sharpTimer)
         clearTimeout(session.idle)
         clearTimeout(session.stateTimer)
+        clearTimeout(session.interactionTimer)
         this.sessions.delete(taskId)
         this.owners.delete(taskId)
         this.emit(session, {
@@ -599,8 +621,15 @@ export class RemoteBrowsers {
       const info = await session.page.evaluate(() => ({
         title: document.title,
         editable:
-          document.activeElement instanceof HTMLInputElement ||
-          document.activeElement instanceof HTMLTextAreaElement ||
+          (document.activeElement instanceof HTMLInputElement &&
+            !document.activeElement.disabled &&
+            !document.activeElement.readOnly &&
+            ['text', 'search', 'tel', 'url', 'email', 'password', 'number'].includes(
+              document.activeElement.type,
+            )) ||
+          (document.activeElement instanceof HTMLTextAreaElement &&
+            !document.activeElement.disabled &&
+            !document.activeElement.readOnly) ||
           (document.activeElement instanceof HTMLElement &&
             document.activeElement.isContentEditable),
       }))
@@ -615,6 +644,7 @@ export class RemoteBrowsers {
         forward: history.currentIndex < history.entries.length - 1,
         loading: session.loading,
         touch: true,
+        primaryModifier: process.platform === 'darwin' ? 'Meta' : 'Control',
       }
       this.emit(session, session.state)
     } catch (error) {
@@ -636,18 +666,34 @@ export class RemoteBrowsers {
     }
   }
   private async sharpFrame(session: Session) {
-    // Optional detail capture runs separately from input, with a timeout and
-    // Playwright's viewport restoration. Suppress transient emulation frames.
-    session.capturingFrames = (session.capturingFrames ?? 0) + 1
+    // Capture the current surface without Playwright's screenshot emulation /
+    // viewport restoration, so live frames continue throughout detail capture.
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      return await session.page.screenshot({
-        type: 'jpeg',
-        quality: 90,
-        scale: 'device',
-        timeout: 3000,
-      })
+      const result = await Promise.race([
+        (async () => {
+          const { cssVisualViewport } = await session.cdp.send('Page.getLayoutMetrics')
+          return session.cdp.send('Page.captureScreenshot', {
+            format: 'jpeg',
+            quality: 90,
+            fromSurface: true,
+            captureBeyondViewport: false,
+            clip: {
+              x: cssVisualViewport.pageX,
+              y: cssVisualViewport.pageY,
+              width: cssVisualViewport.clientWidth,
+              height: cssVisualViewport.clientHeight,
+              scale: 2,
+            },
+          })
+        })(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error('Browser detail capture timed out')), 3000)
+        }),
+      ])
+      return Buffer.from(result.data, 'base64')
     } finally {
-      session.capturingFrames--
+      clearTimeout(timer)
     }
   }
   private scheduleSharpFrame(session: Session, delay = 150) {
@@ -670,7 +716,7 @@ export class RemoteBrowsers {
             current.height !== size.height
           )
             return
-          session.frame = { type: 'frame', data, ...size }
+          session.frame = { type: 'frame', data, ...size, detail: true }
           this.emit(session, session.frame)
         })
         .catch((error) => {
@@ -704,7 +750,11 @@ export class RemoteBrowsers {
     session.listeners.add(listener)
     session.visibleListeners.add(listener)
     if (session.frame) listener(session.frame)
+    if (session.interaction) listener(session.interaction)
     try {
+      // Activate the host tab when a human viewer opens it, including retained
+      // Chromium pages whose compositor was inactive after switching away.
+      await session.page.bringToFront()
       await this.syncStream(session)
       this.scheduleSharpFrame(session)
       await this.state(session)
@@ -722,6 +772,17 @@ export class RemoteBrowsers {
         // Keep the page and its login state briefly for reconnects, but stop streaming.
         session.queue = session.queue
           .then(async () => {
+            if (session.mouseButtons && !session.page.isClosed()) {
+              session.mouseButtons = 0
+              for (const button of ['left', 'middle', 'right'] as const)
+                await session.cdp.send('Input.dispatchMouseEvent', {
+                  type: 'mouseReleased',
+                  x: 0,
+                  y: 0,
+                  button,
+                  buttons: 0,
+                })
+            }
             if (!session.touching || session.page.isClosed()) return
             session.touching = false
             await session.cdp.send('Input.dispatchTouchEvent', {
@@ -739,26 +800,33 @@ export class RemoteBrowsers {
   async visibility(taskId: string, listener: Listener, visible: boolean) {
     const session = await this.sessions.get(taskId)
     if (!session || !session.listeners.has(listener)) return
-    if (visible) session.visibleListeners.add(listener)
-    else session.visibleListeners.delete(listener)
+    if (visible) {
+      session.visibleListeners.add(listener)
+      await session.page.bringToFront()
+    } else session.visibleListeners.delete(listener)
     await this.syncStream(session)
     this.scheduleSharpFrame(session)
     if (visible && session.frame) listener(session.frame)
   }
-  private syncStream(session: Session) {
+  private syncStream(session: Session, restart = false) {
     const operation = session.stream.then(async () => {
       if (session.page.isClosed()) return
+      if (session.streaming && (restart || !session.visibleListeners.size)) {
+        await session.page.screencast.stop()
+        session.streaming = false
+        session.liveFrame = undefined
+      }
       if (session.visibleListeners.size && !session.streaming) {
         await session.page.screencast.start({
           // Use lighter frames during motion, then restore device-resolution
           // detail with a quality-90 still when input settles.
           quality: 70,
+          fps: 60,
           size: {
             width: 1920,
             height: 1920,
           },
           onFrame: (frame) => {
-            if (session.capturingFrames) return
             const viewport = session.page.viewportSize()
             if (
               !viewport ||
@@ -766,6 +834,15 @@ export class RemoteBrowsers {
               frame.viewportHeight !== viewport.height
             )
               return
+            const previous = session.liveFrame
+            if (
+              previous &&
+              Buffer.from(previous.buffer, previous.byteOffset, previous.byteLength).equals(
+                Buffer.from(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength),
+              )
+            )
+              return
+            session.liveFrame = frame.data
             session.frame = {
               type: 'frame',
               data: frame.data,
@@ -773,12 +850,10 @@ export class RemoteBrowsers {
               height: viewport.height,
             }
             this.emit(session, session.frame)
+            if (!session.capturingSharpFrame) this.scheduleSharpFrame(session)
           },
         })
         session.streaming = true
-      } else if (!session.visibleListeners.size && session.streaming) {
-        await session.page.screencast.stop()
-        session.streaming = false
       }
     })
     session.stream = operation.catch((error) => this.report(session, error))
@@ -884,6 +959,10 @@ export class RemoteBrowsers {
           width: input.width,
           height: input.height,
         })
+        // Chromium can stop delivering screencast frames after changing device
+        // metrics. Re-arm capture for the new surface rather than leaving the
+        // viewer dependent on still screenshots after each input.
+        await this.syncStream(session, true)
         // The optional detail capture must not block clicks/typing behind resize.
         // A zero-delay sharp frame also covers identical screencast pixels, which
         // Chromium may suppress after resizing a blank or scrolled page.
@@ -905,15 +984,26 @@ export class RemoteBrowsers {
         })
         session.touching = input.phase !== 'up'
       } else if (input.type === 'pointer') {
-        await page.mouse.move(input.x, input.y)
-        if (input.phase === 'down')
-          await page.mouse.down({
-            button: input.button,
-          })
-        if (input.phase === 'up')
-          await page.mouse.up({
-            button: input.button,
-          })
+        const bit = input.button === 'left' ? 1 : input.button === 'right' ? 2 : 4
+        if (input.phase === 'down') session.mouseButtons |= bit
+        if (input.phase === 'up') session.mouseButtons &= ~bit
+        await session.cdp.send('Input.dispatchMouseEvent', {
+          type:
+            input.phase === 'move'
+              ? 'mouseMoved'
+              : input.phase === 'down'
+                ? 'mousePressed'
+                : 'mouseReleased',
+          x: input.x,
+          y: input.y,
+          button: input.phase === 'move' ? 'none' : input.button,
+          buttons: session.mouseButtons,
+          clickCount: input.phase === 'move' ? 0 : (input.clickCount ?? 1),
+          modifiers: (input.modifiers ?? []).reduce(
+            (mask, modifier) => mask | { Alt: 1, Control: 2, Meta: 4, Shift: 8 }[modifier],
+            0,
+          ),
+        })
       } else if (input.type === 'scroll') {
         await session.cdp.send('Input.dispatchMouseEvent', {
           type: 'mouseWheel',

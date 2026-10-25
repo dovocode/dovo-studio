@@ -11,7 +11,7 @@ const html = JSON.parse(source.slice(source.indexOf(marker) + marker.length))
 const shim = `<script>
 window.outbox=[];window.bridges=[];
 window.WebSocket=class {static OPEN=1;readyState=1;constructor(){window.socket=this;queueMicrotask(()=>this.onopen?.())}send(data){window.outbox.push(JSON.parse(data))}close(){this.readyState=3}};
-window.addEventListener('message',event=>{if(event.data?.channel==='dovo-browser'&&['ready','reconnect','close'].includes(event.data.type))window.bridges.push(event.data.type)});
+window.addEventListener('message',event=>{if(event.data?.channel==='dovo-browser'&&['ready','reconnect','close','focusAddress','performance'].includes(event.data.type))window.bridges.push(event.data.type)});
 </script>`
 const browser = await chromium.launch()
 await mkdir('/tmp/dovo-browser-redesign', { recursive: true })
@@ -174,7 +174,27 @@ try {
       await address.click()
       assert.equal(await menu.isVisible(), false, 'Outside press closes the menu')
     }
-    await post({ type: 'presentation', expanded: true })
+    await post({ type: 'presentation', expanded: true, externalNavigation: true })
+    await page.locator('#browserBar').waitFor({ state: 'hidden' })
+    await page.keyboard.press('Control+l')
+    if (!native) await page.waitForFunction(() => window.bridges.includes('focusAddress'))
+    await post({
+      type: 'input',
+      input: { type: 'navigate', url: 'http://runtime.lan:4310/shared' },
+    })
+    await page.waitForFunction(() =>
+      window.outbox.some(
+        (message) =>
+          message.type === 'navigate' && message.url === 'http://runtime.lan:4310/shared',
+      ),
+    )
+    await post({ type: 'viewport', preset: 'tablet', landscape: true })
+    await page.waitForFunction(
+      () => window.outbox.filter((message) => message.type === 'resize').at(-1).width === 1180,
+    )
+    await post({ type: 'performance' })
+    if (!native) await page.waitForFunction(() => window.bridges.includes('performance'))
+
     await page.locator('#browserBar').waitFor({ state: 'hidden' })
     await post({ type: 'presentation', expanded: false })
     await page.locator('#browserBar').waitFor({ state: 'visible' })

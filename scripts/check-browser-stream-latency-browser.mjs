@@ -10,6 +10,34 @@ import { remoteBrowserHtml } from '../packages/protocol/dist/generated/browser-v
 const require = createRequire(new URL('../packages/runtime/package.json', import.meta.url))
 const { WebSocketServer, WebSocket } = require('ws')
 const sharp = require('sharp')
+const browser = await chromium.launch({ headless: true })
+// Capture a real, detailed page at retina resolution. Limited-link scenarios
+// must compress actual image content, rather than benefiting from JPEG padding.
+const fixture = await browser.newPage({
+  viewport: { width: 480, height: 320 },
+  deviceScaleFactor: 2,
+})
+await fixture.setContent(
+  `<style>body{margin:0;background:#10131b;color:#e6e8ef;font:11px system-ui}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px}.card{border:1px solid #393e4b;border-radius:6px;overflow:hidden}.card p{margin:5px}.photo{height:90px;background-size:cover}</style><div class="cards">${Array.from(
+    { length: 16 },
+    (_, i) => {
+      const photo = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="180">${Array.from({ length: 90 }, (_, j) => `<circle cx="${(j * 43 + i * 19) % 240}" cy="${(j * 31 + i * 17) % 180}" r="${4 + (j % 20)}" fill="hsl(${(j * 17 + i * 27) % 360} 40% ${25 + (j % 45)}%)"/>`).join('')}</svg>`
+      return `<div class="card"><div class="photo" style="background-image:url(data:image/svg+xml;base64,${Buffer.from(photo).toString('base64')})"></div><p>Project ${i + 1} · Latest activity</p><p>Review changes and preview</p></div>`
+    },
+  ).join('')}</div>`,
+)
+const pageImage = await fixture.screenshot()
+await fixture.close()
+const detailedImages = await Promise.all(
+  Array.from({ length: 256 }, async (_, id) => {
+    const barcode = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="80">${Array.from({ length: 8 }, (_, bit) => `<rect x="${bit * 100}" y="0" width="80" height="80" fill="${id & (1 << bit) ? '#fff' : '#000'}"/>`).join('')}</svg>`
+    return sharp(pageImage)
+      .composite([{ input: Buffer.from(barcode), top: 0, left: 0 }])
+      .jpeg({ quality: 70 })
+      .toBuffer()
+  }),
+)
+let wireBytes = 0
 const width = 480,
   height = 320
 const images = await Promise.all(
@@ -77,12 +105,15 @@ sockets.on('connection', (client, request) => {
       undefined,
       undefined,
       true,
+      url.searchParams.get('adaptiveImages') === '1',
     )
     return
   }
   // Emulate the link outside Chromium: background-tab timer coalescing must
   // not turn a 40ms network hop into a browser scheduling benchmark.
-  const upstream = new WebSocket(`ws://${address}/source`)
+  const upstream = new WebSocket(
+    `ws://${address}/source?adaptiveImages=${url.searchParams.get('adaptiveImages') ?? '0'}`,
+  )
   const mbps = Number(url.searchParams.get('mbps'))
   const timers = new Set()
   let available = 0
@@ -94,6 +125,7 @@ sockets.on('connection', (client, request) => {
     timers.add(timer)
   }
   upstream.on('message', (data, binary) => {
+    if (binary) wireBytes += data.byteLength
     const now = performance.now()
     const transfer = mbps ? (data.byteLength * 8) / (mbps * 1000) : 0
     available = Math.max(now, available) + transfer
@@ -118,7 +150,6 @@ sockets.on('connection', (client, request) => {
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const address = `127.0.0.1:${server.address().port}`
-const browser = await chromium.launch({ headless: true })
 try {
   const reports = []
   for (const scenario of [
@@ -126,13 +157,14 @@ try {
     { name: 'adaptive', legacy: false, decodeDelay: 0 },
     { name: 'slow-decoder', legacy: false, decodeDelay: 80 },
     { name: 'limited-legacy', legacy: true, decodeDelay: 0, mbps: 2 },
-    { name: 'limited-adaptive', legacy: false, decodeDelay: 0, mbps: 2 },
+    { name: 'limited-adaptive', legacy: false, decodeDelay: 0, mbps: 2, adaptiveImages: true },
     { name: 'decoder-slows', legacy: false, decodeDelay: 0, slows: true },
   ]) {
     const page = await browser.newPage({ viewport: { width, height: 400 } })
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
-    await page.addInitScript(({ legacy, decodeDelay }) => {
+    wireBytes = 0
+    await page.addInitScript(({ legacy, decodeDelay, mbps }) => {
       window.draws = []
       window.decodeSamples = []
       window.movementDelays = []
@@ -149,17 +181,40 @@ try {
         }
       }
       const decode = window.createImageBitmap.bind(window)
+      const draw = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'drawImage')
+      if (!draw) throw new Error('Canvas drawImage is unavailable')
+      const probe = document.createElement('canvas')
+      probe.width = 8
+      probe.height = 1
+      const pixels = probe.getContext('2d', { willReadFrequently: true })
       const ids = new WeakMap()
       window.createImageBitmap = async (blob, ...args) => {
         const data = new Uint8Array(await blob.arrayBuffer())
         if (window.decodeDelay)
           await new Promise((resolve) => setTimeout(resolve, window.decodeDelay))
         const image = await decode(blob, ...args)
-        ids.set(image, data.at(-1))
+        let id = data.at(-1)
+        if (mbps) {
+          for (let bit = 0; bit < 8; bit++)
+            draw.value.call(
+              pixels,
+              image,
+              ((20 + bit * 50) * image.width) / 480,
+              (20 * image.height) / 320,
+              1,
+              1,
+              bit,
+              0,
+              1,
+              1,
+            )
+          const row = pixels.getImageData(0, 0, 8, 1).data
+          id = 0
+          for (let bit = 0; bit < 8; bit++) if (row[bit * 4] > 127) id |= 1 << bit
+        }
+        ids.set(image, id)
         return image
       }
-      const draw = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'drawImage')
-      if (!draw) throw new Error('Canvas drawImage is unavailable')
       CanvasRenderingContext2D.prototype.drawImage = function (...args) {
         draw.value.apply(this, args)
         window.draws.push({ id: ids.get(args[0]), at: Date.now() })
@@ -168,7 +223,7 @@ try {
     await page.goto(`http://${address}/`)
     await page.evaluate(
       (url) => window.postMessage({ channel: 'dovo-browser', type: 'connect', url }, '*'),
-      `ws://${address}/?mbps=${scenario.mbps ?? 0}`,
+      `ws://${address}/?mbps=${scenario.mbps ?? 0}&adaptiveImages=${scenario.adaptiveImages ? 1 : 0}`,
     )
     await page.waitForFunction(() => !document.querySelector('#go').disabled)
     await page.waitForTimeout(150)
@@ -179,10 +234,7 @@ try {
           window.decodeDelay = 80
         })
       sent.set(index, Date.now())
-      const data = scenario.mbps
-        ? Buffer.concat([images[index], Buffer.alloc(24 * 1024 - images[index].length)])
-        : images[index]
-      data[data.length - 1] = index
+      const data = scenario.mbps ? detailedImages[index] : images[index]
       publish({ type: 'frame', width, height, data })
       await new Promise((resolve) => setTimeout(resolve, 16))
     }
@@ -199,6 +251,7 @@ try {
       decodeP95Ms: Math.round(decodeSamples[Math.floor(decodeSamples.length * 0.95)]),
       sourceFrames: 180,
       renderedFrames: draws.length,
+      wireJpegBytes: wireBytes,
       renderedFps: Math.round((draws.length * 1000) / duration),
       frameAgeMedianMs: ages[Math.floor(ages.length / 2)],
       frameAgeP95Ms: ages[Math.floor(ages.length * 0.95)],
@@ -269,7 +322,7 @@ try {
     JSON.stringify(
       {
         scope:
-          'Synthetic JPEG source; real transport/canvas; 40ms delay each way; limited cases add 2Mbps serialization with 24KiB frames',
+          'Synthetic JPEG source; real transport/canvas; 40ms delay each way; limited cases serialize real retina page JPEGs at 2Mbps',
         reports,
       },
       null,
@@ -288,6 +341,14 @@ try {
   assert.ok(
     reports[4].steadyFrameAgeP95Ms <= reports[3].steadyFrameAgeP95Ms + 80,
     'bandwidth-limited flow built a stale frame queue',
+  )
+  assert.ok(
+    reports[4].steadyRenderedFps > reports[3].steadyRenderedFps * 1.5,
+    'adaptive images did not improve constrained-link motion',
+  )
+  assert.ok(
+    reports[4].steadyFrameAgeP95Ms < reports[3].steadyFrameAgeP95Ms * 0.8,
+    'adaptive images did not reduce constrained-link visual latency',
   )
   assert.ok(reports[5].steadyRenderedFps <= 15, 'flow failed to contract after the decoder slowed')
 } finally {

@@ -5,8 +5,38 @@ import {
   remoteBrowserViewportSchema,
   remoteBrowserOpenSchema,
   remoteBrowserFrameAckSchema,
+  remoteBrowserInteractionSchema,
 } from './remote-browser'
 import { previewUrl } from './previews'
+it('bounds native mouse metadata and only accepts safe page cursor values', () => {
+  const pointer = { type: 'pointer', phase: 'down', x: 20, y: 30 }
+  expect(
+    decodeResult(remoteBrowserInputSchema, { ...pointer, clickCount: 2, modifiers: ['Shift'] })
+      .success,
+  ).toBe(true)
+  for (const clickCount of [0, 4, 1.5, '2'])
+    expect(decodeResult(remoteBrowserInputSchema, { ...pointer, clickCount }).success).toBe(false)
+  expect(decodeResult(remoteBrowserInputSchema, { ...pointer, modifiers: ['Super'] }).success).toBe(
+    false,
+  )
+  const interaction = {
+    type: 'interaction',
+    editable: false,
+    href: 'http://localhost:3000',
+    cursor: 'pointer',
+  }
+  expect(decodeResult(remoteBrowserInteractionSchema, interaction).success).toBe(true)
+  expect(
+    decodeResult(remoteBrowserInteractionSchema, {
+      ...interaction,
+      cursor: 'url(https://example.com/track)',
+    }).success,
+  ).toBe(false)
+  expect(
+    decodeResult(remoteBrowserInteractionSchema, { ...interaction, href: 'x'.repeat(4097) })
+      .success,
+  ).toBe(false)
+})
 it('accepts optional decoder timing without permitting unbounded or invalid feedback', () => {
   const ack = { type: 'frameAck', sequence: 1 }
   for (const extra of [{}, { decodeMs: 0 }, { decodeMs: 17.25 }, { decodeMs: 10000 }])

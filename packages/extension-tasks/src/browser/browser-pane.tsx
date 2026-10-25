@@ -16,6 +16,7 @@ import {
   Plus,
   MonitorUp,
   Camera,
+  Keyboard,
   X,
 } from 'lucide-react'
 import {
@@ -47,7 +48,7 @@ import {
   Popover,
 } from '@dovo/studio-ui'
 import { useScreenshotAttachment } from './screenshot-attachment'
-import { RemoteBrowser } from './remote-browser'
+import { RemoteBrowser, type RemoteBrowserControls } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
 import { DeviceDeployment } from './device-deployment'
@@ -173,11 +174,17 @@ function BrowserContent({
   const browserKey = `${scope}:${activeTab}`
   const openedLink = useRef('')
   const controlsId = useId()
+  const remote = useRef<RemoteBrowserControls>(null)
+  const [remoteOnline, setRemoteOnline] = useApplicationState(false)
+  const [streamDetails, setStreamDetails] = useApplicationState('')
+  const [remoteLoading, setRemoteLoading] = useApplicationState(false)
   useEffect(() => {
     savedTabs.set(scope, { tabs, active: activeTab })
   }, [scope, tabs, activeTab])
   const selectTab = (tab: BrowserTab) => {
     setActiveTab(tab.id)
+    setRemoteOnline(false)
+    setStreamDetails('')
     setUrl(tab.url)
     setInput(tab.url)
     setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
@@ -194,6 +201,7 @@ function BrowserContent({
     selectTab(tab)
   }
   const editing = useRef(false)
+  const addressField = useRef<HTMLInputElement>(null)
   const mode =
     initialMode === 'devices'
       ? 'devices'
@@ -312,8 +320,9 @@ function BrowserContent({
   }, [initialMode, connected])
   const navigate = (address = input) => {
     try {
-      const target = previewUrl(address, connection?.address)
-      if (target === url) {
+      const target = previewUrl(address, mode === 'remote' ? undefined : connection?.address)
+      if (mode === 'remote') remote.current?.input({ type: 'navigate', url: target })
+      else if (target === url) {
         if (browser)
           void act(() =>
             browser({
@@ -597,12 +606,19 @@ function BrowserContent({
   )
   const takeScreenshot = () =>
     void act(async () => {
+      if (mode === 'remote') {
+        remote.current?.screenshot()
+        return
+      }
       if (!browser) return
       const result = await browser({ action: 'screenshot', key: browserKey })
       if (!result?.image)
         throw new Error('Could not capture the browser. Update the desktop app and try again.')
       await screenshots.attach(result.image)
     })
+  useEffect(() => {
+    if (mode === 'remote' && remoteOnline) remote.current?.viewport(preset, landscape)
+  }, [mode, activeTab, preset, landscape, remoteOnline])
   const browserOptions = (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -628,6 +644,23 @@ function BrowserContent({
                   : 'Embedded website preview'}
             </p>
           </div>
+          {mode === 'remote' && (
+            <div className="space-y-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => remote.current?.performance()}
+              >
+                Connection details
+              </Button>
+              {streamDetails && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  {streamDetails}
+                </p>
+              )}
+            </div>
+          )}
           {(mode === 'remote' || browser) && (
             <div className="flex flex-col gap-2 text-xs">
               <label htmlFor={`${controlsId}-profile`} className="text-xs text-muted-foreground">
@@ -709,9 +742,21 @@ function BrowserContent({
             </div>
           )}
 
-          {mode === 'web' && (
+          {(mode === 'web' || mode === 'remote') && (
             <div className="flex flex-col gap-1">
-              {browser && url && (
+              {mode === 'remote' && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="justify-start gap-2 text-xs"
+                  disabled={!remoteOnline || screenshots.busy}
+                  onClick={takeScreenshot}
+                >
+                  <Camera size={14} /> Take screenshot
+                </Button>
+              )}
+              {mode === 'web' && browser && url && (
                 <>
                   <Button
                     type="button"
@@ -974,7 +1019,7 @@ function BrowserContent({
           )}
         </div>
       )}
-      {mode === 'web' && (
+      {(mode === 'web' || mode === 'remote') && (
         <form
           aria-label="Browser navigation"
           className="flex min-h-12 shrink-0 items-center gap-1 border-b bg-sidebar/50 px-2 py-2 @max-[480px]/browser:flex-wrap"
@@ -988,69 +1033,83 @@ function BrowserContent({
               key={action}
               label={action === 'back' ? 'Back' : 'Forward'}
               type="button"
-              className="size-7 shrink-0"
-              disabled={!browser || !url || !history[action] || busy}
+              className="size-8 shrink-0"
+              disabled={
+                busy || !history[action] || (mode === 'remote' ? !remoteOnline : !browser || !url)
+              }
               onClick={() => {
-                if (browser) void act(() => browser({ action, key: browserKey }))
+                if (mode === 'remote') remote.current?.input({ type: action })
+                else if (browser) void act(() => browser({ action, key: browserKey }))
               }}
             >
               {action === 'back' ? <ArrowLeft size={15} /> : <ArrowRight size={15} />}
             </IconButton>
           ))}
           <IconButton
-            label="Reload preview"
+            label={mode === 'remote' && !remoteOnline ? 'Reconnect' : 'Reload'}
             type="button"
-            className="size-7 shrink-0"
-            disabled={!url || busy}
+            className="size-8 shrink-0"
+            aria-busy={mode === 'remote' && remoteLoading}
+            disabled={busy || (mode !== 'remote' && !url)}
             onClick={() =>
-              browser
-                ? void act(() => browser({ action: 'reload', key: browserKey }))
-                : setReload((value) => value + 1)
+              mode === 'remote'
+                ? remoteOnline
+                  ? remote.current?.input({ type: 'reload' })
+                  : remote.current?.reconnect()
+                : browser
+                  ? void act(() => browser({ action: 'reload', key: browserKey }))
+                  : setReload((value) => value + 1)
             }
           >
             <RotateCw size={15} />
           </IconButton>
-          <div className="flex h-8 min-w-0 flex-1 items-center gap-1 @max-[480px]/browser:order-first @max-[480px]/browser:basis-full [@media(pointer:coarse)]:h-11 rounded-lg border border-transparent bg-muted/70 pl-2 focus-within:border-ring/50 focus-within:ring-2 focus-within:ring-ring/10">
-            <Globe2 size={13} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+          <div className="studio-browser-address flex h-9 min-w-0 flex-1 items-center @max-[480px]/browser:order-first @max-[480px]/browser:basis-full [@media(pointer:coarse)]:h-12">
+            <span className="flex w-9 shrink-0 justify-center [@media(pointer:coarse)]:w-11">
+              <Globe2 size={15} className="text-muted-foreground" aria-hidden="true" />
+            </span>
             <Input
               type="text"
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
-              onFocus={() => {
+              onFocus={(event) => {
                 editing.current = true
+                event.currentTarget.select()
               }}
               onBlur={() => {
                 editing.current = false
               }}
+              ref={addressField}
               aria-label="Preview URL"
+              disabled={mode === 'remote' && !remoteOnline}
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Enter a URL or localhost:3000"
-              className="h-full min-w-0 flex-1 border-0 bg-transparent px-1 text-xs shadow-none focus-visible:ring-0"
+              placeholder="Enter website address"
+              className="h-full min-w-0 flex-1 border-0 bg-transparent px-0 text-center text-[13px] shadow-none focus:text-left focus-visible:outline-none focus-visible:ring-0 [@media(pointer:coarse)]:text-base"
             />
             <IconButton
               label="Go to address"
               type="submit"
-              className="size-7 shrink-0"
-              disabled={!input.trim() || busy}
+              className="size-8 shrink-0 rounded-full [@media(pointer:coarse)]:size-11"
+              disabled={!input.trim() || busy || (mode === 'remote' && !remoteOnline)}
             >
               <ArrowUpRight size={14} />
             </IconButton>
           </div>
+          {mode === 'remote' && (
+            <IconButton
+              type="button"
+              label="Keyboard"
+              className="size-8 shrink-0"
+              disabled={!remoteOnline}
+              onClick={() => remote.current?.keyboard()}
+            >
+              <Keyboard size={16} />
+            </IconButton>
+          )}
           {newTabMenu}
           {browserOptions}
         </form>
-      )}
-      {mode === 'remote' && (
-        <div className="flex min-h-10 shrink-0 items-center gap-1 border-b bg-sidebar/50 px-2 py-1">
-          <MonitorUp size={14} className="mx-1 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate text-xs font-medium">
-            {tabProfiles.find((profile) => profile.id === profileId)?.name ?? 'Host browser'}
-          </span>
-          {newTabMenu}
-          {browserOptions}
-        </div>
       )}
       {mode === 'remote' && remoteProfiles.error && (
         <p role="alert" className="p-3 text-xs text-destructive">
@@ -1074,12 +1133,31 @@ function BrowserContent({
             <RemoteBrowser
               key={`${tab.id}:${tab.profileId}`}
               taskId={taskId}
+              ref={activeTab === tab.id ? remote : undefined}
+              externalNavigation
+              onFocusAddress={() => {
+                addressField.current?.focus()
+                addressField.current?.select()
+              }}
+              onPerformance={setStreamDetails}
+              onConnection={(online) => {
+                if (activeTab === tab.id) {
+                  setRemoteOnline(online)
+                  if (!online) setStreamDetails('')
+                }
+              }}
               profileId={tab.profileId}
               initialUrl={tab.url}
               tabId={tab.id}
               active={mode === 'remote' && activeTab === tab.id}
               reloadToken={activeTab === tab.id ? turnReload : undefined}
-              onState={(state) =>
+              onState={(state) => {
+                if (activeTab === tab.id) {
+                  setHistory({ ...state, cdp: undefined })
+                  setRemoteLoading(state.loading)
+                  setUrl(state.url === 'about:blank' ? '' : state.url)
+                  if (!editing.current) setInput(state.url === 'about:blank' ? '' : state.url)
+                }
                 setTabs((previous) => {
                   const url = state.url === 'about:blank' ? '' : state.url
                   if (
@@ -1093,7 +1171,7 @@ function BrowserContent({
                     item.id === tab.id ? { ...item, url, title: state.title } : item,
                   )
                 })
-              }
+              }}
             />
           </div>
         ))}
