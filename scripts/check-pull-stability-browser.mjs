@@ -114,6 +114,7 @@ try {
   const assets = root + '/apps/desktop/dist/assets'
   for (const file of (await readdir(assets)).filter((file) => file.endsWith('.css')))
     await page.addStyleTag({ content: await readFile(assets + '/' + file, 'utf8') })
+  await page.clock.install()
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const list = page.getByRole('navigation', { name: 'Pull request sidebar' })
   const detail = page.locator('[aria-label="Pull request details"]')
@@ -140,6 +141,26 @@ try {
   await detail.getByText('Loading files…', { exact: true }).waitFor()
   await page.evaluate(() => window.releaseSection('changes'))
   await detail.getByRole('navigation', { name: 'Changed files', exact: true }).waitFor()
+  const pinnedReads = await page.evaluate(
+    () => window.sectionReads.filter((x) => x === 'changes').length,
+  )
+  const overviewReads = await page.evaluate(
+    () => window.sectionReads.filter((x) => x === 'overview').length,
+  )
+  await page.clock.fastForward(31000)
+  await page.waitForFunction(
+    (count) => window.sectionReads.filter((x) => x === 'overview').length > count,
+    overviewReads,
+  )
+  assert.equal(
+    await page.evaluate(() => window.sectionReads.filter((x) => x === 'changes').length),
+    pinnedReads,
+  )
+  await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
+  await page.waitForFunction(
+    (count) => window.sectionReads.filter((x) => x === 'changes').length > count,
+    pinnedReads,
+  )
   await page.evaluate(() => {
     window.failedSection = 'checks'
     window.releaseSection('checks')

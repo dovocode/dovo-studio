@@ -90,7 +90,7 @@ if(path.endsWith('/detail')){
  const value=detail(id);
  if(input.section==='overview'&&window.pushed)value.pull.headSha='c'.repeat(40);
  if(window.linkedComment&&input.section==='discussion')value.comments=[{id:'linked',kind:'comment',body:'Linked feedback',url:value.pull.url+'#linked',author:'reviewer',date:''}];
- if(input.section==='changes') { value.pull.headSha=(window.pushed?'c':'a').repeat(40); value.files=[{path:'changed.ts',status:'added',additions:1,deletions:0,patch:'@@ -0,0 +1 @@\\n+new code'}]; }
+ if(input.section==='changes') { if(window.changesWarning)value.warnings=['Incomplete patch']; value.pull.headSha=(window.pushed?'c':'a').repeat(40); value.files=[{path:'changed.ts',status:'added',additions:1,deletions:0,patch:'@@ -0,0 +1 @@\\n+new code'}]; }
  return value;
 }
 if(path.endsWith('/overview')&&window.simulatedPages?.[id])return decode(schema,{destination:'destination-'+id,pulls:[{...detail(id).pull,number:window.simulatedPages[id].number}],page:1,hasMore:false,cachedAt:window.simulatedPages[id].cachedAt,stale:window.simulatedPages[id].stale});if(path.endsWith('/overview'))return decode(schema,{destination:'destination-'+id,pulls:[input.page===2?{...detail(id).pull,number:8,url:'https://github.com/team/project/pull/8'}:detail(id).pull],page:input.page,hasMore:input.page===1});
@@ -238,6 +238,7 @@ try {
   await sectionsPage.evaluate(() => {
     window.blockedSections = ['stack', 'checks', 'changes']
   })
+  await sectionsPage.clock.install()
   await sectionsPage.addScriptTag({ content: built.outputFiles[0].text })
   await sectionsPage.waitForFunction(
     () => window.reader?.detail?.pull.body === 'Body' && window.reader.sections.status.ready,
@@ -257,6 +258,44 @@ try {
     window.releaseSections.changes()
   })
   await sectionsPage.waitForFunction(() => window.reader.detail.files[0]?.path === 'changed.ts')
+  const pinnedReads = await sectionsPage.evaluate(
+    () => window.calls.filter((x) => x.input.section === 'changes').length,
+  )
+  const overviewReads = await sectionsPage.evaluate(
+    () => window.calls.filter((x) => x.input.section === 'overview').length,
+  )
+  await sectionsPage.clock.fastForward(31000)
+  await sectionsPage.waitForFunction(
+    (count) => window.calls.filter((x) => x.input.section === 'overview').length > count,
+    overviewReads,
+  )
+  assert.equal(
+    await sectionsPage.evaluate(
+      () => window.calls.filter((x) => x.input.section === 'changes').length,
+    ),
+    pinnedReads,
+  )
+  // A partial response must keep polling until a clean pinned revision is received.
+  await sectionsPage.evaluate(() => {
+    window.changesWarning = true
+    window.reader.sections.changes.refresh()
+  })
+  await sectionsPage.waitForFunction(() =>
+    window.reader.sections.changes.detail.warnings.includes('Incomplete patch'),
+  )
+  const partialReads = await sectionsPage.evaluate(
+    () => window.calls.filter((x) => x.input.section === 'changes').length,
+  )
+  await sectionsPage.evaluate(() => {
+    window.changesWarning = false
+  })
+  await sectionsPage.clock.fastForward(11000)
+  await sectionsPage.waitForFunction(
+    (count) =>
+      window.calls.filter((x) => x.input.section === 'changes').length > count &&
+      !window.reader.sections.changes.detail.warnings.length,
+    partialReads,
+  )
   await sectionsPage.evaluate(() => {
     window.failedSection = 'checks'
     window.setObservedTab('checks')

@@ -70,3 +70,29 @@ it('finds source and additional thread links without confusing repositories, hos
   expect(pullLinkedTasks([source], 'https://elsewhere.test/o/r/pull/7')).toEqual([])
   expect(pullLinkedTasks([source], 'invalid')).toEqual([])
 })
+
+it('refreshes reverse links when immutable associations change and ignores credentialed URLs', async () => {
+  const { pullLinkedTasks } = await import('./task-pull-links')
+  const url = 'https://github.com/o/r/pull/7'
+  const link = { number: 7, url, title: 'Fix', repositoryUrl: 'https://github.com/o/r' }
+  const task = { example: false, linkedPullRequests: [link] }
+  expect(pullLinkedTasks([task], url)).toEqual([task])
+  const streaming = { ...task, title: 'Streaming' }
+  expect(pullLinkedTasks([streaming], url)).toEqual([streaming])
+  expect(pullLinkedTasks([{ ...task, linkedPullRequests: [] }], url)).toEqual([])
+  expect(
+    pullLinkedTasks([{ ...task, linkedPullRequests: [{ ...link, url: url + '0' }] }], url),
+  ).toEqual([])
+  const source = { example: false, pullRequest: { ...link, headSha: 'head', baseSha: 'base' } }
+  expect(pullLinkedTasks([source], url)).toEqual([source])
+  expect(
+    pullLinkedTasks([{ ...source, pullRequest: { ...source.pullRequest, url: url + '0' } }], url),
+  ).toEqual([])
+  expect(pullLinkedTasks([task], 'https://user:password@github.com/o/r/pull/7')).toEqual([])
+  expect(
+    pullLinkedTasks(
+      [{ ...task, linkedPullRequests: [{ ...link, url: 'https://user@github.com/o/r/pull/7' }] }],
+      url,
+    ),
+  ).toEqual([])
+})

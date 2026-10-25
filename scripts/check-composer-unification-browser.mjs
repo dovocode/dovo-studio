@@ -77,7 +77,7 @@ const built = await build({
         readRuntime,readRuntimeEffect:(...args)=>Effect.tryPromise(()=>readRuntime(...args)),
         refreshRuntime:async()=>{},runtimeReadCache:()=>null,setWorkspace:()=>{throw Error('Launcher wrote workspace state')}
       };
-      function App(){const [preferences,setPreferences]=useState({sendWith:'enter',markdownComposerPreview:false,themePalette:'dovo'});window.setPreferences=next=>setPreferences(current=>({...current,...next}));return <Preferences.Provider value={preferences}><Context.Provider value={value}><TaskLauncherForm bridge={bridge}/></Context.Provider></Preferences.Provider>}
+      function App(){const [preferences,setPreferences]=useState({sendWith:'enter',markdownComposerPreview:false,themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});window.setPreferences=next=>setPreferences(current=>({...current,...next}));return <Preferences.Provider value={preferences}><Context.Provider value={value}><TaskLauncherForm bridge={bridge}/></Context.Provider></Preferences.Provider>}
       createRoot(document.getElementById('app')).render(<App/>);
     `,
     resolveDir: root + 'packages/studio-ui/',

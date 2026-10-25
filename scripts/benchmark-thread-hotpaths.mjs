@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const paths = [
   'packages/protocol/src/tasks/task-priority.ts',
   'packages/protocol/src/tasks/settled-page.ts',
+  'packages/protocol/src/tasks/task-pull-links.ts',
   'packages/runtime/src/http/support/body.ts',
 ]
 const index = process.argv.indexOf('--baseline-ref')
@@ -86,6 +87,34 @@ const implementations = []
 if (baseline) implementations.push([baseline, await load(baseline)])
 implementations.push(['checkout', await load()])
 const output = []
+const associated = Array.from({ length: 10000 }, (_, index) => ({
+  id: String(index),
+  example: false,
+  linkedPullRequests: Array.from({ length: 5 }, (_, offset) => ({
+    number: offset + 1,
+    title: 'PR',
+    url: `https://github.com/team/repo/pull/${(index % 200) + offset + 1}`,
+  })),
+}))
+let expectedLinks
+for (const [version, impl] of implementations) {
+  const matches = impl
+    .pullLinkedTasks(associated, 'https://github.com/team/repo/pull/7')
+    .map((task) => task.id)
+  if (expectedLinks) assert.deepEqual(matches, expectedLinks)
+  else expectedLinks = matches
+  output.push({
+    version,
+    workload: '10000 threads: reverse PR links after streaming',
+    milliseconds: measure(() =>
+      impl.pullLinkedTasks(
+        associated.map((task) => ({ ...task, draft: 'streamed' })),
+        'https://github.com/team/repo/pull/7',
+      ),
+    ),
+  })
+}
+
 for (const count of [1000, 10000]) {
   const tasks = Array.from({ length: count }, (_, i) => task(i, count))
   const projects = new Map(Array.from({ length: 40 }, (_, i) => [`repo-${i}`, `Project ${40 - i}`]))

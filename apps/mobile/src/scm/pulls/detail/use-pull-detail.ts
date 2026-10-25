@@ -88,6 +88,7 @@ function usePullSection(
         ),
       ),
     )
+    let changesLoaded = false
     let force = forceNext.current
     if (enabled) forceNext.current = false
     setState((current) => ({ ...current, busy: false, refreshing: false }))
@@ -96,6 +97,9 @@ function usePullSection(
       if (!enabled || !readConnected || !focused || AppState.currentState !== 'active') return
       const refresh = force
       force = false
+      // A successful diff pinned to both commit hashes cannot change. Overview polling
+      // discovers pushes; explicit refresh, reconnection and scope changes still revalidate.
+      if (section === 'changes' && changesLoaded && !refresh) return
       setState((current) => ({ ...current, busy: true, refreshing: refresh }))
       yield* request(
         '/api/scm/pulls/detail',
@@ -105,12 +109,23 @@ function usePullSection(
         Effect.map((value) => retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value)),
         Effect.tap((value) =>
           Effect.sync(() => {
-            if (!stopped)
+            if (!stopped) {
+              changesLoaded = !!(
+                section === 'changes' &&
+                revision &&
+                value.pull.headSha &&
+                value.pull.baseSha &&
+                pullRevision(value) === revision &&
+                !value.stale &&
+                !value.refreshError &&
+                !value.warnings.length
+              )
               setState((current) => ({
                 ...current,
                 detail: value,
                 error: value.refreshError ?? '',
               }))
+            }
           }),
         ),
         Effect.flatMap((value) =>

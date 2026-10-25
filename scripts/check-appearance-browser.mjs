@@ -240,14 +240,14 @@ try {
       assert.equal(actual.dark, scheme === 'dark')
       await page.waitForFunction((expected) => {
         const token = [...document.querySelectorAll('[data-streamdown=code-block] span')].find(
-          (span) => span.childElementCount === 0 && span.textContent === 'export',
+          (span) => span.childElementCount === 0 && /^export\b/.test(span.textContent ?? ''),
         )
         return token && getComputedStyle(token).color === expected
       }, rgb(expected['syntax-keyword']))
       await page.waitForFunction((expected) => {
         const shadow = document.querySelector('[data-testid=diff] diffs-container')?.shadowRoot
         const token = [...(shadow?.querySelectorAll('span') ?? [])].find(
-          (span) => span.childElementCount === 0 && span.textContent === 'export',
+          (span) => span.childElementCount === 0 && /^export\b/.test(span.textContent ?? ''),
         )
         return token && getComputedStyle(token).color === expected
       }, rgb(expected['syntax-keyword']))
@@ -412,7 +412,7 @@ try {
   await page.waitForFunction(() => {
     const shadow = document.querySelector('[data-testid=diff] diffs-container')?.shadowRoot
     const token = [...(shadow?.querySelectorAll('span') ?? [])].find(
-      (span) => span.childElementCount === 0 && span.textContent === 'export',
+      (span) => span.childElementCount === 0 && /^export\b/.test(span.textContent ?? ''),
     )
     return token && getComputedStyle(token).color === 'rgb(192, 45, 105)'
   })

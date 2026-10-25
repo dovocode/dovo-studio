@@ -2261,7 +2261,7 @@ it('applies Claude steering received during finalization even when the remaining
   }
 })
 
-it('runs queued turns with their own model and reasoning without changing the active run or defaults', async () => {
+it('persists queued model choices without changing the active run or saved agent defaults', async () => {
   const { runClientEffect } = await import('@dovo/client-runtime')
   const s = await setup()
   const runs: AgentRun[] = []
@@ -2314,14 +2314,20 @@ it('runs queued turns with their own model and reasoning without changing the ac
     ['', undefined],
     ['large-model', 'high'],
     ['small-model', 'low'],
-    ['', undefined],
+    ['small-model', 'low'],
   ])
   const finished = s.store.task(task.id)
   expect(finished.turns?.map((turn) => [turn.model, turn.reasoning])).toEqual(
     runs.map((run) => [run.agent.model, run.agent.reasoning]),
   )
   expect(finished.harness).toEqual(original.harness)
-  expect(finished.agentOverrides).toEqual(original.agentOverrides)
+  expect(finished.agentOverrides).toEqual({
+    ...original.agentOverrides,
+    model: 'small-model',
+    reasoning: 'low',
+    serviceTier: null,
+    cyberAccessProgram: null,
+  })
   expect(s.store.get().agents[0].model).toBe('')
 })
 

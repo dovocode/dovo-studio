@@ -33,7 +33,7 @@ const mocks = {
       const workspace=spaces[runtimeId];
       const runtimes=Object.entries(spaces).map(([id,workspace])=>({profile:{id,name:id,connection:{address:'http://'+id+'.lan',token:'fixture-token'}},connected:true,snapshot:{workspace}}));
       const store={workspace,ready:true,connected:true,snapshot:defaults?{defaults}:null,storageError:null,syncError:null,pendingSync:false,runtimes,
-        runtimeRegistry:{activeId:runtimeId,profiles:[{id:'mac'},{id:'remote'}]},activeRuntimeId:runtimeId,switchRuntime,
+        runtimeRegistry:{activeId:runtimeId,profiles:[{id:'mac',connection:{address:'http://mac.lan',token:'fixture-token'}},{id:'remote',connection:{address:'http://remote.lan',token:'fixture-token'}}]},activeRuntimeId:runtimeId,switchRuntime,
         setWorkspace:update=>setSpaces(current=>({...current,[runtimeId]:typeof update==='function'?update(current[runtimeId]):update}))};
       return <WorkspaceContext.Provider value={store}>{children}</WorkspaceContext.Provider>;
     }

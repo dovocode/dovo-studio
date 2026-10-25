@@ -1,6 +1,7 @@
 # T3 comparison: thread performance, PR navigation and themes
 
-Reviewed T3 Code at `d0b9e9d3c72b` on 2026-10-25. T3 measurements are not Dovo measurements.
+Reviewed T3 Code through `7bafc40c17ab` on 2026-10-25; theme source links remain pinned to
+`d0b9e9d3c72b`. T3 measurements are not Dovo measurements.
 
 ## Changes in Dovo
 
@@ -120,3 +121,37 @@ Review also confirmed that disk writes are already coalesced by the desktop/mobi
 pass does not add a second write scheduler. Selected-thread loading still depends on the runtime
 connection and network round trip. No comparable T3/Dovo end-to-end device measurement, NetBird
 latency improvement, battery saving or native Pierre speedup has been established.
+
+## Further PR integration review
+
+T3's recent PR work emphasizes verified shell-created PR links
+([#24813](https://github.com/pingdotgg/t3code/pull/24813)), fresh merge/close handling
+([#24830](https://github.com/pingdotgg/t3code/pull/24830)), and avoiding repeated date parsing when
+choosing linked PRs ([#22891](https://github.com/pingdotgg/t3code/pull/22891)). Dovo already
+compares ISO timestamps when sorting PR summaries and verifies mentioned URLs against the configured
+repository/forge. Branch matches reject ambiguous and foreign-fork heads; automatic settlement
+requires fresh closure confirmation and respects queued work and drafts.
+
+This pass improves two adjacent hot paths:
+
+- Desktop and mobile stop polling a successfully loaded, warning-free Changes section once both head
+  and base hashes match the requested revision. Overview/status/checks continue polling; pushes
+  select a new revision. Explicit refresh, reconnection, and scope/tab changes revalidate. Cached
+  hydration alone never suppresses a network read; stale, failed, incomplete or unpinned responses
+  continue polling. This avoids repeating the same diff transfer every ten seconds.
+- Reverse links inspect associations directly, without enriching status metadata or parsing each URL
+  again during streaming. Weak caches follow immutable association objects/arrays, release deleted
+  threads, and invalidate naturally when associations are replaced. The benchmark checks equal
+  results. A 10,000-thread fixture with five links per thread measured **20.425 ms before versus
+  0.630 ms after** (warm median, Linux Node 26.8.1). Cold first reads still parse the links.
+
+Browser checks exercise real desktop/mobile hooks: advancing the clock leaves diff-read counts
+unchanged while overview reads continue; explicit refresh and a new head reload changes. Mobile
+presentation/transport are mocked; these are not native-device measurements.
+
+A remaining difference is immediacy after shell commands: Dovo's watcher discovers branch PRs on its
+two-minute poll, and summary references come from chat text. T3 reacts to verified completed
+create/merge commands, including output-only PR links. Dovo has not adopted shell-command parsing in
+this pass. Doing so needs command provenance, multi-forge validation and lifecycle tests; merely
+scraping every tool-output URL would incorrectly link unrelated PRs. No new automatic PR watch or
+merge policy is introduced.
