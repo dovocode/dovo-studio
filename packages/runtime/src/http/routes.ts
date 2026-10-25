@@ -1,3 +1,4 @@
+import { STUDIO_BROWSER_SCOPE } from '@dovo/protocol'
 import { usageHubs } from './endpoints/usage-hubs.js'
 import { peerConfigSchema } from '@dovo/protocol'
 import { sharingWriterConfigSchema } from '@dovo/protocol'
@@ -886,7 +887,7 @@ export function route(
           profileId = 'default',
           url,
         } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
-        s.store.taskSummary(taskId)
+        if (taskId !== STUDIO_BROWSER_SCOPE) s.store.taskSummary(taskId)
         if (!s.preferences.get().browserProfiles.some((profile) => profile.id === profileId))
           throw new HttpError(404, 'Browser profile is unavailable. Choose another profile.')
         const resourceId = JSON.stringify(
@@ -900,13 +901,26 @@ export function route(
           host: hostname(),
         })
       }
-      if (method === 'POST' && path === '/api/previews/browser/close') {
+      if (
+        method === 'POST' &&
+        (path === '/api/previews/browser/close' || path === '/api/previews/browser/selection')
+      ) {
         const {
           taskId,
           tabId,
           profileId = 'default',
         } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
-        s.store.taskSummary(taskId)
+        if (taskId !== STUDIO_BROWSER_SCOPE) s.store.taskSummary(taskId)
+        if (path.endsWith('/selection'))
+          return yield* serviceResult(
+            s.browsers.selection(
+              JSON.stringify(
+                profileId === 'default'
+                  ? [taskId, tabId ?? null]
+                  : [taskId, tabId ?? null, profileId],
+              ),
+            ),
+          )
         yield* serviceResult(
           s.browsers.close(
             JSON.stringify(

@@ -40,6 +40,8 @@ const stubs = [
   ...Object.entries({
     // Pair registration is covered by check-studio-tools-browser; this fixture tests navigation.
     './studio-paired-computers-bridge': 'export const StudioPairedComputersBridge=()=>null;',
+    // Capture permissions are covered by check-browser-media-browser.mjs.
+    './browser-media-controls': 'export const BrowserMediaControls=()=>null;',
     './app-extension': 'export const appSettingsExtension={views:[]};',
     './appearance': 'export const useAppearance=()=>{};',
     './task-notifications': 'export const useTaskNotifications=()=>({});',

@@ -90,7 +90,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           path: '/settings/general',
           group: 'Look & feel',
           local: true,
-          keywords: 'startup launch date time clock format automatic 12-hour 24-hour',
+          keywords:
+            'startup launch date time clock format automatic 12-hour 24-hour experimental browser tabs web',
         },
         {
           title: 'Conversation',

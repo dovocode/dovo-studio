@@ -300,3 +300,31 @@ it('falls back from invalid accessibility values independently', async () => {
     theme: 'light',
   })
 })
+
+it('keeps the experimental Browser disabled until explicitly enabled', async () => {
+  const saved = storage()
+  vi.stubGlobal('localStorage', saved)
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().browserWorkspaceEnabled).toBe(false)
+  updateAppPreferences({ browserWorkspaceEnabled: true })
+  expect(readAppPreferences().browserWorkspaceEnabled).toBe(true)
+  expect(JSON.parse(saved.getItem('dovo.app-preferences.v1')!).browserWorkspaceEnabled).toBe(true)
+  updateAppPreferences({ browserWorkspaceEnabled: false })
+  expect(readAppPreferences().browserWorkspaceEnabled).toBe(false)
+})
+
+it('merges desktop updates with the latest settings from another window', async () => {
+  let saved: Record<string, unknown> = { theme: 'dark', browserWorkspaceEnabled: false }
+  vi.stubGlobal('dovo', {
+    readAppSettings: () => saved,
+    writeAppSettings: (value: string) => {
+      saved = JSON.parse(value)
+    },
+  })
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().browserWorkspaceEnabled).toBe(false)
+  // Another window writes before its asynchronous change event arrives here.
+  saved = { ...saved, browserWorkspaceEnabled: true }
+  updateAppPreferences({ textSize: 'large' })
+  expect(saved).toMatchObject({ browserWorkspaceEnabled: true, textSize: 'large' })
+})

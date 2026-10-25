@@ -200,7 +200,8 @@ try {
         binaries: ['Contents/Resources/dictation/dovo-dictation'],
         extendInfo: {
           NSMicrophoneUsageDescription:
-            'Dictate messages locally. Your audio stays on this computer.',
+            'Use the microphone for local dictation or calls in browser pages you approve.',
+          NSCameraUsageDescription: 'Use the camera in browser pages you approve.',
         },
         notarize: !!(
           process.env.APPLE_API_KEY ||

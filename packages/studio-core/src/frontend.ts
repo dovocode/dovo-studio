@@ -3,6 +3,7 @@ import type { Extension, ExtensionManifest } from '@dovo/client-runtime'
 
 export type StudioIcon =
   | 'tasks'
+  | 'browser'
   | 'artifacts'
   | 'issues'
   | 'jira'
@@ -77,7 +78,10 @@ export interface StudioHostApi {
   popOutThread?: import('@dovo/protocol').ThreadWindowBridge
   threadWindow?: boolean
   taskLauncher?: import('@dovo/protocol').TaskLauncherBridge
+  browserWindowId?: string
+  openBrowserWindow?: () => Promise<void>
   browser?: import('@dovo/protocol').BrowserBridge
+  browserExtensions?: import('@dovo/protocol').BrowserExtensionBridge
   /** Opens a recognized forge PR in native details; false leaves normal link handling. */
   openPullLink?: (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => boolean
   /** A handoff is valid only while its initiating view and navigation are still current. */

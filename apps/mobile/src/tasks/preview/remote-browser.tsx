@@ -8,6 +8,7 @@ import {
   remoteBrowserMessageSchema,
   type RemoteBrowserMessage,
   responses,
+  type RemoteBrowserInput,
 } from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -22,23 +23,18 @@ import { useTheme } from '../../ui/theme'
 import { deviceHostMessage } from '../../screens/device-host-form'
 import { usePreviewActive } from './use-preview-active'
 import { BrowserToolbar, type BrowserMode } from './browser-toolbar'
+import { browserAddress } from '../../browser/browser-state'
 import { useOpenAppLink } from '../../ui/content/open-link'
 const bridgeSchema = mutableStruct({
   channel: Schema.Literal('dovo-browser'),
   type: Schema.Literals(['ready', 'reconnect', 'close', 'screenshot']),
   image: Schema.optional(Schema.String),
 })
-export function RemoteBrowser({
-  taskId,
-  deviceId,
-  devicePlatform,
-  expanded = false,
-  reloadToken,
-  initialUrl,
-  onMode,
-  onExpand,
-}: {
+export type RemoteBrowserControls = { input: (input: RemoteBrowserInput) => void }
+type RemoteBrowserProps = {
   taskId: string
+  tabId?: string
+  profileId?: string
   deviceId?: string
   devicePlatform?: 'ios' | 'android'
   expanded?: boolean
@@ -46,10 +42,42 @@ export function RemoteBrowser({
   initialUrl?: string
   onMode?: (mode: BrowserMode, address?: string) => void
   onExpand?: () => void
-}) {
+  onState?: (state: Extract<RemoteBrowserMessage, { type: 'state' }>) => void
+  onControls?: (controls: RemoteBrowserControls | null) => void
+}
+export function RemoteBrowser(props: RemoteBrowserProps) {
+  return props.tabId ? (
+    <RemoteBrowserContent key={`${props.tabId}:${props.profileId ?? 'default'}`} {...props} />
+  ) : (
+    <ThreadRemoteBrowser {...props} />
+  )
+}
+function ThreadRemoteBrowser(props: RemoteBrowserProps) {
+  const attachment = useScreenshotAttachment(props.taskId)
+  return <RemoteBrowserContent {...props} attachment={attachment} />
+}
+function RemoteBrowserContent({
+  taskId,
+  tabId,
+  profileId = 'default',
+  deviceId,
+  devicePlatform,
+  expanded = false,
+  reloadToken,
+  initialUrl,
+  onMode,
+  onExpand,
+  onState,
+  onControls,
+  attachment,
+}: RemoteBrowserProps & { attachment?: ReturnType<typeof useScreenshotAttachment> }) {
   const { styles, mode } = useTheme()
   const appearance = useRef(mode)
-  const screenshots = useScreenshotAttachment(taskId)
+  const screenshots = attachment
+  const stateCallback = useRef(onState)
+  const controlsCallback = useRef(onControls)
+  stateCallback.current = onState
+  controlsCallback.current = onControls
   const openLink = useOpenAppLink(taskId)
   const [browserState, setBrowserState] = useApplicationState<
     Extract<RemoteBrowserMessage, { type: 'state' }> | undefined
@@ -81,6 +109,12 @@ export function RemoteBrowser({
         ...message,
       }).replace(/</g, '\\u003c')}}));true;`,
     )
+  const send = useRef(post)
+  send.current = post
+  useEffect(() => {
+    controlsCallback.current?.({ input: (input) => send.current({ type: 'input', input }) })
+    return () => controlsCallback.current?.(null)
+  }, [tabId, profileId])
   useLayoutEffect(() => {
     appearance.current = mode
     if (ready.current) post({ type: 'appearance', theme: mode })
@@ -117,6 +151,8 @@ export function RemoteBrowser({
             deviceId ? '/api/previews/simulator/open' : '/api/previews/browser/open',
             {
               taskId,
+              tabId,
+              profileId: tabId ? profileId : undefined,
               id: deviceId,
               ...(!deviceId && lastAddress.current ? { url: lastAddress.current } : {}),
             },
@@ -128,6 +164,8 @@ export function RemoteBrowser({
             AppState.currentState === 'background'
           )
             return
+          if (tabId && (result.tabId !== tabId || result.profileId !== profileId))
+            throw new Error('Update this runtime to support shared browser tabs.')
           const target = createRuntimeClient(connection).socketUrl(
             deviceId ? '/ws/simulator' : '/ws/browser',
             result,
@@ -200,8 +238,8 @@ export function RemoteBrowser({
   }, [])
   return (
     <View style={styles.screen}>
-      {screenshots.editor}
-      {screenshots.error ? (
+      {screenshots?.editor}
+      {screenshots?.error ? (
         <Text accessibilityRole="alert" style={styles.error}>
           {screenshots.error}
         </Text>
@@ -267,6 +305,7 @@ export function RemoteBrowser({
             const state = decodeResult(remoteBrowserMessageSchema, message)
             if (state.success && state.data.type === 'state') {
               setBrowserState(state.data)
+              stateCallback.current?.(state.data)
               lastAddress.current = state.data.url === 'about:blank' ? '' : state.data.url
               if (!editing.current) setAddress(lastAddress.current)
               return
@@ -284,6 +323,7 @@ export function RemoteBrowser({
           const parsed = decodeResult(bridgeSchema, message)
           if (!parsed.success) return
           if (parsed.data.type === 'screenshot') {
+            if (!screenshots) return
             if (
               visible.current &&
               AppState.currentState !== 'background' &&
@@ -303,6 +343,8 @@ export function RemoteBrowser({
                 deviceId ? '/api/previews/simulator/close' : '/api/previews/browser/close',
                 {
                   taskId,
+                  tabId,
+                  profileId: tabId ? profileId : undefined,
                   id: deviceId,
                 },
                 responses.ok,
@@ -350,7 +392,19 @@ export function RemoteBrowser({
           available={online}
           back={browserState?.back ?? false}
           forward={browserState?.forward ?? false}
-          onNavigate={() => post({ type: 'input', input: { type: 'navigate', url: address } })}
+          onNavigate={() => {
+            try {
+              post({
+                type: 'input',
+                input: { type: 'navigate', url: tabId ? browserAddress(address) : address },
+              })
+            } catch (cause) {
+              Alert.alert(
+                'Could not navigate',
+                cause instanceof Error ? cause.message : String(cause),
+              )
+            }
+          }}
           onBack={() => post({ type: 'input', input: { type: 'back' } })}
           onForward={() => post({ type: 'input', input: { type: 'forward' } })}
           onReload={() => post({ type: 'reload' })}
@@ -358,9 +412,14 @@ export function RemoteBrowser({
           onCloseSession={() => post({ type: 'close' })}
           onDiagnostics={() => post({ type: 'performance' })}
           onKeyboard={() => post({ type: 'keyboard' })}
-          onScreenshot={() => post({ type: 'screenshot' })}
+          onScreenshot={() => {
+            if (screenshots) post({ type: 'screenshot' })
+          }}
           screenshotDisabled={
-            screenshots.busy || !browserState?.url || browserState.url === 'about:blank'
+            !screenshots ||
+            screenshots.busy ||
+            !browserState?.url ||
+            browserState.url === 'about:blank'
           }
           preset={preset}
           onPreset={setPreset}

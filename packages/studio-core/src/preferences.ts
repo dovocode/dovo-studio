@@ -76,6 +76,7 @@ const schema = mutableStruct({
   lastThreadId: Schema.NullOr(Schema.String),
   showIssues: Schema.Boolean,
   showJira: Schema.Boolean,
+  browserWorkspaceEnabled: Schema.Boolean,
   diffLayout: Schema.Literals(['unified', 'split']),
   diffOverflow: Schema.Literals(['wrap', 'scroll']),
   diffHighlight: Schema.Literals(['word', 'char', 'none']),
@@ -171,6 +172,7 @@ export const defaultAppPreferences: AppPreferences = {
   lastThreadId: null,
   showIssues: true,
   showJira: true,
+  browserWorkspaceEnabled: false,
   diffLayout: 'unified',
   diffOverflow: 'wrap',
   diffHighlight: 'word',
@@ -202,6 +204,13 @@ const desktopSettingsBridge = mutableStruct({
   dovo: mutableStruct({
     readAppSettings: Schema.Unknown.pipe(
       Schema.refine((value): value is () => unknown => typeof value === 'function'),
+    ),
+    subscribeAppSettings: Schema.optional(
+      Schema.Unknown.pipe(
+        Schema.refine(
+          (value): value is (listener: () => void) => () => void => typeof value === 'function',
+        ),
+      ),
     ),
     writeAppSettings: Schema.Unknown.pipe(
       Schema.refine((value): value is (value: string) => void => typeof value === 'function'),
@@ -256,8 +265,10 @@ export function readAppPreferences(): AppPreferences {
   return cached
 }
 export function updateAppPreferences(changes: Partial<AppPreferences>) {
-  cached = { ...readAppPreferences(), ...changes }
   const bridge = decodeResult(desktopSettingsBridge, globalThis)
+  // Desktop settings are shared across windows; merge against the latest stored value.
+  if (bridge.success) cached = undefined
+  cached = { ...readAppPreferences(), ...changes }
   try {
     if (bridge.success) bridge.data.dovo.writeAppSettings(JSON.stringify(cached))
     else globalThis.localStorage?.setItem(key, JSON.stringify(cached))
@@ -275,7 +286,15 @@ function subscribe(listener: () => void) {
     listener()
   }
   globalThis.addEventListener?.('storage', storage)
+  const bridge = decodeResult(desktopSettingsBridge, globalThis)
+  const stopNative = bridge.success
+    ? bridge.data.dovo.subscribeAppSettings?.(() => {
+        cached = undefined
+        listener()
+      })
+    : undefined
   return () => {
+    stopNative?.()
     listeners.delete(listener)
     globalThis.removeEventListener?.('storage', storage)
   }

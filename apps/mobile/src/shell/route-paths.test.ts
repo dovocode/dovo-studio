@@ -19,6 +19,8 @@ describe('mobile workbench route context', () => {
     ['/settings/automations/host/release', 'settings', true],
     ['/settings', 'settings', false],
     ['/artifacts', 'artifacts', false],
+    ['/browser', 'browser', false],
+    ['/browser-other', 'tasks', true],
     ['/artifacts-other', 'tasks', true],
     ['/issues-other', 'tasks', true],
   ] as const)('keeps %s in %s with detail=%s', (path, tab, detail) => {

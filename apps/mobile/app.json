@@ -37,7 +37,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Take photos to attach to messages and scan Dovo pairing QR codes.",
+          "cameraPermission": "Take photos, scan Dovo pairing QR codes, or use the camera in browser calls you approve.",
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
         }
@@ -46,8 +46,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Choose photos to attach to Dovo messages.",
-          "cameraPermission": "Take photos to attach to messages and scan Dovo pairing QR codes.",
-          "microphonePermission": "Use the microphone to dictate a message in Dovo Studio."
+          "cameraPermission": "Take photos, scan Dovo pairing QR codes, or use the camera in browser calls you approve.",
+          "microphonePermission": "Use the microphone for dictation or browser calls you approve."
         }
       ],
       [
@@ -83,7 +83,7 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Use the microphone to dictate a message in Dovo Studio.",
+          "microphonePermission": "Use the microphone for dictation or browser calls you approve.",
           "speechRecognitionPermission": "Turn your speech into message text. Audio may be processed by your device\u2019s speech service."
         }
       ],

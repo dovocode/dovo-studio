@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixture Page</title>
+  </head>
+  <body>
+    <p id="sel">Selected text with ünïcode 😀 and spaces</p>
+    <a id="blank" href="/other.html" target="_blank">open other</a>
+    <script>
+      window.__dovoPageGlobal = 'page'
+      window.addEventListener('message', (event) => {
+        if (event.data === 'oauth-ok') document.documentElement.dataset.oauth = 'ok'
+      })
+    </script>
+  </body>
+</html>

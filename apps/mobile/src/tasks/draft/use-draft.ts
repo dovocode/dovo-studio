@@ -12,6 +12,21 @@ const drafts = createDraftStorage(AsyncStorage)
 export function saveRuntimeDraft(runtimeId: string, taskId: string, text: string) {
   return drafts.write(`dovo.draft.${encodeURIComponent(runtimeId)}.${taskId}`, text)
 }
+/** Append through the same serialized store as the composer, including queued keyboard edits. */
+export function appendRuntimeDraft(
+  runtimeId: string,
+  taskId: string,
+  text: string,
+  initialDraft = '',
+) {
+  return runClientEffect(
+    drafts.appendEffect(
+      `dovo.draft.${encodeURIComponent(runtimeId)}.${taskId}`,
+      text,
+      initialDraft,
+    ),
+  )
+}
 export function useDraft(taskId: string, initial = '', deliveredIds: readonly string[] = []) {
   const { activeId, legacyDraftRuntimeId } = useRuntime()
   const key = `dovo.draft.${encodeURIComponent(activeId ?? '')}.${taskId}`

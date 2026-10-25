@@ -13,6 +13,7 @@ import { useShortcuts } from './shortcuts'
 import {
   preferencesReady,
   readMobilePreferences,
+  useMobilePreferences,
   useCarMode,
 } from '../runtime/preferences/app-preferences'
 import { NewTask } from '../tasks/creation/new-task'
@@ -271,15 +272,25 @@ export function Workbench() {
   ])
   const { tab: active, detail: routeDetail } = workbenchRoute(pathname)
   const car = useCarMode()
+  const { browserWorkspaceEnabled } = useMobilePreferences()
   const artifactsEnabled = runtime.overviews.some((entry) => entry.snapshot?.artifactsEnabled)
   useEffect(() => {
     if (runtime.ready && active === 'artifacts' && (!artifactsEnabled || car)) router.replace('/')
   }, [runtime.ready, active, artifactsEnabled, car])
+  useEffect(() => {
+    if (active === 'browser' && (!browserWorkspaceEnabled || car)) router.replace('/')
+  }, [active, browserWorkspaceEnabled, car])
   const [screens, setScreens] = useApplicationState<Record<string, ComponentType>>({}),
     [loadError, setLoadError] = useApplicationState('')
   useEffect(() => {
     // Tasks greets a first-run user with pairing; other collections have nothing to show yet.
-    if (runtime.ready && !runtime.profiles.length && active !== 'settings' && active !== 'tasks')
+    if (
+      runtime.ready &&
+      !runtime.profiles.length &&
+      active !== 'settings' &&
+      active !== 'tasks' &&
+      active !== 'browser'
+    )
       router.replace('/')
   }, [runtime.ready, runtime.profiles.length, active])
   // Settings → General → Open on launch: once per cold start, and only from the default Tasks
@@ -352,13 +363,16 @@ export function Workbench() {
     )
   }
   // Without a computer only Tasks (first-run welcome) and Settings have anything to show.
-  const selected = !runtime.profiles.length
-    ? active === 'tasks' && pathname !== '/projects'
-      ? 'tasks'
-      : 'settings'
-    : active === 'tasks' && pathname === '/projects'
-      ? 'scm'
-      : active
+  const selected =
+    active === 'browser'
+      ? 'browser'
+      : !runtime.profiles.length
+        ? active === 'tasks' && pathname !== '/projects'
+          ? 'tasks'
+          : 'settings'
+        : active === 'tasks' && pathname === '/projects'
+          ? 'scm'
+          : active
   useEffect(() => {
     let stopped = false
     setLoadError('')
@@ -431,11 +445,13 @@ export function Workbench() {
           ? 'issues'
           : view === 'pulls'
             ? 'pulls'
-            : view === 'artifacts'
-              ? 'artifacts'
-              : view === 'settings'
-                ? 'settings'
-                : 'tasks'
+            : view === 'browser'
+              ? 'browser'
+              : view === 'artifacts'
+                ? 'artifacts'
+                : view === 'settings'
+                  ? 'settings'
+                  : 'tasks'
       router.navigate(routes[tab])
     },
     [runtime.profiles],
@@ -474,6 +490,7 @@ export function Workbench() {
       issues: value('issues'),
       pulls: value('pulls'),
       artifacts: value('artifacts'),
+      browser: value('browser'),
       settings: value('settings'),
     }
   }, [active, navigate, work, runtime.activeId])
@@ -481,7 +498,15 @@ export function Workbench() {
   // Unified collections retain their filters and position when opening work on another computer.
   const scenes = useMemo(() => {
     const content: Record<string, ReactNode> = {}
-    for (const tab of ['tasks', 'issues', 'pulls', 'artifacts', 'settings', 'scm'] as const) {
+    for (const tab of [
+      'tasks',
+      'issues',
+      'pulls',
+      'artifacts',
+      'browser',
+      'settings',
+      'scm',
+    ] as const) {
       const View = screens[tab]
       content[tab] =
         !runtime.ready || !View ? (

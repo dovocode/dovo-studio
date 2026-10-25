@@ -1,3 +1,4 @@
+import { STUDIO_BROWSER_SCOPE } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { WebSocket } from 'ws'
 import {
@@ -180,7 +181,7 @@ export function attachBrowserSocket(
     if (client.readyState !== WebSocket.OPEN) throw new Error('Browser controller disconnected')
     services.devices.authenticate(token)
     if (foreignAuthorize) foreignAuthorize()
-    else services.store.taskSummary(taskId)
+    else if (simulatorId || taskId !== STUDIO_BROWSER_SCOPE) services.store.taskSummary(taskId)
   }
   let count = 0,
     windowStart = Date.now()

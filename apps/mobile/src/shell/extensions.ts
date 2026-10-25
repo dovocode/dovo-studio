@@ -12,6 +12,11 @@ type NativeContribution = {
 }
 const contributions: NativeContribution[] = [
   {
+    id: 'browser',
+    title: 'Browser',
+    load: () => import('../screens/browser'),
+  },
+  {
     id: 'tasks',
     title: 'Tasks',
     load: () => import('../screens/tasks'),

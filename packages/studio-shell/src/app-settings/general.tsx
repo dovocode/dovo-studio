@@ -84,6 +84,20 @@ export default function GeneralSettings() {
           />
         </SettingRow>
       </SettingsGroup>
+      <SettingsGroup title="Experimental">
+        <SettingRow
+          label="Browser workspace"
+          description="A shared browser with vertical tabs, profiles, bookmarks and page-to-thread actions. Experimental and off by default; thread previews stay available."
+        >
+          <Toggle
+            label="Enable experimental Browser"
+            checked={preferences.browserWorkspaceEnabled}
+            onChange={(browserWorkspaceEnabled) =>
+              updateAppPreferences({ browserWorkspaceEnabled })
+            }
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Date & time">
         <SettingRow
           label="Time format"

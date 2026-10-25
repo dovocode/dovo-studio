@@ -13,6 +13,8 @@ export const appSettingsExtension = defineStudioExtension(
         'Time format',
         'Background activity',
         'Quit shortcut',
+        'Browser workspace',
+        'Enable experimental Browser',
       ],
       navigationGroup: 'settings',
       settingsScope: 'device',
@@ -20,7 +22,8 @@ export const appSettingsExtension = defineStudioExtension(
       icon: 'runtime',
       order: 0.1,
       settingsSection: 'app',
-      keywords: 'navigation shortcuts issues jira time clock quit battery background activity',
+      keywords:
+        'navigation shortcuts issues jira time clock quit battery background activity experimental browser workspace',
       load: () => import('./app-settings/general'),
     },
     {

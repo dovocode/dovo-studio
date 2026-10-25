@@ -4,6 +4,13 @@ export const tasksExtension = defineStudioExtension(
   [
     { id: 'tasks', title: 'Tasks', icon: 'tasks', order: 0, load: () => import('./view') },
     {
+      id: 'browser',
+      title: 'Browser',
+      icon: 'browser',
+      order: 0.25,
+      load: () => import('./browser/browser-view'),
+    },
+    {
       id: 'artifacts',
       title: 'Artifacts',
       icon: 'artifacts',

@@ -370,3 +370,19 @@ it('restores accessibility choices independently and keeps older saved settings'
     colorVision: 'blue-orange',
   })
 })
+
+it('keeps Browser experimental and disabled until this device opts in', async () => {
+  let saved: string | null = null
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences().browserWorkspaceEnabled).toBe(false)
+  preferences.updateMobilePreferences({ browserWorkspaceEnabled: true })
+  await vi.waitFor(() => expect(JSON.parse(saved ?? '{}').browserWorkspaceEnabled).toBe(true))
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  expect(reopened.readMobilePreferences().browserWorkspaceEnabled).toBe(true)
+})

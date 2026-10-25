@@ -23,6 +23,7 @@
     "@dovo/studio-shell": "workspace:*",
     "@dovo/studio-ui": "workspace:*",
     "effect": "4.0.6",
+    "electron-chrome-extensions": "4.10.0",
     "electron-updater": "^6.8.9",
     "lucide-react": "^1.61.0",
     "react": "^19.3.1",
