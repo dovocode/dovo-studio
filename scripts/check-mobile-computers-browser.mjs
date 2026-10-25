@@ -58,6 +58,11 @@ const stubs = [
     contents: 'export const useConnectionTypes=()=>()=>({label:"Private · LAN / VPN"});',
   },
   ...[
+    [
+      '../../ui/content/sharing-people',
+      'runtime/connection/',
+      'export const SharingPeoplePanel=()=>null;',
+    ],
     ['../../ui/content/text', 'runtime/connection/', text],
     ['../ui/content/text', 'screens/', text],
     ['../ui/controls/icon', 'screens/', 'export const Icon=()=>null;'],
