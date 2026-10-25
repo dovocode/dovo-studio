@@ -44,9 +44,13 @@ export function PullChanges({
     () => detail.files.filter((file) => !hideWhitespaceChanges || !whitespaceOnlyPatch(file)),
     [detail.files, hideWhitespaceChanges],
   )
+  const { headSha, baseSha } = detail.pull
   const fingerprints = useMemo(
-    () => new Map(visibleFiles.map((file) => [file.path, pullFileFingerprint(file, detail.pull)])),
-    [visibleFiles, detail.pull],
+    () =>
+      new Map(
+        visibleFiles.map((file) => [file.path, pullFileFingerprint(file, { headSha, baseSha })]),
+      ),
+    [visibleFiles, headSha, baseSha],
   )
   const review = useFileReview(
     { kind: 'pull', repositoryId, number: detail.pull.number },

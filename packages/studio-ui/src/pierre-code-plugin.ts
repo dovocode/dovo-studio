@@ -5,20 +5,35 @@ import type { resolveCodeTheme } from '@dovo/studio-core/code-themes'
 type SourceTheme = ReturnType<typeof resolveCodeTheme>
 let engine: typeof import('@pierre/highlights') | undefined
 let loading: Promise<typeof import('@pierre/highlights')> | undefined
+// Reopening a message can reuse its palette's tokens. Weak keys release removed imports;
+// edited imports have a new identity even when they keep the same theme name.
+const plugins = new WeakMap<SourceTheme, WeakMap<SourceTheme, CodeHighlighterPlugin>>()
 
 /** Streamdown's plugin contract calls this slot "shiki"; the engine is always Pierre. */
 export function createPierreCodePlugin(themes: [SourceTheme, SourceTheme]): CodeHighlighterPlugin {
+  const existing = plugins.get(themes[0])?.get(themes[1])
+  if (existing) return existing
   const palettes = { light: pierreTheme(themes[0]), dark: pierreTheme(themes[1]) }
+  const entries = new Map<string, { result: HighlightResult; bytes: number }>()
+  let retainedBytes = 0
   const highlight = (code: string, language: string): HighlightResult => {
     if (!engine) throw new Error('Pierre highlighting has not loaded')
+    const lang = engine.isSupportedLanguage(language) ? language : 'text'
+    const key = `${lang}\0${code}`
+    const cached = entries.get(key)
+    if (cached) {
+      entries.delete(key)
+      entries.set(key, cached)
+      return cached.result
+    }
     const result = engine.codeToTokens(code, {
-      lang: engine.isSupportedLanguage(language) ? language : 'text',
+      lang,
       themes: palettes,
       cssVariablePrefix: '--shiki-',
       tokenizeMaxLineLength: 2000,
     })
     // Streamdown renders CSS styles, rather than Shiki's numeric font flags.
-    return {
+    const highlighted = {
       ...result,
       tokens: result.tokens.map((line) =>
         line.map((token) => {
@@ -42,8 +57,24 @@ export function createPierreCodePlugin(themes: [SourceTheme, SourceTheme]): Code
         }),
       ),
     }
+    // Estimate source, keys, lines and styled token objects; never retain an oversized block.
+    // Both limits matter for streaming, where every growing prefix has a different key.
+    const bytes =
+      key.length * 4 + highlighted.tokens.reduce((sum, line) => sum + 32 + line.length * 256, 0)
+    const budget = 1024 * 1024
+    if (bytes <= budget) {
+      while (entries.size >= 20 || retainedBytes + bytes > budget) {
+        const oldest = entries.entries().next().value
+        if (!oldest) break
+        entries.delete(oldest[0])
+        retainedBytes -= oldest[1].bytes
+      }
+      entries.set(key, { result: highlighted, bytes })
+      retainedBytes += bytes
+    }
+    return highlighted
   }
-  return {
+  const plugin: CodeHighlighterPlugin = {
     type: 'code-highlighter',
     name: 'shiki',
     getThemes: () => themes,
@@ -86,4 +117,11 @@ export function createPierreCodePlugin(themes: [SourceTheme, SourceTheme]): Code
       return null
     },
   }
+  let darkThemes = plugins.get(themes[0])
+  if (!darkThemes) {
+    darkThemes = new WeakMap()
+    plugins.set(themes[0], darkThemes)
+  }
+  darkThemes.set(themes[1], plugin)
+  return plugin
 }

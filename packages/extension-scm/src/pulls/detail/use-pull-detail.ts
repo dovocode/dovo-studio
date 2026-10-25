@@ -77,6 +77,10 @@ function usePullSection(
   }, [cacheKey, readCache])
   useEffect(() => {
     let stopped = false
+    setState((current) => ({ ...current, busy: false, refreshing: false }))
+    // Keep loaded sections available, but defer disk reads and owned polling workers
+    // until their tab needs them. Enabling the section performs the initial read.
+    if (!enabled) return
     const hydrated = Effect.runSync(
       Effect.cached(
         Effect.gen(function* () {
@@ -104,8 +108,7 @@ function usePullSection(
     )
     let changesLoaded = false
     let force = forceNext.current
-    if (enabled) forceNext.current = false
-    setState((current) => ({ ...current, busy: false, refreshing: false }))
+    forceNext.current = false
     const load = Effect.gen(function* () {
       yield* hydrated
       if (!enabled || !readConnected || document.visibilityState !== 'visible') return

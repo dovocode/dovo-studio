@@ -63,6 +63,9 @@ function usePullSection(
   }, [cacheKey, readCache])
   useEffect(() => {
     let stopped = false
+    setState((current) => ({ ...current, busy: false, refreshing: false }))
+    // Retain loaded details without reading disk or starting timers for closed tabs.
+    if (!enabled) return
     const hydrated = Effect.runSync(
       Effect.cached(
         Effect.gen(function* () {
@@ -90,8 +93,7 @@ function usePullSection(
     )
     let changesLoaded = false
     let force = forceNext.current
-    if (enabled) forceNext.current = false
-    setState((current) => ({ ...current, busy: false, refreshing: false }))
+    forceNext.current = false
     const load = Effect.gen(function* () {
       yield* hydrated
       if (!enabled || !readConnected || !focused || AppState.currentState !== 'active') return

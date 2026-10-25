@@ -164,3 +164,27 @@ through ordinary polling and watcher restarts. Commands cannot settle an auxilia
 known source/branch PR, bypass settlement preferences or discard protected work. The two-minute poll
 remains the fallback for later external changes and unsupported shell forms. No new automatic PR
 watch or merge policy is introduced.
+
+## Follow-up: idle PR tabs and repeated code blocks
+
+- Closed PR sections on desktop and mobile retain their loaded state but defer cache hydration and
+  polling-worker creation until enabled. Opening a tab still reads its saved section and revalidates
+  online; overview, status and other enabled sections keep refreshing. Browser checks assert that
+  unused Changes/Checks sections perform no cache reads, then load when selected.
+- Review fingerprints depend on file contents and head/base hashes, rather than the whole merged PR
+  object. Status/check updates no longer recompute SHA-256 for every unchanged patch. Browser checks
+  count the actual production fingerprint calls; metadata-only updates skip hashing while a new
+  commit still invalidates the mobile fingerprints. Existing review/draft/120-file checks remain.
+- Chat shares a Pierre plugin per light/dark theme-object pair, with a least-recently-used token
+  cache limited to 20 blocks and an estimated 1 MiB per pair. Growing streaming prefixes obey both
+  limits; oversized blocks render without retention. Weak theme keys allow removed imports to be
+  collected, and edited imports with the same name cannot reuse the old colors. This cache applies
+  to desktop/web chat; it does not migrate the native highlighter.
+
+Run `pnpm benchmark:chat-highlighting --baseline-ref d4cac399` to compare the production adapters.
+One warm Node 26.8.1 run on a 3,076-character TypeScript file measured median repeated highlighting
+at **0.110 ms before / 0.002 ms after**, and remounted-message highlighting at **0.110 / 0.002 ms**.
+Unique blocks measured **0.115 / 0.124 ms**: cache misses incur bookkeeping overhead. The benchmark
+checks exact source reconstruction and uses 60 samples per workload. These are adapter CPU times,
+excluding React, network, cold initialization and native-device performance; they are not measured
+thread-opening gains. The memory budget is an estimate of retained source/tokens, not a heap cap.

@@ -169,6 +169,7 @@
     "test:mermaid:browser": "pnpm --filter @dovo/desktop build && node scripts/build-mobile-mermaid.mjs && node scripts/check-mermaid-rendering-browser.mjs",
     "test:pull-thread-links:browser": "node scripts/check-pull-thread-links-browser.mjs",
     "benchmark:syntax": "node scripts/benchmark-syntax.mjs",
+    "benchmark:chat-highlighting": "node scripts/benchmark-chat-highlighting.mjs",
     "benchmark:thread-hotpaths": "node scripts/benchmark-thread-hotpaths.mjs",
     "test:pierre-code:browser": "node scripts/check-pierre-code-browser.mjs"
   },

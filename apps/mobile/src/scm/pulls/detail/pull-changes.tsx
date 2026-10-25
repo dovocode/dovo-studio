@@ -64,9 +64,13 @@ export function PullChanges({
   const [options, setOptions] = useState(false)
   const [feedbackPath, setFeedbackPath] = useState('')
   const [controlsHeight, setControlsHeight] = useState(88)
+  const { headSha, baseSha } = detail.pull
   const fingerprints = useMemo(
-    () => new Map(detail.files.map((file) => [file.path, pullFileFingerprint(file, detail.pull)])),
-    [detail.files, detail.pull],
+    () =>
+      new Map(
+        detail.files.map((file) => [file.path, pullFileFingerprint(file, { headSha, baseSha })]),
+      ),
+    [detail.files, headSha, baseSha],
   )
   const review = useFileReview(
     { kind: 'pull', repositoryId, number: detail.pull.number },
