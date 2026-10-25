@@ -1,18 +1,26 @@
 import { Schema } from 'effect'
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
-export interface PlanLimit {
-  provider: 'codex' | 'claude'
-  sourceTaskId?: string
-  agentId?: string
-  bucketId?: string
-  windowId?: string
-  durationMins?: number
-  account?: { id: string; label: string; subscription?: string }
-  window: string
-  usedPercent: number
-  resetsAt?: number
-  updatedAt: string
-}
+export const usageAccountSchema = mutableStruct({
+  id: Schema.String,
+  label: Schema.String,
+  subscription: Schema.optional(Schema.String),
+})
+export const planLimitSchema = mutableStruct({
+  provider: Schema.Literals(['codex', 'claude']),
+  account: Schema.optional(usageAccountSchema),
+  sourceTaskId: Schema.optional(Schema.String),
+  agentId: Schema.optional(Schema.String),
+  bucketId: Schema.optional(Schema.String),
+  windowId: Schema.optional(Schema.String),
+  durationMins: Schema.optional(
+    Schema.Number.pipe(Schema.check(Schema.isFinite()), Schema.check(Schema.isGreaterThan(0))),
+  ),
+  window: Schema.String,
+  usedPercent: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+  resetsAt: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+  updatedAt: Schema.String,
+})
+export type PlanLimit = Schema.Schema.Type<typeof planLimitSchema>
 
 const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -243,14 +251,18 @@ export function accountPlanLimits(
       const previous = windows.get(key)
       const computers = [...new Set([...(previous?.computers ?? []), source.computer])]
       const reading =
-        previous && Date.parse(previous.updatedAt) > Date.parse(limit.updatedAt) ? previous : limit
+        previous &&
+        (Date.parse(previous.updatedAt) > Date.parse(limit.updatedAt) ||
+          (previous.updatedAt === limit.updatedAt && previous.connected && !source.connected))
+          ? previous
+          : limit
       windows.set(key, {
         ...reading,
         key,
         accountKey,
         sourceId: reading === previous ? previous?.sourceId : source.sourceId,
         computers,
-        connected: (previous?.connected ?? false) || (source.connected ?? true),
+        connected: reading === previous ? previous.connected : (source.connected ?? true),
         accountLabel: limit.account
           ? `${limit.account.label}${limit.account.subscription ? ` · ${limit.account.subscription}` : ''}`
           : `Unidentified account · ${source.computer}`,
@@ -319,7 +331,38 @@ export const resetCreditsSchema = mutableStruct({
 })
 export const resetCreditResultSchema = mutableStruct({ outcome: Schema.String })
 
+export const usageHubSchema = mutableStruct({
+  id: Schema.String,
+  label: Schema.String,
+  url: Schema.String,
+  enabled: Schema.Boolean,
+  checkedAt: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+  limits: mutableArray(planLimitSchema),
+})
+export type UsageHub = Schema.Schema.Type<typeof usageHubSchema>
+export const usageHubsSchema = mutableArray(usageHubSchema)
+export const usageHubInputSchema = mutableStruct({
+  id: Schema.optional(
+    Schema.String.pipe(Schema.check(Schema.isMinLength(1)), Schema.check(Schema.isMaxLength(100))),
+  ),
+  label: Schema.String.pipe(
+    Schema.check(Schema.isMinLength(1)),
+    Schema.check(Schema.isMaxLength(100)),
+  ),
+  url: Schema.String.pipe(Schema.check(Schema.isMaxLength(2000))),
+  enabled: Schema.Boolean,
+  managementKey: Schema.optional(
+    Schema.String.pipe(
+      Schema.check(Schema.isMinLength(1)),
+      Schema.check(Schema.isMaxLength(10000)),
+    ),
+  ),
+})
+export type UsageHubInput = Schema.Schema.Type<typeof usageHubInputSchema>
+
 export const usageLimitsReadSchema = mutableStruct({
+  hubs: Schema.optional(usageHubsSchema),
   checkedAt: Schema.String,
   accounts: mutableArray(
     mutableStruct({
@@ -330,3 +373,94 @@ export const usageLimitsReadSchema = mutableStruct({
     }),
   ),
 })
+
+/** One equally sized segment per account, never a sum of different subscription capacities. */
+export function pooledPlanLimits(windows: ReturnType<typeof accountPlanLimits>, now = Date.now()) {
+  const accounts = new Map<string, typeof windows>()
+  for (const window of windows) {
+    const key = JSON.stringify([window.provider, window.bucketId ?? window.provider])
+    const group = accounts.get(key) ?? []
+    group.push(window)
+    accounts.set(key, group)
+  }
+  return [...accounts].flatMap(([bucket, readings]) => {
+    const byAccount = new Map<
+      string,
+      {
+        label: string
+        windows: Map<string, (typeof readings)[number]>
+        weekly?: (typeof readings)[number]
+      }
+    >()
+    for (const row of readings) {
+      const account = byAccount.get(row.accountKey) ?? {
+        label: row.accountLabel,
+        windows: new Map<string, typeof row>(),
+      }
+      account.windows.set(row.windowId ?? row.window, row)
+      if (row.window === 'Weekly') account.weekly = row
+      byAccount.set(row.accountKey, account)
+    }
+    const identities = [...byAccount.keys()].sort()
+    const definitions = new Map(readings.map((row) => [row.windowId ?? row.window, row]))
+    return [...definitions].map(([windowId, definition]) => {
+      const segments = identities.map((accountKey) => {
+        const own = byAccount.get(accountKey)!
+        const reading = own.windows.get(windowId)
+        const weekly = own.weekly
+        const session = definition.window === 'Session'
+        const gate =
+          session &&
+          weekly &&
+          quotaReadingState(weekly, weekly.connected, now) === 'fresh' &&
+          weekly.usedPercent >= 100
+            ? weekly
+            : undefined
+        const readingState = reading
+          ? quotaReadingState(reading, reading.connected, now)
+          : 'unknown'
+        const state =
+          session &&
+          weekly &&
+          quotaReadingState(weekly, weekly.connected, now) !== 'fresh' &&
+          readingState === 'fresh'
+            ? 'unknown'
+            : readingState
+        const remaining =
+          state === 'fresh' && reading
+            ? gate
+              ? 0
+              : Math.max(0, Math.min(100, 100 - reading.usedPercent))
+            : null
+        return {
+          accountKey,
+          label: own.label,
+          state,
+          remaining,
+          gatedByWeekly: !!gate,
+          resetsAt:
+            gate && reading && reading.usedPercent >= 100
+              ? gate.resetsAt && reading.resetsAt
+                ? Math.max(gate.resetsAt, reading.resetsAt)
+                : undefined
+              : (gate?.resetsAt ?? reading?.resetsAt),
+        }
+      })
+      const resets = segments.flatMap((segment) =>
+        segment.remaining === 0 && segment.resetsAt && segment.resetsAt * 1000 > now
+          ? [segment.resetsAt]
+          : [],
+      )
+      return {
+        key: JSON.stringify([bucket, windowId]),
+        provider: definition.provider,
+        window: definition.window,
+        segments,
+        available: segments.filter((segment) => segment.remaining !== null && segment.remaining > 0)
+          .length,
+        unknown: segments.filter((segment) => segment.remaining === null).length,
+        nextReset: resets.length ? Math.min(...resets) : undefined,
+      }
+    })
+  })
+}

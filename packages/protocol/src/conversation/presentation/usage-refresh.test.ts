@@ -3,6 +3,7 @@ import { decode } from '../../shared/schema.js'
 import { runtimeProfile } from '../../runtime/connection/runtime-fleet.js'
 import { createRuntimeReadCache, type CacheStorage } from '../../runtime/cache/read-cache.js'
 import { usageHistorySchema, type UsageHistoryResult } from './usage-history.js'
+import type { UsageHub } from '../workflow/plan-limits.js'
 import { refreshUsageEntry, type UsageRead } from './usage-refresh.js'
 
 function fixture() {
@@ -88,4 +89,89 @@ it('uses cached usage offline without issuing a host request', async () => {
   expect(publish).toHaveBeenCalledWith(history)
   expect(requests).toEqual([])
   expect(refresh).not.toHaveBeenCalled()
+})
+
+it('reads only subscription windows on Limits without loading history from disk or publishing it', async () => {
+  const { profile, cache } = fixture()
+  const readCache = vi.spyOn(cache, 'read')
+  const requests: string[] = []
+  const read: UsageRead = async (_, path, __, schema) => {
+    requests.push(path)
+    return decode(schema, { checkedAt: new Date().toISOString(), accounts: [] })
+  }
+  const refresh = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+  const publish = vi.fn<(value: UsageHistoryResult) => void>()
+  expect(
+    await refreshUsageEntry({
+      profile,
+      cache,
+      read,
+      refresh,
+      publish,
+      connected: true,
+      force: true,
+      kind: 'limits',
+    }),
+  ).toEqual([])
+  expect(requests).toEqual(['/api/usage/limits/read'])
+  expect(readCache).not.toHaveBeenCalled()
+  expect(publish).not.toHaveBeenCalled()
+  expect(refresh).toHaveBeenCalledOnce()
+})
+
+it('refreshes costs and tokens without opening a provider subscription control channel', async () => {
+  const { profile, cache, history } = fixture()
+  const requests: string[] = []
+  const read: UsageRead = async (_, path, __, schema) => {
+    requests.push(path)
+    return decode(schema, history)
+  }
+  const refresh = vi.fn<() => Promise<void>>()
+  const publish = vi.fn<(value: UsageHistoryResult) => void>()
+  await refreshUsageEntry({
+    profile,
+    cache,
+    read,
+    refresh,
+    publish,
+    connected: true,
+    force: false,
+    kind: 'history',
+  })
+  expect(requests).toEqual(['/api/usage/history/read'])
+  expect(publish).toHaveBeenCalledWith(history)
+  expect(refresh).not.toHaveBeenCalled()
+})
+
+it('replicates only public hub readings for offline Limits and clears unsupported runtime data', async () => {
+  const { profile, cache } = fixture()
+  const hubs: UsageHub[] = [
+    { id: 'hub', label: 'Hub', url: 'http://hub/', enabled: true, limits: [] },
+  ]
+  const publishHubs = vi.fn<(value: typeof hubs) => void>()
+  const refresh = vi.fn<() => Promise<void>>(async () => {})
+  const read: UsageRead = async (_, path, __, schema) =>
+    decode(schema, { checkedAt: new Date().toISOString(), accounts: [], hubs })
+  const input = {
+    profile,
+    cache,
+    read,
+    refresh,
+    force: false,
+    kind: 'limits' as const,
+    publish: () => {},
+    publishHubs,
+  }
+  await refreshUsageEntry({ ...input, connected: true })
+  expect(publishHubs).toHaveBeenLastCalledWith(hubs)
+  publishHubs.mockClear()
+  await refreshUsageEntry({ ...input, connected: false })
+  expect(publishHubs).toHaveBeenCalledExactlyOnceWith(hubs)
+  await refreshUsageEntry({
+    ...input,
+    connected: true,
+    read: async (_, __, ___, schema) =>
+      decode(schema, { checkedAt: new Date().toISOString(), accounts: [] }),
+  })
+  expect(publishHubs).toHaveBeenLastCalledWith([])
 })

@@ -14,6 +14,7 @@ export const Text=({children,style,numberOfLines,accessibilityLiveRegion})=><spa
 export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,contentContainerStyle})=><View style={contentContainerStyle}>{ListHeaderComponent}{data.map((item,index)=><View key={keyExtractor(item)}>{renderItem({item,index})}</View>)}{!data.length&&ListEmptyComponent}</View>;
 export const SettingsPage=View;
 export const useSettingsTheme=()=>({colors:{surface:'#f6f8fa',border:'#d0d7de',accent:'#0969da',error:'#cf222e',warning:'#9a6700'},styles:{content:{padding:12,gap:20,maxWidth:768,width:'100%',alignSelf:'center'},text:{fontSize:16,lineHeight:22},muted:{fontSize:13,lineHeight:18,color:'#57606a'},title:{fontSize:17,lineHeight:23},card:{padding:12,gap:10,borderRadius:16,backgroundColor:'#f6f8fa'}}});
+export const SettingsField=({label,value,onChangeText,secureTextEntry,placeholder})=><label>{label}<input aria-label={label} type={secureTextEntry?'password':'text'} value={value} placeholder={placeholder} onChange={event=>onChangeText(event.target.value)} /></label>;
 export const SettingsAction=({label,disabled,onPress})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const SettingsChoice=({label,value,items,onChange})=><label>{label}<select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
 export const SettingsGroup=({title,footer,children})=><View>{title&&<h2>{title}</h2>}{children}{footer&&<Text>{footer}</Text>}</View>;
@@ -59,7 +60,20 @@ function App(){const[,render]=useState(0);window.refreshLayout=scale=>{window.fo
     {
       path: '../runtime/connection/provider',
       importer: screen,
-      contents: `import {useState} from 'react';const cache={read:async()=>null,write:async()=>{}};const readRuntime=async(profile,path)=>path==='/api/usage/limits/read'?{checkedAt:new Date().toISOString(),accounts:[]}:{sourceId:profile.id,records:[],notices:[]};export const useRuntime=()=>{const[overviews,setOverviews]=useState([window.usageHost]);window.changeUsageScenario=scenario=>setOverviews(scenario==='unpaired'?[]:[{...window.usageHost,snapshot:{workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[{...window.missingTurn,tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[window.missingTurn]}]:window.usageHost.snapshot.workspace.tasks,planLimits:[]}}}]);return {overviews,readRuntime,refreshRuntime:async()=>{},cacheForRuntime:()=>cache}};`,
+      contents: `import {useSyncExternalStore} from 'react';window.hubWrites=[];window.hubEntries=[];window.failHubWrite=false;
+const hubRead=(path,input)=>{
+ if(path==='/api/usage/hubs/read')return window.hubEntries;
+ if(path==='/api/usage/hubs/remove'){window.hubEntries=window.hubEntries.filter(h=>h.id!==input.id);return window.hubEntries}
+ if(path==='/api/usage/hubs/write'){
+  window.hubWrites.push(input);
+  if(window.failHubWrite)throw new Error('Hub unavailable');
+  const old=window.hubEntries.find(h=>h.id===input.id);
+  if((!old||old.url!==input.url)&&!input.managementKey)throw new Error('Missing management key');
+  const value={id:input.id||'hub',label:input.label,url:input.url,enabled:input.enabled,checkedAt:new Date().toISOString(),limits:[{provider:'claude',window:'Session',windowId:'five_hour',usedPercent:25,updatedAt:new Date().toISOString(),account:{id:'hub-account',label:'Hub account'}}]};
+  window.hubEntries=[...window.hubEntries.filter(h=>h.id!==value.id),value];return window.hubEntries;
+ }
+};
+const cache={read:async()=>null,write:async()=>{}};const readRuntime=async(profile,path,input)=>{(window.usageReads??=[]).push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);return path==='/api/usage/limits/read'?{checkedAt:new Date().toISOString(),accounts:[],hubs:window.hubEntries}:{sourceId:profile.id,records:[],notices:[]}};let overviews;const listeners=new Set();const subscribe=callback=>{listeners.add(callback);return ()=>listeners.delete(callback)};const current=()=>overviews??=[window.usageHost];window.changeUsageScenario=scenario=>{overviews=(scenario==='unpaired'?[]:[{...window.usageHost,snapshot:{workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[{...window.missingTurn,tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[window.missingTurn]}]:window.usageHost.snapshot.workspace.tasks,planLimits:[]}}}]);listeners.forEach(callback=>callback())};export const useRuntime=()=>({overviews:useSyncExternalStore(subscribe,current),readRuntime,refreshRuntime:async()=>{},cacheForRuntime:()=>cache});`,
     },
   ],
 )
@@ -123,8 +137,61 @@ try {
   await page.getByText('No usage in this period.', { exact: true }).waitFor()
   assert.equal(await page.getByRole('img').count(), 0)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  assert.equal(
+    await page.evaluate(() => window.usageReads.includes('/api/usage/limits/read')),
+    false,
+  )
+  const historyReads = await page.evaluate(
+    () => window.usageReads.filter((path) => path === '/api/usage/history/read').length,
+  )
   await page.getByLabel('Usage view', { exact: true }).selectOption('limits')
   await page.getByText(/No account limits reported/).waitFor()
+  await page.waitForFunction(() => window.usageReads.includes('/api/usage/limits/read'))
+  assert.equal(
+    await page.evaluate(
+      () => window.usageReads.filter((path) => path === '/api/usage/history/read').length,
+    ),
+    historyReads,
+    'Native Limits must not download history',
+  )
+
+  await page.getByRole('button', { name: 'Manage usage hubs', exact: true }).click()
+  await page.getByLabel('Hub name', { exact: true }).fill('Home hub')
+  await page.getByLabel('Hub URL', { exact: true }).fill('http://hub.internal:8317')
+  await page.getByLabel('Management key', { exact: true }).fill('test-management-key')
+  await page.evaluate(() => (window.failHubWrite = true))
+  await page.getByRole('button', { name: 'Save hub', exact: true }).click()
+  await page.getByText(/Could not save hubs/).waitFor()
+  assert.equal(
+    await page.getByLabel('Management key', { exact: true }).inputValue(),
+    'test-management-key',
+    'Failed saves preserve the draft',
+  )
+  await page.evaluate(() => (window.failHubWrite = false))
+  await page.getByRole('button', { name: 'Save hub', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit Home hub', exact: true }).waitFor()
+  assert.equal(
+    await page.getByLabel('Management key', { exact: true }).inputValue(),
+    '',
+    'Saved keys leave the form',
+  )
+  await page.getByText('Pooled availability', { exact: true }).waitFor()
+  assert.ok(await page.getByRole('img', { name: /Hub account: 75% left/ }).count())
+  await page.getByRole('button', { name: 'Edit Home hub', exact: true }).click()
+  assert.equal(
+    await page.getByLabel('Management key', { exact: true }).inputValue(),
+    '',
+    'Edit never retrieves the stored key',
+  )
+  await page.getByLabel('Hub name', { exact: true }).fill('Renamed hub')
+  await page.getByRole('button', { name: 'Save hub', exact: true }).click()
+  await page.getByRole('button', { name: 'Remove Renamed hub', exact: true }).click()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: 'Confirm removal', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Remove Renamed hub', exact: true }).click()
+  await page.getByRole('button', { name: 'Confirm removal', exact: true }).click()
+  await page.waitForFunction(() => window.hubEntries.length === 0)
+  await page.getByRole('button', { name: 'Save hub', exact: true }).waitFor()
   await page.evaluate(() => window.changeUsageScenario('unpaired'))
   await page
     .getByText('Connect a computer to see recorded usage and account limits.', { exact: true })

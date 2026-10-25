@@ -117,9 +117,15 @@ it('retains message history after tasks are removed and keeps the streamed messa
   }
 })
 it('redacts credentials from structured integration records', () => {
-  expect(redact({ token: 'secret', nested: { password: 'hidden' }, text: 'Bearer abc' })).toEqual({
+  expect(
+    redact({
+      token: 'secret',
+      nested: { password: 'hidden', managementKey: 'private-hub-key' },
+      text: 'Bearer abc',
+    }),
+  ).toEqual({
     token: '[redacted]',
-    nested: { password: '[redacted]' },
+    nested: { password: '[redacted]', managementKey: '[redacted]' },
     text: 'Bearer [redacted]',
   })
 })

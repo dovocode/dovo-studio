@@ -1,3 +1,4 @@
+import { UsageHubs } from './usage-hubs.js'
 import { randomUUID } from 'node:crypto'
 import { propagateDelegatedPermissions } from '../agents/tasks/delegation-permissions.js'
 import { projectDelegatedAgents } from '../agents/tasks/delegation-state.js'
@@ -206,6 +207,7 @@ export class WorkspaceStore {
   /** Version 1 and 2 documents are rewritten as normalized version 3 task rows. */
   private rewriteDocuments = true
   readonly providerActions: ProviderActions
+  readonly usageHubs: UsageHubs
   readonly usage: UsageHistory
   readonly usagePricing: UsagePricing
   readonly usageTranscripts = new UsageTranscripts()
@@ -266,6 +268,7 @@ export class WorkspaceStore {
     this.documents = new WorkspaceDocuments(db)
     this.providerActions = new ProviderActions(db)
     this.providerActions.recover()
+    this.usageHubs = new UsageHubs(db)
     this.usage = new UsageHistory(db)
     this.usagePricing = new UsagePricing(db)
     const keyRow = db.prepare('SELECT value FROM documents WHERE id = ?').get('mcp-projection-key')

@@ -62,3 +62,42 @@ are skipped, and failures name the affected computer.
 Usage history and price data have separate authenticated endpoints and credential-scoped client
 caches. They are not included in streaming conversation snapshots. CLI scans run on the usage path,
 reuse unchanged files, and yield during large reads so chat traffic can continue.
+
+## Pooled availability and external hubs
+
+Limits includes a pooled overview and per-account details. Each segment represents one account, with
+a consistent account order across its windows. Different plan sizes are not treated as a single
+percentage of remaining capacity. An exhausted overall Weekly window gates that account's Session
+availability. Model-specific weekly windows do not gate unrelated usage. Stale, offline, missing and
+reset-expired observations do not count as available. Reset times are estimates from the last
+provider reading; Dovo waits for a fresh reading after the reset.
+
+Open **Manage usage hubs** in Limits to add, edit, disable or remove a CLIProxyAPI hub. Choose the
+computer that should query it, enter its base HTTP(S) URL and management key, and save. HTTP is
+supported for LAN/VPN hubs; URLs are not upgraded. A pasted `/v0/management` suffix is normalized.
+Editing never retrieves the stored key. A blank key retains it only when the URL stays the same;
+changing the URL requires its key. Removal asks for confirmation and leaves the hub itself intact.
+Hubs are usage sources; they do not change agent routing or create provider agents.
+
+The selected runtime stores the management key in its private SQLite database, which uses the
+runtime's existing filesystem permissions. This is not additional encryption at rest. Keys are
+excluded from API responses, workspace snapshots, usage history and client caches. Only public hub
+configuration and readings are returned to paired clients. Redirects are refused, management
+responses are bounded, requests time out after 15 seconds within a shared 20-second hub refresh
+budget, and refresh work is coalesced with a five-minute automatic cooldown, including failures.
+Runtime shutdown cancels pending hub reads.
+
+Enabled Codex and Claude auth files are queried through CLIProxyAPI's management `api-call`
+endpoint; unsupported or disabled files are skipped. Claude model-scoped weekly windows are
+retained. Verified Codex identities deduplicate with the same locally reported workspace/plan.
+Without a reliable workspace/organisation identity, accounts are kept separate rather than merged by
+email alone. Partial failures are displayed explicitly and that hub's readings do not count as fresh
+availability. A failed hub read preserves its last reading. Credential-scoped safe client replicas
+remain visible offline. Older runtimes without hub support continue showing their normal local
+account limits. Hub reset-credit redemption is not included; existing verified local-account
+redemption is unchanged.
+
+Costs and Tokens read history and pricing without probing subscription accounts or hubs. Limits
+reads account windows without downloading usage history, scanning CLI transcripts or loading prices.
+The CLI ownership exclusion scan projects only session identities in yielding 256-row pages instead
+of decoding the complete history a second time.

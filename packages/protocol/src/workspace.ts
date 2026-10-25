@@ -1,3 +1,5 @@
+import { usageAccountSchema, planLimitSchema } from './conversation/workflow/plan-limits.js'
+export { usageAccountSchema } from './conversation/workflow/plan-limits.js'
 import {
   threadParentSchema,
   threadWatchSummarySchema,
@@ -496,11 +498,6 @@ export const turnCheckpointSchema = mutableStruct({
   // undoing, so redo can bring back exactly what was there (including later edits).
   undone: Schema.optional(mutableStruct({ at: Schema.String, backup: Schema.String })),
 })
-export const usageAccountSchema = mutableStruct({
-  id: Schema.String,
-  label: Schema.String,
-  subscription: Schema.optional(Schema.String),
-})
 export const turnSchema = mutableStruct({
   /** One user-visible run can contain replacement provider attempts. */
   runId: Schema.optional(Schema.String),
@@ -942,28 +939,7 @@ export const workspaceSchema = mutableStruct({
   tasks: mutableArray(taskSchema),
   automations: mutableArray(automationSchema),
   runtimeAddress: Schema.String,
-  planLimits: Schema.optional(
-    mutableArray(
-      mutableStruct({
-        provider: Schema.Literals(['codex', 'claude']),
-        account: Schema.optional(usageAccountSchema),
-        sourceTaskId: Schema.optional(Schema.String),
-        agentId: Schema.optional(Schema.String),
-        bucketId: Schema.optional(Schema.String),
-        windowId: Schema.optional(Schema.String),
-        durationMins: Schema.optional(
-          Schema.Number.pipe(
-            Schema.check(Schema.isFinite()),
-            Schema.check(Schema.isGreaterThan(0)),
-          ),
-        ),
-        window: Schema.String,
-        usedPercent: Schema.Number.pipe(Schema.check(Schema.isFinite())),
-        resetsAt: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
-        updatedAt: Schema.String,
-      }),
-    ),
-  ),
+  planLimits: Schema.optional(mutableArray(planLimitSchema)),
   jiraSources: Schema.optional(mutableArray(jiraSourceSchema)),
   jiraIssueLinks: Schema.optional(mutableArray(jiraIssueLinkSchema)),
 })

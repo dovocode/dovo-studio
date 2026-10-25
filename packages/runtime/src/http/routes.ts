@@ -1,3 +1,4 @@
+import { usageHubs } from './endpoints/usage-hubs.js'
 import { peerConfigSchema } from '@dovo/protocol'
 import { sharingWriterConfigSchema } from '@dovo/protocol'
 import { remoteDesktopRequestSchema, remoteDesktopUnlockSchema } from '@dovo/protocol'
@@ -720,6 +721,7 @@ export function route(
           `${method} ${path}`,
           !path.startsWith('/api/memory/') &&
             !path.startsWith('/api/sharing/') &&
+            !path.startsWith('/api/usage/hubs/') &&
             !path.endsWith('/enable-encrypted') &&
             !path.startsWith('/api/scm/project-transfer/') &&
             ![
@@ -1479,6 +1481,11 @@ export function route(
         (path === '/api/usage/history/read' || path === '/api/usage/prices/write')
       )
         return yield* usageHistory(request, path)
+      if (
+        method === 'POST' &&
+        ['/api/usage/hubs/read', '/api/usage/hubs/write', '/api/usage/hubs/remove'].includes(path)
+      )
+        return yield* usageHubs(request, path)
       if (method === 'POST' && path === '/api/usage/limits/read') return yield* usageLimits(request)
       if (
         method === 'POST' &&

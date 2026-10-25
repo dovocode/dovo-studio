@@ -30,7 +30,7 @@ type Result = {
 /** Coalesce clients and launch settings. Failed probes also respect the automatic cooldown. */
 async function read(s: Services, force: boolean): Promise<Result> {
   const workspace = s.store.get()
-  const configurations = new Map<string, Agent[]>()
+  const configurations = new Map<string, Map<string, Agent>>()
   for (const agent of [
     ...workspace.agents,
     ...workspace.tasks.flatMap((task) => {
@@ -40,12 +40,14 @@ async function read(s: Services, force: boolean): Promise<Result> {
   ]) {
     if (agent.provider !== 'codex' && agent.provider !== 'claude') continue
     const key = JSON.stringify(modelDiscoveryInput(agent))
-    const agents = configurations.get(key) ?? []
-    if (!agents.some((old) => old.id === agent.id)) configurations.set(key, [...agents, agent])
+    let agents = configurations.get(key)
+    if (!agents) {
+      agents = new Map()
+      configurations.set(key, agents)
+    }
+    if (!agents.has(agent.id)) agents.set(agent.id, agent)
   }
-  const key = JSON.stringify(
-    [...configurations].map(([key, agents]) => [key, agents.map((agent) => agent.id)]),
-  )
+  const key = JSON.stringify([...configurations].map(([key, agents]) => [key, [...agents.keys()]]))
   const previous = cache.get(s)
   if (previous?.key === key && previous.pending) return previous.pending
   if (
@@ -62,7 +64,8 @@ async function read(s: Services, force: boolean): Promise<Result> {
   cache.set(s, entry)
   const pending = (async () => {
     const accounts: Result['accounts'] = []
-    const probe = async (agents: Agent[]) => {
+    const probe = async (configuration: Map<string, Agent>) => {
+      const agents = [...configuration.values()]
       const agent = agents[0]
       try {
         const result = await readUsageLimits(agent)
@@ -88,7 +91,7 @@ async function read(s: Services, force: boolean): Promise<Result> {
           planLimits: mergePlanLimits(
             (workspace.planLimits ?? []).filter(
               (limit) =>
-                !agents.some((agent) => limit.agentId === agent.id) &&
+                !(limit.agentId !== undefined && configuration.has(limit.agentId)) &&
                 !(
                   result.account &&
                   limit.provider === agent.provider &&
@@ -136,5 +139,8 @@ export const usageLimits = (request: IncomingMessage) =>
       mutableStruct({ force: Schema.optional(Schema.Boolean) }),
       yield* serviceResult(body(request)),
     )
-    return yield* serviceResult(read(s, input.force ?? false))
+    const [local, hubs] = yield* serviceResult(
+      Promise.all([read(s, input.force ?? false), s.store.usageHubs.read(input.force ?? false)]),
+    )
+    return { ...local, hubs }
   })

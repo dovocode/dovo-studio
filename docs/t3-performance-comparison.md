@@ -188,3 +188,36 @@ Unique blocks measured **0.115 / 0.124 ms**: cache misses incur bookkeeping over
 checks exact source reconstruction and uses 60 samples per workload. These are adapter CPU times,
 excluding React, network, cold initialization and native-device performance; they are not measured
 thread-opening gains. The memory budget is an estimate of retained source/tokens, not a heap cap.
+
+## Usage hubs and pooled availability
+
+Reference: T3 main `aa247c52a01de58c69e6944268125ffdfe76318f`, particularly
+`apps/server/src/usage/cliproxyApi.ts`, `packages/shared/src/usageLimits.ts` and the web usage
+views. Dovo now follows the same useful shape: server-side CLIProxyAPI queries, bounded concurrency,
+automatic cooldown, pooled account segments and per-account details. Management is available in
+Studio on desktop/web and native mobile. Local runtime access remains account-free and paired.
+
+Dovo preserves account identity across computers and verified hub Codex accounts; unknown
+organisation identities remain separate. Overall weekly exhaustion gates session availability, while
+model-scoped windows stay independent. The UI explicitly avoids claiming that equally sized account
+segments measure combined capacity across differing plans. Offline/stale/expired/failed-source
+observations remain unavailable until verified again. External reset-credit redemption and routing
+through hubs are not part of this implementation. Native highlighting remains a separate gap from
+T3's native Pierre backend; this usage work does not change it.
+
+Usage performance changes:
+
+- Costs/Tokens no longer launch provider processes or hub requests. Limits no longer scans CLI
+  transcripts, downloads history or refreshes prices. Browser checks count endpoint calls on both
+  desktop and native-adapted screens.
+- A session-only SQL projection replaces a redundant full history decode for CLI exclusion. Both
+  scans yield every 256 rows, keeping streaming work schedulable.
+- Local provider configuration deduplication uses keyed maps rather than repeated array searches.
+- Hub reads run at most two hubs/four accounts per hub concurrently per runtime, coalesce pending
+  requests and cache automatic failures too. Credentials never enter workspace or client caches.
+
+Run `node scripts/benchmark-usage-history.mjs` after building runtime dependencies. One warm Node
+26.8.1 in-memory run over 20,000 synthetic records measured median full decoding at **122.60 ms**
+versus **46.64 ms** for identity projection (**62.0% lower scan time**), returning the same 2,500
+owned session IDs. It uses a warm-up plus nine samples per path and asserts identical identity sets.
+This measures the ownership scan, not complete dashboard/network latency or physical-device speed.

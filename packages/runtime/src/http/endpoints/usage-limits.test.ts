@@ -60,3 +60,48 @@ it('checks limits without a thread, authenticates, coalesces refreshes and prese
     await f.cleanup()
   }
 })
+
+it('keeps hub management authenticated and never adds management credentials to snapshots or API results', async () => {
+  const token = randomBytes(32).toString('base64url'),
+    f = await fixture()
+  const runtime = await startRuntime({
+    databasePath: join(f.directory, 'hubs.sqlite'),
+    ownerToken: token,
+    port: 0,
+  })
+  try {
+    const call = (path: string, input: unknown, credential = token) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/usage/hubs/${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+    const input = {
+      label: 'Hub',
+      url: 'http://hub.internal:8317',
+      enabled: false,
+      managementKey: 'do-not-return-this-secret',
+    }
+    expect((await call('write', input, 'bad')).status).toBe(401)
+    const saved = await call('write', input)
+    expect(saved.status).toBe(200)
+    const value: unknown = await saved.json()
+    expect(value).toMatchObject([
+      { label: 'Hub', url: 'http://hub.internal:8317/', enabled: false, limits: [] },
+    ])
+    expect(JSON.stringify(value)).not.toContain(input.managementKey)
+    expect(JSON.stringify(runtime.services.store.get())).not.toContain(input.managementKey)
+    const bad = await call('write', { ...input, label: 0 })
+    expect(bad.status).toBe(400)
+    expect(await bad.text()).not.toContain(input.managementKey)
+    expect((await call('read', {}, 'bad')).status).toBe(401)
+    const activity = runtime.services.activity.list('', 'integration', 0)
+    expect(JSON.stringify(activity)).not.toContain(input.managementKey)
+    expect(JSON.stringify(activity)).toContain('[sensitive input not recorded]')
+    const [hub] = runtime.services.store.usageHubs.list()
+    expect(await (await call('remove', { id: hub!.id })).json()).toEqual([])
+  } finally {
+    await runtime.close()
+    await f.cleanup()
+  }
+})
