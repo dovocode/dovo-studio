@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
+const literalMessage =
+  'Dovo PR feedback for https://github.com/foreign/project/pull/42/files#note.\nHead: abc123\n\nreview by Dominic (CHANGES_REQUESTED)\nKeep  two spaces, a\ttab, punctuation & <tags>, and **literal Markdown**.\n\n  Indented final line.\n'
 const environment = `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
@@ -77,7 +79,7 @@ async function bundle(mobile) {
     )
     .replace('CHOOSER_DIALOG', mobile ? '<LinkBrowser/>' : '{chooser.dialog}')
   const entry = mobile
-    ? `import {LinkBrowser} from '${root}/apps/mobile/src/ui/content/open-link.tsx';import {ThreadMarkdown} from '${root}/apps/mobile/src/tasks/conversation/components/thread-markdown.tsx';${renderedFixture.replace('CONTENT', '<><ThreadMarkdown text={url} variant="chat"/><ThreadMarkdown text={"See "+url+"."} plainText/></>')}`
+    ? `import {LinkBrowser} from '${root}/apps/mobile/src/ui/content/open-link.tsx';import {ThreadMarkdown} from '${root}/apps/mobile/src/tasks/conversation/components/thread-markdown.tsx';${renderedFixture.replace('CONTENT', `<><ThreadMarkdown text={url} variant="chat"/><div data-literal><ThreadMarkdown text={${JSON.stringify(literalMessage)}} plainText/></div></>`)}`
     : `import {resolveLinkTargets} from '@dovo/studio-core/links';import {useLinkChooser} from '${root}/packages/studio-shell/src/link-chooser.tsx';import {TaskPullLinkDialog} from '${root}/packages/extension-tasks/src/dialogs/task-pull-link-dialog.tsx';import {ChatThread} from '${root}/packages/extension-tasks/src/chat/thread/chat-thread.tsx';${renderedFixture.replace('CONTENT', '<><ChatThread task={task} onPullLink={url=>{window.opened.push(url);return true}} onManagePulls={()=>setManage(true)}/>{manage&&<TaskPullLinkDialog task={task} onClose={()=>setManage(false)}/>}</>')}`
   const result = await build({
     stdin: { contents: entry, resolveDir: root, loader: 'tsx' },
@@ -123,6 +125,14 @@ try {
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: await bundle(mobile) })
     const link = page.getByRole('link', { name: 'Thread PR', exact: true })
+    if (mobile) {
+      await page.locator('[data-literal]').waitFor()
+      assert.equal(
+        await page.locator('[data-literal]').textContent(),
+        literalMessage,
+        'User messages must preserve every space, newline and punctuation mark around PR links',
+      )
+    }
     if (!mobile) {
       await page.evaluate(() => {
         Object.defineProperty(navigator, 'clipboard', {
