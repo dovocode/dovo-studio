@@ -150,3 +150,21 @@ it('ends snoozing at its deadline and allows clearing it early', () => {
   expect(isSnoozed(snoozed, deadline + 1)).toBe(false)
   expect(isSnoozed({ ...snoozed, snoozedUntil: undefined }, deadline - 1)).toBe(false)
 })
+
+it('preserves numeric, case-insensitive name sorting and activity ties', () => {
+  const tasks = ['Item 10', 'item 2', 'ITEM 2', 'Éclair', 'Alpha'].map((title, i) => ({
+    ...task(String(i), `2026-09-0${i + 1}T00:00:00Z`),
+    title,
+  }))
+  const projectNames = new Map(tasks.map((entry) => [entry.repositoryId, entry.title]))
+  for (const sort of ['title', 'project']) {
+    const expected = [...tasks].sort(
+      (a, b) =>
+        a.title.localeCompare(b.title, undefined, { sensitivity: 'base', numeric: true }) ||
+        compareTasks(a, b, 'activity', new Set(), projectNames),
+    )
+    expect([...tasks].sort((a, b) => compareTasks(a, b, sort, new Set(), projectNames))).toEqual(
+      expected,
+    )
+  }
+})

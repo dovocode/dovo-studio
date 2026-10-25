@@ -329,6 +329,7 @@ export function useDiffOptions() {
       ({
         defaultSplit: diffLayout === 'split',
         options: {
+          preferredHighlighter: 'highlights',
           theme: code.name,
           themeType: code.type,
           overflow: diffOverflow,

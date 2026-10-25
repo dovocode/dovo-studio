@@ -1,3 +1,4 @@
+import { pierreTheme } from '@dovo/studio-core/pierre-theme'
 import { resolveCodeTheme } from '@dovo/studio-core/code-themes'
 import {
   studioSyntaxTheme,
@@ -11,7 +12,7 @@ import { preloadHighlighter, registerCustomTheme, type SupportedLanguages } from
 const themes = studioThemeIds.flatMap((id) =>
   (['light', 'dark'] as const).map((mode) => {
     const theme = studioSyntaxTheme(id, mode)
-    registerCustomTheme(theme.name, () => Promise.resolve(theme))
+    registerCustomTheme(theme.name, () => Promise.resolve(pierreTheme(theme)), 'zed')
     return theme.name
   }),
 )
@@ -22,7 +23,7 @@ function registerImportedThemes(
 ) {
   for (const theme of imported) {
     if (registered.has(theme.name)) continue
-    registerCustomTheme(theme.name, () => Promise.resolve(theme))
+    registerCustomTheme(theme.name, () => Promise.resolve(pierreTheme(theme)), 'zed')
     registered.add(theme.name)
   }
 }
@@ -51,6 +52,7 @@ export function preloadStudioHighlighter(language: SupportedLanguages) {
     mode,
   )
   return preloadHighlighter({
+    preferredHighlighter: 'highlights',
     themes: [theme.name],
     langs: [language],
   })

@@ -12,7 +12,8 @@
     "./theme-catalog": "./src/theme-catalog.ts",
     "./links": "./src/links/index.ts",
     "./state": "./src/runtime/application-state.ts",
-    "./testing": "./src/testing.ts"
+    "./testing": "./src/testing.ts",
+    "./pierre-theme": "./src/pierre-theme.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -23,6 +24,7 @@
     "@dovo/protocol": "workspace:*",
     "@effect/atom-react": "4.0.6",
     "@noble/hashes": "2.4.0",
+    "@pierre/highlights": "0.2.0",
     "effect": "4.0.6",
     "fflate": "0.8.3",
     "jsonc-parser": "3.3.1",

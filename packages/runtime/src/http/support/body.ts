@@ -7,13 +7,34 @@ const compress = promisify(gzip)
 const cachedBodies = new WeakMap<IncomingMessage, { size: number; value: unknown }>()
 const observers = new WeakMap<IncomingMessage, (value: unknown) => void>()
 const workspaceFingerprints = new WeakMap<object, string>()
+const taskFingerprints = new WeakMap<object, string>()
+function workspaceFingerprint(workspace: object) {
+  // Immutable task identities survive updates to other threads. Hash their contents once,
+  // then hash only the small workspace shell and ordered digests during streaming.
+  if ('tasks' in workspace && Array.isArray(workspace.tasks)) {
+    const tasks = workspace.tasks.map((task: unknown) => {
+      if (!task || typeof task !== 'object') return task
+      let fingerprint = taskFingerprints.get(task)
+      if (!fingerprint) {
+        fingerprint = createHash('sha256').update(JSON.stringify(task)).digest('base64url')
+        taskFingerprints.set(task, fingerprint)
+      }
+      return fingerprint
+    })
+    return createHash('sha256')
+      .update('task-digests:')
+      .update(JSON.stringify({ ...workspace, tasks }))
+      .digest('base64url')
+  }
+  return createHash('sha256').update(JSON.stringify(workspace)).digest('base64url')
+}
 export function snapshotTag(data: unknown) {
   if (!data || typeof data !== 'object' || !('workspace' in data)) return undefined
   const { workspace, ...state } = data
   if (!workspace || typeof workspace !== 'object') return undefined
   let fingerprint = workspaceFingerprints.get(workspace)
   if (!fingerprint) {
-    fingerprint = createHash('sha256').update(JSON.stringify(workspace)).digest('base64url')
+    fingerprint = workspaceFingerprint(workspace)
     workspaceFingerprints.set(workspace, fingerprint)
   }
   // WorkspaceStore replaces its workspace object on every change. The other, smaller

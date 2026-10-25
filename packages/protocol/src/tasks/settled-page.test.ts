@@ -135,3 +135,22 @@ it('keeps feedback, snoozes and subagent families available across page boundari
     ),
   ).toEqual(['0', '2', '3', '5'])
 })
+
+it('matches complete sorting for shuffled pages, ties and boundary limits', () => {
+  const tasks = Array.from({ length: 257 }, (_, i) => ({
+    ...task(`id-${i}`),
+    createdAt: new Date(1700000000000 + ((i * 73) % 31) * 1000).toISOString(),
+    lastPromptAt: undefined,
+  }))
+  for (const limit of [0, 1, 25, 256, 257, 500]) {
+    const expected = new Set(
+      [...tasks]
+        .sort((a, b) => compareTasks(a, b, 'priority', new Set(), new Map()))
+        .slice(0, limit)
+        .map((task) => task.id),
+    )
+    const page = settledSummaryPage(tasks, limit)
+    expect(page.tasks).toEqual(tasks.filter((task) => expected.has(task.id)))
+    expect(page.omitted).toBe(Math.max(0, tasks.length - limit))
+  }
+})

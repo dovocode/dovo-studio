@@ -11,8 +11,9 @@ import {
 } from 'react'
 import { resolveMarkdownLink, localMarkdownURL, markdownURLLocalPath } from '@dovo/protocol'
 import { Streamdown, defaultComponents } from 'streamdown'
-import { createCodePlugin } from '@streamdown/code'
-import { studioSyntaxTheme, useAppPreferences } from '@dovo/studio-core'
+import { createPierreCodePlugin } from '../../pierre-code-plugin'
+import { resolveCodeTheme } from '@dovo/studio-core/code-themes'
+import { useAppPreferences } from '@dovo/studio-core'
 import { cn } from '../../lib/utils'
 import { IconButton } from '../icon-button'
 import { FileTypeIcon } from '../../file-tree'
@@ -45,14 +46,15 @@ export const MessageResponse = memo(function MessageResponse({
     remoteImage?: (uri: string, alt: string) => ReactNode
   }
 }) {
-  const { themePalette } = useAppPreferences()
+  const { themePalette, codeTheme, importedCodeThemes } = useAppPreferences()
   const markdownPlugins = useMemo(
     () => ({
-      code: createCodePlugin({
-        themes: [studioSyntaxTheme(themePalette, 'light'), studioSyntaxTheme(themePalette, 'dark')],
-      }),
+      code: createPierreCodePlugin([
+        resolveCodeTheme(codeTheme, importedCodeThemes, themePalette, 'light'),
+        resolveCodeTheme(codeTheme, importedCodeThemes, themePalette, 'dark'),
+      ]),
     }),
-    [themePalette],
+    [themePalette, codeTheme, importedCodeThemes],
   )
   const urlTransform = useCallback(
     (url: string) => {
