@@ -20,7 +20,7 @@ export function ThreadSharing({ onClose }: { onClose: () => void }) {
       call('/api/sharing/status', { taskId: task.id, id }, sharingStatusSchema),
     stop: (id: string) => call('/api/sharing/stop', { taskId: task.id, id }, sharingStatusSchema),
   }
-  if (task.example) return null
+  if (task.example || !account.directory || account.deletionPending) return null
   return (
     <Sheet title="Share thread" onClose={onClose}>
       <SharingPanel
@@ -37,7 +37,7 @@ export function InlineThreadSuggestions() {
   const { task, actions, visible } = useTaskConversation()
   const { activeId } = useRuntime()
   const account = useMobileAccount()
-  if (task.example) return null
+  if (task.example || !account.directory || account.deletionPending) return null
   return (
     <ThreadSuggestions
       client={account.client}

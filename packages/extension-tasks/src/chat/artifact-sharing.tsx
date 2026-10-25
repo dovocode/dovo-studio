@@ -7,9 +7,28 @@ import { ArtifactFeedSetup } from './artifact-feed'
 import { SharingPanel } from './sharing-panel'
 
 export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
-  const host = useStudioHost(),
-    [open, setOpen] = useState(false)
+  const host = useStudioHost()
   if (!host.accountStorage || !host.openExternalLink) return null
+  return (
+    <SignedInArtifactSharing
+      artifact={artifact}
+      storage={host.accountStorage}
+      openUrl={host.openExternalLink}
+    />
+  )
+}
+function SignedInArtifactSharing({
+  artifact,
+  storage,
+  openUrl,
+}: {
+  artifact: Artifact
+  storage: AccountStorage
+  openUrl: (url: string) => Promise<void>
+}) {
+  const account = useAccount(storage, openUrl, useAppPreferences())
+  const [open, setOpen] = useState(false)
+  if (!account.directory || account.deletionPending) return null
   return (
     <>
       <Button size="sm" variant="ghost" onClick={() => setOpen(true)} aria-label="Share artifact">
@@ -22,13 +41,7 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
           <DialogDescription>
             Manage encrypted sharing for “{artifact.title}”, version {artifact.revision}.
           </DialogDescription>
-          {open && (
-            <Content
-              artifact={artifact}
-              storage={host.accountStorage}
-              open={host.openExternalLink}
-            />
-          )}
+          {open && <Content artifact={artifact} account={account} />}
         </DialogContent>
       </Dialog>
     </>
@@ -36,14 +49,11 @@ export function ArtifactSharing({ artifact }: { artifact: Artifact }) {
 }
 function Content({
   artifact,
-  storage,
-  open,
+  account,
 }: {
   artifact: Artifact
-  storage: AccountStorage
-  open: (url: string) => Promise<void>
+  account: ReturnType<typeof useAccount>
 }) {
-  const account = useAccount(storage, open, useAppPreferences())
   return (
     <SharingPanel
       key={`${account.client.sessionId()}:${artifact.id}:${artifact.revision}`}

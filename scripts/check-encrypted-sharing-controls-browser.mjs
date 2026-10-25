@@ -39,8 +39,79 @@ const built = await bundleBrowser(
     },
   ],
 )
+const visibility = await bundleBrowser(
+  {
+    stdin: {
+      contents: `
+    import {useState} from 'react';import {createRoot} from 'react-dom/client';
+    import {ThreadSharing,InlineThreadSuggestions} from '${root}/packages/extension-tasks/src/chat/thread-sharing';
+    import {ArtifactSharing} from '${root}/packages/extension-tasks/src/chat/artifact-sharing';
+    function App(){const [account,setAccount]=useState({directory:null});window.account=account;window.setAccount=setAccount;return <><ThreadSharing taskId="thread" title="Thread"/><ArtifactSharing artifact={{id:'artifact',title:'Notes',revision:1,format:'markdown',content:'Notes'}}/><InlineThreadSuggestions taskId="thread" active onUseSuggestion={()=>{}}/></>};createRoot(document.getElementById('app')).render(<App/>);
+  `,
+      loader: 'tsx',
+      resolveDir: root + '/apps/web',
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    jsx: 'automatic',
+  },
+  [
+    {
+      path: '@dovo/studio-core',
+      contents: `export const useAccount=()=>window.account;export const useAppPreferences=()=>({});export const useStudioHost=()=>({accountStorage:{},openExternalLink:async()=>{}});export const useWorkspace=()=>({connected:true,activeRuntimeId:'runtime'});export const sharedContentSchema={};export const sharingStatusSchema={};`,
+    },
+    {
+      path: '@dovo/studio-ui',
+      contents: `export {Button} from '${root}/packages/studio-ui/src/components/ui/button';export * from '${root}/packages/studio-ui/src/components/ui/dialog';`,
+    },
+    {
+      path: './sharing-panel',
+      importer: root + '/packages/extension-tasks/src/chat/',
+      contents: `export const SharingPanel=()=> <p>Sharing controls</p>;`,
+    },
+    {
+      path: './artifact-feed',
+      importer: root + '/packages/extension-tasks/src/chat/',
+      contents: `export const ArtifactFeedSetup=()=>null;`,
+    },
+    {
+      path: './thread-suggestions',
+      importer: root + '/packages/extension-tasks/src/chat/',
+      contents: `export const ThreadSuggestions=()=> <p>Suggestion inbox</p>;`,
+    },
+  ],
+)
 const browser = await chromium.launch()
 try {
+  const auth = await browser.newPage()
+  await auth.setContent('<div id="app"></div>')
+  await auth.addScriptTag({ content: visibility.outputFiles[0].text })
+  assert.equal(await auth.getByRole('button').count(), 0)
+  assert.equal(await auth.getByText('Suggestion inbox').count(), 0)
+  await auth.evaluate(() =>
+    window.setAccount({ directory: {}, client: { sessionId: () => 'session' } }),
+  )
+  await auth.getByRole('button', { name: 'Share thread', exact: true }).click()
+  await auth.getByRole('dialog').waitFor()
+  await auth.getByText('Suggestion inbox').waitFor()
+  await auth.evaluate(() => window.setAccount({ directory: null }))
+  await auth.getByRole('dialog').waitFor({ state: 'hidden' })
+  assert.equal(await auth.getByRole('button').count(), 0)
+  assert.equal(await auth.getByText('Suggestion inbox').count(), 0)
+  await auth.evaluate(() => window.setAccount({ directory: {}, deletionPending: true }))
+  assert.equal(await auth.getByRole('button').count(), 0)
+  await auth.evaluate(() =>
+    window.setAccount({ directory: {}, client: { sessionId: () => 'session' } }),
+  )
+  await auth.getByRole('dialog').waitFor()
+  await auth.keyboard.press('Escape')
+  await auth.getByRole('dialog').waitFor({ state: 'hidden' })
+  await auth.getByRole('button', { name: 'Share artifact', exact: true }).click()
+  await auth.getByRole('dialog').waitFor()
+  await auth.evaluate(() => window.setAccount({ directory: null }))
+  await auth.getByRole('dialog').waitFor({ state: 'hidden' })
+  await auth.close()
   const inline = await browser.newPage()
   inline.on('pageerror', (error) => console.error(error))
   await inline.setContent('<div id="app"></div>')

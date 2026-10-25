@@ -134,6 +134,7 @@ const built = await build({
   target: 'es2022',
 })
 const mocks = {
+  '../../runtime/connection/account-context': `import {useSyncExternalStore} from 'react';window.sharingAccount={directory:{},deletionPending:false};window.setSharingAccount=account=>{window.sharingAccount=account;window.dispatchEvent(new Event('sharing-account'))};const subscribe=notify=>{window.addEventListener('sharing-account',notify);return()=>window.removeEventListener('sharing-account',notify)};export const useOptionalMobileAccount=()=>useSyncExternalStore(subscribe,()=>window.sharingAccount);`,
   // Encrypted publication is covered separately; keep local artifact scenarios account-free.
   './artifact-sharing':
     'export const ArtifactSharing=({artifact,onClose})=>onClose?<section role="dialog" aria-label="Share artifact"><p>{artifact.title} · Version {artifact.revision}</p><button onClick={onClose}>Close sharing</button></section>:null;',
@@ -609,6 +610,19 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     if (ui.platform === 'mobile') {
       await view.getByRole('button', { name: 'Share artifact', exact: true }).click()
       await view.getByRole('dialog', { name: 'Share artifact', exact: true }).waitFor()
+      await view.evaluate(() => window.setSharingAccount(null))
+      await view.getByRole('dialog', { name: 'Share artifact' }).waitFor({ state: 'hidden' })
+      assert.equal(
+        await view.getByRole('button', { name: 'Share artifact', exact: true }).count(),
+        0,
+      )
+      await view.evaluate(() => window.setSharingAccount({ directory: {}, deletionPending: true }))
+      assert.equal(
+        await view.getByRole('button', { name: 'Share artifact', exact: true }).count(),
+        0,
+      )
+      await view.evaluate(() => window.setSharingAccount({ directory: {}, deletionPending: false }))
+      await view.getByRole('button', { name: 'Share artifact', exact: true }).waitFor()
       await view.getByRole('button', { name: 'Close sharing', exact: true }).click()
       await view
         .getByRole('dialog', { name: 'Share artifact', exact: true })

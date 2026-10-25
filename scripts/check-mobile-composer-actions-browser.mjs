@@ -30,6 +30,16 @@ export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>
 export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff'},styles:{content:{},muted:{color:'#999'}}});
 `
 const stubs = [
+  {
+    path: '../../../ui/content/open-link',
+    importer: mobile,
+    contents: 'export const openAppLink=async()=>{};',
+  },
+  {
+    path: '../../../ui/content/link-origin',
+    importer: mobile,
+    contents: 'export const useLinkOrigin=()=>({});',
+  },
   { path: 'react-native', contents: controls },
   {
     path: 'react-native-gesture-handler',

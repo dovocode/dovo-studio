@@ -1,3 +1,4 @@
+import { useOptionalMobileAccount } from '../../runtime/connection/account-context'
 import { ThreadSharing, InlineThreadSuggestions } from './thread-sharing'
 import { useTaskPanes } from '../../shell/task-panes'
 import { contentColumn } from '../../ui/layout/content-column'
@@ -217,6 +218,8 @@ function TaskDetailContent({
   const { snapshot, connected, profiles, profile, callEffect, activeId, connection } = useRuntime()
   const worktreeThread = useAction()
   const [transferring, setTransferring] = useState(false)
+  const account = useOptionalMobileAccount()
+  const canShare = !!account?.directory && !account.deletionPending
   const [sharingTaskId, setSharingTaskId] = useState<string>()
   const worktreeActions: HeaderAction[] =
     task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
@@ -771,7 +774,7 @@ function TaskDetailContent({
                       disabled: !lifecycle.enabled || lifecycle.busy,
                       onPress: lifecycle.togglePinned,
                     },
-                    ...(!task.example
+                    ...(!task.example && canShare
                       ? [
                           {
                             label: 'Share thread',
@@ -985,7 +988,7 @@ function TaskDetailContent({
             setPane('diff')
           }}
         >
-          {!startup?.temporary && sharingTaskId === task.id && (
+          {!startup?.temporary && canShare && sharingTaskId === task.id && (
             <ThreadSharing onClose={() => setSharingTaskId(undefined)} />
           )}
           <View

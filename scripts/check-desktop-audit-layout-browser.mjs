@@ -165,13 +165,30 @@ try {
       const provider = row.locator('[data-agent-avatar]')
       assert.equal(await provider.count(), 1)
       assert.equal(
-        await provider.evaluate((icon) =>
-          icon.parentElement.classList.contains('studio-thread-card-context'),
-        ),
+        await provider.evaluate((icon) => !!icon.closest('.studio-thread-card-context')),
         true,
       )
       const providerBox = await provider.boundingBox()
-      assert.ok(Math.abs(providerBox.y + providerBox.height / 2 - status.y - status.height / 2) < 1)
+      const runtime = row.locator('[data-runtime-icon]')
+      assert.equal(await runtime.count(), 1)
+      const runtimeBox = await runtime.boundingBox()
+      assert.ok(
+        runtimeBox.x + runtimeBox.width <= providerBox.x,
+        'Harness follows the runtime machine',
+      )
+      assert.ok(
+        Math.abs(providerBox.y + providerBox.height / 2 - runtimeBox.y - runtimeBox.height / 2) < 1,
+        'Runtime and harness share a row',
+      )
+      if (archived)
+        assert.ok(
+          Math.abs(providerBox.y + providerBox.height / 2 - status.y - status.height / 2) < 1,
+        )
+      else
+        assert.ok(
+          title.y + title.height <= providerBox.y,
+          'Active thread machine and harness appear below its title',
+        )
       if (!archived) {
         const toggle = row.getByRole('button', { name: 'Subthreads for Short title', exact: true })
         const icon = await toggle.locator('svg').boundingBox()
@@ -179,7 +196,10 @@ try {
         await contained(toggle, row)
         const bounds = await toggle.boundingBox()
         assert.ok(
-          providerBox.x + providerBox.width <= bounds.x,
+          providerBox.x + providerBox.width <= bounds.x ||
+            bounds.x + bounds.width <= providerBox.x ||
+            providerBox.y + providerBox.height <= bounds.y ||
+            bounds.y + bounds.height <= providerBox.y,
           'Provider and subthread controls do not overlap',
         )
       }

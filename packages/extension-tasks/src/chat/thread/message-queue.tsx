@@ -1,8 +1,16 @@
-import { randomUUID, turnSettingsLabel, type PendingMessage } from '@dovo/protocol'
+import {
+  watchMessage,
+  watchMessagePreview,
+  randomUUID,
+  turnSettingsLabel,
+  type PendingMessage,
+} from '@dovo/protocol'
+import { WatchMessageCard } from './watch-message'
 import { useQueueEdit } from '../composer/queue-edit'
 import { useRef, type DragEvent } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  Eye,
   Clock3,
   SlidersHorizontal,
   Copy,
@@ -15,6 +23,9 @@ import {
 } from 'lucide-react'
 import { responses, useWorkspace, type Task } from '@dovo/studio-core'
 import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
   IconButton,
   Queue,
   QueueSectionTrigger,
@@ -34,6 +45,9 @@ export function MessageQueue({
   const { request, connected } = useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
+  const [selectedId, setSelectedId] = useApplicationState<string | null>(null)
+  const selected = task.queue?.find((message) => message.id === selectedId)
+  const selectedWatch = selected ? watchMessage(selected) : null
   const duplicateIds = useRef(new Map<string, string>())
   const editor = useQueueEdit()
   const queue = task.queue ?? []
@@ -128,7 +142,8 @@ export function MessageQueue({
                   : 'Runs after this turn'}
             </span>
             <span className="min-w-0 flex-1 truncate text-left text-muted-foreground">
-              {queue[0]?.text || queue[0]?.attachments?.map((file) => file.name).join(', ')}
+              {(queue[0] && watchMessagePreview(queue[0])) ||
+                queue[0]?.attachments?.map((file) => file.name).join(', ')}
             </span>
           </QueueSectionTrigger>
         )}
@@ -253,13 +268,26 @@ export function MessageQueue({
                   </IconButton>
                 )}
                 <QueueItemContent
-                  title={message.text || message.attachments?.map((file) => file.name).join(', ')}
+                  title={
+                    watchMessagePreview(message) ||
+                    message.attachments?.map((file) => file.name).join(', ')
+                  }
                 >
-                  {message.text || message.attachments?.map((f) => f.name).join(', ')}
+                  {watchMessagePreview(message) ||
+                    message.attachments?.map((f) => f.name).join(', ')}
                   {message.text && message.attachments?.length
                     ? ` · ${message.attachments.length} files`
                     : ''}
                 </QueueItemContent>
+                {watchMessage(message) && (
+                  <IconButton
+                    label={`View queued update ${index + 1}`}
+                    className="size-6"
+                    onClick={() => setSelectedId(message.id)}
+                  >
+                    <Eye size={12} />
+                  </IconButton>
+                )}
                 {message.turnSettings && (
                   <span
                     className="flex size-3 shrink-0 items-center text-muted-foreground"
@@ -388,6 +416,17 @@ export function MessageQueue({
           </p>
         )}
       </Queue>
+      <Dialog
+        open={!!selectedWatch}
+        onOpenChange={(open) => {
+          if (!open) setSelectedId(null)
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Queued update</DialogTitle>
+          {selectedWatch && <WatchMessageCard update={selectedWatch} />}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

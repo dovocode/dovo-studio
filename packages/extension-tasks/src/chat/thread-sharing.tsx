@@ -14,9 +14,31 @@ import type { AccountStorage, SharingWriterConfig } from '@dovo/protocol'
 import { SharingPanel } from './sharing-panel'
 
 export function ThreadSharing({ taskId, title }: { taskId: string; title: string }) {
-  const host = useStudioHost(),
-    [open, setOpen] = useState(false)
+  const host = useStudioHost()
   if (!host.accountStorage || !host.openExternalLink) return null
+  return (
+    <SignedInThreadSharing
+      taskId={taskId}
+      title={title}
+      storage={host.accountStorage}
+      openUrl={host.openExternalLink}
+    />
+  )
+}
+function SignedInThreadSharing({
+  taskId,
+  title,
+  storage,
+  openUrl,
+}: {
+  taskId: string
+  title: string
+  storage: AccountStorage
+  openUrl: (url: string) => Promise<void>
+}) {
+  const account = useAccount(storage, openUrl, useAppPreferences())
+  const [open, setOpen] = useState(false)
+  if (!account.directory || account.deletionPending) return null
   return (
     <>
       <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => setOpen(true)}>
@@ -27,25 +49,14 @@ export function ThreadSharing({ taskId, title }: { taskId: string; title: string
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogTitle>Share thread</DialogTitle>
           <DialogDescription>Choose who can access “{title}”.</DialogDescription>
-          {open && (
-            <Content taskId={taskId} storage={host.accountStorage} open={host.openExternalLink} />
-          )}
+          {open && <Content taskId={taskId} account={account} />}
         </DialogContent>
       </Dialog>
     </>
   )
 }
-function Content({
-  taskId,
-  storage,
-  open,
-}: {
-  taskId: string
-  storage: AccountStorage
-  open: (url: string) => Promise<void>
-}) {
-  const account = useAccount(storage, open, useAppPreferences()),
-    { request, connected, activeRuntimeId } = useWorkspace()
+function Content({ taskId, account }: { taskId: string; account: ReturnType<typeof useAccount> }) {
+  const { request, connected, activeRuntimeId } = useWorkspace()
   const runtime = {
     taskId,
     preview: () => request('/api/sharing/preview', { taskId }, sharedContentSchema),
@@ -89,6 +100,7 @@ function InlineContent({
 }) {
   const account = useAccount(storage, open, useAppPreferences())
   const { activeRuntimeId } = useWorkspace()
+  if (!account.directory || account.deletionPending) return null
   return (
     <ThreadSuggestions
       client={account.client}

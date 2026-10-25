@@ -16,6 +16,7 @@ export function ArtifactSharing({
 }) {
   const account = useMobileAccount(),
     { styles } = useTheme()
+  if (!account.directory || account.deletionPending) return null
   return (
     <Sheet title="Share artifact" onClose={onClose}>
       <View style={{ gap: 12 }}>

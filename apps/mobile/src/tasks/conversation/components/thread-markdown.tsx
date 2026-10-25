@@ -9,29 +9,13 @@ import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { useConversationSelector } from '../state/provider'
 
-// Encode Markdown syntax and whitespace so a user message stays literal, while PR URLs
-// use native links whose long-press gesture can coexist with text selection.
-function plainMessageMarkdown(text: string) {
-  const literal = (value: string) =>
-    value.replace(/[\\&<>`*_[\]{}()#+.!|~\s-]/g, (char) => `&#${char.charCodeAt(0)};`)
-  return text
-    .split(/(https?:\/\/[^\s<>"'`]+)/gi)
-    .map((part) => {
-      const url = part.replace(/[.,;:!?)\]}]+$/, '')
-      return threadPullLink(url)
-        ? `[${literal(url)}](<${url}>)${literal(part.slice(url.length))}`
-        : literal(part)
-    })
-    .join('')
-}
-
 export function ThreadMarkdown({
   plainText = false,
   ...props
 }: Omit<ComponentProps<typeof Markdown>, 'onLinkLongPress' | 'onLinkPress'> & {
   plainText?: boolean
 }) {
-  const { styles } = useTheme()
+  const { styles, colors } = useTheme()
 
   const draft = useConversationSelector((value) => value.actions.draft)
   const taskId = useConversationSelector((value) => value.task.id)
@@ -44,17 +28,21 @@ export function ThreadMarkdown({
   }, [taskId, origin.runtimeId])
   const task = useConversationSelector((value) => value.task)
   const { call, connected } = useRuntime()
-  const hasPullLink = useMemo(
+  // Keep user text literal. The native Markdown parser drops HTML entities,
+  // including the encoded spaces/newlines previously used around PR links.
+  const plainParts = useMemo(
     () =>
-      [...props.text.matchAll(/https?:\/\/[^\s<>"'`]+/gi)].some((match) =>
-        threadPullLink(match[0].replace(/[.,;:!?)\]}]+$/, '')),
-      ),
+      props.text
+        .split(/(https?:\/\/[^\s<>"'`]+)/gi)
+        .flatMap<{ text: string; url?: string }>((part) => {
+          const url = part.replace(/[.,;:!?)\]}]+$/, '')
+          return threadPullLink(url)
+            ? [{ text: url, url }, { text: part.slice(url.length) }]
+            : [{ text: part }]
+        }),
     [props.text],
   )
-  const markdown = useMemo(
-    () => (plainText && hasPullLink ? plainMessageMarkdown(props.text) : props.text),
-    [plainText, hasPullLink, props.text],
-  )
+  const hasPullLink = plainParts.some((part) => !!part.url)
   const choose = (url: string) => {
     const pull = threadPullLink(url)
     if (!pull) return false
@@ -83,9 +71,29 @@ export function ThreadMarkdown({
   }
   return (
     <>
-      {plainText && !hasPullLink ? (
+      {plainText ? (
         <Text selectable style={styles.chatText}>
-          {props.text}
+          {plainParts.map((part, index) =>
+            part.url ? (
+              <Text
+                key={index}
+                accessibilityRole="link"
+                style={{ color: colors.accent }}
+                onPress={() => {
+                  const url = part.url
+                  if (url && !choose(url)) open(url)
+                }}
+                onLongPress={() => {
+                  const url = part.url
+                  if (url && !choose(url)) open(url)
+                }}
+              >
+                {part.text}
+              </Text>
+            ) : (
+              part.text
+            ),
+          )}
         </Text>
       ) : (
         <Markdown
@@ -94,8 +102,6 @@ export function ThreadMarkdown({
           onUseTemplate={(prompt) =>
             draft.update([draft.text.trimEnd(), prompt].filter(Boolean).join('\n\n'))
           }
-          text={markdown}
-          variant={plainText ? 'chat' : props.variant}
           onLinkPress={(url) => {
             if (!choose(url)) open(url)
           }}

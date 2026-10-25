@@ -1,3 +1,4 @@
+import { useOptionalMobileAccount } from '../../runtime/connection/account-context'
 import { ArtifactSharedBadge } from './artifact-shared-badge'
 import { SafeModal } from '../layout/safe-modal'
 import { memo, useEffect, useRef, useState } from 'react'
@@ -179,6 +180,8 @@ export function ArtifactBrowser({
   const [exportDraft, setExportDraft] = useState<{ key: string; content: string }>()
   const [editingExport, setEditingExport] = useState<{ key: string; content: string }>()
   const [preparingEditor, setPreparingEditor] = useState(false)
+  const account = useOptionalMobileAccount()
+  const canShare = !!account?.directory && !account.deletionPending
   const [sharingArtifact, setSharingArtifact] = useState<Artifact>()
   const editorRequest = useRef(false)
   const exportKey = JSON.stringify([taskId, id, artifact?.revision])
@@ -384,12 +387,14 @@ export function ArtifactBrowser({
                   ` · Version ${artifact.revision}${revision === undefined ? ' · Latest' : ''}`}
               </Text>
             </View>
-            <IconButton
-              label="Share artifact"
-              icon="share"
-              disabled={!artifact}
-              onPress={() => setSharingArtifact(artifact)}
-            />
+            {canShare && (
+              <IconButton
+                label="Share artifact"
+                icon="share"
+                disabled={!artifact}
+                onPress={() => setSharingArtifact(artifact)}
+              />
+            )}
           </View>
           <View
             style={{
@@ -475,7 +480,7 @@ export function ArtifactBrowser({
             </View>
           )}
         </View>
-        {sharingArtifact && (
+        {canShare && sharingArtifact && (
           <ArtifactSharing
             artifact={sharingArtifact}
             onClose={() => setSharingArtifact(undefined)}
