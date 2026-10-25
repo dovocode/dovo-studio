@@ -4,7 +4,8 @@
   "private": true,
   "files": [
     "dist",
-    "src/theme.css"
+    "src/theme.css",
+    "src/markdown.css"
   ],
   "type": "module",
   "exports": {
@@ -45,7 +46,16 @@
     "./select": {
       "types": "./src/select.tsx",
       "import": "./dist/select.js"
-    }
+    },
+    "./message": {
+      "types": "./src/message.tsx",
+      "import": "./dist/message.js"
+    },
+    "./conversation": {
+      "types": "./src/conversation.tsx",
+      "import": "./dist/conversation.js"
+    },
+    "./markdown.css": "./src/markdown.css"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node build-css.mjs",
@@ -61,7 +71,8 @@
     "lucide-react": "^1.61.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "use-stick-to-bottom": "^1.1.6"
   },
   "devDependencies": {
     "@tailwindcss/node": "^4.3.3",

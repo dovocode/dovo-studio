@@ -258,12 +258,21 @@ function TaskRowView({
                   {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
                   {compactStatus}
                 </span>
-                {provider && (
-                  <AgentAvatar
-                    provider={provider}
-                    customIcon={customIcon}
-                    className="size-3.5 shrink-0"
-                  />
+                {compact && (
+                  <span className="inline-flex shrink-0 items-center gap-1">
+                    <RuntimeIcon
+                      icon={owner.runtimeIcon}
+                      className="size-3 shrink-0"
+                      aria-label={host ?? 'Unknown host'}
+                    />
+                    {provider && (
+                      <AgentAvatar
+                        provider={provider}
+                        customIcon={customIcon}
+                        className="size-3.5 shrink-0"
+                      />
+                    )}
+                  </span>
                 )}
               </span>
               <span
@@ -322,6 +331,13 @@ function TaskRowView({
                     className="size-3 shrink-0"
                     aria-label={host ?? 'Unknown host'}
                   />
+                  {provider && (
+                    <AgentAvatar
+                      provider={provider}
+                      customIcon={customIcon}
+                      className="size-3 shrink-0"
+                    />
+                  )}
                 </span>
               )}
             </Button>

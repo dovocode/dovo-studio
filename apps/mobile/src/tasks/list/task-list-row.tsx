@@ -356,7 +356,9 @@ function TaskListRowView({
               {task.pinned && <Pin size={12} color={colors.muted} />}
               {worktree && <GitFork size={12} color={colors.muted} />}
               {statusIndicator}
-              {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
+              {!!agent && (!showDevice || car) && (
+                <HarnessIcon provider={agent.provider} size={12} />
+              )}
             </View>
             <View
               style={{
@@ -408,6 +410,7 @@ function TaskListRowView({
                   flexible={dense}
                 />
               )}
+              {showDevice && !car && !!agent && <HarnessIcon provider={agent.provider} size={12} />}
               {row.reachability === 'offline' &&
                 (dense ? (
                   <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
