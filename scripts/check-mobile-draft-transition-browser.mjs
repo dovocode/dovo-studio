@@ -8,6 +8,9 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 // Exercise the real route, startup controller, creation runtime and TaskDetail. Native
 // controls/conversation content are boundaries; their mount counts expose page replacement.
 const mocks = {
+  // Encrypted sharing is exercised by the dedicated sharing controls suite.
+  './thread-sharing':
+    'export const ThreadSharing=({onClose})=><section role="dialog" aria-label="Share thread"><button onClick={onClose}>Close sharing</button></section>;export const InlineThreadSuggestions=()=>null;',
   // Pairing is covered by check-thread-pairing-browser; keep its native scanner
   // outside this route/composer continuity fixture.
   '../../runtime/connection/pair-computer': `export const PairComputer=()=>null;`,
@@ -365,6 +368,13 @@ try {
     ),
   ])
   assert.deepEqual(menuGroups, ['Tools', 'Navigate', 'Thread', 'Project', 'Advanced', 'Delete'])
+  assert.equal(await page.getByRole('button', { name: 'Share thread', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('dialog', { name: 'Share thread' }).count(), 0)
+  await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
+  await page.getByRole('button', { name: 'Share thread', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Share thread' }).waitFor()
+  await page.getByRole('button', { name: 'Close sharing', exact: true }).click()
+  assert.equal(await page.getByRole('dialog', { name: 'Share thread' }).count(), 0)
   assert.deepEqual(await page.evaluate(() => window.headerCollapsedMenuGroups), [
     'Project',
     'Advanced',

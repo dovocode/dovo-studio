@@ -217,6 +217,7 @@ function TaskDetailContent({
   const { snapshot, connected, profiles, profile, callEffect, activeId, connection } = useRuntime()
   const worktreeThread = useAction()
   const [transferring, setTransferring] = useState(false)
+  const [sharingTaskId, setSharingTaskId] = useState<string>()
   const worktreeActions: HeaderAction[] =
     task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
       ? (['reuse', 'fork'] as const).map((mode) => ({
@@ -770,6 +771,20 @@ function TaskDetailContent({
                       disabled: !lifecycle.enabled || lifecycle.busy,
                       onPress: lifecycle.togglePinned,
                     },
+                    ...(!task.example
+                      ? [
+                          {
+                            label: 'Share thread',
+                            group: 'Thread',
+                            icon: 'share' as const,
+                            overflow: true,
+                            onPress: () => {
+                              Keyboard.dismiss()
+                              setSharingTaskId(task.id)
+                            },
+                          },
+                        ]
+                      : []),
                     {
                       label: 'Regenerate title',
                       group: 'Advanced',
@@ -970,6 +985,9 @@ function TaskDetailContent({
             setPane('diff')
           }}
         >
+          {!startup?.temporary && sharingTaskId === task.id && (
+            <ThreadSharing onClose={() => setSharingTaskId(undefined)} />
+          )}
           <View
             style={{
               ...contentColumn.conversation,
@@ -977,7 +995,6 @@ function TaskDetailContent({
               display: pane === 'chat' ? 'flex' : 'none',
             }}
           >
-            {!startup?.temporary && <ThreadSharing />}
             <Composer
               queuedMessages={<ComposerActivity task={task} />}
               renderAbove={(setup) => (

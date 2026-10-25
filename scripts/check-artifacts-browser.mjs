@@ -134,6 +134,11 @@ const built = await build({
   target: 'es2022',
 })
 const mocks = {
+  // Encrypted publication is covered separately; keep local artifact scenarios account-free.
+  './artifact-sharing': 'export const ArtifactSharing=()=>null;',
+  './artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
+  './chat/artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
+  '../ui/content/artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   'expo-router': `export const router={canGoBack:()=>!!window.artifactHistory,back:()=>window.artifactBackRoute=window.artifactHistory,replace:href=>window.artifactBackRoute=href};`,
   // Keep account/feed hooks real; these local-artifact scenarios have no account host.

@@ -1,9 +1,10 @@
 # Encrypted threads and artifacts
 
 Studio manages shared threads and artifacts directly. Open **Share thread**, or **Share** on a saved
-artifact. Review the destination, account and content, then publish. Publishing creates a private
-copy with no readers until you invite someone or create a link. Local runtime access still supports
-HTTP LAN/VPN addresses, pairing codes and device tokens without an account.
+artifact. On mobile, **Share thread** is in the thread’s menu. Review the destination, account and
+content, then publish. Publishing creates a private copy with no readers until you invite someone or
+create a link. Local runtime access still supports HTTP LAN/VPN addresses, pairing codes and device
+tokens without an account.
 
 Threads automatically publish new user and assistant message text while the source runtime is
 online. Tools, attachments and unsent drafts are excluded. Readers see updates without refreshing.
