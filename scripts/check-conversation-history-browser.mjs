@@ -537,6 +537,10 @@ return <div>{h.task.messages.map(message=><div data-pending-message={message.id}
               contents = 'export const ChatImageEditProvider=({children})=>children'
             else if (args.path.endsWith('use-task-viewed'))
               contents = "export const useTaskViewed=()=>({error:'',retry:()=>{}})"
+            // Sharing has its own suite; this fixture exercises pending messages and paging.
+            else if (args.path === '../chat/thread-sharing')
+              contents =
+                'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null'
             else {
               const names = {
                 'composer-activity': 'ComposerActivity',

@@ -5,6 +5,9 @@ import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
+  // Sharing is verified separately from scroll anchoring and composer collapse.
+  '../chat/thread-sharing':
+    'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export const useAppPreferences=()=>({collapseComposerOnScroll:true});export const useWorkspace=()=>({snapshot:null,connected:true});export const formatDateTime=value=>value;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '../chat/composer/chat-image-edit': `export const ChatImageEditProvider=({children})=>children;`,
