@@ -18,7 +18,12 @@ export function ThreadSuggestions({
 }) {
   const inbox = useThreadSuggestions(client, sourceId, active)
   const { styles, colors } = useTheme()
-  if (!inbox.suggestions.length && !inbox.error) return null
+  if (!inbox.suggestions.length)
+    return inbox.error ? (
+      <Text accessibilityRole="alert" style={{ color: colors.error, padding: 16 }}>
+        {inbox.error}
+      </Text>
+    ) : null
   return (
     <View accessibilityLabel="Suggested next prompts" style={{ padding: 16, gap: 12 }}>
       <Text style={styles.muted}>Suggested next prompts</Text>

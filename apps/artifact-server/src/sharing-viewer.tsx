@@ -18,7 +18,17 @@ import {
   parseSharedMarkdown,
   type SharedMarkdownNode,
 } from '@dovo/protocol'
-import { Button, Input, Textarea, Badge } from '@dovo/web-ui'
+import {
+  Button,
+  Input,
+  Textarea,
+  Badge,
+  Message,
+  MessageContent,
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from '@dovo/web-ui'
 
 const id = location.pathname.split('/')[2] ?? ''
 const fragment = new URLSearchParams(location.hash.slice(1))
@@ -102,9 +112,22 @@ function MarkdownNode({ node }: { node: SharedMarkdownNode }) {
     case 'text':
       return <>{node.value}</>
     case 'html':
-      return <code>{node.value}</code>
+      return <code data-streamdown="inline-code">{node.value}</code>
     case 'heading':
-      return node.depth <= 2 ? <h2>{children}</h2> : <h3>{children}</h3>
+      switch (node.depth) {
+        case 1:
+          return <h1>{children}</h1>
+        case 2:
+          return <h2>{children}</h2>
+        case 3:
+          return <h3>{children}</h3>
+        case 4:
+          return <h4>{children}</h4>
+        case 5:
+          return <h5>{children}</h5>
+        case 6:
+          return <h6>{children}</h6>
+      }
     case 'strong':
       return <strong>{children}</strong>
     case 'emphasis':
@@ -113,12 +136,17 @@ function MarkdownNode({ node }: { node: SharedMarkdownNode }) {
       return <del>{children}</del>
     case 'code':
       return (
-        <pre>
-          <code>{node.value}</code>
-        </pre>
+        <div data-streamdown="code-block">
+          <div data-streamdown="code-block-header">{node.lang ?? 'text'}</div>
+          <div data-streamdown="code-block-body">
+            <pre tabIndex={0} aria-label="Code block">
+              <code>{node.value}</code>
+            </pre>
+          </div>
+        </div>
       )
     case 'inlineCode':
-      return <code>{node.value}</code>
+      return <code data-streamdown="inline-code">{node.value}</code>
     case 'break':
       return <br />
     case 'thematicBreak':
@@ -148,7 +176,7 @@ function MarkdownNode({ node }: { node: SharedMarkdownNode }) {
       return <span>{node.alt ? `[Image: ${node.alt}]` : '[Image excluded]'}</span>
     case 'table':
       return (
-        <div className="sharing-table">
+        <div className="sharing-table" data-streamdown="table-wrapper">
           <table>
             <tbody>{children}</tbody>
           </table>
@@ -248,9 +276,18 @@ function App() {
     window.addEventListener('focus', resume)
     return () => window.removeEventListener('focus', resume)
   })
+  const threadTurns = useMemo(() => {
+    const turns: Extract<SharedContent, { kind: 'thread' }>['messages'][] = []
+    if (content?.kind !== 'thread') return turns
+    for (const message of content.messages) {
+      if (message.role === 'user' || !turns.length) turns.push([])
+      turns[turns.length - 1]!.push(message)
+    }
+    return turns
+  }, [content])
   const title = content?.kind === 'thread' ? content.title : content?.artifact.title
   return (
-    <div className="app-shell">
+    <div className={content?.kind === 'thread' ? 'app-shell shared-thread-shell' : 'app-shell'}>
       <header className="site-header">
         <a className="brand" href="https://dovo.studio" rel="noreferrer">
           dovo<span className="brand-divider">/</span>
@@ -258,10 +295,20 @@ function App() {
         </a>
         <div className="artifact-title">
           <h1>{title ?? 'Encrypted sharing'}</h1>
-          <Badge>End-to-end encrypted</Badge>
+          <Badge variant="outline" className="sharing-encryption">
+            End-to-end encrypted
+          </Badge>
         </div>
       </header>
-      <main className={content?.kind === 'artifact' ? 'artifact-workspace' : 'shared-conversation'}>
+      <main
+        className={
+          content?.kind === 'artifact'
+            ? 'artifact-workspace'
+            : content?.kind === 'thread'
+              ? 'shared-thread-workspace'
+              : 'shared-conversation'
+        }
+      >
         {error && (
           <p role="alert" className="status-message error">
             {error}
@@ -318,7 +365,7 @@ function App() {
             )}
           </section>
         )}
-        {content && view && (
+        {content?.kind === 'artifact' && view && (
           <p className="sharing-meta">
             {view.paused ? 'Updates paused' : 'Automatic updates enabled'} · Last published{' '}
             {new Date(view.updatedAt).toLocaleString()}
@@ -327,68 +374,111 @@ function App() {
         {content?.kind === 'artifact' && <Artifact content={content} />}
         {content?.kind === 'thread' && (
           <>
-            <div className="sharing-messages">
-              {content.messages.map((message) => (
-                <article className="sharing-message" key={message.id}>
-                  <p className="sharing-speaker">{message.role === 'user' ? 'User' : 'Agent'}</p>
-                  <div className="sharing-message-text">
-                    <Markdown text={message.text} />
+            <Conversation className="min-h-0" aria-label="Shared thread messages" aria-live="off">
+              <ConversationContent className="sharing-messages mx-auto w-full max-w-[48rem] gap-5 px-4 py-4 md:pl-16 md:pr-5">
+                {threadTurns.map((messages) => (
+                  <div
+                    className="studio-chat-turn flex min-w-0 flex-col gap-3"
+                    key={messages[0]!.id}
+                  >
+                    {messages.map((message) => (
+                      <Message
+                        from={message.role}
+                        key={message.id}
+                        data-message-id={message.id}
+                        aria-label={message.role === 'user' ? 'User message' : 'Agent message'}
+                      >
+                        <div className="group/message flex min-w-0 flex-col gap-2">
+                          <MessageContent>
+                            <div className="studio-markdown sharing-message-text min-w-0 max-w-full">
+                              <Markdown text={message.text} />
+                            </div>
+                          </MessageContent>
+                          {message.createdAt && (
+                            <time
+                              dateTime={message.createdAt}
+                              className="sharing-message-time text-[0.625rem] text-muted-foreground group-[.is-user]:ml-auto"
+                            >
+                              {new Date(message.createdAt).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </time>
+                          )}
+                        </div>
+                      </Message>
+                    ))}
                   </div>
-                </article>
-              ))}
-            </div>
-            <section className="sharing-suggestion">
-              <h2>Suggest a next prompt</h2>
-              <p>
-                Only the thread owner can read your suggestion. They choose whether to send it to
-                the agent.
-              </p>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  void act(async () => {
-                    if (!keys || !view)
-                      throw new Error('Reload this thread before suggesting a prompt')
-                    await request(
-                      path + '/suggestions?access=' + encodeURIComponent(access),
-                      'POST',
-                      encryptSuggestion(
-                        {
-                          shareId: id,
-                          revision: view.packet.revision,
-                          name: name.trim(),
-                          text: text.trim(),
-                        },
-                        keys.suggestionKey,
-                      ),
-                    )
-                    setText('')
-                    setNotice('Suggestion sent to the owner.')
-                  })
-                }}
-              >
-                <label>
-                  Your name (optional)
-                  <Input
-                    value={name}
-                    maxLength={100}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Suggested prompt
-                  <Textarea
-                    required
-                    maxLength={12000}
-                    value={text}
-                    onChange={(event) => setText(event.target.value)}
-                    rows={5}
-                  />
-                </label>
-                <Button type="submit" disabled={busy || !text.trim()}>
-                  {busy ? 'Sending…' : 'Send suggestion'}
-                </Button>
-              </form>
+                ))}
+              </ConversationContent>
+              <ConversationScrollButton />
+            </Conversation>
+            <section className="sharing-suggestion" aria-labelledby="suggestion-heading">
+              <div className="sharing-composer">
+                <h2 id="suggestion-heading">Suggest a next prompt</h2>
+                <p className="sharing-composer-hint" id="suggestion-hint">
+                  Only the owner can read and send your suggestion to the agent.
+                </p>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void act(async () => {
+                      if (!keys || !view)
+                        throw new Error('Reload this thread before suggesting a prompt')
+                      await request(
+                        path + '/suggestions?access=' + encodeURIComponent(access),
+                        'POST',
+                        encryptSuggestion(
+                          {
+                            shareId: id,
+                            revision: view.packet.revision,
+                            name: name.trim(),
+                            text: text.trim(),
+                          },
+                          keys.suggestionKey,
+                        ),
+                      )
+                      setText('')
+                      setNotice('Suggestion sent to the owner.')
+                    })
+                  }}
+                >
+                  <label>
+                    <span className="sr-only">Suggested prompt</span>
+                    <Textarea
+                      aria-label="Suggested prompt"
+                      required
+                      maxLength={12000}
+                      value={text}
+                      onChange={(event) => setText(event.target.value)}
+                      rows={2}
+                      placeholder="Suggest a next prompt…"
+                      aria-describedby="suggestion-hint"
+                    />
+                  </label>
+                  <div className="sharing-composer-actions">
+                    <label className="sharing-name">
+                      <span className="sr-only">Your name (optional)</span>
+                      <Input
+                        aria-label="Your name (optional)"
+                        placeholder="Your name (optional)"
+                        value={name}
+                        maxLength={100}
+                        onChange={(event) => setName(event.target.value)}
+                      />
+                    </label>
+                    <Button type="submit" disabled={busy || !text.trim()}>
+                      {busy ? 'Sending…' : 'Send suggestion'}
+                    </Button>
+                  </div>
+                </form>
+                {view && (
+                  <p className="sharing-meta" role="status">
+                    {view.paused ? 'Updates paused' : 'Automatic updates enabled'} · Last published{' '}
+                    {new Date(view.updatedAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
             </section>
           </>
         )}

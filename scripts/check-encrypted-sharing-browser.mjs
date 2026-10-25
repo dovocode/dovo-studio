@@ -96,6 +96,18 @@ try {
             role: 'assistant',
             text: 'Found **the cause**.\n\n<script>window.compromised=true</script>',
           },
+          ...Array.from({ length: 20 }, (_, index) => [
+            {
+              id: randomUUID(),
+              role: 'user',
+              text: `Question ${index + 1}: inspect the shared reader`,
+            },
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              text: `## Reply ${index + 1}\n\nA response with **formatting**, \`inline code\` and a [safe link](https://dovo.studio).\n\n- First detail\n- Second detail\n\n> A useful observation\n\n\`\`\`ts\nconst message = ${index + 1}\n\`\`\``,
+            },
+          ]).flat(),
         ],
       }),
     ],
@@ -129,6 +141,7 @@ try {
   browser = await chromium.launch()
   const context = await browser.newContext(),
     page = await context.newPage()
+  page.setDefaultTimeout(15000)
   const requests = [],
     errors = []
   page.on('request', (request) => requests.push({ url: request.url(), data: request.postData() }))
@@ -138,6 +151,56 @@ try {
   await page.getByText('the cause', { exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.compromised), undefined)
   assert.equal(await page.getByText('Unsent private draft', { exact: true }).count(), 0)
+  const log = page.getByRole('log', { name: 'Shared thread messages' })
+  const scrollState = () =>
+    log.evaluate((root) => {
+      const scroll = [...root.querySelectorAll('div')].find(
+        (element) => getComputedStyle(element).overflowY === 'auto',
+      )
+      if (!scroll) throw new Error('Conversation scroll container missing')
+      return {
+        top: scroll.scrollTop,
+        remaining: scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop,
+      }
+    })
+  const waitForLatest = () =>
+    page.waitForFunction(() => {
+      const root = document.querySelector('[role="log"]')
+      const scroll =
+        root &&
+        [...root.querySelectorAll('div')].find(
+          (element) => getComputedStyle(element).overflowY === 'auto',
+        )
+      return (
+        scroll &&
+        scroll.scrollHeight > scroll.clientHeight &&
+        scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop < 4
+      )
+    })
+  await waitForLatest()
+  assert.equal(await page.getByRole('button', { name: 'Scroll to latest message' }).count(), 0)
+  const appearance = await log.evaluate((root) => {
+    const user = root.querySelector('.is-user'),
+      assistant = root.querySelector('.is-assistant')
+    const bubble = user.firstElementChild.firstElementChild
+    return {
+      userMax: getComputedStyle(user).maxWidth,
+      userRadius: getComputedStyle(bubble).borderRadius,
+      assistantBorder: getComputedStyle(assistant).borderTopWidth,
+      width: root.getBoundingClientRect().width,
+    }
+  })
+  assert.equal(appearance.userMax, '90%')
+  assert.equal(appearance.userRadius, '16px')
+  assert.equal(appearance.assistantBorder, '0px')
+  // Real wheel input releases the same following lock used by Studio.
+  await log.hover()
+  await page.mouse.wheel(0, -1800)
+  await page.getByRole('button', { name: 'Scroll to latest message' }).waitFor()
+  const reading = await scrollState()
+  assert.ok(reading.remaining > 500)
+  await page.getByRole('button', { name: 'Scroll to latest message' }).click()
+  await waitForLatest()
   await page.getByLabel('Your name (optional)').fill('A reader')
   await page
     .getByLabel('Suggested prompt', { exact: true })
@@ -158,6 +221,11 @@ try {
     shared.vault.contentKey,
   ])
     assert.ok(!stored.includes(secret), 'hosting must not store plaintext or keys')
+  await page.getByLabel('Suggested prompt', { exact: true }).fill('Keep my unfinished suggestion')
+  await log.hover()
+  await page.mouse.wheel(0, -1600)
+  await page.getByRole('button', { name: 'Scroll to latest message' }).waitFor()
+  const beforeUpdate = await scrollState()
   runtime.services.store.update((workspace) => ({
     ...workspace,
     tasks: workspace.tasks.map((task) =>
@@ -174,6 +242,39 @@ try {
   }))
   await runtime.services.sharedThreads.tick()
   await page.getByText('A new automatic message', { exact: true }).waitFor({ timeout: 20000 })
+  assert.ok(
+    Math.abs((await scrollState()).top - beforeUpdate.top) < 4,
+    'incoming replies must preserve the reading position',
+  )
+  assert.equal(
+    await page.getByLabel('Suggested prompt', { exact: true }).inputValue(),
+    'Keep my unfinished suggestion',
+  )
+  await page.getByRole('button', { name: 'Scroll to latest message' }).click()
+  await waitForLatest()
+  await page.screenshot({ path: '/tmp/dovo-share-thread-desktop.png' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForFunction(() => {
+    const composer = document.querySelector('.sharing-suggestion').getBoundingClientRect()
+    return composer.bottom <= innerHeight + 1 && composer.top > 0
+  })
+  assert.ok(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    'mobile reader must fit the viewport',
+  )
+  await page.waitForFunction(() => {
+    const scroll = [...document.querySelector('[role="log"]').querySelectorAll('div')].find(
+      (element) => getComputedStyle(element).overflowY === 'auto',
+    )
+    return scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop < 4
+  })
+  await log.hover()
+  await page.mouse.wheel(0, -900)
+  await page.getByRole('button', { name: 'Scroll to latest message' }).waitFor()
+  await page.screenshot({ path: '/tmp/dovo-share-thread-mobile.png' })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.getByRole('button', { name: 'Scroll to latest message' }).click()
+  await waitForLatest()
   const secondPage = await context.newPage()
   await secondPage.goto(otherUrl)
   await secondPage.getByRole('heading', { name: 'Encrypted thread title' }).waitFor()
@@ -236,6 +337,8 @@ try {
     'Encrypted sharing: reader, markdown isolation, encrypted suggestions, runtime updates, rotation, revocation, recovery and deletion passed',
   )
 } finally {
+  const openPage = browser?.contexts()[0]?.pages()[0]
+  if (openPage) await openPage.screenshot({ path: '/tmp/dovo-share-thread-last.png' })
   await browser?.close()
   await runtime?.close()
   await Promise.all(

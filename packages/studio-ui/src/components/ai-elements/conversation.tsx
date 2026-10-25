@@ -1,7 +1,10 @@
 import { reducedMotion } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 // Adapted from Vercel AI Elements (MIT), packages/elements/src/conversation.tsx.
-import { ArrowDown } from 'lucide-react'
+import {
+  ConversationContent as SharedConversationContent,
+  ConversationScrollButton as SharedConversationScrollButton,
+} from '@dovo/web-ui/conversation'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
 import {
   createContext,
@@ -13,20 +16,9 @@ import {
   type ComponentProps,
 } from 'react'
 import { cn } from '../../lib/utils'
-import { Button } from '../ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
-export function Conversation({ className, ...props }: ComponentProps<typeof StickToBottom>) {
-  return (
-    <StickToBottom
-      className={cn('relative flex-1 overflow-y-hidden', className)}
-      initial="instant"
-      resize="instant"
-      role="log"
-      defaultChecked
-      {...props}
-    />
-  )
-}
+export { Conversation } from '@dovo/web-ui/conversation'
+
 export function ConversationContent({
   className,
   style,
@@ -34,9 +26,9 @@ export function ConversationContent({
 }: ComponentProps<typeof StickToBottom.Content>) {
   const ready = useContext(HistoryReady)
   return (
-    <StickToBottom.Content
+    <SharedConversationContent
       {...props}
-      className={cn('flex flex-col gap-4 p-4', className)}
+      className={className}
       // Keep scroll measurements available while the initial position settles.
       style={ready ? style : { ...style, visibility: 'hidden' }}
     />
@@ -81,16 +73,6 @@ export function ConversationHistory({
       disposed = true
     }
   }, [scrollToBottom, onReady])
-  // Content observation alone misses viewport changes caused by the composer or panels.
-  useEffect(() => {
-    const root = scrollRef.current
-    if (!root) return
-    const observer = new ResizeObserver(() => {
-      void scrollToBottom({ animation: 'instant', preserveScrollPosition: true })
-    })
-    observer.observe(root)
-    return () => observer.disconnect()
-  }, [scrollRef, scrollToBottom])
   useEffect(() => {
     const root = scrollRef.current
     if (!escapedFromLock || !onReadingHistory || !root) return
@@ -120,20 +102,7 @@ export function useConversationHistory() {
 }
 
 export function ConversationScrollButton() {
-  const { isAtBottom, scrollToBottom } = useStickToBottomContext()
-  return (
-    !isAtBottom && (
-      <Button
-        aria-label="Scroll to latest message"
-        className="absolute bottom-3 left-1/2 rounded-full"
-        size="icon"
-        variant="outline"
-        onClick={() => void scrollToBottom({ animation: reducedMotion() ? 'instant' : undefined })}
-      >
-        <ArrowDown />
-      </Button>
-    )
-  )
+  return <SharedConversationScrollButton reduceMotion={reducedMotion()} />
 }
 
 // Kept inside the conversation context so jumping also suspends automatic following.

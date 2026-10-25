@@ -14,7 +14,15 @@ export function ThreadSuggestions({
   onUseSuggestion: (text: string) => void
 }) {
   const inbox = useThreadSuggestions(client, sourceId, active)
-  if (!inbox.suggestions.length && !inbox.error) return null
+  if (!inbox.suggestions.length)
+    return inbox.error ? (
+      <p
+        role="alert"
+        className="mx-auto w-full max-w-[var(--chat-max)] px-5 py-2 text-xs text-destructive"
+      >
+        {inbox.error}
+      </p>
+    ) : null
   return (
     <section
       aria-label="Suggested next prompts"
