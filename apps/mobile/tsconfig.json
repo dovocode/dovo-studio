@@ -10,6 +10,8 @@
     "*.ts",
     "*.cts",
     "plugins/**/*.ts",
+    "modules/**/*.ts",
+    "modules/**/*.tsx",
     "terminal/**/*.ts",
     "mermaid/**/*.ts",
     ".rnstorybook/**/*.ts",
