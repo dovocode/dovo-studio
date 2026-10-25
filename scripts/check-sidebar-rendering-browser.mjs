@@ -386,10 +386,11 @@ try {
   await page.getByRole('button', { name: 'Show all 120 settled threads', exact: true }).click()
   await page.getByText('Settled thread 0', { exact: true }).waitFor({ state: 'attached' })
   const settledRow = page.getByRole('button', { name: /Settled thread 0/, exact: true })
-  // Settled rows retain project and status above the title, with no branch or device metadata.
+  // Settled rows keep project, status and the runtime icon above the title, without a branch row.
   for (const label of ['Project', 'Settled', 'Settled thread 0'])
     assert.equal(await settledRow.getByText(label, { exact: true }).count(), 1)
-  assert.equal(await settledRow.locator('[data-row-icon]').count(), 0)
+  assert.equal(await settledRow.locator('[data-row-icon]').count(), 1)
+  assert.equal(await settledRow.locator('.studio-thread-card-context').count(), 1)
   await settledRow.click()
   assert.equal(await page.evaluate(() => window.selected.task.id), 'settled-0')
   await page.getByRole('button', { name: 'Show fewer settled threads', exact: true }).click()
