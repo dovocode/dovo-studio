@@ -224,6 +224,8 @@ function WorkbenchContent({
   }, [])
   const currentRuntime = useRef(runtimeRegistry.activeId)
   currentRuntime.current = runtimeRegistry.activeId
+  const currentProfiles = useRef(runtimeRegistry.profiles)
+  currentProfiles.current = runtimeRegistry.profiles
   const [navigationKey, setNavigationKey] = useState(0)
   const canLeave = useCallback(() => {
     const { target, extensions } = settingsNavigation.current
@@ -243,7 +245,7 @@ function WorkbenchContent({
       const { target } = settingsNavigation.current
       if (!canLeave()) return
       if (next.viewId === 'tasks' && next.entityId) {
-        const profile = runtimeRegistry.profiles.find(
+        const profile = currentProfiles.current.find(
           (profile) => profile.id === currentRuntime.current,
         )
         if (profile) prepareRuntimeTask(profile.connection, next.entityId)
@@ -262,7 +264,7 @@ function WorkbenchContent({
       updateTarget(next)
       setNavigationKey((key) => key + 1)
     },
-    [updateTarget, canLeave, runtimeRegistry.profiles],
+    [updateTarget, canLeave],
   )
   const goBack = useCallback(() => {
     const previous = history.current.at(-1)

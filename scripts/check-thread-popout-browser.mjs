@@ -52,6 +52,8 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
     conditions: ['development'],
     alias: {
       '@dovo/studio-core': root + 'packages/studio-core/src/index.ts',
+      '@dovo/studio-core/code-themes': root + 'packages/studio-core/src/code-themes.ts',
+      '@dovo/studio-core/pierre-theme': root + 'packages/studio-core/src/pierre-theme.ts',
       '@dovo/studio-core/links': root + 'packages/studio-core/src/links/index.ts',
       '@dovo/studio-core/state': root + 'packages/studio-core/src/runtime/application-state.ts',
       '@dovo/studio-ui/runtime-icon': root + 'packages/studio-ui/src/runtime-icon.tsx',
@@ -232,6 +234,11 @@ try {
   await main.evaluate(() => window.store.switchRuntime('http://host1.lan:8787'))
   await main.evaluate(() => window.store.switchRuntime('http://host0.lan:8787'))
   await detached.evaluate(() => window.store.switchRuntime('http://host1.lan:8787'))
+  assert.equal(
+    await main.evaluate(() => window.initialHost === window.host),
+    true,
+    'Saved connection changes must preserve the host API and extension catalog',
+  )
   await detached.getByRole('button', { name: 'Task actions', exact: true }).click()
   await detached.getByRole('menuitem', { name: 'Advanced', exact: true }).focus()
   await detached.keyboard.press('ArrowRight')
