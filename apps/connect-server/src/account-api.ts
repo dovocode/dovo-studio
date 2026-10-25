@@ -1,7 +1,12 @@
 import type { InternetStore } from './internet-store.js'
 import type { DeleteIdentity } from './delete-identity.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { decode, accountServerSchema, accountServerAddress } from '@dovo/protocol'
+import {
+  decode,
+  accountServerSchema,
+  accountServerAddress,
+  peopleActionSchema,
+} from '@dovo/protocol'
 import { AccountStore } from './store.js'
 import { json, readJson, bearerToken, RequestError } from './http.js'
 
@@ -74,6 +79,13 @@ export function accountApi(
           'Account deletion has started. Retry to finish deleting your account.',
         )
       throw new RequestError(401, 'Sign in to see your linked computers')
+    }
+    if (url.pathname === '/v1/people') {
+      if (req.method === 'GET') return json(res, 200, store.people.directory(directory.user.id))
+      if (req.method === 'POST') {
+        const input = decode(peopleActionSchema, await readJson(req))
+        return json(res, 200, store.people.mutate(directory.user.id, input))
+      }
     }
     if (req.method === 'GET' && url.pathname === '/v1/servers') {
       const hosted = internet?.directory(directory.user.id) ?? []

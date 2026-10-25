@@ -56,6 +56,7 @@ export type SharePacket = typeof sharePacketSchema.Type
 export const shareGrantSchema = mutableStruct({
   id: uuidSchema,
   userId: Schema.optional(maxValue(minValue(Schema.String, 1), 500)),
+  organizationId: Schema.optional(uuidSchema),
   tokenHash: Schema.optional(hex(64)),
   expiresAt: Schema.optional(Schema.Number),
   box: sharingBoxSchema,

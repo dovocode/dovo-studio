@@ -206,14 +206,7 @@ export function TaskConversation({
       <div data-task-conversation={task.id} className="flex h-full min-h-0 flex-col">
         {!temporary && !task.example && (
           <div className="flex justify-end px-4 py-1">
-            <ThreadSharing
-              taskId={task.id}
-              title={task.title}
-              onUseSuggestion={(text) => {
-                setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
-                setComposerCollapsed(false)
-              }}
-            />
+            <ThreadSharing taskId={task.id} title={task.title} />
           </div>
         )}
         {temporary ? (

@@ -135,7 +135,8 @@ const built = await build({
 })
 const mocks = {
   // Encrypted publication is covered separately; keep local artifact scenarios account-free.
-  './artifact-sharing': 'export const ArtifactSharing=()=>null;',
+  './artifact-sharing':
+    'export const ArtifactSharing=({artifact,onClose})=>onClose?<section role="dialog" aria-label="Share artifact"><p>{artifact.title} · Version {artifact.revision}</p><button onClick={onClose}>Close sharing</button></section>:null;',
   './artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
   './chat/artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
   '../ui/content/artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
@@ -606,6 +607,12 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     }
 
     if (ui.platform === 'mobile') {
+      await view.getByRole('button', { name: 'Share artifact', exact: true }).click()
+      await view.getByRole('dialog', { name: 'Share artifact', exact: true }).waitFor()
+      await view.getByRole('button', { name: 'Close sharing', exact: true }).click()
+      await view
+        .getByRole('dialog', { name: 'Share artifact', exact: true })
+        .waitFor({ state: 'hidden' })
       await view.setViewportSize({ width: 320, height: 700 })
       const boxes = await Promise.all(
         [

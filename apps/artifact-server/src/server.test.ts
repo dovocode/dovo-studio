@@ -2,7 +2,15 @@ import { afterEach, expect, it } from 'vite-plus/test'
 import { once } from 'node:events'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
-import { artifactPublicationResponseSchema, artifactViewSchema, decode } from '@dovo/protocol'
+import {
+  artifactPublicationResponseSchema,
+  artifactViewSchema,
+  decode,
+  SharingClient,
+  encryptSuggestion,
+  sharingReaderKeys,
+  type AccountStorage,
+} from '@dovo/protocol'
 import { AccountStore } from '../../connect-server/src/store.js'
 import { createConnectServer } from '../../connect-server/src/server.js'
 import { ArtifactStore } from './store.js'
@@ -549,4 +557,89 @@ it('replaces previous publication writers without exhausting long-lived scope ca
     previous = next.token
   }
   expect(f.accounts.db.prepare('SELECT count(*) AS n FROM artifact_feed_grants').get()?.n).toBe(1)
+})
+
+it('keeps organisation content encrypted and follows membership on reads and prompt suggestions without changing the link', async () => {
+  const f = await fixture()
+  f.accounts.people.mutate('owner', { action: 'createOrganization', name: 'Product team' })
+  const org = f.accounts.people.directory('owner').organizations[0]!
+  f.accounts.people.mutate('owner', {
+    action: 'inviteMember',
+    organizationId: org.id,
+    userId: 'invited',
+  })
+  let key: string | null = null
+  const storage: AccountStorage = {
+    read: async () => null,
+    write: async () => {},
+    readSharingKey: async () => key,
+    writeSharingKey: async (value) => {
+      key = value
+    },
+  }
+  class TestSharing extends SharingClient {
+    override async request(
+      _origin: string,
+      path: string,
+      method = 'GET',
+      body?: unknown,
+    ): Promise<unknown> {
+      const response = await f.request(path, method, body, f.grant(f.owner))
+      if (!response.ok) throw new Error('Sharing HTTP ' + response.status)
+      return response.json()
+    }
+  }
+  const client = new TestSharing(
+    storage,
+    f.connectOrigin,
+    () => ({ userId: 'owner', sessionId: 'owner' }),
+    async () => '',
+  )
+  await client.recoveryKey(true)
+  let share = await client.publish(f.origin, 'private-thread', {
+    kind: 'thread',
+    title: 'Encrypted roadmap',
+    messages: [{ id: 'one', role: 'user', text: 'Private conversation' }],
+  })
+  share = await client.invite(f.origin, share, undefined, undefined, org.id)
+  const access = share.record.grants[0]!.id
+  const url = `/v2/shares/${share.record.id}/read?access=${access}`
+  const invited = f.grant(f.invited),
+    stranger = f.grant(f.stranger)
+  expect((await f.request(url)).status).toBe(404)
+  expect((await f.request(url, 'GET', undefined, invited)).status).toBe(404)
+  f.accounts.people.mutate('invited', { action: 'acceptOrganization', organizationId: org.id })
+  const read = await f.request(url, 'GET', undefined, invited)
+  expect(read.status).toBe(200)
+  const encrypted = await read.text()
+  expect(encrypted).not.toContain('Private conversation')
+  expect(encrypted).not.toContain('Encrypted roadmap')
+  const suggestion = encryptSuggestion(
+    {
+      shareId: share.record.id,
+      revision: share.record.packet.revision,
+      name: 'Teammate',
+      text: 'What should we build next?',
+    },
+    sharingReaderKeys(share.vault).suggestionKey,
+  )
+  const suggestionsUrl = `/v2/shares/${share.record.id}/suggestions?access=${access}`
+  expect((await f.request(suggestionsUrl, 'POST', suggestion, invited)).status).toBe(200)
+  expect((await f.request(url, 'GET', undefined, stranger)).status).toBe(404)
+  f.accounts.people.mutate('owner', {
+    action: 'removeMember',
+    organizationId: org.id,
+    userId: 'invited',
+  })
+  expect((await f.request(url, 'GET', undefined, invited)).status).toBe(404)
+  expect((await f.request(suggestionsUrl, 'POST', suggestion, invited)).status).toBe(404)
+  f.accounts.people.mutate('owner', {
+    action: 'inviteMember',
+    organizationId: org.id,
+    userId: 'stranger',
+  })
+  f.accounts.people.mutate('stranger', { action: 'acceptOrganization', organizationId: org.id })
+  expect((await f.request(url, 'GET', undefined, stranger)).status).toBe(200)
+  f.accounts.people.mutate('owner', { action: 'deleteOrganization', organizationId: org.id })
+  expect((await f.request(url, 'GET', undefined, stranger)).status).toBe(404)
 })

@@ -42,9 +42,6 @@ export function useEncryptedSharing({
     [hasShares, setHasShares] = useState(false)
   const [recovery, setRecovery] = useState(''),
     [preview, setPreview] = useState<SharedContent | null>(null)
-  const [suggestions, setSuggestions] = useState<
-    Awaited<ReturnType<typeof client.sharing.suggestions>>
-  >([])
   const [sync, setSync] = useState<{ enabled: boolean; error: string } | null>(null)
   const scope = JSON.stringify([client.origin, client.sessionId(), sourceId, kind])
   const current = useRef(scope),
@@ -76,9 +73,6 @@ export function useEncryptedSharing({
     check(captured)
     setShare(opened)
     if (opened?.record.kind === 'thread') {
-      const inbox = await client.sharing.suggestions(destination, opened)
-      check(captured)
-      setSuggestions(inbox)
       if (options.current.runtime) {
         const status = await options.current.runtime.status(opened.record.id)
         check(captured)
@@ -89,7 +83,6 @@ export function useEncryptedSharing({
   }, [client, scope, kind, sourceId])
   useEffect(() => {
     setShare(null)
-    setSuggestions([])
     setLoaded(false)
     setHasKey(false)
     setHasShares(false)
@@ -155,6 +148,29 @@ export function useEncryptedSharing({
       setShare(paused.share)
       throw cause
     }
+    return result.share
+  }
+  // Sharing is created on the first explicit invitation or link action. Reopening
+  // the sheet reuses its publication and links, without another setup flow.
+  const ensureShare = async () => {
+    if (!loaded) throw new Error('Sharing settings are still loading')
+    if (share) return share
+    const captured = scope
+    if (!hasKey) {
+      if ((await client.sharing.list(origin)).length)
+        throw new Error('Restore your recovery key to access your existing shared content')
+      await client.sharing.recoveryKey(true)
+      check(captured)
+      setHasKey(true)
+    }
+    const value = options.current.content ?? (await options.current.runtime?.preview())
+    check(captured)
+    if (!value) throw new Error('Reconnect to the source computer to share this thread')
+    const next = await client.sharing.publish(origin, sourceId, value)
+    check(captured)
+    setShare(next)
+    setHasShares(true)
+    return kind === 'thread' ? resume(next) : next
   }
   return {
     origin,
@@ -167,7 +183,6 @@ export function useEncryptedSharing({
     hasShares,
     recovery,
     preview,
-    suggestions,
     sync,
     refresh: () => act(load),
     createKey: () =>
@@ -205,11 +220,42 @@ export function useEncryptedSharing({
       }),
     invite: (recipient: string) =>
       act(async () => {
-        if (share) setShare(await client.sharing.invite(origin, share, recipient))
+        const next = await ensureShare()
+        setShare(await client.sharing.invite(origin, next, recipient))
+      }),
+    inviteOrganization: (organizationId: string) =>
+      act(async () => {
+        const next = await ensureShare()
+        setShare(await client.sharing.invite(origin, next, undefined, undefined, organizationId))
       }),
     createLink: (seconds: number) =>
       act(async () => {
-        if (share) setShare(await client.sharing.invite(origin, share, undefined, seconds))
+        const next = await ensureShare()
+        setShare(await client.sharing.invite(origin, next, undefined, seconds))
+      }),
+    setLinkAccess: (enabled: boolean, seconds = 604800) =>
+      act(async () => {
+        if (enabled) {
+          const next = await ensureShare()
+          if (
+            next.record.grants.some(
+              (grant) =>
+                !grant.userId && !grant.organizationId && (grant.expiresAt ?? 0) > Date.now(),
+            )
+          )
+            return
+          setShare(await client.sharing.invite(origin, next, undefined, seconds))
+          return
+        }
+        if (!share) return
+        let next = share
+        for (const grant of share.record.grants.filter(
+          (grant) => !grant.userId && !grant.organizationId,
+        )) {
+          next = await client.sharing.revoke(origin, next, grant.id)
+          setShare(next)
+        }
+        if (kind === 'thread' && !share.record.paused && options.current.runtime) await resume(next)
       }),
     link: (id: string) => (share ? client.sharing.link(origin, share, id) : ''),
     revoke: (id: string) =>
@@ -217,7 +263,7 @@ export function useEncryptedSharing({
         if (!share) return
         const next = await client.sharing.revoke(origin, share, id)
         setShare(next)
-        if (kind === 'thread' && !share.record.paused) await resume(next)
+        if (kind === 'thread' && !share.record.paused && options.current.runtime) await resume(next)
       }),
     pause: () =>
       act(async () => {
@@ -236,14 +282,7 @@ export function useEncryptedSharing({
         if (!share) return
         await client.sharing.remove(origin, share.record.id)
         setShare(null)
-        setSuggestions([])
         if (options.current.runtime) await options.current.runtime.stop(share.record.id)
-      }),
-    dismiss: (id: string) =>
-      act(async () => {
-        if (!share) return
-        await client.sharing.dismiss(origin, share.record.id, id)
-        setSuggestions((items) => items.filter((item) => item.id !== id))
       }),
   }
 }

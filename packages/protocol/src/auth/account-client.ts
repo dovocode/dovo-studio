@@ -11,6 +11,7 @@ import { connectionSchema, type RuntimeConnection } from '../runtime/connection/
 import { peerAddress } from '../runtime/connection/peer.js'
 import { Schema } from 'effect'
 import { SharingClient } from './sharing-client.js'
+import { peopleDirectorySchema, type PeopleAction } from './people.js'
 import { Base64Url } from 'effect/encoding'
 import {
   managedPushGrantSchema,
@@ -139,6 +140,9 @@ export class AccountClient {
     const service = decode(artifactServiceSchema, await this.request('/v1/sharing/service'))
     return artifactServiceOrigin(service.origin)
   }
+  people = async () => decode(peopleDirectorySchema, await this.request('/v1/people'))
+  updatePeople = async (action: PeopleAction) =>
+    decode(peopleDirectorySchema, await this.request('/v1/people', 'POST', action))
   private sharingGrant = async (expectedOrigin: string) => {
     const token = this.token
     if (!token || !this.state.directory || this.state.deletionPending)

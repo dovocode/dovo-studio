@@ -10,6 +10,7 @@ export const artifactSessionSchema = mutableStruct({
   audience: Schema.String,
   user: accountUserSchema,
   expiresAt: Schema.Number,
+  sharingOrganizations: Schema.optional(mutableArray(Schema.String)),
 })
 export const artifactGrantSchema = mutableStruct({
   origin: Schema.String,

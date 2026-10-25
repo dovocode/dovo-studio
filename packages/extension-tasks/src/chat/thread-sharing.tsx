@@ -13,15 +13,7 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@
 import type { AccountStorage, SharingWriterConfig } from '@dovo/protocol'
 import { SharingPanel } from './sharing-panel'
 
-export function ThreadSharing({
-  taskId,
-  title,
-  onUseSuggestion,
-}: {
-  taskId: string
-  title: string
-  onUseSuggestion: (text: string) => void
-}) {
+export function ThreadSharing({ taskId, title }: { taskId: string; title: string }) {
   const host = useStudioHost(),
     [open, setOpen] = useState(false)
   if (!host.accountStorage || !host.openExternalLink) return null
@@ -34,17 +26,9 @@ export function ThreadSharing({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogTitle>Share thread</DialogTitle>
-          <DialogDescription>Manage sharing and suggested prompts for “{title}”.</DialogDescription>
+          <DialogDescription>Choose who can access “{title}”.</DialogDescription>
           {open && (
-            <Content
-              taskId={taskId}
-              storage={host.accountStorage}
-              open={host.openExternalLink}
-              onUseSuggestion={(text) => {
-                onUseSuggestion(text)
-                setOpen(false)
-              }}
-            />
+            <Content taskId={taskId} storage={host.accountStorage} open={host.openExternalLink} />
           )}
         </DialogContent>
       </Dialog>
@@ -55,12 +39,10 @@ function Content({
   taskId,
   storage,
   open,
-  onUseSuggestion,
 }: {
   taskId: string
   storage: AccountStorage
   open: (url: string) => Promise<void>
-  onUseSuggestion: (text: string) => void
 }) {
   const account = useAccount(storage, open, useAppPreferences()),
     { request, connected, activeRuntimeId } = useWorkspace()
@@ -79,7 +61,6 @@ function Content({
       sourceId={`${activeRuntimeId}:${taskId}`}
       kind="thread"
       runtime={connected ? runtime : undefined}
-      onUseSuggestion={onUseSuggestion}
     />
   )
 }

@@ -1,5 +1,6 @@
 import { useAppPreferences } from '@dovo/studio-core'
 import { useState } from 'react'
+import { SharingPeoplePanel } from '@dovo/studio-ui/sharing-people'
 import { accountServerAddresses, responses, ACCOUNT_DIRECTORY_URL } from '@dovo/protocol'
 import { useAccount, useStudioHost, useRuntimeSources, useWorkspace } from '@dovo/studio-core'
 import { Button, ChoicePicker } from '@dovo/studio-ui'
@@ -73,6 +74,16 @@ function AccountPanelContent({
           VPN pairing stays separate and works without sign-in.
         </p>
       </div>
+      {directory && !deletionPending && (
+        <details className="border-t pt-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Friends and organisations
+          </summary>
+          <div className="pt-4">
+            <SharingPeoplePanel key={client.sessionId()} client={client} />
+          </div>
+        </details>
+      )}
       {snapshot?.owner && snapshot.internet && (
         <div className="space-y-2 border-t pt-3">
           <label className="flex items-center gap-2 text-sm font-medium">

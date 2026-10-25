@@ -4,16 +4,23 @@ import {
   decode,
   shareWriteSchema,
   newSharingKey,
+  sharingUUID,
   encryptSuggestion,
   sharingReaderKeys,
   type AccountState,
   type AccountStorage,
   type ShareRecord,
+  type SharedContent,
+  type PeopleDirectory,
+  type PeopleAction,
 } from '@dovo/protocol'
 
 /** Synthetic, in-memory adapter for the production sharing manager. Never contacts a service. */
-export function createSharingFixture() {
-  let key: string | null = newSharingKey()
+export function createSharingFixture({
+  kind = 'thread',
+  withKey = true,
+}: { kind?: 'thread' | 'artifact'; withKey?: boolean } = {}) {
+  let key: string | null = withKey ? newSharingKey() : null
   const storage: AccountStorage = {
     read: async () => null,
     write: async () => {
@@ -28,22 +35,34 @@ export function createSharingFixture() {
   let fail = false
   const sourceId = 'catalog-computer:catalog-thread',
     origin = 'https://share.example.invalid'
-  const content = {
-    kind: 'thread' as const,
-    title: 'Investigate the checkout flow',
-    messages: [
-      {
-        id: 'catalog-prompt',
-        role: 'user' as const,
-        text: 'Can we investigate why checkout stalls on mobile?',
-      },
-      {
-        id: 'catalog-answer',
-        role: 'assistant' as const,
-        text: 'The payment request is waiting for a response. I will trace its timeout and retry behavior.',
-      },
-    ],
-  }
+  const content: SharedContent =
+    kind === 'artifact'
+      ? {
+          kind: 'artifact',
+          artifact: {
+            sourceId: 'f6ce1ce1-f4c3-4000-8000-000000000001',
+            revision: 3,
+            title: 'Checkout notes',
+            format: 'markdown',
+            content: '# Checkout notes\nInspect the payment timeout.',
+          },
+        }
+      : {
+          kind: 'thread' as const,
+          title: 'Investigate the checkout flow',
+          messages: [
+            {
+              id: 'catalog-prompt',
+              role: 'user' as const,
+              text: 'Can we investigate why checkout stalls on mobile?',
+            },
+            {
+              id: 'catalog-answer',
+              role: 'assistant' as const,
+              text: 'The payment request is waiting for a response. I will trace its timeout and retry behavior.',
+            },
+          ],
+        }
   class LocalSharing extends SharingClient {
     override async request(
       _origin: string,
@@ -92,7 +111,80 @@ export function createSharingFixture() {
     }
   }
   let suggestions: ReturnType<typeof encryptSuggestion>[] = []
+  let people: PeopleDirectory = {
+    friends: [
+      { id: 'catalog-recipient', name: 'Alex', status: 'accepted' },
+      { id: 'second-recipient', name: 'Sam', status: 'accepted' },
+      { id: 'new-friend', name: 'Jamie', status: 'incoming' },
+    ],
+    organizations: [
+      {
+        id: 'd3d97ead-0292-448d-bdf8-1260fd675d10',
+        name: 'Dovo team',
+        ownerId: 'catalog-owner',
+        status: 'member',
+        members: [
+          { id: 'catalog-owner', name: 'Preview owner', status: 'member' },
+          { id: 'catalog-recipient', name: 'Alex', status: 'member' },
+        ],
+      },
+    ],
+  }
   class LocalAccount extends AccountClient {
+    override people = async () => structuredClone(people)
+    override updatePeople = async (input: PeopleAction) => {
+      if (fail) throw new Error('Simulated connection failure. Try again.')
+      switch (input.action) {
+        case 'requestFriend':
+          people.friends.push({ id: input.userId, name: input.userId, status: 'outgoing' })
+          break
+        case 'acceptFriend':
+          people.friends = people.friends.map((person) =>
+            person.id === input.userId ? { ...person, status: 'accepted' } : person,
+          )
+          break
+        case 'removeFriend':
+          people.friends = people.friends.filter((person) => person.id !== input.userId)
+          break
+        case 'createOrganization':
+          people.organizations.push({
+            id: sharingUUID(),
+            name: input.name,
+            ownerId: 'catalog-owner',
+            status: 'member',
+            members: [{ id: 'catalog-owner', name: 'Preview owner', status: 'member' }],
+          })
+          break
+        case 'deleteOrganization':
+          people.organizations = people.organizations.filter(
+            (org) => org.id !== input.organizationId,
+          )
+          break
+        case 'acceptOrganization':
+          people.organizations = people.organizations.map((org) =>
+            org.id === input.organizationId ? { ...org, status: 'member' } : org,
+          )
+          break
+        case 'inviteMember':
+          people.organizations
+            .find((org) => org.id === input.organizationId)
+            ?.members.push({
+              id: input.userId,
+              name:
+                people.friends.find((person) => person.id === input.userId)?.name ?? input.userId,
+              status: 'invited',
+            })
+          break
+        case 'removeMember':
+          people.organizations = people.organizations.map((org) =>
+            org.id === input.organizationId
+              ? { ...org, members: org.members.filter((member) => member.id !== input.userId) }
+              : org,
+          )
+          break
+      }
+      return structuredClone(people)
+    }
     override readonly sharing = new LocalSharing(
       storage,
       'https://connect.example.invalid',
@@ -135,17 +227,21 @@ export function createSharingFixture() {
     let share = await client.sharing.publish(origin, sourceId, content)
     share = await client.sharing.invite(origin, share, 'catalog-recipient')
     share = await client.sharing.invite(origin, share, undefined, 604800)
-    suggestions = [
-      encryptSuggestion(
-        {
-          shareId: share.record.id,
-          revision: share.record.packet.revision,
-          name: 'Alex',
-          text: 'Could we check whether the request is cancelled when the app goes into the background?',
-        },
-        sharingReaderKeys(share.vault).suggestionKey,
-      ),
-    ]
+    suggestions =
+      kind === 'thread'
+        ? [
+            encryptSuggestion(
+              {
+                shareId: share.record.id,
+                revision: share.record.packet.revision,
+                name: 'Alex',
+                text: 'Could we check whether the request is cancelled when the app goes into the background?',
+              },
+              sharingReaderKeys(share.vault).suggestionKey,
+            ),
+          ]
+        : []
+    if (kind !== 'thread') return
     const resumed = await client.sharing.setPaused(origin, share, false)
     enabled = true
     // Keep fixture identity and permissions local; these values never authorize a real service.
@@ -155,10 +251,14 @@ export function createSharingFixture() {
     client,
     runtime,
     sourceId,
+    content,
     ready,
     fail: (value: boolean) => {
       fail = value
     },
     records,
+    forgetKey: () => {
+      key = null
+    },
   }
 }

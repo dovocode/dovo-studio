@@ -188,17 +188,29 @@ export class SharingClient {
     this.changed()
     return { ...share, record: saved }
   }
-  async invite(origin: string, share: OpenShare, userId?: string, seconds = 604800) {
+  async invite(
+    origin: string,
+    share: OpenShare,
+    userId?: string,
+    seconds = 604800,
+    organizationId?: string,
+  ) {
     const next = await this.refresh(origin, share.record.id),
       id = sharingUUID(),
       key = newSharingKey(),
-      token = userId ? undefined : newSharingKey()
+      token = userId || organizationId ? undefined : newSharingKey()
     if (userId && next.record.grants.some((grant) => grant.userId === userId.trim()))
       throw new Error('This account is already invited')
+    if (
+      organizationId &&
+      next.record.grants.some((grant) => grant.organizationId === organizationId)
+    )
+      throw new Error('This organisation already has access')
     next.vault.grants.push({ id, key, token })
     next.record.grants.push({
       id,
       userId: userId?.trim(),
+      organizationId,
       tokenHash: token ? sharingHash(token) : undefined,
       expiresAt: token ? Date.now() + seconds * 1000 : undefined,
       box: encryptSharing(sharingReaderKeys(next.vault), key),

@@ -59,18 +59,17 @@ export class EncryptedShareStore {
     if (
       new Set(record.grants.map((grant) => grant.id)).size !== record.grants.length ||
       record.grants.some((grant) =>
-        grant.userId
-          ? !!grant.tokenHash || !!grant.expiresAt
+        grant.userId || grant.organizationId
+          ? !!grant.tokenHash || !!grant.expiresAt || (!!grant.userId && !!grant.organizationId)
           : !grant.tokenHash ||
             !grant.expiresAt ||
-            grant.expiresAt <= this.artifacts.now() ||
             grant.expiresAt > this.artifacts.now() + 30 * 86400000,
       )
     )
       throw new ShareError(400, 'Invalid sharing permissions')
     if (
-      record.grants.filter((grant) => grant.userId).length > 100 ||
-      record.grants.filter((grant) => !grant.userId).length > 10
+      record.grants.filter((grant) => grant.userId || grant.organizationId).length > 100 ||
+      record.grants.filter((grant) => !grant.userId && !grant.organizationId).length > 10
     )
       throw new ShareError(400, 'Sharing limit reached')
     if (!verifySharePacket(record.id, record.packet, record.signingKey))
@@ -164,16 +163,24 @@ export class EncryptedShareStore {
       throw error
     }
   }
-  read(id: string, access: string, user?: string, token?: string) {
+  read(
+    id: string,
+    access: string,
+    user?: string,
+    token?: string,
+    organizations: readonly string[] = [],
+  ) {
     const record = this.get(id).record
     const grant = record.grants.find(
       (grant) =>
         grant.id === access &&
         (grant.userId
           ? grant.userId === user
-          : !!token &&
-            grant.tokenHash === digest(token) &&
-            (grant.expiresAt ?? 0) > this.artifacts.now()),
+          : grant.organizationId
+            ? !!user && organizations.includes(grant.organizationId)
+            : !!token &&
+              grant.tokenHash === digest(token) &&
+              (grant.expiresAt ?? 0) > this.artifacts.now()),
     )
     if (!grant) throw unavailable()
     return {

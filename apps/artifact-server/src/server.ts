@@ -286,6 +286,19 @@ export function createArtifactServer(options: {
         if (input.record.id !== id) throw new ShareError(400, 'Sharing ID does not match')
         const current = await identity(req)
         if (current?.user.id !== session.user.id) throw new ShareError(401, 'Sharing cancelled')
+        const previous = input.expectedVersion > 0 ? shares.own(id, session.user.id) : undefined
+        if (
+          input.record.grants.some(
+            (grant) =>
+              grant.organizationId &&
+              !current?.sharingOrganizations?.includes(grant.organizationId) &&
+              !previous?.grants.some(
+                (existing) =>
+                  existing.id === grant.id && existing.organizationId === grant.organizationId,
+              ),
+          )
+        )
+          throw new ShareError(403, 'Join the organisation before sharing with it')
         return json(res, 200, shares.save(session.user.id, input.expectedVersion, input.record))
       }
       const saved = shares.get(id)
@@ -322,13 +335,20 @@ export function createArtifactServer(options: {
           url.searchParams.get('access') ?? '',
           session?.user.id,
           token,
+          session?.sharingOrganizations,
         )
         if (req.method === 'GET') return json(res, 200, viewed)
         limit('suggestion:' + id + ':' + (req.socket.remoteAddress ?? ''), 5)
         const input = decode(encryptedSuggestionSchema, await body(req, 100000))
         // Revocation during upload must also block the write.
         const current = await identity(req, false)
-        shares.read(id, url.searchParams.get('access') ?? '', current?.user.id, token)
+        shares.read(
+          id,
+          url.searchParams.get('access') ?? '',
+          current?.user.id,
+          token,
+          current?.sharingOrganizations,
+        )
         shares.suggest(id, input)
         return json(res, 200, { ok: true })
       }

@@ -372,3 +372,46 @@ it('serves owner-proven account internet registration and ciphertext setup throu
     ).status,
   ).toBe(200)
 })
+
+it('exposes friends and organisations only to full account sessions and validates mutations', async () => {
+  const f = await fixture()
+  const a = f.store.createLogin(),
+    b = f.store.createLogin()
+  f.store.approve(a.login, { id: 'alice', name: 'Alice' })
+  f.store.approve(b.login, { id: 'bob', name: 'Bob' })
+  const headers = { Authorization: 'Bearer ' + a.token, 'Content-Type': 'application/json' }
+  expect((await f.request('/v1/people')).status).toBe(401)
+  expect(
+    (
+      await f.request('/v1/people', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'createOrganization', name: '' }),
+      })
+    ).status,
+  ).toBe(400)
+  expect(
+    (
+      await f.request('/v1/people', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'requestFriend', userId: 'bob' }),
+      })
+    ).status,
+  ).toBe(200)
+  expect(
+    await (
+      await f.request('/v1/people', { headers: { Authorization: 'Bearer ' + b.token } })
+    ).json(),
+  ).toEqual({ friends: [{ id: 'alice', name: 'Alice', status: 'incoming' }], organizations: [] })
+  const grant = f.store.artifactGrant(a.token, 'https://share.test')!
+  expect(
+    (
+      await f.request('/v1/people', {
+        method: 'POST',
+        headers: { ...headers, Authorization: 'Bearer ' + grant.token },
+        body: JSON.stringify({ action: 'createOrganization', name: 'Forbidden' }),
+      })
+    ).status,
+  ).toBe(401)
+})

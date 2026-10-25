@@ -9,12 +9,14 @@ import { Text } from '../../ui/content/text'
 import { SettingsChoice as Choice } from '../../screens/settings-controls'
 import { SettingsAction as Action } from '../../screens/settings-controls'
 import { useSettingsTheme } from '../../screens/settings-theme'
+import { SharingPeoplePanel } from '../../ui/content/sharing-people'
 export function AccountPanel({ onPair }: { onPair: (address: string) => void }) {
   const { client, directory, login, busy, error, loaded, deletionPending } = useMobileAccount()
   const { overviews, connect } = useRuntime()
   const [connecting, setConnecting] = useState<string | null>(null)
   const [connectionError, setConnectionError] = useState('')
   const [linkedOpen, setLinkedOpen] = useState(false)
+  const [peopleOpen, setPeopleOpen] = useState(false)
   useEffect(() => setLinkedOpen(false), [directory?.user.id])
   const attempt = useRef<AbortController | null>(null)
   useEffect(() => () => attempt.current?.abort(), [])
@@ -111,6 +113,16 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
       )}
       {!!error && (
         <Action label="Retry account" disabled={busy} onPress={() => void client.load()} />
+      )}
+      {directory && !deletionPending && (
+        <>
+          <Action
+            secondary
+            label={peopleOpen ? 'Hide friends and organisations' : 'Friends and organisations'}
+            onPress={() => setPeopleOpen((value) => !value)}
+          />
+          {peopleOpen && <SharingPeoplePanel key={client.sessionId()} />}
+        </>
       )}
       {directory && !deletionPending && (
         <>
