@@ -56,7 +56,7 @@ const built = await build({
                   ? 'export const PhysicalControls=()=>null;'
                   : `
 import {createContext,createElement,useContext,useState,useSyncExternalStore} from 'react';
-import {resolveSettingsTarget} from '@dovo/protocol';
+import {resolveSettingsTarget,decode,browserCommandSchema} from '@dovo/protocol';
 import {Effect} from 'effect';
 export * from '@dovo/protocol';
 export {updateTask,createTask} from '${root}packages/studio-core/src/workspace/actions.ts';
@@ -70,13 +70,13 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
-const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
+const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
 const task={id:'target',title:'Destination thread',repositoryId:'repo',agentId:'',status:'draft',draft:'Existing draft',createdAt:'2026-10-25T00:00:00Z',messages:[],files:[],example:false};
 const snapshot={runtimeHost:'LAN runtime',workspace:{tasks:[task],repositories:[{id:'repo',name:'Project'}],agents:[]}};
-const otherProfile={id:'mac',name:'Mac Studio',connection:{address:'http://mac.local',token:'paired-mac'}};
+const otherProfile={id:'mac',name:'Mac Studio',connection:{address:'http://mac.local',token:'paired-mac-token-at-least-20-characters'}};
 const otherSnapshot={...snapshot,workspace:{...snapshot.workspace,tasks:[{...task,id:'remote-target',title:'Mac thread',draft:'Remote draft'}]}};
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot},{profile:otherProfile,name:otherProfile.name,scope:'mac',connected:true,snapshot:otherSnapshot}];
 export const useRuntimeSources=()=>sources;
@@ -1304,7 +1304,14 @@ try {
           { ...base, id: 'unused', title: 'Unused', url: 'http://localhost/unused' },
           { ...base, id: 'pinned', title: 'Pinned', pinned: true },
           { ...base, id: 'media', title: 'Media' },
-          { ...base, id: 'remote-media', title: 'Remote media', kind: 'remote', runtimeId: 'mac' },
+          {
+            ...base,
+            id: 'remote-media',
+            title: 'Remote media '.repeat(50),
+            url: 'http://remote.local/' + 'x'.repeat(9000),
+            kind: 'remote',
+            runtimeId: 'mac',
+          },
         ],
       }),
     )
@@ -1312,8 +1319,47 @@ try {
     window.activeMedia = ['remote-media']
   })
   await lifecycle.addScriptTag({ content: built.outputFiles[0].text })
+  await lifecycle.waitForFunction(
+    () =>
+      window.calls.some(
+        (c) =>
+          c.action === 'remote-media-sources' && c.sources.some((s) => s.tabId === 'remote-media'),
+      ) || !!document.querySelector('[role="alert"]'),
+  )
+  assert.deepEqual(
+    await lifecycle.getByRole('alert').allTextContents(),
+    [],
+    'Remote sharing metadata passes native validation',
+  )
+  const remoteSharingSource = await lifecycle.evaluate(() =>
+    window.calls
+      .filter((c) => c.action === 'remote-media-sources')
+      .at(-1)
+      .sources.find((s) => s.tabId === 'remote-media'),
+  )
+  assert.equal(
+    remoteSharingSource.title,
+    'Remote media '.repeat(50).slice(0, 200),
+    'Long page titles must fit the native sharing boundary',
+  )
+  assert.equal(
+    remoteSharingSource.url,
+    ('http://remote.local/' + 'x'.repeat(9000)).slice(0, 8192),
+    'Descriptive URLs fit the command without changing the shared tab',
+  )
+  assert.equal(remoteSharingSource.profileId, 'default')
+  assert.equal(remoteSharingSource.connection.address, 'http://mac.local')
   const lifecycleState = () =>
     lifecycle.evaluate(() => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')))
+  assert.equal(
+    (await lifecycleState()).tabs.find((t) => t.id === 'remote-media').title,
+    'Remote media '.repeat(50),
+    'Only sharing labels are shortened',
+  )
+  assert.equal(
+    (await lifecycleState()).tabs.find((t) => t.id === 'remote-media').url,
+    'http://remote.local/' + 'x'.repeat(9000),
+  )
   await lifecycle.getByRole('button', { name: 'Current', exact: false }).first().waitFor()
   await lifecycle.clock.fastForward(120000)
   assert.equal(

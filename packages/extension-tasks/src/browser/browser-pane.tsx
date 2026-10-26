@@ -276,8 +276,9 @@ function BrowserContent({
               key: nativeKey(tab.id),
               tabId: tab.id,
               profileId: tab.profileId,
-              title: tab.title,
-              url: tab.url,
+              // Picker metadata must fit the native command without changing the page.
+              title: tab.title.slice(0, 200),
+              url: tab.url.slice(0, 8192),
               connection: owner.profile.connection,
             },
           ]
