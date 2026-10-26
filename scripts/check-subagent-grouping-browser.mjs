@@ -25,7 +25,7 @@ export const Text=({children,accessibilityLabel})=><span aria-label={accessibili
 export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;
 export const ScrollView=View;export const Image=()=>null;export const useWindowDimensions=()=>({width:390,height:844,fontScale:1,scale:3});
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID})=><button data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} disabled={disabled} onClick={onPress} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</button>;
-export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent})=><div>{ListHeaderComponent}{data.length?data.map((item,i)=><div key={i}>{renderItem({item})}</div>):ListEmptyComponent}</div>;
+export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent,ListFooterComponent})=><div>{ListHeaderComponent}{data.length?data.map((item,i)=><div key={i}>{renderItem({item})}</div>):ListEmptyComponent}{ListFooterComponent}</div>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const SettingsAction=Action;export const SettingsSearchField=SearchField;export const SettingsChoice=({label,value,items,onChange})=><label>{label}<select aria-label={label} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
