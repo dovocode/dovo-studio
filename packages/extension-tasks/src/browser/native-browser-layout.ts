@@ -17,6 +17,8 @@ export function nativeBrowserBounds(slot: HTMLElement) {
       top = Math.max(top, bounds.top + parent.clientTop)
       bottom = Math.min(bottom, bounds.top + parent.clientTop + parent.clientHeight)
     }
+    // A floating preview escapes the browser pane's scrolling/clipping containers.
+    if (parent.matches('[data-preview-overlay="true"]') && style.position === 'fixed') break
   }
   if (right - left < 1 || bottom - top < 1) return
   return new DOMRect(left, top, right - left, bottom - top)

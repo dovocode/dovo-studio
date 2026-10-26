@@ -78,6 +78,7 @@ import { RemoteBrowser, type RemoteBrowserControls } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
 import { DeviceDeployment } from './device-deployment'
+import { FloatingPreview, type PreviewPlacement } from '../detail/floating-preview'
 import { deviceHostSettingsResultSchema } from '@dovo/protocol'
 // A popped-out thread has its own renderer and must never share main-window tabs.
 const threadBrowserWindowId = randomUUID()
@@ -87,7 +88,9 @@ const savedTabs = new Map<string, BrowserTabs>()
 // Extension-created pages already have a native view. Keep its identity for this renderer session.
 const nativeTabKeys = new Map<string, string>()
 const restorableTab = (tab: BrowserTab) =>
-  !isPrivateBrowserProfile(tab.profileId) && (!tab.url || /^https?:\/\//i.test(tab.url))
+  !tab.previewOf &&
+  !isPrivateBrowserProfile(tab.profileId) &&
+  (!tab.url || /^https?:\/\//i.test(tab.url))
 export function BrowserPane({
   taskId,
   onClose,
@@ -224,6 +227,8 @@ function BrowserContent({
   const currentTabs = useRef(tabs)
   currentTabs.current = tabs
   const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0]
+  const regularTabs = tabs.filter((tab) => !tab.previewOf)
+  const [previewPlacement, setPreviewPlacement] = useApplicationState<PreviewPlacement>('floating')
   const selectedRuntime = selectedTab.runtimeId
     ? runtimes.find((entry) => entry.profile.id === selectedTab.runtimeId)
     : undefined
@@ -337,6 +342,14 @@ function BrowserContent({
     try {
       // Extension pages require their existing native view; never restore stale extension URLs.
       const restorable = tabs.filter(restorableTab)
+      let source = selectedTab
+      const seen = new Set<string>()
+      while (source.previewOf && !seen.has(source.id)) {
+        seen.add(source.id)
+        const parent = tabs.find((tab) => tab.id === source.previewOf)
+        if (!parent) break
+        source = parent
+      }
       const fallback: BrowserTab = {
         id: 'empty',
         url: '',
@@ -350,7 +363,9 @@ function BrowserContent({
           tabs: restorable.length ? restorable : [fallback],
           active: restorable.some((tab) => tab.id === activeTab)
             ? activeTab
-            : (restorable[0]?.id ?? fallback.id),
+            : (restorable.find((tab) => tab.id === source.id)?.id ??
+              restorable[0]?.id ??
+              fallback.id),
           closed: closed.filter(restorableTab),
         },
         storageWindowId,
@@ -409,6 +424,7 @@ function BrowserContent({
     selectedTab.kind,
     selectedTab.profileId,
     selectedTab.runtimeId,
+    selectedTab.previewOf,
   ])
   const [turnReload, setTurnReload] = useApplicationState(0)
   const latestTurn = snapshot?.workspace.tasks.find((task) => task.id === taskId)?.turns?.at(-1)
@@ -565,6 +581,7 @@ function BrowserContent({
         Effect.sync(() => {
           if (!alive || !state) return
           if (shared) {
+            const previousSelected = currentTabs.current.find((tab) => tab.id === activeTab)
             const closedKeys = new Set(state.closedTabs ?? [])
             const closedIds = new Set(
               currentTabs.current
@@ -579,8 +596,11 @@ function BrowserContent({
                 /^chrome-extension:\/\/[a-p]{32}\//.test(tab.url),
             )
             const capacity = Math.max(0, 100 - remaining.length)
+            const identities = new Map(
+              additions.slice(0, capacity).map((tab) => [tab.key, randomUUID()]),
+            )
             const adopted = additions.slice(0, capacity).map((tab) => {
-              const id = randomUUID()
+              const id = identities.get(tab.key)!
               nativeTabKeys.set(`${scope}:${id}`, tab.key)
               return {
                 id,
@@ -589,6 +609,11 @@ function BrowserContent({
                 kind: 'web' as const,
                 profileId: tab.profileId,
                 visitedAt: 0,
+                previewOf: tab.openerKey
+                  ? (identities.get(tab.openerKey) ??
+                    currentTabs.current.find((item) => nativeKey(item.id) === tab.openerKey)?.id ??
+                    activeTab)
+                  : undefined,
               }
             })
             const rejected = (state.createdTabs ?? []).filter(
@@ -614,18 +639,25 @@ function BrowserContent({
                 const next = [...kept, ...adopted].slice(0, 100)
                 return next.length ? next : [fallback]
               })
-              if (closedKeys.has(browserKey)) selectTab(currentTabs.current[0])
+              if (closedKeys.has(browserKey))
+                selectTab(
+                  currentTabs.current.find((tab) => tab.id === previousSelected?.previewOf) ??
+                    currentTabs.current[0],
+                )
               let foreground = -1
               additions.slice(0, capacity).forEach((tab, index) => {
-                if (tab.active) foreground = index
+                if (tab.active || tab.openerKey) foreground = index
               })
-              if (foreground >= 0) selectTab(adopted[foreground])
+              if (foreground >= 0) {
+                setPreviewPlacement('floating')
+                selectTab(adopted[foreground])
+              }
               for (const [key, value] of nativeTabKeys)
                 if (closedKeys.has(value)) nativeTabKeys.delete(key)
             }
             if (
               closedKeys.has(browserKey) ||
-              additions.slice(0, capacity).some((tab) => tab.active)
+              additions.slice(0, capacity).some((tab) => tab.active || tab.openerKey)
             )
               return
           }
@@ -636,22 +668,28 @@ function BrowserContent({
           )
             return
           if (shared && state.openedLinks?.length) {
-            // Page-created tabs open in the background and share one bounded update.
-            // Polling closes over older state, so enforce the cap against current tabs.
             const links = state.openedLinks
-            setTabs((previous) => [
-              ...previous,
-              ...links.slice(0, Math.max(0, 100 - previous.length)).map((target) => ({
+            const additions = links
+              .slice(0, Math.max(0, 100 - currentTabs.current.length))
+              .map((target) => ({
                 id: randomUUID(),
                 url: target,
                 title: '',
                 kind: 'web' as const,
                 profileId,
                 visitedAt: 0,
-              })),
-            ])
+                previewOf: activeTab,
+              }))
+            if (additions.length) {
+              setTabs((previous) => [...previous, ...additions])
+              setPreviewPlacement('floating')
+              selectTab(additions[additions.length - 1])
+              return
+            }
           }
           setHistory({ ...state, title: state.title ?? '', cdp: state.cdp })
+          // window.open('', name) can navigate after the preview is adopted.
+          if (!url && /^https?:\/\//i.test(state.url)) setUrl(state.url)
           if (!editing.current) setInput(state.url === 'about:blank' ? '' : state.url)
           addresses.set(scope, state.url)
           setTabs((previous) =>
@@ -840,10 +878,31 @@ function BrowserContent({
       }
       await loadDevices()
     })
+  const disposeTab = async (tab: BrowserTab) => {
+    if (tab.kind === 'remote') {
+      const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
+      if (shared && !owner?.connected)
+        throw new Error('This tab’s computer is offline. Its session will expire automatically.')
+      const call: typeof request =
+        shared && owner
+          ? (path, input, schema, method) =>
+              store.readRuntime(owner.profile, path, input, schema, method)
+          : request
+      await call(
+        '/api/previews/browser/close',
+        { taskId, tabId: tab.id, profileId: tab.profileId },
+        responses.ok,
+      )
+    } else if (browser) {
+      const key = nativeKey(tab.id)
+      nativeTabKeys.delete(`${scope}:${tab.id}`)
+      await browser({ action: 'close', key })
+    }
+  }
   const closeTab = (tab: BrowserTab) => {
     if (tab.pinned) return
     if (shared && restorableTab(tab)) setClosed((previous) => [tab, ...previous].slice(0, 20))
-    const remaining = tabs.filter((item) => item.id !== tab.id)
+    const remaining = currentTabs.current.filter((item) => item.id !== tab.id)
     const next: BrowserTab[] = remaining.length
       ? remaining
       : [
@@ -856,30 +915,32 @@ function BrowserContent({
             profileId: 'default',
           },
         ]
+    currentTabs.current = next
     setTabs(next)
-    if (activeTab === tab.id) selectTab(next[Math.min(tabs.indexOf(tab), next.length - 1)])
-    if (tab.kind === 'remote')
-      void act(() => {
-        const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
-        if (shared && !owner?.connected)
-          throw new Error('This tab’s computer is offline. Its session will expire automatically.')
-        const call: typeof request =
-          shared && owner
-            ? (path, input, schema, method) =>
-                store.readRuntime(owner.profile, path, input, schema, method)
-            : request
-        return call(
-          '/api/previews/browser/close',
-          { taskId, tabId: tab.id, profileId: tab.profileId },
-          responses.ok,
-        )
-      })
-    else if (browser) {
-      const key = nativeKey(tab.id)
-      nativeTabKeys.delete(`${scope}:${tab.id}`)
-      void act(() => browser({ action: 'close', key }))
-    }
+    if (activeTab === tab.id)
+      selectTab(
+        next.find((item) => item.id === tab.previewOf) ??
+          next[Math.min(tabs.indexOf(tab), next.length - 1)],
+      )
+    void disposeTab(tab).catch((cause) => setError(`Could not close tab: ${String(cause)}`))
   }
+  // Only the active preview's return chain stays alive. Switching tabs or promoting it
+  // disposes hidden previews, without reloading the retained page.
+  useEffect(() => {
+    const retained = new Set<string>()
+    let tab = tabs.find((item) => item.id === activeTab)
+    while (tab && !retained.has(tab.id)) {
+      retained.add(tab.id)
+      tab = tabs.find((item) => item.id === tab?.previewOf)
+    }
+    const discarded = tabs.filter((tab) => tab.previewOf && !retained.has(tab.id))
+    if (!discarded.length) return
+    const ids = new Set(discarded.map((tab) => tab.id))
+    currentTabs.current = currentTabs.current.filter((tab) => !ids.has(tab.id))
+    setTabs((previous) => previous.filter((tab) => !ids.has(tab.id)))
+    for (const tab of discarded)
+      void disposeTab(tab).catch((cause) => setError(`Could not close preview: ${String(cause)}`))
+  }, [tabs, activeTab])
   const openSavedPage = (tab: BrowserTab) => {
     const existing = tabs.find((item) => browserPageKey(item) === browserPageKey(tab))
     if (existing) selectTab(existing)
@@ -1301,7 +1362,9 @@ function BrowserContent({
             onClick={() =>
               setTabs((previous) =>
                 previous.map((tab) =>
-                  tab.id === activeTab ? { ...tab, pinned: !tab.pinned } : tab,
+                  tab.id === activeTab
+                    ? { ...tab, pinned: !tab.pinned, previewOf: undefined }
+                    : tab,
                 ),
               )
             }
@@ -1522,6 +1585,22 @@ function BrowserContent({
   return (
     <BrowserLayout
       devices={initialMode === 'devices'}
+      preview={
+        selectedTab.previewOf
+          ? {
+              placement: previewPlacement,
+              onPlacementChange: (placement) =>
+                placement === 'inline' ? closeTab(selectedTab) : setPreviewPlacement(placement),
+              onClose: () => closeTab(selectedTab),
+              onPromote: () =>
+                setTabs((previous) =>
+                  previous.map((tab) =>
+                    tab.id === activeTab ? { ...tab, previewOf: undefined } : tab,
+                  ),
+                ),
+            }
+          : undefined
+      }
       sidebar={
         shared ? (
           <aside
@@ -1651,13 +1730,13 @@ function BrowserContent({
         </Dialog>
       )}
 
-      {!shared && initialMode !== 'devices' && tabs.length > 1 && (
+      {!shared && initialMode !== 'devices' && regularTabs.length > 1 && (
         <div
           role="tablist"
           aria-label="Browser tabs"
           className="flex shrink-0 items-center gap-1 overflow-x-auto border-b bg-sidebar/60 px-2 pt-2 pb-1"
         >
-          {tabs.map((tab) => (
+          {regularTabs.map((tab) => (
             <div
               key={tab.id}
               className={`flex min-w-0 shrink-0 items-center rounded-lg border ${activeTab === tab.id ? 'border-border/60 bg-background shadow-sm' : 'border-transparent'}`}
@@ -1675,12 +1754,12 @@ function BrowserContent({
                     event.key === 'Home'
                       ? 0
                       : event.key === 'End'
-                        ? tabs.length - 1
-                        : (tabs.indexOf(tab) +
+                        ? regularTabs.length - 1
+                        : (regularTabs.indexOf(tab) +
                             (event.key === 'ArrowRight' ? 1 : -1) +
-                            tabs.length) %
-                          tabs.length
-                  selectTab(tabs[index])
+                            regularTabs.length) %
+                          regularTabs.length
+                  selectTab(regularTabs[index])
                   const target = event.currentTarget
                     .closest('[role="tablist"]')
                     ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[index]
@@ -1802,13 +1881,17 @@ function BrowserContent({
                       url: child.url,
                       title: '',
                       pinned: false,
+                      previewOf: tab.id,
                     }))
                     currentTabs.current = [...currentTabs.current, ...adopted]
                     setTabs((previous) => [
                       ...previous,
                       ...adopted.filter((child) => !previous.some((item) => item.id === child.id)),
                     ])
-                    if (adopted.length) selectTab(adopted[adopted.length - 1])
+                    if (adopted.length) {
+                      setPreviewPlacement('floating')
+                      selectTab(adopted[adopted.length - 1])
+                    }
                   }
                   if (activeTab === tab.id && !additions.length) {
                     setHistory({ ...state, cdp: undefined })
@@ -2036,10 +2119,17 @@ function BrowserLayout({
   sidebar,
   devices,
   children,
+  preview,
 }: {
   sidebar: React.ReactNode
   devices: boolean
   children: React.ReactNode
+  preview?: {
+    placement: PreviewPlacement
+    onPlacementChange: (placement: PreviewPlacement) => void
+    onClose: () => void
+    onPromote: () => void
+  }
 }) {
   const sidebarState = useNavigationSidebar()
   return (
@@ -2048,7 +2138,24 @@ function BrowserLayout({
       aria-label={devices ? 'Device previews' : 'Browser previews'}
     >
       {!sidebarState?.collapsed && sidebar}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+      <FloatingPreview
+        title={preview ? 'Link' : 'Browser'}
+        placement={preview?.placement ?? 'inline'}
+        onPlacementChange={(placement) => preview?.onPlacementChange(placement)}
+        onClose={preview?.onClose}
+        returnLabel="Back to tab"
+        inlineClassName="min-w-0 flex-1"
+        hideInlineHeader
+        actions={
+          preview && (
+            <Button size="sm" variant="ghost" onClick={preview.onPromote}>
+              Keep as tab
+            </Button>
+          )
+        }
+      >
+        {children}
+      </FloatingPreview>
     </section>
   )
 }

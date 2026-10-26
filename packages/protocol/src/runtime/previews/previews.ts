@@ -350,10 +350,17 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       /** HTTP(S) new-tab requests from a workspace browser view, drained by `status`. */
       openedLinks?: string[]
       /**
-       * Hidden tabs an extension opened in this window. Adopt each with `show` using its key and
-       * exact URL; drained by any `status` in the window.
+       * Native pages opened by a website or extension. Adopt each with `show` using its key and
+       * exact URL. Website pages include their opener key for temporary previews.
+       * Drained by any `status` in the window.
        */
-      createdTabs?: { key: string; url: string; profileId: string; active?: boolean }[]
+      createdTabs?: {
+        key: string
+        url: string
+        profileId: string
+        active?: boolean
+        openerKey?: string
+      }[]
       /** Keys of tabs an extension closed in this window; drained by any `status` in the window. */
       closedTabs?: string[]
       /** Pending media requests in this window; a snapshot, repeated until answered or expired. */

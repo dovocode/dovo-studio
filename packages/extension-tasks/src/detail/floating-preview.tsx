@@ -30,6 +30,7 @@ export function FloatingPreview({
   children,
   inlineClassName = 'h-96',
   returnLabel = 'Return to thread',
+  hideInlineHeader = false,
 }: {
   title: string
   placement: PreviewPlacement
@@ -39,6 +40,7 @@ export function FloatingPreview({
   children: ReactNode
   inlineClassName?: string
   returnLabel?: string
+  hideInlineHeader?: boolean
 }) {
   const [frame, setFrame] = useState<Frame>(() =>
     typeof window === 'undefined'
@@ -83,7 +85,13 @@ export function FloatingPreview({
         }
       }}
     >
-      <header className="flex h-10 shrink-0 items-center gap-1 rounded-t-[inherit] border-b px-2">
+      <header
+        className={
+          hideInlineHeader && placement === 'inline'
+            ? 'hidden'
+            : 'flex h-10 shrink-0 items-center gap-1 rounded-t-[inherit] border-b px-2'
+        }
+      >
         {floating && (
           <button
             type="button"

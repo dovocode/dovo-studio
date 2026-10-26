@@ -18,6 +18,7 @@ const common = {
   title: Schema.String.pipe(Schema.check(Schema.isMaxLength(500))),
   visitedAt: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   pinned: Schema.optional(Schema.Boolean),
+  previewOf: Schema.optional(short),
 }
 const tabSchema = Schema.Union([
   mutableStruct({
@@ -69,15 +70,21 @@ export function initialBrowserState(id: string): BrowserState {
   }
 }
 export function persistableBrowserState(state: BrowserState, replacementId: string): BrowserState {
-  const keep = (tab: BrowserTab) => !isPrivateBrowserProfile(tab.profileId)
+  const keep = (tab: BrowserTab) => !tab.previewOf && !isPrivateBrowserProfile(tab.profileId)
   const tabs = state.tabs.filter(keep)
   const fallback = initialBrowserState(replacementId)
+  let selected = state.tabs.find((tab) => tab.id === state.active)
+  const seen = new Set<string>()
+  while (selected?.previewOf && !seen.has(selected.id)) {
+    seen.add(selected.id)
+    selected = state.tabs.find((tab) => tab.id === selected?.previewOf)
+  }
   return {
     ...state,
     tabs: tabs.length ? tabs : fallback.tabs,
     active: tabs.some((tab) => tab.id === state.active)
       ? state.active
-      : (tabs[0]?.id ?? fallback.active),
+      : (tabs.find((tab) => tab.id === selected?.id)?.id ?? tabs[0]?.id ?? fallback.active),
     bookmarks: state.bookmarks.filter(keep),
     history: state.history.filter(keep),
     closed: state.closed.filter(keep),
@@ -86,11 +93,28 @@ export function persistableBrowserState(state: BrowserState, replacementId: stri
 export const pageKey = (tab: BrowserTab) =>
   JSON.stringify([tab.url, tab.kind, tab.kind === 'remote' ? tab.runtimeId : '', tab.profileId])
 export const recentTabs = (tabs: BrowserTab[]) =>
-  [...tabs].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.visitedAt - a.visitedAt)
+  tabs
+    .filter((tab) => !tab.previewOf)
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.visitedAt - a.visitedAt)
+export function promoteTab(state: BrowserState, id: string): BrowserState {
+  const tab = state.tabs.find((tab) => tab.id === id)
+  if (!tab?.previewOf) return state
+  const next = { ...tab, previewOf: undefined }
+  return {
+    ...state,
+    tabs: state.tabs.map((tab) => (tab.id === id ? next : tab)),
+    history:
+      next.url && !isPrivateBrowserProfile(next.profileId)
+        ? [next, ...state.history.filter((item) => pageKey(item) !== pageKey(next))].slice(0, 200)
+        : state.history,
+  }
+}
 export function togglePinnedTab(state: BrowserState, id: string): BrowserState {
   return {
     ...state,
-    tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, pinned: !tab.pinned } : tab)),
+    tabs: state.tabs.map((tab) =>
+      tab.id === id ? { ...tab, pinned: !tab.pinned, previewOf: undefined } : tab,
+    ),
   }
 }
 export function recordPage(
@@ -114,9 +138,10 @@ export function recordPage(
   return {
     ...state,
     tabs: state.tabs.map((tab) => (tab.id === id ? next : tab)),
-    history: isPrivateBrowserProfile(tab.profileId)
-      ? state.history
-      : [next, ...state.history.filter((item) => pageKey(item) !== pageKey(next))].slice(0, 200),
+    history:
+      tab.previewOf || isPrivateBrowserProfile(tab.profileId)
+        ? state.history
+        : [next, ...state.history.filter((item) => pageKey(item) !== pageKey(next))].slice(0, 200),
   }
 }
 export function visitTab(state: BrowserState, id: string): BrowserState {
@@ -139,14 +164,20 @@ export function closeTab(state: BrowserState, id: string, replacementId: string)
   return {
     ...state,
     tabs: tabs.length ? tabs : [fallback],
-    active: state.active === id ? (recentTabs(tabs)[0]?.id ?? fallback.id) : state.active,
-    closed: isPrivateBrowserProfile(closed.profileId)
-      ? state.closed
-      : [closed, ...state.closed].slice(0, 20),
+    active:
+      state.active === id
+        ? (tabs.find((tab) => tab.id === closed.previewOf)?.id ??
+          recentTabs(tabs)[0]?.id ??
+          fallback.id)
+        : state.active,
+    closed:
+      closed.previewOf || isPrivateBrowserProfile(closed.profileId)
+        ? state.closed
+        : [closed, ...state.closed].slice(0, 20),
   }
 }
 export function toggleBookmark(state: BrowserState, tab: BrowserTab): BrowserState {
-  if (isPrivateBrowserProfile(tab.profileId)) return state
+  if (tab.previewOf || isPrivateBrowserProfile(tab.profileId)) return state
   const exists = state.bookmarks.some((item) => pageKey(item) === pageKey(tab))
   if (!exists && state.bookmarks.length >= 100)
     throw new Error('Remove a bookmark before saving more than 100 pages.')
@@ -198,10 +229,16 @@ export function appendBrowserDraft(draft: string, selection: BrowserSelection) {
   return [draft, source + quote].filter(Boolean).join('\n\n')
 }
 
-/** Native page-created tabs stay in the background and inherit the native profile. */
+/** Page-created tabs retain the native page and open as a temporary preview of their opener. */
 export function adoptNativeTab(
   state: BrowserState,
-  page: { tabId: string; profileId: string; url: string | null; title: string },
+  page: {
+    tabId: string
+    profileId: string
+    url: string | null
+    title: string
+    openerTabId?: string | null
+  },
   now = Date.now(),
 ): BrowserState {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(page.tabId) || !/^[A-Za-z0-9_-]{1,64}$/.test(page.profileId))
@@ -216,7 +253,11 @@ export function adoptNativeTab(
     url: page.url && /^https?:\/\//i.test(page.url) ? previewUrl(page.url) : '',
     title: page.title.slice(0, 500),
     visitedAt: now,
+    previewOf:
+      page.openerTabId && state.tabs.some((tab) => tab.id === page.openerTabId)
+        ? page.openerTabId
+        : undefined,
   }
   if (tab.url.length > 4096) throw new Error('Page address is too long.')
-  return { ...state, tabs: [...state.tabs, tab] }
+  return { ...state, tabs: [...state.tabs, tab], active: tab.previewOf ? tab.id : state.active }
 }

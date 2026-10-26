@@ -39,6 +39,14 @@ it('orders by visits without changing session IDs, computer/profile ownership or
   expect(visited[1]).toBe(remote)
   expect(tabs).toEqual([local, remote])
 })
+it('keeps temporary previews out of the tab list and visits until promotion', () => {
+  const preview = { ...remote, id: 'preview', previewOf: local.id }
+  expect(recentBrowserTabs([local, preview])).toEqual([local])
+  expect(rememberBrowserVisit([local], preview)).toEqual([local])
+  const promoted = { ...preview, previewOf: undefined }
+  expect(recentBrowserTabs([local, promoted])[0]).toEqual(promoted)
+  expect(rememberBrowserVisit([local], promoted)[0]).toEqual(promoted)
+})
 it('restores local and remote tabs with their profiles without storing runtime credentials', () => {
   const values = new Map<string, string>()
   vi.stubGlobal('localStorage', {

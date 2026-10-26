@@ -212,6 +212,7 @@ app.whenReady().then(async () => {
       let createdChild: any
       for (let i=0;i<60&&!createdChild;i++) { createdChild = (await call('browser',{action:'status',key:tab}))?.createdTabs?.[0]; if(!createdChild) await wait(50) }
       assert.ok(createdChild, 'Deferred named window must become a native tab.')
+      assert.equal(createdChild.openerKey, tab, 'Preview records its native opener.')
       stage('show child')
       await show(createdChild.key, 'work', page+'?child=1')
       const child = studio.contentView.children.map((view: any) => view.webContents).find((contents: any) => contents?.getURL() === page+'?child=1')!
@@ -231,6 +232,23 @@ app.whenReady().then(async () => {
       let childClosed=false
       for(let i=0;i<60&&!childClosed;i++) { childClosed=!!(await call('browser',{action:'status',key:tab}))?.closedTabs?.includes(createdChild.key); if(!childClosed) await wait(50) }
       assert.ok(childClosed, 'window.close must release a page-created tab')
+      stage('command-click preview')
+      await show(tab, 'work')
+      const linkPoint = await main.executeJavaScript(\`(() => {
+        const link = document.createElement('a'); link.href = '\${page}?command-click=1';
+        link.textContent = 'Quick navigation'; link.style.cssText = 'position:fixed;left:20px;top:20px;padding:20px;background:white;z-index:9999';
+        document.body.append(link); const rect = link.getBoundingClientRect();
+        return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}
+      })()\`)
+      const linkModifiers = [process.platform === 'darwin' ? 'meta' : 'control']
+      main.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,modifiers:linkModifiers,...linkPoint})
+      main.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,modifiers:linkModifiers,...linkPoint})
+      let linkChild: any
+      for(let i=0;i<60&&!linkChild;i++) { linkChild=(await call('browser',{action:'status',key:tab}))?.createdTabs?.[0]; if(!linkChild) await wait(50) }
+      assert.ok(linkChild, 'Command/control-click creates a page for the preview.')
+      assert.equal(linkChild.openerKey, tab)
+      assert.equal(linkChild.profileId, 'work')
+      await call('browser',{action:'close',key:linkChild.key})
       const privateId = 'private-00000000-0000-4000-8000-000000000001'
       assert.ok(!workspacePartition(privateId).startsWith('persist:'))
       stage('private profile')

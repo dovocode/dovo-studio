@@ -170,7 +170,13 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
   const windowTabs = new Map<
     number,
     {
-      created: { key: string; url: string; profileId: string; active?: boolean }[]
+      created: {
+        key: string
+        url: string
+        profileId: string
+        active?: boolean
+        openerKey?: string
+      }[]
       closed: string[]
     }
   >()
@@ -554,6 +560,7 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
               url: child.url === 'about:blank' ? '' : child.url,
               profileId,
               active: details.disposition !== 'background-tab',
+              openerKey: created.key,
             })
             return child.view.webContents
           },

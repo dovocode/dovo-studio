@@ -10,6 +10,8 @@ export type BrowserTab = {
   favicon?: string
   visitedAt?: number
   pinned?: boolean
+  /** Temporary page opened by a link; promotion keeps this exact page identity. */
+  previewOf?: string
 }
 const tabSchema = Schema.Struct({
   id: Schema.String,
@@ -130,9 +132,11 @@ export function saveSharedBrowserTabs(state: BrowserTabs, windowId = 'main') {
   storage.setItem(storageKey, JSON.stringify(saved))
 }
 export function recentBrowserTabs(tabs: readonly BrowserTab[]) {
-  return [...tabs].sort(
-    (a, b) => Number(!!b.pinned) - Number(!!a.pinned) || (b.visitedAt ?? 0) - (a.visitedAt ?? 0),
-  )
+  return tabs
+    .filter((tab) => !tab.previewOf)
+    .sort(
+      (a, b) => Number(!!b.pinned) - Number(!!a.pinned) || (b.visitedAt ?? 0) - (a.visitedAt ?? 0),
+    )
 }
 
 export function visitBrowserTab(tabs: BrowserTab[], id: string, now = Date.now()) {
@@ -210,7 +214,7 @@ export function rememberBrowserVisit(
 ): BrowserTab[] {
   const seen = new Set<string>()
   return (
-    tab.url.trim() && !isPrivateBrowserProfile(tab.profileId)
+    tab.url.trim() && !tab.previewOf && !isPrivateBrowserProfile(tab.profileId)
       ? [{ ...tab }, ...previous]
       : [...previous]
   )

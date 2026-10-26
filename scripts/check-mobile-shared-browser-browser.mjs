@@ -437,6 +437,89 @@ try {
     }),
   )
   await nativeButton('Tabs (1)').waitFor()
+  // Target-blank links preview the existing native child. Keeping it must not reopen it.
+  await nativePage.evaluate(
+    (openerTabId) =>
+      window.nativeEmit('onTabCreated', {
+        tabId: 'link-preview',
+        instanceId: 'link-instance',
+        profileId: 'Work_1',
+        openerTabId,
+        url: 'http://localhost:3000/quick',
+        title: 'Quick link',
+        reason: 'targetBlank',
+        loadState: 'loaded',
+        progress: 1,
+        canGoBack: false,
+        canGoForward: false,
+        secure: false,
+        error: null,
+      }),
+    originalTab,
+  )
+  await nativeButton('Keep as tab').waitFor()
+  await nativePage.locator('[data-native-tab="link-preview"]').waitFor()
+  assert.equal(
+    await nativePage.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).tabs.length,
+    ),
+    1,
+  )
+  const previewOpens = await nativePage.evaluate(
+    () => window.nativeCalls.filter((call) => call.open?.tabId === 'link-preview').length,
+  )
+  await nativeButton('Keep as tab').click()
+  await nativeButton('Tabs (2)').waitFor()
+  assert.equal(
+    await nativePage.locator('[data-native-tab]').getAttribute('data-native-tab'),
+    'link-preview',
+  )
+  assert.equal(
+    await nativePage.evaluate(
+      () => window.nativeCalls.filter((call) => call.open?.tabId === 'link-preview').length,
+    ),
+    previewOpens,
+  )
+  await nativePage.evaluate(() =>
+    window.nativeEmit('onTabClosed', {
+      tabId: 'link-preview',
+      instanceId: 'link-instance',
+      profileId: 'Work_1',
+      reason: 'page',
+    }),
+  )
+  await nativeButton('Tabs (1)').waitFor()
+  await nativePage.locator(`[data-native-tab="${originalTab}"]`).waitFor()
+  await nativePage.evaluate(
+    (openerTabId) =>
+      window.nativeEmit('onTabCreated', {
+        tabId: 'dismiss-preview',
+        instanceId: 'dismiss-instance',
+        profileId: 'Work_1',
+        openerTabId,
+        url: 'http://localhost:3000/discard',
+        title: 'Discard',
+        reason: 'windowOpen',
+        loadState: 'loaded',
+        progress: 1,
+        canGoBack: false,
+        canGoForward: false,
+        secure: false,
+        error: null,
+      }),
+    originalTab,
+  )
+  await nativeButton('Close preview').click()
+  await nativePage.locator(`[data-native-tab="${originalTab}"]`).waitFor()
+  assert.equal(await nativeButton('Keep as tab').count(), 0)
+  assert.equal(
+    await nativePage.evaluate(() =>
+      JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).closed.some(
+        (tab) => tab.id === 'dismiss-preview',
+      ),
+    ),
+    false,
+  )
   await nativePage.evaluate(
     (id) =>
       window.nativeEmit('onTabClosed', {

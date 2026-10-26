@@ -47,6 +47,7 @@ import {
   initialBrowserState,
   parseBrowserState,
   persistableBrowserState,
+  promoteTab,
   browserAddress,
   recordPage,
   recentTabs,
@@ -80,6 +81,7 @@ export function BrowserScreen() {
   const [localProfiles, setLocalProfiles] = useState<string[]>(['device'])
   const switchingProfiles = useRef(new Set<string>())
   const nativeInstances = useRef(new Map<string, { instanceId: string; profileId: string }>())
+  const adoptedRemoteTabs = useRef(new Set<string>())
   const { navigate } = useNavigation()
   const focused = usePreviewActive()
   const [state, setState] = useState<BrowserState>(() => initialBrowserState(randomUUID()))
@@ -384,8 +386,7 @@ export function BrowserScreen() {
     change((state) => addTab(state, tab))
     librarySheet.current?.dismiss()
   }
-  const close = async (tab: BrowserTab) => {
-    if (tab.pinned) return
+  const disposeTab = async (tab: BrowserTab) => {
     if (tab.kind === 'local' && nativeAvailable && DovoWebKitBrowser)
       await closeNativeTab(DovoWebKitBrowser, tab.id)
     if (tab.kind === 'remote') {
@@ -401,8 +402,26 @@ export function BrowserScreen() {
           responses.ok,
         )
     }
+  }
+  const close = async (tab: BrowserTab) => {
+    if (tab.pinned) return
+    await disposeTab(tab)
     change((state) => closeTab(state, tab.id, randomUUID()))
   }
+  useEffect(() => {
+    const retained = new Set<string>()
+    let tab = state.tabs.find((tab) => tab.id === state.active)
+    while (tab && !retained.has(tab.id)) {
+      retained.add(tab.id)
+      tab = state.tabs.find((item) => item.id === tab?.previewOf)
+    }
+    const discarded = state.tabs.filter((tab) => tab.previewOf && !retained.has(tab.id))
+    if (!discarded.length) return
+    const ids = new Set(discarded.map((tab) => tab.id))
+    change((state) => ({ ...state, tabs: state.tabs.filter((tab) => !ids.has(tab.id)) }))
+    for (const tab of discarded)
+      void disposeTab(tab).catch((cause) => setError(`Could not close preview: ${String(cause)}`))
+  }, [state.tabs, state.active])
   const pageState = (
     id: string,
     page: { url: string; title?: string; back?: boolean; forward?: boolean },
@@ -575,10 +594,46 @@ export function BrowserScreen() {
     )
   return (
     <KeyboardAvoidingView
-      style={styles.screen}
+      style={[
+        styles.screen,
+        active.previewOf
+          ? {
+              margin: 10,
+              borderRadius: 18,
+              borderWidth: 1,
+              borderColor: colors.border,
+              overflow: 'hidden',
+            }
+          : undefined,
+      ]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenHeader title="Browser" onBack={() => navigate('tasks')} />
+      <ScreenHeader
+        title={active.previewOf ? 'Link preview' : 'Browser'}
+        onBack={() => (active.previewOf ? void act(() => close(active)) : navigate('tasks'))}
+      />
+      {active.previewOf && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 12,
+            paddingBottom: 8,
+          }}
+        >
+          <Action
+            secondary
+            label="Close preview"
+            disabled={busy}
+            onPress={() => void act(() => close(active))}
+          />
+          <Action
+            label="Keep as tab"
+            onPress={() => change((state) => promoteTab(state, active.id))}
+          />
+        </View>
+      )}
       <View style={{ paddingHorizontal: 12 }}>
         {native.error ? (
           <Text accessibilityRole="alert" style={styles.error}>
@@ -616,9 +671,12 @@ export function BrowserScreen() {
                 onClosed={() => change((state) => closeTab(state, active.id, randomUUID()))}
                 onState={(page) => {
                   pageState(active.id, page)
-                  const additions = (page.createdTabs ?? []).filter(
-                    (child) => !current.current.tabs.some((tab) => tab.id === child.id),
-                  )
+                  const additions = (page.createdTabs ?? []).filter((child) => {
+                    const key = JSON.stringify([active.runtimeId, child.id])
+                    if (adoptedRemoteTabs.current.has(key)) return false
+                    adoptedRemoteTabs.current.add(key)
+                    return !current.current.tabs.some((tab) => tab.id === child.id)
+                  })
                   const capacity = Math.max(0, 100 - current.current.tabs.length)
                   for (const child of additions.slice(capacity)) {
                     if (owner?.connected)
@@ -649,6 +707,7 @@ export function BrowserScreen() {
                           title: '',
                           pinned: false,
                           visitedAt: Date.now(),
+                          previewOf: active.id,
                         }))
                       return {
                         ...state,
@@ -704,7 +763,12 @@ export function BrowserScreen() {
             setSupportMultipleWindows
             onOpenWindow={(event) =>
               void act(async () =>
-                newTab({ ...active, url: browserAddress(event.nativeEvent.targetUrl) }),
+                newTab({
+                  ...active,
+                  pinned: false,
+                  previewOf: active.id,
+                  url: browserAddress(event.nativeEvent.targetUrl),
+                }),
               )
             }
             onShouldStartLoadWithRequest={(request) => {
@@ -873,7 +937,7 @@ export function BrowserScreen() {
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Tabs (${state.tabs.length})`}
+            accessibilityLabel={`Tabs (${recentTabs(state.tabs).length})`}
             onPress={() => {
               setQuery('')
               setLibrary('tabs')
@@ -892,7 +956,7 @@ export function BrowserScreen() {
               }}
             >
               <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>
-                {state.tabs.length}
+                {recentTabs(state.tabs).length}
               </Text>
             </View>
           </Pressable>
@@ -938,7 +1002,7 @@ export function BrowserScreen() {
                 ? 'Remove bookmark'
                 : 'Bookmark page'
             }
-            disabled={busy || isPrivateBrowserProfile(active.profileId)}
+            disabled={busy || !!active.previewOf || isPrivateBrowserProfile(active.profileId)}
             onPress={() => change((state) => toggleBookmark(state, active))}
           />
           <Action

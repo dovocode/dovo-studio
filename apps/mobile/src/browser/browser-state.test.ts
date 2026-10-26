@@ -10,6 +10,7 @@ import {
   toggleBookmark,
   togglePinnedTab,
   persistableBrowserState,
+  promoteTab,
   appendBrowserDraft,
   pageKey,
   recentTabs,
@@ -64,6 +65,46 @@ it('never persists private tabs or adds their pages to history, bookmarks or rec
   expect(
     parseBrowserState(JSON.stringify(persistableBrowserState(onlyPrivate, 'fallback'))).active,
   ).toBe('fallback')
+})
+it('keeps link previews temporary, returns to their opener and promotes the same page', () => {
+  const original = initialBrowserState('device')
+  let state = adoptNativeTab(original, {
+    tabId: 'preview',
+    openerTabId: 'device',
+    profileId: 'device',
+    url: 'http://localhost:3000/new',
+    title: 'Preview',
+  })
+  expect(state.active).toBe('preview')
+  expect(recentTabs(state.tabs).map((tab) => tab.id)).toEqual(['device'])
+  state = recordPage(state, 'preview', {
+    url: 'http://localhost:3000/navigated',
+    title: 'Navigated',
+  })
+  expect(state.history).toEqual([])
+  expect(persistableBrowserState(state, 'unused')).toMatchObject({
+    active: 'device',
+    tabs: original.tabs,
+  })
+  expect(closeTab(state, 'preview', 'unused')).toMatchObject({ active: 'device', closed: [] })
+  const nested = adoptNativeTab(state, {
+    tabId: 'nested',
+    openerTabId: 'preview',
+    profileId: 'device',
+    url: null,
+    title: '',
+  })
+  expect(closeTab(nested, 'nested', 'unused').active).toBe('preview')
+  const promoted = promoteTab(state, 'preview')
+  expect(promoted.active).toBe('preview')
+  expect(promoted.tabs[1]).toMatchObject({
+    id: 'preview',
+    url: 'http://localhost:3000/navigated',
+    profileId: 'device',
+    previewOf: undefined,
+  })
+  expect(promoted.history[0]?.id).toBe('preview')
+  expect(persistableBrowserState(promoted, 'unused').tabs).toHaveLength(2)
 })
 it('rejects invalid saved state and bounded collections before restoring', () => {
   const state = initialBrowserState('one')

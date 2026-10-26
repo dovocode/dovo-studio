@@ -70,7 +70,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const nativePages=new Map();window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
@@ -134,6 +134,7 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   // Direct BrowserPane coverage deliberately bypasses the experimental BrowserView gate.
   const recent = page.getByRole('complementary', { name: 'Recent browser tabs' })
+  const preview = page.getByRole('region', { name: 'Link preview', exact: true })
   if (!(await recent.isVisible())) throw new Error('Missing vertical tab list')
   const url = page.getByRole('textbox', { name: 'Preview URL' })
   await url.fill('http://localhost:3000')
@@ -377,6 +378,72 @@ try {
         call.body.profileId === 'remote-work',
     ),
   )
+  // A remote child retains its owner/profile and the same viewer when promoted.
+  const parentFrame = page.locator('iframe[title="Host browser"]').filter({ visible: true })
+  await parentFrame
+    .contentFrame()
+    .locator('body')
+    .evaluate(() =>
+      window.parent.postMessage(
+        {
+          channel: 'dovo-browser',
+          type: 'state',
+          url: 'http://localhost:3000/remote-page',
+          title: 'Remote source',
+          back: true,
+          forward: false,
+          loading: false,
+          editable: false,
+          createdTabs: [
+            {
+              id: '00000000-0000-4000-8000-000000000999',
+              url: 'http://localhost:3000/remote-preview',
+            },
+          ],
+        },
+        '*',
+      ),
+    )
+  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  const remotePreviewFrame = preview
+    .locator('iframe[title="Host browser"]')
+    .filter({ visible: true })
+  await remotePreviewFrame.waitFor()
+  await remotePreviewFrame.evaluate((frame) => (frame.dataset.previewIdentity = 'retained-viewer'))
+  const remoteOpens = await page.evaluate(
+    () => window.calls.filter((call) => call.path === '/api/previews/browser/open').length,
+  )
+  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).click()
+  await page.waitForFunction(() =>
+    JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some(
+      (tab) =>
+        tab.id === '00000000-0000-4000-8000-000000000999' &&
+        tab.runtimeId === 'mac' &&
+        tab.profileId === 'remote-work',
+    ),
+  )
+  assert.equal(
+    await page.locator('iframe[data-preview-identity="retained-viewer"]').count(),
+    1,
+    'Promotion retains remote iframe identity',
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path === '/api/previews/browser/open').length,
+    ),
+    remoteOpens,
+    'Promotion does not reconnect remote page',
+  )
+  await page.keyboard.press('Control+w')
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (call) =>
+        call.owner === 'mac' &&
+        call.path === '/api/previews/browser/close' &&
+        call.body.tabId === '00000000-0000-4000-8000-000000000999' &&
+        call.body.profileId === 'remote-work',
+    ),
+  )
   const beforeSwitch = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')),
   )
@@ -614,18 +681,135 @@ try {
     window.openedLinks.push('http://localhost:3000/new-window')
     await window.pollBrowser()
   })
+  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  assert.equal(
+    (await persisted()).tabs.some((tab) => tab.url.endsWith('/new-window')),
+    false,
+    'Previews are not saved as tabs',
+  )
+  assert.equal(
+    (await selected()).id,
+    sourceBeforeOpen.id,
+    'Saved selection stays on source until promotion',
+  )
+  await page.waitForFunction(() =>
+    window.calls.some((call) => call.action === 'show' && call.url.endsWith('/new-window')),
+  )
+  const previewKey = await page.evaluate(
+    () =>
+      window.calls
+        .filter((call) => call.action === 'show' && call.url.endsWith('/new-window'))
+        .at(-1)?.key,
+  )
+  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).click()
   await page.waitForFunction(() =>
     JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some(
       (tab) => tab.url === 'http://localhost:3000/new-window',
     ),
   )
-  assert.equal((await selected()).id, sourceBeforeOpen.id, 'Page-created tab must not steal focus')
+  assert.notEqual(
+    (await selected()).id,
+    sourceBeforeOpen.id,
+    'Promoted preview becomes the active tab',
+  )
   const openedPageTab = (await persisted()).tabs.find(
     (tab) => tab.url === 'http://localhost:3000/new-window',
   )
   assert.equal(openedPageTab.profileId, 'local-work', 'Native opened link retains source profile')
   assert.equal(openedPageTab.kind, 'web')
+  assert.equal(
+    await page.evaluate(
+      (key) => window.calls.some((call) => call.action === 'close' && call.key === key),
+      previewKey,
+    ),
+    false,
+    'Promotion keeps the existing native page',
+  )
   await recent.getByRole('button', { name: /^localhost:3000\/new-window Local/ }).click()
+  // Command-click disposition still previews the original Chromium child; nested close returns
+  // to its opener and promotion retains the exact key and profile.
+  await page.evaluate(async () => {
+    const source = window.calls.filter((call) => call.action === 'show').at(-1)
+    window.createdTabs.push({
+      key: 'native-link-preview',
+      url: 'http://localhost:3000/cmd-link',
+      profileId: 'local-work',
+      active: false,
+      openerKey: source.key,
+    })
+    await window.pollBrowser()
+  })
+  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  await page.waitForFunction(() =>
+    window.calls.some((call) => call.action === 'show' && call.key === 'native-link-preview'),
+  )
+  await page.screenshot({ path: root + 'work/shared-browser/link-preview.png' })
+  assert.equal(
+    (await persisted()).tabs.some((tab) => tab.url.endsWith('/cmd-link')),
+    false,
+  )
+  await page.evaluate(async () => {
+    window.createdTabs.push({
+      key: 'native-nested-preview',
+      url: 'http://localhost:3000/nested-link',
+      profileId: 'local-work',
+      active: true,
+      openerKey: 'native-link-preview',
+    })
+    await window.pollBrowser()
+  })
+  await page.waitForFunction(() =>
+    window.calls.some((call) => call.action === 'show' && call.key === 'native-nested-preview'),
+  )
+  await preview.getByRole('button', { name: 'Close preview', exact: true }).click()
+  await page.waitForFunction(() =>
+    window.calls.some((call) => call.action === 'close' && call.key === 'native-nested-preview'),
+  )
+  await page.waitForFunction(
+    () =>
+      window.calls.filter((call) => call.action === 'show').at(-1)?.key === 'native-link-preview',
+  )
+  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).click()
+  await page.waitForFunction(() =>
+    JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some((tab) =>
+      tab.url.endsWith('/cmd-link'),
+    ),
+  )
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some((call) => call.action === 'close' && call.key === 'native-link-preview'),
+    ),
+    false,
+  )
+  await page.evaluate(async () => {
+    window.createdTabs.push({
+      key: 'native-deferred-preview',
+      url: '',
+      profileId: 'local-work',
+      openerKey: 'native-link-preview',
+    })
+    await window.pollBrowser()
+  })
+  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  await page.evaluate(async () => {
+    window.setNativePage('native-deferred-preview', {
+      url: 'http://localhost:3000/deferred-preview',
+      title: 'Deferred',
+      back: false,
+      forward: false,
+    })
+    await window.pollBrowser()
+  })
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (call) =>
+        call.action === 'show' &&
+        call.key === 'native-deferred-preview' &&
+        call.url.endsWith('/deferred-preview'),
+    ),
+  )
+  await preview.getByRole('button', { name: 'Close preview', exact: true }).click()
+  await preview.waitFor({ state: 'hidden' })
   // Extension-created pages retain native identity/profile instead of opening a second view.
   await page.evaluate(async () => {
     window.createdTabs.push({
@@ -779,7 +963,7 @@ try {
     (key) => window.calls.some((call) => call.action === 'close' && call.key === key),
     privateShow.key,
   )
-  // Drain multiple page-created link batches against current state, without stealing focus.
+  // Repeated link batches retain one active preview and close the unused native pages.
   await recent.getByRole('button', { name: /^localhost:3000\/new-window Local/ }).click()
   await page.waitForFunction(() =>
     window.calls.some(
@@ -788,44 +972,35 @@ try {
   )
   const floodSource = await selected()
   const tabsBeforeFlood = (await persisted()).tabs
-  const showCountBeforeFlood = await page.evaluate(
-    () => window.calls.filter((call) => call.action === 'show').length,
-  )
   await page.evaluate(async () => {
     window.openedLinks.push(
       ...Array.from({ length: 80 }, (_, index) => `http://localhost:3000/flood-a-${index}`),
     )
     await window.pollBrowser()
-    window.openedLinks.push(
-      ...Array.from({ length: 80 }, (_, index) => `http://localhost:3000/flood-b-${index}`),
-    )
-    await window.pollBrowser()
   })
+  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
   await page.waitForFunction(
-    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 100,
+    () => window.calls.filter((call) => call.action === 'close').length >= 79,
   )
   const flooded = await persisted()
-  assert.equal(flooded.active, floodSource.id, 'Flood must retain active source tab')
-  assert.equal(new Set(flooded.tabs.map((tab) => tab.id)).size, 100, 'Flood tabs have unique IDs')
-  const addedTabs = flooded.tabs.filter(
-    (tab) => !tabsBeforeFlood.some((previous) => previous.id === tab.id),
-  )
-  assert.equal(addedTabs.length, 100 - tabsBeforeFlood.length)
+  assert.equal(flooded.active, floodSource.id, 'Saved selection retains the source tab')
   assert.equal(
-    addedTabs.every((tab) => tab.kind === 'web' && tab.profileId === floodSource.profileId),
-    true,
-    'Flood preserves source profile',
-  )
-  assert.equal(
-    await page.evaluate(() => window.calls.filter((call) => call.action === 'show').length),
-    showCountBeforeFlood,
-    'Background flood tabs are not launched',
+    flooded.tabs.length,
+    tabsBeforeFlood.length,
+    'Preview batches do not fill saved tabs',
   )
   await page.evaluate(async () => {
-    window.openedLinks.push('http://localhost:3000/over-cap')
+    window.openedLinks.push('http://localhost:3000/flood-b-last')
     await window.pollBrowser()
   })
-  assert.equal((await persisted()).tabs.length, 100, 'Further batches cannot exceed cap')
+  await page.waitForFunction(() =>
+    window.calls.some((call) => call.action === 'show' && call.url.endsWith('/flood-b-last')),
+  )
+  await preview.getByRole('button', { name: 'Close preview', exact: true }).click()
+  await preview.getByRole('button', { name: 'Close preview', exact: true }).waitFor()
+  await preview.getByRole('button', { name: 'Close preview', exact: true }).click()
+  await preview.waitFor({ state: 'hidden' })
+  assert.equal((await persisted()).tabs.length, tabsBeforeFlood.length)
   assert.equal((await selected()).id, floodSource.id)
   // Exercise the real BrowserView gate in a fresh browser context, with reactive preferences.
   const gatePage = await browser.newPage({ viewport: { width: 1200, height: 800 } })
@@ -1104,7 +1279,7 @@ try {
   assert.equal(extracted.passwordText, '', 'Password selection must be excluded')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Shared vertical tabs, active-tab reselection, local localhost, source-preserving drafts across computers, conflicts, per-tab remote ownership/profiles, recent order, restore, lazy sessions, saved-page profile labels/search with real runtime catalogs, bookmarks/history, reopen, shortcuts, page drafts, opened-link source profiles, real BrowserView preference gate, bounded background opened links and pop-out isolation passed.',
+    'Shared browser tabs, local/remote ownership and profiles, saved pages, private/pinned tabs, temporary link previews, native/remote promotion without page replacement, nested/deferred navigation, bounded cleanup, shortcuts, drafts, feature gate and pop-out isolation passed.',
   )
 } finally {
   await browser.close()
