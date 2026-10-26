@@ -8,6 +8,7 @@ import {
   canChangeTaskCheckout,
   applyTurnSettings,
   agentTurnSettings,
+  queuedModelAgent,
   type TurnSettings,
 } from '@dovo/protocol'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
@@ -57,7 +58,11 @@ export function HarnessSettings({
   onClose: () => void
   inline?: boolean
   onBusyChange?: (busy: boolean) => void
-  turn?: { value: TurnSettings | null; onChange: (value: TurnSettings | null) => void }
+  turn?: {
+    value: TurnSettings | null
+    onChange: (value: TurnSettings | null) => void
+    beforeMessageId?: string
+  }
 }) {
   const { styles } = useTheme()
   const [turnError, setTurnError] = useState('')
@@ -75,11 +80,15 @@ export function HarnessSettings({
     snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
     snapshot?.workspace.agents ?? [],
   )
-  const defaultAgent = resolveTaskAgent(task, agents) ?? {
+  const threadAgent = resolveTaskAgent(task, agents) ?? {
     ...defaultTaskHarness('codex'),
     id: 'task',
     name: 'Codex',
   }
+  const defaultAgent =
+    turn && snapshot?.persistentTurnModelsSupported
+      ? queuedModelAgent(threadAgent, task.queue, turn.beforeMessageId)
+      : threadAgent
   const agent = applyTurnSettings(defaultAgent, turn?.value ?? undefined)
   const selectionTask = turn?.value
     ? { ...task, agentId: '', agentOverrides: undefined, harness: agent, modelSelection: undefined }
@@ -416,7 +425,9 @@ export function HarnessSettings({
             <Text style={styles.muted}>Stop the active turn to change model settings.</Text>
           ) : (
             <Text style={styles.muted}>
-              Applies to {turn ? 'this message only' : 'the next turn'}.
+              {turn && snapshot?.persistentTurnModelsSupported
+                ? 'Model and reasoning stay selected for following turns. Other settings apply only to this message.'
+                : `Applies to ${turn ? 'this message only' : 'the next turn'}.`}
             </Text>
           )}
           {turn?.value && (

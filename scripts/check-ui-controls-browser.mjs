@@ -67,6 +67,11 @@ const built = await bundleBrowser(
   },
   [
     {
+      path: '@dovo/studio-core',
+      importer: root + 'packages/extension-tasks/src/dialogs',
+      contents: 'export const useWorkspace=()=>({runtimeRegistry:{profiles:[]},connection:null});',
+    },
+    {
       path: '../list/use-task-search',
       importer: root + 'packages/extension-tasks/src/dialogs',
       contents: 'export const useTaskSearch=()=>({hits:[],loading:false,error:null});',

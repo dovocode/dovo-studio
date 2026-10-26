@@ -1,3 +1,4 @@
+import { selectedBrowserText, STUDIO_BROWSER_SCOPE } from '@dovo/protocol'
 import { redact } from '../storage/activity.js'
 import { browserScript } from './browser-script.js'
 import { browserInteraction } from './browser-interaction.js'
@@ -84,6 +85,8 @@ type Session = {
   liveFrame?: Uint8Array
   dialog?: Dialog
 }
+// Dots cannot appear in a legacy profile ID, keeping daily-browsing cookies separate.
+const WORKSPACE_PROFILES = 'browser-workspace.profiles'
 const idleMs = 5 * 60 * 1000
 export class RemoteBrowsers {
   private artifactQueue: Promise<unknown> = Promise.resolve()
@@ -363,7 +366,7 @@ export class RemoteBrowsers {
       if (!/^[a-zA-Z0-9_-]{1,100}$/.test(profileId))
         throw new HttpError(400, 'Invalid browser profile')
       const target = initialUrl ? previewUrl(initialUrl) : undefined
-      pending = this.create(taskId, profileId, target, isolated)
+      pending = this.create(taskId, profileId, target, isolated, owner === STUDIO_BROWSER_SCOPE)
       this.sessions.set(taskId, pending)
       this.owners.set(taskId, owner)
       void pending.catch(() => {
@@ -376,8 +379,12 @@ export class RemoteBrowsers {
     const session = await pending
     if (!session.listeners.size) this.scheduleClose(taskId, session)
   }
-  private async profile(profileId: string, isolated = false) {
-    const key = isolated ? `isolated:${profileId}` : profileId
+  private async profile(profileId: string, isolated = false, workspace = false) {
+    const key = isolated
+      ? `isolated:${profileId}`
+      : workspace
+        ? `workspace:${profileId}`
+        : profileId
     await this.closingProfiles.get(key)
     let entry = this.profiles.get(key)
     if (!entry) {
@@ -392,12 +399,17 @@ export class RemoteBrowsers {
         let context: BrowserContext
         if (this.profileDirectory && !isolated) {
           const { chromium, executablePath } = await this.executable()
-          context = await chromium.launchPersistentContext(join(this.profileDirectory, profileId), {
-            ...options,
-            executablePath,
-            headless: true,
-            chromiumSandbox: true,
-          })
+          context = await chromium.launchPersistentContext(
+            workspace
+              ? join(this.profileDirectory, WORKSPACE_PROFILES, profileId)
+              : join(this.profileDirectory, profileId),
+            {
+              ...options,
+              executablePath,
+              headless: true,
+              chromiumSandbox: true,
+            },
+          )
         } else context = await (await this.launch()).newContext(options)
         try {
           if (this.profileDirectory && !isolated)
@@ -439,8 +451,14 @@ export class RemoteBrowsers {
       throw error
     }
   }
-  private async create(taskId: string, profileId: string, initialUrl?: string, isolated = false) {
-    const { context, release } = await this.profile(profileId, isolated)
+  private async create(
+    taskId: string,
+    profileId: string,
+    initialUrl?: string,
+    isolated = false,
+    workspace = false,
+  ) {
+    const { context, release } = await this.profile(profileId, isolated, workspace)
     let createdPage: Page | undefined
     try {
       const page = await context.newPage()
@@ -859,6 +877,49 @@ export class RemoteBrowsers {
     session.stream = operation.catch((error) => this.report(session, error))
     return operation
   }
+  async selection(resourceId: string) {
+    const session = await this.sessions.get(resourceId)
+    if (!session || session.page.isClosed()) throw new HttpError(404, 'Browser tab is unavailable.')
+    // Page scripts can stall evaluations or forge their return values. Bound the whole read,
+    // including the title, and keep literal selection data separate from executable code.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const read = async () => {
+        const frames = session.page.frames()
+        const focused: typeof frames = []
+        for (const frame of frames)
+          if (await frame.evaluate(() => document.hasFocus()).catch(() => false))
+            focused.push(frame)
+        let text = ''
+        for (const frame of focused.length ? focused : [session.page.mainFrame()]) {
+          const value: unknown = await frame.evaluate(selectedBrowserText).catch((error) => {
+            // Navigating child frames can detach between the focus probe and the read.
+            if (frame.isDetached()) return ''
+            throw error
+          })
+          text = typeof value === 'string' ? value.slice(0, 32000) : ''
+          if (text) break
+        }
+        const title: unknown = await session.page.title()
+        return {
+          text,
+          url: session.page.url(),
+          title: typeof title === 'string' ? title.slice(0, 2000) : '',
+        }
+      }
+      return await Promise.race([
+        read(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new HttpError(504, 'Reading the page selection timed out.')),
+            3000,
+          )
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
   async input(
     taskId: string,
     input: RemoteBrowserInput,
@@ -1035,6 +1096,8 @@ export class RemoteBrowsers {
   ) {
     authorize()
     const resource = resourceId ?? `agent-browser:${taskId}`
+    if (this.owners.get(resource) === STUDIO_BROWSER_SCOPE)
+      throw new HttpError(403, 'Shared Browser tabs are not available to agents.')
     if (resourceId && !this.sessions.has(resourceId))
       throw new HttpError(404, 'Browser session not found')
     if (command.action === 'close') {
@@ -1107,18 +1170,22 @@ export class RemoteBrowsers {
   }
   async studioList() {
     return Promise.all(
-      [...this.sessions].map(async ([id, pending]) => {
-        const session = await pending
-        return {
-          id,
-          taskId: this.owners.get(id),
-          url: session.page.url(),
-          title: await session.page.title(),
-        }
-      }),
+      [...this.sessions]
+        .filter(([id]) => this.owners.get(id) !== STUDIO_BROWSER_SCOPE)
+        .map(async ([id, pending]) => {
+          const session = await pending
+          return {
+            id,
+            taskId: this.owners.get(id),
+            url: session.page.url(),
+            title: await session.page.title(),
+          }
+        }),
     )
   }
   async studioLogs(id: string) {
+    if (this.owners.get(id) === STUDIO_BROWSER_SCOPE)
+      throw new HttpError(403, 'Shared Browser tabs are not available to agents.')
     const pending = this.sessions.get(id)
     if (!pending) throw new HttpError(404, 'Browser session not found')
     return { entries: [...(await pending).logs] }

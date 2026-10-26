@@ -9,6 +9,7 @@ const bundle = await bundleBrowser(
       resolveDir: root + '/packages/studio-ui',
       loader: 'tsx',
       contents: `import {createRoot} from 'react-dom/client';
+import {getHighlighterType} from '@pierre/diffs';window.highlighterType=getHighlighterType;
 import {PierreEditor} from '${root}/packages/extension-tasks/src/review/pierre-editor.tsx';
 import {importCodeTheme} from '${root}/packages/studio-core/src/code-themes.ts';
 import {updateAppPreferences} from '${root}/packages/studio-core/src/preferences.ts';
@@ -55,6 +56,7 @@ try {
   await page.waitForFunction(() =>
     document.querySelector('diffs-container')?.shadowRoot?.textContent.includes('export'),
   )
+  assert.equal(await page.evaluate(() => window.highlighterType()), 'highlights')
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
   const input = page.locator('diffs-container [contenteditable="true"]')
   await input.waitFor()

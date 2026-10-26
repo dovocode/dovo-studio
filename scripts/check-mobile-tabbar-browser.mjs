@@ -67,7 +67,7 @@ NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export
   {
     path: '../runtime/preferences/app-preferences',
     importer: workbench,
-    contents: `export const preferencesReady=Promise.resolve();export const readMobilePreferences=()=>({launchTab:'settings',carMode:false});export const useCarMode=()=>window.fixture.car;`,
+    contents: `export const preferencesReady=Promise.resolve();export const readMobilePreferences=()=>({launchTab:'settings',carMode:false});export const useCarMode=()=>window.fixture.car;export const useMobilePreferences=()=>({browserWorkspaceEnabled:false});`,
   },
   {
     path: '../runtime/connection/provider',

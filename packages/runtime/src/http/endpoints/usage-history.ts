@@ -46,15 +46,8 @@ export const usageHistory = (request: IncomingMessage, path: string) =>
         }),
       ),
     )
-    const saved = yield* serviceResult(
-      s.store.usage.read(new Date(Date.now() - 90 * 86400000).toISOString()),
-    )
-    const sessions = new Set(
-      saved.flatMap((record) =>
-        record.origin !== 'cli' && record.sessionId
-          ? [`${record.turn.provider}:${record.sessionId}`]
-          : [],
-      ),
+    const sessions = yield* serviceResult(
+      s.store.usage.ownedSessions(new Date(Date.now() - 90 * 86400000).toISOString()),
     )
     for (const task of s.store.get().tasks)
       if (task.sessionId) {

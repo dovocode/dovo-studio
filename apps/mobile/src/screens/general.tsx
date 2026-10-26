@@ -83,6 +83,18 @@ export default function GeneralScreen() {
           onPress={() => router.push('/settings/speech')}
         />
       </SettingsGroup>
+      <SettingsGroup
+        title="Experimental"
+        footer="Browser tabs stay on this device. Remote tabs use their selected paired computer."
+      >
+        <SettingsSwitchRow
+          label="Enable experimental Browser"
+          value={preferences.browserWorkspaceEnabled}
+          onValueChange={(browserWorkspaceEnabled) =>
+            updateMobilePreferences({ browserWorkspaceEnabled })
+          }
+        />
+      </SettingsGroup>
       <SettingsGroup title="Related settings">
         <SettingsRow
           title="Battery & background"

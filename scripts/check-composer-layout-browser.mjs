@@ -17,7 +17,7 @@ const mocks = {
     export {WorkspaceContext as Context,useWorkspace} from '../studio-core/src/workspace/context';
     export const useStudioHost=()=>({navigate:()=>{}});
     export const useResolvedTheme=()=> 'dark';
-    const preferences={sendWith:'enter',themePalette:'dovo',markdownComposerPreview:false,followUp:'queue',confirmStop:false};
+    const preferences={sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false};
     window.setFollowUp=value=>{preferences.followUp=value};
     export const useAppPreferences=()=>preferences;
     export const readAppPreferences=()=>preferences;

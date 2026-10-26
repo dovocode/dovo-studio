@@ -1,18 +1,26 @@
 import { Schema } from 'effect'
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
-export interface PlanLimit {
-  provider: 'codex' | 'claude'
-  sourceTaskId?: string
-  agentId?: string
-  bucketId?: string
-  windowId?: string
-  durationMins?: number
-  account?: { id: string; label: string; subscription?: string }
-  window: string
-  usedPercent: number
-  resetsAt?: number
-  updatedAt: string
-}
+export const usageAccountSchema = mutableStruct({
+  id: Schema.String,
+  label: Schema.String,
+  subscription: Schema.optional(Schema.String),
+})
+export const planLimitSchema = mutableStruct({
+  provider: Schema.Literals(['codex', 'claude']),
+  account: Schema.optional(usageAccountSchema),
+  sourceTaskId: Schema.optional(Schema.String),
+  agentId: Schema.optional(Schema.String),
+  bucketId: Schema.optional(Schema.String),
+  windowId: Schema.optional(Schema.String),
+  durationMins: Schema.optional(
+    Schema.Number.pipe(Schema.check(Schema.isFinite()), Schema.check(Schema.isGreaterThan(0))),
+  ),
+  window: Schema.String,
+  usedPercent: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+  resetsAt: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+  updatedAt: Schema.String,
+})
+export type PlanLimit = Schema.Schema.Type<typeof planLimitSchema>
 
 const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -201,8 +209,13 @@ export function mergePlanLimits(
   }
   return [...merged.values()]
 }
-export function quotaReadingState(limit: PlanLimit, connected: boolean, now = Date.now()) {
+export function quotaReadingState(
+  limit: PlanLimit & { readError?: boolean },
+  connected: boolean,
+  now = Date.now(),
+) {
   if (!connected) return 'offline'
+  if (limit.readError) return 'unavailable'
   if (!Number.isFinite(Date.parse(limit.updatedAt))) return 'stale'
   if (limit.resetsAt && limit.resetsAt * 1000 <= now) return 'awaiting'
   return now - Date.parse(limit.updatedAt) > 5 * 60_000 ? 'stale' : 'fresh'
@@ -214,6 +227,7 @@ export function accountPlanLimits(
     computer: string
     sourceId?: string
     connected?: boolean
+    readError?: boolean
     limits: readonly PlanLimit[]
   }[],
   now = Date.now(),
@@ -227,6 +241,7 @@ export function accountPlanLimits(
       accountKey: string
       sourceId?: string
       connected: boolean
+      readError: boolean
     }
   >()
   for (const source of sources)
@@ -243,14 +258,22 @@ export function accountPlanLimits(
       const previous = windows.get(key)
       const computers = [...new Set([...(previous?.computers ?? []), source.computer])]
       const reading =
-        previous && Date.parse(previous.updatedAt) > Date.parse(limit.updatedAt) ? previous : limit
+        previous &&
+        (Date.parse(previous.updatedAt) > Date.parse(limit.updatedAt) ||
+          (previous.updatedAt === limit.updatedAt &&
+            previous.connected &&
+            !previous.readError &&
+            (!source.connected || source.readError)))
+          ? previous
+          : limit
       windows.set(key, {
         ...reading,
         key,
         accountKey,
         sourceId: reading === previous ? previous?.sourceId : source.sourceId,
         computers,
-        connected: (previous?.connected ?? false) || (source.connected ?? true),
+        connected: reading === previous ? previous.connected : (source.connected ?? true),
+        readError: reading === previous ? previous.readError : (source.readError ?? false),
         accountLabel: limit.account
           ? `${limit.account.label}${limit.account.subscription ? ` · ${limit.account.subscription}` : ''}`
           : `Unidentified account · ${source.computer}`,
@@ -319,7 +342,46 @@ export const resetCreditsSchema = mutableStruct({
 })
 export const resetCreditResultSchema = mutableStruct({ outcome: Schema.String })
 
+export const usageHubAccountSchema = mutableStruct({
+  id: Schema.String,
+  provider: Schema.Literals(['codex', 'claude']),
+  account: usageAccountSchema,
+  status: Schema.Literals(['ok', 'failed', 'unsupported']),
+})
+export type UsageHubAccount = Schema.Schema.Type<typeof usageHubAccountSchema>
+export const usageHubSchema = mutableStruct({
+  accounts: Schema.optional(mutableArray(usageHubAccountSchema)),
+  id: Schema.String,
+  label: Schema.String,
+  url: Schema.String,
+  enabled: Schema.Boolean,
+  checkedAt: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+  limits: mutableArray(planLimitSchema),
+})
+export type UsageHub = Schema.Schema.Type<typeof usageHubSchema>
+export const usageHubsSchema = mutableArray(usageHubSchema)
+export const usageHubInputSchema = mutableStruct({
+  id: Schema.optional(
+    Schema.String.pipe(Schema.check(Schema.isMinLength(1)), Schema.check(Schema.isMaxLength(100))),
+  ),
+  label: Schema.String.pipe(
+    Schema.check(Schema.isMinLength(1)),
+    Schema.check(Schema.isMaxLength(100)),
+  ),
+  url: Schema.String.pipe(Schema.check(Schema.isMaxLength(2000))),
+  enabled: Schema.Boolean,
+  managementKey: Schema.optional(
+    Schema.String.pipe(
+      Schema.check(Schema.isMinLength(1)),
+      Schema.check(Schema.isMaxLength(10000)),
+    ),
+  ),
+})
+export type UsageHubInput = Schema.Schema.Type<typeof usageHubInputSchema>
+
 export const usageLimitsReadSchema = mutableStruct({
+  hubs: Schema.optional(usageHubsSchema),
   checkedAt: Schema.String,
   accounts: mutableArray(
     mutableStruct({
@@ -330,3 +392,134 @@ export const usageLimitsReadSchema = mutableStruct({
     }),
   ),
 })
+
+/** One equally sized segment per account, never a sum of different subscription capacities. */
+export function pooledPlanLimits(
+  windows: ReturnType<typeof accountPlanLimits>,
+  now = Date.now(),
+  knownAccounts: readonly UsageHubAccount[] = [],
+) {
+  const accounts = new Map<string, typeof windows>()
+  for (const window of windows) {
+    const key = JSON.stringify([window.provider, window.bucketId ?? window.provider])
+    const group = accounts.get(key) ?? []
+    group.push(window)
+    accounts.set(key, group)
+  }
+  return [...accounts].flatMap(([bucket, readings]) => {
+    const byAccount = new Map<
+      string,
+      {
+        label: string
+        windows: Map<string, (typeof readings)[number]>
+        weekly?: (typeof readings)[number]
+      }
+    >()
+    for (const row of readings) {
+      const account = byAccount.get(row.accountKey) ?? {
+        label: row.accountLabel,
+        windows: new Map<string, typeof row>(),
+      }
+      account.windows.set(row.windowId ?? row.window, row)
+      if (row.window === 'Weekly') account.weekly = row
+      byAccount.set(row.accountKey, account)
+    }
+    for (const account of knownAccounts) {
+      if (
+        account.status === 'unsupported' ||
+        JSON.stringify([account.provider, account.provider]) !== bucket ||
+        byAccount.has(account.account.id)
+      )
+        continue
+      byAccount.set(account.account.id, { label: account.account.label, windows: new Map() })
+    }
+    const identities = [...byAccount.keys()].sort()
+    const definitions = new Map(readings.map((row) => [row.windowId ?? row.window, row]))
+    return [...definitions].map(([windowId, definition]) => {
+      const segments = identities.map((accountKey) => {
+        const own = byAccount.get(accountKey)!
+        const reading = own.windows.get(windowId)
+        const weekly = own.weekly
+        const session = definition.window === 'Session'
+        const gate =
+          session &&
+          weekly &&
+          quotaReadingState(weekly, weekly.connected, now) === 'fresh' &&
+          weekly.usedPercent >= 100
+            ? weekly
+            : undefined
+        const readingState = reading
+          ? quotaReadingState(reading, reading.connected, now)
+          : 'unknown'
+        const state =
+          session &&
+          weekly &&
+          quotaReadingState(weekly, weekly.connected, now) !== 'fresh' &&
+          readingState === 'fresh'
+            ? 'unknown'
+            : readingState
+        const remaining =
+          state === 'fresh' && reading
+            ? gate
+              ? 0
+              : Math.max(0, Math.min(100, 100 - reading.usedPercent))
+            : null
+        return {
+          accountKey,
+          label: own.label,
+          state,
+          remaining,
+          gatedByWeekly: !!gate,
+          resetsAt:
+            gate && reading && reading.usedPercent >= 100
+              ? gate.resetsAt && reading.resetsAt
+                ? Math.max(gate.resetsAt, reading.resetsAt)
+                : undefined
+              : (gate?.resetsAt ?? reading?.resetsAt),
+        }
+      })
+      const resets = segments.flatMap((segment) =>
+        segment.remaining === 0 && segment.resetsAt && segment.resetsAt * 1000 > now
+          ? [segment.resetsAt]
+          : [],
+      )
+      return {
+        key: JSON.stringify([bucket, windowId]),
+        provider: definition.provider,
+        window: definition.window,
+        segments,
+        available: segments.filter((segment) => segment.remaining !== null && segment.remaining > 0)
+          .length,
+        unknown: segments.filter((segment) => segment.remaining === null).length,
+        nextReset: resets.length ? Math.min(...resets) : undefined,
+      }
+    })
+  })
+}
+
+/** Per-account health prevents one failed auth file from disabling healthy accounts. */
+export function hubPlanLimitSources(
+  hub: UsageHub,
+  source: { computer: string; sourceId: string; connected: boolean },
+) {
+  if (!hub.accounts)
+    return [{ ...source, connected: source.connected && !hub.error, limits: hub.limits }]
+  const status = new Map<string, boolean>()
+  for (const account of hub.accounts)
+    status.set(
+      account.account.id,
+      (status.get(account.account.id) ?? false) || account.status === 'ok',
+    )
+  const grouped = new Map<string, PlanLimit[]>()
+  for (const limit of hub.limits) {
+    const id = limit.account?.id ?? ''
+    const limits = grouped.get(id) ?? []
+    limits.push(limit)
+    grouped.set(id, limits)
+  }
+  return [...grouped].map(([id, limits]) => ({
+    ...source,
+    readError: status.get(id) !== true,
+    limits,
+  }))
+}

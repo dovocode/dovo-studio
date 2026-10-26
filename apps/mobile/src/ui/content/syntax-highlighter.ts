@@ -1,3 +1,4 @@
+import { cachedSyntax } from './syntax-cache'
 import { createHighlighterCore } from '@shikijs/core'
 import type {
   Awaitable,
@@ -77,6 +78,8 @@ export type SyntaxTokenize = (content: string, language?: string) => ThemedToken
 export function createSyntaxHighlighter(engine: () => Awaitable<RegexEngine>) {
   let instance: Promise<HighlighterCore> | undefined
   const pendingLanguages = new Map<string, Promise<void>>()
+  let previousTheme: ThemeRegistration | undefined
+  let previousTokenize: SyntaxTokenize | undefined
 
   return async (
     languages: readonly string[],
@@ -105,7 +108,8 @@ export function createSyntaxHighlighter(engine: () => Awaitable<RegexEngine>) {
       }),
     )
     if (!highlighter.getLoadedThemes().includes(theme.name)) await highlighter.loadTheme(theme)
-    return (content, language) => {
+    if (previousTheme === theme && previousTokenize) return previousTokenize
+    const tokenize = cachedSyntax((content, language) => {
       if (
         !language ||
         !highlighter.getLoadedLanguages().includes(language) ||
@@ -117,6 +121,9 @@ export function createSyntaxHighlighter(engine: () => Awaitable<RegexEngine>) {
         theme: theme.name,
         tokenizeMaxLineLength: 2000,
       })
-    }
+    })
+    previousTheme = theme
+    previousTokenize = tokenize
+    return tokenize
   }
 }

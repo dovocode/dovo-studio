@@ -91,3 +91,37 @@ it('requires feature groups to partition changed paths exactly once and preserve
   ).toThrow(/omitted/)
   expect(() => decode(featureReviewSchema, { groups: [] })).toThrow(/at least 1/)
 })
+
+it('indexes review state without losing revision matching or first-match semantics', async () => {
+  const { createReviewFileLookup } = await import('./review')
+  const first = { path: 'app.ts', fingerprint: 'old', viewed: true, version: 1 }
+  const current = { ...first, fingerprint: 'new', viewed: false, version: 2 }
+  const progress = { files: [first, current, { ...first, viewed: false }], groups: [] }
+  const lookup = createReviewFileLookup(progress)
+  expect(lookup('app.ts', 'old')).toBe(first)
+  expect(lookup('app.ts', 'new')).toBe(current)
+  expect(lookup('app.ts', 'missing')).toBeUndefined()
+  expect(lookup('other.ts', 'new')).toBeUndefined()
+  expect(createReviewFileLookup(null)('app.ts', 'old')).toBeUndefined()
+})
+it('indexes renamed inline comments in timeline order, without duplicate aliases', async () => {
+  const { pullCommentsByFile } = await import('./review')
+  const files = [
+    { path: 'new.ts', previousPath: 'old.ts', status: 'renamed', additions: 1, deletions: 0 },
+    { path: 'same.ts', previousPath: 'same.ts', status: 'modified', additions: 1, deletions: 0 },
+  ]
+  const comments = ['old.ts', 'new.ts', 'same.ts', 'old.ts', 'unrelated.ts'].map((path, index) => ({
+    id: String(index),
+    kind: 'inline' as const,
+    path,
+    author: 'reviewer',
+    body: 'Review',
+    url: 'https://github.com/team/repo/pull/1',
+    date: '',
+  }))
+  const ordinary = { ...comments[0]!, id: 'discussion', kind: 'comment' as const }
+  const result = pullCommentsByFile(files, [...comments, ordinary])
+  expect(result.get('new.ts')?.map((comment) => comment.id)).toEqual(['0', '1', '3'])
+  expect(result.get('same.ts')?.map((comment) => comment.id)).toEqual(['2'])
+  expect(result.has('unrelated.ts')).toBe(false)
+})

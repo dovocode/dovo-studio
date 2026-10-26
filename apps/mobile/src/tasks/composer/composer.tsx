@@ -844,7 +844,11 @@ export function Composer({
                       inline
                       task={task}
                       onClose={() => setTurnModelOpen(false)}
-                      turn={{ value: turnSettings, onChange: setTurnSettings }}
+                      turn={{
+                        value: turnSettings,
+                        onChange: setTurnSettings,
+                        beforeMessageId: editing?.message.id,
+                      }}
                     />
                   ) : (
                     <TurnModelControls

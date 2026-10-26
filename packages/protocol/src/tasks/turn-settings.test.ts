@@ -3,6 +3,7 @@ import { Schema } from 'effect'
 import {
   agentTurnSettings,
   applyTurnSettings,
+  queuedModelAgent,
   sameTurnSettings,
   turnSettingsMatchHarness,
   type Agent,
@@ -89,4 +90,45 @@ it('keeps existing model-only messages compatible', () => {
   expect(selected.permission).toBe('ask')
   expect(selected.env).toEqual(agent.env)
   expect(selected.serviceTier).toBeUndefined()
+})
+
+it('previews the model inherited at each queue position without leaking other harness settings', () => {
+  const full = agentTurnSettings(
+    {
+      ...agent,
+      model: 'large',
+      reasoning: 'high',
+      permission: 'full-access',
+      env: { TEMP: 'yes' },
+    },
+    true,
+  )
+  const queue = [
+    { id: 'earlier' },
+    { id: 'chosen', turnSettings: full },
+    { id: 'following' },
+    { id: 'reset', turnSettings: { provider: 'codex' as const, model: '', reasoning: '' } },
+  ]
+  expect(queuedModelAgent(agent, queue, 'chosen')).toBe(agent)
+  expect(queuedModelAgent(agent, queue, 'following')).toEqual({
+    ...agent,
+    model: 'large',
+    reasoning: 'high',
+  })
+  expect(queuedModelAgent(agent, queue)).toEqual({
+    ...agent,
+    model: '',
+    reasoning: '',
+    serviceTier: undefined,
+    cyberAccessProgram: undefined,
+  })
+  expect(
+    queuedModelAgent(agent, [{ id: 'wrong', turnSettings: { ...full, provider: 'claude' } }]),
+  ).toBe(agent)
+  expect(
+    queuedModelAgent(agent, [
+      { id: 'wrong', turnSettings: { ...full, acpInstallationId: 'other' } },
+    ]),
+  ).toBe(agent)
+  expect(agent.model).toBe('old-model')
 })

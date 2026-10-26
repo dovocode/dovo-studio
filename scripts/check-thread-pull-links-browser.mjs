@@ -10,7 +10,7 @@ const environment = `export const reducedMotion=()=>window.matchMedia("(prefers-
 import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
 export const updateTask=(w,id,change)=>({...w,tasks:w.tasks.map(task=>task.id===id?change(task):task)});export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);
-export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo'});export const useResolvedTheme=()=> 'dark';
+export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useResolvedTheme=()=> 'dark';
 export const useRuntime=useWorkspace;export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
 export const useStudioHost=()=>({...useWorkspace().host,openExternalLink:async url=>{window.external.push(url)},openBrowserLink:async url=>{window.browsers.push(url)},openPullLink:url=>{window.opened.push(url);return true}});
 `

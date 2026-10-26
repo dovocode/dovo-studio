@@ -132,6 +132,8 @@ export const browserCommandSchema = Schema.Union([
     ),
     taskId: Schema.optional(Schema.String),
     agentAccess: Schema.optional(Schema.Boolean),
+    /** Shared Browser activity only: queue new-tab requests, allow popups and forward tab shortcuts. */
+    workspaceBrowser: Schema.optional(Schema.Boolean),
     key: maxValue(minValue(Schema.String, 1), 500),
     url: urlSchema(),
     viewport: Schema.optional(
@@ -236,10 +238,66 @@ export const browserCommandSchema = Schema.Union([
       'devtools',
       'status',
       'screenshot',
+      'selection',
+      /** Window-wide `mediaRequests` and `captures` only; `key` is ignored, tab events untouched. */
+      'media-status',
     ]),
     key: maxValue(minValue(Schema.String, 1), 500),
   }),
+  /** Answer a pending `mediaRequests` entry; only shared-browser tabs ever create one. */
+  mutableStruct({
+    action: Schema.Literal('media'),
+    /** Tab key of the requesting page, as listed in the request. */
+    key: maxValue(minValue(Schema.String, 1), 500),
+    requestId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f-]{36}$/))),
+    decision: Schema.Literals(['allow', 'deny']),
+    /** Display requests: key of one of the request's `sources` to share as a whole tab. */
+    source: Schema.optional(maxValue(minValue(Schema.String, 1), 500)),
+    /** Display requests: also share that tab's audio (needs `audio` in the request). */
+    audio: Schema.optional(Schema.Boolean),
+  }),
+  /** Ask the capturing page to stop; the capture stays listed until its tracks really end. */
+  mutableStruct({
+    action: Schema.Literal('stop-capture'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    captureId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f-]{36}$/))),
+  }),
 ])
+/** A page in a shared-browser tab asked to share a tab or use the camera or microphone. */
+export type BrowserMediaRequest = {
+  id: string
+  /** `display`: `getDisplayMedia` (tab sharing). `user-media`: camera and/or microphone. */
+  kind: 'display' | 'user-media'
+  /** Requesting tab key and profile. */
+  key: string
+  profileId: string
+  /** Origin of the requesting page, e.g. `https://meet.google.com`. */
+  origin: string
+  video: boolean
+  audio: boolean
+  /** Epoch milliseconds; afterwards the request is denied automatically. */
+  expiresAt: number
+  /** Display requests: shareable tabs in the same window and profile, never thread previews. */
+  sources?: { key: string; title: string; url: string; requester: boolean }[]
+}
+/** A tab being captured. Listed until its tracks really end, never just because Stop was asked. */
+export type BrowserCapture = {
+  id: string
+  /** Tab key of the page that receives the capture. */
+  key: string
+  /** Tab key of the tab being shared. */
+  sourceKey: string
+  /** The shared tab's current title and address, for naming it in the sharing indicator. */
+  sourceTitle?: string
+  sourceUrl?: string
+  profileId: string
+  origin: string
+  audio: boolean
+  /** `starting`: approved, page not yet holding tracks. `stopping`: Stop asked, tracks still live. */
+  state: 'starting' | 'active' | 'stopping'
+  /** Stop was asked but the page kept its tracks; only closing the capturing page ends it. */
+  unresponsive?: boolean
+}
 export type BrowserCommand = Schema.Schema.Type<typeof browserCommandSchema>
 export type BrowserBridge = (command: BrowserCommand) => Promise<
   | {
@@ -247,6 +305,20 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       title?: string
       cdp?: string
       image?: string
+      selection?: string
+      /** HTTP(S) new-tab requests from a workspace browser view, drained by `status`. */
+      openedLinks?: string[]
+      /**
+       * Hidden tabs an extension opened in this window. Adopt each with `show` using its key and
+       * exact URL; drained by any `status` in the window.
+       */
+      createdTabs?: { key: string; url: string; profileId: string }[]
+      /** Keys of tabs an extension closed in this window; drained by any `status` in the window. */
+      closedTabs?: string[]
+      /** Pending media requests in this window; a snapshot, repeated until answered or expired. */
+      mediaRequests?: BrowserMediaRequest[]
+      /** Ongoing tab captures in this window; a snapshot, repeated while they run. */
+      captures?: BrowserCapture[]
       back: boolean
       forward: boolean
     }
@@ -268,3 +340,93 @@ export const desktopBrowserHostSchema = mutableStruct({
     }),
   ),
 })
+
+/** Paired-user browser workspace; never accepted by agent or device endpoints as a task. */
+export const STUDIO_BROWSER_SCOPE = 'studio:browser'
+export const browserSelectionSchema = mutableStruct({
+  text: maxValue(Schema.String, 32000),
+  url: Schema.String,
+  title: Schema.String,
+})
+/** Read literal page text only; never interpolate page content into executable code. */
+export function selectedBrowserText() {
+  const element = document.activeElement
+  if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+    // Password, hidden and other non-text controls expose masks or nothing useful.
+    if (
+      element instanceof HTMLInputElement &&
+      !['text', 'search', 'url', 'email', 'tel'].includes(element.type)
+    )
+      return ''
+    return element.value
+      .slice(element.selectionStart ?? 0, element.selectionEnd ?? 0)
+      .slice(0, 32000)
+  }
+  return (window.getSelection()?.toString() ?? '').slice(0, 32000)
+}
+
+const browserProfileIdSchema = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/)),
+)
+const browserExtensionIdSchema = Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-p]{32}$/)))
+const browserPixelSchema = (minimum: number) =>
+  maxValue(minValue(Schema.Number.pipe(Schema.check(Schema.isInt())), minimum), 10000)
+/** Local shared-browser profiles only; extension code and paths never come from the renderer. */
+export const browserExtensionCommandSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literals(['list', 'install']),
+    profileId: browserProfileIdSchema,
+  }),
+  mutableStruct({
+    action: Schema.Literals(['enable', 'disable', 'remove']),
+    profileId: browserProfileIdSchema,
+    id: browserExtensionIdSchema,
+  }),
+  mutableStruct({
+    action: Schema.Literal('open'),
+    profileId: browserProfileIdSchema,
+    id: browserExtensionIdSchema,
+    /** Browser tab key of the active shared-browser tab, as used by `BrowserCommand`. */
+    key: maxValue(minValue(Schema.String, 1), 500),
+    /** Toolbar button bounds in window content coordinates, like `show` bounds. */
+    anchor: mutableStruct({
+      x: browserPixelSchema(0),
+      y: browserPixelSchema(0),
+      width: browserPixelSchema(1),
+      height: browserPixelSchema(1),
+    }),
+  }),
+])
+export type BrowserExtensionCommand = Schema.Schema.Type<typeof browserExtensionCommandSchema>
+export type BrowserExtension = {
+  id: string
+  name: string
+  version: string
+  enabled: boolean
+  /** Enabled and running in this profile now. */
+  loaded: boolean
+  title?: string
+  /** PNG data URL from the managed copy. */
+  icon?: string
+  /** Clicking opens an action popup rather than sending `action.onClicked`. */
+  popup: boolean
+  /** Requested permissions Dovo does not provide; related features may fail. */
+  unsupportedPermissions: string[]
+  /** Permissions removed from Dovo's managed copy, such as `nativeMessaging`. */
+  removedPermissions: string[]
+  error?: string
+}
+export type BrowserExtensionsResult = {
+  extensions: BrowserExtension[]
+  /** Set by `install` on success; absent when the user cancelled the folder picker. */
+  installed?: string
+  capabilities: {
+    unpackedFolders: true
+    nativeMessaging: false
+    chromeWebStore: false
+    remoteRuntimes: false
+  }
+}
+export type BrowserExtensionBridge = (
+  command: BrowserExtensionCommand,
+) => Promise<BrowserExtensionsResult | undefined>

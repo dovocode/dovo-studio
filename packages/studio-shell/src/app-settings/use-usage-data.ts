@@ -1,11 +1,14 @@
 import { useEffect, useLayoutEffect, useEffectEvent, useRef, useState } from 'react'
-import { refreshUsageEntry, type UsageHistoryResult } from '@dovo/protocol'
+import { refreshUsageEntry, type UsageHub, type UsageHistoryResult } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
 /** Synchronize only when hosts change or the usage page's five-minute timer fires. */
-export function useUsageData(selected: string) {
+export function useUsageData(selected: string, kind: 'history' | 'limits') {
   const { runtimes, readRuntime, refreshRuntime, runtimeReadCache } = useWorkspace()
   const [saved, setSaved] = useState<
     Record<string, { connection: string; history: UsageHistoryResult }>
+  >({})
+  const [savedHubs, setSavedHubs] = useState<
+    Record<string, { connection: string; hubs: UsageHub[] }>
   >({})
   const [notices, setNotices] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
@@ -13,9 +16,10 @@ export function useUsageData(selected: string) {
   const requested = useRef(new Set<string>())
   const mounted = useRef(true)
   const hosts = runtimes.filter((entry) => selected === 'all' || entry.profile.id === selected)
-  const scope = JSON.stringify(
+  const scope = JSON.stringify([
+    kind,
     hosts.map((entry) => [entry.profile.id, entry.profile.connection, entry.connected]),
-  )
+  ])
   const currentScope = useRef(scope)
   useLayoutEffect(() => {
     currentScope.current = scope
@@ -34,9 +38,20 @@ export function useUsageData(selected: string) {
             profile: entry.profile,
             connected: entry.connected,
             force,
+            kind,
             read: readRuntime,
             cache: runtimeReadCache(entry.profile),
             refresh: () => refreshRuntime(entry.profile),
+            publishHubs: (hubs) => {
+              if (mounted.current && currentScope.current === scope)
+                setSavedHubs((previous) => ({
+                  ...previous,
+                  [entry.profile.id]: {
+                    connection: JSON.stringify(entry.profile.connection),
+                    hubs,
+                  },
+                }))
+            },
             publish: (history) => {
               if (mounted.current && currentScope.current === scope)
                 setSaved((previous) => ({
@@ -80,11 +95,15 @@ export function useUsageData(selected: string) {
     const timer = setInterval(automaticRefresh, 300000)
     return () => clearInterval(timer)
   }, [scope])
+  const hubs: Record<string, UsageHub[]> = {}
   const histories: Record<string, UsageHistoryResult> = {}
   for (const host of hosts) {
+    const hub = savedHubs[host.profile.id]
+    if (hub?.connection === JSON.stringify(host.profile.connection))
+      hubs[host.profile.id] = hub.hubs
     const value = saved[host.profile.id]
     if (value?.connection === JSON.stringify(host.profile.connection))
       histories[host.profile.id] = value.history
   }
-  return { hosts, histories, notices, busy, refresh: () => void refresh(true) }
+  return { hosts, histories, hubs, notices, busy, refresh: () => void refresh(true) }
 }

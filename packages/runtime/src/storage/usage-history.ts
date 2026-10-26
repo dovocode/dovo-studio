@@ -90,6 +90,32 @@ export class UsageHistory {
         )
     })()
   }
+  /** CLI exclusion needs identities, not decoding every durable turn a second time. */
+  async ownedSessions(since: string) {
+    const schema = mutableStruct({
+      provider: Schema.String,
+      session: Schema.NullOr(Schema.String),
+      origin: Schema.NullOr(Schema.String),
+      started_at: Schema.String,
+      id: Schema.String,
+    })
+    const page = this.db.prepare(
+      "SELECT id, started_at, json_extract(value, '$.turn.provider') AS provider, json_extract(value, '$.sessionId') AS session, json_extract(value, '$.origin') AS origin FROM usage_records WHERE (started_at,id) > (?,?) ORDER BY started_at,id LIMIT 256",
+    )
+    const sessions = new Set<string>()
+    let timestamp = since,
+      id = ''
+    while (true) {
+      const rows = page.all(timestamp, id).map((row) => decode(schema, row))
+      for (const row of rows)
+        if (row.origin !== 'cli' && row.session) sessions.add(`${row.provider}:${row.session}`)
+      const last = rows.at(-1)
+      if (!last || rows.length < 256) return sessions
+      timestamp = last.started_at
+      id = last.id
+      await setImmediate()
+    }
+  }
   async read(since: string): Promise<UsageRecord[]> {
     const records: UsageRecord[] = []
     const schema = mutableStruct({

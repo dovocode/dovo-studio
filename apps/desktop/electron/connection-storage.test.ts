@@ -254,3 +254,21 @@ it('validates merged uniqueness before persisting independently added profiles',
   await expect(save(source, second)).rejects.toThrow('unique')
   expect(await invoke('read', source)).toBe(committed)
 })
+
+it('allows validated browser-window workbenches and broadcasts app-setting changes across readers', async () => {
+  const main = event(),
+    browser = event('file:///app/index.html#browser-window=12345678-1234-1234-1234-123456789abc')
+  f.listeners.get('app:settings-read')!(main)
+  f.listeners.get('app:settings-read')!(browser)
+  expect(browser.returnValue).toEqual({ value: { theme: 'dark' } })
+  await expect(f.handlers.get('runtime:registry-read')!(browser)).resolves.toBeNull()
+  f.listeners.get('app:settings-write')!(main, JSON.stringify({ browserWorkspaceEnabled: false }))
+  expect(browser.sender.send).toHaveBeenCalledWith('app:settings-changed')
+  expect(main.sender.send).not.toHaveBeenCalled()
+  const foreign = event('https://evil.example/#browser-window=12345678-1234-1234-1234-123456789abc')
+  f.listeners.get('app:settings-read')!(foreign)
+  expect(foreign.returnValue).toHaveProperty('error')
+  const invalid = event('file:///app/index.html#browser-window=not-a-window')
+  f.listeners.get('app:settings-read')!(invalid)
+  expect(invalid.returnValue).toHaveProperty('error')
+})

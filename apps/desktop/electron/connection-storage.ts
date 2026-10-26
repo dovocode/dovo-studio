@@ -13,6 +13,7 @@ import { readLocalSettingsSection, writeLocalSettingsSection } from '@dovo/proto
 export function registerConnectionStorage(rendererPath: string) {
   let writes: Promise<unknown> = Promise.resolve()
   const readers = new Set<Electron.WebContents>()
+  const appReaders = new Set<Electron.WebContents>()
   const read = async () => {
     try {
       return safeStorage.decryptString(await readFile(path()))
@@ -35,6 +36,12 @@ export function registerConnectionStorage(rendererPath: string) {
       )
       source.hash = ''
     }
+    if (
+      /^#browser-window=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        source.hash,
+      )
+    )
+      source.hash = ''
     if (source.hash) throw new Error('Untrusted connection storage request')
     if (
       process.env.VITE_DEV_SERVER_URL
@@ -55,6 +62,7 @@ export function registerConnectionStorage(rendererPath: string) {
   ipcMain.on('app:settings-read', (event) => {
     try {
       trustedFrame(event, true)
+      appReaders.add(event.sender)
       event.returnValue = { value: readLocalSettingsSection('app') ?? null }
     } catch (error) {
       event.returnValue = { error: String(error) }
@@ -69,6 +77,10 @@ export function registerConnectionStorage(rendererPath: string) {
       if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new Error('Invalid app settings')
       writeLocalSettingsSection('app', () => value)
+      for (const reader of appReaders) {
+        if (reader.isDestroyed()) appReaders.delete(reader)
+        else if (reader !== event.sender) reader.send('app:settings-changed')
+      }
       event.returnValue = { ok: true }
     } catch (error) {
       event.returnValue = { error: String(error) }

@@ -406,6 +406,9 @@ importers:
       effect:
         specifier: 4.0.6
         version: 4.0.6
+      electron-chrome-extensions:
+        specifier: 4.10.0
+        version: 4.10.0(supports-color@8.1.1)
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9(supports-color@8.1.1)
@@ -1196,6 +1199,9 @@ importers:
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
+      '@pierre/highlights':
+        specifier: 0.2.0
+        version: 0.2.0
       effect:
         specifier: 4.0.6
         version: 4.0.6
@@ -1267,6 +1273,9 @@ importers:
       '@pierre/diffs':
         specifier: 1.6.1
         version: 1.6.1(@shikijs/themes@4.5.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@pierre/highlights':
+        specifier: 0.2.0
+        version: 0.2.0
       '@radix-ui/react-checkbox':
         specifier: ^1.4.1
         version: 1.4.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -1288,9 +1297,6 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.4.1
         version: 1.4.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@streamdown/code':
-        specifier: ^2.0.0
-        version: 2.0.0(react@19.3.1)
       '@xyflow/react':
         specifier: 12.12.0
         version: 12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -4749,12 +4755,6 @@ packages:
       typescript:
         optional: true
 
-  '@streamdown/code@2.0.0':
-    resolution: {integrity: sha512-sSyX/9gOOcivbP7204+sfAam+gotxjUNV+T4EuN3aa6i5x1LaqtB6Ln/Mxzd1XGvm0vNApO4oKLZs+7gzFI1kQ==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      react: ^18.0.0 || ^19.0.0
-
   '@swc/helpers@0.5.23':
     resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
 
@@ -6734,6 +6734,9 @@ packages:
     resolution: {integrity: sha512-a1KM5heqS3gQCZzizXEI8RjJy3QVogULPdeSknt76uLDpBIW/HDGsMg/XgP0riP6PI9COsRvFITKKGDqA8fJxA==}
     engines: {node: '>=14.0.0'}
     hasBin: true
+
+  electron-chrome-extensions@4.10.0:
+    resolution: {integrity: sha512-yGOGqDN38Xn8hP1jGSWUNoQJSmgZvDltZn8ZVFo8GcQQD1DI4NtA/Fv/BzYzUhpevX8C+4aZI3LC/lqzN+/RFQ==}
 
   electron-publish@26.15.3:
     resolution: {integrity: sha512-g/2bn8YTavY4cuS5F+jOS7zmZbXXBV8KZ8yHKfJjFPoKtzBqrpCdNPxBd3tqdBwP7BVd0lGzf7Bk2s0KesWZ4Q==}
@@ -14165,11 +14168,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@streamdown/code@2.0.0(react@19.3.1)':
-    dependencies:
-      react: 19.3.1
-      shiki: 4.5.0
-
   '@swc/helpers@0.5.23':
     dependencies:
       tslib: 2.8.1
@@ -16232,6 +16230,12 @@ snapshots:
       yargs: 17.7.3
     transitivePeerDependencies:
       - electron-builder-squirrel-windows
+      - supports-color
+
+  electron-chrome-extensions@4.10.0(supports-color@8.1.1):
+    dependencies:
+      debug: 4.4.3(supports-color@8.1.1)
+    transitivePeerDependencies:
       - supports-color
 
   electron-publish@26.15.3(supports-color@8.1.1):

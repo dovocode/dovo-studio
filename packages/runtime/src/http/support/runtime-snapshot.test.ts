@@ -55,6 +55,7 @@ it.each(['full', 'overview', 'paged'] as const)(
     const next = await read(true)
     const phone = await read(false)
     expect(first.permissionPolicySupported).toBe(true)
+    expect(first.persistentTurnModelsSupported).toBe(true)
     expect(phone.permissionPolicySupported).toBe(true)
     expect(next.workspace).toBe(first.workspace)
     expect(phone.workspace).toBe(first.workspace)
@@ -184,4 +185,43 @@ it('publishes opaque provider generations without invalidating unrelated catalog
   expect(JSON.stringify(next.catalogGenerations)).not.toContain('/private')
   expect(snapshotTag(next)).not.toBe(snapshotTag(first))
   expect((await read()).catalogGenerations).toEqual(next.catalogGenerations)
+})
+
+it('opts into bounded settled summaries, keeps selected old threads and leaves legacy snapshots complete', async () => {
+  const { runtime } = await setup()
+  const tasks: Task[] = Array.from({ length: 40 }, (_, i) => ({
+    id: `settled-${i}`,
+    title: `Settled ${i}`,
+    agentId: '',
+    repositoryId: '',
+    status: 'review',
+    archived: true,
+    createdAt: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(),
+    draft: '',
+    example: false,
+    messages: [],
+    files: [],
+  }))
+  runtime.services.store.update((workspace) => ({ ...workspace, tasks }))
+  const read = (limit?: number, selected: string[] = []) =>
+    Effect.runPromise(
+      runtimeSnapshot(runtime.services, { id: 'owner', owner: true }, false, selected, true, limit),
+    )
+  const first = await read(25)
+  expect(first.workspace.tasks).toHaveLength(25)
+  expect(first.olderSettled).toEqual({ limit: 25, omitted: 15 })
+  expect((await read(25)).workspace).toBe(first.workspace)
+  const selected = await read(25, ['settled-0'])
+  expect(selected.workspace.tasks.some((task) => task.id === 'settled-0')).toBe(true)
+  expect(selected.detailTaskIds).toContain('settled-0')
+  expect((await read(50)).workspace.tasks).toHaveLength(40)
+  expect((await read()).workspace.tasks).toHaveLength(40)
+  runtime.services.store.updateTask('settled-0', (task) => ({
+    ...task,
+    lastPromptAt: '2026-10-25T00:00:00Z',
+    settledAt: '2026-10-01T00:00:00Z',
+  }))
+  const reordered = await read(25)
+  expect(reordered.workspace.tasks.some((task) => task.id === 'settled-0')).toBe(true)
+  expect(reordered.olderSettled).toEqual({ limit: 25, omitted: 15 })
 })

@@ -12,7 +12,7 @@ const controls =
   `export {ProjectIcon} from '${uiDir}/project-icon.tsx';export * from '${uiDir}/sidebar-header.tsx';export const OrganizeReview=()=>null;export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
 const mocks = {
   '@dovo/studio-ui': controls,
-  '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
+  '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[],theme:'dark',themePalette:'dovo',codeTheme:'app'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
   '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './use-pulls': `export const usePulls=()=>({sources:[window.source],pages:[{source:window.source,reader:window.source,pulls:window.pulls,error:window.pullError}],connected:window.store.connected,busy:false,refresh:()=>{},more:()=>{}});`,
@@ -33,7 +33,7 @@ const pull={number:7,title:'Improve pull request reviews',url:'https://github.co
 window.pulls=[pull,{...pull,number:8,url:'https://github.com/team/project/pull/8',title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,url:'https://github.com/team/project/pull/9',title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
 window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project'}};
 window.detail={pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
-window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};const originalRequest = window.store.request; const marks = new Map();
+window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',runtimes:[],workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};const originalRequest = window.store.request; const marks = new Map();
 window.store.request = async (path, input, ...rest) => {
   if (!path.startsWith('/api/review/')) return originalRequest(path, input, ...rest);
   const files = window.detail.files.map(file => {
@@ -266,6 +266,27 @@ try {
   await form.getByText(/\*\*text\*\*/).waitFor()
   await form.getByRole('button', { name: 'Comment', exact: true }).click()
   assert.equal((await page.evaluate(() => window.writes.at(-1))).input.action, 'comment')
+  await page.evaluate(() => {
+    window.detail.capabilities = {
+      ...window.detail.capabilities,
+      actions: ['comment', 'review', 'merge'],
+      mergeMethods: ['squash'],
+    }
+  })
+  await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).click()
+  await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await detail.getByRole('button', { name: 'Merge', exact: true }).click()
+  const mergeDialog = page.getByRole('dialog')
+  const mergeConfirm = mergeDialog.getByRole('button', { name: 'Merge pull request', exact: true })
+  assert.equal(await mergeConfirm.isDisabled(), true)
+  await mergeDialog.getByRole('checkbox', { name: 'Confirm merge of reviewed commit' }).check()
+  await mergeConfirm.click()
+  await mergeDialog.waitFor({ state: 'detached' })
+  const merged = await page.evaluate(() =>
+    window.writes.find((write) => write.input.action === 'merge'),
+  )
+  assert.equal(merged.input.headSha, 'a'.repeat(40))
+  assert.equal(merged.input.method, 'squash')
   await page.screenshot({ path: '/tmp/dovo-pull-workspace.png' })
   await page.getByRole('tab', { name: /Changes/ }).click()
   await page.getByText('1 of 2 viewed', { exact: true }).waitFor()

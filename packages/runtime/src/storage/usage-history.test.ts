@@ -88,3 +88,69 @@ it('allows streamed writes between pages of a large history read', async () => {
     db.close()
   }
 })
+
+it('projects only owned provider/session identities while yielding between pages', async () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const turn = task.turns?.[0]
+    if (!turn) throw new Error('Missing fixture turn')
+    store.usage.recordExternal(
+      Array.from({ length: 600 }, (_, index) => ({
+        taskId: 'owned',
+        title: 'Owned',
+        sessionId: `session-${index % 3}`,
+        origin: 'dovo' as const,
+        turn: { ...turn, id: String(index) },
+      })),
+    )
+    store.usage.recordExternal([
+      {
+        taskId: 'cli',
+        title: 'CLI',
+        origin: 'cli',
+        sessionId: 'external',
+        turn: { ...turn, id: 'external' },
+      },
+      {
+        taskId: 'old',
+        title: 'Old',
+        sessionId: 'old',
+        turn: { ...turn, id: 'old', startedAt: '2025-01-01T00:00:00Z' },
+      },
+      {
+        taskId: 'legacy',
+        title: 'Legacy',
+        sessionId: 'session-0',
+        turn: { ...turn, id: 'legacy', provider: 'claude' },
+      },
+    ])
+    const pending = store.usage.ownedSessions('2026-09-01')
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          ...task,
+          sessionId: 'new-session',
+          turns: [
+            { ...turn, startedAt: '2026-10-02T00:00:00Z', finishedAt: '2026-10-02T00:01:00Z' },
+          ],
+        },
+      ],
+    }))
+    const sessions = await pending
+    expect(sessions).toEqual(
+      new Set([
+        'codex:session-0',
+        'codex:session-1',
+        'codex:session-2',
+        'claude:session-0',
+        'codex:new-session',
+      ]),
+    )
+    const reopened = new WorkspaceStore(db)
+    expect(await reopened.usage.ownedSessions('2026-09-01')).toEqual(sessions)
+  } finally {
+    db.close()
+  }
+})

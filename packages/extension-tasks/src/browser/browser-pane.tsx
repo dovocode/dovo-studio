@@ -1,3 +1,20 @@
+import { BrowserExtensions } from './browser-extensions'
+import { BrowserLibrary } from './browser-library'
+import {
+  readSharedBrowserTabs,
+  readSharedBrowserLibrary,
+  saveSharedBrowserLibrary,
+  SHARED_BROWSER_LIBRARY_KEY,
+  saveSharedBrowserTabs,
+  recentBrowserTabs,
+  visitBrowserTab,
+  browserAddress,
+  browserPageKey,
+  rememberBrowserVisit,
+  type BrowserTabs,
+  type BrowserTab,
+} from './shared-browser-tabs'
+import { SharedBrowserActions } from './shared-browser-actions'
 import { randomUUID, runtimeComputerName } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -18,6 +35,7 @@ import {
   Camera,
   Keyboard,
   X,
+  Star,
 } from 'lucide-react'
 import {
   useWorkspace,
@@ -26,8 +44,10 @@ import {
   useAppPreferences,
   updateAppPreferences,
   useRemoteBrowserProfiles,
+  WorkspaceScope,
 } from '@dovo/studio-core'
 import {
+  browserSelectionSchema,
   previewUrl,
   previewPresets,
   previewDevicesSchema,
@@ -46,6 +66,7 @@ import {
   DialogTitle,
   DialogDescription,
   Popover,
+  useNavigationSidebar,
 } from '@dovo/studio-ui'
 import { useScreenshotAttachment } from './screenshot-attachment'
 import { RemoteBrowser, type RemoteBrowserControls } from './remote-browser'
@@ -53,26 +74,26 @@ import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
 import { DeviceDeployment } from './device-deployment'
 import { deviceHostSettingsResultSchema } from '@dovo/protocol'
+// A popped-out thread has its own renderer and must never share main-window tabs.
+const threadBrowserWindowId = randomUUID()
 const addresses = new Map<string, string>()
-type BrowserTab = {
-  id: string
-  url: string
-  title: string
-  kind: 'web' | 'remote'
-  profileId: string
-}
 type OpenLink = { id: string; url: string }
-const savedTabs = new Map<string, { tabs: BrowserTab[]; active: string }>()
+const savedTabs = new Map<string, BrowserTabs>()
+// Extension-created pages already have a native view. Keep its identity for this renderer session.
+const nativeTabKeys = new Map<string, string>()
+const restorableTab = (tab: BrowserTab) => !tab.url || /^https?:\/\//i.test(tab.url)
 export function BrowserPane({
   taskId,
   onClose,
   openLink,
   onLinkOpened,
+  shared = false,
 }: {
   taskId: string
   onClose?: () => void
   openLink?: OpenLink | null
   onLinkOpened?: () => void
+  shared?: boolean
 }) {
   return (
     <PreviewPane
@@ -81,6 +102,7 @@ export function BrowserPane({
       mode="remote"
       openLink={openLink}
       onLinkOpened={onLinkOpened}
+      shared={shared}
     />
   )
 }
@@ -93,52 +115,73 @@ function PreviewPane({
   mode,
   openLink,
   onLinkOpened,
+  shared = false,
 }: {
   taskId: string
   onClose?: () => void
   mode: 'remote' | 'devices'
   openLink?: OpenLink | null
   onLinkOpened?: () => void
+  shared?: boolean
 }) {
   const { connection } = useWorkspace()
-  const scope = `${connection?.address ?? ''}:${taskId}`
+  const { browserWindowId, threadWindow } = useStudioHost()
+  // Pop-out threads must not overwrite the main browser workspace.
+  const [storageWindowId] = useApplicationState(
+    () => browserWindowId ?? (threadWindow ? threadBrowserWindowId : undefined),
+  )
+  const scope = shared
+    ? `studio:browser:${storageWindowId ?? 'main'}`
+    : `${connection?.address ?? ''}:${taskId}`
   return (
     <BrowserContent
       key={`${scope}:${mode}`}
       scope={scope}
+      storageWindowId={storageWindowId}
       taskId={taskId}
       onClose={onClose}
       initialMode={mode}
       openLink={openLink}
       onLinkOpened={onLinkOpened}
+      shared={shared}
     />
   )
 }
 function BrowserContent({
   scope,
+  storageWindowId,
   initialMode,
   taskId,
   onClose,
   openLink,
   onLinkOpened,
+  shared = false,
 }: {
   scope: string
+  storageWindowId?: string
   openLink?: OpenLink | null
   onLinkOpened?: () => void
+  shared?: boolean
   initialMode: 'remote' | 'devices'
   taskId: string
   onClose?: () => void
 }) {
-  const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace(),
-    { browser } = useStudioHost()
+  const store = useWorkspace()
+  const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = store,
+    { browser, openBrowserWindow } = useStudioHost()
   const screenshots = useScreenshotAttachment(taskId)
   const preferences = useAppPreferences()
   const profiles = preferences.browserProfiles.length
     ? preferences.browserProfiles
     : [{ id: 'default', name: 'Default' }]
-  const remoteProfiles = useRemoteBrowserProfiles(undefined, initialMode !== 'devices')
   const agentAccess = preferences.browserAgentAccess[scope] ?? false
-  const saved = savedTabs.get(scope)
+  const [restored] = useApplicationState(() =>
+    shared ? readSharedBrowserTabs(storageWindowId) : {},
+  )
+  const saved = savedTabs.get(scope) ?? restored.state
+  const [library] = useApplicationState(() =>
+    shared ? readSharedBrowserLibrary() : { bookmarks: [], visits: [], error: undefined },
+  )
   const initialUrl =
     saved?.tabs.find((tab) => tab.id === saved.active)?.url ?? addresses.get(scope) ?? ''
   const [input, setInput] = useApplicationState(initialUrl)
@@ -152,12 +195,13 @@ function BrowserContent({
   })
   const [tabs, setTabs] = useApplicationState<BrowserTab[]>(
     () =>
-      savedTabs.get(scope)?.tabs ?? [
+      saved?.tabs ?? [
         {
           id: randomUUID(),
           url: addresses.get(scope) ?? '',
           title: '',
           kind: browser ? 'web' : 'remote',
+          runtimeId: activeRuntimeId ?? undefined,
           profileId:
             browser &&
             profiles.some((profile) => profile.id === preferences.browserProfileByThread[scope])
@@ -166,12 +210,31 @@ function BrowserContent({
         },
       ],
   )
-  const [activeTab, setActiveTab] = useApplicationState(
-    () => savedTabs.get(scope)?.active ?? tabs[0].id,
-  )
+  const [activeTab, setActiveTab] = useApplicationState(() => saved?.active ?? tabs[0].id)
+  const [bookmarks, setBookmarks] = useApplicationState<BrowserTab[]>(() => library.bookmarks)
+  const [closed, setClosed] = useApplicationState<BrowserTab[]>(() => saved?.closed ?? [])
+  const [visits, setVisits] = useApplicationState<BrowserTab[]>(() => library.visits)
+  const [openedTabs, setOpenedTabs] = useApplicationState(() => new Set([activeTab]))
+  const currentTabs = useRef(tabs)
+  currentTabs.current = tabs
   const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0]
+  const selectedRuntime = selectedTab.runtimeId
+    ? runtimes.find((entry) => entry.profile.id === selectedTab.runtimeId)
+    : undefined
+  const remoteConnected = shared ? !!selectedRuntime?.connected : connected
+  const remoteProfiles = useRemoteBrowserProfiles(
+    shared ? selectedRuntime?.profile : undefined,
+    initialMode !== 'devices' && (!shared || (!!selectedRuntime && selectedTab.kind === 'remote')),
+  )
+  const tabRequest: typeof request = (path, input, schema, method) =>
+    shared && selectedTab.kind === 'remote'
+      ? selectedRuntime?.connected
+        ? store.readRuntime(selectedRuntime.profile, path, input, schema, method)
+        : Promise.reject(new Error('This tab’s computer is offline or no longer paired.'))
+      : request(path, input, schema, method)
   const profileId = selectedTab.profileId ?? 'default'
-  const browserKey = `${scope}:${activeTab}`
+  const nativeKey = (id: string) => nativeTabKeys.get(`${scope}:${id}`) ?? `${scope}:${id}`
+  const browserKey = nativeKey(activeTab)
   const openedLink = useRef('')
   const controlsId = useId()
   const remote = useRef<RemoteBrowserControls>(null)
@@ -179,26 +242,41 @@ function BrowserContent({
   const [streamDetails, setStreamDetails] = useApplicationState('')
   const [remoteLoading, setRemoteLoading] = useApplicationState(false)
   useEffect(() => {
-    savedTabs.set(scope, { tabs, active: activeTab })
-  }, [scope, tabs, activeTab])
+    savedTabs.set(scope, { tabs, active: activeTab, closed })
+  }, [scope, tabs, activeTab, closed])
   const selectTab = (tab: BrowserTab) => {
     setActiveTab(tab.id)
+    if (shared) setTabs((previous) => visitBrowserTab(previous, tab.id))
+    setOpenedTabs((previous) => new Set([...previous, tab.id]))
     setRemoteOnline(false)
     setStreamDetails('')
     setUrl(tab.url)
     setInput(tab.url)
     setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
   }
-  const newTab = (target = '', kind: BrowserTab['kind'] = 'web', profileId = 'default') => {
+  const newTab = (
+    target = '',
+    kind: BrowserTab['kind'] = browser ? 'web' : 'remote',
+    profileId = 'default',
+    runtimeId = activeRuntimeId ?? undefined,
+    title = '',
+  ) => {
+    if (shared && tabs.length >= 100) {
+      setError('Close a tab before opening more than 100 tabs.')
+      return
+    }
     const tab: BrowserTab = {
       id: randomUUID(),
       url: target,
-      title: '',
+      title,
       kind,
       profileId,
+      runtimeId,
+      visitedAt: Date.now(),
     }
     setTabs((previous) => [...previous, tab])
     selectTab(tab)
+    return tab
   }
   const editing = useRef(false)
   const addressField = useRef<HTMLInputElement>(null)
@@ -209,14 +287,92 @@ function BrowserContent({
   const tabProfiles = mode === 'remote' ? (remoteProfiles.profiles ?? []) : profiles
   useEffect(() => {
     if (!openLink || openedLink.current === openLink.id) return
+    if (!newTab(previewUrl(openLink.url))) return
     openedLink.current = openLink.id
-    newTab(previewUrl(openLink.url))
     onLinkOpened?.()
-  }, [openLink?.id, browser, onLinkOpened])
+  }, [openLink?.id, browser, onLinkOpened, tabs.length])
   const [preset, setPreset] = useApplicationState('fill'),
     [landscape, setLandscape] = useApplicationState(false)
-  const [error, setError] = useApplicationState(''),
+  const [error, setError] = useApplicationState(restored.error ?? library.error ?? ''),
     [reload, setReload] = useApplicationState(0)
+  useEffect(() => {
+    if (!shared) return
+    try {
+      // Extension pages require their existing native view; never restore stale extension URLs.
+      const restorable = tabs.filter(restorableTab)
+      const fallback: BrowserTab = {
+        id: 'empty',
+        url: '',
+        title: '',
+        kind: browser ? 'web' : 'remote',
+        profileId: 'default',
+        runtimeId: activeRuntimeId ?? undefined,
+      }
+      saveSharedBrowserTabs(
+        {
+          tabs: restorable.length ? restorable : [fallback],
+          active: restorable.some((tab) => tab.id === activeTab)
+            ? activeTab
+            : (restorable[0]?.id ?? fallback.id),
+          closed: closed.filter(restorableTab),
+        },
+        storageWindowId,
+      )
+    } catch {
+      setError('Could not save browser tabs. They will remain in this session.')
+    }
+  }, [shared, tabs, activeTab, closed, storageWindowId, browser, activeRuntimeId])
+  const lastLibrary = useRef({ bookmarks, visits })
+  useEffect(() => {
+    if (!shared) return
+    const prior = lastLibrary.current
+    if (prior.bookmarks === bookmarks && prior.visits === visits) return
+    const latest = readSharedBrowserLibrary()
+    if (latest.error) {
+      setError(latest.error)
+      return
+    }
+    const merged = {
+      bookmarks: prior.bookmarks === bookmarks ? latest.bookmarks : bookmarks,
+      visits: prior.visits === visits ? latest.visits : visits,
+    }
+    try {
+      saveSharedBrowserLibrary(merged)
+      lastLibrary.current = merged
+      setBookmarks(merged.bookmarks)
+      setVisits(merged.visits)
+    } catch {
+      setError('Could not save bookmarks and history. Keep this window open.')
+    }
+  }, [shared, bookmarks, visits])
+  useEffect(() => {
+    if (!shared) return
+    const changed = (event: StorageEvent) => {
+      if (event.key !== SHARED_BROWSER_LIBRARY_KEY) return
+      const latest = readSharedBrowserLibrary()
+      if (latest.error) {
+        setError(latest.error)
+        return
+      }
+      lastLibrary.current = latest
+      setBookmarks(latest.bookmarks)
+      setVisits(latest.visits)
+    }
+    window.addEventListener('storage', changed)
+    return () => window.removeEventListener('storage', changed)
+  }, [shared])
+  useEffect(() => {
+    if (shared && /^https?:\/\//i.test(selectedTab.url))
+      setVisits((previous) => rememberBrowserVisit(previous, selectedTab))
+  }, [
+    shared,
+    selectedTab.id,
+    selectedTab.url,
+    selectedTab.title,
+    selectedTab.kind,
+    selectedTab.profileId,
+    selectedTab.runtimeId,
+  ])
   const [turnReload, setTurnReload] = useApplicationState(0)
   const latestTurn = snapshot?.workspace.tasks.find((task) => task.id === taskId)?.turns?.at(-1)
   const seenTurn = useRef(latestTurn?.status === 'completed' ? latestTurn.id : '')
@@ -320,7 +476,9 @@ function BrowserContent({
   }, [initialMode, connected])
   const navigate = (address = input) => {
     try {
-      const target = previewUrl(address, mode === 'remote' ? undefined : connection?.address)
+      const target = shared
+        ? browserAddress(address)
+        : previewUrl(address, mode === 'remote' ? undefined : connection?.address)
       if (mode === 'remote') remote.current?.input({ type: 'navigate', url: target })
       else if (target === url) {
         if (browser)
@@ -333,7 +491,11 @@ function BrowserContent({
         else setReload((n) => n + 1)
       }
       setTabs((previous) =>
-        previous.map((tab) => (tab.id === activeTab ? { ...tab, url: target, title: '' } : tab)),
+        previous.map((tab) =>
+          tab.id === activeTab
+            ? { ...tab, url: target, title: '', ...(shared ? { visitedAt: Date.now() } : {}) }
+            : tab,
+        ),
       )
       setUrl(target)
       setInput(target)
@@ -352,16 +514,94 @@ function BrowserContent({
     }).pipe(
       Effect.tap((state) =>
         Effect.sync(() => {
-          if (!alive || !state || !state.url.startsWith('http')) return
+          if (!alive || !state) return
+          if (shared) {
+            const closedKeys = new Set(state.closedTabs ?? [])
+            const closedIds = new Set(
+              currentTabs.current
+                .filter((tab) => closedKeys.has(nativeKey(tab.id)))
+                .map((tab) => tab.id),
+            )
+            const remaining = currentTabs.current.filter((tab) => !closedIds.has(tab.id))
+            const additions = (state.createdTabs ?? []).filter(
+              (tab) =>
+                /^https?:\/\//i.test(tab.url) || /^chrome-extension:\/\/[a-p]{32}\//.test(tab.url),
+            )
+            const capacity = Math.max(0, 100 - remaining.length)
+            const adopted = additions.slice(0, capacity).map((tab) => {
+              const id = randomUUID()
+              nativeTabKeys.set(`${scope}:${id}`, tab.key)
+              return {
+                id,
+                url: tab.url,
+                title: '',
+                kind: 'web' as const,
+                profileId: tab.profileId,
+                visitedAt: 0,
+              }
+            })
+            const rejected = (state.createdTabs ?? []).filter(
+              (tab) => !additions.slice(0, capacity).includes(tab),
+            )
+            for (const tab of rejected)
+              void browser({ action: 'close', key: tab.key }).catch((cause) =>
+                setError(`Could not close an extra extension tab: ${String(cause)}`),
+              )
+            if (rejected.length) setError('Close a tab before opening more extension tabs.')
+            if (closedKeys.size || adopted.length) {
+              const fallback: BrowserTab = {
+                id: randomUUID(),
+                url: '',
+                title: '',
+                kind: 'web',
+                profileId: 'default',
+              }
+              const next = [...remaining, ...adopted]
+              currentTabs.current = next.length ? next : [fallback]
+              setTabs((previous) => {
+                const kept = previous.filter((tab) => !closedIds.has(tab.id))
+                const next = [...kept, ...adopted].slice(0, 100)
+                return next.length ? next : [fallback]
+              })
+              if (closedKeys.has(browserKey)) selectTab(currentTabs.current[0])
+              for (const [key, value] of nativeTabKeys)
+                if (closedKeys.has(value)) nativeTabKeys.delete(key)
+            }
+            if (closedKeys.has(browserKey)) return
+          }
+          if (!/^https?:\/\//i.test(state.url) && !nativeTabKeys.has(`${scope}:${activeTab}`))
+            return
+          if (shared && state.openedLinks?.length) {
+            // Page-created tabs open in the background and share one bounded update.
+            // Polling closes over older state, so enforce the cap against current tabs.
+            const links = state.openedLinks
+            setTabs((previous) => [
+              ...previous,
+              ...links.slice(0, Math.max(0, 100 - previous.length)).map((target) => ({
+                id: randomUUID(),
+                url: target,
+                title: '',
+                kind: 'web' as const,
+                profileId,
+                visitedAt: 0,
+              })),
+            ])
+          }
           setHistory({ ...state, title: state.title ?? '', cdp: state.cdp })
           if (!editing.current) setInput(state.url)
           addresses.set(scope, state.url)
           setTabs((previous) =>
-            previous.map((tab) =>
-              tab.id === activeTab && (tab.url !== state.url || tab.title !== state.title)
-                ? { ...tab, url: state.url, title: state.title ?? '' }
-                : tab,
-            ),
+            !previous.some(
+              (tab) =>
+                tab.id === activeTab &&
+                (tab.url !== state.url || tab.title !== (state.title ?? '')),
+            )
+              ? previous
+              : previous.map((tab) =>
+                  tab.id === activeTab && (tab.url !== state.url || tab.title !== state.title)
+                    ? { ...tab, url: state.url, title: state.title ?? '' }
+                    : tab,
+                ),
           )
         }),
       ),
@@ -377,7 +617,7 @@ function BrowserContent({
       alive = false
       void polling.stop()
     }
-  }, [browser, url, mode, scope, browserKey])
+  }, [browser, url, mode, scope, browserKey, profileId, shared])
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
   useEffect(() => {
     if (!browser || !url || mode !== 'web') return
@@ -417,9 +657,10 @@ function BrowserContent({
         rect && rect.width > 0 && rect.height > 0 && !obscured
           ? {
               action: 'show' as const,
+              workspaceBrowser: shared,
               profileId,
-              taskId,
-              agentAccess,
+              taskId: shared ? undefined : taskId,
+              agentAccess: shared ? false : agentAccess,
               key: browserKey,
               url,
               viewport:
@@ -521,6 +762,7 @@ function BrowserContent({
       await loadDevices()
     })
   const closeTab = (tab: BrowserTab) => {
+    if (shared && restorableTab(tab)) setClosed((previous) => [tab, ...previous].slice(0, 20))
     const remaining = tabs.filter((item) => item.id !== tab.id)
     const next: BrowserTab[] = remaining.length
       ? remaining
@@ -529,22 +771,97 @@ function BrowserContent({
             id: randomUUID(),
             url: '',
             title: '',
-            kind: 'web',
+            kind: browser ? 'web' : 'remote',
+            runtimeId: activeRuntimeId ?? undefined,
             profileId: 'default',
           },
         ]
     setTabs(next)
     if (activeTab === tab.id) selectTab(next[Math.min(tabs.indexOf(tab), next.length - 1)])
     if (tab.kind === 'remote')
-      void act(() =>
-        request(
+      void act(() => {
+        const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
+        if (shared && !owner?.connected)
+          throw new Error('This tab’s computer is offline. Its session will expire automatically.')
+        const call: typeof request =
+          shared && owner
+            ? (path, input, schema, method) =>
+                store.readRuntime(owner.profile, path, input, schema, method)
+            : request
+        return call(
           '/api/previews/browser/close',
           { taskId, tabId: tab.id, profileId: tab.profileId },
           responses.ok,
-        ),
-      )
-    else if (browser) void act(() => browser({ action: 'close', key: `${scope}:${tab.id}` }))
+        )
+      })
+    else if (browser) {
+      const key = nativeKey(tab.id)
+      nativeTabKeys.delete(`${scope}:${tab.id}`)
+      void act(() => browser({ action: 'close', key }))
+    }
   }
+  const openSavedPage = (tab: BrowserTab) => {
+    const existing = tabs.find((item) => browserPageKey(item) === browserPageKey(tab))
+    if (existing) selectTab(existing)
+    else newTab(tab.url, tab.kind, tab.profileId, tab.runtimeId, tab.title)
+  }
+  const reopenTab = () => {
+    const tab = closed[0]
+    if (!tab) return
+    if (newTab(tab.url, tab.kind, tab.profileId, tab.runtimeId, tab.title))
+      setClosed((previous) => previous.slice(1))
+  }
+  const bookmarked = bookmarks.some((tab) => browserPageKey(tab) === browserPageKey(selectedTab))
+  const toggleBookmark = () => {
+    if (!selectedTab.url || !restorableTab(selectedTab)) return
+    if (!bookmarked && bookmarks.length >= 100) {
+      setError('Remove a bookmark before saving more than 100 pages.')
+      return
+    }
+    setBookmarks((previous) =>
+      bookmarked
+        ? previous.filter((tab) => browserPageKey(tab) !== browserPageKey(selectedTab))
+        : [...previous, { ...selectedTab }],
+    )
+  }
+  useEffect(() => {
+    if (!shared) return
+    const shortcuts = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.defaultPrevented) return
+      if (
+        event.target instanceof Element &&
+        event.target.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')
+      )
+        return
+      const key = event.key.toLowerCase()
+      if (!['l', 't', 'w', 'd', 'r', 'n'].includes(key)) return
+      if (key === 'n' && !openBrowserWindow) return
+      event.preventDefault()
+      if (key === 'l') {
+        addressField.current?.focus()
+        addressField.current?.select()
+      }
+      if (key === 't') {
+        if (event.shiftKey) reopenTab()
+        else {
+          newTab('', selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
+          requestAnimationFrame(() => addressField.current?.focus())
+        }
+      }
+      if (key === 'w') closeTab(selectedTab)
+      if (key === 'd') toggleBookmark()
+      if (key === 'n' && openBrowserWindow) void act(openBrowserWindow)
+      if (key === 'r') {
+        if (mode === 'remote') remote.current?.input({ type: 'reload' })
+        else if (browser && url)
+          void act(() =>
+            browser({ action: event.shiftKey ? 'hard-reload' : 'reload', key: browserKey }),
+          )
+      }
+    }
+    window.addEventListener('keydown', shortcuts)
+    return () => window.removeEventListener('keydown', shortcuts)
+  })
   const newTabMenu = (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -558,6 +875,17 @@ function BrowserContent({
           collisionPadding={8}
           className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-44 overflow-y-auto rounded-lg border bg-popover p-1 text-sm shadow-lg"
         >
+          {shared && openBrowserWindow && (
+            <>
+              <DropdownMenu.Item
+                className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
+                onSelect={() => void act(openBrowserWindow)}
+              >
+                New browser window
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator className="my-1 h-px bg-border" />
+            </>
+          )}
           <DropdownMenu.Label className="px-2 py-1 text-[0.6875rem] text-muted-foreground">
             New tab
           </DropdownMenu.Label>
@@ -584,18 +912,30 @@ function BrowserContent({
           <DropdownMenu.Label className="px-2 py-1 text-[0.6875rem] text-muted-foreground">
             New remote tab
           </DropdownMenu.Label>
-          {remoteProfiles.profiles?.map((profile) => (
-            <DropdownMenu.Item
-              key={profile.id}
-              aria-label={`New remote tab · ${profile.name}`}
-              disabled={!connected}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
-              onSelect={() => newTab('', 'remote', profile.id)}
-            >
-              <MonitorUp size={14} /> {profile.name}
-            </DropdownMenu.Item>
-          ))}
-          {!remoteProfiles.profiles && (
+          {shared
+            ? runtimes.map((entry) => (
+                <DropdownMenu.Item
+                  key={entry.profile.id}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                  disabled={!entry.connected}
+                  onSelect={() => newTab('', 'remote', 'default', entry.profile.id)}
+                >
+                  <MonitorUp size={14} /> {runtimeComputerName(entry)}
+                  {!entry.connected ? ' · Offline' : ''}
+                </DropdownMenu.Item>
+              ))
+            : remoteProfiles.profiles?.map((profile) => (
+                <DropdownMenu.Item
+                  key={profile.id}
+                  aria-label={`New remote tab · ${profile.name}`}
+                  disabled={!connected}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                  onSelect={() => newTab('', 'remote', profile.id)}
+                >
+                  <MonitorUp size={14} /> {profile.name}
+                </DropdownMenu.Item>
+              ))}
+          {!shared && !remoteProfiles.profiles && (
             <p className="px-2 py-1.5 text-xs text-muted-foreground">
               {remoteProfiles.error || 'Loading remote profiles…'}
             </p>
@@ -661,6 +1001,19 @@ function BrowserContent({
               )}
             </div>
           )}
+          {shared && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium">Browser location</p>
+              <p className="text-xs text-muted-foreground">
+                Location stays with this tab. Open another tab to use a different computer.
+              </p>
+              <p className="text-xs">
+                {mode === 'web'
+                  ? 'Local · this device'
+                  : `Remote · ${selectedRuntime ? runtimeComputerName(selectedRuntime) : 'Unavailable computer'}`}
+              </p>
+            </div>
+          )}
           {(mode === 'remote' || browser) && (
             <div className="flex flex-col gap-2 text-xs">
               <label htmlFor={`${controlsId}-profile`} className="text-xs text-muted-foreground">
@@ -671,7 +1024,9 @@ function BrowserContent({
                 aria-label="Profile for this tab"
                 className="min-w-0 flex-1 rounded border bg-background p-1"
                 value={profileId}
-                disabled={busy || (mode === 'remote' && (!remoteProfiles.profiles || !connected))}
+                disabled={
+                  busy || (mode === 'remote' && (!remoteProfiles.profiles || !remoteConnected))
+                }
                 onChange={(event) => {
                   const next = event.target.value
                   setUrl(selectedTab.url)
@@ -684,7 +1039,7 @@ function BrowserContent({
                   )
                   if (mode === 'remote')
                     void act(() =>
-                      request(
+                      tabRequest(
                         '/api/previews/browser/close',
                         { taskId, tabId: activeTab, profileId },
                         responses.ok,
@@ -705,7 +1060,7 @@ function BrowserContent({
                   </option>
                 ))}
               </select>
-              {browser && mode === 'web' && (
+              {!shared && browser && mode === 'web' && (
                 <Button
                   type="button"
                   variant={agentAccess ? 'secondary' : 'ghost'}
@@ -724,7 +1079,7 @@ function BrowserContent({
                   Agent browser access
                 </Button>
               )}
-              {mode === 'web' && agentAccess && history.cdp && (
+              {!shared && mode === 'web' && agentAccess && history.cdp && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -744,13 +1099,13 @@ function BrowserContent({
 
           {(mode === 'web' || mode === 'remote') && (
             <div className="flex flex-col gap-1">
-              {mode === 'remote' && (
+              {!shared && mode === 'remote' && (
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
                   className="justify-start gap-2 text-xs"
-                  disabled={!remoteOnline || screenshots.busy}
+                  disabled={!remoteOnline || screenshots.busy || shared}
                   onClick={takeScreenshot}
                 >
                   <Camera size={14} /> Take screenshot
@@ -758,16 +1113,18 @@ function BrowserContent({
               )}
               {mode === 'web' && browser && url && (
                 <>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="justify-start gap-2 text-xs"
-                    disabled={busy || screenshots.busy || !connected}
-                    onClick={takeScreenshot}
-                  >
-                    <Camera size={14} /> Take screenshot
-                  </Button>
+                  {!shared && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="justify-start gap-2 text-xs"
+                      disabled={busy || screenshots.busy || !connected}
+                      onClick={takeScreenshot}
+                    >
+                      <Camera size={14} /> Take screenshot
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     size="sm"
@@ -912,9 +1269,80 @@ function BrowserContent({
       </section>
     )
   return (
-    <section
-      className="@container/browser flex h-full min-h-0 flex-col"
-      aria-label={initialMode === 'devices' ? 'Device previews' : 'Browser previews'}
+    <BrowserLayout
+      devices={initialMode === 'devices'}
+      sidebar={
+        shared ? (
+          <aside
+            aria-label="Recent browser tabs"
+            className="flex w-56 max-w-[35vw] shrink-0 flex-col border-r bg-sidebar"
+          >
+            <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3 text-sm font-medium">
+              <Globe2 size={16} /> Browser {newTabMenu}
+            </div>
+            <div className="border-b px-2 py-1">
+              <BrowserLibrary
+                bookmarks={bookmarks}
+                closed={closed}
+                visits={visits}
+                describeSource={(tab) => {
+                  const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
+                  const name =
+                    tab.kind === 'web'
+                      ? 'Local · this device'
+                      : `Remote · ${owner ? runtimeComputerName(owner) : 'Unavailable computer'}`
+                  const profile = (tab.kind === 'web' ? profiles : tabProfiles).find(
+                    (profile) => profile.id === tab.profileId,
+                  )
+                  return `${name} · ${profile?.name ?? (tab.profileId === 'default' ? 'Default' : tab.profileId)}`
+                }}
+                onOpen={openSavedPage}
+                onReopen={reopenTab}
+                onRemoveBookmark={(tab) =>
+                  setBookmarks((previous) =>
+                    previous.filter((item) => browserPageKey(item) !== browserPageKey(tab)),
+                  )
+                }
+                onClearHistory={() => setVisits([])}
+              />
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {recentBrowserTabs(tabs).map((tab) => (
+                <div
+                  key={tab.id}
+                  className={`group flex items-center rounded-md ${activeTab === tab.id ? 'bg-accent' : 'hover:bg-accent/50'}`}
+                >
+                  <button
+                    type="button"
+                    aria-current={activeTab === tab.id ? 'page' : undefined}
+                    className="min-w-0 flex-1 px-2 py-2 text-left"
+                    onClick={() => selectTab(tab)}
+                    title={tab.url || 'New tab'}
+                  >
+                    <span className="block truncate text-xs font-medium">
+                      {tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'}
+                    </span>
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {tab.kind === 'web'
+                        ? 'Local'
+                        : `Remote · ${runtimes.find((entry) => entry.profile.id === tab.runtimeId)?.profile.name ?? 'Unavailable computer'}`}{' '}
+                      · {tab.profileId}
+                    </span>
+                  </button>
+                  <IconButton
+                    label={`Close tab ${tab.title || tab.url || 'New tab'}`}
+                    className="size-7 shrink-0"
+                    disabled={busy}
+                    onClick={() => closeTab(tab)}
+                  >
+                    <X size={12} />
+                  </IconButton>
+                </div>
+              ))}
+            </div>
+          </aside>
+        ) : null
+      }
     >
       {screenshots.editor}
       {screenshots.error && (
@@ -945,7 +1373,7 @@ function BrowserContent({
         </Dialog>
       )}
 
-      {initialMode !== 'devices' && tabs.length > 1 && (
+      {!shared && initialMode !== 'devices' && tabs.length > 1 && (
         <div
           role="tablist"
           aria-label="Browser tabs"
@@ -1084,7 +1512,7 @@ function BrowserContent({
               disabled={mode === 'remote' && !remoteOnline}
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Enter website address"
+              placeholder={shared ? 'Search or enter address' : 'Enter website address'}
               className="h-full min-w-0 flex-1 border-0 bg-transparent px-0 text-center text-[13px] shadow-none focus:text-left focus-visible:outline-none focus-visible:ring-0 [@media(pointer:coarse)]:text-base"
             />
             <IconButton
@@ -1107,9 +1535,50 @@ function BrowserContent({
               <Keyboard size={16} />
             </IconButton>
           )}
+          {shared && (
+            <IconButton
+              type="button"
+              label={bookmarked ? 'Remove bookmark' : 'Bookmark page'}
+              className="size-8 shrink-0"
+              disabled={!selectedTab.url || !restorableTab(selectedTab)}
+              aria-pressed={bookmarked}
+              onClick={toggleBookmark}
+            >
+              <Star size={15} fill={bookmarked ? 'currentColor' : 'none'} />
+            </IconButton>
+          )}
+          {shared && mode === 'web' && (
+            <BrowserExtensions
+              key={`${profileId}:${browserKey}`}
+              profileId={profileId}
+              tabKey={browserKey}
+              hasPage={!!url}
+            />
+          )}
           {newTabMenu}
           {browserOptions}
         </form>
+      )}
+      {shared && (
+        <SharedBrowserActions
+          tabKey={browserKey}
+          url={history.url || url}
+          title={history.title}
+          enabled={!!url && (mode === 'web' ? !!browser : remoteOnline)}
+          capture={async () => {
+            if (mode === 'web' && browser) {
+              const value = await browser({ action: 'selection', key: browserKey })
+              if (!value)
+                throw new Error('Browser tab is unavailable. Update the desktop app if needed.')
+              return { text: value.selection ?? '', url: value.url, title: value.title ?? '' }
+            }
+            return tabRequest(
+              '/api/previews/browser/selection',
+              { taskId, tabId: activeTab, profileId },
+              browserSelectionSchema,
+            )
+          }}
+        />
       )}
       {mode === 'remote' && remoteProfiles.error && (
         <p role="alert" className="p-3 text-xs text-destructive">
@@ -1122,7 +1591,7 @@ function BrowserContent({
         </p>
       )}
       {tabs
-        .filter((tab) => tab.kind === 'remote')
+        .filter((tab) => tab.kind === 'remote' && (!shared || openedTabs.has(tab.id)))
         .map((tab) => (
           <div
             key={tab.id}
@@ -1130,49 +1599,51 @@ function BrowserContent({
               mode === 'remote' && activeTab === tab.id ? 'flex min-h-0 flex-1 flex-col' : 'hidden'
             }
           >
-            <RemoteBrowser
-              key={`${tab.id}:${tab.profileId}`}
-              taskId={taskId}
-              ref={activeTab === tab.id ? remote : undefined}
-              externalNavigation
-              onFocusAddress={() => {
-                addressField.current?.focus()
-                addressField.current?.select()
-              }}
-              onPerformance={setStreamDetails}
-              onConnection={(online) => {
-                if (activeTab === tab.id) {
-                  setRemoteOnline(online)
-                  if (!online) setStreamDetails('')
-                }
-              }}
-              profileId={tab.profileId}
-              initialUrl={tab.url}
-              tabId={tab.id}
-              active={mode === 'remote' && activeTab === tab.id}
-              reloadToken={activeTab === tab.id ? turnReload : undefined}
-              onState={(state) => {
-                if (activeTab === tab.id) {
-                  setHistory({ ...state, cdp: undefined })
-                  setRemoteLoading(state.loading)
-                  setUrl(state.url === 'about:blank' ? '' : state.url)
-                  if (!editing.current) setInput(state.url === 'about:blank' ? '' : state.url)
-                }
-                setTabs((previous) => {
-                  const url = state.url === 'about:blank' ? '' : state.url
-                  if (
-                    !previous.some(
-                      (item) =>
-                        item.id === tab.id && (item.url !== url || item.title !== state.title),
+            <BrowserOwner shared={shared} runtimeId={tab.runtimeId}>
+              <RemoteBrowser
+                key={`${tab.id}:${tab.profileId}`}
+                taskId={taskId}
+                ref={activeTab === tab.id ? remote : undefined}
+                externalNavigation
+                onFocusAddress={() => {
+                  addressField.current?.focus()
+                  addressField.current?.select()
+                }}
+                onPerformance={setStreamDetails}
+                onConnection={(online) => {
+                  if (activeTab === tab.id) {
+                    setRemoteOnline(online)
+                    if (!online) setStreamDetails('')
+                  }
+                }}
+                profileId={tab.profileId}
+                initialUrl={tab.url}
+                tabId={tab.id}
+                active={mode === 'remote' && activeTab === tab.id}
+                reloadToken={activeTab === tab.id ? turnReload : undefined}
+                onState={(state) => {
+                  if (activeTab === tab.id) {
+                    setHistory({ ...state, cdp: undefined })
+                    setRemoteLoading(state.loading)
+                    setUrl(state.url === 'about:blank' ? '' : state.url)
+                    if (!editing.current) setInput(state.url === 'about:blank' ? '' : state.url)
+                  }
+                  setTabs((previous) => {
+                    const url = state.url === 'about:blank' ? '' : state.url
+                    if (
+                      !previous.some(
+                        (item) =>
+                          item.id === tab.id && (item.url !== url || item.title !== state.title),
+                      )
                     )
-                  )
-                    return previous
-                  return previous.map((item) =>
-                    item.id === tab.id ? { ...item, url, title: state.title } : item,
-                  )
-                })
-              }}
-            />
+                      return previous
+                    return previous.map((item) =>
+                      item.id === tab.id ? { ...item, url, title: state.title } : item,
+                    )
+                  })
+                }}
+              />
+            </BrowserOwner>
           </div>
         ))}
       {mode === 'web' ? (
@@ -1186,8 +1657,9 @@ function BrowserContent({
                 Your project, live.
               </h2>
               <p className="mt-2 max-w-64 text-xs leading-relaxed">
-                Open a website or preview your development server. Its browser stays with this
-                thread.
+                {shared
+                  ? 'Open a website, then copy a selection or add it to a thread draft. Tabs stay independent of threads.'
+                  : 'Open a website or preview your development server. Its browser stays with this thread.'}
               </p>
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 {['localhost:3000', 'localhost:5173'].map((address) => (
@@ -1325,6 +1797,48 @@ function BrowserContent({
           )}
         </div>
       ) : null}
+    </BrowserLayout>
+  )
+}
+
+function BrowserOwner({
+  shared,
+  runtimeId,
+  children,
+}: {
+  shared: boolean
+  runtimeId?: string
+  children: React.ReactNode
+}) {
+  const { runtimes } = useWorkspace()
+  if (!shared) return children
+  const owner = runtimes.find((entry) => entry.profile.id === runtimeId)
+  if (!owner)
+    return (
+      <p role="status" className="p-4 text-sm text-muted-foreground">
+        This tab’s computer is no longer paired.
+      </p>
+    )
+  return <WorkspaceScope profile={owner.profile}>{children}</WorkspaceScope>
+}
+
+function BrowserLayout({
+  sidebar,
+  devices,
+  children,
+}: {
+  sidebar: React.ReactNode
+  devices: boolean
+  children: React.ReactNode
+}) {
+  const sidebarState = useNavigationSidebar()
+  return (
+    <section
+      className="@container/browser flex h-full min-h-0 min-w-0"
+      aria-label={devices ? 'Device previews' : 'Browser previews'}
+    >
+      {!sidebarState?.collapsed && sidebar}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
     </section>
   )
 }

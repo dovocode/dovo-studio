@@ -1,3 +1,4 @@
+import { STUDIO_BROWSER_SCOPE } from '@dovo/protocol'
 import { isRunToken } from '../auth/run-credentials.js'
 import { authorizeRunTerminal, authenticateRuntimeOperation } from '../auth/run-authorization.js'
 import { serveTaskFile } from './endpoints/task-files.js'
@@ -278,6 +279,7 @@ export function createRuntimeServer(
             ticket.syncTasks,
             ticket.pagedHistory,
             ticket.resourceId === 'runtime-sync-5',
+            ticket.settledLimit,
           )
         })
         return
@@ -373,7 +375,8 @@ export function createRuntimeServer(
         const ticket = services.browserTickets.consume(url.searchParams.get('ticket') ?? '')
         services.devices.authenticate(ticket.token)
         bind(ticket.token)
-        services.store.taskSummary(ticket.taskId ?? ticket.resourceId)
+        if (ticket.taskId !== STUDIO_BROWSER_SCOPE)
+          services.store.taskSummary(ticket.taskId ?? ticket.resourceId)
         sockets.handleUpgrade(request, socket, head, (client) => {
           track(client, ticket.token)
           attachBrowserSocket(

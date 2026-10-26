@@ -63,7 +63,7 @@ export function CodeThemeSettings() {
       </SettingRow>
       <SettingRow
         label="VS Code themes"
-        description="Browse Open VSX or import a standalone JSON/JSONC file. TextMate token colors are supported; semantic-only rules are not used."
+        description="Browse Open VSX or import a standalone JSON/JSONC file. Colors and bold/italic styles are mapped to Pierre highlighting. Detailed TextMate scopes and semantic-only rules may differ."
       >
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => setBrowse(true)}>

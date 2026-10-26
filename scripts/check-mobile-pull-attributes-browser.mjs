@@ -6,6 +6,11 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mobile = `${root}/apps/mobile/src`
 const stubs = [
   {
+    path: '@dovo/protocol',
+    importer: mobile,
+    contents: `export * from '${root}/packages/protocol/src/index.ts';import {pullFileFingerprint as fingerprint} from '${root}/packages/protocol/src/index.ts';export const pullFileFingerprint=(...args)=>{window.fingerprintCalls=(window.fingerprintCalls??0)+1;const value=fingerprint(...args);(window.fingerprints??={})[args[0].path]=value;return value};`,
+  },
+  {
     path: '../../../runtime/connection/provider',
     importer: mobile,
     contents: 'export const useRuntime=()=>({connection:null,snapshot:null});',
@@ -85,8 +90,8 @@ const bundle = await bundleBrowser(
       loader: 'tsx',
       contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {PullChanges} from '${mobile}/scm/pulls/detail/pull-changes.tsx';
 window.diffMounts=0;
-const files=['binary.dat','generated.ts','vendor.ts','normal.ts','docs/setup.md'].map((path,index)=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new',attributes:{binary:index===0,generated:index===1,vendored:index===2}}));
-function App(){const [current,setCurrent]=useState(files),[fragment,setFragment]=useState(''),[initialPath,setInitialPath]=useState();window.openLinkedComment=()=>{setInitialPath('normal.ts');setFragment('#discussion_r7')};window.clearGenerated=()=>setCurrent(prior=>prior.map(file=>({...file,attributes:{...file.attributes,generated:false}})));return <PullChanges initialPath={initialPath} viewportHeight={640} fragment={fragment} repositoryId="repo" detail={{pull:{number:7,headSha:'a'.repeat(40),baseSha:'b'.repeat(40)},files:current,comments:[{id:'inline',kind:'inline',path:'normal.ts',url:'https://github.com/o/r/pull/7#discussion_r7',body:'Inline feedback'}],capabilities:{actions:['inline-comment']}}} onOpen={()=>{}} onLineComment={()=>{}}/>}createRoot(document.getElementById('app')).render(<App/>);`,
+const files=['binary.dat','generated.ts','vendor.ts','normal.ts','docs/setup.md'].map((path,index)=>({path,status:'modified',additions:1,deletions:0,patch:index===0?undefined:'@@ -1 +1,2 @@\\n old\\n+new',attributes:{binary:index===0,generated:index===1,vendored:index===2}}));
+function App(){const [version,setVersion]=useState(0),[headSha,setHeadSha]=useState('a'.repeat(40)),[current,setCurrent]=useState(files),[fragment,setFragment]=useState(''),[initialPath,setInitialPath]=useState();window.statusVersion=version;window.refreshStatus=()=>setVersion(value=>value+1);window.pushCommit=()=>setHeadSha('c'.repeat(40));window.openLinkedComment=()=>{setInitialPath('normal.ts');setFragment('#discussion_r7')};window.clearGenerated=()=>setCurrent(prior=>prior.map(file=>({...file,attributes:{...file.attributes,generated:false}})));return <PullChanges initialPath={initialPath} viewportHeight={640} fragment={fragment} repositoryId="repo" detail={{pull:{number:7,headSha,baseSha:'b'.repeat(40)},files:current,comments:[{id:'inline',kind:'inline',path:'normal.ts',url:'https://github.com/o/r/pull/7#discussion_r7',body:'Inline feedback'}],capabilities:{actions:['inline-comment']}}} onOpen={()=>{}} onLineComment={()=>{}}/>}createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -111,6 +116,26 @@ try {
   await page
     .getByText('Text diff disabled by .gitattributes (binary or -diff).', { exact: true })
     .waitFor()
+  const fingerprintCalls = await page.evaluate(() => window.fingerprintCalls)
+  assert.equal(fingerprintCalls, 5)
+  const initialFingerprints = await page.evaluate(() => window.fingerprints)
+  await page.evaluate(() => window.refreshStatus())
+  await page.waitForFunction(() => window.statusVersion === 1)
+  assert.equal(
+    await page.evaluate(() => window.fingerprintCalls),
+    fingerprintCalls,
+    'Unrelated PR metadata must not rehash native review files',
+  )
+  await page.evaluate(() => window.pushCommit())
+  await page.waitForFunction((count) => window.fingerprintCalls > count, fingerprintCalls)
+  assert.equal(
+    await page.evaluate(() => window.fingerprintCalls),
+    fingerprintCalls + 5,
+    'A new commit still invalidates fingerprints, including missing patches',
+  )
+  const nextFingerprints = await page.evaluate(() => window.fingerprints)
+  assert.notEqual(nextFingerprints['binary.dat'], initialFingerprints['binary.dat'])
+  assert.equal(nextFingerprints['normal.ts'], initialFingerprints['normal.ts'])
   assert.equal(await page.locator('[data-diff]').count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Comment on line', exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Code 3', exact: true }).waitFor()

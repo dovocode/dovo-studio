@@ -17,6 +17,7 @@ const threadWindow = window.location.hash.startsWith('#thread=')
       JSON.parse(decodeURIComponent(window.location.hash.slice('#thread='.length))),
     )
   : undefined
+const browserWindowId = /^#browser-window=([a-f0-9-]{36})$/.exec(window.location.hash)?.[1]
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing application root')
 createRoot(root).render(
@@ -32,17 +33,20 @@ createRoot(root).render(
         <Workbench
           extensions={extensions}
           threadWindow={threadWindow}
+          browserWindowId={browserWindowId}
+          openBrowserWindow={window.dovo?.openBrowserWindow}
           popOutThread={window.dovo?.popOutThread}
           appInfo={window.dovo?.appInfo}
           desktopPlatform={window.dovo?.platform}
           pickDirectory={window.dovo?.pickDirectory}
           browser={window.dovo?.browser}
+          browserExtensions={window.dovo?.browserExtensions}
           onOpenLink={window.dovo?.onOpenLink}
           openBrowserLink={window.dovo?.openBrowserLink}
           accountStorage={window.dovo?.accountStorage}
           openExternalLink={window.dovo?.openExternalLink}
-          inputPreview={threadWindow ? undefined : window.dovo?.inputPreview}
-          taskLauncher={threadWindow ? undefined : window.dovo?.taskLauncher}
+          inputPreview={threadWindow || browserWindowId ? undefined : window.dovo?.inputPreview}
+          taskLauncher={threadWindow || browserWindowId ? undefined : window.dovo?.taskLauncher}
           updates={window.dovo?.updates}
           windowColors={window.dovo?.setWindowColors}
         />

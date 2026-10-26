@@ -13,6 +13,7 @@ import {
   type Attachment,
   sameTurnSettings,
   applyTurnSettings,
+  queuedModelAgent,
   responses,
   generatedTitleSchema,
   taskSchema,
@@ -257,7 +258,11 @@ export function useConversationActions(task: Task) {
       return next.length === items.length ? items : next
     })
   }, [task.id, task.messages, task.queue, pendingScope])
-  const agent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
+  const threadAgent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
+  const agent =
+    threadAgent && snapshot?.persistentTurnModelsSupported
+      ? queuedModelAgent(threadAgent, task.queue, editing?.message.id)
+      : threadAgent
   const policyIssue = agent
     ? permissionPolicyUIIssue(
         applyTurnSettings(agent, turnSettings ?? undefined),

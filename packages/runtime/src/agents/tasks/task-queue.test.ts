@@ -1,5 +1,11 @@
 import { expect, it } from 'vite-plus/test'
-import { canChangeTaskCheckout, agentTurnSettings, defaultTaskHarness } from '@dovo/protocol'
+import {
+  canChangeTaskCheckout,
+  agentTurnSettings,
+  defaultTaskHarness,
+  resolveTaskAgent,
+  type TaskHarness,
+} from '@dovo/protocol'
 import { openDatabase } from '../../storage/database'
 import { WorkspaceStore } from '../../storage/workspace'
 import { Activity } from '../../storage/activity'
@@ -671,6 +677,7 @@ it('persists per-message choices through reorder, editing, admission and restore
     queue = new TaskQueue(restored)
     queue.take('task', 'first-run')
     expect(restored.task('task').runAttempt?.turnSettings).toBeUndefined()
+    expect(resolveTaskAgent(restored.task('task'), [])?.model).toBe('default-model')
     queue.take('task', 'second-run')
     expect(restored.task('task').runAttempt?.turnSettings).toEqual({
       ...settings,
@@ -678,6 +685,10 @@ it('persists per-message choices through reorder, editing, admission and restore
     })
     expect(restored.task('task').messages.at(-1)?.turnSettings).toEqual({
       ...settings,
+      reasoning: 'low',
+    })
+    expect(resolveTaskAgent(restored.task('task'), [])).toMatchObject({
+      model: 'large',
       reasoning: 'low',
     })
     queue.add('task', 'restore', 'Restore', [], undefined, false, false, undefined, {
@@ -705,6 +716,132 @@ it('persists per-message choices through reorder, editing, admission and restore
     db.close()
   }
 })
+
+it.each(['harness', 'custom agent'] as const)(
+  'persists queued models in execution order without leaking full settings or changing the saved %s',
+  (selection) => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new WorkspaceStore(db)
+      const harness: TaskHarness = {
+        ...defaultTaskHarness('codex'),
+        model: 'original',
+        reasoning: 'low',
+        serviceTier: 'priority',
+        cyberAccessProgram: 'daybreakBlue',
+        instructions: 'Thread instructions',
+        env: { KEEP: 'yes' },
+        permission: 'read-only' as const,
+      }
+      const custom = { ...harness, id: 'agent', name: 'Saved agent' }
+      store.update((w) => ({
+        ...w,
+        agents: [custom],
+        tasks: [
+          {
+            id: 'task',
+            title: 'Queue',
+            repositoryId: '',
+            agentId: selection === 'custom agent' ? custom.id : '',
+            ...(selection === 'harness' ? { harness } : {}),
+            agentOverrides: { permission: 'ask' },
+            status: 'running',
+            createdAt: '',
+            messages: [],
+            files: [],
+            draft: '',
+            example: false,
+          },
+        ],
+      }))
+      const queue = new TaskQueue(store)
+      const settings = agentTurnSettings(
+        {
+          ...harness,
+          model: 'large',
+          reasoning: 'high',
+          serviceTier: undefined,
+          cyberAccessProgram: undefined,
+          permission: 'full-access',
+          instructions: 'One-turn instructions',
+          env: { TEMPORARY: 'yes' },
+        },
+        true,
+      )
+      queue.add('task', 'chosen', 'Use a larger model', [], undefined, false, false, undefined, {
+        turnSettings: settings,
+      })
+      queue.add('task', 'inherited', 'Use the selected model')
+      queue.add('task', 'earlier', 'Still uses the original model')
+      queue.move('task', 'earlier', 'chosen')
+      expect(resolveTaskAgent(store.task('task'), store.get().agents)?.model).toBe('original')
+      queue.take('task', 'earlier-run')
+      expect(resolveTaskAgent(store.task('task'), store.get().agents)?.model).toBe('original')
+      queue.setPaused('task', 'chosen', true)
+      expect(() => queue.take('task')).toThrow('Resume')
+      expect(resolveTaskAgent(store.task('task'), store.get().agents)?.model).toBe('original')
+      queue.setPaused('task', 'chosen', false)
+      queue.take('task', 'chosen-run')
+
+      // Reopen storage before the next turn: the defaults are durable, not composer state.
+      const reopened = new WorkspaceStore(db)
+      const selected = resolveTaskAgent(reopened.task('task'), reopened.get().agents)
+      expect(selected).toMatchObject({
+        model: 'large',
+        reasoning: 'high',
+        permission: 'ask',
+        instructions: 'Thread instructions',
+        env: { KEEP: 'yes' },
+      })
+      expect(selected?.serviceTier).toBeUndefined()
+      expect(selected?.cyberAccessProgram).toBeUndefined()
+      expect(reopened.task('task').runAttempt?.turnSettings).toEqual(settings)
+      expect(reopened.task('task').harnessCustomized).toBe(true)
+      expect(reopened.get().agents).toEqual([custom])
+      const restoredQueue = new TaskQueue(reopened)
+      restoredQueue.take('task', 'inherited-run')
+      expect(reopened.task('task').runAttempt?.turnSettings).toBeUndefined()
+      expect(resolveTaskAgent(reopened.task('task'), reopened.get().agents)).toEqual(selected)
+
+      const reset = { provider: 'codex' as const, model: '', reasoning: '' }
+      restoredQueue.add(
+        'task',
+        'removed',
+        'Do not change models',
+        [],
+        undefined,
+        false,
+        false,
+        undefined,
+        {
+          turnSettings: reset,
+        },
+      )
+      restoredQueue.change('task', 'remove', 'removed')
+      expect(resolveTaskAgent(reopened.task('task'), reopened.get().agents)).toEqual(selected)
+      restoredQueue.add(
+        'task',
+        'reset',
+        'Use provider defaults',
+        [],
+        undefined,
+        false,
+        false,
+        undefined,
+        {
+          turnSettings: reset,
+        },
+      )
+      restoredQueue.take('task', 'reset-run')
+      expect(resolveTaskAgent(reopened.task('task'), reopened.get().agents)).toMatchObject({
+        model: '',
+        reasoning: '',
+      })
+    } finally {
+      db.close()
+    }
+  },
+)
 
 it('includes full turn settings in stable submission receipts', () => {
   const db = openDatabase(':memory:')

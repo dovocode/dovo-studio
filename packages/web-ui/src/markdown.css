@@ -167,3 +167,13 @@
   padding-block: 0.4em;
   font-weight: 500;
 }
+
+/* Pierre palettes retain font styles independently in each color mode. */
+.studio-markdown code span[style] {
+  font-style: var(--shiki-light-font-style, normal);
+  font-weight: var(--shiki-light-font-weight, 400);
+}
+.dark .studio-markdown code span[style] {
+  font-style: var(--shiki-dark-font-style, var(--shiki-light-font-style, normal));
+  font-weight: var(--shiki-dark-font-weight, var(--shiki-light-font-weight, 400));
+}

@@ -122,6 +122,18 @@ export const internetStatusSchema = mutableStruct({
   error: Schema.String,
 })
 export const snapshotSchema = mutableStruct({
+  olderSettled: Schema.optional(
+    mutableStruct({
+      limit: Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isBetween({ minimum: 1, maximum: 100000 })),
+      ),
+      omitted: Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      ),
+    }),
+  ),
   internet: Schema.optional(internetStatusSchema),
   internetSetupSupported: Schema.optional(Schema.Boolean),
   relaySettings: Schema.optional(relaySettingsSchema),
@@ -145,6 +157,8 @@ export const snapshotSchema = mutableStruct({
   threadBehaviorSupported: Schema.optional(Schema.Boolean),
   fullTurnSettingsSupported: Schema.optional(Schema.Boolean),
   queuedTurnSettingsSupported: Schema.optional(Schema.Boolean),
+  /** Queued model/reasoning choices become thread defaults when their turn starts. */
+  persistentTurnModelsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),
   projectWorktreeTransfersSupported: Schema.optional(Schema.Boolean),
   projectTransfers: Schema.optional(mutableArray(projectTransferSchema)),

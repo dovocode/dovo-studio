@@ -81,6 +81,18 @@ export function PullActions(
           Review
         </Button>
       )}
+      {available.includes('merge') && (
+        <Button
+          size="sm"
+          disabled={!connected || !!props.detail.stale || !!props.detail.refreshError}
+          onClick={() => {
+            setNotice('')
+            setAction('merge')
+          }}
+        >
+          Merge
+        </Button>
+      )}
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
           <Button
@@ -100,7 +112,7 @@ export function PullActions(
             className="z-50 min-w-48 rounded-lg border bg-popover p-1 shadow-xl"
           >
             {available
-              .filter((item) => item !== 'review')
+              .filter((item) => item !== 'review' && item !== 'merge')
               .map((item) => (
                 <DropdownMenu.Item
                   key={item}

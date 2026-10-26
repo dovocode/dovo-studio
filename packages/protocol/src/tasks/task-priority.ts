@@ -31,7 +31,7 @@ function promptTime(task: Task) {
   }
   return latest
 }
-export function compareTaskActivity(a: Task, b: Task, _needsInput: ReadonlySet<string>) {
+export function compareTaskActivity(a: Task, b: Task, _needsInput?: ReadonlySet<string>) {
   return promptTime(b).localeCompare(promptTime(a)) || a.id.localeCompare(b.id)
 }
 
@@ -51,6 +51,8 @@ export const taskGroupOptions = [
 ] as const
 export type TaskGroup = (typeof taskGroupOptions)[number]['id']
 export type TaskSort = (typeof taskSortOptions)[number]['id']
+// Reuse ICU collation state instead of constructing it for every sort comparison.
+const nameCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
 export function compareTasks(
   a: Task,
   b: Task,
@@ -60,29 +62,26 @@ export function compareTasks(
 ) {
   const pinned = Number(!!b.pinned) - Number(!!a.pinned)
   if (pinned) return pinned
-  const recent = promptTime(b).localeCompare(promptTime(a)) || a.id.localeCompare(b.id)
+  const recent = () => compareTaskActivity(a, b, needsInput)
   switch (sort) {
     case 'status': {
       const order = ['running', 'review', 'failed', 'draft', 'done', 'cancelled']
-      return order.indexOf(a.status) - order.indexOf(b.status) || recent
+      return order.indexOf(a.status) - order.indexOf(b.status) || recent()
     }
     case 'activity':
-      return recent
+      return recent()
     case 'newest':
-      return b.createdAt.localeCompare(a.createdAt) || recent
+      return b.createdAt.localeCompare(a.createdAt) || recent()
     case 'oldest':
-      return a.createdAt.localeCompare(b.createdAt) || recent
+      return a.createdAt.localeCompare(b.createdAt) || recent()
     case 'title':
-      return (
-        a.title.localeCompare(b.title, undefined, { sensitivity: 'base', numeric: true }) || recent
-      )
+      return nameCollator.compare(a.title, b.title) || recent()
     case 'project':
       return (
-        (projects.get(a.repositoryId) ?? '').localeCompare(
+        nameCollator.compare(
+          projects.get(a.repositoryId) ?? '',
           projects.get(b.repositoryId) ?? '',
-          undefined,
-          { sensitivity: 'base', numeric: true },
-        ) || recent
+        ) || recent()
       )
     default:
       return compareTaskActivity(a, b, needsInput)

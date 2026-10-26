@@ -1,4 +1,4 @@
-import { taskParentReference, resolveThreadRuntime } from '@dovo/protocol'
+import { taskParentReference, resolveThreadRuntime, watchRuntimeTask } from '@dovo/protocol'
 import { Redirect, router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { randomUUID } from 'expo-crypto'
@@ -45,6 +45,9 @@ export function TaskRouteScreen() {
   const [pairing, setPairing] = useState(false)
   const owner = resolveThreadRuntime(params, profiles, overviews)
   const switching = useRouteComputer(owner?.id ?? '')
+  useEffect(() => {
+    if (owner && focused && !startup) return watchRuntimeTask(owner.connection, params.taskId)
+  }, [owner?.connection, focused, startup, params.taskId])
   useEffect(() => {
     if (ready && focused && owner && owner.id !== params.runtimeId)
       router.setParams({ runtimeId: owner.id })

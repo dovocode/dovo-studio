@@ -131,7 +131,9 @@
     "dev:site": "pnpm --filter @dovo/site dev",
     "test:site:browser": "pnpm --filter @dovo/site build && node scripts/check-site-browser.mjs",
     "test:browser-profile-settings:browser": "pnpm --filter @dovo/web build && node scripts/check-browser-profile-settings-browser.mjs",
-    "test:browser-tabs:browser": "pnpm --filter @dovo/desktop build && node scripts/check-browser-tabs-browser.mjs",
+    "test:browser-extensions:native": "node apps/desktop/scripts/check-browser-extensions-native.mjs",
+    "test:browser-media:native": "node apps/desktop/scripts/check-browser-media-native.mjs",
+    "test:browser-tabs:browser": "pnpm --filter @dovo/desktop build && node scripts/check-browser-tabs-browser.mjs && node scripts/check-shared-browser-browser.mjs && node scripts/check-browser-extensions-browser.mjs && node scripts/check-browser-media-browser.mjs && node scripts/check-mobile-shared-browser-browser.mjs",
     "test:browser-viewer-ui:browser": "node scripts/build-browser-viewer.mjs && node scripts/check-browser-viewer-ui-browser.mjs",
     "test:composer-typing:browser": "node scripts/check-composer-typing-browser.mjs",
     "test:mobile-server-images:browser": "node scripts/check-mobile-server-images-browser.mjs",
@@ -166,7 +168,12 @@
     "design:dev": "pnpm --filter @dovo/design-system^... -r build && pnpm --filter @dovo/design-system dev",
     "design:build": "pnpm --filter @dovo/design-system... -r build",
     "test:design-system:browser": "pnpm design:build && node scripts/check-design-system-browser.mjs",
-    "test:mermaid:browser": "pnpm --filter @dovo/desktop build && node scripts/build-mobile-mermaid.mjs && node scripts/check-mermaid-rendering-browser.mjs"
+    "test:mermaid:browser": "pnpm --filter @dovo/desktop build && node scripts/build-mobile-mermaid.mjs && node scripts/check-mermaid-rendering-browser.mjs",
+    "test:pull-thread-links:browser": "node scripts/check-pull-thread-links-browser.mjs",
+    "benchmark:syntax": "node scripts/benchmark-syntax.mjs",
+    "benchmark:chat-highlighting": "node scripts/benchmark-chat-highlighting.mjs",
+    "benchmark:thread-hotpaths": "node scripts/benchmark-thread-hotpaths.mjs",
+    "test:pierre-code:browser": "node scripts/check-pierre-code-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

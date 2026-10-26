@@ -10,6 +10,7 @@ export class SocketTickets {
       taskId?: string
       syncTasks?: string[]
       pagedHistory?: boolean
+      settledLimit?: number
     }
   >()
   issue(
@@ -18,6 +19,7 @@ export class SocketTickets {
     taskId?: string,
     syncTasks?: string[],
     pagedHistory = false,
+    settledLimit?: number,
   ) {
     for (const [key, value] of this.tickets)
       if (value.expires < Date.now()) this.tickets.delete(key)
@@ -28,6 +30,7 @@ export class SocketTickets {
       taskId,
       syncTasks,
       pagedHistory,
+      settledLimit,
       expires: Date.now() + 30000,
     })
     return ticket

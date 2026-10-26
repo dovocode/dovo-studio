@@ -1,3 +1,6 @@
+import { hubPlanLimitSources } from '@dovo/protocol'
+import { UsageHubs } from './usage-hubs'
+import { UsagePool } from './usage-pool'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useForegroundInterval } from '../runtime/state/app-active'
 import { UsagePrices } from './usage-prices'
@@ -71,7 +74,10 @@ export default function UsageScreen() {
   const [computer, setComputer] = useState('all')
   const [view, setView] = useState<'costs' | 'tokens' | 'limits'>('costs')
   const selectedComputer = overviews.length === 1 ? 'all' : computer
-  const { hosts, histories, notices, busy, refresh } = useUsageData(selectedComputer)
+  const { hosts, histories, hubs, notices, busy, refresh } = useUsageData(
+    selectedComputer,
+    view === 'limits' ? 'limits' : 'history',
+  )
   const [period, setPeriod] = useState<keyof typeof periods>('week')
   const [now, setNow] = useState(Date.now())
   useForegroundInterval(() => setNow(Date.now()), 60000)
@@ -79,23 +85,25 @@ export default function UsageScreen() {
   const summary = useMemo(
     () =>
       projectUsage(
-        hosts.flatMap((entry) =>
-          entry.snapshot
-            ? [
-                {
-                  id: entry.profile.id,
-                  sourceId: histories[entry.profile.id]?.sourceId,
-                  records: histories[entry.profile.id]?.records,
-                  computer: runtimeComputerName(entry),
-                  tasks: entry.snapshot.workspace.tasks,
-                },
-              ]
-            : [],
-        ),
+        view === 'limits'
+          ? []
+          : hosts.flatMap((entry) =>
+              entry.snapshot
+                ? [
+                    {
+                      id: entry.profile.id,
+                      sourceId: histories[entry.profile.id]?.sourceId,
+                      records: histories[entry.profile.id]?.records,
+                      computer: runtimeComputerName(entry),
+                      tasks: entry.snapshot.workspace.tasks,
+                    },
+                  ]
+                : [],
+            ),
         now - periods[period] * 86_400_000,
         now,
       ),
-    [hosts, histories, period, now, projectUsage],
+    [hosts, histories, period, now, projectUsage, view],
   )
   const [breakdown, setBreakdown] = useState<'accounts' | 'models' | 'tasks'>('accounts')
   const total = summary.total
@@ -120,12 +128,23 @@ export default function UsageScreen() {
         ? 'Reported cost is $0.00 in this period.'
         : 'No priced usage in this period.'
   const limits = accountPlanLimits(
-    hosts.map((entry) => ({
-      computer: runtimeComputerName(entry),
-      sourceId: entry.profile.id,
-      connected: entry.connected,
-      limits: entry.snapshot?.workspace.planLimits ?? [],
-    })),
+    hosts.flatMap((entry) => [
+      {
+        computer: runtimeComputerName(entry),
+        sourceId: entry.profile.id,
+        connected: entry.connected,
+        limits: entry.snapshot?.workspace.planLimits ?? [],
+      },
+      ...(hubs[entry.profile.id] ?? [])
+        .filter((hub) => hub.enabled)
+        .flatMap((hub) =>
+          hubPlanLimitSources(hub, {
+            computer: `${runtimeComputerName(entry)} · ${hub.label}`,
+            sourceId: `${entry.profile.id}:hub:${hub.id}`,
+            connected: entry.connected,
+          }),
+        ),
+    ]),
     now,
   )
   return (
@@ -343,85 +362,110 @@ export default function UsageScreen() {
               </>
             )}
             {view === 'limits' && (
-              <SettingsGroup
-                title="Account limits"
-                footer="Limits are reported by Codex and Claude agents on connected computers. API-key usage may not have subscription windows."
-              >
-                {!limits.length && (
-                  <Text accessibilityLiveRegion="polite" style={[styles.muted, { padding: 12 }]}>
-                    No account limits reported. Refresh to check connected computers. API-key
-                    accounts may not have subscription limits.
-                  </Text>
-                )}
-                {accountLimitGroups(limits).map((group) => {
-                  const { provider, windows } = group
-                  return (
-                    <View key={group.key} style={{ padding: 12, gap: 12 }}>
-                      <Text style={[styles.text, { fontWeight: '600' }]}>
-                        {provider === 'codex' ? 'Codex' : 'Claude'} · {group.label}
+              <View style={{ gap: 16 }}>
+                <UsageHubs computer={selectedComputer} onSaved={refresh} />
+                {hosts.flatMap((entry) =>
+                  (hubs[entry.profile.id] ?? [])
+                    .filter((hub) => hub.enabled)
+                    .map((hub) => (
+                      <Text key={`${entry.profile.id}:${hub.id}`} style={styles.muted}>
+                        {runtimeComputerName(entry)} · {hub.label}:{' '}
+                        {hub.error ??
+                          (hub.limits.length
+                            ? `Updated ${hub.checkedAt ? new Date(hub.checkedAt).toLocaleString() : 'unknown'}`
+                            : 'No supported account limits reported.')}
                       </Text>
-                      {group.windows[0] && <ResetCredits window={group.windows[0]} />}
-                      {windows.length ? (
-                        windows.map((limit) => {
-                          const state = quotaReadingState(limit, limit.connected, now)
-                          const expired = state === 'awaiting'
-                          const remaining = Math.max(0, Math.min(100, 100 - limit.usedPercent))
-                          return (
-                            <View key={limit.key} style={{ gap: 5 }}>
-                              <Text style={styles.text}>
-                                {limit.window} ·{' '}
-                                {expired
-                                  ? 'Awaiting reading'
-                                  : `${Math.round(remaining)}% left${state === 'fresh' ? '' : ` · ${state}`}`}
-                              </Text>
-                              {!expired && (
-                                <View
-                                  accessibilityRole="progressbar"
-                                  accessibilityLabel={`${provider} ${limit.window} remaining`}
-                                  accessibilityValue={{
-                                    min: 0,
-                                    max: 100,
-                                    now: Math.round(remaining),
-                                  }}
-                                  style={{
-                                    height: 7,
-                                    borderRadius: 4,
-                                    backgroundColor: colors.border,
-                                  }}
-                                >
+                    )),
+                )}
+                <UsagePool
+                  limits={limits}
+                  now={now}
+                  accounts={hosts.flatMap((entry) =>
+                    (hubs[entry.profile.id] ?? [])
+                      .filter((hub) => hub.enabled)
+                      .flatMap((hub) => hub.accounts ?? []),
+                  )}
+                />
+                <SettingsGroup
+                  title="Account limits"
+                  footer="Limits are reported by Codex and Claude agents on connected computers. API-key usage may not have subscription windows."
+                >
+                  {!limits.length && (
+                    <Text accessibilityLiveRegion="polite" style={[styles.muted, { padding: 12 }]}>
+                      No account limits reported. Refresh to check connected computers. API-key
+                      accounts may not have subscription limits.
+                    </Text>
+                  )}
+                  {accountLimitGroups(limits).map((group) => {
+                    const { provider, windows } = group
+                    return (
+                      <View key={group.key} style={{ padding: 12, gap: 12 }}>
+                        <Text style={[styles.text, { fontWeight: '600' }]}>
+                          {provider === 'codex' ? 'Codex' : 'Claude'} · {group.label}
+                        </Text>
+                        {group.windows[0] && <ResetCredits window={group.windows[0]} />}
+                        {windows.length ? (
+                          windows.map((limit) => {
+                            const state = quotaReadingState(limit, limit.connected, now)
+                            const expired = state === 'awaiting'
+                            const remaining = Math.max(0, Math.min(100, 100 - limit.usedPercent))
+                            return (
+                              <View key={limit.key} style={{ gap: 5 }}>
+                                <Text style={styles.text}>
+                                  {limit.window} ·{' '}
+                                  {expired
+                                    ? 'Awaiting reading'
+                                    : `${Math.round(remaining)}% left${state === 'fresh' ? '' : ` · ${state}`}`}
+                                </Text>
+                                {!expired && (
                                   <View
+                                    accessibilityRole="progressbar"
+                                    accessibilityLabel={`${provider} ${limit.window} remaining`}
+                                    accessibilityValue={{
+                                      min: 0,
+                                      max: 100,
+                                      now: Math.round(remaining),
+                                    }}
                                     style={{
                                       height: 7,
                                       borderRadius: 4,
-                                      width: `${remaining}%`,
-                                      backgroundColor:
-                                        remaining <= 10
-                                          ? colors.error
-                                          : remaining <= 25
-                                            ? colors.warning
-                                            : colors.accent,
+                                      backgroundColor: colors.border,
                                     }}
-                                  />
-                                </View>
-                              )}
-                              <Text style={styles.muted}>
-                                Reported by {limit.computers.join(', ')} · Updated{' '}
-                                {new Date(limit.updatedAt).toLocaleString()} ·{' '}
-                                {formatQuotaReset(limit.resetsAt, now)}
-                              </Text>
-                            </View>
-                          )
-                        })
-                      ) : (
-                        <Text style={styles.muted}>
-                          No subscription windows reported. Refresh checks the signed-in host
-                          account without starting a turn.
-                        </Text>
-                      )}
-                    </View>
-                  )
-                })}
-              </SettingsGroup>
+                                  >
+                                    <View
+                                      style={{
+                                        height: 7,
+                                        borderRadius: 4,
+                                        width: `${remaining}%`,
+                                        backgroundColor:
+                                          remaining <= 10
+                                            ? colors.error
+                                            : remaining <= 25
+                                              ? colors.warning
+                                              : colors.accent,
+                                      }}
+                                    />
+                                  </View>
+                                )}
+                                <Text style={styles.muted}>
+                                  Reported by {limit.computers.join(', ')} · Updated{' '}
+                                  {new Date(limit.updatedAt).toLocaleString()} ·{' '}
+                                  {formatQuotaReset(limit.resetsAt, now)}
+                                </Text>
+                              </View>
+                            )
+                          })
+                        ) : (
+                          <Text style={styles.muted}>
+                            No subscription windows reported. Refresh checks the signed-in host
+                            account without starting a turn.
+                          </Text>
+                        )}
+                      </View>
+                    )
+                  })}
+                </SettingsGroup>
+              </View>
             )}
             {view !== 'limits' && (
               <UsagePrices

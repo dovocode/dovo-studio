@@ -11,6 +11,11 @@ const runtimeSyncError = (id: string, error: unknown) =>
       error instanceof Error ? error.message : 'Could not reach the runtime connection manager.',
   })
 contextBridge.exposeInMainWorld('dovo', {
+  openBrowserWindow: (): Promise<void> => ipcRenderer.invoke('browser:new-window'),
+  browserExtensions: (
+    command: import('@dovo/protocol').BrowserExtensionCommand,
+  ): Promise<import('@dovo/protocol').BrowserExtensionsResult | undefined> =>
+    ipcRenderer.invoke('browser:extensions', command),
   dictation: {
     status: (): Promise<import('@dovo/protocol').DictationStatus> =>
       ipcRenderer.invoke('dictation:status'),
@@ -199,6 +204,11 @@ contextBridge.exposeInMainWorld('dovo', {
     const handler = () => listener()
     ipcRenderer.on('runtime:registry-changed', handler)
     return () => ipcRenderer.removeListener('runtime:registry-changed', handler)
+  },
+  subscribeAppSettings: (listener: () => void) => {
+    const handler = () => listener()
+    ipcRenderer.on('app:settings-changed', handler)
+    return () => ipcRenderer.removeListener('app:settings-changed', handler)
   },
   readAppSettings: () => {
     const result: { value?: unknown; error?: string } = ipcRenderer.sendSync('app:settings-read')

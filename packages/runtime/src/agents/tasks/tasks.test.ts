@@ -2261,7 +2261,7 @@ it('applies Claude steering received during finalization even when the remaining
   }
 })
 
-it('runs queued turns with their own model and reasoning without changing the active run or defaults', async () => {
+it('persists queued model choices without changing the active run or saved agent defaults', async () => {
   const { runClientEffect } = await import('@dovo/client-runtime')
   const s = await setup()
   const runs: AgentRun[] = []
@@ -2314,14 +2314,20 @@ it('runs queued turns with their own model and reasoning without changing the ac
     ['', undefined],
     ['large-model', 'high'],
     ['small-model', 'low'],
-    ['', undefined],
+    ['small-model', 'low'],
   ])
   const finished = s.store.task(task.id)
   expect(finished.turns?.map((turn) => [turn.model, turn.reasoning])).toEqual(
     runs.map((run) => [run.agent.model, run.agent.reasoning]),
   )
   expect(finished.harness).toEqual(original.harness)
-  expect(finished.agentOverrides).toEqual(original.agentOverrides)
+  expect(finished.agentOverrides).toEqual({
+    ...original.agentOverrides,
+    model: 'small-model',
+    reasoning: 'low',
+    serviceTier: null,
+    cyberAccessProgram: null,
+  })
   expect(s.store.get().agents[0].model).toBe('')
 })
 
@@ -2420,4 +2426,66 @@ it('honors a message paused while its checkout is still being prepared', async (
     await s.tasks.start(task.id)
   ).done
   expect(run).toHaveBeenCalledTimes(1)
+})
+
+it('emits completed shell commands once with paired inputs and excludes failed or late events', async () => {
+  const s = await setup()
+  const completed: Array<{
+    taskId: string
+    turnId: string
+    tool: { input?: unknown; output?: unknown }
+  }> = []
+  const stop = s.tasks.onCommandCompleted((event) => completed.push(event))
+  let emit: AgentRun['onEvent']
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      emit = run.onEvent
+      run.onSession('command-session')
+      run.onEvent?.('item/started', {
+        item: { id: 'create', type: 'commandExecution', command: 'git status' },
+      })
+      const result = {
+        item: {
+          id: 'create',
+          type: 'commandExecution',
+          exitCode: 0,
+          status: 'completed',
+          aggregatedOutput: 'clean',
+        },
+      }
+      run.onEvent?.('item/completed', result)
+      run.onEvent?.('item/completed', result)
+      run.onEvent?.('item/completed', {
+        item: {
+          id: 'failed',
+          type: 'commandExecution',
+          command: 'git status',
+          exitCode: 1,
+          status: 'completed',
+        },
+      })
+      run.onText('Done')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Command events',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Check status',
+  })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(completed).toHaveLength(1)
+  expect(completed[0]).toMatchObject({
+    taskId: task.id,
+    tool: { input: 'git status', output: 'clean' },
+  })
+  expect(completed[0].turnId).toBe(s.store.task(task.id).turns?.at(-1)?.id)
+  emit?.('item/completed', {
+    item: { id: 'late', type: 'commandExecution', command: 'git status', status: 'completed' },
+  })
+  expect(completed).toHaveLength(1)
+  stop()
 })

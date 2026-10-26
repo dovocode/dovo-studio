@@ -1,3 +1,4 @@
+import { pullCommentsByFile } from '@dovo/protocol'
 import { type ComponentRef, useEffect, useMemo, useState } from 'react'
 import { useRuntime } from '../../../runtime/connection/provider'
 import {
@@ -8,7 +9,7 @@ import {
 
 import {
   pullFileFingerprint,
-  reviewFileState,
+  createReviewFileLookup,
   orderReviewFiles,
   pullFileKind,
   type FileKind,
@@ -64,15 +65,21 @@ export function PullChanges({
   const [options, setOptions] = useState(false)
   const [feedbackPath, setFeedbackPath] = useState('')
   const [controlsHeight, setControlsHeight] = useState(88)
+  const { headSha, baseSha } = detail.pull
   const fingerprints = useMemo(
-    () => new Map(detail.files.map((file) => [file.path, pullFileFingerprint(file, detail.pull)])),
-    [detail.files, detail.pull],
+    () =>
+      new Map(
+        detail.files.map((file) => [file.path, pullFileFingerprint(file, { headSha, baseSha })]),
+      ),
+    [detail.files, headSha, baseSha],
   )
+  const reviewVersion = useMemo(() => JSON.stringify([...fingerprints]), [fingerprints])
   const review = useFileReview(
     { kind: 'pull', repositoryId, number: detail.pull.number },
-    JSON.stringify([...fingerprints]),
+    reviewVersion,
     active,
   )
+  const fileState = useMemo(() => createReviewFileLookup(review.progress), [review.progress?.files])
   const { connection, snapshot } = useRuntime()
   const { draft, setField } = useDetailDraft(
     changeDrafts,
@@ -102,23 +109,21 @@ export function PullChanges({
       orderReviewFiles(
         detail.files.map((file) => ({
           ...file,
-          viewed:
-            reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
-              ?.viewed ?? false,
+          viewed: fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed ?? false,
         })),
         review.progress?.groups ?? [],
         related,
       ),
-    [detail.files, review.progress, fingerprints, related],
+    [detail.files, review.progress, fingerprints, related, fileState],
   )
   const files = allFiles.filter((file) => !kind || pullFileKind(file) === kind)
   const file =
     files.find((file) => file.path === selected || file.previousPath === selected) ?? files[0]
-  const comments = detail.comments.filter(
-    (comment) =>
-      comment.kind === 'inline' &&
-      (comment.path === file?.path || comment.path === file?.previousPath),
+  const commentsByFile = useMemo(
+    () => pullCommentsByFile(detail.files, detail.comments),
+    [detail.files, detail.comments],
   )
+  const comments = (file && commentsByFile.get(file.path)) ?? []
   const linkedComment = fragment
     ? comments.find((comment) => pullFragment(comment.url) === fragment)
     : undefined
@@ -194,10 +199,7 @@ export function PullChanges({
             onViewed={(viewed) =>
               review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
             }
-            disabled={
-              !review.ready ||
-              !reviewFileState(review.progress, file.path, fingerprints.get(file.path) ?? '')
-            }
+            disabled={!review.ready || !fileState(file.path, fingerprints.get(file.path) ?? '')}
             busy={review.busy}
             error={review.error}
             onRetry={review.reload}

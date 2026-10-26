@@ -1,4 +1,5 @@
 import { enabledStudioTools } from '@dovo/protocol'
+import { settledSummaryPage } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import { Effect } from 'effect'
@@ -63,12 +64,41 @@ function projectWorkspace(
   projections.set(services, { source: new WeakRef(source), workspace: new WeakRef(workspace) })
   return workspace
 }
+const settledPages = new WeakMap<
+  Workspace,
+  Map<string, { workspace: Workspace; omitted: number; expires: number }>
+>()
+function pagedWorkspace(workspace: Workspace, limit: number, selected: readonly string[] = []) {
+  const key = JSON.stringify([limit, [...selected].sort()])
+  let pages = settledPages.get(workspace)
+  const previous = pages?.get(key)
+  const now = Date.now()
+  if (previous && now < previous.expires) return previous
+  const page = settledSummaryPage(workspace.tasks, limit, selected, now)
+  const expires = workspace.tasks.reduce((expiry, task) => {
+    const until = task.snoozedUntil ? Date.parse(task.snoozedUntil) : 0
+    return until > now ? Math.min(expiry, until) : expiry
+  }, Infinity)
+  const value = {
+    workspace: page.omitted ? { ...workspace, tasks: page.tasks } : workspace,
+    omitted: page.omitted,
+    expires,
+  }
+  if (!pages) settledPages.set(workspace, (pages = new Map()))
+  pages.set(key, value)
+  if (pages.size > 16) {
+    const first = pages.keys().next().value
+    if (first !== undefined) pages.delete(first)
+  }
+  return value
+}
 export function runtimeSnapshot(
   s: Services,
   device: { id: string; owner: boolean },
   overview = false,
   taskIds?: readonly string[],
   pagedHistory = false,
+  settledLimit?: number,
 ) {
   return Effect.gen(function* () {
     const migrated = migrateProjectIcons(s.defaults.get(), s.store.get().repositories, {
@@ -81,7 +111,7 @@ export function runtimeSnapshot(
     const acpInstallations = s.acpInstallations.list()
     const catalogGenerations = modelCatalogGenerations(s.agents, acpInstallations)
     // Capture the wire view before asynchronous repository enrichment, at this revision.
-    const storedWorkspace = snapshotWorkspace(
+    const completeWorkspace = snapshotWorkspace(
       s.store.publicWorkspace(),
       {
         publicTask: (id) => s.store.publicTask(id),
@@ -98,6 +128,15 @@ export function runtimeSnapshot(
         pagedHistory,
       },
     )
+    const page =
+      settledLimit === undefined
+        ? undefined
+        : pagedWorkspace(completeWorkspace, settledLimit, [
+            ...(taskIds ?? []),
+            ...s.approvals.list().map((request) => request.taskId),
+            ...s.questions.list().map((request) => request.taskId),
+          ])
+    const storedWorkspace = page?.workspace ?? completeWorkspace
     const forgeConnections = new Map(
       storedWorkspace.repositories.some((repository) => repository.forge)
         ? s.forges.list().map((connection) => [connection.id, connection] as const)
@@ -211,6 +250,7 @@ export function runtimeSnapshot(
       threadBehaviorSupported: true,
       queuedTurnSettingsSupported: true,
       fullTurnSettingsSupported: true,
+      persistentTurnModelsSupported: true,
       projectTransfersSupported: true,
       projectWorktreeTransfersSupported: true,
       projectTransfers: s.projectTransfers.list(),
@@ -226,6 +266,9 @@ export function runtimeSnapshot(
       allowWebRequests: preferences.allowWebRequests,
       acpInstallations,
       revision,
+      ...(page && settledLimit !== undefined
+        ? { olderSettled: { limit: settledLimit, omitted: page.omitted } }
+        : {}),
       workspace: selectedWorkspace,
       approvals: s.approvals.list(),
       questions: s.questions.list(),

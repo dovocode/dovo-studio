@@ -30,6 +30,14 @@ While an agent runs, write a message to reveal **Queue** and **Steer**. **Stop**
   queued and paused with an explanation. Check the conversation before explicitly resuming it; a
   lost harness acknowledgement cannot establish whether it received the input.
 
+Changing the model or reasoning while a turn runs applies to the queued message and all following
+turns. The active turn keeps its original model. The new model becomes this thread's default when
+that queued turn starts, so removing, pausing or reordering messages cannot change earlier turns.
+Later queued messages without their own model choice inherit the new default. The choice survives
+reconnecting and runtime restarts and does not change project defaults or saved agents. Other
+per-message harness settings, such as permissions, stay scoped to that message. Older runtimes
+without persistent turn-model support retain their one-turn behavior.
+
 Steering a queued follow-up keeps its original message ID. Provider acknowledgement moves it into
 the conversation atomically; a failed or unconfirmed handoff leaves the original in a paused queue.
 Desktop and mobile hide queued messages already present in history, including while a newer queue

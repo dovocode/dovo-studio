@@ -632,3 +632,288 @@ it('isolates remote tabs, binds their tickets to the task, and closes only the r
     'http://localhost:3000',
   )
 })
+
+it('opens a paired shared-browser session without a thread, preserves its host/profile and requires credentials for selections', async () => {
+  const { STUDIO_BROWSER_SCOPE } = await import('@dovo/protocol')
+  const open = vi.spyOn(RemoteBrowsers.prototype, 'open').mockResolvedValue()
+  const selection = vi
+    .spyOn(RemoteBrowsers.prototype, 'selection')
+    .mockResolvedValue({ text: 'Selected text', url: 'http://lan.local/', title: 'LAN' })
+  const close = vi.spyOn(RemoteBrowsers.prototype, 'close').mockResolvedValue()
+  const input = vi
+    .spyOn(RemoteBrowsers.prototype, 'input')
+    .mockImplementation(async (_id, _input, authorize) => {
+      authorize?.()
+    })
+  vi.spyOn(RemoteBrowsers.prototype, 'attach').mockResolvedValue(() => {})
+  const token = 'shared-browser-token-with-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  runtime.services.preferences.save({
+    browserProfiles: [
+      { id: 'default', name: 'Default' },
+      { id: 'work', name: 'Work' },
+    ],
+  })
+  const call = (action: string, credential = token, taskId = STUDIO_BROWSER_SCOPE) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/previews/browser/${action}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        taskId,
+        tabId: 'shared-tab',
+        profileId: 'work',
+        url: 'http://lan.local/',
+      }),
+    })
+  expect((await call('open', 'wrong')).status).toBe(401)
+  expect((await call('selection', 'wrong')).status).toBe(401)
+  expect((await call('open', token, 'missing-thread')).status).toBe(404)
+  const opened = await call('open')
+  expect(opened.status).toBe(200)
+  const resourceId = JSON.stringify([STUDIO_BROWSER_SCOPE, 'shared-tab', 'work'])
+  expect(open).toHaveBeenCalledWith(resourceId, STUDIO_BROWSER_SCOPE, 'work', 'http://lan.local/')
+  const { ticket } = await opened.json()
+  const socket = new WebSocket(`ws://127.0.0.1:${runtime.port}/ws/browser?ticket=${ticket}`)
+  await once(socket, 'open')
+  socket.send(JSON.stringify({ type: 'key', key: 'ArrowDown' }))
+  await vi.waitFor(() => expect(input).toHaveBeenCalled())
+  socket.close()
+  expect(await (await call('selection')).json()).toMatchObject({
+    text: 'Selected text',
+    url: 'http://lan.local/',
+  })
+  expect(selection).toHaveBeenCalledWith(resourceId)
+  expect((await call('selection', token, 'missing-thread')).status).toBe(404)
+  expect((await call('close')).status).toBe(200)
+  expect(close).toHaveBeenCalledWith(resourceId)
+})
+
+// These fixtures exercise RemoteBrowsers itself without starting Chromium. The injected
+// sessions deliberately implement only the page surface under test; clear their maps
+// before disposal rather than relying on dispose's allSettled to hide incomplete mocks.
+function browserFixture() {
+  const browsers = new RemoteBrowsers('/runtime/browser.profiles')
+  const sessions = new Map<string, Promise<ReturnType<typeof selectionSession>>>()
+  const owners = new Map<string, string>()
+  Object.defineProperty(browsers, 'sessions', { value: sessions })
+  Object.defineProperty(browsers, 'owners', { value: owners })
+  cleanups.push(async () => {
+    sessions.clear()
+    owners.clear()
+    await browsers.dispose()
+  })
+  return { browsers, sessions, owners }
+}
+function selectionFrame(focused: boolean, text: unknown) {
+  return {
+    evaluate: vi
+      .fn<() => Promise<unknown>>()
+      .mockResolvedValueOnce(focused)
+      .mockResolvedValue(text),
+    isDetached: vi.fn<() => boolean>(() => false),
+  }
+}
+function selectionSession() {
+  const main = selectionFrame(true, 'Main selection')
+  const page = {
+    isClosed: () => false,
+    frames: () => [main],
+    mainFrame: () => main,
+    evaluate: vi.fn<() => Promise<unknown>>().mockResolvedValue('Main selection'),
+    url: () => 'http://lan.local/',
+    title: vi.fn<() => Promise<string>>(async () => 'LAN page'),
+    close: vi.fn<() => Promise<void>>(async () => {}),
+  }
+  return {
+    page,
+    logs: [{ time: 'now', kind: 'console', message: 'Private' }],
+    release: vi.fn<() => Promise<void>>(async () => {}),
+  }
+}
+
+it('hides shared workspace browser sessions and rejects Studio access before any close mutation', async () => {
+  const { STUDIO_BROWSER_SCOPE } = await import('@dovo/protocol')
+  const { browsers, sessions, owners } = browserFixture()
+  const shared = selectionSession()
+  const thread = selectionSession()
+  sessions.set('shared', Promise.resolve(shared))
+  owners.set('shared', STUDIO_BROWSER_SCOPE)
+  sessions.set('thread', Promise.resolve(thread))
+  owners.set('thread', 'task')
+  expect(await browsers.studioList()).toEqual([
+    { id: 'thread', taskId: 'task', url: 'http://lan.local/', title: 'LAN page' },
+  ])
+  expect(shared.page.title).not.toHaveBeenCalled()
+  await expect(browsers.studioLogs('shared')).rejects.toMatchObject({ status: 403 })
+  expect(await browsers.studioLogs('thread')).toEqual({ entries: thread.logs })
+  const close = vi.spyOn(browsers, 'close')
+  const authorize = vi.fn<() => void>()
+  for (const action of ['snapshot', 'close'] as const)
+    await expect(
+      browsers.agentCommand('task', { action }, authorize, 'shared'),
+    ).rejects.toMatchObject({ status: 403 })
+  expect(authorize).toHaveBeenCalledTimes(2)
+  expect(close).not.toHaveBeenCalled()
+  expect(shared.page.close).not.toHaveBeenCalled()
+  expect(shared.release).not.toHaveBeenCalled()
+  expect(sessions.has('shared')).toBe(true)
+  expect(owners.get('shared')).toBe(STUDIO_BROWSER_SCOPE)
+})
+
+it('clamps selection results at the runtime boundary and treats nonstrings as empty', async () => {
+  const { browsers, sessions } = browserFixture()
+  for (const value of ['x'.repeat(40000), { text: 'untrusted object' }, null, 123]) {
+    const session = selectionSession()
+    const frame = selectionFrame(true, value)
+    session.page.frames = () => [frame]
+    session.page.mainFrame = () => frame
+    session.page.evaluate.mockResolvedValue(value)
+    sessions.set('selection', Promise.resolve(session))
+    expect(await browsers.selection('selection')).toEqual({
+      text: typeof value === 'string' ? value.slice(0, 32000) : '',
+      title: 'LAN page',
+      url: 'http://lan.local/',
+    })
+  }
+})
+
+it('falls back to the main frame when no frame reports focus', async () => {
+  const { browsers, sessions } = browserFixture()
+  const session = selectionSession()
+  const child = selectionFrame(false, 'Child selection')
+  const main = selectionFrame(false, 'Main selection')
+  session.page.frames = () => [child, main]
+  session.page.mainFrame = () => main
+  sessions.set('selection', Promise.resolve(session))
+  expect(await browsers.selection('selection')).toEqual({
+    text: 'Main selection',
+    title: 'LAN page',
+    url: 'http://lan.local/',
+  })
+})
+
+it('bounds the entire selection operation, including frame evaluation and title lookup, to three seconds', async () => {
+  vi.useFakeTimers()
+  try {
+    const { browsers, sessions } = browserFixture()
+    for (const blocked of ['frame', 'title'] as const) {
+      const session = selectionSession()
+      if (blocked === 'frame') {
+        const frame = selectionFrame(true, '')
+        frame.evaluate.mockReset().mockReturnValue(new Promise(() => {}))
+        session.page.frames = () => [frame]
+      } else {
+        // Spend part of the same deadline finding focus before title lookup stalls.
+        const frame = selectionFrame(true, 'Main selection')
+        frame.evaluate
+          .mockReset()
+          .mockImplementationOnce(
+            () => new Promise((resolve) => setTimeout(() => resolve(true), 2000)),
+          )
+          .mockResolvedValue('Main selection')
+        session.page.frames = () => [frame]
+        session.page.title.mockReturnValue(new Promise(() => {}))
+      }
+      sessions.set('selection', Promise.resolve(session))
+      const result = browsers.selection('selection')
+      const outcome = result.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      )
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(await outcome).toMatchObject({ error: { status: 504 } })
+      expect(vi.getTimerCount()).toBe(0)
+    }
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('keeps same-named shared and thread profiles in separate persistent directories and contexts', async () => {
+  const { browsers } = browserFixture()
+  const context = () => ({
+    pages: () => [],
+    route: vi.fn<() => Promise<void>>(async () => {}),
+    close: vi.fn<() => Promise<void>>(async () => {}),
+  })
+  const threadContext = context()
+  const workspaceContext = context()
+  const launchPersistentContext = vi
+    .fn<(directory: string) => Promise<ReturnType<typeof context>>>()
+    .mockResolvedValueOnce(threadContext)
+    .mockResolvedValueOnce(workspaceContext)
+  Object.defineProperty(browsers, 'executable', {
+    value: async () => ({
+      chromium: { launchPersistentContext },
+      executablePath: '/managed/chromium',
+    }),
+  })
+  const thread = await browsers['profile']('work')
+  const shared = await browsers['profile']('work', false, true)
+  const sharedAgain = await browsers['profile']('work', false, true)
+  try {
+    expect(launchPersistentContext.mock.calls.map(([directory]) => directory)).toEqual([
+      '/runtime/browser.profiles/work',
+      '/runtime/browser.profiles/browser-workspace.profiles/work',
+    ])
+    expect(thread.context).toBe(threadContext)
+    expect(shared.context).toBe(workspaceContext)
+    expect(shared.context).not.toBe(thread.context)
+    expect(sharedAgain.context).toBe(shared.context)
+    await shared.release()
+    expect(workspaceContext.close).not.toHaveBeenCalled()
+    await sharedAgain.release()
+    expect(workspaceContext.close).toHaveBeenCalledOnce()
+    expect(threadContext.close).not.toHaveBeenCalled()
+  } finally {
+    await Promise.all([thread.release(), shared.release(), sharedAgain.release()])
+  }
+  expect(threadContext.close).toHaveBeenCalledOnce()
+  expect(workspaceContext.close).toHaveBeenCalledOnce()
+  expect(browsers['profiles'].size).toBe(0)
+})
+
+it('routes shared ownership into the workspace profile namespace when opening a tab', async () => {
+  const { STUDIO_BROWSER_SCOPE } = await import('@dovo/protocol')
+  const { browsers } = browserFixture()
+  const session = { ...selectionSession(), listeners: new Set([() => {}]) }
+  const create = vi.fn<(...args: Parameters<RemoteBrowsers['create']>) => Promise<typeof session>>(
+    async () => session,
+  )
+  Object.defineProperty(browsers, 'create', { value: create })
+  await browsers.open('shared', STUDIO_BROWSER_SCOPE, 'work', 'http://lan.local/')
+  await browsers.open('thread', 'task', 'work', 'http://lan.local/')
+  expect(create.mock.calls).toEqual([
+    ['shared', 'work', 'http://lan.local/', false, true],
+    ['thread', 'work', 'http://lan.local/', false, false],
+  ])
+})
+
+it('ignores text evaluation failures only for frames that detached after the focus probe', async () => {
+  const { browsers, sessions } = browserFixture()
+  const session = selectionSession()
+  const child = selectionFrame(true, '')
+  const main = selectionFrame(true, 'Main selection')
+  const failure = new Error('Selection evaluation failed')
+  child.evaluate.mockReset().mockResolvedValueOnce(true).mockRejectedValue(failure)
+  child.isDetached.mockReturnValue(true)
+  session.page.frames = () => [child, main]
+  session.page.mainFrame = () => main
+  sessions.set('selection', Promise.resolve(session))
+  expect(await browsers.selection('selection')).toEqual({
+    text: 'Main selection',
+    title: 'LAN page',
+    url: 'http://lan.local/',
+  })
+  expect(child.isDetached).toHaveBeenCalledOnce()
+  expect(main.evaluate).toHaveBeenCalledTimes(2)
+
+  child.evaluate.mockReset().mockResolvedValueOnce(true).mockRejectedValue(failure)
+  child.isDetached.mockReturnValue(false)
+  main.evaluate.mockReset().mockResolvedValueOnce(true).mockResolvedValue('Main selection')
+  await expect(browsers.selection('selection')).rejects.toBe(failure)
+  // A live-frame error must not silently fall through to another page's selection.
+  expect(main.evaluate).toHaveBeenCalledTimes(1)
+  expect(session.page.title).toHaveBeenCalledOnce()
+})

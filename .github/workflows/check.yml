@@ -37,6 +37,10 @@ jobs:
       # The agent browser integration test uses sandboxed managed Chromium.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm exec vp test --maxWorkers=4
+      - name: Verify native browser extensions
+        run: pnpm test:browser-extensions:native
+      - name: Verify browser tab capture and media consent
+        run: pnpm test:browser-media:native
       - name: Verify persistent daily TURN quota
         run: python3 -m unittest discover -s apps/connect-server/turn/budget -p 'test_*.py'
       - name: Verify TURN cutoff in an isolated network namespace

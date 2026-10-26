@@ -1,3 +1,4 @@
+import { PullLinkedThreads } from './linked-threads'
 import { AuthorAvatar } from '../author-avatar'
 import { pullChangesSnapshot } from '@dovo/protocol'
 import { PullSectionStatus } from './section-status'
@@ -447,6 +448,7 @@ function PullDetailContent({
             className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 [container-type:size]"
             aria-label="Pull request content"
           >
+            <PullLinkedThreads pull={detail.pull} />
             {error && (
               <p
                 role="alert"

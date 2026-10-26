@@ -59,15 +59,19 @@ settings, available on desktop and mobile. Smart linking is enabled by default; 
 Smart linking finds the thread's branch PR and verifies full PR URLs mentioned in user or agent
 messages against the project's configured forge. It adds informational links without changing the
 checkout. Unlinking a PR suppresses automatic re-linking; linking it manually again clears that
-suppression. The background watcher checks every two minutes. Extra PR links are available in the
+suppression. Successful agent shell commands also link newly created PRs from `gh pr create` or
+`glab mr create`, after verifying their URL-only output against the project's forge. Merge and close
+commands refresh PR state immediately and again when the turn finishes, including `--auto` merges.
+The background watcher checks every two minutes as a fallback. Extra PR links are available in the
 desktop PR menu and mobile's expandable **Linked PRs** list.
 
 Auto-settle follows the source PR or the PR matching the thread's checkout branch. Closing a
-mentioned auxiliary PR cannot settle the thread. A freshly verified merged or closed main PR moves
-an idle thread to **Settled**, retaining its history and worktree. Pinned threads, active turns,
-approvals/questions, open terminals, queued or scheduled messages, and unsent drafts stay put.
-Unlinked PRs do not trigger automatic settlement. Forge errors and stale status cannot settle a
-thread.
+mentioned auxiliary PR cannot settle the thread. A verified explicit shell merge/close URL can also
+establish the tracked PR for a thread without a checkout branch. A freshly verified merged or closed
+main PR moves an idle thread to **Settled**, retaining its history and worktree. Pinned threads,
+active turns, approvals/questions, open terminals, queued or scheduled messages, and unsent drafts
+stay put. Unlinked PRs do not trigger automatic settlement. Forge errors and stale status cannot
+settle a thread.
 
 The existing auto-archive option remains separate. If enabled too, it archives the thread instead of
 just settling it. Settling alone does not set the archive timestamp or trigger archived-worktree

@@ -160,11 +160,11 @@ export default function TasksView({ entityId, threadParent }: StudioViewProps) {
   useEffect(() => {
     const connection = store.connection
     if (!connection) return
-    const stops = [storedTask?.id, splitTask?.id]
+    const stops = [deselected ? undefined : selectedId || entityId, splitId]
       .filter((id): id is string => !!id)
       .map((id) => watchRuntimeTask(connection, id))
     return () => stops.forEach((stop) => stop())
-  }, [store.connection, storedTask?.id, splitTask?.id])
+  }, [store.connection, deselected, selectedId, entityId, splitId])
   const [listOpen, setListOpen] = useApplicationState(false)
   const [sidebar, setSidebar] = useLeftSidebar(!host.threadWindow)
   const navigationSidebar = useNavigationSidebar()

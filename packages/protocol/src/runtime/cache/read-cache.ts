@@ -4,6 +4,7 @@ import { Data, Effect, Result, Schema, Semaphore } from 'effect'
 import type { RuntimeConnection } from '../connection/runtime.js'
 import { snapshotSchema } from '../connection/runtime.js'
 export const runtimeSnapshotCacheSchema = mutableStruct({
+  cacheId: Schema.optional(Schema.String),
   snapshot: snapshotSchema,
   lastSeen: Schema.NullOr(isoDateTime(Schema.String)),
   pulls: Schema.NullOr(
@@ -14,6 +15,10 @@ export const runtimeSnapshotCacheSchema = mutableStruct({
       partial: Schema.Boolean,
     }),
   ),
+})
+const snapshotFreshnessSchema = mutableStruct({
+  cacheId: Schema.String,
+  lastSeen: Schema.NullOr(isoDateTime(Schema.String)),
 })
 export interface CacheStorage {
   getItem(key: string): Promise<string | null>
@@ -187,10 +192,35 @@ export function createRuntimeReadCache(
       const { prefix } = yield* scope
       const raw = yield* storageEffect(() => storage.getItem(prefix + key))
       if (!raw || closed) return null
+      const freshness =
+        key === 'snapshot'
+          ? yield* storageEffect(() => storage.getItem(prefix + 'snapshot-freshness'))
+          : null
+      const stamp = freshness
+        ? yield* Effect.result(
+            Effect.try(() => {
+              const stored = decode(envelope, JSON.parse(freshness))
+              return { ...decode(snapshotFreshnessSchema, stored.value), cachedAt: stored.cachedAt }
+            }),
+          )
+        : undefined
       const parsed = yield* Effect.result(
         Effect.try(() => {
           const cached = decode(envelope, JSON.parse(raw))
-          return { value: decode(schema, cached.value), cachedAt: cached.cachedAt }
+          let value = cached.value
+          let cachedAt = cached.cachedAt
+          if (
+            stamp &&
+            Result.isSuccess(stamp) &&
+            value &&
+            typeof value === 'object' &&
+            'cacheId' in value &&
+            value.cacheId === stamp.success.cacheId
+          ) {
+            value = { ...value, lastSeen: stamp.success.lastSeen }
+            cachedAt = stamp.success.cachedAt
+          }
+          return { value: decode(schema, value), cachedAt }
         }),
       )
       if (Result.isSuccess(parsed)) return parsed.success

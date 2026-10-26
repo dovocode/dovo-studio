@@ -33,7 +33,7 @@ const mocks = {
       const workspace=spaces[runtimeId];
       const runtimes=Object.entries(spaces).map(([id,workspace])=>({profile:{id,name:id,connection:{address:'http://'+id+'.lan',token:'fixture-token'}},connected:true,snapshot:{workspace}}));
       const store={workspace,ready:true,connected:true,snapshot:defaults?{defaults}:null,storageError:null,syncError:null,pendingSync:false,runtimes,
-        runtimeRegistry:{activeId:runtimeId,profiles:[{id:'mac'},{id:'remote'}]},activeRuntimeId:runtimeId,switchRuntime,
+        runtimeRegistry:{activeId:runtimeId,profiles:[{id:'mac',connection:{address:'http://mac.lan',token:'fixture-token'}},{id:'remote',connection:{address:'http://remote.lan',token:'fixture-token'}}]},activeRuntimeId:runtimeId,switchRuntime,
         setWorkspace:update=>setSpaces(current=>({...current,[runtimeId]:typeof update==='function'?update(current[runtimeId]):update}))};
       return <WorkspaceContext.Provider value={store}>{children}</WorkspaceContext.Provider>;
     }
@@ -41,6 +41,8 @@ const mocks = {
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/sidebar-header.tsx';export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;export const ErrorBoundary=({children})=>children;export const TooltipProvider=({children})=>children;export const useCompactLayout=()=>false;`,
   // Pair registration has its own browser suite; this fixture tests thread navigation.
   './studio-paired-computers-bridge': 'export const StudioPairedComputersBridge=()=>null;',
+  // Capture permissions are covered by check-browser-media-browser.mjs.
+  './browser-media-controls': 'export const BrowserMediaControls=()=>null;',
   './app-extension': 'export const appSettingsExtension={views:[]};',
   './appearance': 'export const useAppearance=()=>{};',
   './task-notifications': 'export const useTaskNotifications=open=>{window.notify=open;return {}};',

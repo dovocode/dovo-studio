@@ -13,7 +13,9 @@ interface Window {
     onOpenLink: (listener: (url: string) => void) => () => void
     openBrowserLink: NonNullable<import('@dovo/studio-core').StudioHostApi['openBrowserLink']>
     openExternalLink: NonNullable<import('@dovo/studio-core').StudioHostApi['openExternalLink']>
+    openBrowserWindow: () => Promise<void>
     browser: import('@dovo/protocol').BrowserBridge
+    browserExtensions: import('@dovo/protocol').BrowserExtensionBridge
     updates: import('@dovo/protocol').DesktopUpdateBridge
     pickDirectory(this: void, runtimeAddress: string): Promise<string | null>
     extensions(): Promise<import('@dovo/client-runtime').ExtensionInfo[]>

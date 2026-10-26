@@ -12,6 +12,7 @@ import {
   RefreshCw,
   PanelsTopLeft,
   Shapes,
+  Globe2,
 } from 'lucide-react'
 import type { DesktopUpdateState } from '@dovo/protocol'
 import { useEffect, useState } from 'react'
@@ -32,6 +33,7 @@ import { UpdateProgress } from './update-progress'
 const icons: Record<StudioIcon, typeof Bot> = {
   tasks: MessagesSquare,
   artifacts: Shapes,
+  browser: Globe2,
   issues: CircleDot,
   jira: PanelsTopLeft,
   scm: GitBranch,

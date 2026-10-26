@@ -1,4 +1,5 @@
 import { Effect, Semaphore } from 'effect'
+import { getRuntimeSnapshotTag } from '../../shared/client.js'
 import type { Task } from '../../workspace.js'
 import { taskBudgetUsage } from '../../tasks/task-budget.js'
 import type { RuntimeSnapshot } from '../connection/runtime.js'
@@ -151,7 +152,16 @@ export function boundedSnapshotCache(snapshot: RuntimeSnapshot): RuntimeSnapshot
 type Envelope = typeof runtimeSnapshotCacheSchema.Type
 const replicas = new WeakMap<
   RuntimeReadCache,
-  { snapshot?: RuntimeSnapshot; loaded: boolean; lock: Semaphore.Semaphore }
+  {
+    snapshot?: RuntimeSnapshot
+    input?: RuntimeSnapshot
+    tag?: string
+    pulls?: string
+    cacheId?: string
+    lastSeen?: string | null
+    loaded: boolean
+    lock: Semaphore.Semaphore
+  }
 >()
 /** Reuse the writer's bounded, decoded replica instead of decoding it again on each selection. */
 export function cachedRuntimeThread(cache: RuntimeReadCache, taskId: string): Task | undefined {
@@ -180,10 +190,32 @@ export function writeRuntimeSnapshotCache(cache: RuntimeReadCache, envelope: Env
         ))?.value.snapshot
         state.loaded = true
       }
+      const tag = getRuntimeSnapshotTag(envelope.snapshot)
+      const pulls = JSON.stringify(envelope.pulls)
+      if (
+        state.cacheId &&
+        state.pulls === pulls &&
+        (state.input === envelope.snapshot || (tag !== undefined && state.tag === tag))
+      ) {
+        if (state.lastSeen !== envelope.lastSeen) {
+          yield* cache.writeEffect('snapshot-freshness', {
+            cacheId: state.cacheId,
+            lastSeen: envelope.lastSeen,
+          })
+          state.lastSeen = envelope.lastSeen
+        }
+        return
+      }
       const snapshot = boundedSnapshotCache(retainCachedThreads(state.snapshot, envelope.snapshot))
-      yield* cache.writeEffect('snapshot', { ...envelope, snapshot })
+      const cacheId = `${Date.now()}:${Math.random().toString(36).slice(2)}`
+      yield* cache.writeEffect('snapshot', { ...envelope, snapshot, cacheId })
       if (cache.closed) return
       state.snapshot = snapshot
+      state.input = envelope.snapshot
+      state.tag = tag
+      state.pulls = pulls
+      state.cacheId = cacheId
+      state.lastSeen = envelope.lastSeen
     }),
   )
 }

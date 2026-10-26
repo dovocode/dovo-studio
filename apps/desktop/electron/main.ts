@@ -1,3 +1,4 @@
+import { registerBrowserWindows } from './browser-window.js'
 import { registerDictation } from './dictation.js'
 import { checkRuntimeConnection } from './runtime-connection-health.js'
 import { configureDesktopRuntimeDirectory, desktopDataRoot } from './runtime-data-directory.js'
@@ -171,6 +172,8 @@ const runtimeSync = registerRuntimeSync(rendererPath, async (connection) => {
 app.once('will-quit', () => runtimeSync.dispose())
 const threadWindows = registerThreadWindows(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => threadWindows.dispose())
+const browserWindows = registerBrowserWindows(rendererPath, join(__dirname, 'preload.mjs'))
+app.once('will-quit', () => browserWindows.dispose())
 let mainWindow: BrowserWindow | undefined
 /** The renderer reports its resolved palette; Windows and Linux paint the caption buttons
  * natively, so they would otherwise stay dark on a light theme. The last palette is kept for
@@ -184,7 +187,8 @@ ipcMain.handle('window:colors', (event, value: unknown) => {
   window.setBackgroundColor(colors.background)
   if (
     process.platform !== 'darwin' &&
-    (window === mainWindow || new URL(event.sender.getURL()).hash.startsWith('#thread='))
+    (window === mainWindow ||
+      /^#(?:thread|browser-window)=/.test(new URL(event.sender.getURL()).hash))
   )
     window.setTitleBarOverlay(titleBarOverlay(colors))
   writeWindowColors(app.getPath('userData'), colors)

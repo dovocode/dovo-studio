@@ -16,6 +16,7 @@ import { Field } from '../../ui/controls/field'
 import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
+import { useRuntime } from '../../runtime/connection/provider'
 
 export function TurnModelControls({
   agent,
@@ -31,6 +32,7 @@ export function TurnModelControls({
   task?: Task
 }) {
   const { styles } = useTheme()
+  const { snapshot } = useRuntime()
   const [custom, setCustom] = useState(false)
   const [customId, setCustomId] = useState('')
   const selected = applyTurnSettings(agent, value ?? undefined)
@@ -47,7 +49,9 @@ export function TurnModelControls({
   return (
     <View style={{ gap: 12 }}>
       <Text style={styles.muted}>
-        Only this turn. The active run and thread defaults stay unchanged.
+        {snapshot?.persistentTurnModelsSupported
+          ? 'Model and reasoning stay selected for following turns. The active run stays unchanged.'
+          : 'Only this turn. The active run and thread defaults stay unchanged.'}
       </Text>
       {task ? (
         <HarnessModelPicker

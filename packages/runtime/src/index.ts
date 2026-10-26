@@ -87,6 +87,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         closeTasks,
         () => services.agents.dispose(),
         () => services.runCredentials.dispose(),
+        () => services.store.usageHubs.dispose(),
         () => services.artifactFeeds.dispose(),
         () => services.sharedThreads.dispose(),
         () => services.mcpApps.dispose(),
@@ -138,6 +139,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                   Effect.gen(function* () {
                     const schedulers = yield* Effect.all(
                       [
+                        () => services.store.usageHubs.dispose(),
                         () => services.retrieval.stop(),
                         () => services.projectTransfers.dispose(),
                         () => housekeeping.dispose(),

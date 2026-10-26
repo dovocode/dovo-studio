@@ -158,3 +158,39 @@ export function orderReviewFiles<T extends { path: string }>(
       a.path.localeCompare(b.path),
   )
 }
+
+/** Viewer-owned index: build once per immutable file list, then keep revision checks constant time. */
+export function createReviewFileLookup(progress: ReviewProgress | null) {
+  const paths = new Map<string, Map<string, ReviewProgress['files'][number]>>()
+  for (const file of progress?.files ?? []) {
+    let revisions = paths.get(file.path)
+    if (!revisions) {
+      revisions = new Map()
+      paths.set(file.path, revisions)
+    }
+    // Preserve the existing first-match behavior, including historical duplicate revisions.
+    if (!revisions.has(file.fingerprint)) revisions.set(file.fingerprint, file)
+  }
+  return (path: string, fingerprint: string) => paths.get(path)?.get(fingerprint)
+}
+/** Index both sides of a rename without changing comment order or duplicating same-path aliases. */
+export function pullCommentsByFile(files: PullDetail['files'], comments: PullDetail['comments']) {
+  const aliases = new Map<string, Set<string>>()
+  for (const file of files)
+    for (const path of [file.path, file.previousPath]) {
+      if (!path) continue
+      const paths = aliases.get(path) ?? new Set<string>()
+      paths.add(file.path)
+      aliases.set(path, paths)
+    }
+  const result = new Map<string, PullDetail['comments']>()
+  for (const comment of comments) {
+    if (comment.kind !== 'inline' || !comment.path) continue
+    for (const path of aliases.get(comment.path) ?? []) {
+      const rows = result.get(path) ?? []
+      rows.push(comment)
+      result.set(path, rows)
+    }
+  }
+  return result
+}

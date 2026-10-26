@@ -1,3 +1,6 @@
+import { hubPlanLimitSources } from '@dovo/protocol'
+import { UsageHubs } from './usage-hubs'
+import { UsagePool } from './usage-pool'
 import { runtimeComputerName } from '@dovo/protocol'
 import { UsagePrices } from './usage-prices'
 import { useUsageData } from './use-usage-data'
@@ -121,7 +124,10 @@ export default function UsageSettings() {
   const [computer, setComputer] = useState('all')
   const [view, setView] = useState<'costs' | 'tokens' | 'limits'>('costs')
   const selectedComputer = runtimes.length === 1 ? 'all' : computer
-  const { hosts, histories, notices, busy, refresh } = useUsageData(selectedComputer)
+  const { hosts, histories, hubs, notices, busy, refresh } = useUsageData(
+    selectedComputer,
+    view === 'limits' ? 'limits' : 'history',
+  )
   const [period, setPeriod] = useState<keyof typeof periods>('week')
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -132,23 +138,25 @@ export default function UsageSettings() {
   const summary = useMemo(
     () =>
       projectUsage(
-        hosts.flatMap((entry) =>
-          entry.snapshot
-            ? [
-                {
-                  id: entry.profile.id,
-                  sourceId: histories[entry.profile.id]?.sourceId,
-                  records: histories[entry.profile.id]?.records,
-                  computer: runtimeComputerName(entry),
-                  tasks: entry.snapshot.workspace.tasks,
-                },
-              ]
-            : [],
-        ),
+        view === 'limits'
+          ? []
+          : hosts.flatMap((entry) =>
+              entry.snapshot
+                ? [
+                    {
+                      id: entry.profile.id,
+                      sourceId: histories[entry.profile.id]?.sourceId,
+                      records: histories[entry.profile.id]?.records,
+                      computer: runtimeComputerName(entry),
+                      tasks: entry.snapshot.workspace.tasks,
+                    },
+                  ]
+                : [],
+            ),
         now - periods[period] * 86_400_000,
         now,
       ),
-    [hosts, histories, period, now, projectUsage],
+    [hosts, histories, period, now, projectUsage, view],
   )
   const [breakdown, setBreakdown] = useState<'accounts' | 'models' | 'tasks'>('accounts')
   const total = summary.total
@@ -173,12 +181,23 @@ export default function UsageSettings() {
         ? 'Reported cost is $0.00 in this period.'
         : 'No priced usage in this period.'
   const limits = accountPlanLimits(
-    hosts.map((entry) => ({
-      computer: runtimeComputerName(entry),
-      sourceId: entry.profile.id,
-      connected: entry.connected,
-      limits: entry.snapshot?.workspace.planLimits ?? [],
-    })),
+    hosts.flatMap((entry) => [
+      {
+        computer: runtimeComputerName(entry),
+        sourceId: entry.profile.id,
+        connected: entry.connected,
+        limits: entry.snapshot?.workspace.planLimits ?? [],
+      },
+      ...(hubs[entry.profile.id] ?? [])
+        .filter((hub) => hub.enabled)
+        .flatMap((hub) =>
+          hubPlanLimitSources(hub, {
+            computer: `${runtimeComputerName(entry)} · ${hub.label}`,
+            sourceId: `${entry.profile.id}:hub:${hub.id}`,
+            connected: entry.connected,
+          }),
+        ),
+    ]),
     now,
   )
   return (
@@ -357,7 +376,34 @@ export default function UsageSettings() {
         </>
       )}
       {view === 'limits' && (
-        <section className="space-y-2">
+        <section className="space-y-4">
+          <UsageHubs computer={selectedComputer} onSaved={refresh} />
+          {hosts.flatMap((entry) =>
+            (hubs[entry.profile.id] ?? [])
+              .filter((hub) => hub.enabled)
+              .map((hub) => (
+                <p
+                  key={`${entry.profile.id}:${hub.id}`}
+                  role="status"
+                  className="text-xs text-muted-foreground"
+                >
+                  {runtimeComputerName(entry)} · {hub.label}:{' '}
+                  {hub.error ??
+                    (hub.limits.length
+                      ? `Updated ${hub.checkedAt ? new Date(hub.checkedAt).toLocaleString() : 'unknown'}`
+                      : 'No supported account limits reported.')}
+                </p>
+              )),
+          )}
+          <UsagePool
+            limits={limits}
+            now={now}
+            accounts={hosts.flatMap((entry) =>
+              (hubs[entry.profile.id] ?? [])
+                .filter((hub) => hub.enabled)
+                .flatMap((hub) => hub.accounts ?? []),
+            )}
+          />
           <div>
             <h2 className="text-sm font-medium">Account limits</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">

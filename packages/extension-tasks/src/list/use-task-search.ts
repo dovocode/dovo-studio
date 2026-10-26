@@ -1,8 +1,8 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
-import { taskSearchSchema } from '@dovo/protocol'
+import { taskSearchSchema, type TaskSearchResult } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
-import { messageResults, type MessageHit } from './task-search'
-import type { TaskEntry } from './task-collection'
+import { messageResults } from './task-search'
+import { taskCollectionKey, type TaskEntry } from './task-collection'
 
 /** Query each owning runtime instead of downloading every conversation for a search. */
 export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
@@ -10,10 +10,9 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
   const needle = query.trim()
   const [remote, setRemote] = useState<{
     scope: string
-    hits: MessageHit[]
-    keys: Set<string>
+    results: { runtimeId: string | null; result: TaskSearchResult }[]
     error: string
-  }>({ scope: '', hits: [], keys: new Set(), error: '' })
+  }>({ scope: '', results: [], error: '' })
   // Streaming metadata changes must not restart an in-flight search.
   const owners = [
     ...new Map(entries.map((entry) => [entry.source.runtimeId, entry.source])).values(),
@@ -39,20 +38,9 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
         const result = await (profile
           ? readRuntime(profile, '/api/tasks/search', { query: needle }, taskSearchSchema)
           : request('/api/tasks/search', { query: needle }, taskSearchSchema))
-        const ownerEntries = new Map(
-          entries
-            .filter((entry) => entry.source.runtimeId === source.runtimeId)
-            .map((entry) => [entry.task.id, entry]),
-        )
-        return {
-          keys: result.taskIds.flatMap((id) => ownerEntries.get(id)?.key ?? []),
-          hits: result.hits.flatMap((hit) => {
-            const entry = ownerEntries.get(hit.taskId)
-            return entry
-              ? [{ entry, messageId: hit.messageId, snippet: hit.snippet, role: hit.role }]
-              : []
-          }),
-        }
+        // A history response can beat the full-summary subscription. Keep its IDs
+        // until the summaries arrive instead of dropping unresolved matches.
+        return { runtimeId: source.runtimeId, result }
       }),
   )
   useEffect(() => {
@@ -71,8 +59,7 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
         )
         setRemote({
           scope,
-          keys: new Set(values.flatMap((value) => value.keys)),
-          hits: values.flatMap((value) => value.hits).slice(0, 50),
+          results: values,
           error: errors.join(' · '),
         })
       })
@@ -84,13 +71,15 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
   }, [needle, scope])
   const local = useMemo(() => messageResults(entries, needle), [entries, needle])
   const currentEntries = new Map(entries.map((entry) => [entry.key, entry]))
-  const remoteHits =
-    remote.scope === scope
-      ? remote.hits.flatMap((hit) => {
-          const entry = currentEntries.get(hit.entry.key)
-          return entry ? [{ ...hit, entry }] : []
-        })
-      : []
+  const results = remote.scope === scope ? remote.results : []
+  const remoteHits = results.flatMap(({ runtimeId, result }) =>
+    result.hits.flatMap((hit) => {
+      const entry = currentEntries.get(taskCollectionKey(runtimeId, hit.taskId))
+      return entry
+        ? [{ entry, messageId: hit.messageId, snippet: hit.snippet, role: hit.role }]
+        : []
+    }),
+  )
   const hits = [
     ...new Map(
       [...remoteHits, ...local].map((hit) => [`${hit.entry.key}:${hit.messageId}`, hit]),
@@ -99,7 +88,9 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
   return {
     hits,
     keys: new Set([
-      ...(remote.scope === scope ? remote.keys : []),
+      ...results.flatMap(({ runtimeId, result }) =>
+        result.taskIds.map((id) => taskCollectionKey(runtimeId, id)),
+      ),
       ...local.map((hit) => hit.entry.key),
     ]),
     error: remote.scope === scope ? remote.error : '',

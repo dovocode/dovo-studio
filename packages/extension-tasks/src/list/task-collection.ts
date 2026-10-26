@@ -3,6 +3,7 @@ import type { RuntimeOverview, RuntimeSnapshot, Task, Workspace } from '@dovo/st
 
 export type TaskSource = {
   runtimeId: string | null
+  connection?: import('@dovo/protocol').RuntimeConnection
   address?: string
   name: string
   workspace: Workspace
@@ -55,6 +56,7 @@ export function taskSources({
   return [
     {
       runtimeId: activeRuntimeId,
+      connection: active?.profile.connection,
       address: connection?.address ?? active?.profile.connection.address,
       name: active ? taskRuntimeName(active) : (snapshot?.runtimeHost ?? 'This computer'),
       workspace,
@@ -67,6 +69,7 @@ export function taskSources({
         : [
             {
               runtimeId: entry.profile.id,
+              connection: entry.profile.connection,
               address: entry.profile.connection.address,
               name: taskRuntimeName(entry),
               workspace: entry.snapshot.workspace,

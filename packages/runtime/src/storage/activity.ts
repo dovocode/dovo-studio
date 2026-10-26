@@ -18,7 +18,7 @@ export function redact(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value).map(([k, v]) => [
         k,
-        /token|secret|password|authorization|ticket|apikey|contentkey|signingseed|^(?:code|pairingcode|env|headerenv|envvalues|headervalues)$/i.test(
+        /token|secret|password|authorization|ticket|apikey|managementkey|contentkey|signingseed|^(?:code|pairingcode|env|headerenv|envvalues|headervalues)$/i.test(
           k.replace(/[^a-z0-9]/gi, ''),
         )
           ? '[redacted]'

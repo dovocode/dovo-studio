@@ -33,6 +33,7 @@ const boundaries = new Map([
     `import {createContext,useContext} from 'react';export const RuntimeContext=createContext(null);export const useRuntime=()=>useContext(RuntimeContext);`,
   ],
   [mobile + 'scm/pulls/list/create-pull', 'export const CreatePull=()=>null;'],
+  [mobile + 'scm/pulls/detail/linked-threads', 'export const PullLinkedThreads=()=>null;'],
   [mobile + 'scm/pulls/detail/pull-comments', 'export const PullComments=()=>null;'],
   [
     mobile + 'scm/pulls/detail/pull-changes',
@@ -67,13 +68,13 @@ import {decode,snapshotSchema,pullDetailSchema,RuntimeRequestError} from '@dovo/
 import {RuntimeContext} from './apps/mobile/src/runtime/connection/provider';import {NavigationContext} from './apps/mobile/src/shell/navigation';
 import {PullDetail} from './apps/mobile/src/scm/pulls/detail/pull-detail';import {usePullDetail} from './apps/mobile/src/scm/pulls/detail/use-pull-detail';
 import {usePulls} from './apps/mobile/src/scm/pulls/list/use-pulls';
-window.calls=[];window.cacheWrites=[];window.writes=[];window.count=0;window.changedAccount=false;window.failOriginIdentity=!!window.initialLegacy;
+window.calls=[];window.cacheReads=[];window.cacheWrites=[];window.writes=[];window.count=0;window.changedAccount=false;window.failOriginIdentity=!!window.initialLegacy;
 const ids=['origin','matching','mismatch','legacy','wrong-repository','wrong-host'];
 const profiles=ids.map(id=>({id,name:id,connection:{address:'http://'+id+'.lan:8787',token:'paired-'+id},createdAt:'2026-10-14T00:00:00Z'}));
 const repository=id=>({id:'repo-'+id,name:id,path:'/checkout/'+id,branch:'main',pullIdentity:id==='origin'&&window.reboundOrigin?'github.com/team/rebound':id==='wrong-repository'?'github.com/other/project':id==='wrong-host'?'other.example/team/project':'github.com/team/project',forge:{connectionId:'local-'+id,repository:id==='origin'&&window.reboundOrigin?'team/rebound':'team/project',revision:'binding-'+id+(id==='origin'&&window.reboundOrigin?'-rebound':'')}});
 const snapshot=id=>decode(snapshotSchema,{revision:1,owner:false,workspace:{version:1,runtimeAddress:'',repositories:[repository(id)],agents:[],automations:[],tasks:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]});
 const detail=id=>decode(pullDetailSchema,{destination:'destination-'+id,pull:{destination:'destination-'+id,connectionId:'local-'+id,provider:'github',number:7,title:'PR from '+id+' '+window.count,url:'https://github.com/team/project/pull/7',state:'open',draft:false,head:'feature',base:'main',author:'dominic',labels:[],updatedAt:'2026-10-14T10:00:00Z',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',body:'Body',additions:0,deletions:0,changedFiles:0,mergeable:true,reviewers:[],assignees:[]},capabilities:{actions:['comment'],mergeMethods:[],reviewDecisions:[]},comments:[],commits:[],files:[],checks:[],warnings:[]});
-const data=new Map();const caches=new Map();const cache=profile=>{if(!caches.has(profile.id))caches.set(profile.id,{readEffect:key=>Effect.succeed(data.get(profile.id+key)),writeEffect:(key,value)=>Effect.sync(()=>{window.cacheWrites.push({owner:profile.id,key,value});data.set(profile.id+key,{value,cachedAt:'2026-10-14T10:00:00Z'})}),removeEffect:key=>Effect.sync(()=>data.delete(profile.id+key))});return caches.get(profile.id)};
+const data=new Map();const caches=new Map();const cache=profile=>{if(!caches.has(profile.id))caches.set(profile.id,{readEffect:key=>Effect.sync(()=>{window.cacheReads.push(key);return data.get(profile.id+key)}),writeEffect:(key,value)=>Effect.sync(()=>{window.cacheWrites.push({owner:profile.id,key,value});data.set(profile.id+key,{value,cachedAt:'2026-10-14T10:00:00Z'})}),removeEffect:key=>Effect.sync(()=>data.delete(profile.id+key))});return caches.get(profile.id)};
 const request=(profile,path,input,schema)=>Effect.tryPromise({try:async()=>{
 const id=profile.id;window.calls.push({owner:id,path,input});
 if(window.offline&&id==='origin')throw Error('Origin offline');
@@ -89,7 +90,7 @@ if(path.endsWith('/detail')){
  const value=detail(id);
  if(input.section==='overview'&&window.pushed)value.pull.headSha='c'.repeat(40);
  if(window.linkedComment&&input.section==='discussion')value.comments=[{id:'linked',kind:'comment',body:'Linked feedback',url:value.pull.url+'#linked',author:'reviewer',date:''}];
- if(input.section==='changes') { value.pull.headSha=(window.pushed?'c':'a').repeat(40); value.files=[{path:'changed.ts',status:'added',additions:1,deletions:0,patch:'@@ -0,0 +1 @@\\n+new code'}]; }
+ if(input.section==='changes') { if(window.changesWarning)value.warnings=['Incomplete patch']; value.pull.headSha=(window.pushed?'c':'a').repeat(40); value.files=[{path:'changed.ts',status:'added',additions:1,deletions:0,patch:'@@ -0,0 +1 @@\\n+new code'}]; }
  return value;
 }
 if(path.endsWith('/overview')&&window.simulatedPages?.[id])return decode(schema,{destination:'destination-'+id,pulls:[{...detail(id).pull,number:window.simulatedPages[id].number}],page:1,hasMore:false,cachedAt:window.simulatedPages[id].cachedAt,stale:window.simulatedPages[id].stale});if(path.endsWith('/overview'))return decode(schema,{destination:'destination-'+id,pulls:[input.page===2?{...detail(id).pull,number:8,url:'https://github.com/team/project/pull/8'}:detail(id).pull],page:input.page,hasMore:input.page===1});
@@ -237,6 +238,7 @@ try {
   await sectionsPage.evaluate(() => {
     window.blockedSections = ['stack', 'checks', 'changes']
   })
+  await sectionsPage.clock.install()
   await sectionsPage.addScriptTag({ content: built.outputFiles[0].text })
   await sectionsPage.waitForFunction(
     () => window.reader?.detail?.pull.body === 'Body' && window.reader.sections.status.ready,
@@ -247,6 +249,16 @@ try {
     ),
     false,
   )
+  assert.equal(
+    await sectionsPage.evaluate(() =>
+      window.cacheReads.some((key) => {
+        const parts = JSON.parse(key)
+        return parts[1] === 'detail-section' && ['changes', 'checks'].includes(parts[2])
+      }),
+    ),
+    false,
+    'Closed native PR tabs must not hydrate unused sections from disk',
+  )
   await sectionsPage.evaluate(() => window.setObservedTab('changes'))
   await sectionsPage.waitForFunction(() => !!window.releaseSections?.changes)
   assert.equal(await sectionsPage.evaluate(() => window.reader.detail.pull.body), 'Body')
@@ -256,6 +268,54 @@ try {
     window.releaseSections.changes()
   })
   await sectionsPage.waitForFunction(() => window.reader.detail.files[0]?.path === 'changed.ts')
+  assert.equal(
+    await sectionsPage.evaluate(() =>
+      window.cacheReads.some((key) => {
+        const parts = JSON.parse(key)
+        return parts[1] === 'detail-section' && parts[2] === 'changes'
+      }),
+    ),
+    true,
+    'Opening native Changes starts its deferred cache read',
+  )
+  const pinnedReads = await sectionsPage.evaluate(
+    () => window.calls.filter((x) => x.input.section === 'changes').length,
+  )
+  const overviewReads = await sectionsPage.evaluate(
+    () => window.calls.filter((x) => x.input.section === 'overview').length,
+  )
+  await sectionsPage.clock.fastForward(31000)
+  await sectionsPage.waitForFunction(
+    (count) => window.calls.filter((x) => x.input.section === 'overview').length > count,
+    overviewReads,
+  )
+  assert.equal(
+    await sectionsPage.evaluate(
+      () => window.calls.filter((x) => x.input.section === 'changes').length,
+    ),
+    pinnedReads,
+  )
+  // A partial response must keep polling until a clean pinned revision is received.
+  await sectionsPage.evaluate(() => {
+    window.changesWarning = true
+    window.reader.sections.changes.refresh()
+  })
+  await sectionsPage.waitForFunction(() =>
+    window.reader.sections.changes.detail.warnings.includes('Incomplete patch'),
+  )
+  const partialReads = await sectionsPage.evaluate(
+    () => window.calls.filter((x) => x.input.section === 'changes').length,
+  )
+  await sectionsPage.evaluate(() => {
+    window.changesWarning = false
+  })
+  await sectionsPage.clock.fastForward(11000)
+  await sectionsPage.waitForFunction(
+    (count) =>
+      window.calls.filter((x) => x.input.section === 'changes').length > count &&
+      !window.reader.sections.changes.detail.warnings.length,
+    partialReads,
+  )
   await sectionsPage.evaluate(() => {
     window.failedSection = 'checks'
     window.setObservedTab('checks')

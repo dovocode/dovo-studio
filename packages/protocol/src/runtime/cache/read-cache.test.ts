@@ -273,3 +273,25 @@ it.each(['', 'ASCII', 'é€😀', 'x'.repeat(4095) + '😀suffix', '\ud800', '\
     expect(readCacheBytes(value)).toBe(new TextEncoder().encode(value).byteLength)
   },
 )
+
+it('applies only matching snapshot freshness and ignores malformed or stale stamps', async () => {
+  const { cache, values } = fixture()
+  const client = cache('http://snapshot-stamps.local')
+  const schema = mutableStruct({
+    cacheId: Schema.String,
+    lastSeen: Schema.String,
+    title: Schema.String,
+  })
+  const original = { cacheId: 'first', lastSeen: '2026-10-25T10:00:00Z', title: 'First' }
+  await client.write('snapshot', original)
+  await client.write('snapshot-freshness', { cacheId: 'first', lastSeen: '2026-10-25T11:00:00Z' })
+  expect((await client.read('snapshot', schema))?.value.lastSeen).toBe('2026-10-25T11:00:00Z')
+  const newer = { ...original, cacheId: 'second', title: 'Second' }
+  await client.write('snapshot', newer)
+  expect((await client.read('snapshot', schema))?.value).toEqual(newer)
+  const stamp = [...values.keys()].find((key) => key.endsWith('.snapshot-freshness'))
+  expect(stamp).toBeDefined()
+  if (stamp) values.set(stamp, '{invalid')
+  expect((await client.read('snapshot', schema))?.value).toEqual(newer)
+  await client.close()
+})

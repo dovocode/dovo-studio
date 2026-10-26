@@ -138,3 +138,182 @@ it('accepts dynamically named Claude model windows', () => {
     }),
   ).toMatchObject([{ window: 'Weekly · New model', usedPercent: 45, windowId: 'model:New model' }])
 })
+
+it('pools deduplicated account segments, applies only overall weekly gates, and keeps order across windows', async () => {
+  const { pooledPlanLimits } = await import('./plan-limits.js')
+  const now = Date.now()
+  const row = (id: string, window: string, usedPercent: number) => ({
+    provider: 'claude' as const,
+    account: { id, label: id },
+    window,
+    windowId: window,
+    usedPercent,
+    updatedAt: new Date(now).toISOString(),
+    resetsAt: now / 1000 + 3600,
+  })
+  const rows = [
+    row('a', 'Session', 10),
+    row('a', 'Weekly', 100),
+    row('b', 'Session', 20),
+    row('b', 'Weekly', 10),
+    row('b', 'Weekly · Opus', 100),
+  ]
+  const pools = pooledPlanLimits(
+    accountPlanLimits(
+      [
+        { computer: 'Mac', limits: rows },
+        { computer: 'Linux', limits: rows },
+      ],
+      now,
+    ),
+    now,
+  )
+  const session = pools.find((pool) => pool.window === 'Session')!
+  expect(session.segments).toHaveLength(2)
+  expect(session.available).toBe(1)
+  expect(session.segments).toMatchObject([
+    { accountKey: 'a', remaining: 0, gatedByWeekly: true },
+    { accountKey: 'b', remaining: 80, gatedByWeekly: false },
+  ])
+  expect(session.nextReset).toBe(now / 1000 + 3600)
+  expect(
+    pools.every((pool) => pool.segments.map((segment) => segment.accountKey).join(',') === 'a,b'),
+  ).toBe(true)
+  expect(pools.find((pool) => pool.window === 'Weekly · Opus')?.unknown).toBe(1)
+})
+it('does not turn stale, offline or reset-expired observations into pooled availability', async () => {
+  const { pooledPlanLimits } = await import('./plan-limits.js')
+  const now = Date.now()
+  const row = {
+    provider: 'codex' as const,
+    window: 'Session',
+    usedPercent: 1,
+    updatedAt: new Date(now).toISOString(),
+  }
+  const sources = [
+    {
+      computer: 'offline',
+      connected: false,
+      limits: [{ ...row, account: { id: 'offline', label: 'Offline' } }],
+    },
+    {
+      computer: 'stale',
+      limits: [
+        {
+          ...row,
+          account: { id: 'stale', label: 'Stale' },
+          updatedAt: new Date(now - 600001).toISOString(),
+        },
+      ],
+    },
+    {
+      computer: 'expired',
+      limits: [{ ...row, account: { id: 'expired', label: 'Expired' }, resetsAt: now / 1000 - 1 }],
+    },
+  ]
+  const pool = pooledPlanLimits(accountPlanLimits(sources, now), now)[0]!
+  expect(pool.available).toBe(0)
+  expect(pool.unknown).toBe(3)
+  expect(pool.segments.every((segment) => segment.remaining === null)).toBe(true)
+})
+it('does not label a newer failed hub reading fresh just because the same account is connected elsewhere', () => {
+  const now = Date.now(),
+    account = { id: 'same', label: 'Account' }
+  const row = {
+    provider: 'codex' as const,
+    window: 'Session',
+    usedPercent: 20,
+    account,
+    updatedAt: new Date(now - 1000).toISOString(),
+  }
+  const [result] = accountPlanLimits(
+    [
+      { computer: 'Mac', connected: true, limits: [row] },
+      {
+        computer: 'Hub',
+        connected: false,
+        limits: [{ ...row, updatedAt: new Date(now).toISOString() }],
+      },
+    ],
+    now,
+  )
+  expect(result?.connected).toBe(false)
+})
+
+it('waits for all depleted account windows and treats an expired weekly gate as unknown', async () => {
+  const { pooledPlanLimits } = await import('./plan-limits.js')
+  const now = Date.now()
+  const row = {
+    provider: 'codex' as const,
+    account: { id: 'account', label: 'Account' },
+    updatedAt: new Date(now).toISOString(),
+    usedPercent: 100,
+  }
+  const project = (weeklyReset: number) =>
+    pooledPlanLimits(
+      accountPlanLimits(
+        [
+          {
+            computer: 'Mac',
+            limits: [
+              { ...row, window: 'Session', resetsAt: now / 1000 + 7200 },
+              { ...row, window: 'Weekly', resetsAt: weeklyReset },
+            ],
+          },
+        ],
+        now,
+      ),
+      now,
+    ).find((pool) => pool.window === 'Session')!
+  expect(project(now / 1000 + 3600).nextReset).toBe(now / 1000 + 7200)
+  expect(project(now / 1000 - 1).unknown).toBe(1)
+})
+
+it('keeps never-reported hub accounts visible as unknown without counting unsupported subscriptions', async () => {
+  const { pooledPlanLimits, hubPlanLimitSources } = await import('./plan-limits')
+  const accounts = [
+    {
+      id: 'a',
+      provider: 'codex' as const,
+      account: { id: 'good', label: 'Good' },
+      status: 'ok' as const,
+    },
+    {
+      id: 'b',
+      provider: 'codex' as const,
+      account: { id: 'bad', label: 'Bad' },
+      status: 'failed' as const,
+    },
+    {
+      id: 'c',
+      provider: 'codex' as const,
+      account: { id: 'api', label: 'API' },
+      status: 'unsupported' as const,
+    },
+  ]
+  const hub = {
+    id: 'hub',
+    label: 'Hub',
+    url: 'http://hub/',
+    enabled: true,
+    error: '1 account failed',
+    accounts,
+    limits: [
+      {
+        provider: 'codex' as const,
+        window: 'Session',
+        account: accounts[0]!.account,
+        usedPercent: 25,
+        updatedAt: new Date().toISOString(),
+      },
+    ],
+  }
+  const windows = accountPlanLimits(
+    hubPlanLimitSources(hub, { computer: 'Host', sourceId: 'hub', connected: true }),
+  )
+  const pool = pooledPlanLimits(windows, Date.now(), accounts)[0]!
+  expect(pool.segments).toHaveLength(2)
+  expect(pool.available).toBe(1)
+  expect(pool.unknown).toBe(1)
+  expect(pool.segments.find((segment) => segment.accountKey === 'bad')?.remaining).toBeNull()
+})

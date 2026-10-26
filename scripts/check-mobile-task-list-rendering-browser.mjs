@@ -195,7 +195,7 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';
 import {TaskPanesContext} from './apps/mobile/src/shell/task-panes';
-import {runtimeProfile} from '@dovo/protocol';
+import {runtimeProfile,runtimeSnapshotPath} from '@dovo/protocol';
 import {studioThemes} from './packages/studio-core/src/themes.ts';
 window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['light','dark'].map(mode=>({name:name+'/'+mode,...theme[mode]})));
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
@@ -204,7 +204,7 @@ import {TaskListViewProvider} from './apps/mobile/src/tasks/list/task-list-view.
 import TasksScreen from './apps/mobile/src/screens/tasks.tsx';
 const now=Date.now(),iso=age=>new Date(now-age).toISOString();
 const profile=runtimeProfile({address:'http://mobile-owner.lan:8787',token:'test-token-private-at-least-32-characters'},'Owner');
-window.saved=JSON.stringify({version:1,activeId:profile.id,profiles:[profile]});
+window.settledPath=()=>runtimeSnapshotPath(profile.connection);window.saved=JSON.stringify({version:1,activeId:profile.id,profiles:[profile]});
 const base={repositoryId:'repo',agentId:'agent',draft:'',files:[],example:false,messages:[],status:'done',createdAt:iso(100000)};
 const running={...base,id:'running',title:'Running task',status:'running',createdAt:iso(0)};
 const child={...base,id:'child',title:'Child task',status:'running',delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'}};
@@ -858,8 +858,38 @@ try {
     await page.getByRole('button', { name: /^Task details for /, exact: true }).count(),
     5,
   )
+  for (const sort of ['newest', 'oldest', 'title', 'project']) {
+    await page.evaluate((taskSort) => window.setListPreferences({ taskSort }), sort)
+    await page.waitForFunction(() => !window.settledPath().includes('settled='))
+  }
+  for (const sort of ['activity', 'priority']) {
+    await page.evaluate((taskSort) => window.setListPreferences({ taskSort }), sort)
+    await page.waitForFunction(() => window.settledPath().includes('settled=25'))
+  }
+  await page.evaluate(() => {
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      olderSettled: { limit: 25, omitted: 13 },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  await page.getByRole('button', { name: 'Show more settled threads', exact: true }).click()
+  await page.getByRole('button', { name: 'Load more settled threads', exact: true }).click()
+  await page.waitForFunction(() => window.settledPath().includes('settled=50'))
+  await page.evaluate(() => {
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      olderSettled: { limit: 50, omitted: 0 },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  await page.getByRole('button', { name: 'Show fewer settled threads', exact: true }).click()
+  await page.waitForFunction(() => window.settledPath().includes('settled=25'))
   await filters.click()
   await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('Task 11')
+  await page.waitForFunction(() => !window.settledPath().includes('settled='))
   await page.getByTestId('Task task-11').waitFor()
   assert.equal(await page.getByRole('button', { name: /Show all \d+ settled threads/ }).count(), 0)
   await page.getByRole('textbox', { name: 'Search tasks', exact: true }).fill('')

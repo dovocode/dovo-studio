@@ -26,7 +26,9 @@ import {memo,useState} from 'react';
 import {TaskList} from './src/list/task-list.tsx';
 import {ApplicationStateProvider} from '@dovo/studio-core/state';
 import {TooltipProvider} from '@dovo/studio-ui';
-import {WorkspaceValueProvider,useWorkspace,useWorkspaceSelector} from '@dovo/studio-core';
+import {WorkspaceValueProvider,useWorkspace,useWorkspaceSelector,updateAppPreferences} from '@dovo/studio-core';
+import {runtimeSnapshotPath} from '@dovo/protocol';
+window.setListPreferences=updateAppPreferences;window.settledPath=()=>runtimeSnapshotPath({address:'http://local',token:'token'});
 window.counts={list:0,rows:0,broad:0,selected:0,pills:0,trees:0};
 const now=Date.now();
 const iso=offset=>new Date(now-offset).toISOString();
@@ -62,7 +64,7 @@ function App(){
   window.tasks=tasks;
   const workspace={version:1,runtimeAddress:'',repositories,agents,automations,tasks};
   const snapshot={...baseSnapshot,revision,workspace};
-  const source={runtimeId:'local',address:'http://local',name:'Local',workspace,snapshot,online:true};
+  const source={runtimeId:'local',address:'http://local',connection:actions.connection,name:'Local',workspace,snapshot,online:true};
   return <WorkspaceValueProvider value={{...actions,workspace,snapshot,connected:true,runtimes:[]}}>
     <BroadProbe/><SelectedProbe/>
     <div style={{height:'600px',display:'flex'}}>
@@ -549,6 +551,15 @@ try {
   assert.equal(await general.locator('svg.lucide-message-circle').count(), 0)
   assert.equal(await general.locator('svg.lucide-git-branch, svg.lucide-git-fork').count(), 0)
   assert.ok(!/stale-branch|Local checkout/.test(await general.textContent()))
+  await page.evaluate(() => window.setProject(''))
+  for (const sort of ['newest', 'oldest', 'title', 'project', 'status']) {
+    await page.evaluate((taskSort) => window.setListPreferences({ taskSort }), sort)
+    await page.waitForFunction(() => !window.settledPath().includes('settled='))
+  }
+  for (const sort of ['priority', 'activity']) {
+    await page.evaluate((taskSort) => window.setListPreferences({ taskSort }), sort)
+    await page.waitForFunction(() => window.settledPath().includes('settled=25'))
+  }
   assert.deepEqual(errors, [])
   console.log(
     `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero tree/pill renders for 30 large child-payload updates and one tree render for visible activity; selector isolation, latest-entry commands, nested thread navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,

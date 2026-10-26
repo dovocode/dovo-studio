@@ -13,7 +13,7 @@ const controls =
   `export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export const OrganizeReview=()=>null;export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
 const mocks = {
   '@dovo/studio-ui': controls,
-  '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo',importedCodeThemes:[]});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[]});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
+  '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{preferredHighlighter:'highlights',theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[],theme:'dark',themePalette:'dovo',codeTheme:'app'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
   '../workspace/context':
     'export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});',
   '@dovo/studio-core/state': `export * from '${root}/packages/studio-core/src/runtime/application-state.ts';`,
@@ -33,11 +33,11 @@ const pull={number:7,title:'Improve pull request reviews',url:'https://github.co
 window.pulls=[pull,{...pull,number:8,url:'https://github.com/team/project/pull/8',title:'Other author',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerIsAuthor:false,viewerIsAssigned:false,viewerReviewRequested:false},{...pull,number:9,url:'https://github.com/team/project/pull/9',title:'Draft feature',draft:true,viewerIsAuthor:false,viewerReviewRequested:false}];
 window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connected:true,repository:{id:'repo',name:'Project'}};
 window.detail={destination:'verified-project-account',pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
-window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};const cachedReads=window.savedReads=new Map();window.store.readCache={
+window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',runtimes:[],workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};window.cacheReads=[];const cachedReads=window.savedReads=new Map();window.store.readCache={
 read:async key=>cachedReads.get(key)??null,
 write:async(key,value)=>cachedReads.set(key,{value:structuredClone(value),cachedAt:'2026-10-14'}),
 remove:async key=>cachedReads.delete(key),
-readEffect:key=>Effect.sync(()=>cachedReads.get(key)??null),
+readEffect:key=>Effect.sync(()=>{window.cacheReads.push(key);return cachedReads.get(key)??null}),
 writeEffect:(key,value)=>Effect.sync(()=>{cachedReads.set(key,{value:structuredClone(value),cachedAt:'2026-10-14'})})
 };window.detailReads=0;window.sectionReads=[];window.sectionReleases={};window.releaseSection=section=>{window.blockedSections=window.blockedSections.filter(value=>value!==section);for(const release of window.sectionReleases[section]??[])release();};window.store.requestEffect=(_path,input)=>Effect.tryPromise({try:async()=>{window.detailReads++;window.sectionReads.push(input.section);if(window.blockedSections?.includes(input.section))await new Promise(resolve=>(window.sectionReleases[input.section]??=[]).push(resolve));if(input.section===window.failedSection)throw new Error('Checks temporarily unavailable');const value=JSON.parse(JSON.stringify({...window.detail,pull:{...window.detail.pull,changedFiles:window.detail.files.length}}));if(input.section!=='changes')value.files=[];if(input.section!=='checks')value.checks=[];if(input.section!=='discussion')value.comments=[];return value;},catch:error=>error});const realRoot=createRoot(document.getElementById('app'));const rootView={render:element=>realRoot.render(<ApplicationStateProvider>{element}</ApplicationStateProvider>)};window.showLongList=()=>{window.pullError='Command failed: gh repo view '+('https://github.example/'+ 'long-repository-name'.repeat(70));window.source.repository.name='project-name'.repeat(40);window.pulls=Array.from({length:180},(_,i)=>({...pull,number:i+1,title:'Scroll regression '+i,url:'https://github.com/team/project/pull/'+(i+1)}));rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key="long-list"/></div></div></main></div></div>)};window.showEmbedded=()=>rootView.render(<main className="studio dark flex flex-col" style={{width:352,height:'100vh'}}><PullDetail repositoryId="repo" number={7} embedded onBack={()=>{window.embeddedClosed=true}} onChanged={()=>{}}/></main>);window.renderKey=0;window.showProbe=()=>rootView.render(<div className="studio dark"><header className="studio-titlebar">Dovo</header><div className="studio-body"><nav className="studio-navigation" style={{width:44}}/><main className="studio-main"><div className="flex min-h-0 min-w-0 flex-1"><div className="flex min-h-0 min-w-0 flex-1 flex-col"><View key={window.renderKey++}/></div></div></main></div></div>);
 const originalRequest = window.store.request; const marks = new Map();
@@ -90,6 +90,15 @@ window.showAnchored=()=>rootView.render(<main className="studio dark flex flex-c
               ) +
             '\nfunction parsePatchFiles(...args){window.parseCount=(window.parseCount??0)+1;return originalParsePatchFiles(...args)}',
         }))
+        b.onLoad({ filter: /pulls\/detail\/changes\.tsx$/ }, async ({ path }) => ({
+          loader: 'tsx',
+          contents:
+            (await readFile(path, 'utf8')).replace(
+              'pullFileFingerprint,',
+              'pullFileFingerprint as originalFingerprint,',
+            ) +
+            '\nfunction pullFileFingerprint(...args){window.fingerprintCalls=(window.fingerprintCalls??0)+1;return originalFingerprint(...args)}',
+        }))
         b.onResolve({ filter: /.*/ }, ({ path }) =>
           mocks[path] ? { path, namespace: 'mock' } : undefined,
         )
@@ -114,6 +123,7 @@ try {
   const assets = root + '/apps/desktop/dist/assets'
   for (const file of (await readdir(assets)).filter((file) => file.endsWith('.css')))
     await page.addStyleTag({ content: await readFile(assets + '/' + file, 'utf8') })
+  await page.clock.install()
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const list = page.getByRole('navigation', { name: 'Pull request sidebar' })
   const detail = page.locator('[aria-label="Pull request details"]')
@@ -136,10 +146,57 @@ try {
     ),
     false,
   )
+  assert.equal(
+    await page.evaluate(() =>
+      window.cacheReads.some((key) => {
+        const parts = JSON.parse(key)
+        return parts[1] === 'detail-section' && ['changes', 'checks'].includes(parts[2])
+      }),
+    ),
+    false,
+    'Closed PR tabs must not hydrate unused sections from disk',
+  )
   await detail.getByRole('tab', { name: 'Changes (2)', exact: true }).click()
   await detail.getByText('Loading files…', { exact: true }).waitFor()
   await page.evaluate(() => window.releaseSection('changes'))
   await detail.getByRole('navigation', { name: 'Changed files', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() =>
+      window.cacheReads.some((key) => {
+        const parts = JSON.parse(key)
+        return parts[1] === 'detail-section' && parts[2] === 'changes'
+      }),
+    ),
+    true,
+    'Opening Changes starts its deferred cache read',
+  )
+  const pinnedReads = await page.evaluate(
+    () => window.sectionReads.filter((x) => x === 'changes').length,
+  )
+  const fingerprintCalls = await page.evaluate(() => window.fingerprintCalls)
+  assert.ok(fingerprintCalls >= 2)
+  const overviewReads = await page.evaluate(
+    () => window.sectionReads.filter((x) => x === 'overview').length,
+  )
+  await page.clock.fastForward(31000)
+  await page.waitForFunction(
+    (count) => window.sectionReads.filter((x) => x === 'overview').length > count,
+    overviewReads,
+  )
+  assert.equal(
+    await page.evaluate(() => window.sectionReads.filter((x) => x === 'changes').length),
+    pinnedReads,
+  )
+  assert.equal(
+    await page.evaluate(() => window.fingerprintCalls),
+    fingerprintCalls,
+    'Overview/status refreshes must not rehash every unchanged patch',
+  )
+  await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
+  await page.waitForFunction(
+    (count) => window.sectionReads.filter((x) => x === 'changes').length > count,
+    pinnedReads,
+  )
   await page.evaluate(() => {
     window.failedSection = 'checks'
     window.releaseSection('checks')
@@ -419,7 +476,8 @@ try {
     return ['def', 'export'].every((text) =>
       tokens.some(
         (element) =>
-          element.textContent === text && getComputedStyle(element).color === 'rgb(124, 201, 255)',
+          element.textContent.trim().split(/\s+/).includes(text) &&
+          getComputedStyle(element).color === 'rgb(124, 201, 255)',
       ),
     )
   })
@@ -445,7 +503,7 @@ try {
       [...pre.querySelectorAll('span')].filter(
         (element) =>
           !element.children.length &&
-          element.textContent === 'export' &&
+          element.textContent.trim().split(/\s+/).includes('export') &&
           getComputedStyle(element).color === 'rgb(124, 201, 255)',
       ).length === 2
     )

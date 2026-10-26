@@ -5,6 +5,7 @@ import { TurnModelControls } from './turn-model-controls'
 import {
   sameTurnSettings,
   applyTurnSettings,
+  queuedModelAgent,
   type TurnSettings,
   type Attachment,
 } from '@dovo/protocol'
@@ -334,7 +335,11 @@ export function Composer({
     onPending(null)
   }, [task.messages, task.queue, acceptDraft, onPending])
   const firstMessage = task.messages.length === 0 && !task.queue?.length && !task.turns?.length
-  const agent = resolveTaskAgent(task, workspace.agents)
+  const threadAgent = resolveTaskAgent(task, workspace.agents)
+  const agent =
+    threadAgent && snapshot?.persistentTurnModelsSupported
+      ? queuedModelAgent(threadAgent, task.queue, editing?.message.id)
+      : threadAgent
   const policyIssue = agent
     ? permissionPolicyUIIssue(
         applyTurnSettings(agent, turnSettings ?? undefined),

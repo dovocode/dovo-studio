@@ -12,7 +12,7 @@ import { useState } from 'react'
 import { HarnessDialog } from '../../dialogs/harness-dialog'
 import type { Task } from '@dovo/protocol'
 
-/** These controls edit one message without changing the running agent or thread defaults. */
+/** Edits a queued turn without changing the active run. */
 export function TurnModelControls({
   agent,
   value,
@@ -72,6 +72,11 @@ export function TurnModelControls({
         }}
         onConfigure={() => setConfigure(true)}
       />
+      {snapshot?.persistentTurnModelsSupported && (
+        <span className="text-xs text-muted-foreground">
+          Model and reasoning stay selected for following turns.
+        </span>
+      )}
       {value && (
         <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onChange(null)}>
           Use thread defaults

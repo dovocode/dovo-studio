@@ -18,6 +18,7 @@ type Events = Schema.Schema.Type<typeof activitySchema>['events']
 type Listener = (events: Events) => void
 type Registration = {
   tasks: Map<string, number>
+  settled: Set<{ limit: number | undefined }>
   events: Map<string, Events>
   compactors: Map<string, ReturnType<typeof createActivityCompactor>>
   expiry?: ReturnType<typeof setTimeout>
@@ -39,6 +40,7 @@ type Registration = {
   scopes: Map<string, Set<Listener>>
 }
 const registrations = new Map<string, Registration>()
+const preparing = new Map<string, { taskId: string; release: () => void }>()
 const key = (connection: RuntimeConnection) =>
   JSON.stringify([connection.address, connection.token])
 const registration = (connection: RuntimeConnection) => {
@@ -47,6 +49,7 @@ const registration = (connection: RuntimeConnection) => {
   if (!value) {
     value = {
       tasks: new Map(),
+      settled: new Set(),
       scopes: new Map(),
       events: new Map(),
       compactors: new Map(),
@@ -56,12 +59,40 @@ const registration = (connection: RuntimeConnection) => {
   }
   return value
 }
+function settledLimit(value: Registration) {
+  if (!value.settled.size || [...value.settled].some((entry) => entry.limit === undefined))
+    return undefined
+  return Math.max(...[...value.settled].map((entry) => entry.limit ?? 0))
+}
+const selectionIdentity = (tasks: Iterable<string>, limit: number | undefined) =>
+  JSON.stringify([[...tasks].sort(), limit ?? null])
+/** Task lists opt in; a simultaneous full-list consumer always wins. */
+export function watchRuntimeSettled(connection: RuntimeConnection, limit?: number) {
+  const value = registration(connection)
+  const entry = { limit }
+  value.settled.add(entry)
+  value.live?.watch()
+  return () => {
+    if (!value.settled.delete(entry)) return
+    value.live?.watch()
+    if (
+      !value.live &&
+      !value.scopes.size &&
+      !value.tasks.size &&
+      !value.settled.size &&
+      !value.cursor
+    )
+      registrations.delete(key(connection))
+  }
+}
 /** Reference counted so split panes can share one subscription without dropping each other. */
 export function watchRuntimeTask(connection: RuntimeConnection, taskId: string) {
   const value = registration(connection)
   if (!value.tasks.has(taskId) && value.tasks.size >= 8)
     throw new Error('Open at most eight threads per computer.')
   value.tasks.set(taskId, (value.tasks.get(taskId) ?? 0) + 1)
+  const prepared = preparing.get(key(connection))
+  if (prepared?.taskId === taskId) prepared.release()
   value.live?.watch()
   let watching = true
   return () => {
@@ -71,15 +102,47 @@ export function watchRuntimeTask(connection: RuntimeConnection, taskId: string) 
     if (count > 1) value.tasks.set(taskId, count - 1)
     else value.tasks.delete(taskId)
     value.live?.watch()
-    if (!value.live && !value.scopes.size && !value.tasks.size && !value.cursor)
+    if (
+      !value.live &&
+      !value.scopes.size &&
+      !value.tasks.size &&
+      !value.settled.size &&
+      !value.cursor
+    )
       registrations.delete(key(connection))
   }
 }
+/** Begin the selected thread's network load before navigation mounts its subscriber.
+ * One temporary lease per connection; a screen subscription takes it over without a gap. */
+export function prepareRuntimeTask(connection: RuntimeConnection, taskId: string): boolean {
+  const id = key(connection)
+  if (preparing.get(id)?.taskId === taskId) return true
+  preparing.get(id)?.release()
+  const active = registrations.get(id)
+  if (active?.tasks.has(taskId)) return true
+  if ((active?.tasks.size ?? 0) >= 8) return false
+  const stop = watchRuntimeTask(connection, taskId)
+  const timer = setTimeout(() => lease.release(), 3000)
+  const lease = {
+    taskId,
+    release() {
+      if (preparing.get(id) !== lease) return
+      preparing.delete(id)
+      clearTimeout(timer)
+      stop()
+    },
+  }
+  preparing.set(id, lease)
+  return true
+}
 export function runtimeSnapshotPath(connection: RuntimeConnection | null) {
   const query = new URLSearchParams({ scope: 'threads', history: 'paged' })
-  if (connection)
-    for (const id of registrations.get(key(connection))?.tasks.keys() ?? [])
-      query.append('task', id)
+  if (connection) {
+    const value = registrations.get(key(connection))
+    for (const id of value?.tasks.keys() ?? []) query.append('task', id)
+    const limit = value && settledLimit(value)
+    if (limit !== undefined) query.set('settled', String(limit))
+  }
   return `/api/snapshot?${query}`
 }
 
@@ -115,7 +178,13 @@ export function watchRuntimeActivity(
       value.compactors.delete(scope)
     }
     value.live?.watch()
-    if (!value.live && !value.scopes.size && !value.tasks.size && !value.cursor)
+    if (
+      !value.live &&
+      !value.scopes.size &&
+      !value.tasks.size &&
+      !value.settled.size &&
+      !value.cursor
+    )
       registrations.delete(key(connection))
   }
 }
@@ -156,6 +225,7 @@ export function startRuntimeSync(
       id,
       connection,
       tasks: [...value.tasks.keys()],
+      settledLimit: settledLimit(value),
       scopes: [...value.scopes.keys()],
       detailScopes: [...value.scopes.entries()]
         .filter(([, listeners]) => [...listeners].some((listener) => value.details.has(listener)))
@@ -234,7 +304,8 @@ export function startRuntimeSync(
         if (value.live === live) value.live = undefined
         value.events.clear()
         for (const compact of value.compactors.values()) compact([])
-        if (!value.tasks.size && !value.scopes.size) registrations.delete(key(connection))
+        if (!value.tasks.size && !value.scopes.size && !value.settled.size)
+          registrations.delete(key(connection))
       },
     }
   }
@@ -252,7 +323,8 @@ export function startRuntimeSync(
     status = next
     options.onStatus?.(next)
   }
-  let taskIdentity = JSON.stringify([...value.tasks.keys()].sort())
+  let listLimit = settledLimit(value)
+  let taskIdentity = selectionIdentity(value.tasks.keys(), listLimit)
   const cached =
     value.cursor &&
     value.cursor.tasks === taskIdentity &&
@@ -280,11 +352,14 @@ export function startRuntimeSync(
   const activities = value.events
   const sendWatch = () => {
     if (stopped) return
-    const next = JSON.stringify([...value.tasks.keys()].sort())
+    const nextLimit = settledLimit(value)
+    const listChanged = listLimit !== nextLimit
+    listLimit = nextLimit
+    const next = selectionIdentity(value.tasks.keys(), listLimit)
     if (next !== taskIdentity) {
       taskIdentity = next
       value.cursor = undefined
-      if (!taskUpdates || socket?.readyState !== 1) {
+      if (listChanged || !taskUpdates || socket?.readyState !== 1) {
         snapshot = undefined
         epoch = undefined
         sequence = undefined
@@ -383,6 +458,7 @@ export function startRuntimeSync(
     try {
       const query = new URLSearchParams({ format: '4', history: 'paged', subscriptions: 'live' })
       for (const id of value.tasks.keys()) query.append('task', id)
+      if (listLimit !== undefined) query.set('settled', String(listLimit))
       const ticket = await createRuntimeClient(connection).request(
         `/api/sync/ticket?${query}`,
         {},
@@ -457,7 +533,10 @@ export function startRuntimeSync(
           if (frame.type === 'snapshot') {
             snapshot = frame.snapshot
             snapshotTasks = taskUpdates
-              ? JSON.stringify([...(snapshot.detailTaskIds ?? [])].sort())
+              ? selectionIdentity(
+                  snapshot.detailTaskIds ?? [],
+                  snapshot.olderSettled?.limit ?? listLimit,
+                )
               : taskIdentity
             epoch = frame.epoch
             sequence = frame.sequence
@@ -618,6 +697,7 @@ export function startRuntimeSync(
             if (
               !value.scopes.size &&
               !value.tasks.size &&
+              !value.settled.size &&
               registrations.get(key(connection)) === value
             )
               registrations.delete(key(connection))
@@ -633,13 +713,14 @@ export function startRuntimeSync(
         )
           timer.unref()
       }
-      if (!value.scopes.size && !value.tasks.size && !value.cursor)
+      if (!value.scopes.size && !value.tasks.size && !value.settled.size && !value.cursor)
         registrations.delete(key(connection))
       for (const [id, entry] of registrations) {
         if (
           !entry.live &&
           !entry.scopes.size &&
           !entry.tasks.size &&
+          !entry.settled.size &&
           (registrations.size > 8 ||
             !entry.cursor ||
             Date.now() - entry.cursor.time > 5 * 60 * 1000)

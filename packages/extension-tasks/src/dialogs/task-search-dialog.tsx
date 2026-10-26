@@ -1,5 +1,7 @@
 import { useTaskSearch } from '../list/use-task-search'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from 'react'
+import { useWorkspace } from '@dovo/studio-core'
+import { watchRuntimeSettled } from '@dovo/protocol'
 import { MessageSquare, Search } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle, Input, cn } from '@dovo/studio-ui'
 import type { TaskEntry } from '../list/task-collection'
@@ -22,6 +24,23 @@ export function TaskSearchDialog({
   onClose: () => void
   onSelect: (entry: TaskEntry, messageId?: string) => void
 }) {
+  const { runtimeRegistry, connection } = useWorkspace()
+  const openSearch = !!mode
+  const connections = [
+    ...new Map(
+      [
+        ...runtimeRegistry.profiles.map((profile) => profile.connection),
+        ...(connection ? [connection] : []),
+      ].map((entry) => [JSON.stringify(entry), entry]),
+    ).values(),
+  ]
+  const connectionIdentity = JSON.stringify(connections)
+  const searchConnections = useEffectEvent(() => connections)
+  useEffect(() => {
+    if (!openSearch) return
+    const stops = searchConnections().map((entry) => watchRuntimeSettled(entry))
+    return () => stops.forEach((stop) => stop())
+  }, [openSearch, connectionIdentity])
   const [query, setQuery] = useState('')
   const [activeKey, setActiveKey] = useState('')
   const list = useRef<HTMLUListElement>(null)
