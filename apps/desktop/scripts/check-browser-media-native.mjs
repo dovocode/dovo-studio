@@ -11,7 +11,8 @@
  * and camera/microphone allow, remember and deny.
  *
  * Usage: node apps/desktop/scripts/check-browser-media-native.mjs [--keep]
- * Linux without a display needs `xvfb-run`. The Chromium sandbox must be available.
+ * Linux needs a display with a window manager (for example, Xvfb with Openbox) so Chromium can
+ * discover shareable windows. Xvfb alone has no managed window sources. The sandbox must be available.
  */
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'

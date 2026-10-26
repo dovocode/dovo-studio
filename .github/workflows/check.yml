@@ -40,7 +40,26 @@ jobs:
       - name: Verify native browser extensions
         run: pnpm test:browser-extensions:native
       - name: Verify browser tab capture and media consent
-        run: pnpm test:browser-media:native
+        run: |
+          # Chromium discovers shareable X11 windows through the window manager's client list.
+          # Xvfb alone provides screens but no managed window sources.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openbox x11-utils
+          xvfb-run -a -s '-screen 0 1280x900x24' bash -euc '
+            openbox >/tmp/dovo-openbox.log 2>&1 &
+            wm_pid=$!
+            trap "kill $wm_pid 2>/dev/null || true" EXIT
+            for attempt in {1..50}; do
+              if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id"; then
+                pnpm test:browser-media:native
+                exit 0
+              fi
+              sleep 0.1
+            done
+            cat /tmp/dovo-openbox.log
+            echo "Window manager did not become ready" >&2
+            exit 1
+          '
       - name: Verify persistent daily TURN quota
         run: python3 -m unittest discover -s apps/connect-server/turn/budget -p 'test_*.py'
       - name: Verify TURN cutoff in an isolated network namespace
