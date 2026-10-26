@@ -247,6 +247,34 @@ export default function BrowserSettings() {
           />
         </SettingRow>
       </SettingsGroup>
+      <SettingsGroup
+        title="Tab cleanup"
+        description="Timers are saved on this device. 0 turns a timer off. The current tab, pinned tabs and active media are protected. Checks run when Browser is open."
+      >
+        {(
+          [
+            ['browserAutoSettleMinutes', 'Auto-settle unused tabs after (minutes)'],
+            ['browserCloseSettledMinutes', 'Close settled tabs after (minutes)'],
+          ] as const
+        ).map(([key, label]) => (
+          <SettingRow key={key} label={label}>
+            <Input
+              type="number"
+              className="w-28"
+              aria-label={label}
+              min={0}
+              max={525600}
+              step={1}
+              value={preferences[key]}
+              onChange={(event) => {
+                const value = event.currentTarget.valueAsNumber
+                if (Number.isInteger(value) && value >= 0 && value <= 525600)
+                  updateAppPreferences({ [key]: value })
+              }}
+            />
+          </SettingRow>
+        ))}
+      </SettingsGroup>
       {browser && (
         <SettingsGroup
           title="Local browser profiles"

@@ -29,6 +29,23 @@ it('uses managed Chromium to inspect and interact with HTTP pages in isolated ta
     const page = await browsers.agentCommand('task-a', { action: 'navigate', url }, authorize)
     expect(page).toMatchObject({ title: 'Agent browser test', url: `${url}/` })
     expect('snapshot' in page && page.snapshot).toContain('Hello browser')
+    expect(await browsers.activeMedia('missing')).toBe(false)
+    expect(await browsers.activeMedia('agent-browser:task-a')).toBe(false)
+    await browsers.agentCommand(
+      'task-a',
+      {
+        action: 'evaluate',
+        script: `(() => { const video=document.createElement('video'); Object.defineProperty(video,'paused',{value:false}); Object.defineProperty(video,'ended',{value:false}); video.id='playing'; document.body.append(video) })()`,
+      },
+      authorize,
+    )
+    expect(await browsers.activeMedia('agent-browser:task-a')).toBe(true)
+    await browsers.agentCommand(
+      'task-a',
+      { action: 'evaluate', script: 'document.getElementById("playing").remove()' },
+      authorize,
+    )
+    expect(await browsers.activeMedia('agent-browser:task-a')).toBe(false)
     expect('image' in page && Buffer.from(page.image, 'base64').subarray(1, 4).toString()).toBe(
       'PNG',
     )

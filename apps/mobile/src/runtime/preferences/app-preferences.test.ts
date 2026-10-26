@@ -386,3 +386,33 @@ it('keeps Browser experimental and disabled until this device opts in', async ()
   await reopened.preferencesReady
   expect(reopened.readMobilePreferences().browserWorkspaceEnabled).toBe(true)
 })
+
+it('defaults both cleanup timers off and persists each timer independently on this device', async () => {
+  let saved: string | null = null
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  const preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences()).toMatchObject({
+    browserAutoSettleMinutes: 0,
+    browserCloseSettledMinutes: 0,
+  })
+  preferences.updateMobilePreferences({
+    browserAutoSettleMinutes: 45,
+    browserCloseSettledMinutes: 120,
+  })
+  await vi.waitFor(() =>
+    expect(JSON.parse(saved ?? '{}')).toMatchObject({
+      browserAutoSettleMinutes: 45,
+      browserCloseSettledMinutes: 120,
+    }),
+  )
+  const reopened = await loadPreferences()
+  await reopened.preferencesReady
+  expect(reopened.readMobilePreferences()).toMatchObject({
+    browserAutoSettleMinutes: 45,
+    browserCloseSettledMinutes: 120,
+  })
+})

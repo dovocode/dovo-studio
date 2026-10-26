@@ -34,6 +34,21 @@ final class BrowserProfileRuntime {
 @available(iOS 17.0, *)
 @MainActor
 final class BrowserEngine {
+  func activeMediaTabIds() async -> [String] {
+    var active: [String] = []
+    for tab in tabs {
+      let view = tab.webView
+      if view.cameraCaptureState != .none || view.microphoneCaptureState != .none {
+        active.append(tab.id)
+        continue
+      }
+      let playing: Bool = await withCheckedContinuation { continuation in
+        view.requestMediaPlaybackState { state in continuation.resume(returning: state == .playing) }
+      }
+      if playing { active.append(tab.id) }
+    }
+    return active
+  }
   static let shared = BrowserEngine()
 
   var storage = BrowserStorage()

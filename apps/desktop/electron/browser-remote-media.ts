@@ -23,6 +23,8 @@ export async function openRemoteMedia(source: Source) {
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
+      // Remote tabs can send a single still frame; hidden capture still needs a live surface.
+      offscreen: true,
     },
   })
   const contents = window.webContents

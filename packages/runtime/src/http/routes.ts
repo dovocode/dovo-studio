@@ -931,7 +931,9 @@ export function route(
       }
       if (
         method === 'POST' &&
-        (path === '/api/previews/browser/close' || path === '/api/previews/browser/selection')
+        (path === '/api/previews/browser/close' ||
+          path === '/api/previews/browser/selection' ||
+          path === '/api/previews/browser/activity')
       ) {
         const {
           taskId,
@@ -939,25 +941,16 @@ export function route(
           profileId = 'default',
         } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
         if (taskId !== STUDIO_BROWSER_SCOPE) s.store.taskSummary(taskId)
-        if (path.endsWith('/selection'))
-          return yield* serviceResult(
-            s.browsers.selection(
-              JSON.stringify(
-                profileId === 'default'
-                  ? [taskId, tabId ?? null]
-                  : [taskId, tabId ?? null, profileId],
-              ),
-            ),
-          )
-        yield* serviceResult(
-          s.browsers.close(
-            JSON.stringify(
-              profileId === 'default'
-                ? [taskId, tabId ?? null]
-                : [taskId, tabId ?? null, profileId],
-            ),
-          ),
+        const resourceId = JSON.stringify(
+          profileId === 'default' ? [taskId, tabId ?? null] : [taskId, tabId ?? null, profileId],
         )
+        if (path.endsWith('/activity')) {
+          const active = yield* serviceResult(s.browsers.activeMedia(resourceId))
+          return yield* serviceResult({ active })
+        }
+        if (path.endsWith('/selection'))
+          return yield* serviceResult(s.browsers.selection(resourceId))
+        yield* serviceResult(s.browsers.close(resourceId))
         return yield* serviceResult({
           ok: true,
         })

@@ -176,6 +176,7 @@ export * from './conversation/mcp-app-downloads.js'
 export * from './conversation/presentation/turn-duration.js'
 
 export * from './runtime/previews/browser-profiles.js'
+export * from './runtime/previews/browser-tab-lifecycle.js'
 
 export * from './runtime/connection/mutations.js'
 

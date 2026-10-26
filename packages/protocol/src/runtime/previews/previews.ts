@@ -248,6 +248,8 @@ export const browserCommandSchema = Schema.Union([
       'selection',
       /** Window-wide `mediaRequests` and `captures` only; `key` is ignored, tab events untouched. */
       'media-status',
+      /** Active media/sharing tab keys; never drains page-created tab events. */
+      'tab-activity',
     ]),
     key: maxValue(minValue(Schema.String, 1), 500),
   }),
@@ -367,6 +369,7 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       mediaRequests?: BrowserMediaRequest[]
       /** Ongoing tab captures in this window; a snapshot, repeated while they run. */
       captures?: BrowserCapture[]
+      protectedKeys?: string[]
       back: boolean
       forward: boolean
     }

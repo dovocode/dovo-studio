@@ -95,6 +95,27 @@ type Session = {
 const WORKSPACE_PROFILES = 'browser-workspace.profiles'
 const idleMs = 5 * 60 * 1000
 export class RemoteBrowsers {
+  async activeMedia(resourceId: string) {
+    const pending = this.sessions.get(resourceId)
+    if (!pending) return false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        pending.then((session) =>
+          session.page.evaluate(() =>
+            Array.from(document.querySelectorAll('audio,video')).some(
+              (element) => element instanceof HTMLMediaElement && !element.paused && !element.ended,
+            ),
+          ),
+        ),
+        new Promise<true>((resolve) => {
+          timer = setTimeout(() => resolve(true), 2000)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
   private artifactQueue: Promise<unknown> = Promise.resolve()
   private pendingArtifactRenders = 0
   private browser?: Promise<Browser>

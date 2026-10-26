@@ -58,6 +58,10 @@ public class DovoWebKitBrowserModule: Module {
       }
       return try BrowserEngine.shared.status()
     }
+    AsyncFunction("getActiveMediaTabIds") { @MainActor () async throws -> [String] in
+      guard #available(iOS 17.0, *) else { return [] }
+      return await BrowserEngine.shared.activeMediaTabIds()
+    }
 
     AsyncFunction("ensureProfile") { @MainActor (profileId: String) async throws -> [String: Any] in
       guard #available(iOS 17.0, *) else { throw unsupported() }

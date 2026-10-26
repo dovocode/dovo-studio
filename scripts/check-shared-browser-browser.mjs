@@ -70,7 +70,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
@@ -81,7 +81,7 @@ const otherSnapshot={...snapshot,workspace:{...snapshot.workspace,tasks:[{...tas
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot},{profile:otherProfile,name:otherProfile.name,scope:'mac',connected:true,snapshot:otherSnapshot}];
 export const useRuntimeSources=()=>sources;
 const workspace={activeRuntimeId:profile.id,connection:profile.connection,request,connected:true,snapshot,workspace:snapshot.workspace,runtimes:sources,runtimeRegistry:{profiles:[profile,otherProfile]},
-readRuntime:async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs[owner.id]??[]};if(path==='/api/workspace'){if(window.conflict)return {outcome:'reconciled',reason:'Draft changed elsewhere',recoveryId:'11223344-1122-4122-8122-112233445566'};otherSnapshot.workspace.tasks[0].draft=body.changes.draft.after;return {outcome:'applied'}};return remoteTicket(body)},
+readRuntime:async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs[owner.id]??[]};if(path.endsWith('/activity'))return {active:!!window.activeMedia?.includes(body.tabId)};if(path==='/api/workspace'){if(window.conflict)return {outcome:'reconciled',reason:'Draft changed elsewhere',recoveryId:'11223344-1122-4122-8122-112233445566'};otherSnapshot.workspace.tasks[0].draft=body.changes.draft.after;return {outcome:'applied'}};return remoteTicket(body)},
 setWorkspace:update=>{workspace.workspace=typeof update==='function'?update(workspace.workspace):update;window.savedDraft=workspace.workspace.tasks[0].draft},flush:async()=>{if(window.hangFlush)await new Promise(()=>{});},refreshRuntime:async()=>{},};
 window.fixtureStore=workspace;window.remoteDraft=()=>otherSnapshot.workspace.tasks[0].draft;
 const WorkspaceContext=createContext(null);
@@ -96,7 +96,7 @@ export const useSettingsTarget=()=>{
   return {target,setTarget,sources,...resolveSettingsTarget(sources,target,workspace.activeRuntimeId)};
 };
 export const useStudioHost=()=>({browser,browserExtensions,onBrowserContextAction:listener=>{window.contextAction=listener;return ()=>{window.contextAction=null}},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
-const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{}};
+const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
 export {useRemoteBrowserProfiles} from '${root}packages/studio-core/src/browser-profiles.ts';
@@ -1277,6 +1277,120 @@ try {
     'Applied remote save opens the thread once',
   )
   assert.equal(extracted.passwordText, '', 'Password selection must be excluded')
+  // Exercise manual categories and the real sweep with a controlled clock.
+  const lifecycle = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  lifecycle.on('pageerror', (error) => errors.push(error.message))
+  await lifecycle.route('http://localhost/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app" style="height:800px"></div>' }),
+  )
+  await lifecycle.goto('http://localhost/lifecycle')
+  await lifecycle.clock.install({ time: new Date('2026-10-26T12:00:00Z') })
+  await lifecycle.evaluate(() => {
+    const base = {
+      kind: 'web',
+      profileId: 'default',
+      url: 'http://localhost/current',
+      title: 'Current',
+      visitedAt: Date.now() - 600000,
+      lastActiveAt: Date.now() - 600000,
+    }
+    localStorage.setItem(
+      'dovo.shared-browser-tabs.v1',
+      JSON.stringify({
+        active: 'current',
+        closed: [],
+        tabs: [
+          { ...base, id: 'current' },
+          { ...base, id: 'unused', title: 'Unused', url: 'http://localhost/unused' },
+          { ...base, id: 'pinned', title: 'Pinned', pinned: true },
+          { ...base, id: 'media', title: 'Media' },
+          { ...base, id: 'remote-media', title: 'Remote media', kind: 'remote', runtimeId: 'mac' },
+        ],
+      }),
+    )
+    window.protectedKeys = ['studio:browser:main:media']
+    window.activeMedia = ['remote-media']
+  })
+  await lifecycle.addScriptTag({ content: built.outputFiles[0].text })
+  const lifecycleState = () =>
+    lifecycle.evaluate(() => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')))
+  await lifecycle.getByRole('button', { name: 'Current', exact: false }).first().waitFor()
+  await lifecycle.clock.fastForward(120000)
+  assert.equal(
+    (await lifecycleState()).tabs.some((t) => t.settledAt),
+    false,
+    'Timers default off',
+  )
+  await lifecycle.evaluate(() =>
+    window.setCleanup({ browserAutoSettleMinutes: 1, browserCloseSettledMinutes: 2 }),
+  )
+  await lifecycle.waitForFunction(
+    () =>
+      JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+        (t) => t.id === 'unused',
+      )?.settledAt,
+  )
+  assert.deepEqual(
+    (await lifecycleState()).tabs.filter((t) => t.settledAt).map((t) => t.id),
+    ['unused'],
+  )
+  await lifecycle.clock.fastForward(120000)
+  await lifecycle.waitForFunction(
+    () =>
+      !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some(
+        (t) => t.id === 'unused',
+      ),
+  )
+  assert.equal(
+    (await lifecycleState()).closed[0].id,
+    'unused',
+    'Auto-closed tabs remain recoverable',
+  )
+  assert.deepEqual(
+    (await lifecycleState()).tabs.map((t) => t.id),
+    ['current', 'pinned', 'media', 'remote-media'],
+  )
+  await lifecycle.evaluate(() =>
+    window.setCleanup({ browserAutoSettleMinutes: 0, browserCloseSettledMinutes: 0 }),
+  )
+  const lifecycleMenu = () =>
+    lifecycle.getByRole('button', { name: 'Browser options', exact: true })
+  await lifecycleMenu().click()
+  await lifecycle.getByRole('button', { name: 'Settle tab', exact: true }).click()
+  await lifecycle.keyboard.press('Escape')
+  await lifecycle.waitForFunction(
+    () =>
+      JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+        (t) => t.id === 'current',
+      )?.settledAt,
+  )
+  await lifecycle.locator('summary').filter({ hasText: 'Settled tabs' }).click()
+  await lifecycle
+    .getByRole('button', { name: /Current/ })
+    .first()
+    .click()
+  await lifecycle.waitForFunction(() => {
+    const s = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+    return s.active === 'current' && !s.tabs.find((t) => t.id === 'current').settledAt
+  })
+  await lifecycleMenu().click()
+  await lifecycle.locator('summary').filter({ hasText: 'Snooze tab' }).click()
+  await lifecycle.getByRole('button', { name: 'Snooze for 1 hour', exact: true }).click()
+  await lifecycle.keyboard.press('Escape')
+  await lifecycle.waitForFunction(
+    () =>
+      JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+        (t) => t.id === 'current',
+      )?.snoozedUntil,
+  )
+  await lifecycle.clock.fastForward(3600000)
+  await lifecycle.waitForFunction(
+    () =>
+      !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+        (t) => t.id === 'current',
+      )?.snoozedUntil,
+  )
+  await lifecycle.close()
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Shared browser tabs, local/remote ownership and profiles, saved pages, private/pinned tabs, temporary link previews, native/remote promotion without page replacement, nested/deferred navigation, bounded cleanup, shortcuts, drafts, feature gate and pop-out isolation passed.',

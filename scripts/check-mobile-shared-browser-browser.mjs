@@ -24,7 +24,7 @@ export const Sheet=forwardRef(({title,children,onClose},ref)=>{useImperativeHand
 export const ScreenHeader=({title,onBack})=><header><h1>{title}</h1>{onBack&&<button onClick={onBack}>Back</button>}</header>;
 export const useTheme=()=>({mode:'dark',colors:{border:'#455063'},styles:{screen:{height:'100vh',display:'flex',flexDirection:'column'},content:{padding:12},muted:{color:'#b8c4d8'},error:{color:'#ff9999'},title:{fontWeight:'bold'}}});
 export const router={push:path=>window.navigation.push(path)};
-let enabled=false;const listeners=new Set();window.setExperimental=value=>{enabled=value;listeners.forEach(f=>f())};export const useMobilePreferences=()=>({browserWorkspaceEnabled:useSyncExternalStore(f=>{listeners.add(f);return ()=>listeners.delete(f)},()=>enabled)});
+let prefs={browserWorkspaceEnabled:false,browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};const listeners=new Set();window.setCleanup=change=>{prefs={...prefs,...change};listeners.forEach(f=>f())};window.setExperimental=value=>window.setCleanup({browserWorkspaceEnabled:value});export const useMobilePreferences=()=>useSyncExternalStore(f=>{listeners.add(f);return ()=>listeners.delete(f)},()=>prefs);
 const profiles=[{id:'lan',name:'LAN computer'},{id:'mac',name:'Mac computer'}];
 const scope=createContext('lan');export const RuntimeScope=({runtimeId,children})=><scope.Provider value={runtimeId}>{children}</scope.Provider>;
 const overviews=profiles.map(profile=>({profile,connected:true,snapshot:{workspace:{tasks:[{id:'target',title:'Destination',draft:'Server fallback'}]}}}));
@@ -37,7 +37,7 @@ const emit=(name,event)=>{for(const f of nativeListeners.get(name)||[])f(event)}
 const nativeStatus=()=>({enabled:nativeEnabled,browsingAvailable:window.nativeBrowsing!==false,websiteTabCaptureAvailable:false,websiteTabCaptureUnavailableReason:'No public arbitrary-tab capture API.',systemVersion:'mock',maxTabs:100,profiles:[...nativeProfiles].map(profileId=>({profileId,dataStoreIdentifier:profileId})),tabs:[...nativeTabs.values()]});
 const nativeModule={
 addListener:(name,f)=>{const listeners=nativeListeners.get(name)||new Set();nativeListeners.set(name,listeners);listeners.add(f);return {remove:()=>listeners.delete(f)}},
-setEnabled:async enabled=>{window.nativeCalls.push({enabled});nativeEnabled=enabled;if(!enabled)nativeTabs.clear();return nativeStatus()},getStatus:async()=>nativeStatus(),
+setEnabled:async enabled=>{window.nativeCalls.push({enabled});nativeEnabled=enabled;if(!enabled)nativeTabs.clear();return nativeStatus()},getStatus:async()=>nativeStatus(),getActiveMediaTabIds:async()=>window.activeMedia||[],
 ensureProfile:async profileId=>{nativeProfiles.add(profileId);return {profileId,dataStoreIdentifier:profileId}},
 openTab:async options=>{window.nativeCalls.push({open:options});if(nativeTabs.has(options.tabId)){const existing=nativeTabs.get(options.tabId);if(existing.profileId===options.profileId)return existing;throw Error('Native fixture profile conflict')};const page={...options,instanceId:'instance-'+(++nativeInstance),openerTabId:null,url:options.url||'about:blank',title:'Native page',loadState:'loaded',progress:1,canGoBack:false,canGoForward:false,secure:false,error:null};nativeTabs.set(page.tabId,page);emit('onTabCreated',{...page,reason:'api'});return page},
 activateTab:async tabId=>{window.nativeCalls.push({activate:tabId})},
@@ -538,6 +538,46 @@ try {
     originalTab,
   )
   await nativeButton('Tabs (1)').waitFor()
+  const opensBeforeSettle = await nativePage.evaluate(
+    (id) => window.nativeCalls.filter((c) => c.open?.tabId === id).length,
+    originalTab,
+  )
+  await nativeButton('Browser options').click()
+  await nativeButton('Settle tab').click()
+  await nativeButton('Tabs (2)').click()
+  await nativePage.getByLabel('Tab category').selectOption('settled')
+  const settledId = await nativePage.evaluate(
+    () =>
+      JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).tabs.find((t) => t.settledAt).id,
+  )
+  assert.equal(settledId, originalTab)
+  await nativePage
+    .getByRole('button', { name: /^Open / })
+    .first()
+    .click()
+  await nativePage.locator('[data-native-tab="' + originalTab + '"]').waitFor()
+  await nativeButton('Browser options').click()
+  await nativeButton('Snooze for 1 hour').click()
+  await nativeButton('Tabs (2)').click()
+  await nativePage.getByLabel('Tab category').selectOption('snoozed')
+  await nativePage
+    .getByRole('button', { name: /^Open / })
+    .first()
+    .click()
+  await nativePage.locator('[data-native-tab="' + originalTab + '"]').waitFor()
+  assert.equal(
+    await nativePage.evaluate(
+      (id) => window.nativeCalls.filter((c) => c.open?.tabId === id).length,
+      originalTab,
+    ),
+    opensBeforeSettle,
+    'Restore keeps original native page',
+  )
+  // Close the blank fallback so the existing single-tab checks remain meaningful.
+  await nativeButton('Tabs (2)').click()
+  await nativePage.getByLabel('Tab category').selectOption('active')
+  await nativePage.getByRole('button', { name: 'Close tab', exact: true }).click()
+  await nativePage.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   await nativePage.evaluate(() => (window.nativeFail = true))
   await nativePage
     .getByLabel('Search or enter address', { exact: true })
@@ -577,6 +617,75 @@ try {
   assert.deepEqual(await nativePage.evaluate(() => window.nativeCalls), [])
   assert.deepEqual(errors, [])
   await nativePage.close()
+  const cleanupPage = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  cleanupPage.on('pageerror', (error) => errors.push(error.message))
+  await cleanupPage.route('http://mobile.fixture/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  await cleanupPage.goto('http://mobile.fixture/cleanup')
+  await cleanupPage.clock.install({ time: new Date('2026-10-26T12:00:00Z') })
+  await cleanupPage.evaluate(() => {
+    window.fixtureNative = true
+    window.activeMedia = ['media']
+    const base = {
+      kind: 'local',
+      profileId: 'device',
+      url: 'http://localhost/',
+      title: 'Page',
+      visitedAt: Date.now() - 600000,
+      lastActiveAt: Date.now() - 600000,
+    }
+    localStorage.setItem(
+      'dovo.mobile-browser.v1',
+      JSON.stringify({
+        version: 1,
+        active: 'current',
+        bookmarks: [],
+        history: [],
+        closed: [],
+        tabs: [
+          { ...base, id: 'current' },
+          { ...base, id: 'unused' },
+          { ...base, id: 'pinned', pinned: true },
+          { ...base, id: 'media' },
+        ],
+      }),
+    )
+  })
+  await cleanupPage.addScriptTag({ content: built.outputFiles[0].text })
+  await cleanupPage.evaluate(() => window.setExperimental(true))
+  await cleanupPage.locator('[data-native-tab="current"]').waitFor()
+  await cleanupPage.clock.fastForward(120000)
+  assert.equal(
+    await cleanupPage.evaluate(() =>
+      JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).tabs.some((t) => t.settledAt),
+    ),
+    false,
+  )
+  await cleanupPage.evaluate(() =>
+    window.setCleanup({ browserAutoSettleMinutes: 1, browserCloseSettledMinutes: 1 }),
+  )
+  await cleanupPage.waitForFunction(
+    () =>
+      JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).tabs.find((t) => t.id === 'unused')
+        ?.settledAt,
+  )
+  await cleanupPage.clock.fastForward(60000)
+  await cleanupPage.waitForFunction(
+    () =>
+      !JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).tabs.some(
+        (t) => t.id === 'unused',
+      ),
+  )
+  const cleaned = await cleanupPage.evaluate(() =>
+    JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')),
+  )
+  assert.deepEqual(
+    cleaned.tabs.map((t) => t.id),
+    ['current', 'pinned', 'media'],
+  )
+  assert.equal(cleaned.closed[0].id, 'unused')
+  await cleanupPage.close()
   console.log(
     'Mobile shared Browser UI checks passed; screenshots: work/mobile-shared-browser/{narrow,narrow-library}.png. Native engines not exercised.',
   )

@@ -16,6 +16,7 @@ import {
   mutableArray,
   browserProfilesSchema,
   defaultBrowserProfiles,
+  browserTabCleanupSettingsFields,
 } from '@dovo/protocol'
 
 /** Preferences for this app window only (like Codex and T3 Code "General" and "Appearance").
@@ -77,6 +78,7 @@ const schema = mutableStruct({
   showIssues: Schema.Boolean,
   showJira: Schema.Boolean,
   browserWorkspaceEnabled: Schema.Boolean,
+  ...browserTabCleanupSettingsFields,
   diffLayout: Schema.Literals(['unified', 'split']),
   diffOverflow: Schema.Literals(['wrap', 'scroll']),
   diffHighlight: Schema.Literals(['word', 'char', 'none']),
@@ -173,6 +175,8 @@ export const defaultAppPreferences: AppPreferences = {
   showIssues: true,
   showJira: true,
   browserWorkspaceEnabled: false,
+  browserAutoSettleMinutes: 0,
+  browserCloseSettledMinutes: 0,
   diffLayout: 'unified',
   diffOverflow: 'wrap',
   diffHighlight: 'word',

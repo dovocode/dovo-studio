@@ -15,6 +15,7 @@ import {
   pageKey,
   recentTabs,
   visitTab,
+  moveBrowserTab,
   type BrowserTab,
 } from './browser-state'
 const remote: BrowserTab = {
@@ -195,9 +196,12 @@ it('appends literal selections and page sources without replacing draft text', (
 
 it('selection preserves order; navigation moves a tab up without title updates reordering it', () => {
   let state = addTab(initialBrowserState('device'), remote)
+  state = visitTab(state, 'device', 1000)
   const before = state.tabs
-  state = visitTab(state, 'remote')
-  expect(state.tabs).toBe(before)
+  state = visitTab(state, 'remote', 1234)
+  expect(state.tabs.map((tab) => tab.id)).toEqual(before.map((tab) => tab.id))
+  expect(state.tabs.map((tab) => tab.visitedAt)).toEqual(before.map((tab) => tab.visitedAt))
+  expect(state.tabs.every((tab) => tab.lastActiveAt === 1234)).toBe(true)
   state = recordPage(state, 'remote', { url: 'http://localhost/new', title: 'New' })
   expect(recentTabs(state.tabs)[0].id).toBe('remote')
   const timestamp = state.tabs.find((tab) => tab.id === 'remote')?.visitedAt
@@ -237,4 +241,35 @@ it('adopts page-created native tabs in the background, bounds tabs and preserves
       native,
     ),
   ).toThrow(/100/)
+})
+
+it('settles and snoozes without changing page identity or profile, then restores on selection', () => {
+  let state = addTab(initialBrowserState('device'), remote)
+  state = moveBrowserTab(state, 'remote', 'unused', undefined, 1000)
+  expect(state.active).toBe('device')
+  expect(state.tabs[1]).toMatchObject({ ...remote, settledAt: 1000 })
+  expect(state.closed).toEqual([])
+  expect(parseBrowserState(JSON.stringify(state))).toEqual(state)
+  state = visitTab(state, 'remote', 2000)
+  expect(state.tabs[1]).toMatchObject({ ...remote, settledAt: undefined, lastActiveAt: 2000 })
+  state = moveBrowserTab(state, 'remote', 'unused', 10000, 3000)
+  expect(state.active).toBe('device')
+  expect(state.tabs[1]).toMatchObject({ ...remote, snoozedUntil: 10000, settledAt: undefined })
+  state = visitTab(state, 'remote', 4000)
+  expect(state.tabs[1]).toMatchObject({ ...remote, snoozedUntil: undefined, lastActiveAt: 4000 })
+})
+it('creates a blank fallback on the same computer when the sole tab is settled', () => {
+  const original = { ...initialBrowserState('remote'), tabs: [remote] }
+  const state = moveBrowserTab(original, 'remote', 'replacement', undefined, 1000)
+  expect(state.active).toBe('replacement')
+  expect(state.tabs[0]).toMatchObject({ ...remote, settledAt: 1000 })
+  expect(state.tabs[1]).toMatchObject({
+    id: 'replacement',
+    kind: 'remote',
+    runtimeId: 'mac',
+    profileId: 'work',
+    url: '',
+    settledAt: undefined,
+  })
+  expect(state.closed).toEqual([])
 })

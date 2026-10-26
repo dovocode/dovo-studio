@@ -16,6 +16,35 @@ import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
 import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { SettingsGroup, SettingsRow, SettingsSwitchRow } from './settings-group'
+import { Field } from '../ui/controls/field'
+
+function BrowserCleanupMinutes({
+  label,
+  value,
+  onSave,
+}: {
+  label: string
+  value: number
+  onSave: (minutes: number) => void
+}) {
+  const [text, setText] = useState(String(value))
+  useEffect(() => setText(String(value)), [value])
+  return (
+    <Field
+      label={label}
+      value={text}
+      keyboardType="number-pad"
+      onChangeText={(text) => {
+        setText(text)
+        if (/^\d+$/.test(text)) {
+          const minutes = Number(text)
+          if (minutes <= 525600) onSave(minutes)
+        }
+      }}
+      onBlur={() => setText(String(value))}
+    />
+  )
+}
 
 const tabs = [
   { id: 'tasks', name: 'Tasks' },
@@ -52,6 +81,25 @@ export default function GeneralScreen() {
           items={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}
           onChange={(launchTab) =>
             updateMobilePreferences({ launchTab: launchTab as typeof preferences.launchTab })
+          }
+        />
+      </SettingsGroup>
+      <SettingsGroup
+        title="Browser tab cleanup"
+        footer="0 turns a timer off. Current tabs, pinned tabs and active media are protected. Checks run when Browser is open."
+      >
+        <BrowserCleanupMinutes
+          label="Auto-settle unused tabs after (minutes)"
+          value={preferences.browserAutoSettleMinutes}
+          onSave={(browserAutoSettleMinutes) =>
+            updateMobilePreferences({ browserAutoSettleMinutes })
+          }
+        />
+        <BrowserCleanupMinutes
+          label="Close settled tabs after (minutes)"
+          value={preferences.browserCloseSettledMinutes}
+          onSave={(browserCloseSettledMinutes) =>
+            updateMobilePreferences({ browserCloseSettledMinutes })
           }
         />
       </SettingsGroup>

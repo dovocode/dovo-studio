@@ -79,6 +79,8 @@ export type DovoWebKitBrowserModule = {
   /** Default off. Disabling closes all tabs and cancels native dialogs. */
   setEnabled(enabled: boolean): Promise<BrowserStatus>
   getStatus(): Promise<BrowserStatus>
+  /** Older app binaries omit this; cleanup must keep their native tabs. */
+  getActiveMediaTabIds?(): Promise<BrowserId[]>
 
   ensureProfile(profileId: BrowserId): Promise<BrowserProfile>
   /** Closes the profile's tabs and deletes its website data store. */

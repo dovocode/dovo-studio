@@ -148,6 +148,7 @@ afterEach(async () => {
 })
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.media.snapshot.mockReturnValue({})
   vi.stubEnv('VITE_DEV_SERVER_URL', '')
 })
 const frame = { url: 'file:///app/index.html' }
@@ -796,6 +797,26 @@ it('keeps denying every new window and shortcut for thread-side previews', async
   expect(mocks.window.webContents.sendInputEvent).not.toHaveBeenCalled()
   const status = await call(event, { action: 'status', key: 'shared' })
   expect(status).not.toHaveProperty('openedLinks')
+})
+
+it('reports media and capture sources without consuming queued tab events', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  mocks.media.keepAlive.mockReturnValue(true)
+  mocks.media.snapshot.mockReturnValue({
+    captures: [{ key: 'requester', sourceKey: 'remote-source' }],
+  })
+  openHandler()({
+    url: 'https://example.com/child',
+    disposition: 'foreground-tab',
+    features: '',
+  }).createWindow?.({})
+  await expect(call(event, { action: 'tab-activity', key: 'cleanup' })).resolves.toMatchObject({
+    protectedKeys: expect.arrayContaining(['shared', 'requester', 'remote-source']),
+  })
+  await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
+    createdTabs: [{ url: 'https://example.com/child' }],
+  })
 })
 
 it('adopts bounded native new tabs with their profile, background disposition and opener preferences', async () => {

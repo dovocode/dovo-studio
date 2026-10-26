@@ -41,6 +41,8 @@ it('keeps valid saved choices, fills in new defaults and ignores invalid values'
     sendWith: 'enter',
     textSize: 'default',
     collapseChangedFiles: true,
+    browserAutoSettleMinutes: 0,
+    browserCloseSettledMinutes: 0,
   })
   expect(readAppPreferences()).not.toHaveProperty('launchView')
 })

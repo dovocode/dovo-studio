@@ -20,9 +20,15 @@ import {
   selectedBrowserText,
   STUDIO_BROWSER_SCOPE,
   isPrivateBrowserProfile,
+  browserTabCategory,
+  tomorrowBrowserTabWake,
+  cleanBrowserTabs,
+  browserTabActivitySchema,
+  type BrowserTabCategory,
 } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from '../shell/navigation'
+import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { appendRuntimeDraft } from '../tasks/draft/use-draft'
 import { usePreviewActive } from '../tasks/preview/use-preview-active'
 import { RemoteBrowser } from '../tasks/preview/remote-browser'
@@ -48,6 +54,7 @@ import {
   parseBrowserState,
   persistableBrowserState,
   promoteTab,
+  moveBrowserTab,
   browserAddress,
   recordPage,
   recentTabs,
@@ -68,6 +75,9 @@ import {
 export function BrowserScreen() {
   const { styles, colors } = useTheme()
   const runtime = useRuntime()
+  const runtimeRef = useRef(runtime)
+  runtimeRef.current = runtime
+  const preferences = useMobilePreferences()
   const native = useNativeBrowser()
   const nativeAvailable = !!(
     native.status?.enabled &&
@@ -96,6 +106,8 @@ export function BrowserScreen() {
   const editing = useRef(false)
   const [navigation, setNavigation] = useState({ back: false, forward: false })
   const [source, setSource] = useState('device')
+  const [clock, setClock] = useState(() => Date.now())
+  const [tabCategory, setTabCategory] = useState<BrowserTabCategory>('active')
   const [profiles, setProfiles] = useState([{ id: 'default', name: 'Default' }])
   const [library, setLibrary] = useState<'tabs' | 'bookmarks' | 'history' | null>(null)
   const [optionsOpen, setOptionsOpen] = useState(false)
@@ -363,7 +375,13 @@ export function BrowserScreen() {
   }
   const newTab = (saved?: BrowserTab, incognito = false) => {
     const tab: BrowserTab = saved
-      ? { ...saved, id: randomUUID(), visitedAt: Date.now() }
+      ? {
+          ...saved,
+          id: randomUUID(),
+          visitedAt: Date.now(),
+          settledAt: undefined,
+          snoozedUntil: undefined,
+        }
       : source === 'device'
         ? {
             id: randomUUID(),
@@ -422,6 +440,114 @@ export function BrowserScreen() {
     for (const tab of discarded)
       void disposeTab(tab).catch((cause) => setError(`Could not close preview: ${String(cause)}`))
   }, [state.tabs, state.active])
+  useEffect(() => {
+    if (!loaded || !focused) return
+    let stopped = false,
+      running = false
+    const settings = {
+      browserAutoSettleMinutes: preferences.browserAutoSettleMinutes ?? 0,
+      browserCloseSettledMinutes: preferences.browserCloseSettledMinutes ?? 0,
+    }
+    const sweep = async () => {
+      if (running) return
+      running = true
+      try {
+        const now = Date.now()
+        setClock(now)
+        const before = current.current
+        const plan = cleanBrowserTabs(before.tabs, settings, before.active, now)
+        const candidates = before.tabs.filter(
+          (tab) =>
+            plan.closeIds.includes(tab.id) ||
+            plan.tabs.find((item) => item.id === tab.id)?.settledAt !== tab.settledAt,
+        )
+        const protectedIds = new Set<string>()
+        if (candidates.length) {
+          const local = candidates.filter((tab) => tab.kind === 'local')
+          if (nativeAvailable && local.length) {
+            try {
+              if (DovoWebKitBrowser?.getActiveMediaTabIds) {
+                for (const id of await DovoWebKitBrowser.getActiveMediaTabIds())
+                  protectedIds.add(id)
+              } else for (const tab of local) protectedIds.add(tab.id)
+            } catch {
+              for (const tab of local) protectedIds.add(tab.id)
+            }
+          }
+          await Promise.all(
+            candidates
+              .filter((tab) => tab.kind === 'remote')
+              .map(async (tab) => {
+                const runtime = runtimeRef.current
+                const owner = runtime.overviews.find((entry) => entry.profile.id === tab.runtimeId)
+                if (!owner?.connected) {
+                  protectedIds.add(tab.id)
+                  return
+                }
+                try {
+                  const status = await runtime.readRuntime(
+                    owner.profile,
+                    '/api/previews/browser/activity',
+                    { taskId: STUDIO_BROWSER_SCOPE, tabId: tab.id, profileId: tab.profileId },
+                    browserTabActivitySchema,
+                  )
+                  if (status.active) protectedIds.add(tab.id)
+                } catch {
+                  protectedIds.add(tab.id)
+                }
+              }),
+          )
+          for (const tab of current.current.tabs)
+            if (!candidates.includes(tab)) protectedIds.add(tab.id)
+        }
+        if (stopped) return
+        const currentState = current.current
+        const result = cleanBrowserTabs(
+          currentState.tabs,
+          settings,
+          currentState.active,
+          now,
+          protectedIds,
+        )
+        if (
+          result.tabs.length === currentState.tabs.length &&
+          result.tabs.every((tab, index) => tab === currentState.tabs[index])
+        )
+          return
+        const closing = currentState.tabs.filter((tab) => result.closeIds.includes(tab.id))
+        const restorable = closing.filter((tab) => !isPrivateBrowserProfile(tab.profileId))
+        change((state) => ({
+          ...state,
+          tabs: result.tabs,
+          closed: [...restorable, ...state.closed].slice(0, 20),
+        }))
+        for (const tab of closing)
+          void disposeTab(tab).catch((cause) =>
+            setError(`Could not close settled tab: ${String(cause)}`),
+          )
+      } catch (cause) {
+        if (!stopped) setError(`Tab cleanup failed: ${String(cause)}`)
+      } finally {
+        running = false
+      }
+    }
+    void sweep()
+    const timer = setInterval(() => void sweep(), 30000)
+    return () => {
+      stopped = true
+      clearInterval(timer)
+    }
+  }, [
+    loaded,
+    focused,
+    nativeAvailable,
+    preferences.browserAutoSettleMinutes,
+    preferences.browserCloseSettledMinutes,
+  ])
+  const move = (until?: number) =>
+    optionsSheet.current?.dismiss(() =>
+      change((state) => moveBrowserTab(state, active.id, randomUUID(), until)),
+    )
   const pageState = (
     id: string,
     page: { url: string; title?: string; back?: boolean; forward?: boolean },
@@ -1044,6 +1170,25 @@ export function BrowserScreen() {
       )}
       {optionsOpen && (
         <Sheet ref={optionsSheet} title="Browser options" onClose={() => setOptionsOpen(false)}>
+          <Action secondary label="Settle tab" disabled={busy} onPress={() => move()} />
+          <Action
+            secondary
+            label="Snooze for 1 hour"
+            disabled={busy}
+            onPress={() => move(Date.now() + 3600000)}
+          />
+          <Action
+            secondary
+            label="Snooze for 4 hours"
+            disabled={busy}
+            onPress={() => move(Date.now() + 14400000)}
+          />
+          <Action
+            secondary
+            label="Snooze until tomorrow"
+            disabled={busy}
+            onPress={() => move(tomorrowBrowserTabWake())}
+          />
           <Action
             secondary
             label={active.pinned ? 'Unpin tab' : 'Pin tab'}
@@ -1202,65 +1347,80 @@ export function BrowserScreen() {
           />
           <SearchField label="Search browser pages" value={query} onChangeText={setQuery} />
           {library === 'tabs' ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-              {recentTabs(state.tabs)
-                .filter(matches)
-                .map((tab) => (
-                  <View
-                    key={tab.id}
-                    style={{
-                      width: '47%',
-                      borderRadius: 18,
-                      borderWidth: tab.id === active.id ? 2 : 1,
-                      borderColor: tab.id === active.id ? colors.accent : colors.border,
-                      backgroundColor: colors.surface,
-                      overflow: 'hidden',
-                    }}
-                  >
+            <>
+              <Choice
+                label="Tab category"
+                value={tabCategory}
+                items={(['active', 'snoozed', 'settled'] as const).map((id) => ({
+                  id,
+                  name: `${id === 'active' ? 'Active' : id === 'snoozed' ? 'Snoozed' : 'Settled'} (${recentTabs(state.tabs).filter((tab) => browserTabCategory(tab, clock) === id).length})`,
+                }))}
+                onChange={(value) => {
+                  if (value === 'active' || value === 'snoozed' || value === 'settled')
+                    setTabCategory(value)
+                }}
+              />
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                {recentTabs(state.tabs)
+                  .filter((tab) => browserTabCategory(tab, clock) === tabCategory)
+                  .filter(matches)
+                  .map((tab) => (
                     <View
+                      key={tab.id}
                       style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        paddingLeft: 12,
+                        width: '47%',
+                        borderRadius: 18,
+                        borderWidth: tab.id === active.id ? 2 : 1,
+                        borderColor: tab.id === active.id ? colors.accent : colors.border,
+                        backgroundColor: colors.surface,
+                        overflow: 'hidden',
                       }}
                     >
-                      <Icon
-                        name={tab.pinned ? 'pin' : 'web'}
-                        size={18}
-                        color={tab.pinned ? colors.accent : colors.muted}
-                      />
-                      <IconButton
-                        label={`${tab.pinned ? 'Unpin' : 'Close'} ${tab.title || 'tab'}`}
-                        icon={tab.pinned ? 'unpin' : 'close'}
-                        disabled={busy}
-                        onPress={() =>
-                          tab.pinned
-                            ? change((state) => togglePinnedTab(state, tab.id))
-                            : void act(() => close(tab))
-                        }
-                      />
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          paddingLeft: 12,
+                        }}
+                      >
+                        <Icon
+                          name={tab.pinned ? 'pin' : 'web'}
+                          size={18}
+                          color={tab.pinned ? colors.accent : colors.muted}
+                        />
+                        <IconButton
+                          label={`${tab.pinned ? 'Unpin' : 'Close'} ${tab.title || 'tab'}`}
+                          icon={tab.pinned ? 'unpin' : 'close'}
+                          disabled={busy}
+                          onPress={() =>
+                            tab.pinned
+                              ? change((state) => togglePinnedTab(state, tab.id))
+                              : void act(() => close(tab))
+                          }
+                        />
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open ${tab.title || tab.url || 'New tab'}`}
+                        accessibilityState={{ selected: tab.id === active.id }}
+                        onPress={() => open(tab)}
+                        style={{ minHeight: 116, padding: 12, gap: 8 }}
+                      >
+                        <Text numberOfLines={2} style={styles.text}>
+                          {tab.title || 'New tab'}
+                        </Text>
+                        <Text numberOfLines={2} style={styles.muted}>
+                          {tab.url || 'Search or enter address'}
+                        </Text>
+                        <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
+                          {describe(tab)}
+                        </Text>
+                      </Pressable>
                     </View>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open ${tab.title || tab.url || 'New tab'}`}
-                      accessibilityState={{ selected: tab.id === active.id }}
-                      onPress={() => open(tab)}
-                      style={{ minHeight: 116, padding: 12, gap: 8 }}
-                    >
-                      <Text numberOfLines={2} style={styles.text}>
-                        {tab.title || 'New tab'}
-                      </Text>
-                      <Text numberOfLines={2} style={styles.muted}>
-                        {tab.url || 'Search or enter address'}
-                      </Text>
-                      <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
-                        {describe(tab)}
-                      </Text>
-                    </Pressable>
-                  </View>
-                ))}
-            </View>
+                  ))}
+              </View>
+            </>
           ) : library === 'bookmarks' ? (
             <>
               <Text style={styles.title}>Bookmarks</Text>

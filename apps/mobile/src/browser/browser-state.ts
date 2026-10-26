@@ -5,6 +5,11 @@ import {
   mutableArray,
   previewUrl,
   isPrivateBrowserProfile,
+  browserTabLifecycleFields,
+  wakeBrowserTab,
+  settleBrowserTab,
+  snoozeBrowserTab,
+  browserTabCategory,
 } from '@dovo/protocol'
 
 const short = Schema.String.pipe(Schema.check(Schema.isMaxLength(200)))
@@ -13,6 +18,7 @@ const url = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^(?:https?:\/\/[^\s]+)?$/)),
 )
 const common = {
+  ...browserTabLifecycleFields,
   id: short,
   url,
   title: Schema.String.pipe(Schema.check(Schema.isMaxLength(500))),
@@ -113,7 +119,9 @@ export function togglePinnedTab(state: BrowserState, id: string): BrowserState {
   return {
     ...state,
     tabs: state.tabs.map((tab) =>
-      tab.id === id ? { ...tab, pinned: !tab.pinned, previewOf: undefined } : tab,
+      tab.id === id
+        ? { ...(tab.pinned ? tab : wakeBrowserTab(tab)), pinned: !tab.pinned, previewOf: undefined }
+        : tab,
     ),
   }
 }
@@ -144,24 +152,63 @@ export function recordPage(
         : [next, ...state.history.filter((item) => pageKey(item) !== pageKey(next))].slice(0, 200),
   }
 }
-export function visitTab(state: BrowserState, id: string): BrowserState {
+export function visitTab(state: BrowserState, id: string, now = Date.now()): BrowserState {
   if (!state.tabs.some((tab) => tab.id === id)) return state
   return {
     ...state,
     active: id,
-    tabs: state.tabs,
+    tabs: state.tabs.map((tab) =>
+      tab.id === id
+        ? wakeBrowserTab(tab, now)
+        : tab.id === state.active
+          ? { ...tab, lastActiveAt: now }
+          : tab,
+    ),
   }
 }
 export function addTab(state: BrowserState, tab: BrowserTab): BrowserState {
   if (state.tabs.length >= 100) throw new Error('Close a tab before opening more than 100 tabs.')
   return visitTab({ ...state, tabs: [...state.tabs, tab] }, tab.id)
 }
+export function moveBrowserTab(
+  state: BrowserState,
+  id: string,
+  replacementId: string,
+  until?: number,
+  now = Date.now(),
+): BrowserState {
+  const source = state.tabs.find((tab) => tab.id === id)
+  if (!source) return state
+  const tabs = state.tabs.map((tab) =>
+    tab.id === id ? (until ? snoozeBrowserTab(tab, until, now) : settleBrowserTab(tab, now)) : tab,
+  )
+  const moved = { ...state, tabs }
+  if (state.active !== id) return moved
+  const other = recentTabs(tabs).filter((tab) => tab.id !== id)
+  const next = other.find((tab) => browserTabCategory(tab, now) === 'active') ?? other[0]
+  if (next) return visitTab(moved, next.id, now)
+  const fallback: BrowserTab = {
+    ...wakeBrowserTab(source, now),
+    id: replacementId,
+    url: '',
+    title: '',
+    pinned: false,
+    previewOf: undefined,
+    visitedAt: now,
+    profileId: isPrivateBrowserProfile(source.profileId)
+      ? source.kind === 'local'
+        ? 'device'
+        : 'default'
+      : source.profileId,
+  }
+  return addTab(moved, fallback)
+}
 export function closeTab(state: BrowserState, id: string, replacementId: string): BrowserState {
   const closed = state.tabs.find((tab) => tab.id === id)
   if (!closed || closed.pinned) return state
   const tabs = state.tabs.filter((tab) => tab.id !== id)
   const fallback = initialBrowserState(replacementId).tabs[0]
-  return {
+  const next = {
     ...state,
     tabs: tabs.length ? tabs : [fallback],
     active:
@@ -175,6 +222,7 @@ export function closeTab(state: BrowserState, id: string, replacementId: string)
         ? state.closed
         : [closed, ...state.closed].slice(0, 20),
   }
+  return next.active === state.active ? next : visitTab(next, next.active)
 }
 export function toggleBookmark(state: BrowserState, tab: BrowserTab): BrowserState {
   if (tab.previewOf || isPrivateBrowserProfile(tab.profileId)) return state

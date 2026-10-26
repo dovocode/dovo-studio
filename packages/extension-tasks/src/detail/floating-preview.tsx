@@ -62,7 +62,7 @@ export function FloatingPreview({
   const floating = placement === 'floating'
   return (
     <section
-      aria-label={`${title} preview`}
+      aria-label={hideInlineHeader && placement === 'inline' ? undefined : `${title} preview`}
       data-preview-dragging={dragging ? true : undefined}
       data-preview-overlay={placement !== 'inline' ? true : undefined}
       className={cn(

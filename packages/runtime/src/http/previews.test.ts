@@ -58,3 +58,23 @@ it('authenticates preview controls and requires a task on this runtime before in
     expect.any(Function),
   )
 })
+
+it('authenticates tab activity checks and scopes them to the exact task, tab and profile', async () => {
+  const token = 'browser-activity-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  const activeMedia = vi.spyOn(runtime.services.browsers, 'activeMedia').mockResolvedValue(true)
+  const call = (taskId: string, credential = token) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/previews/browser/activity`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, tabId: 'tab', profileId: 'work' }),
+    })
+  expect((await call('studio:browser', 'bad')).status).toBe(401)
+  expect((await call('missing')).status).toBe(404)
+  expect(activeMedia).not.toHaveBeenCalled()
+  const response = await call('studio:browser')
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ active: true })
+  expect(activeMedia).toHaveBeenCalledWith(JSON.stringify(['studio:browser', 'tab', 'work']))
+})

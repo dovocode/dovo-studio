@@ -1,6 +1,11 @@
-import { decodeResult, isPrivateBrowserProfile } from '@dovo/protocol'
+import {
+  decodeResult,
+  isPrivateBrowserProfile,
+  browserTabLifecycleFields,
+  type BrowserTabLifecycle,
+} from '@dovo/protocol'
 import { Schema } from 'effect'
-export type BrowserTab = {
+export type BrowserTab = BrowserTabLifecycle & {
   id: string
   url: string
   title: string
@@ -14,6 +19,7 @@ export type BrowserTab = {
   previewOf?: string
 }
 const tabSchema = Schema.Struct({
+  ...browserTabLifecycleFields,
   id: Schema.String,
   url: Schema.String,
   title: Schema.String,

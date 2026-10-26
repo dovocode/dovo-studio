@@ -1,7 +1,14 @@
 /** Native labels differ from desktop; index only controls and groups available on these pages. */
 export const mobileSettingsFields: Readonly<Record<string, readonly string[]>> = {
   '/settings/devices': ['Dovo Connect URL', 'Dovo Artifacts URL'],
-  '/settings/general': ['Open on launch', 'Time format', 'Enable experimental Browser'],
+  '/settings/general': [
+    'Open on launch',
+    'Time format',
+    'Enable experimental Browser',
+    'Browser tab cleanup',
+    'Auto-settle unused tabs after (minutes)',
+    'Close settled tabs after (minutes)',
+  ],
   '/settings/appearance': [
     'Status colors',
     'Higher contrast',

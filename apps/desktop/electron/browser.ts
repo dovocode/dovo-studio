@@ -887,6 +887,20 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
     if (command.action === 'media') return media.decide(window.id, command)
     if (command.action === 'media-status')
       return { url: '', back: false, forward: false, ...media.snapshot(window.id) }
+    if (command.action === 'tab-activity') {
+      const snapshot = media.snapshot(window.id)
+      const protectedKeys = [...views.values()]
+        .filter(
+          (entry) =>
+            entry.windowId === window.id &&
+            entry.workspace &&
+            media.keepAlive(entry.view.webContents),
+        )
+        .map((entry) => entry.key)
+      for (const capture of snapshot.captures ?? [])
+        protectedKeys.push(capture.key, capture.sourceKey)
+      return { url: '', back: false, forward: false, protectedKeys }
+    }
     if (command.action === 'stop-capture') return media.stop(window.id, command)
     if (entry?.key !== command.key) {
       // An extension may have closed this very tab; its window still needs to hear about it.

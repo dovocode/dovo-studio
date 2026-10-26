@@ -13,6 +13,7 @@ import {
   mutableArray,
   decodeResult,
   mutableStruct,
+  browserTabCleanupSettingsFields,
 } from '@dovo/protocol'
 
 /** Local preferences for this phone. Never synced to computers. */
@@ -50,6 +51,7 @@ const schema = mutableStruct({
   pullDraft: Schema.Boolean,
   keepScreenOn: Schema.Boolean,
   browserWorkspaceEnabled: Schema.Boolean,
+  ...browserTabCleanupSettingsFields,
   computerRefresh: Schema.Literals(['normal', 'reduced', 'manual']),
   widgetUpdates: Schema.Boolean,
   carMode: Schema.Boolean,
@@ -95,6 +97,8 @@ const defaults: MobilePreferences = {
   pullDraft: false,
   keepScreenOn: false,
   browserWorkspaceEnabled: false,
+  browserAutoSettleMinutes: 0,
+  browserCloseSettledMinutes: 0,
   computerRefresh: 'normal',
   widgetUpdates: true,
   carMode: false,

@@ -48,7 +48,7 @@ export * from '${root}packages/studio-ui/src/choice-picker.tsx';
 import {useSyncExternalStore} from 'react';
 export * from '@dovo/protocol';export {useRemoteBrowserProfiles} from '${root}packages/studio-core/src/browser-profiles.ts';
 export const providers=[];export const useResolvedTheme=()=> 'dark';
-let preferences={browserViewport:'fill',browserProfiles:[{id:'default',name:'Local Default'}]};const listeners=new Set();
+let preferences={browserAutoSettleMinutes:0,browserCloseSettledMinutes:0,browserViewport:'fill',browserProfiles:[{id:'default',name:'Local Default'}]};const listeners=new Set();
 export const useAppPreferences=()=>useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>preferences);
 export const updateAppPreferences=changes=>{preferences={...preferences,...changes};for(const notify of listeners)notify()};
 export const useStudioHost=()=>({browser:async()=>{}});
@@ -86,6 +86,16 @@ try {
       content: readFileSync(root + 'apps/web/dist/client/assets/' + file, 'utf8'),
     })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  for (const label of [
+    'Auto-settle unused tabs after (minutes)',
+    'Close settled tabs after (minutes)',
+  ]) {
+    const timer = page.getByRole('spinbutton', { name: label, exact: true })
+    assert.equal(await timer.inputValue(), '0')
+    await timer.fill('45')
+    assert.equal(await timer.inputValue(), '45')
+    await timer.fill('0')
+  }
   const local = page
     .getByRole('heading', { name: 'Local browser profiles', exact: true })
     .locator('xpath=ancestor::section[1]')
