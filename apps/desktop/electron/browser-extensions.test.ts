@@ -183,7 +183,7 @@ it('installs a managed copy without nativeMessaging, leaving the chosen folder u
     capabilities: {
       unpackedFolders: true,
       nativeMessaging: false,
-      chromeWebStore: false,
+      chromeWebStore: true,
       remoteRuntimes: false,
     },
     extensions: [

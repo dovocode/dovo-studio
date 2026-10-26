@@ -306,6 +306,7 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       cdp?: string
       image?: string
       selection?: string
+      favicon?: string
       /** HTTP(S) new-tab requests from a workspace browser view, drained by `status`. */
       openedLinks?: string[]
       /**
@@ -371,8 +372,13 @@ const browserProfileIdSchema = Schema.String.pipe(
 const browserExtensionIdSchema = Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-p]{32}$/)))
 const browserPixelSchema = (minimum: number) =>
   maxValue(minValue(Schema.Number.pipe(Schema.check(Schema.isInt())), minimum), 10000)
-/** Local shared-browser profiles only; extension code and paths never come from the renderer. */
+/** Local shared-browser profiles only; extension code and filesystem paths never come from the renderer. */
 export const browserExtensionCommandSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literal('installStore'),
+    profileId: browserProfileIdSchema,
+    url: maxValue(minValue(Schema.String, 1), 4096),
+  }),
   mutableStruct({
     action: Schema.Literals(['list', 'install']),
     profileId: browserProfileIdSchema,
@@ -423,10 +429,19 @@ export type BrowserExtensionsResult = {
   capabilities: {
     unpackedFolders: true
     nativeMessaging: false
-    chromeWebStore: false
+    chromeWebStore: boolean
     remoteRuntimes: false
   }
 }
 export type BrowserExtensionBridge = (
   command: BrowserExtensionCommand,
 ) => Promise<BrowserExtensionsResult | undefined>
+
+export const browserContextActionSchema = mutableStruct({
+  key: maxValue(minValue(Schema.String, 1), 500),
+  action: Schema.Literals(['selection', 'page']),
+  text: maxValue(Schema.String, 32000),
+  url: maxValue(Schema.String, 4096),
+  title: maxValue(Schema.String, 500),
+})
+export type BrowserContextAction = Schema.Schema.Type<typeof browserContextActionSchema>

@@ -12,7 +12,19 @@ import { ElectronChromeExtensions } from 'electron-chrome-extensions'
 import crxPreload from 'electron-chrome-extensions/preload?raw'
 import { app, dialog, session, type BaseWindow, type BrowserWindow } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
-import { copyFile, lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { chromeStoreId, downloadStoreExtension, unpackStoreExtension } from './browser-web-store.js'
+import {
+  copyFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
 import { Schema } from 'effect'
 
@@ -49,7 +61,7 @@ const SUPPORTED_PERMISSIONS = new Set([
 const CAPABILITIES = {
   unpackedFolders: true,
   nativeMessaging: false,
-  chromeWebStore: false,
+  chromeWebStore: true,
   remoteRuntimes: false,
 } as const
 /**
@@ -566,15 +578,8 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     })
     return response === 0
   }
-  const install = async (profile: Profile, window: BrowserWindow) => {
+  const installFolder = async (profile: Profile, window: BrowserWindow, source: string) => {
     requireEnabled()
-    const choice = await dialog.showOpenDialog(window, {
-      title: 'Add an unpacked browser extension',
-      buttonLabel: 'Choose folder',
-      properties: ['openDirectory'],
-    })
-    const source = choice.filePaths[0]
-    if (choice.canceled || !source) return
     const manifest = await readManifest(source)
     if (manifest.manifest_version !== 3)
       throw new Error('Dovo supports Manifest V3 extensions only.')
@@ -647,6 +652,33 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     }
   }
 
+  const install = async (profile: Profile, window: BrowserWindow, storeUrl?: string) => {
+    requireEnabled()
+    if (storeUrl === undefined) {
+      const choice = await dialog.showOpenDialog(window, {
+        title: 'Add an unpacked browser extension',
+        buttonLabel: 'Choose folder',
+        properties: ['openDirectory'],
+      })
+      if (choice.canceled || !choice.filePaths[0]) return
+      return installFolder(profile, window, choice.filePaths[0])
+    }
+    const id = chromeStoreId(storeUrl)
+    const source = await mkdtemp(join(tmpdir(), 'dovo-web-store-'))
+    try {
+      const bytes = await downloadStoreExtension(id, process.versions.chrome)
+      requireEnabled()
+      const key = await unpackStoreExtension(bytes, id, source)
+      const manifest = await readManifest(source)
+      // Packed IDs come from the verified developer key, not the temporary extraction path.
+      manifest.key = key
+      await writeFile(join(source, 'manifest.json'), JSON.stringify(manifest, null, 2))
+      return await installFolder(profile, window, source)
+    } finally {
+      await rm(source, { recursive: true, force: true })
+    }
+  }
+
   return {
     /** Load a profile's enabled extensions before its first shared-browser page. */
     prepare: async (profileId: string) => {
@@ -710,7 +742,16 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
       if (!('id' in command))
         return command.action === 'list'
           ? result(profile)
-          : change(profile, async () => result(profile, await install(profile, window)))
+          : change(profile, async () =>
+              result(
+                profile,
+                await install(
+                  profile,
+                  window,
+                  command.action === 'installStore' ? command.url : undefined,
+                ),
+              ),
+            )
       const record = profile.registry.extensions.find((r) => r.id === command.id)
       if (!record) throw new Error('This extension is not installed in this browser profile.')
       if (command.action === 'open') {

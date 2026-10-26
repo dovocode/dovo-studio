@@ -111,6 +111,22 @@ function App(){const[status,setStatus]=useState('running');window.taskStatus=set
     await checklist.evaluate((el) => {
       el.scrollTop = el.scrollHeight
     })
+    if (!mobile) {
+      const frames = await checklist.evaluate(async (el) => {
+        const sizes = []
+        for (let i = 0; i < 60; i++) {
+          await new Promise(requestAnimationFrame)
+          sizes.push([el.clientWidth, el.scrollWidth, el.scrollHeight, el.scrollTop])
+        }
+        return sizes
+      })
+      assert.equal(
+        new Set(frames.map((frame) => JSON.stringify(frame))).size,
+        1,
+        'Animated checklist keeps scrollbar geometry and position stable',
+      )
+      assert.equal(frames[0][0], frames[0][1], 'Checklist has no horizontal overflow')
+    }
     assert.equal(
       await page.getByRole('textbox', { name: 'Message thread' }).inputValue(),
       'Retained draft',

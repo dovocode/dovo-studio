@@ -41,6 +41,7 @@ createRoot(root).render(
           pickDirectory={window.dovo?.pickDirectory}
           browser={window.dovo?.browser}
           browserExtensions={window.dovo?.browserExtensions}
+          onBrowserContextAction={window.dovo?.onBrowserContextAction}
           onOpenLink={window.dovo?.onOpenLink}
           openBrowserLink={window.dovo?.openBrowserLink}
           accountStorage={window.dovo?.accountStorage}

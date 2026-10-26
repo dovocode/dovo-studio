@@ -304,9 +304,12 @@ try {
   await submit('Use a larger model')
   const selectedId = await page.evaluate(() => window.pending.message.id)
   const selectedSettings = { provider: 'codex', model: 'large-model', reasoning: 'high' }
-  await page
-    .getByText('Model and reasoning stay selected for following turns.', { exact: true })
-    .waitFor()
+  assert.equal(
+    await page
+      .getByText('Model and reasoning stay selected for following turns.', { exact: true })
+      .count(),
+    0,
+  )
   assert.deepEqual(
     await page.evaluate(() => window.requests.at(-1).input.turnSettings),
     selectedSettings,

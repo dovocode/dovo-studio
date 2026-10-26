@@ -1,3 +1,4 @@
+import { TaskAgentLineage } from './task-agent-lineage'
 import { taskPullStatusFor } from '@dovo/protocol'
 import { WorkingSubagents } from '../list/working-subagents'
 import { useCallback, useMemo, useRef } from 'react'
@@ -589,6 +590,7 @@ export function TaskProjectPanel({
           taskId={task.id}
         />
       </div>
+      <TaskAgentLineage task={task} />
       <WorkingSubagents
         subagents={subagents}
         online={connected}

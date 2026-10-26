@@ -6,7 +6,7 @@ import { defaultWindowColors, readWindowColors, titleBarOverlay } from './window
 import { offerLink } from './links.js'
 import { registerQuitShortcut } from './quit-shortcut.js'
 
-/** Each browser window hosts the normal Studio shell and its own independent tab workspace. */
+/** Each browser window hosts browser-only controls and its own independent tab workspace. */
 export function registerBrowserWindows(rendererPath: string, preload: string) {
   const windows = new Set<BrowserWindow>()
   ipcMain.handle('browser:new-window', async (event) => {

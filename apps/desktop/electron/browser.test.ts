@@ -2,9 +2,15 @@ import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 const registrations: Array<ReturnType<typeof registerBrowser>> = []
 const mocks = vi.hoisted(() => {
   const contents = {
+    reload: vi.fn<() => void>(),
+    getUserAgent: () =>
+      'Mozilla/5.0 Chrome/148.0.0.0 Safari/537.36 DovoStudio/0.0.9 Electron/45.0.0',
+    setUserAgent: vi.fn<(value: string) => void>(),
     setWindowOpenHandler: vi.fn<(...args: unknown[]) => void>(),
     setIgnoreMenuShortcuts: vi.fn<(ignore: boolean) => void>(),
     session: {
+      fetch: vi.fn<(url: string, options?: unknown) => Promise<Response>>(),
+      setUserAgent: vi.fn<(value: string) => void>(),
       setPermissionRequestHandler: vi.fn<(...args: unknown[]) => void>(),
       setPermissionCheckHandler: vi.fn<(...args: unknown[]) => void>(),
     },
@@ -42,11 +48,16 @@ const mocks = vi.hoisted(() => {
     webContents: {
       on: vi.fn<(event: string, callback: (...args: unknown[]) => void) => void>(),
       isDestroyed: () => false,
+      send: vi.fn<(...args: unknown[]) => void>(),
       focus: vi.fn<() => void>(),
       sendInputEvent: vi.fn<(input: unknown) => void>(),
     },
   }
   return {
+    menu: vi.fn<(items: import('electron').MenuItemConstructorOptions[]) => { popup: () => void }>(
+      () => ({ popup: () => {} }),
+    ),
+    clipboard: vi.fn<(value: string) => void>(),
     view,
     window,
     contents,
@@ -96,6 +107,8 @@ vi.mock('./browser-extensions.js', () => ({
 }))
 vi.mock('./browser-cdp.js', () => ({ createBrowserCdp: mocks.cdpCreate }))
 vi.mock('electron', () => ({
+  Menu: { buildFromTemplate: mocks.menu },
+  clipboard: { writeText: mocks.clipboard },
   BrowserWindow: { fromWebContents: () => mocks.window },
   WebContentsView: class {
     constructor(options: unknown) {
@@ -1250,4 +1263,86 @@ it('serves global media status to a trusted window without a tab and never drain
       { action: 'media-status', key: 'studio-media' },
     ),
   ).rejects.toThrow('Untrusted')
+})
+
+it('routes workspace context menus to the selected page and keeps password text private', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const show = (password = false) =>
+    listener('context-menu')?.(
+      {},
+      {
+        linkURL: 'https://example.com/link',
+        selectionText: 'Exact selected text',
+        formControlType: password ? 'input-password' : 'textarea',
+        isEditable: true,
+      },
+    )
+  show()
+  const items = mocks.menu.mock.calls.at(-1)?.[0] ?? []
+  const click = (label: string) => {
+    const item = items.find((item) => item.label === label)
+    if (!item?.click) throw new Error(`Missing ${label}`)
+    item.click(
+      {} as import('electron').MenuItem,
+      mocks.window as unknown as import('electron').BrowserWindow,
+      {} as import('electron').KeyboardEvent,
+    )
+  }
+  click('Copy')
+  expect(mocks.clipboard).toHaveBeenLastCalledWith('Exact selected text')
+  click('Reload')
+  expect(mocks.contents.reload).toHaveBeenCalledOnce()
+  click('Add selection to thread…')
+  expect(mocks.window.webContents.send).toHaveBeenLastCalledWith('browser:context-action', {
+    key: 'shared',
+    action: 'selection',
+    text: 'Exact selected text',
+    url: 'https://example.com/',
+    title: 'Example',
+  })
+  click('Open link in new tab')
+  await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
+    openedLinks: ['https://example.com/link'],
+  })
+  show(true)
+  const passwordItems = mocks.menu.mock.calls.at(-1)?.[0] ?? []
+  expect(
+    passwordItems.some(
+      (item) => item.label === 'Copy' || item.label === 'Add selection to thread…',
+    ),
+  ).toBe(false)
+  expect(passwordItems.find((item) => item.role === 'cut')?.enabled).toBe(false)
+  await call(event, { action: 'close', key: 'shared' })
+  mocks.menu.mockClear()
+  show()
+  expect(mocks.menu).not.toHaveBeenCalled()
+})
+
+it('captures a bounded website favicon and exposes it in native status', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  mocks.contents.session.fetch.mockResolvedValueOnce(
+    new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }),
+  )
+  listener('page-favicon-updated')?.({}, ['https://example.com/favicon.png'])
+  await vi.waitFor(async () =>
+    expect(await call(event, { action: 'status', key: 'shared' })).toMatchObject({
+      favicon: 'data:image/png;base64,AQID',
+    }),
+  )
+  listener('did-start-navigation')?.({}, 'https://example.com/next', false, true)
+  expect(await call(event, { action: 'status', key: 'shared' })).not.toHaveProperty(
+    'favicon',
+    expect.any(String),
+  )
+  mocks.contents.session.fetch.mockResolvedValueOnce(
+    new Response('not an image', { headers: { 'content-type': 'text/html' } }),
+  )
+  listener('page-favicon-updated')?.({}, ['https://example.com/not-icon'])
+  await vi.waitFor(() => expect(mocks.contents.session.fetch).toHaveBeenCalledTimes(2))
+  expect(await call(event, { action: 'status', key: 'shared' })).not.toHaveProperty(
+    'favicon',
+    expect.any(String),
+  )
 })

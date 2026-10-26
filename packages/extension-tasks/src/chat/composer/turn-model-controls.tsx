@@ -72,11 +72,6 @@ export function TurnModelControls({
         }}
         onConfigure={() => setConfigure(true)}
       />
-      {snapshot?.persistentTurnModelsSupported && (
-        <span className="text-xs text-muted-foreground">
-          Model and reasoning stay selected for following turns.
-        </span>
-      )}
       {value && (
         <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onChange(null)}>
           Use thread defaults

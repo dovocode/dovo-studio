@@ -130,6 +130,16 @@ contextBridge.exposeInMainWorld('dovo', {
       return () => ipcRenderer.removeListener('input-preview:open-thread', handler)
     },
   },
+  onBrowserContextAction: (
+    listener: (action: import('@dovo/protocol').BrowserContextAction) => void,
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      action: import('@dovo/protocol').BrowserContextAction,
+    ) => listener(action)
+    ipcRenderer.on('browser:context-action', handler)
+    return () => ipcRenderer.removeListener('browser:context-action', handler)
+  },
   onOpenLink: (listener: (url: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url)
     ipcRenderer.on('links:open', handler)

@@ -1,7 +1,7 @@
 import { selectedBrowserText } from '@dovo/protocol'
 import { createBrowserCdp } from './browser-cdp.js'
 import { decode } from '@dovo/protocol'
-import { BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
+import { BrowserWindow, WebContentsView, ipcMain, shell, Menu, clipboard } from 'electron'
 import { trustedRendererUrl } from './renderer-trust.js'
 import { createBrowserExtensions, workspacePartition } from './browser-extensions.js'
 import { createBrowserMedia, type MediaTab } from './browser-media.js'
@@ -17,6 +17,7 @@ type Entry = {
   /** Shared Browser activity view; thread-side previews keep denying popups and shortcuts. */
   workspace: boolean
   openedLinks: string[]
+  favicon?: string
   /** Reported once by the next `status`; native POST loads have no other channel to the UI. */
   navigationError?: string
   popups: Set<BrowserWindow>
@@ -295,6 +296,102 @@ export function registerBrowser(indexPath: string, directory?: string) {
       view,
       url: '',
     }
+    // Websites such as Teams reject Electron-branded user agents despite a supported engine.
+    // Only website views use Chromium's UA; Studio and runtime request identities are unchanged.
+    const userAgent = view.webContents
+      .getUserAgent()
+      .replace(/\s+(?:Electron|DovoStudio|Dovo-Studio)\/[^\s]+/g, '')
+    view.webContents.setUserAgent(userAgent)
+    view.webContents.session.setUserAgent(userAgent)
+    view.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => {
+      if (isMainFrame) created.favicon = undefined
+    })
+    view.webContents.on('page-favicon-updated', (_event, icons) => {
+      const page = view.webContents.getURL()
+      const icon = icons.find((icon) => openableUrl(icon))
+      if (!icon) return
+      void (async () => {
+        const response = await view.webContents.session.fetch(icon, {
+          signal: AbortSignal.timeout(5000),
+        })
+        const mime = response.headers.get('content-type')?.split(';')[0]?.trim() ?? ''
+        if (
+          !response.ok ||
+          !/^image\/(?:png|jpeg|gif|webp|x-icon|vnd.microsoft.icon|svg\+xml)$/.test(mime) ||
+          Number(response.headers.get('content-length')) > 64 * 1024
+        ) {
+          await response.body?.cancel()
+          return
+        }
+        const chunks: Buffer[] = []
+        let size = 0
+        if (!response.body) return
+        for await (const chunk of response.body) {
+          size += chunk.length
+          if (size > 64 * 1024) return
+          chunks.push(Buffer.from(chunk))
+        }
+        if (!view.webContents.isDestroyed() && view.webContents.getURL() === page)
+          created.favicon = `data:${mime};base64,${Buffer.concat(chunks).toString('base64')}`
+      })().catch(() => {
+        /* Missing icons use the globe fallback. */
+      })
+    })
+    view.webContents.on('context-menu', (_event, params) => {
+      if (!created.workspace || views.get(viewKey) !== created) return
+      const navigation = view.webContents.navigationHistory
+      const items: Electron.MenuItemConstructorOptions[] = [
+        { label: 'Back', enabled: navigation.canGoBack(), click: () => navigation.goBack() },
+        {
+          label: 'Forward',
+          enabled: navigation.canGoForward(),
+          click: () => navigation.goForward(),
+        },
+        { label: 'Reload', click: () => view.webContents.reload() },
+        { type: 'separator' },
+      ]
+      if (params.linkURL && openableUrl(params.linkURL))
+        items.push(
+          { label: 'Open link in new tab', click: () => queueLink(created, params.linkURL) },
+          { label: 'Copy link address', click: () => clipboard.writeText(params.linkURL) },
+          { type: 'separator' },
+        )
+      const text =
+        params.formControlType === 'input-password' ? '' : params.selectionText.slice(0, 32000)
+      if (text)
+        items.push(
+          { label: 'Copy', click: () => clipboard.writeText(text) },
+          {
+            label: 'Add selection to thread…',
+            click: () =>
+              window.webContents.send('browser:context-action', {
+                key,
+                action: 'selection',
+                text,
+                url: view.webContents.getURL().slice(0, 4096),
+                title: view.webContents.getTitle().slice(0, 500),
+              }),
+          },
+        )
+      if (params.isEditable)
+        items.push({ role: 'cut', enabled: !!text }, { role: 'paste' }, { role: 'selectAll' })
+      items.push(
+        { type: 'separator' },
+        { label: 'Copy page address', click: () => clipboard.writeText(view.webContents.getURL()) },
+        {
+          label: 'Add page to thread…',
+          click: () =>
+            window.webContents.send('browser:context-action', {
+              key,
+              action: 'page',
+              text: '',
+              url: view.webContents.getURL().slice(0, 4096),
+              title: view.webContents.getTitle().slice(0, 500),
+            }),
+        },
+      )
+      Menu.buildFromTemplate(items).popup({ window })
+    })
     view.webContents.setIgnoreMenuShortcuts(workspace)
     view.webContents.setWindowOpenHandler((details) => {
       if (!created.workspace || views.get(viewKey) !== created) return { action: 'deny' }
@@ -642,6 +739,7 @@ export function registerBrowser(indexPath: string, directory?: string) {
       return {
         url: entry.view.webContents.getURL(),
         title: entry.view.webContents.getTitle(),
+        favicon: entry.favicon,
         cdp: entry.cdp,
         back: navigation.canGoBack(),
         forward: navigation.canGoForward(),

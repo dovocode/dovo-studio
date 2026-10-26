@@ -56,7 +56,7 @@ import {createContext,createElement,useContext,useState,useSyncExternalStore} fr
 import {resolveSettingsTarget} from '@dovo/protocol';
 import {Effect} from 'effect';
 export * from '@dovo/protocol';
-export {updateTask} from '${root}packages/studio-core/src/workspace/actions.ts';
+export {updateTask,createTask} from '${root}packages/studio-core/src/workspace/actions.ts';
 export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
 export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';
 export {browserModelCatalogCache} from '${root}packages/studio-core/src/workspace/model-catalog-cache.ts';
@@ -77,7 +77,7 @@ const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapsho
 export const useRuntimeSources=()=>sources;
 const workspace={activeRuntimeId:profile.id,connection:profile.connection,request,connected:true,snapshot,workspace:snapshot.workspace,runtimes:sources,runtimeRegistry:{profiles:[profile,otherProfile]},
 readRuntime:async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path==='/api/workspace'){if(window.conflict)return {outcome:'reconciled',reason:'Draft changed elsewhere',recoveryId:'11223344-1122-4122-8122-112233445566'};otherSnapshot.workspace.tasks[0].draft=body.changes.draft.after;return {outcome:'applied'}};return remoteTicket(body)},
-setWorkspace:update=>{workspace.workspace=typeof update==='function'?update(workspace.workspace):update;window.savedDraft=workspace.workspace.tasks[0].draft},flush:async()=>{},refreshRuntime:async()=>{},};
+setWorkspace:update=>{workspace.workspace=typeof update==='function'?update(workspace.workspace):update;window.savedDraft=workspace.workspace.tasks[0].draft},flush:async()=>{if(window.hangFlush)await new Promise(()=>{});},refreshRuntime:async()=>{},};
 window.fixtureStore=workspace;window.remoteDraft=()=>otherSnapshot.workspace.tasks[0].draft;
 const WorkspaceContext=createContext(null);
 export const useWorkspace=()=>useContext(WorkspaceContext)||workspace;
@@ -90,7 +90,7 @@ export const useSettingsTarget=()=>{
   const [target,setTarget]=useState({environmentId:'',projectId:''});
   return {target,setTarget,sources,...resolveSettingsTarget(sources,target,workspace.activeRuntimeId)};
 };
-export const useStudioHost=()=>({browser,browserWindowId:window.fixtureThreadWindow?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
+export const useStudioHost=()=>({browser,onBrowserContextAction:listener=>{window.contextAction=listener;return ()=>{window.contextAction=null}},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
 const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{}};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
@@ -209,6 +209,8 @@ try {
     'Keep  spaces\nSecond line',
     'Clipboard must contain exact selection without source markup',
   )
+  // A pending workspace sync must not block opening an unsent local draft.
+  await page.evaluate(() => (window.hangFlush = window.testMainDraft = true))
   // Read literal selected text before opening an overlay; retain an existing composer draft.
   await page.getByRole('button', { name: 'Add selection to thread…', exact: true }).click()
   await page.getByRole('button', { name: 'Destination thread', exact: false }).click()
@@ -221,6 +223,39 @@ try {
     throw new Error('Existing draft/source lost')
   if ((await page.evaluate(() => window.calls.filter((call) => call.openThread).length)) !== 1)
     throw new Error('Thread was not opened once')
+  await page.evaluate(() => (window.hangFlush = window.testMainDraft = false))
+  await page.evaluate(() => {
+    window.testMainDraft = true
+    window.contextAction({
+      key: window.calls.find((call) => call.action === 'show').key,
+      action: 'selection',
+      text: 'Context selected text',
+      url: 'https://example.com/source',
+      title: 'Context page',
+    })
+  })
+  // Native context-menu selection follows the same unsent draft flow.
+  await page.getByRole('dialog', { name: 'Add selection to a thread' }).waitFor()
+  await page.getByRole('combobox', { name: 'Project for new draft thread' }).click()
+  await page.getByRole('option').first().click()
+  await page.getByRole('button', { name: 'Create draft thread', exact: true }).click()
+  await page.waitForFunction(() =>
+    window.fixtureStore.workspace.tasks.some((task) => task.title === 'Context page'),
+  )
+  const created = await page.evaluate(() =>
+    window.fixtureStore.workspace.tasks.find((task) => task.title === 'Context page'),
+  )
+  assert.deepEqual(created.messages, [])
+  assert.equal(created.status, 'draft')
+  assert.equal(created.draft.includes('> Context selected text'), true)
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some((call) => /send|start|queue/.test(call.path || '')),
+    ),
+    false,
+    'Selection never sends a prompt',
+  )
+  await page.evaluate(() => (window.testMainDraft = false))
   await page.evaluate(() => (window.fixtureSelection = ''))
   await page.getByRole('button', { name: 'Add selection to thread…', exact: true }).click()
   if (
@@ -366,12 +401,26 @@ try {
     !saved.tabs.some((tab) => tab.runtimeId === 'mac' && tab.profileId === 'remote-work')
   )
     throw new Error('Tab owner/profile not saved')
+  const rowOrder = await recent
+    .locator('button[aria-current], button[title]')
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('title')))
   const local = recent.getByRole('button', { name: /localhost:3000/ }).first()
   await local.click()
-  if (
-    !(await recent.locator('button[aria-current]').first().innerText()).includes('localhost:3000')
+  assert.equal(
+    (await recent.locator('button[aria-current]').innerText()).includes('localhost:3000'),
+    true,
   )
-    throw new Error('Visit did not reorder tabs')
+  assert.equal(
+    (await recent.locator('button[aria-current]').first().innerText()).includes('localhost:3000'),
+    true,
+  )
+  assert.deepEqual(
+    await recent
+      .locator('button[aria-current], button[title]')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('title'))),
+    rowOrder,
+    'Selecting a tab keeps navigation order stable',
+  )
   await page.reload()
   await loadStyles()
   await page.addScriptTag({ content: built.outputFiles[0].text })

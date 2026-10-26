@@ -64,29 +64,31 @@ export function NativeTodos({
           />
         </div>
         {(open || embedded) && (
-          <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto" aria-label="Checklist items">
+          <ul
+            className="mt-2 max-h-48 space-y-1.5 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
+            aria-label="Checklist items"
+          >
             {todos.map((todo, index) => (
-              <li key={todo.id ?? index} className="flex items-start gap-2 text-xs">
+              <li key={todo.id ?? index} className="flex min-w-0 items-start gap-2 text-xs">
                 {todo.status === 'completed' ? (
                   <CheckCircle2
                     className="mt-px size-3.5 shrink-0 text-status-success"
                     aria-hidden
                   />
                 ) : todo.status === 'in-progress' && !summary.unfinished ? (
-                  <LoaderCircle
-                    className="mt-px size-3.5 shrink-0 animate-spin text-primary"
-                    aria-hidden
-                  />
+                  <span className="mt-px size-3.5 shrink-0 overflow-hidden" aria-hidden>
+                    <LoaderCircle className="size-3.5 animate-spin text-primary motion-reduce:animate-none" />
+                  </span>
                 ) : (
                   <Circle className="mt-px size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                 )}
                 <span
                   className={
                     todo.status === 'completed'
-                      ? 'text-muted-foreground line-through'
+                      ? 'min-w-0 break-words text-muted-foreground line-through'
                       : todo.status === 'in-progress'
-                        ? 'font-medium'
-                        : undefined
+                        ? 'min-w-0 break-words font-medium'
+                        : 'min-w-0 break-words'
                   }
                 >
                   {todo.text}
