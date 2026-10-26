@@ -30,6 +30,10 @@ export async function openRemoteMedia(source: Source) {
   const contents = window.webContents
   contents.setWindowOpenHandler(() => ({ action: 'deny' }))
   contents.on('will-navigate', (event) => event.preventDefault())
+  // Offscreen surfaces need a paint subscriber to deliver frames to capture.
+  // getDisplayMedia consumes them natively; no bitmap processing is needed here.
+  contents.on('paint', () => {})
+  contents.startPainting()
   try {
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(remoteBrowserHtml)}`)
     await contents.insertCSS(

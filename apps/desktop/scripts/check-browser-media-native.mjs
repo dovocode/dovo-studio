@@ -373,6 +373,9 @@ app.whenReady().then(async () => {
     assert.deepEqual(await remoteShare, { ok: true, kinds: ['video'] })
     const [remoteCapture] = await captures((list) => list[0]?.state === 'active')
     assert.equal(remoteCapture.sourceKind, 'remote')
+    // The fixture sent its only image before capture attached. A late consumer
+    // must still receive frames from this static, hidden source.
+    await wait(500)
     const remoteFrame = await run('/requester', 'window.videoFrame()', false)
     assert.ok(remoteFrame.vibrant > 1000, 'Remote viewer must produce real video frames: ' + JSON.stringify(remoteFrame))
     await call({ action: 'stop-capture', key: remoteCapture.key, captureId: remoteCapture.id })
@@ -392,6 +395,7 @@ app.whenReady().then(async () => {
     const [threadCapture] = await captures(list=>list[0]?.state==='active')
     assert.equal(threadCapture.sourceKind,'thread')
     stage('thread-frame')
+    await wait(500)
     const threadFrame = await run('/requester','window.videoFrame()',false)
     assert.ok(threadFrame.vibrant>1000,'Shared thread must render real frames: '+JSON.stringify(threadFrame))
     await call({action:'stop-capture',key:threadCapture.key,captureId:threadCapture.id})

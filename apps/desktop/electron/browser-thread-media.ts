@@ -23,6 +23,10 @@ export async function openThreadMedia(
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => event.preventDefault())
+  // Offscreen surfaces need a paint subscriber to deliver frames to capture.
+  // getDisplayMedia consumes them natively; no bitmap processing is needed here.
+  window.webContents.on('paint', () => {})
+  window.webContents.startPainting()
   try {
     const hash = 'thread-share=' + encodeURIComponent(JSON.stringify(target))
     if (process.env.VITE_DEV_SERVER_URL) {
