@@ -54,7 +54,7 @@ const built = await build({
 import {createContext,createElement,useContext,useState} from 'react';
 import {resolveSettingsTarget} from '@dovo/protocol';
 export * from '@dovo/protocol';
-export {updateTask} from '${root}packages/studio-core/src/workspace/actions.ts';
+export {updateTask,createTask} from '${root}packages/studio-core/src/workspace/actions.ts';
 export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
 export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';
 export {browserModelCatalogCache} from '${root}packages/studio-core/src/workspace/model-catalog-cache.ts';
