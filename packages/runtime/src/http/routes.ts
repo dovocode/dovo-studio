@@ -23,7 +23,12 @@ import { taskWaitingRequestSchema } from '@dovo/protocol'
 import { McpError } from '@modelcontextprotocol/sdk/types.js'
 import { taskWaiting } from './endpoints/task-waiting.js'
 import { reviewRoute } from './endpoints/review-routes.js'
-import { shareTaskFile, openTaskFile, readTaskVisualization } from './endpoints/task-files.js'
+import {
+  shareTaskFile,
+  openTaskFile,
+  taskFileLocation,
+  readTaskVisualization,
+} from './endpoints/task-files.js'
 import { readTaskImage } from './endpoints/task-images.js'
 import { deviceHostRoute } from './endpoints/device-host-routes.js'
 import { memoryRoute } from './endpoints/memory-routes.js'
@@ -982,6 +987,8 @@ export function route(
           revision: s.store.version(),
         })
       }
+      if (method === 'POST' && path === '/api/tasks/files/location')
+        return yield* serviceResult(taskFileLocation(s, yield* serviceResult(body(request, 8192))))
       if (method === 'POST' && path === '/api/tasks/files/open')
         return yield* serviceResult(openTaskFile(s, yield* serviceResult(body(request, 8192))))
       if (method === 'POST' && path === '/api/tasks/files/share')

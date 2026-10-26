@@ -1259,3 +1259,12 @@ subscriptions are combined across windows; closing or reloading one window relea
 subscriptions. A popout stays on its thread’s runtime when the main window switches computers. The
 connection closes when its last window subscription ends. HTTP LAN and VPN connections remain
 supported, with the same pairing codes and device tokens.
+
+### Retry a failed agent turn
+
+Failed turns, including provider rate limits (429) and exhausted connection retries, offer **Retry**
+in desktop and mobile conversations. This explicitly continues the existing context and keeps
+current files and unsent drafts. Queued messages remain paused; retry does not undo changes or
+automatically resubmit other prompts. Offline and already-running tasks cannot be retried. **Try
+again** in a turn’s menu remains the separate operation that reruns a request from scratch and
+undoes that turn’s edits.

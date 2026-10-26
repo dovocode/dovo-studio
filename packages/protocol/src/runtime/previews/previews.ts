@@ -418,7 +418,7 @@ export type BrowserExtension = {
   popup: boolean
   /** Requested permissions Dovo does not provide; related features may fail. */
   unsupportedPermissions: string[]
-  /** Permissions removed from Dovo's managed copy, such as `nativeMessaging`. */
+  /** Permissions removed from a managed copy by an older Dovo release. Reinstall to review access. */
   removedPermissions: string[]
   error?: string
 }
@@ -428,7 +428,7 @@ export type BrowserExtensionsResult = {
   installed?: string
   capabilities: {
     unpackedFolders: true
-    nativeMessaging: false
+    nativeMessaging: boolean
     chromeWebStore: boolean
     remoteRuntimes: false
   }

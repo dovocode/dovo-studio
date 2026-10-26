@@ -1,0 +1,21 @@
+import { useAppPreferences, useRemoteBrowserProfiles, useWorkspace } from '@dovo/studio-core'
+import type { BrowserTab } from './shared-browser-tabs'
+
+/** Resolve each tab against its own computer, including tabs on inactive runtimes. */
+export function BrowserProfileLabel({ tab }: { tab: BrowserTab }) {
+  const { runtimes } = useWorkspace()
+  const preferences = useAppPreferences()
+  const owner = runtimes.find((runtime) => runtime.profile.id === tab.runtimeId)
+  const remote = useRemoteBrowserProfiles(owner?.profile, tab.kind === 'remote' && !!owner)
+  const profiles = tab.kind === 'web' ? preferences.browserProfiles : remote.profiles
+  return (
+    <>
+      {profiles?.find((profile) => profile.id === tab.profileId)?.name ??
+        (tab.profileId === 'default'
+          ? 'Default'
+          : remote.loading && tab.kind === 'remote'
+            ? 'Loading profile…'
+            : 'Unavailable profile')}
+    </>
+  )
+}

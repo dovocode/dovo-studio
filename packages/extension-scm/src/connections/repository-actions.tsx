@@ -1,3 +1,4 @@
+import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { CreateGithub } from './create-github'
 import { useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -12,6 +13,7 @@ import {
 } from '@dovo/studio-core'
 import { Button, Input, DropdownMenu, RepositoryOpenItems } from '@dovo/studio-ui'
 export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?: string }) {
+  const openRepository = useRepositoryOpen()
   const host = useStudioHost()
   const { request, connected } = useWorkspace(),
     [checkout, setCheckout] = useApplicationState(''),
@@ -60,8 +62,8 @@ export function RepositoryActions({ repo, taskId }: { repo: Repository; taskId?:
                 disabled={busy}
                 onSelect={(target) =>
                   act(async () => {
-                    await request('/api/scm/open-folder', { ...input, target }, responses.ok)
-                    setStatus('Opened on the runtime computer.')
+                    await openRepository(input, target)
+                    setStatus('Opened on your computer.')
                   })
                 }
               />

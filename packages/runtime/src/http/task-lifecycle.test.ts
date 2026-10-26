@@ -273,3 +273,19 @@ it('pages all authenticated history with stable cursors while preserving legacy 
   )
   expect(legacy.workspace.tasks[0]?.messages).toHaveLength(80)
 })
+
+it('settles and reopens an individual custom child branch without settling its parent or siblings', async () => {
+  const { store } = await setup()
+  addChildren(store)
+  for (const archived of [true, false]) {
+    store.patch({
+      collection: 'tasks',
+      id: 'child',
+      changes: { archived: { before: archived ? null : true, after: archived } },
+    })
+    expect(store.task('child').archived).toBe(archived)
+    expect(store.task('nested').archived).toBe(archived)
+    expect(store.task('thread').archived).toBeUndefined()
+    expect(store.task('other').archived).toBeUndefined()
+  }
+})

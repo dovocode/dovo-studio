@@ -1,3 +1,4 @@
+import { FailedTaskRetry } from './components/failed-task-retry'
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { TaskEmptyState } from '../creation/task-empty-state'
 import { WatchMessageCard } from './components/watch-message'
@@ -736,7 +737,7 @@ export function Conversation({
           >
             {!car && <TaskActivity task={task} events={legacyEvents} error={activityError} />}
             <TaskApprovals taskId={task.id} />
-            {!!task.error && <Text style={styles.error}>{task.error}</Text>}
+            {(task.error || task.status === 'failed') && <FailedTaskRetry task={task} />}
             {/* The inverted list's header follows the latest message. Expanded task panels
                 share its scroll space, leaving the composer outside the scroll view. */}
             {children && <View style={{ marginHorizontal: -20, gap: 6 }}>{children}</View>}

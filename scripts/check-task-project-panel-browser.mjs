@@ -77,7 +77,7 @@ const built = await build({
     import {TaskTools} from '../extension-tasks/src/detail/task-tools';
     import {TaskLinkedPullPanel} from '../extension-tasks/src/detail/task-linked-pull-panel';
     import {TaskWaitingPanel} from '../extension-tasks/src/detail/task-waiting-panel';
-    window.preferences={confirmDelete:true,confirmUnpin:false};window.calls=[];window.host={appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
+    window.preferences={confirmDelete:true,confirmUnpin:false};window.calls=[];window.clientOpens=[];window.host={repositoryOpener:{open:async input=>window.clientOpens.push(input)},appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
     const repo={id:'repo',name:'Project',path:'/project',branch:'main'};
     const root=createRoot(document.getElementById('app'));
     let initial={id:'thread',title:'Fix reconnection',repositoryId:'repo',agentId:'',status:'done',createdAt:'2026-10-14',messages:[],files:[{path:'connection.ts',before:'old connection\\nremove timeout\\n',after:'new connection\\nrestore session\\nhandle network switch\\n'}],draft:'',example:false,execution:'worktree',checkoutBranch:'fix/reconnection',turns:[],linkedPullRequests:[{number:7,url:'https://github.com/test/project/pull/7',repositoryUrl:'https://github.com/test/project',title:'Fix iOS reconnection across Wi-Fi switches'},{number:9,url:'https://github.com/test/project/pull/9',repositoryUrl:'https://github.com/test/project',title:'Preserve the runtime session'}],pullStatus:{number:7,url:'https://github.com/test/project/pull/7',state:'open',checks:'passed',checkedAt:''}};
@@ -90,6 +90,7 @@ const built = await build({
       window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));
       const request=async(path,input)=>{
         window.calls.push({path,input});
+        if(path==='/api/scm/open-location')return {path:'/remote/worktree',runtimeId:'remote',sshAddress:'ssh://dominic@runtime',kind:'folder'};
         if(path==='/api/artifacts/list')return {artifacts:window.savedArtifacts??[],links:[]};
         if(path==='/api/scm/action-state')return {dirty:true,ahead:0,behind:0,tracking:true,canPush:true};
         if(path==='/api/tasks/waiting')return {dependencies:window.stopped?[]:[{kind:'pipeline',repositoryId:'repo',target:'8',label:'Pipeline run 8',project:'Project',url:'https://github.com/test/project/actions/runs/8',status:'in_progress',checkedAt:''}],related:[{label:'PR #7',project:'Project',url:'https://github.com/test/project/pull/7'}]};
@@ -326,7 +327,7 @@ try {
         .count(),
       1,
     )
-    await page.getByRole('heading', { name: 'Watching', exact: true }).waitFor()
+    await page.getByRole('button', { name: /Watching/ }).waitFor()
     for (const [state, draft, tone] of [
       ['open', false, 'text-status-success'],
       ['merged', false, 'text-status-done'],
@@ -348,6 +349,7 @@ try {
       )
     }
     await page.evaluate(() => window.setPullState('open'))
+    await page.getByRole('button', { name: /Watching/ }).click()
     await page.getByRole('link', { name: 'Project · PR #7', exact: true }).click()
     assert.equal(await page.evaluate(() => window.opened), 'https://github.com/test/project/pull/7')
     await page.getByRole('button', { name: /Open in…/ }).click()
@@ -355,9 +357,14 @@ try {
     await page.getByRole('button', { name: 'Open in Zed', exact: true }).waitFor()
     assert.equal(
       await page.evaluate(
-        () => window.calls.find((call) => call.path === '/api/scm/open-folder').input.taskId,
+        () => window.calls.find((call) => call.path === '/api/scm/open-location').input.taskId,
       ),
       'thread',
+    )
+    assert.equal(await page.evaluate(() => window.clientOpens.at(-1).target), 'zed')
+    assert.equal(
+      await page.evaluate(() => window.calls.some((call) => call.path === '/api/scm/open-folder')),
+      false,
     )
     if (stylesheet) {
       await page.mouse.move(0, 0)
@@ -394,7 +401,11 @@ try {
     const editorBox = await page
       .getByRole('button', { name: 'Open in Zed', exact: true })
       .boundingBox()
-    assert.ok(linkedBox && editorBox && linkedBox.y < editorBox.y)
+    assert.ok(linkedBox && editorBox && linkedBox.y > editorBox.y)
+    assert.equal(
+      await linkedRow.locator('xpath=ancestor::section[@aria-label="Pull requests"]').count(),
+      1,
+    )
     assert.equal(await page.getByRole('button', { name: 'Show 1 more', exact: true }).count(), 0)
     await linkedRow
       .getByRole('button', { name: 'Open PR #9: Preserve the runtime session', exact: true })

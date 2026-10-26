@@ -12,6 +12,12 @@
       "development": "./src/index.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./desktop-openers": {
+      "types": "./src/desktop-openers.ts",
+      "development": "./src/desktop-openers.ts",
+      "import": "./dist/desktop-openers.js",
+      "default": "./dist/desktop-openers.js"
     }
   },
   "scripts": {

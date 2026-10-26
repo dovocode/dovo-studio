@@ -8,7 +8,9 @@ import {
   threadDescendants,
   unlistedThreadBranches,
   visibleThreadChildren,
+  workspacePatchResultSchema,
 } from '@dovo/protocol'
+import { taskRowPatch } from '../list/task-row-actions'
 import { NestedThreads } from '../list/nested-threads'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo } from 'react'
@@ -37,6 +39,22 @@ export function TaskAgents({
   const { hideFinishedSubagents } = useAppPreferences()
   const [stopping, setStopping] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
+  const completeChild = async (child: Task) => {
+    setStopping(true)
+    setError('')
+    try {
+      await request(
+        '/api/workspace',
+        taskRowPatch(child, { archived: !child.archived, snoozedUntil: null }),
+        workspacePatchResultSchema,
+        'PATCH',
+      )
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setStopping(false)
+    }
+  }
   const stopAgents = async (target = task, stopTurn = false, childId?: string) => {
     setStopping(true)
     setError('')
@@ -280,6 +298,22 @@ export function TaskAgents({
                     onClick={() => host.navigate({ viewId: 'tasks', entityId: childId })}
                   >
                     Open child thread · {agent.provider}
+                  </Button>
+                )}
+                {child && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      !connected ||
+                      stopping ||
+                      !!child.activeRunId ||
+                      child.status === 'running' ||
+                      indexed(child, true).length > 0
+                    }
+                    onClick={() => void completeChild(child)}
+                  >
+                    {child.archived ? 'Reopen child' : 'Mark completed'}
                   </Button>
                 )}
                 {agent.source !== 'dovo' && owner && (

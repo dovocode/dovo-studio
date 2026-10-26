@@ -233,6 +233,9 @@ try {
         window.panel = true
         window.render()
       })
+      const watching = page.getByRole('button', { name: /Watching/ })
+      assert.equal(await watching.getAttribute('aria-expanded'), 'false')
+      await watching.click()
     }
     assert.equal(await page.getByRole('link', { name: /Pipeline run 9/ }).count(), 0)
     await page

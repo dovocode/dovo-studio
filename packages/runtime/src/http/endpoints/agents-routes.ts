@@ -1150,14 +1150,15 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         return yield* serviceResult(s.tasks.removeFeedback(input.id, input.messageId))
       }
-      if (method === 'POST' && path === '/api/tasks/run') {
+      if (method === 'POST' && (path === '/api/tasks/run' || path === '/api/tasks/retry-failed')) {
+        const retryFailed = path === '/api/tasks/retry-failed'
         const { id } = decode(
           mutableStruct({
             id: idSchema,
           }),
           yield* serviceResult(body(request)),
         )
-        yield* s.tasks.startEffect(id)
+        yield* s.tasks.startEffect(id, false, undefined, undefined, retryFailed)
         return yield* serviceResult({
           ok: true,
         })

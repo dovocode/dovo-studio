@@ -53,14 +53,20 @@ paired-runtime browsers. Turning Browser workspace off unloads extensions, stops
 closes the affected native pages.
 
 This uses Electron with `electron-chrome-extensions` 4.10.0; supported APIs are a subset of Chrome.
-`nativeMessaging` is removed and blocked. Store packages are downloaded over official Google HTTPS
-endpoints; the CRX3 developer signature and requested extension ID are verified before bounded ZIP
-extraction and permission review. Store extensions update manually by installing the same link
-again. No 1Password compatibility, desktop password-manager integration or general Chrome extension
-compatibility is claimed. Unsupported APIs/permissions and load errors are reported by the extension
-manager. Extension-created tabs retain their native identity and profile, and native close events
-remove them from the tab list. Extension URL pages are session-only and are not restored from saved
-tabs.
+`nativeMessaging` connects to installed Chrome native helpers after explicit per-profile approval.
+Host registrations must allow the extension’s origin; helpers use bounded Chrome stdio framing.
+Turning Browser off or unloading the extension closes its helper connections. Store packages are
+downloaded over official Google HTTPS endpoints; the CRX3 developer signature and requested
+extension ID are verified before bounded ZIP extraction and permission review. Store extensions
+update manually by installing the same link again. Older copies with removed `nativeMessaging` must
+be reinstalled and reviewed to gain it. On macOS, 1Password also requires the signed Dovo Studio app
+in **1Password Settings → Browser → Add Browser**
+([1Password instructions](https://support.1password.com/additional-browsers/)). Dovo never
+impersonates Chrome or bypasses that approval. Native transport is tested, but a real 1Password
+desktop pairing has not been verified; general Chrome extension parity is not claimed. Unsupported
+APIs/permissions and load errors are reported by the extension manager. Extension-created tabs
+retain their native identity and profile, and native close events remove them from the tab list.
+Extension URL pages are session-only and are not restored from saved tabs.
 
 ## Website and call tab capture
 
@@ -139,11 +145,19 @@ desktop testing. Opened-link coverage injects the native status queue rather tha
 The separate production Electron fixture,
 `node apps/desktop/scripts/check-browser-extensions-native.mjs`, passed both process runs. It
 verifies a small MV3 fixture’s content script, popup messaging, tabs/windows/storage/action APIs,
-permission review and requests, blocked native messaging, profile/preview isolation, feature-off
+permission review and requests, approved native messaging, profile/preview isolation, feature-off
 worker shutdown, restart persistence and removal. Its folder picker and confirmation dialogs are
 scripted. `node scripts/check-browser-extensions-browser.mjs` also passed the extension-manager UI
 checks. These results prove the fixture flows, not arbitrary third-party extensions or password
 managers.
+
+The same production fixture also passed both fresh-process runs on the Mac Studio using Electron
+45.0.0 (darwin-arm64). It exercised a registered native helper through the actual extension API,
+including UTF-8 framing and approval. Results and logs are retained under
+`/tmp/dovo-desktop-native-review` on that Mac. The installed Studio app and its profiles were
+untouched. Actual 1Password pairing remains unverified: older installations need reinstalling to
+review native messaging access, and 1Password must trust the signed Studio app through **Settings →
+Browser → Add Browser**.
 
 ## Mobile
 
@@ -219,3 +233,13 @@ draft. Password selections are excluded from copying to threads.
 
 Website requests use a standard Chromium user agent. Real Electron verification reached Teams'
 Microsoft sign-in page; authenticated Teams calls and enterprise-account policies remain unverified.
+
+### Client editors
+
+“Open in” detects applications on the desktop client. The authenticated runtime only resolves the
+checkout/file path; it does not launch an editor. Matching local runtime identities open local
+paths. Other runtimes use their configured SSH address with Zed or VS Code, VS Code Insiders,
+VSCodium, Cursor, Windsurf, Antigravity, or Devin Desktop. The chosen editor must have its SSH
+support installed and the client must have SSH access. Missing SSH settings, unsupported remote
+targets and missing client applications produce explicit errors. Browser-only clients explain that
+the desktop app is required; they never silently launch an application on the server.

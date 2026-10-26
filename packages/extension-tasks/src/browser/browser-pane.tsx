@@ -1,4 +1,5 @@
 import { BrowserFavicon } from './browser-favicon'
+import { BrowserProfileLabel } from './browser-profile-label'
 import { BrowserExtensions } from './browser-extensions'
 import { BrowserLibrary } from './browser-library'
 import {
@@ -237,6 +238,11 @@ function BrowserContent({
   const browserKey = nativeKey(activeTab)
   const openedLink = useRef('')
   const controlsId = useId()
+  const [frozenPage, setFrozenPage] = useApplicationState<{
+    key: string
+    url: string
+    image: string
+  } | null>(null)
   const remote = useRef<RemoteBrowserControls>(null)
   const [remoteOnline, setRemoteOnline] = useApplicationState(false)
   const [streamDetails, setStreamDetails] = useApplicationState('')
@@ -653,6 +659,7 @@ function BrowserContent({
     let alive = true
     let frame: number | undefined
     let previousCommand = ''
+    let revision = 0
     const update = () => {
       frame = undefined
       if (!alive) return
@@ -713,7 +720,25 @@ function BrowserContent({
       const signature = JSON.stringify(command)
       if (signature === previousCommand) return
       previousCommand = signature
-      void browser(command).catch((e) => {
+      const attempt = ++revision
+      void (async () => {
+        if (command.action === 'hide' && obscured && rect?.width && rect.height) {
+          // Keep the website visible behind DOM menus while its native view is hidden.
+          try {
+            const captured = await browser({ action: 'screenshot', key: browserKey })
+            if (!alive || revision !== attempt) return
+            if (captured?.image) {
+              setFrozenPage({ key: browserKey, url, image: captured.image })
+              await new Promise<void>((done) => requestAnimationFrame(() => done()))
+            }
+          } catch {
+            /* A page still loading may not have a frame yet. The menu must still open. */
+          }
+        }
+        if (!alive || revision !== attempt) return
+        await browser(command)
+        if (alive && revision === attempt && command.action === 'show') setFrozenPage(null)
+      })().catch((e) => {
         if (previousCommand === signature) previousCommand = ''
         if (alive) setError(String(e))
       })
@@ -1323,7 +1348,7 @@ function BrowserContent({
                   const profile = (tab.kind === 'web' ? profiles : tabProfiles).find(
                     (profile) => profile.id === tab.profileId,
                   )
-                  return `${name} · ${profile?.name ?? (tab.profileId === 'default' ? 'Default' : tab.profileId)}`
+                  return `${name} · ${profile?.name ?? (tab.profileId === 'default' ? 'Default' : 'Unavailable profile')}`
                 }}
                 onOpen={openSavedPage}
                 onReopen={reopenTab}
@@ -1358,7 +1383,7 @@ function BrowserContent({
                       {tab.kind === 'web'
                         ? 'Local'
                         : `Remote · ${runtimes.find((entry) => entry.profile.id === tab.runtimeId)?.profile.name ?? 'Unavailable computer'}`}{' '}
-                      · {tab.profileId}
+                      · <BrowserProfileLabel tab={tab} />
                     </span>
                   </button>
                   <IconButton
@@ -1585,6 +1610,11 @@ function BrowserContent({
               profileId={profileId}
               tabKey={browserKey}
               hasPage={!!url}
+              profileName={
+                profiles.find((profile) => profile.id === profileId)?.name ?? 'Unavailable profile'
+              }
+              pageUrl={history.url || url}
+              onBrowseStore={() => newTab('https://chromewebstore.google.com/', 'web', profileId)}
             />
           )}
           {newTabMenu}
@@ -1735,7 +1765,7 @@ function BrowserContent({
               )}
               <div
                 ref={slot}
-                className="mx-auto overflow-hidden bg-background"
+                className="relative mx-auto overflow-hidden bg-background"
                 style={
                   !browser && size.width
                     ? {
@@ -1749,6 +1779,14 @@ function BrowserContent({
                       }
                 }
               >
+                {browser && frozenPage?.key === browserKey && frozenPage.url === url && (
+                  <img
+                    aria-hidden
+                    alt=""
+                    src={frozenPage.image}
+                    className="pointer-events-none absolute inset-0 size-full object-fill"
+                  />
+                )}
                 {!browser && (
                   <iframe
                     key={reload}

@@ -97,3 +97,31 @@ it('authenticates installed-app discovery and returns a fresh runtime result wit
   expect(failure.status).toBe(500)
   expect(await failure.json()).toEqual({ error: 'Detection unavailable' })
 })
+
+it('resolves an authenticated remote checkout without launching an application', async () => {
+  const project = await fixture()
+  cleanups.push(project.cleanup)
+  const token = randomBytes(32).toString('base64url')
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  runtime.services.store.update(() => project.workspace)
+  runtime.services.preferences.save({ sshAddress: 'ssh://dominic@buildbox:2222' })
+  const launch = vi.spyOn(runtime.services.git, 'openFolder')
+  const request = (credential: string, repositoryId = 'repo') =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/scm/open-location`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repositoryId }),
+    })
+  expect((await request('invalid')).status).toBe(401)
+  expect((await request(token, 'missing')).status).toBe(404)
+  const result = await request(token)
+  expect(result.status).toBe(200)
+  expect(await result.json()).toEqual({
+    path: project.directory,
+    runtimeId: runtime.services.runtimeId,
+    sshAddress: 'ssh://dominic@buildbox:2222',
+    kind: 'folder',
+  })
+  expect(launch).not.toHaveBeenCalled()
+})

@@ -269,3 +269,25 @@ it('loads HTML visualizations from their runtime with task-scoped authorization 
   await writeFile(binary, '<html>\0</html>')
   expect((await read(binary)).status).toBe(415)
 })
+
+it('resolves authorized files for client editors without launching a remote application', async () => {
+  const { runtime, directory, origin } = await setup()
+  await writeFile(join(directory, 'README'), 'file without extension')
+  const launch = vi.spyOn(runtime.services.git, 'openFile')
+  const location = (path: string, credential = token) =>
+    fetch(origin + '/api/tasks/files/location', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: 'task', path }),
+    })
+  expect((await location('README', 'wrong')).status).toBe(401)
+  expect((await location('/etc/hosts')).status).toBe(403)
+  const response = await location('README')
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({
+    path: join(directory, 'README'),
+    runtimeId: runtime.services.runtimeId,
+    kind: 'file',
+  })
+  expect(launch).not.toHaveBeenCalled()
+})

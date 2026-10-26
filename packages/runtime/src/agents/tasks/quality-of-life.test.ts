@@ -717,3 +717,64 @@ it('browses working and linked folders, previews images without Git, and enforce
       .contents,
   ).toBe('worktree contents')
 })
+
+it.each([false, true])(
+  'retries a provider failure without undoing files or consuming queued prompts (paused=%s)',
+  async (paused) => {
+    const { s, call } = await setup()
+    let attempts = 0
+    const prompts: string[] = []
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: async () => ({ provider: 'codex', available: true, detail: '' }),
+      run: async (run) => {
+        attempts++
+        prompts.push(run.prompt)
+        if (attempts === 1) {
+          await writeFile(join(run.cwd, 'hello.txt'), 'partial work\n')
+          throw new Error('Exceeded retry limit, last status: 429 Too Many Requests')
+        }
+        expect(await readFile(join(run.cwd, 'hello.txt'), 'utf8')).toBe('partial work\n')
+      },
+    })
+    const task = s.tasks.create({
+      title: 'Retry failure',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      objective: 'Original failed request',
+    })
+    const first = await s.tasks.start(task.id)
+    await first.done.catch(() => {})
+    expect(s.store.task(task.id).status).toBe('failed')
+    s.store.updateTask(task.id, (current) => ({
+      ...current,
+      queue: [
+        {
+          id: 'later',
+          role: 'user',
+          text: 'Unrelated queued request',
+          createdAt: '2026-10-26T00:00:00Z',
+          paused,
+        },
+      ],
+    }))
+    expect((await call('/api/tasks/retry-failed', { id: task.id })).status).toBe(200)
+    await vi.waitFor(() => expect(s.store.task(task.id).status).not.toBe('running'), {
+      timeout: 10000,
+    })
+    expect(attempts).toBe(2)
+    expect(prompts[1]).toContain('Original failed request')
+    expect(prompts[1]).not.toContain('Unrelated queued request')
+    expect(s.store.task(task.id).queue).toEqual([
+      {
+        id: 'later',
+        role: 'user',
+        text: 'Unrelated queued request',
+        createdAt: '2026-10-26T00:00:00Z',
+        paused,
+      },
+    ])
+    expect(s.store.task(task.id).queuePaused).toBe(true)
+    expect((await call('/api/tasks/retry-failed', { id: task.id })).status).toBe(409)
+    expect(attempts).toBe(2)
+  },
+)

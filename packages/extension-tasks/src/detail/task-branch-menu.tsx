@@ -1,3 +1,4 @@
+import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
 import { useEffect } from 'react'
@@ -19,7 +20,7 @@ const item =
   'flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[disabled]:opacity-50 data-[highlighted]:bg-accent/55 motion-reduce:transition-none'
 
 /** The header's branch label, with quick actions: copy the branch name, or open the task's
- * checkout in an installed editor or file manager on the computer that runs it. */
+ * checkout in an installed editor or file manager on the desktop client, using SSH for remote checkouts. */
 export function TaskBranchMenu({
   task,
   label,
@@ -81,12 +82,9 @@ export function TaskBranchMenu({
   const branch = task.checkoutBranch
   // Only a started task has a checkout; opening one earlier would create it as a side effect.
   const canOpen = connected && !!branch
+  const openRepository = useRepositoryOpen()
   const open = (target: RepositoryOpenTarget, name: string) =>
-    void request(
-      '/api/scm/open-folder',
-      { repositoryId: task.repositoryId, taskId: task.id, target },
-      responses.ok,
-    ).then(
+    void openRepository({ repositoryId: task.repositoryId, taskId: task.id }, target).then(
       () => setNotice(`Opened in ${name}`),
       (error: unknown) => setNotice(error instanceof Error ? error.message : String(error)),
     )

@@ -100,6 +100,7 @@ export interface StudioHostApi {
     origin?: { runtimeId?: string; repositoryId?: string },
   ) => boolean
   openExternalLink?: (url: string) => Promise<void>
+  repositoryOpener?: import('@dovo/protocol').RepositoryOpenerBridge
   pickDirectory?: (runtimeAddress: string) => Promise<string | null>
   openThread?: (target: StudioThreadReference & { parent?: StudioThreadReference }) => void
   goBack?: () => boolean

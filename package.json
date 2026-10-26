@@ -173,7 +173,9 @@
     "benchmark:syntax": "node scripts/benchmark-syntax.mjs",
     "benchmark:chat-highlighting": "node scripts/benchmark-chat-highlighting.mjs",
     "benchmark:thread-hotpaths": "node scripts/benchmark-thread-hotpaths.mjs",
-    "test:pierre-code:browser": "node scripts/check-pierre-code-browser.mjs"
+    "test:pierre-code:browser": "node scripts/check-pierre-code-browser.mjs",
+    "test:client-openers:browser": "node scripts/check-client-openers-browser.mjs",
+    "test:failed-retry:browser": "node scripts/check-failed-retry-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

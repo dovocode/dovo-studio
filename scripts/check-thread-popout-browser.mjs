@@ -12,7 +12,7 @@ import {createRoot} from 'react-dom/client';
 import {StrictMode} from 'react';
 import {decode,runtimeProfile,snapshotSchema} from '@dovo/protocol';
 import {Workbench} from './packages/studio-shell/src/workbench.tsx';
-import {useWorkspace,useStudioHost,defineStudioExtension} from '@dovo/studio-core';
+import {useWorkspace,useStudioHost,defineStudioExtension,updateAppPreferences} from '@dovo/studio-core';
 import {TaskContextMenu} from './packages/extension-tasks/src/detail/task-context-menu.tsx';
 import {mergeRuntimeRegistry} from './packages/studio-core/src/workspace/runtime-registry.ts';
 const profiles=[0,1].map(i=>runtimeProfile({address:'http://host'+i+'.lan:8787',token:'device-token-at-least-32-characters-'+i},'Computer '+i));
@@ -36,6 +36,7 @@ window.fetch=async(url,init={})=>{
  throw new Error('Unexpected request '+url);
 };
 function Thread({entityId,threadParent}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><span>{threadParent&&<button aria-label={"Open parent thread "+threadParent.title} onClick={()=>host.openThread(threadParent)}>{threadParent.title}</button>}</span><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskContextMenu dropdown task={task} owner={{runtimeId:value.activeRuntimeId,name:'Owner',online:value.connected,agents:[],repositories:value.workspace.repositories,worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Task actions</button></TaskContextMenu>}{task&&value.activeRuntimeId===profiles[0].id&&<TaskContextMenu dropdown task={task} owner={{runtimeId:profiles[1].id,name:'Remote owner',online:true,agents:[],repositories:value.workspace.repositories,worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Remote task actions</button></TaskContextMenu>}</>}
+window.toggleBrowser=value=>updateAppPreferences({browserWorkspaceEnabled:value});
 window.taskViewLoads=0;
 window.featureLoads={};
 function Feature({view,threadConnection}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;window.threadConnection=threadConnection;return <output id="feature">{view+'|'+value.activeRuntimeId}</output>}
@@ -52,6 +53,7 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
     conditions: ['development'],
     alias: {
       '@dovo/studio-core': root + 'packages/studio-core/src/index.ts',
+      '@dovo/studio-core/repository-open': root + 'packages/studio-core/src/repository-open.ts',
       '@dovo/studio-core/code-themes': root + 'packages/studio-core/src/code-themes.ts',
       '@dovo/studio-core/pierre-theme': root + 'packages/studio-core/src/pierre-theme.ts',
       '@dovo/studio-core/links': root + 'packages/studio-core/src/links/index.ts',
@@ -201,6 +203,22 @@ try {
     })
     await main.waitForFunction((revision) => window.store.snapshot.revision === revision, revision)
     assert.equal(await main.evaluate(() => window.initialHost === window.host), true)
+    const hostBefore = await main.evaluate(() => {
+      window.beforeBrowserHost = window.host
+      return window.taskViewLoads
+    })
+    for (const value of [true, false, true]) {
+      await main.evaluate((value) => window.toggleBrowser(value), value)
+      await main.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      assert.equal(
+        await main.evaluate(() => window.host === window.beforeBrowserHost),
+        true,
+        'browser preference keeps the extension host and commands alive',
+      )
+      assert.equal(await main.evaluate(() => window.taskViewLoads), hostBefore)
+    }
     assert.equal(await main.getByRole('button', { name: 'Retry view' }).count(), 0)
   }
   await main.evaluate(() => window.host.navigate({ viewId: 'tasks' }))
@@ -329,6 +347,22 @@ try {
     1,
     'snapshot updates and computer navigation keep the extension host alive',
   )
+  const hostBefore = await main.evaluate(() => {
+    window.beforeBrowserHost = window.host
+    return window.taskViewLoads
+  })
+  for (const value of [true, false, true]) {
+    await main.evaluate((value) => window.toggleBrowser(value), value)
+    await main.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    assert.equal(
+      await main.evaluate(() => window.host === window.beforeBrowserHost),
+      true,
+      'browser preference keeps the extension host and commands alive',
+    )
+    assert.equal(await main.evaluate(() => window.taskViewLoads), hostBefore)
+  }
   assert.equal(await main.getByRole('button', { name: 'Retry view' }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(

@@ -55,6 +55,7 @@ type WorkbenchProps = {
   popOutThread?: StudioHostApi['popOutThread']
   appInfo?: StudioHostApi['appInfo']
   extensions: readonly StudioExtension[]
+  repositoryOpener?: StudioHostApi['repositoryOpener']
   pickDirectory?: StudioHostApi['pickDirectory']
   browserWindowId?: string
   openBrowserWindow?: StudioHostApi['openBrowserWindow']
@@ -154,6 +155,7 @@ function WorkbenchContent({
   extensions,
   threadWindow,
   popOutThread,
+  repositoryOpener,
   pickDirectory,
   browser,
   browserExtensions,
@@ -484,11 +486,17 @@ function WorkbenchContent({
     },
     [navigate],
   )
-  const browserLink =
+  const browserLinkTarget = useRef(openBrowserLink)
+  browserLinkTarget.current =
     browserWorkspaceEnabled &&
     extensions.some((extension) => extension.views.some((view) => view.id === 'browser'))
       ? openSharedBrowserLink
       : openBrowserLink
+  const browserLink = useCallback(async (url: string) => {
+    const handler = browserLinkTarget.current
+    if (handler) await handler(url)
+    else window.open(url, '_blank', 'noopener,noreferrer')
+  }, [])
   const {
     openLink,
     getLinkActions,
@@ -562,6 +570,7 @@ function WorkbenchContent({
       popOutThread,
       threadWindow: !!threadWindow,
       registerCommand,
+      repositoryOpener,
       pickDirectory,
       browser,
       browserExtensions,
@@ -587,6 +596,7 @@ function WorkbenchContent({
       popOutThread,
       threadWindow,
       registerCommand,
+      repositoryOpener,
       pickDirectory,
       browser,
       browserExtensions,
