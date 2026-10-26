@@ -140,6 +140,7 @@ const pages: Record<string, string> = {
       return { width: video.videoWidth, height: video.videoHeight, colored, vibrant }
     }
   </script>\`,
+  '/custom': '<!doctype html><title>Custom</title><p>Original</p>',
   '/plain': '<!doctype html><title>Other profile</title>',
 }
 let remoteImage = Buffer.alloc(0)
@@ -158,6 +159,7 @@ const server = createServer(async (request, response) => {
     response.end(JSON.stringify({ ticket: 'remote-test-ticket', host: 'fixture', tabId: body.tabId, profileId: body.profileId }))
     return
   }
+  if(request.url==='/custom')response.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'none'")
   response.setHeader('content-type', 'text/html')
   response.end(pages[request.url ?? ''] ?? 'missing')
 }).listen(0, '127.0.0.1')
@@ -239,6 +241,23 @@ app.whenReady().then(async () => {
       throw new Error('Capture state never reached the expected value.')
     }
 
+    stage('website-customization')
+    const website = {origin:new URL(url('')).origin, enabled:true, css:'p { color: rgb(123, 45, 67); }', script:'document.querySelector("p").textContent = "Customized";'}
+    const settings = (websites: object[]) => writeFileSync(process.env.DOVO_SETTINGS_PATH!, JSON.stringify({app:{browserWorkspaceEnabled:true,browserProfiles:[{id:'default',name:'Default'},{id:'work',name:'Work',websites},{id:'personal',name:'Personal'}]}}))
+    settings([website])
+    await show('custom-work', '/custom', 'work')
+    await show('custom-personal', '/custom', 'personal')
+    assert.equal(await run('/custom','document.querySelector("p").textContent',false),'Customized')
+    assert.equal(await run('/custom','getComputedStyle(document.querySelector("p")).color',false),'rgb(123, 45, 67)')
+    assert.equal(await run('/custom','document.querySelector("p").textContent',false,'persist:dovo-browser-workspace:personal'),'Original')
+    settings([])
+    const reloaded = new Promise(resolve=>page('/custom',WORK).once('did-finish-load',resolve))
+    await call({action:'reload',key:'custom-work'})
+    await reloaded
+    assert.equal(await run('/custom','document.querySelector("p").textContent',false),'Original')
+    await call({action:'close',key:'custom-work'})
+    await call({action:'close',key:'custom-personal'})
+    report.websiteCustomization='profile-isolated-and-removed'
     stage('gesture')
     await show('thread', '/requester', 'work', false)
     refused(

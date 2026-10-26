@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Clipboard from 'expo-clipboard'
 import { randomUUID } from 'expo-crypto'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -12,6 +12,8 @@ import {
   View,
 } from 'react-native'
 import { WebView } from 'react-native-webview'
+import { WebsiteCustomizationEditor } from './website-customization-editor'
+import { BrowserThreadPanel } from './browser-thread-panel'
 import {
   browserProfilesResultSchema,
   browserSelectionSchema,
@@ -25,10 +27,17 @@ import {
   cleanBrowserTabs,
   browserTabActivitySchema,
   type BrowserTabCategory,
+  type BrowserProfile,
+  type BrowserWebsiteCustomization,
+  browserWebsiteCustomizationScript,
+  websiteCustomizationPrompt,
 } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from '../shell/navigation'
-import { useMobilePreferences } from '../runtime/preferences/app-preferences'
+import {
+  useMobilePreferences,
+  updateMobilePreferences,
+} from '../runtime/preferences/app-preferences'
 import { appendRuntimeDraft } from '../tasks/draft/use-draft'
 import { usePreviewActive } from '../tasks/preview/use-preview-active'
 import { RemoteBrowser } from '../tasks/preview/remote-browser'
@@ -108,7 +117,14 @@ export function BrowserScreen() {
   const [source, setSource] = useState('device')
   const [clock, setClock] = useState(() => Date.now())
   const [tabCategory, setTabCategory] = useState<BrowserTabCategory>('active')
-  const [profiles, setProfiles] = useState([{ id: 'default', name: 'Default' }])
+  const [profiles, setProfiles] = useState<BrowserProfile[]>([{ id: 'default', name: 'Default' }])
+  const [customization, setCustomization] = useState<BrowserWebsiteCustomization | null>(null)
+  const [threadOpen, setThreadOpen] = useState(false)
+  const [customizationRequest, setCustomizationRequest] = useState<{
+    tabId: string
+    text: string
+  } | null>(null)
+  const [websiteReload, setWebsiteReload] = useState(0)
   const [library, setLibrary] = useState<'tabs' | 'bookmarks' | 'history' | null>(null)
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [pageActionsOpen, setPageActionsOpen] = useState(false)
@@ -134,6 +150,74 @@ export function BrowserScreen() {
     active.kind === 'remote'
       ? runtime.overviews.find((entry) => entry.profile.id === active.runtimeId)
       : undefined
+  useEffect(() => {
+    setCustomization(null)
+    setThreadOpen(false)
+  }, [active.id, active.profileId])
+  const websiteOrigin = (() => {
+    try {
+      const url = new URL(active.url)
+      return /^https?:$/.test(url.protocol) ? url.origin : undefined
+    } catch {
+      return undefined
+    }
+  })()
+  useEffect(() => setCustomization(null), [websiteOrigin])
+  const websiteProfiles = active.kind === 'local' ? preferences.browserProfiles : profiles
+  const websiteProfile = websiteProfiles.find((profile) => profile.id === active.profileId)
+  const websiteScripts = useMemo(
+    () => (websiteProfile?.websites ?? []).map((site) => browserWebsiteCustomizationScript([site])),
+    [websiteProfile?.websites],
+  )
+  const customizationSupported =
+    active.kind === 'remote'
+      ? !!owner?.connected
+      : !nativeAvailable || !!DovoWebKitBrowser?.setWebsiteCustomizationScripts
+  const openWebsiteEditor = () => {
+    if (!websiteOrigin) return
+    setCustomization(
+      websiteProfile?.websites?.find((site) => site.origin === websiteOrigin) ?? {
+        origin: websiteOrigin,
+        enabled: true,
+        css: '',
+        script: '',
+      },
+    )
+  }
+  const saveWebsite = async (website: BrowserWebsiteCustomization | null) => {
+    if (!customization) return
+    const profile = websiteProfile ?? { id: active.profileId, name: active.profileId }
+    const websites = [
+      ...(profile.websites ?? []).filter((site) => site.origin !== customization.origin),
+      ...(website ? [website] : []),
+    ]
+    const next = websiteProfiles.some((item) => item.id === profile.id)
+      ? websiteProfiles.map((item) => (item.id === profile.id ? { ...item, websites } : item))
+      : [...websiteProfiles, { ...profile, websites }]
+    if (active.kind === 'remote') {
+      if (!owner?.connected) throw new Error('This computer is offline.')
+      const result = await runtime.readRuntime(
+        owner.profile,
+        '/api/previews/browser/profiles/save',
+        { profiles: next },
+        browserProfilesResultSchema,
+      )
+      setProfiles(result.profiles)
+      setWebsiteReload((previous) => previous + 1)
+    } else {
+      if (nativeAvailable) {
+        if (!DovoWebKitBrowser?.setWebsiteCustomizationScripts)
+          throw new Error('Update the iPhone app to use website customizations.')
+        await DovoWebKitBrowser.setWebsiteCustomizationScripts(
+          active.profileId,
+          websites.map((site) => browserWebsiteCustomizationScript([site])),
+        )
+      }
+      updateMobilePreferences({ browserProfiles: next })
+      if (nativeAvailable && DovoWebKitBrowser) await DovoWebKitBrowser.reload(active.id)
+      else setWebsiteReload((previous) => previous + 1)
+    }
+  }
   const change = (update: (previous: BrowserState) => BrowserState) => {
     const next = update(current.current)
     if (next === current.current) return
@@ -297,6 +381,10 @@ export function BrowserScreen() {
     let alive = true
     const key = `${active.id}:${active.profileId}`
     void (async () => {
+      if (module.setWebsiteCustomizationScripts)
+        await module.setWebsiteCustomizationScripts(active.profileId, websiteScripts)
+      else if (websiteScripts.length)
+        throw new Error('Update the iPhone app to use website customizations.')
       const page = await prepareNativeTab(module, {
         tabId: active.id,
         profileId: active.profileId,
@@ -327,7 +415,16 @@ export function BrowserScreen() {
     return () => {
       alive = false
     }
-  }, [nativeAvailable, loaded, focused, active.id, active.profileId, active.kind, nativeAttempt])
+  }, [
+    nativeAvailable,
+    loaded,
+    focused,
+    active.id,
+    active.profileId,
+    active.kind,
+    nativeAttempt,
+    JSON.stringify(websiteScripts),
+  ])
   const localProfile = async (id: string) => {
     const module = DovoWebKitBrowser
     if (!module || !nativeAvailable || active.kind !== 'local')
@@ -794,6 +891,7 @@ export function BrowserScreen() {
                 tabId={active.id}
                 profileId={active.profileId}
                 initialUrl={active.url}
+                reloadToken={websiteReload}
                 onClosed={() => change((state) => closeTab(state, active.id, randomUUID()))}
                 onState={(page) => {
                   pageState(active.id, page)
@@ -877,8 +975,9 @@ export function BrowserScreen() {
           </Text>
         ) : active.url ? (
           <WebView
-            key={active.id}
+            key={`${active.id}:${websiteReload}`}
             ref={web}
+            injectedJavaScript={websiteScripts.join(';\n') + ';true;'}
             style={{ flex: 1 }}
             source={{ uri: active.url }}
             originWhitelist={['http://*', 'https://*']}
@@ -1088,6 +1187,53 @@ export function BrowserScreen() {
           </Pressable>
         </View>
       </View>
+      {customization && (
+        <WebsiteCustomizationEditor
+          key={`${active.id}:${active.profileId}:${customization.origin}:${customization.css}:${customization.script}`}
+          website={customization}
+          profileName={websiteProfile?.name ?? active.profileId}
+          onClose={() => setCustomization(null)}
+          onSave={saveWebsite}
+          onAgent={(website) => {
+            setCustomization(null)
+            setCustomizationRequest({
+              tabId: active.id,
+              text: websiteCustomizationPrompt(active.profileId, website, active.url),
+            })
+            setThreadOpen(true)
+          }}
+        />
+      )}
+      {threadOpen && (
+        <BrowserThreadPanel
+          thread={customizationRequest?.tabId === active.id ? undefined : active.thread}
+          origin={
+            !isPrivateBrowserProfile(active.profileId) && customizationSupported
+              ? websiteOrigin
+              : undefined
+          }
+          onClose={() => setThreadOpen(false)}
+          onThread={async (thread) => {
+            if (customizationRequest?.tabId === active.id) {
+              const entry = runtime.overviews.find((item) => item.profile.id === thread.runtimeId)
+              const task = entry?.snapshot?.workspace.tasks.find((item) => item.id === thread.id)
+              if (!entry?.connected || !task) throw new Error('This thread is unavailable.')
+              const request = customizationRequest
+              // Consume before appending: a disk failure can still leave the draft in the composer.
+              setCustomizationRequest(null)
+              await appendRuntimeDraft(thread.runtimeId, thread.id, request.text, task.draft)
+            }
+            change((state) => ({
+              ...state,
+              tabs: state.tabs.map((tab) => (tab.id === active.id ? { ...tab, thread } : tab)),
+            }))
+          }}
+          onProposal={(proposal) => {
+            setThreadOpen(false)
+            setCustomization(proposal)
+          }}
+        />
+      )}
       {pageActionsOpen && (
         <Sheet
           ref={pageActionsSheet}
@@ -1097,6 +1243,19 @@ export function BrowserScreen() {
           <Text numberOfLines={2} style={styles.title}>
             {active.title || active.url}
           </Text>
+          <Action
+            secondary
+            label="Thread for this tab"
+            onPress={() => pageActionsSheet.current?.dismiss(() => setThreadOpen(true))}
+          />
+          <Action
+            secondary
+            label="Customize website"
+            disabled={
+              !websiteOrigin || !customizationSupported || isPrivateBrowserProfile(active.profileId)
+            }
+            onPress={() => pageActionsSheet.current?.dismiss(openWebsiteEditor)}
+          />
           <Action
             secondary
             label="Share page"

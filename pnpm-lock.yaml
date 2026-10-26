@@ -969,6 +969,9 @@ importers:
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
+      acorn:
+        specifier: 8.19.0
+        version: 8.19.0
       cron-parser:
         specifier: ^5.10.2
         version: 5.10.2

@@ -25,6 +25,7 @@ const common = {
   visitedAt: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   pinned: Schema.optional(Schema.Boolean),
   previewOf: Schema.optional(short),
+  thread: Schema.optional(mutableStruct({ id: short, runtimeId: short })),
 }
 const tabSchema = Schema.Union([
   mutableStruct({

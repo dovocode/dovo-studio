@@ -68,6 +68,11 @@ public class DovoWebKitBrowserModule: Module {
       return try await run { try await BrowserEngine.shared.ensureProfile(profileId).summary }
     }
 
+    AsyncFunction("setWebsiteCustomizationScripts") { @MainActor (profileId: String, scripts: [String]) async throws in
+      guard #available(iOS 17.0, *) else { throw unsupported() }
+      try await run { try await BrowserEngine.shared.setWebsiteCustomizationScripts(profileId, scripts: scripts) }
+    }
+
     AsyncFunction("removeProfile") { @MainActor (profileId: String) async throws in
       guard #available(iOS 17.0, *) else { throw unsupported() }
       try await run { try await BrowserEngine.shared.removeProfile(profileId) }

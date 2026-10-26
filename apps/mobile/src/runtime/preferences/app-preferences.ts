@@ -14,6 +14,7 @@ import {
   decodeResult,
   mutableStruct,
   browserTabCleanupSettingsFields,
+  browserProfilesSchema,
 } from '@dovo/protocol'
 
 /** Local preferences for this phone. Never synced to computers. */
@@ -51,6 +52,7 @@ const schema = mutableStruct({
   pullDraft: Schema.Boolean,
   keepScreenOn: Schema.Boolean,
   browserWorkspaceEnabled: Schema.Boolean,
+  browserProfiles: browserProfilesSchema,
   ...browserTabCleanupSettingsFields,
   computerRefresh: Schema.Literals(['normal', 'reduced', 'manual']),
   widgetUpdates: Schema.Boolean,
@@ -97,6 +99,10 @@ const defaults: MobilePreferences = {
   pullDraft: false,
   keepScreenOn: false,
   browserWorkspaceEnabled: false,
+  browserProfiles: [
+    { id: 'default', name: 'Default' },
+    { id: 'device', name: 'Device' },
+  ],
   browserAutoSettleMinutes: 0,
   browserCloseSettledMinutes: 0,
   computerRefresh: 'normal',

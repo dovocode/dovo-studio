@@ -3,6 +3,7 @@ import {
   STUDIO_BROWSER_SCOPE,
   isPrivateBrowserProfile,
   type BrowserProfile,
+  browserWebsiteCustomizationScript,
 } from '@dovo/protocol'
 import { redact } from '../storage/activity.js'
 import { browserScript } from './browser-script.js'
@@ -539,6 +540,33 @@ export class RemoteBrowsers {
       })
       await page.addInitScript(browserInteraction)
       if (!existingPage) await page.evaluate(browserInteraction)
+      let customizationReady = Promise.resolve()
+      const applyWebsiteCustomization = async () => {
+        if (!/^https?:\/\//i.test(page.url()) || isolated) return
+        const origin = new URL(page.url()).origin
+        const sites =
+          this.browserProfiles()
+            .find((profile) => profile.id === profileId)
+            ?.websites?.filter((site) => site.origin === origin) ?? []
+        if (sites.length) {
+          const { frameTree } = await session.cdp.send('Page.getFrameTree')
+          const { executionContextId } = await session.cdp.send('Page.createIsolatedWorld', {
+            frameId: frameTree.frame.id,
+            worldName: 'dovo-website-customization',
+          })
+          await session.cdp.send('Runtime.evaluate', {
+            contextId: executionContextId,
+            timeout: 10000,
+            expression: browserWebsiteCustomizationScript(sites),
+          })
+        }
+      }
+      page.on('domcontentloaded', () => {
+        customizationReady = applyWebsiteCustomization().catch((error: unknown) =>
+          this.report(session, error),
+        )
+      })
+      if (existingPage) await applyWebsiteCustomization()
       const log = (kind: string, message: string) => {
         session.logs.push({
           time: new Date().toISOString(),
@@ -657,7 +685,10 @@ export class RemoteBrowsers {
         })
         session.listeners.clear()
       })
-      if (initialUrl) await page.goto(initialUrl, { waitUntil: 'domcontentloaded' })
+      if (initialUrl) {
+        await page.goto(initialUrl, { waitUntil: 'domcontentloaded' })
+        await customizationReady
+      }
       this.scheduleClose(taskId, session)
       return session
     } catch (error) {

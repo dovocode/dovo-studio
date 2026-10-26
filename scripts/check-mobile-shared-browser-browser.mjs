@@ -14,6 +14,7 @@ export default storage;
 export const setStringAsync=async text=>{window.copied=text};let uuid=0;export const randomUUID=()=> '00000000-0000-4000-8000-'+String(++uuid).padStart(12,'0');
 const clean=s=>Object.assign({},...([s].flat(Infinity).filter(Boolean)));const css=s=>{const v=clean(s);if(v.paddingHorizontal){v.paddingLeft=v.paddingRight=v.paddingHorizontal;delete v.paddingHorizontal}if(v.paddingVertical){v.paddingTop=v.paddingBottom=v.paddingVertical;delete v.paddingVertical}return v};
 export const View=({children,style,pointerEvents})=><div style={{display:'flex',flexDirection:'column',pointerEvents,...css(style)}}>{children}</div>;
+export const Switch=({accessibilityLabel,value,onValueChange})=><input aria-label={accessibilityLabel} type="checkbox" checked={value} onChange={event=>onValueChange(event.target.checked)}/>;
 export const ScrollView=({children,style,contentContainerStyle})=><div style={{...css(style),overflow:'auto'}}><div style={{display:'flex',...css(contentContainerStyle)}}>{children}</div></div>;
 export const Pressable=({children,onPress,accessibilityLabel,accessibilityRole,accessibilityState})=><button role={accessibilityRole} aria-checked={accessibilityState?.checked} aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;
 export const Text=({children,style,accessibilityRole})=><div role={accessibilityRole} style={css(style)}>{children}</div>;
@@ -24,12 +25,12 @@ export const Sheet=forwardRef(({title,children,onClose},ref)=>{useImperativeHand
 export const ScreenHeader=({title,onBack})=><header><h1>{title}</h1>{onBack&&<button onClick={onBack}>Back</button>}</header>;
 export const useTheme=()=>({mode:'dark',colors:{border:'#455063'},styles:{screen:{height:'100vh',display:'flex',flexDirection:'column'},content:{padding:12},muted:{color:'#b8c4d8'},error:{color:'#ff9999'},title:{fontWeight:'bold'}}});
 export const router={push:path=>window.navigation.push(path)};
-let prefs={browserWorkspaceEnabled:false,browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};const listeners=new Set();window.setCleanup=change=>{prefs={...prefs,...change};listeners.forEach(f=>f())};window.setExperimental=value=>window.setCleanup({browserWorkspaceEnabled:value});export const useMobilePreferences=()=>useSyncExternalStore(f=>{listeners.add(f);return ()=>listeners.delete(f)},()=>prefs);
+let prefs={browserProfiles:[{id:'default',name:'Default'},{id:'device',name:'Device'}],browserWorkspaceEnabled:false,browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};const listeners=new Set();window.setCleanup=change=>{prefs={...prefs,...change};listeners.forEach(f=>f())};export const updateMobilePreferences=change=>window.setCleanup(change);window.setExperimental=value=>window.setCleanup({browserWorkspaceEnabled:value});export const useMobilePreferences=()=>useSyncExternalStore(f=>{listeners.add(f);return ()=>listeners.delete(f)},()=>prefs);
 const profiles=[{id:'lan',name:'LAN computer'},{id:'mac',name:'Mac computer'}];
 const scope=createContext('lan');export const RuntimeScope=({runtimeId,children})=><scope.Provider value={runtimeId}>{children}</scope.Provider>;
-const overviews=profiles.map(profile=>({profile,connected:true,snapshot:{workspace:{tasks:[{id:'target',title:'Destination',draft:'Server fallback'}]}}}));
+const overviews=profiles.map(profile=>({profile,connected:true,snapshot:{workspace:{tasks:[{id:'target',title:'Destination',messages:[],draft:'Server fallback'}]}}}));
 const readRuntime=async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('profiles/read'))return {profiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]};if(path.endsWith('selection'))return {text:'  remote exact\\ntext ',url:'http://localhost:4000',title:'Remote page'};return {ok:true,ticket:'fixture-ticket',tabId:body.tabId,profileId:body.profileId}};
-export const useRuntime=()=>{const id=useContext(scope);return {activeId:id,connection:{address:'http://'+id+'.fixture',token:'paired'},profiles,overviews,readRuntime,readEffect:(path,body)=>Effect.tryPromise(()=>readRuntime(profiles.find(p=>p.id===id),path,body))}};export const useNavigation=()=>({navigate:(...args)=>window.navigation.push(args)});export const usePreviewActive=()=>true;
+export const useRuntime=()=>{const id=useContext(scope);return {activeId:id,snapshot:overviews.find(entry=>entry.profile.id===id)?.snapshot,connection:{address:'http://'+id+'.fixture',token:'paired'},profiles,overviews,readRuntime,readEffect:(path,body)=>Effect.tryPromise(()=>readRuntime(profiles.find(p=>p.id===id),path,body))}};export const useNavigation=()=>({navigate:(...args)=>window.navigation.push(args)});export const usePreviewActive=()=>true;
 export const WebView=forwardRef(({source,onMessage,onError},ref)=>{const frame=useRef();const owner=useContext(scope);useImperativeHandle(ref,()=>({reload:()=>window.calls.push({reload:true}),goBack:()=>{},goForward:()=>{},injectJavaScript:code=>frame.current.contentWindow.eval(code)}));window.webError=()=>onError?.({nativeEvent:{description:'Fixture page failed'}});return <iframe title={source.html?'Remote page':'Device page'} ref={frame} data-url={source.uri} onLoad={()=>{const w=frame.current.contentWindow;w.ReactNativeWebView={postMessage:data=>onMessage({nativeEvent:{data}})};if(source.html){let url='about:blank';const emit=m=>w.ReactNativeWebView.postMessage(JSON.stringify({channel:'dovo-browser',...m}));const state=()=>emit({type:'state',url,title:'Remote page',back:false,forward:false,loading:false,editable:false});w.addEventListener('message',e=>{const m=e.data;if(m.type==='connect'){const call=window.calls.findLast(c=>c.owner===owner&&c.path?.endsWith('/open'));url=call?.body.url||'about:blank';emit({type:'connection',online:true});state()}if(m.type==='input'&&m.input.type==='navigate'){url=m.input.url;setTimeout(state,25)}});emit({type:'ready'})}}} srcDoc={source.html?'Remote viewer fixture':'<title>Local fixture</title><pre id="selection">  Keep  spaces\\nSecond line </pre>'}/>});
 export const Glass=View;export const Icon=()=>null;export const IconButton=Action;export const TextInput=({accessibilityLabel,value,onChangeText,onSubmitEditing,onFocus,onBlur,style})=><input aria-label={accessibilityLabel} value={value} onChange={e=>onChangeText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSubmitEditing?.()}} onFocus={onFocus} onBlur={onBlur} style={css(style)}/>;export const Keyboard={dismiss:()=>{}};export const KeyboardAvoidingView=View;export const Platform={OS:'ios'};export const Share={share:async value=>window.calls.push({share:value})};export const StyleSheet={hairlineWidth:1};export const AppState={currentState:'active'};export const Alert={alert:(...args)=>window.calls.push({alert:args})};export const useOpenAppLink=()=>()=>{throw Error('Unexpected external navigation')};export const remoteBrowserHtml='fixture';export const deviceHostMessage=message=>message;export const useScreenshotAttachment=()=>{throw Error('Shared browser must not create screenshot attachment')};
 window.nativeCalls=[];const nativeListeners=new Map(),nativeTabs=new Map(),nativeProfiles=new Set(['device']);let nativeEnabled=false;let nativeInstance=0;
@@ -38,6 +39,7 @@ const nativeStatus=()=>({enabled:nativeEnabled,browsingAvailable:window.nativeBr
 const nativeModule={
 addListener:(name,f)=>{const listeners=nativeListeners.get(name)||new Set();nativeListeners.set(name,listeners);listeners.add(f);return {remove:()=>listeners.delete(f)}},
 setEnabled:async enabled=>{window.nativeCalls.push({enabled});nativeEnabled=enabled;if(!enabled)nativeTabs.clear();return nativeStatus()},getStatus:async()=>nativeStatus(),getActiveMediaTabIds:async()=>window.activeMedia||[],
+setWebsiteCustomizationScripts:async(profileId,scripts)=>window.nativeCalls.push({websiteProfile:profileId,websiteScripts:scripts}),
 ensureProfile:async profileId=>{nativeProfiles.add(profileId);return {profileId,dataStoreIdentifier:profileId}},
 openTab:async options=>{window.nativeCalls.push({open:options});if(nativeTabs.has(options.tabId)){const existing=nativeTabs.get(options.tabId);if(existing.profileId===options.profileId)return existing;throw Error('Native fixture profile conflict')};const page={...options,instanceId:'instance-'+(++nativeInstance),openerTabId:null,url:options.url||'about:blank',title:'Native page',loadState:'loaded',progress:1,canGoBack:false,canGoForward:false,secure:false,error:null};nativeTabs.set(page.tabId,page);emit('onTabCreated',{...page,reason:'api'});return page},
 activateTab:async tabId=>{window.nativeCalls.push({activate:tabId})},
@@ -89,6 +91,11 @@ const built = await build({
           contents: adapters,
           loader: 'tsx',
           resolveDir: mobile,
+        }))
+        b.onLoad({ filter: /tasks\/detail\/task-detail\.tsx$/ }, () => ({
+          loader: 'tsx',
+          resolveDir: mobile,
+          contents: `import {useRuntime} from '../runtime/connection/provider';export function TaskDetail({task,parentNavigation}){const runtime=useRuntime();return <div data-testid="tab-thread" data-task={task.id}>{parentNavigation}{task.title}</div>}`,
         }))
         b.onLoad({ filter: /tasks\/draft\/use-draft\.ts$/ }, (args) => ({
           contents: readFileSync(args.path, 'utf8').split('export function useDraft(')[0],
@@ -685,6 +692,28 @@ try {
     ['current', 'pinned', 'media'],
   )
   assert.equal(cleaned.closed[0].id, 'unused')
+  await cleanupPage.getByRole('button', { name: 'Page actions', exact: true }).click()
+  await cleanupPage.getByRole('button', { name: 'Customize website', exact: true }).click()
+  await cleanupPage.getByLabel('Website CSS', { exact: true }).fill('body { color: red; }')
+  await cleanupPage.getByRole('button', { name: 'Save and reload', exact: true }).click()
+  await cleanupPage.waitForFunction(() =>
+    window.nativeCalls.some(
+      (call) =>
+        call.websiteProfile === 'device' &&
+        call.websiteScripts.some((script) => script.includes('color: red')),
+    ),
+  )
+  await cleanupPage.getByRole('button', { name: 'Page actions', exact: true }).click()
+  await cleanupPage.getByRole('button', { name: 'Thread for this tab', exact: true }).click()
+  await cleanupPage.getByRole('button', { name: 'Destination · Mac computer', exact: true }).click()
+  await cleanupPage.getByTestId('tab-thread').waitFor()
+  const withThread = await cleanupPage.evaluate(() =>
+    JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')),
+  )
+  assert.deepEqual(withThread.tabs.find((tab) => tab.id === withThread.active).thread, {
+    id: 'target',
+    runtimeId: 'mac',
+  })
   await cleanupPage.close()
   console.log(
     'Mobile shared Browser UI checks passed; screenshots: work/mobile-shared-browser/{narrow,narrow-library}.png. Native engines not exercised.',

@@ -17,6 +17,7 @@ export type BrowserTab = BrowserTabLifecycle & {
   pinned?: boolean
   /** Temporary page opened by a link; promotion keeps this exact page identity. */
   previewOf?: string
+  thread?: { id: string; runtimeId: string | null }
 }
 const tabSchema = Schema.Struct({
   ...browserTabLifecycleFields,
@@ -29,6 +30,9 @@ const tabSchema = Schema.Struct({
   favicon: Schema.optional(Schema.String),
   visitedAt: Schema.optional(Schema.Number),
   pinned: Schema.optional(Schema.Boolean),
+  thread: Schema.optional(
+    Schema.Struct({ id: Schema.String, runtimeId: Schema.NullOr(Schema.String) }),
+  ),
 })
 const schema = Schema.Struct({
   active: Schema.String,

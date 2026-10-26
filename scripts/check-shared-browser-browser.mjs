@@ -29,6 +29,16 @@ const built = await build({
     {
       name: 'fixture',
       setup(builder) {
+        builder.onResolve({ filter: /^\.\.\/detail\/task-conversation$/ }, () => ({
+          path: 'conversation',
+          namespace: 'fixture-conversation',
+        }))
+        builder.onLoad({ filter: /.*/, namespace: 'fixture-conversation' }, () => ({
+          loader: 'tsx',
+          resolveDir: root + 'packages/extension-tasks',
+          contents: `import {useEffect} from 'react';import {useWorkspace} from '@dovo/studio-core';export function TaskConversation({task,composerInsert,onComposerInsertApplied}){const store=useWorkspace();useEffect(()=>{if(composerInsert){window.agentDraft=composerInsert.text;onComposerInsertApplied()}},[composerInsert]);return <div data-testid="tab-conversation" data-runtime={store.activeRuntimeId}>{task.title}</div>}`,
+        }))
+
         builder.onResolve(
           { filter: /^@dovo\/studio-core(\/state)?$|^\.\/workspace\/context$/ },
           ({ path }) => ({
@@ -64,7 +74,7 @@ export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';
 export {DiscoveryCache} from '${root}packages/client-runtime/src/index.ts';
 export {browserModelCatalogCache} from '${root}packages/studio-core/src/workspace/model-catalog-cache.ts';
 export {useSettingsDraft,useConfirmSettingsNavigation,useOptionalSettingsTarget} from '${root}packages/studio-core/src/settings-target.tsx';
-export const providers=[];export const useResolvedTheme=()=> 'dark';export const reducedMotion=()=>false;
+export const useCachedTask=task=>({task,loaded:true,error:""});export const formatDateTime=()=>"";export const providers=[];export const useResolvedTheme=()=> 'dark';export const reducedMotion=()=>false;
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
 const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-work',name:'LAN Work'},{id:'remote-personal',name:'LAN Personal'}],mac:[{id:'default',name:'Remote Default'},{id:'remote-work',name:'Remote Work'},{id:'remote-personal',name:'Remote Personal'}]};
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
@@ -81,7 +91,7 @@ const otherSnapshot={...snapshot,workspace:{...snapshot.workspace,tasks:[{...tas
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot},{profile:otherProfile,name:otherProfile.name,scope:'mac',connected:true,snapshot:otherSnapshot}];
 export const useRuntimeSources=()=>sources;
 const workspace={activeRuntimeId:profile.id,connection:profile.connection,request,connected:true,snapshot,workspace:snapshot.workspace,runtimes:sources,runtimeRegistry:{profiles:[profile,otherProfile]},
-readRuntime:async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs[owner.id]??[]};if(path.endsWith('/activity'))return {active:!!window.activeMedia?.includes(body.tabId)};if(path==='/api/workspace'){if(window.conflict)return {outcome:'reconciled',reason:'Draft changed elsewhere',recoveryId:'11223344-1122-4122-8122-112233445566'};otherSnapshot.workspace.tasks[0].draft=body.changes.draft.after;return {outcome:'applied'}};return remoteTicket(body)},
+readRuntime:async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs[owner.id]??[]};if(path.endsWith('/profiles/save')){profileCatalogs[owner.id]=body.profiles;return {profiles:body.profiles}};if(path.endsWith('/activity'))return {active:!!window.activeMedia?.includes(body.tabId)};if(path==='/api/workspace'){if(window.conflict)return {outcome:'reconciled',reason:'Draft changed elsewhere',recoveryId:'11223344-1122-4122-8122-112233445566'};otherSnapshot.workspace.tasks[0].draft=body.changes.draft.after;return {outcome:'applied'}};return remoteTicket(body)},
 setWorkspace:update=>{workspace.workspace=typeof update==='function'?update(workspace.workspace):update;window.savedDraft=workspace.workspace.tasks[0].draft},flush:async()=>{if(window.hangFlush)await new Promise(()=>{});},refreshRuntime:async()=>{},};
 window.fixtureStore=workspace;window.remoteDraft=()=>otherSnapshot.workspace.tasks[0].draft;
 const WorkspaceContext=createContext(null);
@@ -89,7 +99,7 @@ export const useWorkspace=()=>useContext(WorkspaceContext)||workspace;
 export const WorkspaceScope=({profile,children})=>{
   const source=sources.find(entry=>entry.profile.id===profile.id&&entry.profile.connection.address===profile.connection.address&&entry.profile.connection.token===profile.connection.token);
   if(!source)return null;
-  return createElement(WorkspaceContext.Provider,{value:{...workspace,activeRuntimeId:source.profile.id,connection:source.profile.connection,snapshot:source.snapshot,connected:source.connected,request:(path,body)=>workspace.readRuntime(source.profile,path,body)}},children);
+  return createElement(WorkspaceContext.Provider,{value:{...workspace,activeRuntimeId:source.profile.id,connection:source.profile.connection,snapshot:source.snapshot,workspace:source.snapshot.workspace,connected:source.connected,request:(path,body)=>workspace.readRuntime(source.profile,path,body)}},children);
 };
 export const useSettingsTarget=()=>{
   const [target,setTarget]=useState({environmentId:'',projectId:''});
@@ -100,8 +110,8 @@ const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
 export {useRemoteBrowserProfiles} from '${root}packages/studio-core/src/browser-profiles.ts';
-export const readAppPreferences=()=>({browserViewport:'fill'});
-window.preferences=[];export const updateAppPreferences=change=>window.preferences.push(change);const polls=new Set();window.pollBrowser=async()=>{for(const poll of [...polls])await Effect.runPromise(poll)};export const startPolling=poll=>{polls.add(poll);return {stop:async()=>{polls.delete(poll)}}};
+export const defaultAppPreferences={toolsSidebarWidth:440};export const readAppPreferences=()=>({browserViewport:'fill',toolsSidebarWidth:440});
+window.preferences=[];export const updateAppPreferences=change=>{window.preferences.push(change);appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};const polls=new Set();window.pollBrowser=async()=>{for(const poll of [...polls])await Effect.runPromise(poll)};export const startPolling=poll=>{polls.add(poll);return {stop:async()=>{polls.delete(poll)}}};
 `,
         }))
       },
@@ -1437,6 +1447,84 @@ try {
       )?.snoozedUntil,
   )
   await lifecycle.close()
+  const custom = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  custom.on('pageerror', (error) => errors.push(error.message))
+  await custom.route('http://localhost/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app" style="height:900px"></div>' }),
+  )
+  await custom.goto('http://localhost/customization')
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+    file.endsWith('.css'),
+  ))
+    await custom.addStyleTag({
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+    })
+  await custom.addScriptTag({ content: built.outputFiles[0].text })
+  await custom.getByRole('button', { name: 'Thread for this tab', exact: true }).click()
+  await custom.getByRole('button', { name: /Destination thread/ }).click()
+  await custom.getByTestId('tab-conversation').waitFor()
+  assert.equal(await custom.getByTestId('tab-conversation').getAttribute('data-runtime'), 'runtime')
+  await custom.getByRole('button', { name: 'Change thread', exact: true }).click()
+  await custom.getByRole('button', { name: /Mac thread/ }).click()
+  assert.equal(await custom.getByTestId('tab-conversation').getAttribute('data-runtime'), 'mac')
+  await custom.getByRole('button', { name: 'Close tab thread panel' }).click()
+  await custom.getByRole('textbox', { name: 'Preview URL' }).fill('http://example.test/page')
+  await custom.getByRole('textbox', { name: 'Preview URL' }).press('Enter')
+  await custom.getByRole('button', { name: 'Customize website', exact: true }).click()
+  await custom.getByRole('textbox', { name: 'Website JavaScript' }).fill('if (')
+  await custom.getByRole('button', { name: 'Save and reload', exact: true }).click()
+  await custom.getByRole('alert').filter({ hasText: 'JavaScript:' }).waitFor()
+  await custom.getByRole('textbox', { name: 'Website JavaScript' }).fill('')
+  await custom.getByRole('textbox', { name: 'Website CSS' }).fill('body { color: red; }')
+  await custom.getByRole('button', { name: 'Save and reload' }).click()
+  await custom.waitForFunction(() =>
+    window.preferences.some((change) =>
+      change.browserProfiles?.some((profile) => profile.websites?.length),
+    ),
+  )
+  const savedRules = await custom.evaluate(() => window.preferences.at(-1).browserProfiles)
+  assert.deepEqual(savedRules.find((profile) => profile.id === 'default').websites, [
+    { origin: 'http://example.test', enabled: true, css: 'body { color: red; }', script: '' },
+  ])
+  assert.equal(savedRules.find((profile) => profile.id === 'local-work').websites, undefined)
+  await custom.getByRole('button', { name: 'Customize website', exact: true }).click()
+  await custom.getByRole('button', { name: 'Customize with agent…', exact: true }).click()
+  await custom.waitForFunction(() => window.agentDraft?.includes('dovo-website-customization'))
+  assert.match(await custom.evaluate(() => window.agentDraft), /http:\/\/example.test/)
+  const savedThreadTabs = await custom.evaluate(() =>
+    JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')),
+  )
+  assert.deepEqual(savedThreadTabs.tabs.find((tab) => tab.id === savedThreadTabs.active).thread, {
+    id: 'remote-target',
+    runtimeId: 'mac',
+  })
+  await custom.evaluate(() => {
+    const site = {
+      origin: 'http://example.test',
+      enabled: true,
+      css: 'body { color: blue; }',
+      script: '',
+    }
+    window.fixtureStore.runtimes[1].snapshot.workspace.tasks[0].messages.push({
+      role: 'assistant',
+      text: '```dovo-website-customization\n' + JSON.stringify(site) + '\n```',
+    })
+    window.renderBrowser()
+  })
+  await custom.getByRole('button', { name: 'Review website changes', exact: true }).click()
+  assert.equal(
+    await custom.getByRole('textbox', { name: 'Website CSS' }).inputValue(),
+    'body { color: blue; }',
+  )
+  await custom.keyboard.press('Escape')
+  await custom.setViewportSize({ width: 390, height: 844 })
+  const threadBounds = await custom
+    .getByRole('complementary', { name: 'Browser tab thread', exact: true })
+    .boundingBox()
+  assert.ok(threadBounds.x >= 0 && threadBounds.width <= 390, 'Thread panel fits a narrow window')
+  await custom.screenshot({ path: root + 'work/shared-browser-thread-panel.png' })
+  await custom.close()
+
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Shared browser tabs, local/remote ownership and profiles, saved pages, private/pinned tabs, temporary link previews, native/remote promotion without page replacement, nested/deferred navigation, bounded cleanup, shortcuts, drafts, feature gate and pop-out isolation passed.',

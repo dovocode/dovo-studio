@@ -1,5 +1,10 @@
 import { app, type Session } from 'electron'
-import { browserLanguages, browserProfilesSchema, decodeResult } from '@dovo/protocol'
+import {
+  browserLanguages,
+  browserProfilesSchema,
+  browserWebsiteCustomizationScript,
+  decodeResult,
+} from '@dovo/protocol'
 import { readLocalSettingsSection } from '@dovo/protocol/local-settings'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -7,6 +12,17 @@ import { Schema } from 'effect'
 
 const configured = new WeakMap<Session, string>()
 const preferences = Schema.Struct({ browserProfiles: browserProfilesSchema })
+export function websiteCustomization(profileId: string, url: string) {
+  const result = decodeResult(preferences, readLocalSettingsSection('app'))
+  const origin = new URL(url).origin
+  return browserWebsiteCustomizationScript(
+    result.success
+      ? (result.data.browserProfiles
+          .find((profile) => profile.id === profileId)
+          ?.websites?.filter((site) => site.origin === origin) ?? [])
+      : [],
+  )
+}
 export function configureBrowserLanguage(session: Session, profileId: string, userAgent: string) {
   const result = decodeResult(preferences, readLocalSettingsSection('app'))
   const language = result.success

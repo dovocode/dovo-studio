@@ -83,6 +83,8 @@ export type DovoWebKitBrowserModule = {
   getActiveMediaTabIds?(): Promise<BrowserId[]>
 
   ensureProfile(profileId: BrowserId): Promise<BrowserProfile>
+  /** Replaces this profile's DOM-ready website customizations for future loads. */
+  setWebsiteCustomizationScripts?(profileId: BrowserId, scripts: string[]): Promise<void>
   /** Closes the profile's tabs and deletes its website data store. */
   removeProfile(profileId: BrowserId): Promise<void>
 

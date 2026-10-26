@@ -6,7 +6,7 @@ import { trustedRendererUrl } from './renderer-trust.js'
 import { createBrowserExtensions, workspacePartition } from './browser-extensions.js'
 import { createBrowserMedia, type MediaTab } from './browser-media.js'
 import { browserPermissions, forgetPrivateBrowserPermissions } from './browser-permissions.js'
-import { configureBrowserLanguage } from './browser-language.js'
+import { configureBrowserLanguage, websiteCustomization } from './browser-language.js'
 import { openThreadMedia } from './browser-thread-media.js'
 import { randomUUID } from 'node:crypto'
 import { browserCommandSchema, previewUrl } from '@dovo/protocol'
@@ -381,6 +381,15 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
       .replace(/\s+(?:Electron|DovoStudio|Dovo-Studio)\/[^\s]+/g, '')
     view.webContents.setUserAgent(userAgent)
     configureBrowserLanguage(view.webContents.session, profileId, userAgent)
+    view.webContents.on('dom-ready', () => {
+      const contents = view.webContents
+      if (!/^https?:\/\//i.test(contents.getURL())) return
+      void contents
+        .executeJavaScriptInIsolatedWorld(1001, [
+          { code: websiteCustomization(profileId, contents.getURL()) },
+        ])
+        .catch((error: unknown) => console.error('Could not apply website customization', error))
+    })
     view.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => {
       if (isMainFrame) created.favicon = undefined
     })

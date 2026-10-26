@@ -12,6 +12,7 @@ final class BrowserProfileRuntime {
   let record: ProfileRecord
   let dataStore: WKWebsiteDataStore
   var activeTabId: String?
+  var websiteScripts: [String] = []
 
   init(record: ProfileRecord) {
     self.record = record
@@ -25,6 +26,9 @@ final class BrowserProfileRuntime {
     configuration.websiteDataStore = dataStore
     configuration.allowsInlineMediaPlayback = true
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+    for source in websiteScripts {
+      configuration.userContentController.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient))
+    }
     return configuration
   }
 
@@ -98,6 +102,22 @@ final class BrowserEngine {
   }
 
   // MARK: Profiles
+
+  func setWebsiteCustomizationScripts(_ profileId: String, scripts: [String]) async throws {
+    guard scripts.count <= 64, scripts.allSatisfy({ $0.utf16.count <= 800_000 }) else {
+      throw BrowserError.invalid("Website customizations are too large.")
+    }
+    let profile = try await ensureProfile(profileId)
+    guard profile.websiteScripts != scripts else { return }
+    profile.websiteScripts = scripts
+    for tab in tabs where tab.profileId == profileId {
+      let controller = tab.webView.configuration.userContentController
+      controller.removeAllUserScripts()
+      for source in scripts {
+        controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient))
+      }
+    }
+  }
 
   func ensureProfile(_ rawId: String) async throws -> BrowserProfileRuntime {
     try requireEnabled()

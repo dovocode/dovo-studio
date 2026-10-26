@@ -18,6 +18,10 @@ import {
   type BrowserTab,
 } from './shared-browser-tabs'
 import { SharedBrowserActions } from './shared-browser-actions'
+import { BrowserThreadPanel } from './browser-thread-panel'
+import { WebsiteCustomizationEditor } from './website-customization-editor'
+import { websiteCustomizationPrompt } from '@dovo/protocol'
+import { ResizableSidebar } from '../detail/resizable-sidebar'
 import {
   randomUUID,
   runtimeComputerName,
@@ -30,6 +34,7 @@ import {
   cleanBrowserTabs,
   browserTabActivitySchema,
   type BrowserTabCategory,
+  type BrowserWebsiteCustomization,
 } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -53,6 +58,8 @@ import {
   Star,
   Pin,
   PinOff,
+  MessageSquare,
+  Paintbrush,
 } from 'lucide-react'
 import {
   useWorkspace,
@@ -245,6 +252,17 @@ function BrowserContent({
   currentTabs.current = tabs
   const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0]
   const regularTabs = tabs.filter((tab) => !tab.previewOf)
+  const [threadPanels, setThreadPanels] = useApplicationState(
+    () => new Set(tabs.filter((tab) => tab.thread).map((tab) => tab.id)),
+  )
+  const [customization, setCustomization] = useApplicationState<BrowserWebsiteCustomization | null>(
+    null,
+  )
+  const [customizationInsert, setCustomizationInsert] = useApplicationState<{
+    tabId: string
+    id: string
+    text: string
+  } | null>(null)
   const [previewPlacement, setPreviewPlacement] = useApplicationState<PreviewPlacement>('floating')
   const selectedRuntime = selectedTab.runtimeId
     ? runtimes.find((entry) => entry.profile.id === selectedTab.runtimeId)
@@ -356,6 +374,54 @@ function BrowserContent({
       ? 'devices'
       : (tabs.find((tab) => tab.id === activeTab)?.kind ?? 'web')
   const tabProfiles = mode === 'remote' ? (remoteProfiles.profiles ?? []) : profiles
+  useEffect(() => setCustomization(null), [activeTab, profileId])
+  const websiteProfile = tabProfiles.find((profile) => profile.id === profileId)
+  const websiteOrigin = (() => {
+    try {
+      const target = new URL(history.url || url)
+      return /^https?:$/.test(target.protocol) ? target.origin : undefined
+    } catch {
+      return undefined
+    }
+  })()
+  useEffect(() => setCustomization(null), [websiteOrigin])
+  const customizeWebsite = () => {
+    if (!websiteOrigin) return
+    setCustomization(
+      websiteProfile?.websites?.find((site) => site.origin === websiteOrigin) ?? {
+        origin: websiteOrigin,
+        enabled: true,
+        css: '',
+        script: '',
+      },
+    )
+  }
+  const customizeWithAgent = (website: BrowserWebsiteCustomization) => {
+    setCustomization(null)
+    setCustomizationInsert({
+      tabId: activeTab,
+      id: randomUUID(),
+      text: websiteCustomizationPrompt(profileId, website, history.url || url),
+    })
+    setThreadPanels((previous) => new Set([...previous, activeTab]))
+  }
+  const saveWebsiteCustomization = async (website: BrowserWebsiteCustomization | null) => {
+    if (!customization || !websiteProfile) throw new Error('This browser profile is unavailable.')
+    const websites = [
+      ...(websiteProfile.websites ?? []).filter((site) => site.origin !== customization.origin),
+      ...(website ? [website] : []),
+    ]
+    const next = tabProfiles.map((profile) =>
+      profile.id === profileId ? { ...profile, websites } : profile,
+    )
+    if (mode === 'web') {
+      updateAppPreferences({ browserProfiles: next })
+      if (browser) await browser({ action: 'reload', key: browserKey })
+    } else {
+      await remoteProfiles.save(next)
+      setTurnReload((previous) => previous + 1)
+    }
+  }
   useEffect(() => {
     if (!openLink || openedLink.current === openLink.id) return
     if (!newTab(previewUrl(openLink.url))) return
@@ -1695,6 +1761,33 @@ function BrowserContent({
           onBrowseStore={() => newTab('https://chromewebstore.google.com/', 'web', profileId)}
         />
       )}
+      {shared && (
+        <>
+          <IconButton
+            type="button"
+            label="Thread for this tab"
+            aria-pressed={threadPanels.has(activeTab)}
+            onClick={() =>
+              setThreadPanels((previous) => {
+                const next = new Set(previous)
+                if (next.has(activeTab)) next.delete(activeTab)
+                else next.add(activeTab)
+                return next
+              })
+            }
+          >
+            <MessageSquare size={15} />
+          </IconButton>
+          <IconButton
+            type="button"
+            label="Customize website"
+            disabled={!websiteOrigin || !websiteProfile || isPrivateBrowserProfile(profileId)}
+            onClick={customizeWebsite}
+          >
+            <Paintbrush size={15} />
+          </IconButton>
+        </>
+      )}
       {newTabMenu}
       {browserOptions(pageActions)}
     </form>
@@ -1770,6 +1863,47 @@ function BrowserContent({
   return (
     <BrowserLayout
       devices={initialMode === 'devices'}
+      threadPanel={
+        shared && mode !== 'devices' && threadPanels.has(activeTab) ? (
+          <BrowserThreadPanel
+            key={selectedTab.id}
+            thread={selectedTab.thread}
+            onThread={(thread) =>
+              setTabs((previous) =>
+                previous.map((tab) => (tab.id === activeTab ? { ...tab, thread } : tab)),
+              )
+            }
+            onClose={() =>
+              setThreadPanels((previous) => {
+                const next = new Set(previous)
+                next.delete(activeTab)
+                return next
+              })
+            }
+            onBrowser={(target) =>
+              newTab(target, selectedTab.kind, profileId, selectedTab.runtimeId)
+            }
+            insert={customizationInsert?.tabId === activeTab ? customizationInsert : null}
+            onInserted={() => setCustomizationInsert(null)}
+            websiteOrigin={
+              websiteProfile && !isPrivateBrowserProfile(profileId) ? websiteOrigin : undefined
+            }
+            onProposal={(proposal) => setCustomization(proposal)}
+          />
+        ) : undefined
+      }
+      editor={
+        customization && (
+          <WebsiteCustomizationEditor
+            key={`${activeTab}:${profileId}:${customization.origin}:${customization.css}:${customization.script}`}
+            website={customization}
+            profileName={websiteProfile?.name ?? profileId}
+            onClose={() => setCustomization(null)}
+            onSave={saveWebsiteCustomization}
+            onAgent={customizeWithAgent}
+          />
+        )
+      }
       preview={
         selectedTab.previewOf
           ? {
@@ -2351,8 +2485,12 @@ function BrowserLayout({
   devices,
   children,
   preview,
+  threadPanel,
+  editor,
 }: {
   sidebar: React.ReactNode
+  threadPanel?: React.ReactNode
+  editor?: React.ReactNode
   devices: boolean
   children: React.ReactNode
   preview?: {
@@ -2365,7 +2503,7 @@ function BrowserLayout({
   const sidebarState = useNavigationSidebar()
   return (
     <section
-      className="@container/browser flex h-full min-h-0 min-w-0"
+      className="@container/browser relative flex h-full min-h-0 min-w-0"
       aria-label={devices ? 'Device previews' : 'Browser previews'}
     >
       {!sidebarState?.collapsed && sidebar}
@@ -2387,6 +2525,19 @@ function BrowserLayout({
       >
         {children}
       </FloatingPreview>
+      {threadPanel && (
+        <ResizableSidebar
+          preference="toolsSidebarWidth"
+          side="right"
+          label="Browser tab thread"
+          maxFraction={0.6}
+          maxWidth={640}
+          className="z-20 @max-[800px]/browser:absolute @max-[800px]/browser:inset-0 @max-[800px]/browser:!w-full @max-[800px]/browser:!max-w-full"
+        >
+          {threadPanel}
+        </ResizableSidebar>
+      )}
+      {editor}
     </section>
   )
 }
