@@ -680,6 +680,20 @@ try {
   )
   await page.getByTestId('Task parent').getByText('Needs input', { exact: true }).waitFor()
   await page.evaluate(() => window.publish({ parent: { threadWatches: [] } }))
+  await page.getByTestId('Task parent').getByText('Working', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    const parent = window.snapshot.workspace.tasks.find((task) => task.id === 'parent')
+    window.publish({
+      parent: {
+        subagents: parent.subagents.map((agent) => ({
+          ...agent,
+          status: 'completed',
+          finishedAt: new Date().toISOString(),
+        })),
+      },
+      child: { status: 'done' },
+    })
+  })
   await page.getByTestId('Task parent').getByText('Finished', { exact: true }).waitFor()
   await page.getByTestId('Task task-2').dispatchEvent('contextmenu')
   await page.getByTestId('Task task-3').click()

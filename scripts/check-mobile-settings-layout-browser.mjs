@@ -20,6 +20,7 @@ const native = `
     ...(style.marginVertical!=null?{marginTop:style.marginTop??style.marginVertical,marginBottom:style.marginBottom??style.marginVertical}:{})}).filter(([,value])=>value!=null));};
   export const StyleSheet={create:style=>style,flatten:flat,hairlineWidth:1};
   export const Platform={OS:window.platform};export const Keyboard={dismiss(){}};
+  export const Linking={openURL:async url=>{window.openedURL=url},openSettings:async()=>{window.openedSystemSettings=true}};
   const base={display:'flex',flexDirection:'column',alignItems:'stretch',flexShrink:0,minHeight:0,position:'relative',boxSizing:'border-box'};
   export const View=({children,style,testID,accessibilityLabel,onLayout,ref:forwarded})=>{
     const ref=useRef();useImperativeHandle(forwarded,()=>{const node=ref.current;node.measureLayout=(parent,done)=>{const a=node.getBoundingClientRect(),b=parent.getBoundingClientRect();done(a.x-b.x,a.y-b.y)};return node;});useLayoutEffect(()=>{if(!onLayout)return;const observer=new ResizeObserver(()=>{const {width,height}=ref.current.getBoundingClientRect();onLayout({nativeEvent:{layout:{width,height}}})});observer.observe(ref.current);return ()=>observer.disconnect()},[onLayout]);
@@ -90,7 +91,7 @@ const mocks = {
   'expo-constants': `export default {expoConfig:{version:'test'}};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async()=>null,setItem:async(key,value)=>{window.savedPreferences=JSON.parse(value)}};`,
   '../tasks/list/task-list-view': `export const useTaskListView=()=>({setView:update=>{window.taskView=update(window.taskView||{})}});`,
-  '../notifications/provider': `import {useState} from 'react';export const usePushNotifications=()=>{const [enabled,setEnabled]=useState(true);const [servers,setServers]=useState({});return {supported:window.notificationsSupported!==false,busy:Boolean(window.notificationsBusy),enabled,setEnabled,error:window.notificationError||'',serverEnabled:id=>servers[id]!==false,setServerEnabled:(id,value)=>setServers({...servers,[id]:value})}};`,
+  '../notifications/provider': `import {useState} from 'react';export const usePushNotifications=()=>{const [enabled,setEnabled]=useState(true);const [servers,setServers]=useState({});return {supported:window.notificationsSupported!==false,busy:Boolean(window.notificationsBusy),enabled,setEnabled,error:window.notificationError||'',permission:window.notificationPermission||'granted',registrations:Object.fromEntries(window.runtime.overviews.map(entry=>[entry.profile.id,{registered:true}])),serverEnabled:id=>servers[id]!==false,setServerEnabled:(id,value)=>setServers({...servers,[id]:value})}};`,
   '../live-activities/provider': `import {useState} from 'react';export const useLiveActivities=()=>{const [enabled,setEnabled]=useState(true);return {supported:window.activitiesSupported??(window.platform==='ios'),enabled,setEnabled,error:window.activityError||''}};`,
   '../runtime/diagnostics/crash-log': `export const readLastCrash=async()=>null;export const clearLastCrash=async()=>{};`,
   '../ui/content/open-link': `export const useOpenAppLink=()=>async()=>{};`,
@@ -143,6 +144,7 @@ const built = await build({
       }
       Object.assign(window.runtime,window.runtime.overviews[0]);
       window.runtime.snapshot=window.runtime.overviews[0].snapshot;window.runtime.profiles=window.runtime.overviews.map(entry=>entry.profile);
+      window.runtime.readRuntime=async(profile,path)=>{window.notificationTest={runtimeId:profile.id,path};return {ok:true}};
       function Controls(){const [modelMode,setModelMode]=useState('auto');window.modelMode=modelMode;const [selected,setSelected]=useState('long');window.selected=selected;const [enabled,setEnabled]=useState(true);window.enabled=enabled;
         return <><SettingsChoice label="Other computer refresh" value={selected} items={[{id:'long',name:'When I refresh the other development computer'},{id:'short',name:'Every 30 seconds'}]} onChange={setSelected}/>
           <SettingsChoice label="Model mode" value={modelMode} items={[{id:'auto',name:'Tune',icon:'tune'},{id:'smart',name:'Maestro',icon:'maestro'}]} onChange={setModelMode}/>
@@ -648,7 +650,35 @@ try {
     await search.fill('app updates')
     await page.getByRole('button', { name: 'App & updates', exact: true }).click()
     await page.getByRole('heading', { name: 'App & updates', exact: true }).waitFor()
+    await page
+      .getByRole('button', {
+        name: platform === 'ios' ? 'Open TestFlight' : 'Open Google Play',
+        exact: true,
+      })
+      .click()
+    assert.equal(
+      await page.evaluate(() => window.openedURL),
+      platform === 'ios'
+        ? 'itms-beta://'
+        : 'https://play.google.com/store/apps/details?id=com.dovo.studio',
+    )
     await page.getByRole('button', { name: 'Notifications', exact: true }).click()
+    await page.getByText('System permission: granted', { exact: true }).waitFor()
+    await page
+      .getByRole('button', {
+        name: 'Test notification from Dominic’s development computer with a long name',
+        exact: true,
+      })
+      .click()
+    await page.getByText('Test accepted by the notification service.', { exact: false }).waitFor()
+    assert.deepEqual(await page.evaluate(() => window.notificationTest), {
+      runtimeId: 'computer',
+      path: '/api/notifications/test',
+    })
+    await page
+      .getByRole('button', { name: 'Open system notification settings', exact: true })
+      .click()
+    assert.equal(await page.evaluate(() => window.openedSystemSettings), true)
     const computerSwitch = page.getByRole('switch', {
       name: 'Dominic’s development computer with a long name',
       exact: true,
