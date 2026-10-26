@@ -1,5 +1,5 @@
 import { browserQuote } from './shared-browser-tabs'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Copy, MessageSquarePlus } from 'lucide-react'
 import {
   browserContextActionSchema,
@@ -36,12 +36,14 @@ export function SharedBrowserActions({
   tabKey,
   url,
   title,
+  children,
 }: {
   enabled: boolean
   url: string
   title: string
   tabKey: string
   capture: () => Promise<Selection>
+  children: (actions: ReactNode) => ReactNode
 }) {
   const store = useWorkspace()
   const host = useStudioHost()
@@ -269,42 +271,50 @@ export function SharedBrowserActions({
   )
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!enabled || busy}
-          onClick={() => void act('copy')}
-        >
-          <Copy size={14} /> Copy selection
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!enabled || busy}
-          onClick={() => void act('selection')}
-        >
-          <MessageSquarePlus size={14} /> Add selection to thread…
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!enabled || busy}
-          onClick={() => void act('page')}
-        >
-          Add page to thread…
-        </Button>
-        {notice && (
-          <p role="status" className="text-xs text-muted-foreground">
-            {notice}
-          </p>
-        )}
-        {error && !selection && (
-          <p role="alert" className="text-xs text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
+      {children(
+        <div className="flex flex-col gap-1 border-t pt-2" aria-label="Page actions">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="justify-start text-xs"
+            disabled={!enabled || busy}
+            onClick={() => void act('copy')}
+          >
+            <Copy size={14} /> Copy selection
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="justify-start text-xs"
+            disabled={!enabled || busy}
+            onClick={() => void act('selection')}
+          >
+            <MessageSquarePlus size={14} /> Add selection to thread…
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="justify-start text-xs"
+            disabled={!enabled || busy}
+            onClick={() => void act('page')}
+          >
+            Add page to thread…
+          </Button>
+        </div>,
+      )}
+      {notice && (
+        <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">
+          {notice}
+        </p>
+      )}
+      {error && !selection && (
+        <p role="alert" className="border-b px-3 py-2 text-xs text-destructive">
+          {error}
+        </p>
+      )}
       <Dialog
         open={!!selection}
         onOpenChange={(open) => {

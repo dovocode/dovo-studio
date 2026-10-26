@@ -26,11 +26,15 @@ current tab's computer and profile, Ctrl/Cmd+W closes it, Ctrl/Cmd+Shift+T reope
 tab and Ctrl/Cmd+R reloads. Native page links that open a new window become tabs using the source
 profile.
 
-Select page text and use **Copy selection** to copy the literal selection, or **Add selection to
-thread…** to append a quotation, page title and URL to an existing thread draft. **Add page to
-thread…** appends the title and URL without requiring a selection. The destination can be on another
-connected computer. Existing draft text is retained, conflicts are reported, and the thread opens
-for you to review and send the draft. Empty selections produce feedback.
+Desktop pages become visible when their DOM is ready, while images and other resources can continue
+loading. Tooltips appear above the page and return keyboard focus after dismissal, unless you click
+or type in Studio in the meantime. Menus and dialogs take focus normally.
+
+Select page text and open **Browser options → Copy selection** to copy the literal selection, or
+**Add selection to thread…** to append a quotation, page title and URL to an existing thread draft.
+**Add page to thread…** appends the title and URL without requiring a selection. The destination can
+be on another connected computer. Existing draft text is retained, conflicts are reported, and the
+thread opens for you to review and send the draft. Empty selections produce feedback.
 
 On desktop, use the tab-list **+** menu → **New browser window** for another window with its own
 tabs. The action requires the desktop window bridge. Browser opened from a pop-out thread uses a
@@ -45,7 +49,7 @@ sessions; saved inactive tabs do not reserve those sessions.
 
 ## Desktop extensions
 
-In a local desktop Browser tab, open **Browser options → Browser extensions** and load an unpacked
+In a local desktop Browser tab, open **Extensions → Manage extensions** and load an unpacked
 Manifest V3 folder, or paste a Chrome Web Store detail URL/extension ID. Review its permissions and
 website access before loading. Extensions belong to that Browser profile, can be enabled/disabled or
 removed, and can expose native action popups. They are not loaded into thread previews or

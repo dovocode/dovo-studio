@@ -1,3 +1,5 @@
+import { nativeBrowserBounds, nativeBrowserOcclusion } from './native-browser-layout'
+import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { BrowserFavicon } from './browser-favicon'
 import { BrowserProfileLabel } from './browser-profile-label'
 import { BrowserExtensions } from './browser-extensions'
@@ -19,7 +21,7 @@ import { SharedBrowserActions } from './shared-browser-actions'
 import { randomUUID, runtimeComputerName } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef, useId } from 'react'
+import { useEffect, useRef, useId, type ReactNode } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -251,6 +253,7 @@ function BrowserContent({
     savedTabs.set(scope, { tabs, active: activeTab, closed })
   }, [scope, tabs, activeTab, closed])
   const selectTab = (tab: BrowserTab) => {
+    if (tab.id === activeTab) return
     setActiveTab(tab.id)
     setOpenedTabs((previous) => new Set([...previous, tab.id]))
     setRemoteOnline(false)
@@ -663,34 +666,11 @@ function BrowserContent({
     const update = () => {
       frame = undefined
       if (!alive) return
-      const rect = slot.current?.getBoundingClientRect()
-      // Native views sit above the DOM. Hide them for visible overlays, but not
-      // for disclosures retained in the hidden chat or panels elsewhere in the window.
-      const obscured =
-        rect &&
-        [
-          ...document.querySelectorAll<HTMLElement>(
-            'details[open], dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-preview-dragging="true"], [data-inline-artifact] [data-preview-overlay="true"]',
-          ),
-        ].some((element) => {
-          if (
-            (element.contains(slot.current) &&
-              !element.matches('[data-preview-dragging="true"]')) ||
-            !element.checkVisibility({ visibilityProperty: true })
-          )
-            return false
-          const overlay = element.getBoundingClientRect()
-          if (!overlay.width || !overlay.height) return false
-          if (element.matches('dialog[open], [aria-modal="true"]')) return true
-          return (
-            overlay.left < rect.right &&
-            overlay.right > rect.left &&
-            overlay.top < rect.bottom &&
-            overlay.bottom > rect.top
-          )
-        })
+      const rect = slot.current && nativeBrowserBounds(slot.current)
+      const occlusion = slot.current && rect && nativeBrowserOcclusion(slot.current, rect)
+      const obscured = !!occlusion
       const command =
-        rect && rect.width > 0 && rect.height > 0 && !obscured
+        rect && !obscured
           ? {
               action: 'show' as const,
               workspaceBrowser: shared,
@@ -716,25 +696,25 @@ function BrowserContent({
           : {
               action: 'hide' as const,
               key: browserKey,
+              ...(occlusion === 'tooltip' ? { preserveFocus: true } : {}),
             }
       const signature = JSON.stringify(command)
       if (signature === previousCommand) return
       previousCommand = signature
       const attempt = ++revision
-      void (async () => {
-        if (command.action === 'hide' && obscured && rect?.width && rect.height) {
-          // Keep the website visible behind DOM menus while its native view is hidden.
-          try {
-            const captured = await browser({ action: 'screenshot', key: browserKey })
-            if (!alive || revision !== attempt) return
-            if (captured?.image) {
+      if (command.action === 'hide' && obscured && rect?.width && rect.height) {
+        // Capturing can stall on a busy page. Never leave the native layer above a menu
+        // while waiting, and never apply a frame after that menu has already closed.
+        void browser({ action: 'screenshot', key: browserKey })
+          .then((captured) => {
+            if (alive && revision === attempt && captured?.image)
               setFrozenPage({ key: browserKey, url, image: captured.image })
-              await new Promise<void>((done) => requestAnimationFrame(() => done()))
-            }
-          } catch {
-            /* A page still loading may not have a frame yet. The menu must still open. */
-          }
-        }
+          })
+          .catch(() => {
+            /* A loading page may not have a frame. The native layer must still hide. */
+          })
+      }
+      void (async () => {
         if (!alive || revision !== attempt) return
         await browser(command)
         if (alive && revision === attempt && command.action === 'show') setFrozenPage(null)
@@ -760,6 +740,7 @@ function BrowserContent({
         'class',
         'role',
         'aria-modal',
+        'data-state',
         'data-preview-dragging',
         'data-preview-overlay',
       ],
@@ -1013,7 +994,7 @@ function BrowserContent({
   useEffect(() => {
     if (mode === 'remote' && remoteOnline) remote.current?.viewport(preset, landscape)
   }, [mode, activeTab, preset, landscape, remoteOnline])
-  const browserOptions = (
+  const browserOptions = (pageActions?: ReactNode) => (
     <Popover.Root>
       <Popover.Trigger asChild>
         <IconButton type="button" label="Browser options" className="size-8 shrink-0">
@@ -1254,6 +1235,7 @@ function BrowserContent({
               )}
             </div>
           )}
+          {pageActions}
           <Button
             type="button"
             size="sm"
@@ -1278,6 +1260,148 @@ function BrowserContent({
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  )
+  const renderNavigation = (pageActions?: ReactNode) => (
+    <form
+      aria-label="Browser navigation"
+      className="flex min-h-12 shrink-0 items-center gap-1 border-b bg-sidebar/50 px-2 py-2 @max-[480px]/browser:flex-wrap"
+      onSubmit={(event) => {
+        event.preventDefault()
+        navigate()
+      }}
+    >
+      {(['back', 'forward'] as const).map((action) => (
+        <IconButton
+          key={action}
+          label={action === 'back' ? 'Back' : 'Forward'}
+          type="button"
+          className="size-8 shrink-0"
+          disabled={
+            busy || !history[action] || (mode === 'remote' ? !remoteOnline : !browser || !url)
+          }
+          onClick={() => {
+            if (mode === 'remote') remote.current?.input({ type: action })
+            else if (browser) void act(() => browser({ action, key: browserKey }))
+          }}
+        >
+          {action === 'back' ? <ArrowLeft size={15} /> : <ArrowRight size={15} />}
+        </IconButton>
+      ))}
+      <IconButton
+        label={mode === 'remote' && !remoteOnline ? 'Reconnect' : 'Reload'}
+        type="button"
+        className="size-8 shrink-0"
+        aria-busy={mode === 'remote' && remoteLoading}
+        disabled={busy || (mode !== 'remote' && !url)}
+        onClick={() =>
+          mode === 'remote'
+            ? remoteOnline
+              ? remote.current?.input({ type: 'reload' })
+              : remote.current?.reconnect()
+            : browser
+              ? void act(() => browser({ action: 'reload', key: browserKey }))
+              : setReload((value) => value + 1)
+        }
+      >
+        <RotateCw size={15} />
+      </IconButton>
+      <div className="studio-browser-address flex h-9 min-w-0 flex-1 items-center @max-[480px]/browser:order-first @max-[480px]/browser:basis-full [@media(pointer:coarse)]:h-12">
+        <span className="flex w-9 shrink-0 justify-center [@media(pointer:coarse)]:w-11">
+          <Globe2 size={15} className="text-muted-foreground" aria-hidden="true" />
+        </span>
+        <Input
+          type="text"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          onFocus={(event) => {
+            editing.current = true
+            event.currentTarget.select()
+          }}
+          onBlur={() => {
+            editing.current = false
+          }}
+          ref={addressField}
+          aria-label="Preview URL"
+          disabled={mode === 'remote' && !remoteOnline}
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder={shared ? 'Search or enter address' : 'Enter website address'}
+          className="h-full min-w-0 flex-1 border-0 bg-transparent px-0 text-center text-[13px] shadow-none focus:text-left focus-visible:outline-none focus-visible:ring-0 [@media(pointer:coarse)]:text-base"
+        />
+        <IconButton
+          label="Go to address"
+          type="submit"
+          className="size-8 shrink-0 rounded-full [@media(pointer:coarse)]:size-11"
+          disabled={!input.trim() || busy || (mode === 'remote' && !remoteOnline)}
+        >
+          <ArrowUpRight size={14} />
+        </IconButton>
+      </div>
+      {mode === 'remote' && (
+        <IconButton
+          type="button"
+          label="Keyboard"
+          className="size-8 shrink-0"
+          disabled={!remoteOnline}
+          onClick={() => remote.current?.keyboard()}
+        >
+          <Keyboard size={16} />
+        </IconButton>
+      )}
+      {shared && (
+        <IconButton
+          type="button"
+          label={bookmarked ? 'Remove bookmark' : 'Bookmark page'}
+          className="size-8 shrink-0"
+          disabled={!selectedTab.url || !restorableTab(selectedTab)}
+          aria-pressed={bookmarked}
+          onClick={toggleBookmark}
+        >
+          <Star size={15} fill={bookmarked ? 'currentColor' : 'none'} />
+        </IconButton>
+      )}
+      {shared && mode === 'web' && (
+        <BrowserExtensions
+          key={`${profileId}:${browserKey}`}
+          profileId={profileId}
+          tabKey={browserKey}
+          hasPage={!!url}
+          profileName={
+            profiles.find((profile) => profile.id === profileId)?.name ?? 'Unavailable profile'
+          }
+          pageUrl={history.url || url}
+          onBrowseStore={() => newTab('https://chromewebstore.google.com/', 'web', profileId)}
+        />
+      )}
+      {newTabMenu}
+      {browserOptions(pageActions)}
+    </form>
+  )
+  const navigation = shared ? (
+    <SharedBrowserActions
+      tabKey={browserKey}
+      url={history.url || url}
+      title={history.title}
+      enabled={!!url && (mode === 'web' ? !!browser : remoteOnline)}
+      capture={async () => {
+        if (mode === 'web' && browser) {
+          const value = await browser({ action: 'selection', key: browserKey })
+          if (!value)
+            throw new Error('Browser tab is unavailable. Update the desktop app if needed.')
+          return { text: value.selection ?? '', url: value.url, title: value.title ?? '' }
+        }
+        return tabRequest(
+          '/api/previews/browser/selection',
+          { taskId, tabId: activeTab, profileId },
+          browserSelectionSchema,
+        )
+      }}
+    >
+      {renderNavigation}
+    </SharedBrowserActions>
+  ) : (
+    renderNavigation()
   )
   if (mode === 'devices' && liveDevice)
     return (
@@ -1339,17 +1463,6 @@ function BrowserContent({
                 bookmarks={bookmarks}
                 closed={closed}
                 visits={visits}
-                describeSource={(tab) => {
-                  const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
-                  const name =
-                    tab.kind === 'web'
-                      ? 'Local · this device'
-                      : `Remote · ${owner ? runtimeComputerName(owner) : 'Unavailable computer'}`
-                  const profile = (tab.kind === 'web' ? profiles : tabProfiles).find(
-                    (profile) => profile.id === tab.profileId,
-                  )
-                  return `${name} · ${profile?.name ?? (tab.profileId === 'default' ? 'Default' : 'Unavailable profile')}`
-                }}
                 onOpen={openSavedPage}
                 onReopen={reopenTab}
                 onRemoveBookmark={(tab) =>
@@ -1361,41 +1474,61 @@ function BrowserContent({
               />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
-              {recentBrowserTabs(tabs).map((tab) => (
-                <div
-                  key={tab.id}
-                  className={`group flex items-center rounded-md ${activeTab === tab.id ? 'bg-accent' : 'hover:bg-accent/50'}`}
-                >
-                  <button
-                    type="button"
-                    aria-current={activeTab === tab.id ? 'page' : undefined}
-                    className="min-w-0 flex-1 px-2 py-2 text-left"
-                    onClick={() => selectTab(tab)}
-                    title={tab.url || 'New tab'}
+              {recentBrowserTabs(tabs).map((tab) => {
+                const owner =
+                  tab.kind === 'remote'
+                    ? runtimes.find((entry) => entry.profile.id === tab.runtimeId)
+                    : undefined
+                const computer =
+                  tab.kind === 'web'
+                    ? 'This computer'
+                    : owner
+                      ? runtimeComputerName(owner)
+                      : 'Unavailable computer'
+                return (
+                  <div
+                    key={tab.id}
+                    className={`group flex min-w-0 items-center rounded-xl border border-transparent ${activeTab === tab.id ? 'bg-accent/70' : 'hover:bg-accent/40'}`}
                   >
-                    <span className="flex min-w-0 items-center gap-2 text-xs font-medium">
-                      <BrowserFavicon tab={tab} />
-                      <span className="truncate">
-                        {tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'}
+                    <button
+                      type="button"
+                      aria-current={activeTab === tab.id ? 'page' : undefined}
+                      className="min-w-0 flex-1 space-y-1 px-2.5 py-2 text-left"
+                      onClick={() => selectTab(tab)}
+                      title={tab.url || 'New tab'}
+                    >
+                      <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5">
+                        <BrowserFavicon tab={tab} />
+                        <span className="truncate">
+                          {tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'}
+                        </span>
                       </span>
-                    </span>
-                    <span className="block truncate text-[11px] text-muted-foreground">
-                      {tab.kind === 'web'
-                        ? 'Local'
-                        : `Remote · ${runtimes.find((entry) => entry.profile.id === tab.runtimeId)?.profile.name ?? 'Unavailable computer'}`}{' '}
-                      · <BrowserProfileLabel tab={tab} />
-                    </span>
-                  </button>
-                  <IconButton
-                    label={`Close tab ${tab.title || tab.url || 'New tab'}`}
-                    className="size-7 shrink-0"
-                    disabled={busy}
-                    onClick={() => closeTab(tab)}
-                  >
-                    <X size={12} />
-                  </IconButton>
-                </div>
-              ))}
+                      <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
+                        <RuntimeIcon
+                          icon={owner?.snapshot?.runtimeIcon}
+                          className="size-3 shrink-0"
+                          aria-hidden="true"
+                        />
+                        <span className="truncate" title={computer}>
+                          {tab.kind === 'web' ? 'Local' : 'Remote'} · {computer}
+                        </span>
+                      </span>
+                      <span className="block truncate pl-4 text-xs leading-4 text-muted-foreground">
+                        <BrowserProfileLabel tab={tab} />
+                        {owner && !owner.connected ? ' · Offline' : ''}
+                      </span>
+                    </button>
+                    <IconButton
+                      label={`Close tab ${tab.title || tab.url || 'New tab'}`}
+                      className="size-7 shrink-0"
+                      disabled={busy}
+                      onClick={() => closeTab(tab)}
+                    >
+                      <X size={12} />
+                    </IconButton>
+                  </div>
+                )
+              })}
             </div>
           </aside>
         ) : null
@@ -1504,144 +1637,7 @@ function BrowserContent({
           )}
         </div>
       )}
-      {(mode === 'web' || mode === 'remote') && (
-        <form
-          aria-label="Browser navigation"
-          className="flex min-h-12 shrink-0 items-center gap-1 border-b bg-sidebar/50 px-2 py-2 @max-[480px]/browser:flex-wrap"
-          onSubmit={(event) => {
-            event.preventDefault()
-            navigate()
-          }}
-        >
-          {(['back', 'forward'] as const).map((action) => (
-            <IconButton
-              key={action}
-              label={action === 'back' ? 'Back' : 'Forward'}
-              type="button"
-              className="size-8 shrink-0"
-              disabled={
-                busy || !history[action] || (mode === 'remote' ? !remoteOnline : !browser || !url)
-              }
-              onClick={() => {
-                if (mode === 'remote') remote.current?.input({ type: action })
-                else if (browser) void act(() => browser({ action, key: browserKey }))
-              }}
-            >
-              {action === 'back' ? <ArrowLeft size={15} /> : <ArrowRight size={15} />}
-            </IconButton>
-          ))}
-          <IconButton
-            label={mode === 'remote' && !remoteOnline ? 'Reconnect' : 'Reload'}
-            type="button"
-            className="size-8 shrink-0"
-            aria-busy={mode === 'remote' && remoteLoading}
-            disabled={busy || (mode !== 'remote' && !url)}
-            onClick={() =>
-              mode === 'remote'
-                ? remoteOnline
-                  ? remote.current?.input({ type: 'reload' })
-                  : remote.current?.reconnect()
-                : browser
-                  ? void act(() => browser({ action: 'reload', key: browserKey }))
-                  : setReload((value) => value + 1)
-            }
-          >
-            <RotateCw size={15} />
-          </IconButton>
-          <div className="studio-browser-address flex h-9 min-w-0 flex-1 items-center @max-[480px]/browser:order-first @max-[480px]/browser:basis-full [@media(pointer:coarse)]:h-12">
-            <span className="flex w-9 shrink-0 justify-center [@media(pointer:coarse)]:w-11">
-              <Globe2 size={15} className="text-muted-foreground" aria-hidden="true" />
-            </span>
-            <Input
-              type="text"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              onFocus={(event) => {
-                editing.current = true
-                event.currentTarget.select()
-              }}
-              onBlur={() => {
-                editing.current = false
-              }}
-              ref={addressField}
-              aria-label="Preview URL"
-              disabled={mode === 'remote' && !remoteOnline}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder={shared ? 'Search or enter address' : 'Enter website address'}
-              className="h-full min-w-0 flex-1 border-0 bg-transparent px-0 text-center text-[13px] shadow-none focus:text-left focus-visible:outline-none focus-visible:ring-0 [@media(pointer:coarse)]:text-base"
-            />
-            <IconButton
-              label="Go to address"
-              type="submit"
-              className="size-8 shrink-0 rounded-full [@media(pointer:coarse)]:size-11"
-              disabled={!input.trim() || busy || (mode === 'remote' && !remoteOnline)}
-            >
-              <ArrowUpRight size={14} />
-            </IconButton>
-          </div>
-          {mode === 'remote' && (
-            <IconButton
-              type="button"
-              label="Keyboard"
-              className="size-8 shrink-0"
-              disabled={!remoteOnline}
-              onClick={() => remote.current?.keyboard()}
-            >
-              <Keyboard size={16} />
-            </IconButton>
-          )}
-          {shared && (
-            <IconButton
-              type="button"
-              label={bookmarked ? 'Remove bookmark' : 'Bookmark page'}
-              className="size-8 shrink-0"
-              disabled={!selectedTab.url || !restorableTab(selectedTab)}
-              aria-pressed={bookmarked}
-              onClick={toggleBookmark}
-            >
-              <Star size={15} fill={bookmarked ? 'currentColor' : 'none'} />
-            </IconButton>
-          )}
-          {shared && mode === 'web' && (
-            <BrowserExtensions
-              key={`${profileId}:${browserKey}`}
-              profileId={profileId}
-              tabKey={browserKey}
-              hasPage={!!url}
-              profileName={
-                profiles.find((profile) => profile.id === profileId)?.name ?? 'Unavailable profile'
-              }
-              pageUrl={history.url || url}
-              onBrowseStore={() => newTab('https://chromewebstore.google.com/', 'web', profileId)}
-            />
-          )}
-          {newTabMenu}
-          {browserOptions}
-        </form>
-      )}
-      {shared && (
-        <SharedBrowserActions
-          tabKey={browserKey}
-          url={history.url || url}
-          title={history.title}
-          enabled={!!url && (mode === 'web' ? !!browser : remoteOnline)}
-          capture={async () => {
-            if (mode === 'web' && browser) {
-              const value = await browser({ action: 'selection', key: browserKey })
-              if (!value)
-                throw new Error('Browser tab is unavailable. Update the desktop app if needed.')
-              return { text: value.selection ?? '', url: value.url, title: value.title ?? '' }
-            }
-            return tabRequest(
-              '/api/previews/browser/selection',
-              { taskId, tabId: activeTab, profileId },
-              browserSelectionSchema,
-            )
-          }}
-        />
-      )}
+      {(mode === 'web' || mode === 'remote') && navigation}
       {mode === 'remote' && remoteProfiles.error && (
         <p role="alert" className="p-3 text-xs text-destructive">
           {remoteProfiles.error}

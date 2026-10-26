@@ -27,7 +27,10 @@ type Entry = {
   url: string
   /** Extension page an extension opened here; the renderer adopts the tab with this exact URL. */
   extensionUrl?: string
+  /** Navigation readiness, without waiting for page subresources. */
   loading?: Promise<void>
+  /** Restore page focus after a passive tooltip, unless Studio receives deliberate input. */
+  restoreFocus?: boolean
 }
 const MAX_OPENED_LINKS = 20
 const MAX_POPUPS = 2
@@ -47,6 +50,37 @@ function openableUrl(input: string) {
 /** A newer navigation replaced this one; that is not a failure to report. */
 const isAborted = (error: unknown) =>
   error instanceof Error && 'code' in error && error.code === 'ERR_ABORTED'
+/** A live renderer can be shown while images or other subresources are still loading. */
+async function loadUntilReady(entry: Entry, url: string) {
+  const contents = entry.view.webContents
+  let domReady = false
+  let onReady = () => {}
+  let onDestroyed = () => {}
+  const ready = new Promise<void>((resolve, reject) => {
+    onReady = () => {
+      domReady = true
+      resolve()
+    }
+    onDestroyed = () => reject(new Error('The browser page was closed.'))
+    contents.on('dom-ready', onReady)
+    contents.on('destroyed', onDestroyed)
+  })
+  try {
+    await Promise.race([
+      ready,
+      contents.loadURL(url).catch((error: unknown) => {
+        // The show request may already have finished at DOM readiness. Surface later
+        // navigation failures through status instead of losing them with the race.
+        if (domReady && !isAborted(error) && entry.url === url && !contents.isDestroyed())
+          entry.navigationError = error instanceof Error ? error.message : String(error)
+        throw error
+      }),
+    ])
+  } finally {
+    contents.removeListener('dom-ready', onReady)
+    contents.removeListener('destroyed', onDestroyed)
+  }
+}
 const POST_REFUSED =
   'This form could not be opened. Only small text form submissions are supported.'
 const POST_FAILED = 'The form submission could not be loaded.'
@@ -111,9 +145,18 @@ function postNavigation(details: Electron.HandlerDetails): Electron.LoadURLOptio
 export function registerBrowser(indexPath: string, directory?: string) {
   let cdp: Awaited<ReturnType<typeof createBrowserCdp>> | undefined
   let cdpPending: Promise<Awaited<ReturnType<typeof createBrowserCdp>>> | undefined
-  const activeViews = new Map<number, string>()
+  // Identity distinguishes overlapping shows of the same tab after resize or a menu closes.
+  const activeViews = new Map<number, { key: string }>()
   const registered = new WeakSet<BrowserWindow>()
   const views = new Map<string, Entry>()
+  const focusStudio = (entry: Entry) => {
+    if (
+      !entry.view.webContents.isDestroyed() &&
+      entry.view.webContents.isFocused() &&
+      !entry.window.webContents.isDestroyed()
+    )
+      entry.window.webContents.focus()
+  }
   const closePopups = (entry: Entry) => {
     for (const popup of entry.popups) if (!popup.isDestroyed()) popup.close()
     entry.popups.clear()
@@ -186,7 +229,7 @@ export function registerBrowser(indexPath: string, directory?: string) {
       entry.inactiveAt = Date.now()
       entry.url = url
       if (!openableUrl(url)) entry.extensionUrl = url
-      entry.loading = entry.view.webContents.loadURL(url).catch((error: unknown) => {
+      entry.loading = loadUntilReady(entry, url).catch((error: unknown) => {
         if (!isAborted(error))
           entry.navigationError = 'The page an extension opened could not be loaded.'
       })
@@ -196,7 +239,7 @@ export function registerBrowser(indexPath: string, directory?: string) {
     close: (contents) => {
       for (const [key, entry] of views) {
         if (entry.view.webContents !== contents) continue
-        if (activeViews.get(entry.windowId) === key) activeViews.delete(entry.windowId)
+        if (activeViews.get(entry.windowId)?.key === key) activeViews.delete(entry.windowId)
         releaseView(key)
         const events = tabEvents(entry.windowId)
         if (events.closed.length < MAX_EXTENSION_TAB_EVENTS) events.closed.push(entry.key)
@@ -219,6 +262,7 @@ export function registerBrowser(indexPath: string, directory?: string) {
   const releaseView = (key: string) => {
     const entry = views.get(key)
     if (!entry) return
+    focusStudio(entry)
     views.delete(key)
     cdp?.remove(key)
     if (entry.workspace) {
@@ -486,6 +530,16 @@ export function registerBrowser(indexPath: string, directory?: string) {
         if (event.isMainFrame && !event.isSameDocument) releaseWindow(window, true)
       })
       window.webContents.on('render-process-gone', () => releaseWindow(window, true))
+      const cancelFocusRestore = () => {
+        for (const entry of views.values())
+          if (entry.windowId === window.id) entry.restoreFocus = false
+      }
+      window.webContents.on('before-mouse-event', (_event, input) => {
+        if (input.type === 'mouseDown') cancelFocusRestore()
+      })
+      window.webContents.on('before-input-event', (_event, input) => {
+        if (input.type === 'keyDown' && input.key !== 'Escape') cancelFocusRestore()
+      })
     }
     return created
   }
@@ -519,7 +573,7 @@ export function registerBrowser(indexPath: string, directory?: string) {
     // Content scripts outlive their extension in already-open pages, so close those pages too.
     for (const [key, entry] of views) {
       if (!entry.workspace) continue
-      if (activeViews.get(entry.windowId) === key) activeViews.delete(entry.windowId)
+      if (activeViews.get(entry.windowId)?.key === key) activeViews.delete(entry.windowId)
       releaseView(key)
     }
     windowTabs.clear()
@@ -546,15 +600,22 @@ export function registerBrowser(indexPath: string, directory?: string) {
     const viewKey = JSON.stringify([window.id, command.key])
     let entry = views.get(viewKey)
     if (command.action === 'close') {
-      if (activeViews.get(window.id) === viewKey) activeViews.delete(window.id)
+      if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
       if (entry) {
         releaseView(viewKey)
       }
       return
     }
     if (command.action === 'hide') {
-      if (activeViews.get(window.id) === viewKey) activeViews.delete(window.id)
+      if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
       if (entry?.key === command.key) {
+        entry.restoreFocus = !!(
+          command.preserveFocus &&
+          (entry.restoreFocus || entry.view.webContents.isFocused())
+        )
+        // Studio must receive Escape while the native page is hidden. Remember page
+        // focus and return it only if the user has not interacted with Studio meanwhile.
+        focusStudio(entry)
         entry.inactiveAt ??= Date.now()
         entry.view.setVisible(false)
         prune()
@@ -569,19 +630,21 @@ export function registerBrowser(indexPath: string, directory?: string) {
         entry?.extensionUrl === command.url && entry.workspace === workspace
           ? command.url
           : previewUrl(command.url)
-      activeViews.set(window.id, viewKey)
+      const showing = { key: viewKey }
+      activeViews.set(window.id, showing)
       if (workspace) {
         profileWindows.set(profileId, { window, key: command.key })
         // Extensions load before the profile's first page so content scripts see it.
         await extensions.prepare(profileId).catch((error: unknown) => {
           console.error('Browser extensions could not load for this profile.', error)
         })
-        if (activeViews.get(window.id) !== viewKey) return
+        if (activeViews.get(window.id) !== showing) return
         entry = views.get(viewKey)
       }
       if (entry) entry.inactiveAt = undefined
       for (const [key, other] of views) {
         if (other.windowId !== window.id || other === entry) continue
+        other.restoreFocus = false
         other.view.setVisible(false)
         other.inactiveAt ??= Date.now()
         if (other.taskId === command.taskId && !command.agentAccess) {
@@ -608,7 +671,7 @@ export function registerBrowser(indexPath: string, directory?: string) {
         cdp = await cdpPending
         if (
           views.get(viewKey) !== entry ||
-          activeViews.get(window.id) !== viewKey ||
+          activeViews.get(window.id) !== showing ||
           !entry.agentAccess ||
           entry.taskId !== command.taskId ||
           entry.view.webContents.isDestroyed()
@@ -619,24 +682,32 @@ export function registerBrowser(indexPath: string, directory?: string) {
         cdp?.remove(viewKey)
         entry.cdp = undefined
       }
-      if (activeViews.get(window.id) !== viewKey) return
+      if (activeViews.get(window.id) !== showing) return
       const [width, height] = window.getContentSize()
-      const { x, y } = command.bounds
+      // DOM rectangles use CSS pixels; native views and popup anchors use window DIPs.
+      const zoom = window.webContents.getZoomFactor()
+      const requested = {
+        x: Math.round(command.bounds.x * zoom),
+        y: Math.round(command.bounds.y * zoom),
+        width: Math.max(1, Math.round(command.bounds.width * zoom)),
+        height: Math.max(1, Math.round(command.bounds.height * zoom)),
+      }
+      const { x, y } = requested
       if (x >= width || y >= height) {
         entry.inactiveAt ??= Date.now()
         entry.view.setVisible(false)
         return
       }
       const bounds = {
-        ...command.bounds,
-        width: Math.min(command.bounds.width, width - x),
-        height: Math.min(command.bounds.height, height - y),
+        ...requested,
+        width: Math.min(requested.width, width - x),
+        height: Math.min(requested.height, height - y),
       }
       entry.view.setBounds(bounds)
       if (entry.url !== url) {
         entry.url = url
         entry.loading =
-          entry.view.webContents.getURL() === url ? undefined : entry.view.webContents.loadURL(url)
+          entry.view.webContents.getURL() === url ? undefined : loadUntilReady(entry, url)
       }
       const loading = entry.loading
       if (loading) {
@@ -645,21 +716,22 @@ export function registerBrowser(indexPath: string, directory?: string) {
         } catch (error) {
           if (entry.loading === loading) {
             entry.loading = undefined
-            entry.url = ''
+            if (!isAborted(error)) entry.url = ''
           }
-          throw error
+          // Redirects and a user reload abort loadURL without making the live page unusable.
+          if (!isAborted(error)) throw error
         }
         if (entry.loading === loading) entry.loading = undefined
       }
       if (
         views.get(viewKey) !== entry ||
-        activeViews.get(window.id) !== viewKey ||
+        activeViews.get(window.id) !== showing ||
         entry.url !== url ||
         entry.view.webContents.isDestroyed()
       )
         return
       // Electron requires a live renderer before either device-emulation call.
-      // Every concurrent show waits for the first navigation, including resize commands.
+      // Every concurrent show waits for DOM readiness, including resize commands.
       if (command.viewport) {
         const { width: vw, height: vh } = command.viewport
         entry.view.webContents.enableDeviceEmulation({
@@ -681,6 +753,10 @@ export function registerBrowser(indexPath: string, directory?: string) {
         })
       } else entry.view.webContents.disableDeviceEmulation()
       entry.view.setVisible(true)
+      if (entry.restoreFocus) {
+        entry.restoreFocus = false
+        entry.view.webContents.focus()
+      }
       return
     }
     if (command.action === 'media') return media.decide(window.id, command)
@@ -720,7 +796,7 @@ export function registerBrowser(indexPath: string, directory?: string) {
       }
     }
     if (command.action === 'screenshot') {
-      const image = await entry.view.webContents.capturePage()
+      const image = await entry.view.webContents.capturePage(undefined, { stayHidden: true })
       if (image.isEmpty()) throw new Error('The browser has no image to capture yet.')
       return {
         url: entry.view.webContents.getURL(),

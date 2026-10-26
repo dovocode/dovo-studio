@@ -228,8 +228,13 @@ export const browserCommandSchema = Schema.Union([
     }),
   }),
   mutableStruct({
+    action: Schema.Literal('hide'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    /** Return keyboard focus to the page after a passive overlay, unless Studio receives input. */
+    preserveFocus: Schema.optional(Schema.Boolean),
+  }),
+  mutableStruct({
     action: Schema.Literals([
-      'hide',
       'close',
       'back',
       'forward',

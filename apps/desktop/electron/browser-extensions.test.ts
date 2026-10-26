@@ -49,6 +49,7 @@ const f = vi.hoisted(() => {
     fakeSession,
     userData: '',
     enabled: true,
+    zoom: vi.fn<() => number>(() => 1),
     dialog: vi.fn<() => Promise<{ canceled: boolean; filePaths: string[] }>>(),
     review: vi.fn<
       (
@@ -114,7 +115,10 @@ import {
 } from './browser-extensions'
 
 let root = ''
-const window = { getContentSize: () => [900, 700] } as never
+const window = {
+  getContentSize: () => [900, 700],
+  webContents: { getZoomFactor: f.zoom },
+} as never
 const tabs = {
   create: vi.fn<ExtensionTabHost['create']>(async () => [{}, {}] as never),
   close: vi.fn<ExtensionTabHost['close']>(),
@@ -386,6 +390,14 @@ it('opens an action popup only for a loaded extension on a shared-browser tab of
     extensionId: id,
     tabId: 7,
     anchorRect: { x: 800, y: 0, width: 32, height: 32 },
+  })
+  f.zoom.mockReturnValueOnce(1.25)
+  await extensions.handle(window, { ...open, anchor: { x: 600, y: 40, width: 32, height: 32 } })
+  expect(f.instances[0]!.api.browserAction.activateClick).toHaveBeenLastCalledWith({
+    eventType: 'click',
+    extensionId: id,
+    tabId: 7,
+    anchorRect: { x: 750, y: 50, width: 40, height: 40 },
   })
   await expect(
     extensions.handle(window, { ...open, anchor: { x: 950, y: 0, width: 32, height: 32 } }),

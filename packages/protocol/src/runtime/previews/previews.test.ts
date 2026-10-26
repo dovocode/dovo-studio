@@ -35,4 +35,12 @@ describe('preview addresses', () => {
       }).success,
     ).toBe(false)
   })
+  it('preserves a typed passive-overlay focus request without changing ordinary hide commands', () => {
+    const input = { action: 'hide', key: 'task', preserveFocus: true }
+    expect(decodeResult(browserCommandSchema, input)).toMatchObject({ success: true, data: input })
+    expect(decodeResult(browserCommandSchema, { action: 'hide', key: 'task' }).success).toBe(true)
+    expect(decodeResult(browserCommandSchema, { ...input, preserveFocus: 'true' }).success).toBe(
+      false,
+    )
+  })
 })

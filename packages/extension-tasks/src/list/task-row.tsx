@@ -215,7 +215,7 @@ function TaskRowView({
               className={cn(
                 'mb-0.5 h-auto w-full min-w-0 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
                 compact
-                  ? 'min-h-[52px] flex-col items-stretch gap-0.5 py-1.5'
+                  ? 'min-h-9 flex-row items-center gap-2 py-1.5'
                   : 'min-h-[68px] flex-col items-stretch gap-0.5 py-1.5',
                 grouped
                   ? 'mb-0 rounded-b-none border-0 bg-transparent hover:bg-accent/30'
@@ -226,59 +226,49 @@ function TaskRowView({
               onClick={onSelect}
               disabled={disabled}
             >
-              <span
-                className={cn(
-                  'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
-                  !!childCount && 'pr-7',
-                  editable &&
-                    'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
-                )}
-              >
-                {projectIcon}
-                <span
-                  className="min-w-0 flex-1 truncate"
-                  title={`${statusDetail} · ${agentDetail}`}
-                >
-                  {projectName}
-                </span>
-                {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-                {!general && task.execution === 'worktree' && (
-                  <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
-                )}
+              {compact ? (
+                <span className="shrink-0">{projectIcon}</span>
+              ) : (
                 <span
                   className={cn(
-                    'flex shrink-0 items-center gap-1 text-xs',
-                    !offline && presentation.state === 'Working' && 'text-primary',
-                    !offline &&
-                      ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
-                      'text-status-success',
-                    !offline && presentation.state === 'Failed' && 'text-destructive',
+                    'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
+                    !!childCount && 'pr-7',
+                    editable &&
+                      'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                   )}
                 >
-                  {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
-                  {compactStatus}
-                </span>
-                {compact && (
-                  <span className="inline-flex shrink-0 items-center gap-1">
-                    <RuntimeIcon
-                      icon={owner.runtimeIcon}
-                      className="size-3 shrink-0"
-                      aria-label={host ?? 'Unknown host'}
-                    />
-                    {provider && (
-                      <AgentAvatar
-                        provider={provider}
-                        customIcon={customIcon}
-                        className="size-3.5 shrink-0"
-                      />
-                    )}
+                  {projectIcon}
+                  <span
+                    className="min-w-0 flex-1 truncate"
+                    title={`${statusDetail} · ${agentDetail}`}
+                  >
+                    {projectName}
                   </span>
-                )}
-              </span>
+                  {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
+                  {!general && task.execution === 'worktree' && (
+                    <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
+                  )}
+                  <span
+                    className={cn(
+                      'flex shrink-0 items-center gap-1 text-xs',
+                      !offline && presentation.state === 'Working' && 'text-primary',
+                      !offline &&
+                        ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
+                        'text-status-success',
+                      !offline && presentation.state === 'Failed' && 'text-destructive',
+                    )}
+                  >
+                    {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
+                    {compactStatus}
+                  </span>
+                </span>
+              )}
               <span
                 className={cn(
-                  'block w-full min-w-0 truncate text-sm font-medium leading-5',
-                  unread ? 'text-foreground font-semibold' : 'text-foreground',
+                  'block min-w-0 truncate text-sm font-medium leading-5',
+                  compact ? 'flex-1' : 'w-full',
+                  compact && !!childCount && 'pr-7',
+                  unread ? 'text-foreground' : 'text-foreground/65',
                   editable &&
                     'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                 )}

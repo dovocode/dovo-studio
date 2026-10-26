@@ -829,7 +829,13 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
         if (!profile.session.extensions.getExtension(record.id))
           throw new Error('Enable this extension before opening it.')
         const [width, height] = window.getContentSize()
-        const { anchor } = command
+        const zoom = window.webContents.getZoomFactor()
+        const anchor = {
+          x: Math.round(command.anchor.x * zoom),
+          y: Math.round(command.anchor.y * zoom),
+          width: Math.max(1, Math.round(command.anchor.width * zoom)),
+          height: Math.max(1, Math.round(command.anchor.height * zoom)),
+        }
         if (anchor.x >= width || anchor.y >= height) throw new Error('Invalid toolbar position.')
         clickAction(profile.extensions, {
           eventType: 'click',

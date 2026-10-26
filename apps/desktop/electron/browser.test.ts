@@ -15,8 +15,11 @@ const mocks = vi.hoisted(() => {
       setPermissionCheckHandler: vi.fn<(...args: unknown[]) => void>(),
     },
     on: vi.fn<(...args: unknown[]) => void>(),
+    removeListener: vi.fn<(...args: unknown[]) => void>(),
     close: vi.fn<(...args: unknown[]) => void>(),
     isDestroyed: vi.fn<() => boolean>(() => false),
+    isFocused: vi.fn<() => boolean>(() => false),
+    focus: vi.fn<() => void>(),
     loadURL: vi.fn<(url?: string, options?: unknown) => Promise<void>>(async () => {}),
     enableDeviceEmulation: vi.fn<(...args: unknown[]) => void>(),
     disableDeviceEmulation: vi.fn<(...args: unknown[]) => void>(),
@@ -24,12 +27,12 @@ const mocks = vi.hoisted(() => {
     getURL: () => 'https://example.com/',
     getTitle: () => 'Example',
     executeJavaScript: vi.fn<(script: string) => Promise<unknown>>(async () => 'Selected text'),
-    capturePage: vi.fn<() => Promise<{ isEmpty: () => boolean; toDataURL: () => string }>>(
-      async () => ({
-        isEmpty: () => false,
-        toDataURL: () => 'data:image/png;base64,c2NyZWVu',
-      }),
-    ),
+    capturePage: vi.fn<
+      (...args: unknown[]) => Promise<{ isEmpty: () => boolean; toDataURL: () => string }>
+    >(async () => ({
+      isEmpty: () => false,
+      toDataURL: () => 'data:image/png;base64,c2NyZWVu',
+    })),
   }
   const view = {
     webContents: contents,
@@ -48,6 +51,7 @@ const mocks = vi.hoisted(() => {
     webContents: {
       on: vi.fn<(event: string, callback: (...args: unknown[]) => void) => void>(),
       isDestroyed: () => false,
+      getZoomFactor: vi.fn<() => number>(() => 1),
       send: vi.fn<(...args: unknown[]) => void>(),
       focus: vi.fn<() => void>(),
       sendInputEvent: vi.fn<(input: unknown) => void>(),
@@ -229,6 +233,161 @@ it('rejects privileged URL schemes before loading native content', async () => {
   expect(mocks.contents.loadURL).not.toHaveBeenCalled()
 })
 
+it('positions native content in window coordinates when Studio is zoomed', async () => {
+  const call = handler()
+  mocks.window.webContents.getZoomFactor.mockReturnValueOnce(1.25)
+  await call(event, {
+    action: 'show',
+    key: 'zoomed',
+    url: 'http://localhost:3000',
+    bounds: { x: 100, y: 40, width: 400, height: 300 },
+  })
+  expect(mocks.view.setBounds).toHaveBeenLastCalledWith({ x: 125, y: 50, width: 500, height: 375 })
+})
+
+it.each(['hide', 'close'])(
+  'returns keyboard focus to Studio when a focused page is %s',
+  async (action) => {
+    const call = handler()
+    await call(event, {
+      action: 'show',
+      key: 'focused',
+      url: 'http://localhost:3000',
+      bounds: { x: 0, y: 40, width: 400, height: 300 },
+    })
+    mocks.contents.isFocused.mockReturnValueOnce(true)
+    await call(event, { action, key: 'focused' })
+    expect(mocks.window.webContents.focus).toHaveBeenCalledOnce()
+  },
+)
+
+it('keeps a redirected or reloaded page visible when its original navigation is aborted', async () => {
+  const call = handler()
+  mocks.contents.loadURL.mockRejectedValueOnce(
+    Object.assign(new Error('Navigation replaced'), { code: 'ERR_ABORTED' }),
+  )
+  const command = {
+    action: 'show',
+    key: 'redirected',
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 40, width: 400, height: 300 },
+  }
+  await expect(call(event, command)).resolves.toBeUndefined()
+  expect(mocks.view.setVisible).toHaveBeenLastCalledWith(true)
+  await call(event, command)
+  expect(mocks.contents.loadURL).toHaveBeenCalledOnce()
+})
+
+it.each(['pointer', 'escape', 'click', 'typing', 'dialog'] as const)(
+  'restores page focus after a passive tooltip unless Studio receives input: %s',
+  async (dismissal) => {
+    const call = handler()
+    const command = {
+      action: 'show',
+      key: 'passive',
+      url: 'http://localhost:3000',
+      bounds: { x: 0, y: 40, width: 400, height: 300 },
+    }
+    await call(event, command)
+    mocks.contents.isFocused.mockReturnValueOnce(true).mockReturnValueOnce(true)
+    await call(event, { action: 'hide', key: 'passive', preserveFocus: true })
+    expect(mocks.view.setVisible).toHaveBeenLastCalledWith(false)
+    expect(mocks.window.webContents.focus).toHaveBeenCalledOnce()
+    const input = (name: string, value: unknown) => {
+      const callback = mocks.window.webContents.on.mock.calls.find(([event]) => event === name)?.[1]
+      if (!callback) throw new Error('Missing Studio input listener')
+      callback({}, value)
+    }
+    if (dismissal === 'escape') input('before-input-event', { type: 'keyDown', key: 'Escape' })
+    if (dismissal === 'click') input('before-mouse-event', { type: 'mouseDown' })
+    if (dismissal === 'typing') input('before-input-event', { type: 'keyDown', key: 'a' })
+    if (dismissal === 'dialog') await call(event, { action: 'hide', key: 'passive' })
+    await call(event, command)
+    expect(mocks.view.setVisible).toHaveBeenLastCalledWith(true)
+    expect(mocks.contents.focus).toHaveBeenCalledTimes(
+      ['pointer', 'escape'].includes(dismissal) ? 1 : 0,
+    )
+  },
+)
+
+it('shows and emulates a DOM-ready page while subresources are still loading', async () => {
+  const call = handler()
+  let finish = () => {}
+  mocks.contents.loadURL.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve
+      }),
+  )
+  const command = {
+    action: 'show',
+    key: 'slow',
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  }
+  const first = call(event, command)
+  const second = call(event, { ...command, viewport: { width: 390, height: 844 } })
+  expect(mocks.view.setVisible).not.toHaveBeenCalledWith(true)
+  const ready = mocks.contents.on.mock.calls.findLast(([name]) => name === 'dom-ready')?.[1]
+  if (typeof ready !== 'function') throw new Error('Missing renderer readiness listener')
+  ready()
+  await Promise.all([first, second])
+  expect(mocks.view.setVisible).toHaveBeenLastCalledWith(true)
+  expect(mocks.contents.enableDeviceEmulation).toHaveBeenCalledOnce()
+  expect(mocks.contents.disableDeviceEmulation).not.toHaveBeenCalled()
+  expect(mocks.contents.removeListener).toHaveBeenCalledWith('dom-ready', ready)
+  finish()
+})
+
+it('reports navigation failures that arrive after the page was shown at DOM readiness', async () => {
+  const call = handler()
+  let fail = (_error: Error) => {}
+  mocks.contents.loadURL.mockImplementationOnce(
+    () =>
+      new Promise<void>((_resolve, reject) => {
+        fail = reject
+      }),
+  )
+  const showing = call(event, {
+    action: 'show',
+    key: 'late-failure',
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  })
+  const ready = mocks.contents.on.mock.calls.findLast(([name]) => name === 'dom-ready')?.[1]
+  if (typeof ready !== 'function') throw new Error('Missing renderer readiness listener')
+  ready()
+  await showing
+  fail(new Error('Renderer navigation failed'))
+  await Promise.resolve()
+  await expect(call(event, { action: 'status', key: 'late-failure' })).rejects.toThrow(
+    'Renderer navigation failed',
+  )
+})
+
+it('stops waiting for renderer readiness when a loading page is destroyed', async () => {
+  const call = handler()
+  let finish = () => {}
+  mocks.contents.loadURL.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve
+      }),
+  )
+  const showing = call(event, {
+    action: 'show',
+    key: 'destroyed-loading',
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  })
+  const destroyed = mocks.contents.on.mock.calls.findLast(([name]) => name === 'destroyed')?.[1]
+  if (typeof destroyed !== 'function') throw new Error('Missing renderer destruction listener')
+  destroyed()
+  await expect(showing).rejects.toThrow('The browser page was closed.')
+  expect(mocks.view.setVisible).not.toHaveBeenCalledWith(true)
+  finish()
+})
+
 it('waits for the initial renderer before emulation, including concurrent positioning commands', async () => {
   const call = handler()
   let ready = () => {}
@@ -252,7 +411,7 @@ it('waits for the initial renderer before emulation, including concurrent positi
   expect(mocks.view.setVisible).not.toHaveBeenCalledWith(true)
   ready()
   await Promise.all([first, second])
-  expect(mocks.contents.disableDeviceEmulation).toHaveBeenCalledOnce()
+  expect(mocks.contents.disableDeviceEmulation).not.toHaveBeenCalled()
   expect(mocks.contents.enableDeviceEmulation).toHaveBeenCalledOnce()
   expect(mocks.view.setVisible).toHaveBeenLastCalledWith(true)
 })
@@ -277,6 +436,35 @@ it.each(['hide', 'close'])('keeps a loading preview inactive after %s', async (a
   await loading
   expect(mocks.contents.disableDeviceEmulation).not.toHaveBeenCalled()
   expect(mocks.view.setVisible).not.toHaveBeenCalledWith(true)
+})
+
+it('ignores an older show when the same tab is restored before profile preparation finishes', async () => {
+  const call = handler()
+  let ready = () => {}
+  mocks.extensions.prepare.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        ready = resolve
+      }),
+  )
+  const command = {
+    action: 'show',
+    key: 'shared',
+    workspaceBrowser: true,
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 0, width: 400, height: 300 },
+  }
+  const first = call(event, command)
+  await call(event, { action: 'hide', key: 'shared' })
+  const bounds = { x: 100, y: 100, width: 600, height: 500 }
+  await call(event, { ...command, bounds, viewport: { width: 390, height: 844 } })
+  mocks.view.setBounds.mockClear()
+  mocks.contents.disableDeviceEmulation.mockClear()
+  ready()
+  await first
+  expect(mocks.view.setBounds).not.toHaveBeenCalled()
+  expect(mocks.contents.disableDeviceEmulation).not.toHaveBeenCalled()
+  expect(mocks.view.setVisible).toHaveBeenLastCalledWith(true)
 })
 
 it('can retry the same URL after its navigation fails', async () => {
@@ -507,6 +695,7 @@ it('captures only the requested browser view and rejects empty images', async ()
   await expect(call(event, { action: 'screenshot', key: 'capture' })).resolves.toMatchObject({
     image: 'data:image/png;base64,c2NyZWVu',
   })
+  expect(mocks.contents.capturePage).toHaveBeenCalledWith(undefined, { stayHidden: true })
   mocks.contents.capturePage.mockResolvedValueOnce({ isEmpty: () => true, toDataURL: () => '' })
   await expect(call(event, { action: 'screenshot', key: 'capture' })).rejects.toThrow('no image')
 })

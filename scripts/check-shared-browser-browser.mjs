@@ -29,10 +29,13 @@ const built = await build({
     {
       name: 'fixture',
       setup(builder) {
-        builder.onResolve({ filter: /^@dovo\/studio-core(\/state)?$/ }, ({ path }) => ({
-          path,
-          namespace: 'fixture',
-        }))
+        builder.onResolve(
+          { filter: /^@dovo\/studio-core(\/state)?$|^\.\/workspace\/context$/ },
+          ({ path }) => ({
+            path: path.endsWith('/state') ? path : '@dovo/studio-core',
+            namespace: 'fixture',
+          }),
+        )
         builder.onResolve(
           { filter: /^\.\/(device-list|physical-controls|screenshot-attachment)$/ },
           ({ path }) => ({
@@ -63,10 +66,12 @@ export {browserModelCatalogCache} from '${root}packages/studio-core/src/workspac
 export {useSettingsDraft,useConfirmSettingsNavigation,useOptionalSettingsTarget} from '${root}packages/studio-core/src/settings-target.tsx';
 export const providers=[];export const useResolvedTheme=()=> 'dark';export const reducedMotion=()=>false;
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
+const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-work',name:'LAN Work'},{id:'remote-personal',name:'LAN Personal'}],mac:[{id:'default',name:'Remote Default'},{id:'remote-work',name:'Remote Work'},{id:'remote-personal',name:'Remote Personal'}]};
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
-window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return remoteTicket(body)};
-const nativePages=new Map();window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='screenshot')return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
+const nativePages=new Map();window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
 const task={id:'target',title:'Destination thread',repositoryId:'repo',agentId:'',status:'draft',draft:'Existing draft',createdAt:'2026-10-25T00:00:00Z',messages:[],files:[],example:false};
@@ -76,7 +81,7 @@ const otherSnapshot={...snapshot,workspace:{...snapshot.workspace,tasks:[{...tas
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot},{profile:otherProfile,name:otherProfile.name,scope:'mac',connected:true,snapshot:otherSnapshot}];
 export const useRuntimeSources=()=>sources;
 const workspace={activeRuntimeId:profile.id,connection:profile.connection,request,connected:true,snapshot,workspace:snapshot.workspace,runtimes:sources,runtimeRegistry:{profiles:[profile,otherProfile]},
-readRuntime:async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path==='/api/workspace'){if(window.conflict)return {outcome:'reconciled',reason:'Draft changed elsewhere',recoveryId:'11223344-1122-4122-8122-112233445566'};otherSnapshot.workspace.tasks[0].draft=body.changes.draft.after;return {outcome:'applied'}};return remoteTicket(body)},
+readRuntime:async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs[owner.id]??[]};if(path==='/api/workspace'){if(window.conflict)return {outcome:'reconciled',reason:'Draft changed elsewhere',recoveryId:'11223344-1122-4122-8122-112233445566'};otherSnapshot.workspace.tasks[0].draft=body.changes.draft.after;return {outcome:'applied'}};return remoteTicket(body)},
 setWorkspace:update=>{workspace.workspace=typeof update==='function'?update(workspace.workspace):update;window.savedDraft=workspace.workspace.tasks[0].draft},flush:async()=>{if(window.hangFlush)await new Promise(()=>{});},refreshRuntime:async()=>{},};
 window.fixtureStore=workspace;window.remoteDraft=()=>otherSnapshot.workspace.tasks[0].draft;
 const WorkspaceContext=createContext(null);
@@ -90,11 +95,11 @@ export const useSettingsTarget=()=>{
   const [target,setTarget]=useState({environmentId:'',projectId:''});
   return {target,setTarget,sources,...resolveSettingsTarget(sources,target,workspace.activeRuntimeId)};
 };
-export const useStudioHost=()=>({browser,onBrowserContextAction:listener=>{window.contextAction=listener;return ()=>{window.contextAction=null}},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
+export const useStudioHost=()=>({browser,browserExtensions,onBrowserContextAction:listener=>{window.contextAction=listener;return ()=>{window.contextAction=null}},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
 const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{}};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
-export const useRemoteBrowserProfiles=()=>({profiles:[{id:'default',name:'Remote Default'},{id:'remote-work',name:'Remote Work'},{id:'remote-personal',name:'Remote Personal'}],error:'',loading:false});
+export {useRemoteBrowserProfiles} from '${root}packages/studio-core/src/browser-profiles.ts';
 export const readAppPreferences=()=>({browserViewport:'fill'});
 window.preferences=[];export const updateAppPreferences=change=>window.preferences.push(change);const polls=new Set();window.pollBrowser=async()=>{for(const poll of [...polls])await Effect.runPromise(poll)};export const startPolling=poll=>{polls.add(poll);return {stop:async()=>{polls.delete(poll)}}};
 `,
@@ -147,6 +152,43 @@ try {
     `studio:browser:main:${initialTabId}`,
     'Native session key includes its window and tab',
   )
+  const nativeAction = (action) =>
+    page.waitForFunction(
+      (action) =>
+        window.calls.filter((call) => ['show', 'hide'].includes(call.action)).at(-1)?.action ===
+        action,
+      action,
+    )
+  // A hung capture must never keep the native view over the real Extensions menu.
+  await page.evaluate(() => {
+    window.holdCapture = true
+  })
+  await page.getByRole('button', { name: 'Extensions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Manage extensions', exact: true }).waitFor()
+  await page.waitForFunction(() => typeof window.finishCapture === 'function')
+  await nativeAction('hide')
+  await page.keyboard.press('Escape')
+  await nativeAction('show')
+  await page.evaluate(() => {
+    window.holdCapture = false
+    window.finishCapture()
+  })
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(
+    await page.locator('img[aria-hidden][src^="data:image/png"]').count(),
+    0,
+    'Late capture cannot freeze a restored page',
+  )
+  await page.getByRole('button', { name: 'Extensions', exact: true }).click()
+  await nativeAction('hide')
+  await page.getByRole('menuitem', { name: 'Manage extensions', exact: true }).click()
+  const extensionsDialog = page.getByRole('dialog', { name: 'Browser extensions' })
+  await extensionsDialog.waitFor()
+  await nativeAction('hide')
+  await extensionsDialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await nativeAction('show')
   await recent.getByRole('button', { name: 'New browser tab', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New browser window', exact: true }).click()
   await page.waitForFunction(
@@ -203,7 +245,18 @@ try {
   assert.equal(extracted.textareaText, extracted.literal.slice(2, -2), 'Textarea selection range')
   assert.equal(extracted.textareaBound, 'x'.repeat(32000), 'Textarea selection bound')
   assert.equal(extracted.documentBound, 'y'.repeat(32000), 'Document selection bound')
-  await page.getByRole('button', { name: 'Copy selection', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Copy selection', exact: true }).count(),
+    0,
+    'Page actions stay out of the toolbar',
+  )
+  const pageAction = async (name) => {
+    const settings = page.getByRole('dialog', { name: 'Browser settings', exact: true })
+    if (!(await settings.isVisible()))
+      await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+    await settings.getByRole('button', { name, exact: true }).click()
+  }
+  await pageAction('Copy selection')
   assert.equal(
     await page.evaluate(() => navigator.clipboard.readText()),
     'Keep  spaces\nSecond line',
@@ -211,8 +264,8 @@ try {
   )
   // A pending workspace sync must not block opening an unsent local draft.
   await page.evaluate(() => (window.hangFlush = window.testMainDraft = true))
-  // Read literal selected text before opening an overlay; retain an existing composer draft.
-  await page.getByRole('button', { name: 'Add selection to thread…', exact: true }).click()
+  // Selection actions remain available from options and preserve an existing composer draft.
+  await pageAction('Add selection to thread…')
   await page.getByRole('button', { name: 'Destination thread', exact: false }).click()
   await page.waitForFunction(() => window.savedDraft?.includes('> Keep  spaces'))
   if (
@@ -257,7 +310,7 @@ try {
   )
   await page.evaluate(() => (window.testMainDraft = false))
   await page.evaluate(() => (window.fixtureSelection = ''))
-  await page.getByRole('button', { name: 'Add selection to thread…', exact: true }).click()
+  await pageAction('Add selection to thread…')
   if (
     !(await page
       .getByRole('alert')
@@ -275,6 +328,13 @@ try {
     window.calls.find((call) => call.owner === 'mac' && call.path === '/api/previews/browser/open'),
   )
   if (opened.body.taskId !== 'studio:browser') throw new Error('Remote tab borrowed a thread')
+  const remoteTab = recent.locator('button[aria-current="page"]')
+  await remoteTab.getByText('Remote · Mac Studio', { exact: true }).waitFor()
+  assert.equal(
+    await remoteTab.locator('[data-runtime-icon]').count(),
+    1,
+    'Tabs identify their owning computer',
+  )
   // The viewer reports the opened address; navigate explicitly instead of inventing a page.
   await url.fill('http://localhost:3000/remote-page')
   await url.press('Enter')
@@ -282,6 +342,29 @@ try {
     window.browserInputs.some(
       (input) => input.type === 'navigate' && input.url === 'http://localhost:3000/remote-page',
     ),
+  )
+  await page.getByRole('button', { name: 'Back', exact: true }).waitFor()
+  const opensBeforeReselect = await page.evaluate(
+    () => window.calls.filter((call) => call.path === '/api/previews/browser/open').length,
+  )
+  await remoteTab.click()
+  assert.equal(await url.isEnabled(), true, 'Reselecting the current tab preserves address entry')
+  assert.equal(
+    await page.getByRole('button', { name: 'Keyboard', exact: true }).isEnabled(),
+    true,
+    'Reselecting the current tab preserves keyboard controls',
+  )
+  assert.equal(
+    await page.getByRole('button', { name: 'Back', exact: true }).isEnabled(),
+    true,
+    'Reselecting the current tab preserves navigation history',
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path === '/api/previews/browser/open').length,
+    ),
+    opensBeforeReselect,
+    'Reselecting the current tab does not reopen its session',
   )
   await page.getByRole('button', { name: 'Browser options', exact: true }).click()
   await page.getByRole('combobox', { name: 'Profile for this tab' }).selectOption('remote-work')
@@ -612,7 +695,7 @@ try {
       ),
   )
   await recent.getByRole('button', { name: /^localhost:3000\/new-window Local/ }).click()
-  await page.getByRole('button', { name: 'Add page to thread…', exact: true }).click()
+  await pageAction('Add page to thread…')
   await page.getByRole('button', { name: 'Destination thread', exact: false }).click()
   await page.waitForFunction(() => window.savedDraft?.includes('http://localhost:3000/new-window'))
   assert.equal(await page.evaluate(() => window.savedDraft.startsWith('Existing draft')), true)
@@ -832,8 +915,120 @@ try {
     'http://localhost:3000/thread-only',
   )
   await threadPage.close()
+  // Saved entries must resolve and search profile names on their own computer,
+  // even when those profiles share IDs with the active tab's computer.
+  const libraryPage = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  libraryPage.on('pageerror', (error) => errors.push(error.message))
+  await libraryPage.route('http://localhost/**', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<html class="dark"><body><div id="app" style="height:800px"></div></body></html>',
+    }),
+  )
+  await libraryPage.goto('http://localhost/library')
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+    file.endsWith('.css'),
+  ))
+    await libraryPage.addStyleTag({
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+    })
+  await libraryPage.evaluate(() => {
+    const local = {
+      id: 'active-local',
+      url: '',
+      title: '',
+      kind: 'web',
+      profileId: 'default',
+    }
+    const lan = {
+      id: 'lan-saved',
+      url: 'http://localhost:3000/lan',
+      title: 'LAN saved page',
+      kind: 'remote',
+      runtimeId: 'runtime',
+      profileId: 'remote-work',
+    }
+    const mac = {
+      id: 'mac-saved',
+      url: 'http://localhost:3000/mac',
+      title: 'Mac saved page',
+      kind: 'remote',
+      runtimeId: 'mac',
+      profileId: 'remote-work',
+    }
+    const unpaired = {
+      id: 'unpaired-saved',
+      url: 'http://localhost:3000/unpaired',
+      title: 'Unpaired saved page',
+      kind: 'remote',
+      runtimeId: 'removed',
+      profileId: 'remote-work',
+    }
+    localStorage.setItem(
+      'dovo.shared-browser-tabs.v1',
+      JSON.stringify({
+        tabs: [local],
+        active: local.id,
+        closed: [lan, mac, unpaired],
+      }),
+    )
+    localStorage.setItem(
+      'dovo.shared-browser-library.v1',
+      JSON.stringify({
+        bookmarks: [lan, mac, unpaired],
+        visits: [lan, mac, unpaired],
+      }),
+    )
+  })
+  await libraryPage.addScriptTag({ content: built.outputFiles[0].text })
+  await libraryPage.getByRole('button', { name: 'Bookmarks and history', exact: true }).click()
+  const sourceLibrary = libraryPage.getByRole('dialog', { name: 'Bookmarks and history' })
+  const sourceSearch = sourceLibrary.getByRole('textbox', { name: 'Search bookmarks and history' })
+  for (const sectionName of ['Bookmarks', 'History', 'Recently closed']) {
+    const section = sourceLibrary.getByRole('region', { name: sectionName, exact: true })
+    assert.match(
+      await section.getByRole('button', { name: /^LAN saved page/ }).innerText(),
+      /LAN Work/,
+    )
+    assert.match(
+      await section.getByRole('button', { name: /^Mac saved page/ }).innerText(),
+      /Remote Work/,
+    )
+    assert.match(
+      await section.getByRole('button', { name: /^Unpaired saved page/ }).innerText(),
+      /Unavailable profile/,
+    )
+    assert.equal(
+      await section.getByText(`No ${sectionName.toLowerCase()} yet.`, { exact: true }).isVisible(),
+      false,
+    )
+  }
+  for (const profileName of ['LAN Work', 'Remote Work']) {
+    await sourceSearch.fill(profileName)
+    for (const sectionName of ['Bookmarks', 'History', 'Recently closed']) {
+      const section = sourceLibrary.getByRole('region', { name: sectionName, exact: true })
+      const entry = section
+        .locator('button[type="button"]')
+        .filter({ hasText: 'saved page' })
+        .first()
+      assert.match(await entry.innerText(), new RegExp(profileName))
+      assert.equal(
+        await section.getByRole('button', { name: /^(LAN|Mac|Unpaired) saved page/ }).count(),
+        1,
+      )
+      assert.equal(
+        await section.getByText('No matching pages.', { exact: true }).isVisible(),
+        false,
+      )
+    }
+  }
+  await sourceSearch.fill('no-profile-with-this-name')
+  const emptySections = sourceLibrary.getByText('No matching pages.', { exact: true })
+  assert.equal(await emptySections.count(), 3)
+  for (const message of await emptySections.all()) assert.equal(await message.isVisible(), true)
+  await libraryPage.close()
   await page.evaluate(() => (window.fixtureSelection = 'Remote selection'))
-  await page.getByRole('button', { name: 'Add selection to thread…', exact: true }).click()
+  await pageAction('Add selection to thread…')
   await page.evaluate(() => (window.conflict = true))
   await page.getByRole('button', { name: 'Mac thread', exact: false }).click()
   if (!(await page.getByRole('alert').filter({ hasText: 'Draft changed elsewhere' }).isVisible()))
@@ -856,7 +1051,7 @@ try {
   assert.equal(extracted.passwordText, '', 'Password selection must be excluded')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Shared vertical tabs, local localhost, source-preserving drafts across computers, conflicts, per-tab remote ownership/profiles, recent order, restore, lazy sessions, search, bookmarks/history, reopen, shortcuts, page drafts, opened-link source profiles real BrowserView preference gate, bounded background opened links and pop-out isolation passed.',
+    'Shared vertical tabs, active-tab reselection, local localhost, source-preserving drafts across computers, conflicts, per-tab remote ownership/profiles, recent order, restore, lazy sessions, saved-page profile labels/search with real runtime catalogs, bookmarks/history, reopen, shortcuts, page drafts, opened-link source profiles, real BrowserView preference gate, bounded background opened links and pop-out isolation passed.',
   )
 } finally {
   await browser.close()

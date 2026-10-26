@@ -13,7 +13,7 @@ if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},
 });</script></body></html>`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import {TooltipProvider} from '@dovo/studio-ui';createRoot(document.getElementById('app')).render(<TooltipProvider><BrowserPane taskId="task"/></TooltipProvider>);`,
+    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import {TooltipProvider,Tooltip,TooltipTrigger,TooltipContent} from '@dovo/studio-ui';createRoot(document.getElementById('app')).render(<TooltipProvider><BrowserPane taskId="task"/></TooltipProvider>);window.mountTooltip=()=>{const node=document.createElement('div');document.body.append(node);const root=createRoot(node);root.render(<TooltipProvider><Tooltip delayDuration={0}><TooltipTrigger asChild><button id="tooltip-trigger" style={{position:'fixed',left:5,top:200,zIndex:100}}>Details</button></TooltipTrigger><TooltipContent side="right" style={{width:100,height:60}}>Thread details</TooltipContent></Tooltip></TooltipProvider>);window.unmountTooltip=()=>{root.unmount();node.remove()}};`,
     resolveDir: root + 'packages/extension-tasks',
     loader: 'tsx',
   },
@@ -182,6 +182,62 @@ try {
       action,
     )
   }
+  // A real tooltip at the page edge must appear over the native view even though
+  // it does not cover the slot's center. Closing it must restore the live page.
+  await page.evaluate(() => window.mountTooltip())
+  await page.locator('#tooltip-trigger').hover()
+  const tooltip = page.getByRole('tooltip', { name: 'Thread details', exact: true })
+  await tooltip.waitFor()
+  const tooltipBox = await tooltip.boundingBox()
+  const nativeBounds = await page.evaluate(
+    () => window.calls.filter((call) => call.action === 'show').at(-1).bounds,
+  )
+  if (
+    !tooltipBox ||
+    tooltipBox.x >= nativeBounds.x + nativeBounds.width ||
+    tooltipBox.x + tooltipBox.width <= nativeBounds.x ||
+    tooltipBox.y >= nativeBounds.y + nativeBounds.height ||
+    tooltipBox.y + tooltipBox.height <= nativeBounds.y ||
+    tooltipBox.x + tooltipBox.width >= nativeBounds.x + nativeBounds.width / 2
+  )
+    throw new Error('Tooltip fixture must overlap the browser edge without covering its center')
+  await nativeAction('hide')
+  await page.waitForFunction(
+    () =>
+      window.calls.filter((call) => ['show', 'hide'].includes(call.action)).at(-1)
+        ?.preserveFocus === true,
+  )
+  // A modal must take priority over passive tooltip focus, even if its own box is elsewhere.
+  await page.evaluate(() => {
+    const modal = document.createElement('div')
+    modal.id = 'tooltip-modal'
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-modal', 'true')
+    modal.style.cssText = 'position:fixed;left:0;top:0;width:20px;height:20px;z-index:100'
+    document.body.append(modal)
+  })
+  await page.waitForFunction(
+    () =>
+      window.calls.filter((call) => ['show', 'hide'].includes(call.action)).at(-1)
+        ?.preserveFocus !== true,
+  )
+  await page.locator('#tooltip-modal').evaluate((element) => element.remove())
+  await page.waitForFunction(
+    () =>
+      window.calls.filter((call) => ['show', 'hide'].includes(call.action)).at(-1)
+        ?.preserveFocus === true,
+  )
+  await page.mouse.move(370, 10, { steps: 5 })
+  await tooltip.waitFor({ state: 'hidden' })
+  await nativeAction('show')
+  await page.locator('#tooltip-trigger').hover()
+  await tooltip.waitFor()
+  await nativeAction('hide')
+  await page.keyboard.press('Escape')
+  await tooltip.waitFor({ state: 'hidden' })
+  await nativeAction('show')
+  await page.evaluate(() => window.unmountTooltip())
+  await page.addStyleTag({ content: '#browser-overlay[data-state="closed"] { display: none }' })
   for (const role of ['menu', 'listbox', 'dialog']) {
     await page.evaluate((role) => {
       const overlay = document.createElement('div')
@@ -200,6 +256,15 @@ try {
       document.getElementById('browser-overlay').hidden = false
     })
     await nativeAction('hide')
+    // Mounted menus may change visibility using Radix's data-state alone.
+    await page.locator('#browser-overlay').evaluate((element) => {
+      element.setAttribute('data-state', 'closed')
+    })
+    await nativeAction('show')
+    await page.locator('#browser-overlay').evaluate((element) => {
+      element.setAttribute('data-state', 'open')
+    })
+    await nativeAction('hide')
     await page.evaluate(() => document.getElementById('browser-overlay').remove())
     await nativeAction('show')
   }
@@ -213,6 +278,67 @@ try {
   })
   await nativeAction('hide')
   await page.evaluate(() => document.getElementById('modal').remove())
+  await nativeAction('show')
+  // Retained panes can have a full layout box while visibility:hidden. Their native
+  // child must not cover the active screen or take its clicks.
+  await page.locator('#app').evaluate((element) => {
+    element.style.visibility = 'hidden'
+  })
+  await nativeAction('hide')
+  await page.locator('#app').evaluate((element) => {
+    element.style.visibility = ''
+  })
+  await nativeAction('show')
+  // Expanded/floating previews can overlap open disclosures and persistent panels
+  // underneath them. Those must not replace the interactive page with a picture.
+  for (const tag of ['details', 'div']) {
+    await page.evaluate((tag) => {
+      const app = document.getElementById('app')
+      app.style.position = 'relative'
+      app.style.zIndex = '10'
+      const panel = document.createElement(tag)
+      panel.id = 'behind-browser'
+      if (tag === 'details') {
+        panel.open = true
+        panel.innerHTML = '<summary>Tool output</summary>'
+      } else panel.setAttribute('role', 'dialog')
+      panel.style.cssText = 'position:fixed;inset:100px 10px 10px;z-index:1;background:black'
+      document.body.append(panel)
+    }, tag)
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    await nativeAction('show')
+    await page.locator('#behind-browser').evaluate((element) => {
+      element.style.zIndex = '100'
+    })
+    await nativeAction('hide')
+    await page.locator('#behind-browser').evaluate((element) => element.remove())
+    await nativeAction('show')
+  }
+  await page.evaluate(() => {
+    const backdrop = document.createElement('div')
+    backdrop.id = 'backdrop'
+    backdrop.style.cssText = 'position:fixed;inset:0;z-index:100;background:#0008'
+    document.body.append(backdrop)
+  })
+  await nativeAction('hide')
+  await page.locator('#backdrop').evaluate((element) => element.remove())
+  await nativeAction('show')
+  await page.locator('#app').evaluate((element) => {
+    element.style.height = '180px'
+    element.style.overflow = 'hidden'
+  })
+  await page.waitForFunction(() => {
+    const last = window.calls.filter((call) => call.action === 'show').at(-1)
+    return last && last.bounds.y + last.bounds.height <= 180
+  })
+  await page.locator('#app').evaluate((element) => {
+    element.style.height = '700px'
+    element.style.overflow = ''
+    element.style.position = ''
+    element.style.zIndex = ''
+  })
   await nativeAction('show')
   // The browser's own floating container must hide the native layer while dragging.
   await page.getByRole('region', { name: 'Browser previews' }).evaluate((element) => {
@@ -365,7 +491,7 @@ try {
   if ((await page.getByRole('tab', { selected: true }).textContent()) !== previousTab)
     throw new Error('Closing the current tab should select its neighbor')
   console.log(
-    'Compact toolbar, native browser visibility with retained chat and real overlays, hidden single-tab strip, Enter navigation, HTTP LAN addresses, browser options, plus menu, mixed tab strip, remote indicators, title updates, retained sessions, per-tab local/remote profile choices, profile switching, and scoped close passed.',
+    'Compact toolbar, native browser visibility with retained chat, real tooltips and overlays, hidden single-tab strip, Enter navigation, HTTP LAN addresses, browser options, plus menu, mixed tab strip, remote indicators, title updates, retained sessions, per-tab local/remote profile choices, profile switching, and scoped close passed.',
   )
 } finally {
   await browser.close()

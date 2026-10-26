@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { chromium } from './browser/harness.mjs'
 
 // Real sidebar, rows, context menus, studio-ui and workspace value provider. Only the host,
@@ -388,11 +388,9 @@ try {
   await page.getByRole('button', { name: 'Show all 120 settled threads', exact: true }).click()
   await page.getByText('Settled thread 0', { exact: true }).waitFor({ state: 'attached' })
   const settledRow = page.getByRole('button', { name: /Settled thread 0/, exact: true })
-  // Settled rows keep project, status and the runtime icon above the title, without a branch row.
-  for (const label of ['Project', 'Settled', 'Settled thread 0'])
-    assert.equal(await settledRow.getByText(label, { exact: true }).count(), 1)
-  assert.equal(await settledRow.locator('[data-row-icon]').count(), 1)
-  assert.equal(await settledRow.locator('.studio-thread-card-context').count(), 1)
+  // Settled rows keep the original single-line project icon and title.
+  assert.equal(await settledRow.getByText('Settled thread 0', { exact: true }).count(), 1)
+  assert.equal(await settledRow.locator('.studio-thread-card-context').count(), 0)
   await settledRow.click()
   assert.equal(await page.evaluate(() => window.selected.task.id), 'settled-0')
   await page.getByRole('button', { name: 'Show fewer settled threads', exact: true }).click()
@@ -560,6 +558,58 @@ try {
     await page.evaluate((taskSort) => window.setListPreferences({ taskSort }), sort)
     await page.waitForFunction(() => window.settledPath().includes('settled=25'))
   }
+  // Verify the actual app CSS after the render/windowing checks above.
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+    file.endsWith('.css'),
+  ))
+    await page.addStyleTag({
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+    })
+  await page.evaluate(() => {
+    const turn = {
+      id: 'appearance-turn',
+      status: 'completed',
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    }
+    const base = {
+      ...window.tasks[0],
+      repositoryId: 'repo',
+      status: 'done',
+      archived: false,
+      archivedAt: undefined,
+      linkedCheckouts: undefined,
+      turns: [turn],
+    }
+    window.publish([
+      { ...base, id: 'read-style', title: 'Read appearance', lastViewedTurnId: turn.id },
+      { ...base, id: 'unread-style', title: 'Unread appearance', lastViewedTurnId: undefined },
+      { ...base, id: 'settled-style', title: 'Compact settled appearance', archived: true },
+    ])
+  })
+  const readTitle = page.getByText('Read appearance', { exact: true })
+  const unreadTitle = page.getByText('Unread appearance', { exact: true })
+  await readTitle.waitFor()
+  await unreadTitle.waitFor()
+  assert.notEqual(
+    await readTitle.evaluate((el) => getComputedStyle(el).color),
+    await unreadTitle.evaluate((el) => getComputedStyle(el).color),
+    'Read titles are visibly dimmer than unread titles',
+  )
+  assert.equal(await unreadTitle.locator('..').getAttribute('data-unread'), 'true')
+  assert.equal(await readTitle.locator('..').getAttribute('data-unread'), null)
+  const settledDetails = page
+    .locator('details')
+    .filter({ has: page.locator('summary').filter({ hasText: 'Settled' }) })
+  if (!(await settledDetails.evaluate((el) => el.open)))
+    await settledDetails.locator('summary').click()
+  const compactTitle = page.getByText('Compact settled appearance', { exact: true })
+  await compactTitle.waitFor()
+  const compactBox = await compactTitle.locator('..').boundingBox()
+  assert.ok(
+    compactBox && compactBox.height <= 38,
+    'Settled rows retain the original compact height',
+  )
   assert.deepEqual(errors, [])
   console.log(
     `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero tree/pill renders for 30 large child-payload updates and one tree render for visible activity; selector isolation, latest-entry commands, nested thread navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
