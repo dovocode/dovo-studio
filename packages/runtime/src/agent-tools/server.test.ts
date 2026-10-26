@@ -675,6 +675,7 @@ it('keeps read-only providers from sending task terminal or device input', async
       'browser',
       'subagent_spawn',
       'subagent_list',
+      'subagent_send',
       'subagent_read',
       'subagent_wait',
       'subagent_cancel',

@@ -659,21 +659,24 @@ it('recovers a durable child completion exactly once and holds it for manual con
   adapter(run)
   const second = await startRuntime(options)
   cleanups.push(second.close)
-  expect(second.services.store.task(parent.id).queue?.[0]?.text).toContain('Recovered child answer')
+  expect(second.services.store.task(parent.id).subagentInbox?.[0]?.text).toContain(
+    'Recovered child answer',
+  )
   expect(second.services.store.task(parent.id).queuePaused).toBe(true)
   expect(run).not.toHaveBeenCalled()
   expect(second.services.store.task(child.id).delegation?.completion).toBe('queued')
   await second.close()
   const third = await startRuntime(options)
   cleanups.push(third.close)
-  expect(third.services.store.task(parent.id).queue).toHaveLength(1)
+  expect(third.services.store.task(parent.id).subagentInbox).toHaveLength(1)
   expect(run).not.toHaveBeenCalled()
   await (
     await third.services.tasks.start(parent.id)
   ).done
   expect(run).toHaveBeenCalledOnce()
   expect(run.mock.calls[0][0].prompt).toContain('Recovered child answer')
-  expect(third.services.store.task(parent.id).queue).toEqual([])
+  expect(third.services.store.task(parent.id).queue ?? []).toEqual([])
+  expect(third.services.store.task(parent.id).subagentInbox).toEqual([])
 })
 
 it('retains interruption delivery when the runtime shuts down with an idle parent and a working child', async () => {
@@ -724,7 +727,7 @@ it('retains interruption delivery when the runtime shuts down with an idle paren
   const task = restarted.services.store.task(parent.id)
   expect(task.status).toBe('review')
   expect(task.queuePaused).toBe(true)
-  expect(task.queue?.[0]?.text).toContain('Child interrupted by runtime restart')
+  expect(task.subagentInbox?.[0]?.text).toContain('Child interrupted by runtime restart')
   expect(restarted.services.store.task(childId).delegation?.completion).toBe('queued')
   expect(resumed).not.toHaveBeenCalled()
   await (

@@ -37,7 +37,7 @@ export function codexMcpServers(servers: McpServer[]) {
                 [
                   'ask_question',
                   'todos',
-                  ...['spawn', 'list', 'read', 'wait', 'cancel'].map(
+                  ...['spawn', 'list', 'send', 'read', 'wait', 'cancel'].map(
                     (action) => `subagent_${action}`,
                   ),
                 ].map((name) => [name, { approval_mode: 'approve' }]),

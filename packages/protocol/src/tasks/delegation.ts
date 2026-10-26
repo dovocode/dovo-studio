@@ -38,6 +38,12 @@ export const subagentReadSchema = mutableStruct({
     ),
   ),
 })
+export const subagentSendSchema = mutableStruct({
+  ...subagentScopeSchema.fields,
+  id,
+  key: maxValue(minValue(Schema.String, 1), 100),
+  prompt: maxValue(minValue(Schema.String, 1), 20000),
+})
 /** Never grant a child wider access than its parent, even when selecting a saved preset. */
 export function delegatedAccess(
   parent: (typeof agentSchema.Type)['permission'],
@@ -88,6 +94,7 @@ export function indexTaskFamilyWorking(tasks: readonly TaskMetadata[]) {
           !watch.paused &&
           (watch.offline || watch.snapshot?.phase !== 'completed'),
       ) ||
+      !!task.subagentInbox?.length ||
       task.queue?.some((message) => message.subagentResultId)
     )
       mark(task)

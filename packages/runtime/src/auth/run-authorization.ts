@@ -13,6 +13,7 @@ const allowed = new Set([
   '/api/agent/todos',
   '/api/subagents/spawn',
   '/api/subagents/list',
+  '/api/subagents/send',
   '/api/subagents/read',
   '/api/subagents/wait',
   '/api/subagents/cancel',
@@ -101,12 +102,32 @@ export function authorizeRunRoute(
       const parent = resolveTaskAgent(s.store.taskSummary(grant.taskId), s.store.get().agents)
       if (!parent || !permissionPolicyWithinCeiling(grant.permissions, parent)) denied()
     }
-    if (['/api/subagents/read', '/api/subagents/wait', '/api/subagents/cancel'].includes(path)) {
+    if (
+      [
+        '/api/subagents/read',
+        '/api/subagents/wait',
+        '/api/subagents/cancel',
+        '/api/subagents/send',
+      ].includes(path)
+    ) {
       const child = s.store.get().tasks.find((task) => task.id === input.id)
       const targeted = s.threadWatch
         .list(grant.taskId)
         .some((watch) => watch.delegated && targetedChildId(watch) === input.id)
-      if (child?.delegation?.parentTaskId !== grant.taskId && !targeted) denied()
+      const native =
+        path !== '/api/subagents/send' &&
+        s.store
+          .taskSummary(grant.taskId)
+          .subagents?.some((agent) => agent.source !== 'dovo' && agent.completionId === input.id)
+      const savedNative =
+        path !== '/api/subagents/send' &&
+        typeof input.id === 'string' &&
+        input.id.startsWith('native-result:') &&
+        s.store
+          .taskSummary(grant.taskId)
+          .subagentInbox?.some((message) => message.subagentResultId === input.id)
+      if (child?.delegation?.parentTaskId !== grant.taskId && !targeted && !native && !savedNative)
+        denied()
     }
     // Child access narrowing is enforced by Tasks.subagentSpawn, including read-only parents.
     return grant

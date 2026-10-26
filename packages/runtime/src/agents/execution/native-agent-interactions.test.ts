@@ -180,8 +180,8 @@ it('queues a late native result once, honors a paused queue, and wakes the paren
     result: 'Child answer',
     completion: 'queued',
   })
-  expect(s.store.task(task.id).queue).toHaveLength(1)
-  expect(s.store.task(task.id).queue?.[0].text).toContain('Child answer')
+  expect(s.store.task(task.id).subagentInbox).toHaveLength(1)
+  expect(s.store.task(task.id).subagentInbox?.[0].text).toContain('Child answer')
   expect(s.store.task(task.id).activeRunId).toBeUndefined()
   s.store.updateTask(task.id, (current) => ({ ...current, queuePaused: false }))
   await s.tasks.runScheduled()

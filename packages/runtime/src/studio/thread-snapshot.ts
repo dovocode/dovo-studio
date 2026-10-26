@@ -201,6 +201,7 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
         : activeEntries.some((entry) => entry.phase === 'waiting') ||
             tasks.some(
               (item) =>
+                !!item.subagentInbox?.length ||
                 item.queue?.some((message) => message.subagentResultId) ||
                 item.subagents?.some((agent) => agent.completion === 'pending') ||
                 (item.id !== id && item.delegation?.completion === 'pending'),

@@ -234,12 +234,12 @@ it('delivers a remote final answer once and retains completed results when offli
     expect(target.s.store.taskSummary(child.threadId).status).toBe('review'),
   )
   await source.s.threadWatch.tick()
-  const queued = source.s.store.taskSummary(source.parent.id).queue ?? []
+  const queued = source.s.store.taskSummary(source.parent.id).subagentInbox ?? []
   expect(queued).toHaveLength(1)
   expect(queued[0].text).toContain('Child completed its focused task')
   expect(queued[0].subagentResultId).toBe(child.id)
   await source.s.threadWatch.tick()
-  expect(source.s.store.taskSummary(source.parent.id).queue).toHaveLength(1)
+  expect(source.s.store.taskSummary(source.parent.id).subagentInbox).toHaveLength(1)
   const result = await source.post('read', { id: child.id })
   expect(decode(childSchema, await result.json()).result).toBe('Child completed its focused task')
   expect(source.s.store.taskSummary(source.parent.id).queue ?? []).toHaveLength(0)
@@ -586,4 +586,84 @@ it('returns background grandchildren and acknowledges a remote failure without l
   expect(response.status).toBe(200)
   expect(source.s.store.taskSummary(parent.id).acknowledgedSubagentFailures).toEqual([key])
   expect(target.s.store.taskSummary(child.threadId).acknowledgedSubagentFailures).toBeUndefined()
+})
+
+it('sends idempotent follow-ups to an owned paired child and receives a fresh inbox result', async () => {
+  const source = await setup(),
+    target = await setup()
+  const pairing = await pair(source, target)
+  let turns = 0
+  target.setChild(async (run) => {
+    turns++
+    run.onText(`Remote answer ${turns}`)
+  })
+  const spawned = await source.post('spawn', { ...request, runtimeId: pairing.peer.id })
+  expect(spawned.status).toBe(200)
+  const child = decode(childSchema, await spawned.json())
+  expect(
+    decode(childSchema, await (await source.post('wait', { id: child.id })).json()).result,
+  ).toBe('Remote answer 1')
+  const followup = { id: child.id, key: 'second-review', prompt: 'Review again' }
+  const sent = await source.post('send', followup)
+  expect(sent.status).toBe(200)
+  expect((await source.post('send', followup)).status).toBe(200)
+  expect((await source.post('send', { ...followup, prompt: 'Different' })).status).toBe(409)
+  const waited = await source.post('wait', { id: child.id })
+  expect(decode(childSchema, await waited.json()).result).toContain('Remote answer 2')
+  expect(turns).toBe(2)
+  expect((await source.post('send', { ...followup, id: 'someone-else' })).status).toBe(403)
+  expect(source.s.store.taskSummary(source.parent.id).queue ?? []).toEqual([])
+})
+
+it('lists and reads a late native result without exposing it to the user queue', async () => {
+  const source = await setup()
+  const completionId = 'native-result:codex:session:child:started'
+  source.s.store.updateTask(source.parent.id, (task) => ({
+    ...task,
+    subagents: [
+      {
+        id: 'native-child',
+        provider: 'codex',
+        name: 'Native reviewer',
+        status: 'completed',
+        source: undefined,
+        startedAt: 'started',
+        updatedAt: 'finished',
+        finishedAt: 'finished',
+        result: 'Native answer',
+        completion: 'pending',
+        completionId,
+      },
+    ],
+  }))
+  await source.s.tasks.runScheduled()
+  const list = await source.post('list')
+  expect(await list.json()).toMatchObject({ inbox: [{ id: completionId }] })
+  expect(source.s.store.taskSummary(source.parent.id).queue ?? []).toEqual([])
+  const result = await source.post('read', { id: completionId })
+  expect(result.status).toBe(200)
+  expect(await result.json()).toMatchObject({ result: 'Native answer', running: false })
+  expect(source.s.store.taskSummary(source.parent.id).subagentInbox).toEqual([])
+  expect(source.s.store.taskSummary(source.parent.id).subagents?.[0].completion).toBe('read')
+  // A restarted native child must not overwrite an older unread result or receive its acknowledgement.
+  source.s.tasks.queue.addSubagentResult(
+    source.parent.id,
+    'older',
+    'Earlier native answer',
+    completionId,
+  )
+  source.s.store.updateTask(source.parent.id, (task) => ({
+    ...task,
+    subagents: task.subagents?.map((agent) => ({
+      ...agent,
+      completionId: 'native-result:new-attempt',
+      completion: 'pending',
+      result: 'New answer',
+    })),
+  }))
+  const earlier = await source.post('read', { id: completionId })
+  expect(earlier.status).toBe(200)
+  expect(await earlier.json()).toMatchObject({ result: 'Earlier native answer' })
+  expect(source.s.store.taskSummary(source.parent.id).subagents?.[0].completion).toBe('pending')
+  expect((await source.post('read', { id: 'native-result:someone-else' })).status).toBe(403)
 })

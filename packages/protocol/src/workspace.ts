@@ -450,6 +450,22 @@ export const taskPullSchema = mutableStruct({
   headSha: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
   baseSha: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
 })
+/** Internal delivery omits attachments, model overrides and user editing controls. */
+export type SubagentNotification = {
+  id: string
+  role: 'user'
+  text: string
+  subagentResultId?: string
+  createdAt: string
+}
+export const subagentNotificationSchema: Schema.Codec<SubagentNotification, SubagentNotification> =
+  mutableStruct({
+    id: Schema.String,
+    role: Schema.Literal('user'),
+    text: Schema.String,
+    subagentResultId: Schema.optional(Schema.String),
+    createdAt: Schema.String,
+  })
 export const queuedMessageSchema = mutableStruct({
   ...messageSchema.fields,
   ...{
@@ -650,6 +666,8 @@ export const taskSchema = mutableStruct({
     mutableStruct({
       runId: Schema.optional(Schema.String),
       inputMessageIds: mutableArray(Schema.String),
+      /** Internal child notifications admitted atomically; never user conversation messages. */
+      subagentInputs: Schema.optional(mutableArray(subagentNotificationSchema)),
       turnSettings: Schema.optional(turnSettingsSchema),
       promptAccepted: Schema.Boolean,
     }),
@@ -780,6 +798,8 @@ export const taskSchema = mutableStruct({
       fingerprint: Schema.optional(maxValue(Schema.String, 64)),
       /** Present on durable children; absent on legacy turn-owned children. */
       completion: Schema.optional(Schema.Literals(['pending', 'queued', 'read', 'disposed'])),
+      /** Stable completion receipt for the latest follow-up, independent of turn preparation. */
+      resultVersion: Schema.optional(Schema.String),
       parentTaskId: maxValue(minValue(Schema.String, 1), 200),
       parentRunId: maxValue(minValue(Schema.String, 1), 200),
       checkoutId: Schema.optional(Schema.String),
@@ -885,6 +905,8 @@ export const taskSchema = mutableStruct({
   /** Runtime-owned notice: Scope resolved this thread to General without a project match. */
   autoProjectFallback: Schema.optional(Schema.Boolean),
   queue: Schema.optional(mutableArray(queuedMessageSchema)),
+  /** Durable child notifications, separate from editable user follow-ups. */
+  subagentInbox: Schema.optional(mutableArray(subagentNotificationSchema)),
   queuePaused: Schema.optional(Schema.Boolean),
   restartRecovery: Schema.optional(
     mutableStruct({

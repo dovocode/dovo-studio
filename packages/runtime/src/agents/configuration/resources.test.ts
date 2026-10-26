@@ -184,6 +184,7 @@ it('permits scoped conversation, progress and child controls without extra Codex
     todos: { approval_mode: 'approve' },
     subagent_spawn: { approval_mode: 'approve' },
     subagent_list: { approval_mode: 'approve' },
+    subagent_send: { approval_mode: 'approve' },
     subagent_read: { approval_mode: 'approve' },
     subagent_wait: { approval_mode: 'approve' },
     subagent_cancel: { approval_mode: 'approve' },

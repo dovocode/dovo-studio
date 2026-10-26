@@ -10,6 +10,7 @@ import {
   resolveTaskAgent,
   subagentListSchema,
   subagentReadSchema,
+  subagentSendSchema,
   taskHarnessSchema,
   threadWatchSnapshotSchema,
   type SubagentSpawn,
@@ -294,6 +295,11 @@ export async function listChildren(
       )
     : undefined
   return {
+    inbox: (parent.subagentInbox ?? []).map((message) => ({
+      id: message.subagentResultId,
+      notificationId: message.id,
+      createdAt: message.createdAt,
+    })),
     agents: [
       ...s.tasks.subagentList(input.taskId),
       ...s.threadWatch
@@ -349,6 +355,14 @@ export async function readChild(
   } catch (error) {
     if (!(error instanceof HttpError)) throw error
     if (error.status < 500 && ![404, 408, 429].includes(error.status)) throw error
+    if (watch.snapshot?.phase === 'completed')
+      s.threadWatch.acknowledgeChild(
+        input.taskId,
+        watch.runtimeId,
+        watch.threadId,
+        watch.snapshot,
+        true,
+      )
     return {
       ...targetResult(watch, watch.snapshot, true),
       note:
@@ -395,4 +409,59 @@ export async function cancelChild(
     stopRequested: true,
     note: 'Stop requested. An offline computer will receive it after reconnecting; cancellation is not yet confirmed.',
   }
+}
+
+export async function sendChild(
+  s: Services,
+  input: typeof subagentSendSchema.Type,
+  supplied?: StudioPolicy,
+) {
+  s.tasks.assertToolScope(input.taskId, input.parentRunId)
+  if (!input.prompt.trim()) throw new HttpError(400, 'Add a follow-up prompt')
+  const watch = ownedTarget(s, input.taskId, input.id)
+  if (!watch) {
+    const child = s.tasks.subagentResult(input.taskId, input.id, false, input.parentRunId)
+    const messageId = `subagent-send:${createHash('sha256')
+      .update(JSON.stringify([input.taskId, input.id, input.key]))
+      .digest('hex')}`
+    if (!child.running && !s.store.taskSubmission(input.id, messageId)) admit(s, input.taskId)
+    return s.tasks.subagentSend(input.taskId, input.id, input.key, input.prompt, input.parentRunId)
+  }
+  const policy = parentPolicy(s, input.taskId, supplied)
+  requireStudioPart(s, 'threads', policy)
+  if (watch.paused || watch.stopRequested)
+    throw new HttpError(403, 'This child is paused or stopping')
+  if (!targetResult(watch).running) admit(s, input.taskId)
+  const messageId = `subagent-send:${createHash('sha256')
+    .update(JSON.stringify([input.taskId, input.id, input.key]))
+    .digest('hex')}`
+  await routedStudioTool(
+    s,
+    input.taskId,
+    'threads',
+    {
+      action: 'send',
+      id: watch.threadId,
+      text: input.prompt,
+      messageId,
+    },
+    watch.runtimeId,
+    () => s.tasks.assertToolScope(input.taskId, input.parentRunId),
+    policy,
+    undefined,
+    true,
+  )
+  // Clear the prior completion only after the target accepted the follow-up.
+  if (watch.snapshot?.phase === 'completed')
+    s.threadWatch.acknowledgeChild(input.taskId, watch.runtimeId, watch.threadId, watch.snapshot)
+  s.threadWatch.watch(
+    input.taskId,
+    watch.runtimeId,
+    watch.threadId,
+    watch.computerName,
+    policy,
+    watch.relation,
+    true,
+  )
+  return readChild(s, input, supplied)
 }

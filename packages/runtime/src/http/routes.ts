@@ -34,8 +34,20 @@ import { runtimeDiagnostics } from './diagnostics.js'
 import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
 import { pullRequestWatchRequestSchema } from '../scm/tasks/pull-request-watch.js'
 import { checkCua, cuaAction } from '../computer-use/cua.js'
-import { subagentSpawnSchema, subagentListSchema, subagentReadSchema } from '@dovo/protocol'
-import { spawnChild, listChildren, readChild, waitChild, cancelChild } from '../studio/subagents.js'
+import {
+  subagentSpawnSchema,
+  subagentListSchema,
+  subagentReadSchema,
+  subagentSendSchema,
+} from '@dovo/protocol'
+import {
+  spawnChild,
+  listChildren,
+  readChild,
+  waitChild,
+  cancelChild,
+  sendChild,
+} from '../studio/subagents.js'
 import { compactActivityEvents } from '@dovo/protocol'
 import { recoverableMutation } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -358,6 +370,8 @@ export function route(
         if (path === '/api/subagents/list') {
           return yield* serviceResult(listChildren(s, decode(subagentListSchema, raw), run))
         }
+        if (path === '/api/subagents/send')
+          return yield* serviceResult(sendChild(s, decode(subagentSendSchema, raw), run))
         const input = decode(subagentReadSchema, raw)
         if (path === '/api/subagents/read') return yield* serviceResult(readChild(s, input, run))
         if (path === '/api/subagents/wait') return yield* serviceResult(waitChild(s, input, run))

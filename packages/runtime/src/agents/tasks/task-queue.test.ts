@@ -1094,3 +1094,70 @@ it('rejects duplication of delivering or archived messages, collisions and overf
     db.close()
   }
 })
+
+it('persists subagent input separately from full user queues, drafts and conversation history', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((workspace) => ({
+      ...workspace,
+      tasks: [
+        {
+          id: 'parent',
+          title: 'Parent',
+          repositoryId: 'repo',
+          agentId: 'agent',
+          status: 'review',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: 'Child answer',
+          example: false,
+          lastPromptAt: 'original',
+          queuePaused: true,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    for (let i = 0; i < 50; i++) queue.add('parent', `user-${i}`, `User ${i}`)
+    // Keep the first user message paused: internal delivery must not resume or remove it.
+    queue.setPaused('parent', 'user-0', true)
+    expect(queue.addSubagentResult('parent', 'result', 'Child answer', 'child')).toBe(true)
+    expect(queue.addSubagentResult('parent', 'result', 'Child answer', 'child')).toBe(false)
+    expect(() => queue.addSubagentResult('parent', 'result', 'Different', 'child')).toThrow(
+      'already in use',
+    )
+    expect(store.task('parent').draft).toBe('Child answer')
+    expect(store.task('parent').queuePaused).toBe(true)
+    const before = store.task('parent').lastPromptAt
+    const restored = new WorkspaceStore(db)
+    expect(restored.task('parent').subagentInbox).toHaveLength(1)
+    const resumedQueue = new TaskQueue(restored)
+    resumedQueue.take('parent', 'run', 'attempt')
+    expect(restored.task('parent').runAttempt?.subagentInputs?.[0]).toMatchObject({
+      text: 'Child answer',
+      subagentResultId: 'child',
+    })
+    expect(restored.task('parent').messages).toEqual([])
+    expect(restored.task('parent').queue).toHaveLength(50)
+    expect(restored.task('parent').queue?.[0].paused).toBe(true)
+    expect(restored.task('parent').lastPromptAt).toBe(before)
+    expect(restored.task('parent').draft).toBe('Child answer')
+    expect(restored.task('parent').subagentInbox).toEqual([])
+    // Failed admission must retain internal input for a retry.
+    resumedQueue.take('parent', 'retry', 'retry-attempt')
+    expect(restored.task('parent').runAttempt?.subagentInputs?.[0].text).toBe('Child answer')
+    // Manual compaction does not accept delegated input and must not consume it.
+    restored.updateTask('parent', (task) => ({
+      ...task,
+      queue: [{ id: 'compact', role: 'user', text: '/compact', createdAt: '' }],
+    }))
+    resumedQueue.take('parent', 'compact-run', 'compact-attempt')
+    expect(restored.task('parent').runAttempt?.subagentInputs).toBeUndefined()
+    expect(restored.task('parent').subagentInbox?.[0].text).toBe('Child answer')
+
+    expect(resumedQueue.addSubagentResult('parent', 'result', 'Child answer', 'child')).toBe(false)
+  } finally {
+    db.close()
+  }
+})

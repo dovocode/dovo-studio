@@ -1,8 +1,9 @@
 # Dovo child agents across harnesses
 
-Dovo's task MCP server exposes `subagent_spawn`, `subagent_list`, `subagent_read`, `subagent_wait`
-and `subagent_cancel` to Codex, Claude, OpenCode and ACP integrations. Agents delegate only when the
-user's instructions permit it. These tools supplement each harness's native subagent support.
+Dovo's task MCP server exposes `subagent_spawn`, `subagent_list`, `subagent_read`, `subagent_wait`,
+`subagent_send` and `subagent_cancel` to Codex, Claude, OpenCode and ACP integrations. Agents
+delegate only when the user's instructions permit it. These tools supplement each harness's native
+subagent support.
 
 A parent can launch a child on another harness or choose a named configuration resolved for its
 project. The child has its own persisted thread, provider session, approvals, questions and usage,
@@ -45,21 +46,34 @@ after provider execution and checkout finalization finish. The parent incorporat
 own response. Use a fresh child/key and full context for each new review round. A child failure is
 returned to the parent without failing the parent automatically.
 
-Normal parent replies leave children working. Their completed answer or failure is queued durably in
-the parent thread and starts a new turn when idle. A running parent receives it on its next queued
-turn. Reading/waiting for a finished result removes any unconsumed automatic notification. Generated
-results are labelled **Dovo child result** and do not count as new user activity. Nested children
-must finish and their results be handled before their owner's result is delivered upwards. A paused
-queue stays paused. Individual cancellation suppresses that child's automatic notification. After a
-runtime restart, interrupted nested families report the direct child's interruption to the root;
-saved descendant answers remain readable without restarting interrupted children.
+Normal parent replies leave children working. Completed answers and failures go to a durable
+**subagent inbox**, separate from the editable prompt queue and conversation messages. They do not
+clear drafts, update the latest user prompt, or consume user queue space. `subagent_list` returns
+unread inbox references; `subagent_read` and `subagent_wait` consume a finished child's pending
+notification and return its answer directly. Native late-result references can also be read this
+way. The Agents panel continues to expose saved child conversations and results.
+
+Use `subagent_send` with the child ID, a stable key and a prompt to follow up in the same Dovo
+conversation. A running child receives it after its current turn; a finished child resumes.
+Identical retries do not duplicate work, while conflicting prompts for the same key are rejected.
+Stopped children require a fresh spawn. Native harness agents retain their provider's own follow-up
+controls.
+
+An idle parent continues automatically with inbox results as internal, explicitly labelled delegated
+input. A running parent can read/wait immediately; otherwise unread results are delivered at the
+next turn boundary. Multiple available results are admitted together. No synthetic user bubble is
+added. The global queue pause also holds automatic inbox continuation; reading a result still works
+while paused. A paused individual user prompt stays paused and does not block inbox collection.
+Nested children must finish and their results be handled before their owner's result is delivered
+upwards. Individual cancellation suppresses that child's automatic notification. Existing
+undelivered child messages are migrated out of the user queue without reordering user prompts.
 
 Explicit Stop cancels descendants across parent attempts, drains their writes before the
 cancellation checkpoint, and suppresses queued completion notifications. The Agents panel offers
 individual **Stop child** controls; **Stop agents** also works while the parent is idle, with a
 guard against stopping newer runs from a stale panel. Interrupted children are not restarted
 independently after a runtime restart; their interruption is returned as a result. Pending
-completions are recovered into the queue exactly once and held for manual continuation after
+completions are recovered into the inbox exactly once and held for manual continuation after
 restart. Completed results stay available. Independent tasks still cannot run simultaneously in the
 same checkout.
 
@@ -72,9 +86,9 @@ its checkout owned after a parent reply and blocks independent work, settings ch
 Claude, Codex, Muse and ACP retain their native event and request handlers between parent turns.
 Live native sessions are excluded from memory-pressure eviction. Child approvals and questions use
 the owning session while retired parent requests remain disabled. Known child events update saved
-outcomes and results. Late native results enter the same durable completion queue, with paused
-queues and duplicate notifications handled as for Dovo children. Native work interrupted by a
-runtime restart is recorded as stopped and returned for manual continuation; it is not relaunched.
+outcomes and results. Late native results enter the same durable subagent inbox, with pause and
+duplicate notifications handled as for Dovo children. Native work interrupted by a runtime restart
+is recorded as stopped and returned for manual continuation; it is not relaunched.
 
 Stop agents and individual Stop child controls include these native agents on desktop and mobile.
 Stops use provider cancellation and wait for confirmation before releasing checkout ownership. ACP
