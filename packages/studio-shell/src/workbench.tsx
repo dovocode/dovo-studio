@@ -144,13 +144,37 @@ export function Workbench(props: WorkbenchProps) {
       <WorkspaceProvider runtimeId={props.threadWindow?.runtimeId}>
         <SettingsTargetProvider>
           <TooltipProvider delayDuration={350}>
-            <ErrorBoundary scope="app">
+            <WorkbenchErrorBoundary appInfo={props.appInfo}>
               <WorkbenchContent {...props} />
-            </ErrorBoundary>
+            </WorkbenchErrorBoundary>
           </TooltipProvider>
         </SettingsTargetProvider>
       </WorkspaceProvider>
     </ApplicationStateProvider>
+  )
+}
+function WorkbenchErrorBoundary({
+  children,
+  appInfo,
+}: {
+  children: ReactNode
+  appInfo: StudioHostApi['appInfo']
+}) {
+  const { runtimes, activeRuntimeId } = useWorkspace()
+  const entry = runtimes.find((runtime) => runtime.profile.id === activeRuntimeId)
+  return (
+    <ErrorBoundary
+      scope="app"
+      diagnosticContext={{
+        appVersion: appInfo?.version,
+        channel: appInfo?.channel,
+        platform: navigator.platform,
+        computerName: entry?.profile.name,
+        runtimeVersion: entry?.snapshot?.releaseVersion,
+      }}
+    >
+      {children}
+    </ErrorBoundary>
   )
 }
 function WorkbenchContent({

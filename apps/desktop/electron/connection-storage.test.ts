@@ -118,20 +118,23 @@ it('stores private encrypted connections with a unique temporary file and cleans
   expect((await stat(target)).mode & 0o777).toBe(0o600)
   expect(await readdir(f.directory)).toEqual(['runtime-connections.enc'])
 })
-it('allows trusted thread windows but rejects foreign and malformed frames', async () => {
-  const hash =
-    '#thread=' +
-    encodeURIComponent(JSON.stringify({ runtimeId: 'remote', taskId: 'task', title: 'Thread' }))
-  const thread = event('file:///app/index.html' + hash)
-  f.listeners.get('app:settings-read')?.(thread)
-  expect(thread.returnValue).toEqual({ value: { theme: 'dark' } })
-  await save(thread)
-  await expect(save(event('https://foreign.test/' + hash))).rejects.toThrow('Untrusted')
-  await expect(save(event('file:///app/index.html#thread=invalid'))).rejects.toThrow(SyntaxError)
-  const subframe = event()
-  Object.defineProperty(subframe, 'senderFrame', { value: { url: 'file:///app/index.html' } })
-  await expect(save(subframe)).rejects.toThrow('Untrusted')
-})
+it.each(['#thread=', '#thread-share='])(
+  'allows trusted %s windows but rejects foreign and malformed frames',
+  async (prefix) => {
+    const hash =
+      prefix +
+      encodeURIComponent(JSON.stringify({ runtimeId: 'remote', taskId: 'task', title: 'Thread' }))
+    const thread = event('file:///app/index.html' + hash)
+    f.listeners.get('app:settings-read')?.(thread)
+    expect(thread.returnValue).toEqual({ value: { theme: 'dark' } })
+    await save(thread)
+    await expect(save(event('https://foreign.test/' + hash))).rejects.toThrow('Untrusted')
+    await expect(save(event('file:///app/index.html#thread=invalid'))).rejects.toThrow(SyntaxError)
+    const subframe = event()
+    Object.defineProperty(subframe, 'senderFrame', { value: { url: 'file:///app/index.html' } })
+    await expect(save(subframe)).rejects.toThrow('Untrusted')
+  },
+)
 it('merges independent stale window edits and notifies other readers only after commit', async () => {
   const main = event(),
     thread = event()

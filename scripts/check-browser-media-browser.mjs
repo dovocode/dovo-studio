@@ -13,7 +13,7 @@ const built = await bundleBrowser(
     import {createRoot} from 'react-dom/client';
     import {BrowserMediaControls} from '${root}packages/studio-shell/src/browser-media-controls';
     import {decode,browserCommandSchema} from '@dovo/protocol';
-    window.commands=[];window.requests=[];window.captures=[];window.failure='';
+    window.runtimes=[];window.commands=[];window.requests=[];window.captures=[];window.failure='';
     window.bridge=async command=>{
       decode(browserCommandSchema,command);window.commands.push(command);
       if(window.failure===command.action)throw Error('Fixture request failed');
@@ -42,7 +42,7 @@ const built = await bundleBrowser(
     {
       path: '@dovo/studio-core',
       contents:
-        'export const useStudioHost=()=>({browser:window.bridge}); export const useWorkspace=()=>({runtimes:[]});',
+        'export const useStudioHost=()=>({browser:window.bridge}); export const useWorkspace=()=>({runtimes:window.runtimes});',
     },
     {
       path: '@dovo/client-runtime',
@@ -52,6 +52,7 @@ const built = await bundleBrowser(
       path: '@dovo/studio-ui',
       contents: `
     export {Button} from '${root}packages/studio-ui/src/components/ui/button';
+    export {Input} from '${root}packages/studio-ui/src/components/ui/input';
     export {Checkbox} from '${root}packages/studio-ui/src/components/ui/checkbox';
     export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}packages/studio-ui/src/components/ui/dialog';
   `,
@@ -82,6 +83,25 @@ try {
   await page.evaluate(() => window.requestCapture())
   const dialog = page.getByRole('dialog')
   await dialog.waitFor()
+  assert.deepEqual(await dialog.getByRole('tab').allTextContents(), [
+    'Tabs',
+    'Threads',
+    'Windows',
+    'Screens',
+  ])
+  assert.equal(await dialog.getByRole('tab', { name: /all/i }).count(), 0)
+  await dialog.getByRole('tab', { name: 'Tabs', exact: true }).focus()
+  await page.keyboard.press('End')
+  assert.equal(
+    await dialog.getByRole('tab', { name: 'Screens' }).getAttribute('aria-selected'),
+    'true',
+  )
+  assert.equal(await dialog.getByRole('radio').count(), 0)
+  await page.keyboard.press('Home')
+  assert.equal(
+    await dialog.getByRole('tab', { name: 'Tabs', exact: true }).getAttribute('aria-selected'),
+    'true',
+  )
   assert.equal(await dialog.getByRole('button', { name: 'Share', exact: true }).isEnabled(), false)
   assert.equal(await dialog.getByRole('checkbox', { name: 'Share tab audio' }).isChecked(), false)
   await dialog.getByRole('radio').check()
@@ -181,6 +201,87 @@ try {
     await window.pollMedia()
   })
   await dialog.waitFor({ state: 'hidden' })
+  // A thread after the first 200 must be searchable and shareable without pre-registering it.
+  await page.evaluate(async () => {
+    window.runtimes = [
+      {
+        connected: true,
+        profile: { id: 'computer', name: 'Work Mac', nameIsCustom: true },
+        snapshot: {
+          workspace: {
+            tasks: Array.from({ length: 250 }, (_, i) => ({
+              id: 'thread-' + i,
+              title: 'Thread ' + i,
+            })),
+          },
+        },
+      },
+    ]
+    await window.requestCapture()
+    window.requests[0].sources.push(
+      {
+        key: 'remote-tab',
+        kind: 'remote',
+        title: 'Remote browser page',
+        url: 'https://remote.example',
+        audioSupported: false,
+      },
+      { key: 'window-source', kind: 'window', title: 'App window', url: '', audioSupported: false },
+      {
+        key: 'screen-source',
+        kind: 'screen',
+        title: 'Main screen',
+        url: '',
+        audioSupported: false,
+      },
+    )
+    await window.pollMedia()
+  })
+  await dialog.waitFor()
+  assert.equal(
+    await dialog.getByRole('radio').count(),
+    2,
+    'Local and remote tabs share the Tabs category',
+  )
+  await dialog.getByText('Remote browser page', { exact: true }).waitFor()
+  await dialog.getByRole('radio').nth(1).check()
+  await dialog.getByRole('tab', { name: 'Windows', exact: true }).click()
+  assert.equal(await dialog.getByRole('radio').count(), 1)
+  await dialog.getByText('App window', { exact: true }).waitFor()
+  assert.equal(
+    await dialog.getByRole('button', { name: 'Share', exact: true }).isEnabled(),
+    false,
+    'Changing source type clears the old selection',
+  )
+  await dialog.getByRole('radio').check()
+  await dialog.getByRole('tab', { name: 'Screens', exact: true }).click()
+  assert.equal(await dialog.getByRole('radio').count(), 1)
+  await dialog.getByText('Main screen', { exact: true }).waitFor()
+  await dialog.getByRole('tab', { name: 'Threads', exact: true }).click()
+  await dialog.getByText('Showing 200 of 250 matches.', { exact: false }).waitFor()
+  await dialog.getByLabel('Search sharing sources').fill('Thread 249')
+  assert.equal(await dialog.getByRole('radio').count(), 1)
+  await dialog.getByRole('radio').check()
+  assert.equal(await dialog.getByRole('checkbox').count(), 0, 'Threads never offer tab audio')
+  await page.evaluate(() => {
+    window.failure = 'thread-media-sources'
+  })
+  await dialog.getByRole('button', { name: 'Share', exact: true }).click()
+  await dialog.getByRole('alert').getByText('Fixture request failed').waitFor()
+  assert.equal(await dialog.getByRole('radio').isChecked(), true)
+  await page.evaluate(() => {
+    window.failure = ''
+  })
+  await dialog.getByRole('button', { name: 'Share', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  const commands = await page.evaluate(() =>
+    window.commands.slice(-3).filter((c) => c.action !== 'media-status'),
+  )
+  assert.equal(commands[0].action, 'thread-media-sources')
+  assert.equal(commands[0].sources.length, 1)
+  assert.equal(commands[0].sources[0].taskId, 'thread-249')
+  assert.equal(commands[1].source, 'thread:computer:thread-249')
+  assert.equal(commands[1].audio, false)
   assert.deepEqual(errors, [])
   console.log(
     'Browser media UI passed: explicit tab/audio consent, preserved failed selection, microphone request, cancellation, expiry and confirmed-stop indicator.',

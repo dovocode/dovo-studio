@@ -1,0 +1,91 @@
+# scripts/ci/mobile-native-smoke.mjs supplies a fresh disposable simulator, never a user's phone.
+appId: com.dovo.studio
+---
+- launchApp
+- extendedWaitUntil:
+    visible: Connect a computer
+    timeout: 15000
+- tapOn: Connect a computer
+- tapOn:
+    id: Computer address
+- inputText: ${RUNTIME_ADDRESS}
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing options
+    direction: DOWN
+- tapOn:
+    id: Pairing options
+- scrollUntilVisible:
+    element:
+      id: This phone’s name
+    direction: DOWN
+- tapOn:
+    id: This phone’s name
+- eraseText
+- inputText: Dovo simulator test
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: Pairing code
+    direction: UP
+- tapOn:
+    id: Pairing code
+- inputText: ${PAIRING_CODE}
+- tapOn: Dismiss keyboard
+- scrollUntilVisible:
+    element:
+      id: Connect
+    direction: DOWN
+- tapOn:
+    id: Connect
+- extendedWaitUntil:
+    visible:
+      id: Task mobile-task
+    timeout: 20000
+- tapOn:
+    id: Task mobile-task
+- tapOn:
+    id: Message
+- inputText: Installed app smoke request
+- tapOn: Dismiss keyboard
+- tapOn:
+    id: Send
+- extendedWaitUntil:
+    visible: .*Verified fixture response.*
+    timeout: 30000
+- tapOn:
+    id: Message
+- inputText: Draft survives navigation
+- tapOn: Dismiss keyboard
+- tapOn: Back
+- tapOn:
+    id: Task mobile-task
+- assertVisible:
+    id: Message
+    text: Draft survives navigation
+- tapOn: Back
+- tapOn: New thread
+- extendedWaitUntil:
+    visible:
+      id: Message
+    timeout: 10000
+- tapOn:
+    id: Message
+- inputText: Installed app first send
+- tapOn: Dismiss keyboard
+- tapOn:
+    id: Send
+- extendedWaitUntil:
+    visible: .*Verified fixture response.*
+    timeout: 30000
+- tapOn: Back
+- tapOn: More actions
+- tapOn: Settings
+- scrollUntilVisible:
+    element: App & updates
+    direction: DOWN
+- tapOn: App & updates
+- assertVisible: Open TestFlight
+- assertVisible: Release notes channel
+- takeScreenshot: dovo-installed-native-release-smoke

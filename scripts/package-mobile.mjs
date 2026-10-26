@@ -14,6 +14,11 @@ if (!/^[1-9][0-9]*$/.test(buildNumber) || Number(buildNumber) > 2_100_000_000)
   throw new Error('Set a unique positive DOVO_MOBILE_BUILD_NUMBER (at most 2100000000)')
 const env = {
   ...process.env,
+  DOVO_SOURCE_COMMIT: execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim(),
+  DOVO_MOBILE_CHANNEL: process.env.DOVO_MOBILE_CHANNEL ?? 'nightly',
   DOVO_MOBILE_DISTRIBUTION: platform === 'android' ? '1' : '0',
   DOVO_APNS_ENVIRONMENT: 'production',
 }

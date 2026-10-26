@@ -217,7 +217,7 @@ app.whenReady().then(async () => {
       assert.equal(content.badge, 'ok')
       report.contentRuns = content.runs
       if (process.env.SMOKE_WEBSITES === '1') {
-        await show('teams-proof','teams-proof','https://teams.microsoft.com')
+        await show('teams-proof','teams-proof','https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=5e3ce6c0-2b1f-4285-8d4b-75ee78787346&scope=openid%20profile%20offline_access&redirect_uri=https%3A%2F%2Fteams.microsoft.com%2Fv2%2Fauthv2&response_type=code&response_mode=fragment&code_challenge=SdIrOLcdSCEDAnJHmbRAR-UBd62i4fJ8CSVKngOlGF4&code_challenge_method=S256')
         let status
         for(let i=0;i<100;i++) {
           status=await call('browser',{action:'status',key:'teams-proof'})
@@ -229,18 +229,34 @@ app.whenReady().then(async () => {
         assert.ok(login, 'The native sign-in view must exist.')
         let rect
         for (let attempt=0; attempt<100; attempt++) {
-          rect = await login.executeJavaScript(\`(() => { const input=document.querySelector('input[type=email]'); if(!input)return null; const box=input.getBoundingClientRect(); return {x:Math.round(box.x+box.width/2),y:Math.round(box.y+box.height/2)} })()\`)
+          rect = await login.executeJavaScript(\`(() => { const input=document.querySelector('input[type=email]'); if(!input || !input.checkVisibility() || input.disabled)return null; const box=input.getBoundingClientRect(); if(!box.width || !box.height)return null; return {x:Math.round(box.x+box.width/2),y:Math.round(box.y+box.height/2)} })()\`)
           if (rect) break
           await wait(100)
         }
         assert.ok(rect, 'Microsoft sign-in must show its email input.')
+        if (process.platform === 'linux' && process.env.SMOKE_NATIVE_INPUT === '1') {
+          const { execFile } = await import('node:child_process')
+          const { promisify } = await import('node:util')
+          const inputCommand = promisify(execFile)
+          studio.show(); studio.focus(); studio.webContents.focus()
+          const nativeView = studio.contentView.children.find((view: any) => view.webContents === login)
+          const content = studio.getContentBounds(), bounds = nativeView.getBounds()
+          await inputCommand('xdotool', ['mousemove','--sync',String(content.x+bounds.x+rect.x),String(content.y+bounds.y+rect.y),'click','1'])
+          await inputCommand('xdotool', ['type','--clearmodifiers','a'])
+        } else {
+        studio.show(); app.focus({steal:true}); studio.focus(); studio.webContents.focus()
+        await wait(250)
         // Send genuine Chromium pointer/key events; do not fill or focus using page JavaScript.
         login.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...rect})
         login.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...rect})
         login.sendInputEvent({type:'keyDown',keyCode:'a'})
         login.sendInputEvent({type:'char',keyCode:'a'})
         login.sendInputEvent({type:'keyUp',keyCode:'a'})
+        }
         await wait(200)
+        report.teamsInput = { rect, windowFocus: studio.isFocused(), focus: login.isFocused(), active: await login.executeJavaScript(\`document.activeElement?.outerHTML\`) }
+        writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report,null,2))
+        assert.ok(studio.isFocused(), 'Native input requires an active desktop window.')
         assert.equal(await login.executeJavaScript(\`document.querySelector('input[type=email]').value\`), 'a', 'Mouse and keyboard must enter text on Microsoft sign-in.')
         report.teamsSignIn=true
       }
@@ -342,7 +358,7 @@ app.whenReady().then(async () => {
       assert.deepEqual(copies, [])
       report.contentRuns = content.runs
       if (process.env.SMOKE_WEBSITES === '1') {
-        await show('teams-proof','teams-proof','https://teams.microsoft.com')
+        await show('teams-proof','teams-proof','https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=5e3ce6c0-2b1f-4285-8d4b-75ee78787346&scope=openid%20profile%20offline_access&redirect_uri=https%3A%2F%2Fteams.microsoft.com%2Fv2%2Fauthv2&response_type=code&response_mode=fragment&code_challenge=SdIrOLcdSCEDAnJHmbRAR-UBd62i4fJ8CSVKngOlGF4&code_challenge_method=S256')
         let status
         for(let i=0;i<100;i++) {
           status=await call('browser',{action:'status',key:'teams-proof'})
@@ -354,18 +370,34 @@ app.whenReady().then(async () => {
         assert.ok(login, 'The native sign-in view must exist.')
         let rect
         for (let attempt=0; attempt<100; attempt++) {
-          rect = await login.executeJavaScript(\`(() => { const input=document.querySelector('input[type=email]'); if(!input)return null; const box=input.getBoundingClientRect(); return {x:Math.round(box.x+box.width/2),y:Math.round(box.y+box.height/2)} })()\`)
+          rect = await login.executeJavaScript(\`(() => { const input=document.querySelector('input[type=email]'); if(!input || !input.checkVisibility() || input.disabled)return null; const box=input.getBoundingClientRect(); if(!box.width || !box.height)return null; return {x:Math.round(box.x+box.width/2),y:Math.round(box.y+box.height/2)} })()\`)
           if (rect) break
           await wait(100)
         }
         assert.ok(rect, 'Microsoft sign-in must show its email input.')
+        if (process.platform === 'linux' && process.env.SMOKE_NATIVE_INPUT === '1') {
+          const { execFile } = await import('node:child_process')
+          const { promisify } = await import('node:util')
+          const inputCommand = promisify(execFile)
+          studio.show(); studio.focus(); studio.webContents.focus()
+          const nativeView = studio.contentView.children.find((view: any) => view.webContents === login)
+          const content = studio.getContentBounds(), bounds = nativeView.getBounds()
+          await inputCommand('xdotool', ['mousemove','--sync',String(content.x+bounds.x+rect.x),String(content.y+bounds.y+rect.y),'click','1'])
+          await inputCommand('xdotool', ['type','--clearmodifiers','a'])
+        } else {
+        studio.show(); app.focus({steal:true}); studio.focus(); studio.webContents.focus()
+        await wait(250)
         // Send genuine Chromium pointer/key events; do not fill or focus using page JavaScript.
         login.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...rect})
         login.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...rect})
         login.sendInputEvent({type:'keyDown',keyCode:'a'})
         login.sendInputEvent({type:'char',keyCode:'a'})
         login.sendInputEvent({type:'keyUp',keyCode:'a'})
+        }
         await wait(200)
+        report.teamsInput = { rect, windowFocus: studio.isFocused(), focus: login.isFocused(), active: await login.executeJavaScript(\`document.activeElement?.outerHTML\`) }
+        writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report,null,2))
+        assert.ok(studio.isFocused(), 'Native input requires an active desktop window.')
         assert.equal(await login.executeJavaScript(\`document.querySelector('input[type=email]').value\`), 'a', 'Mouse and keyboard must enter text on Microsoft sign-in.')
         report.teamsSignIn=true
       }

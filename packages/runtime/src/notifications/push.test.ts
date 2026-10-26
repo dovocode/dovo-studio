@@ -481,3 +481,32 @@ it.each([
     expect(f.send.mock.calls.map(([message]) => message.data.kind)).toEqual(kinds)
   },
 )
+
+it('sends a test only to the requested registered device through its configured transport', async () => {
+  for (const managed of [false, true]) {
+    const f = setup(managed)
+    await expect(f.service.test('unregistered')).rejects.toThrow('Enable notifications')
+    await expect(f.service.test(f.device)).resolves.toEqual({ ok: true })
+    expect(f.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: f.registration.token,
+        title: 'Dovo test notification',
+        data: {
+          runtimeId: f.registration.runtimeId,
+          taskId: 'dovo-notification-test',
+          kind: 'done',
+        },
+      }),
+      ...(managed ? ['m'.repeat(43), undefined] : []),
+    )
+  }
+})
+it('reports rejected tests and clears expired registrations', async () => {
+  const f = setup()
+  f.send.mockResolvedValueOnce({ delivered: false, invalidToken: false })
+  await expect(f.service.test(f.device)).rejects.toThrow('did not accept')
+  expect(f.service.status(f.device).registered).toBe(true)
+  f.send.mockResolvedValueOnce({ delivered: false, invalidToken: true })
+  await expect(f.service.test(f.device)).rejects.toThrow('push token expired')
+  expect(f.service.status(f.device).registered).toBe(false)
+})

@@ -1,0 +1,35 @@
+name: Publish nightly
+on:
+  workflow_run:
+    workflows: [Check, Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Exact source SHA of the verified nightly
+        required: true
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: publish-nightly
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Run trusted default-branch code; never execute a PR's workflow artifact.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Publish when checks and verified packages are both ready
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ inputs.sha || github.event.workflow_run.head_sha }}
+        run: node scripts/ci/publish-nightly.mjs

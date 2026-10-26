@@ -1,3 +1,8 @@
+import { Linking, View } from 'react-native'
+import { responses, diagnosticMessage } from '@dovo/protocol'
+import { SettingsAction as Action } from './settings-controls'
+import { useAction } from '../ui/controls/use-action'
+import { useApplicationState } from '../runtime/state/application-state'
 import { SettingsScrollView } from './settings-search'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
@@ -12,7 +17,9 @@ export default function NotificationsSettingsScreen() {
   const { styles } = useSettingsTheme()
   const notifications = usePushNotifications()
   const activity = useLiveActivities()
-  const { overviews } = useRuntime()
+  const { overviews, readRuntime } = useRuntime()
+  const { busy, error, act } = useAction()
+  const [message, setMessage] = useApplicationState('')
   return (
     <SettingsPage>
       <ScreenHeader title="Notifications" />
@@ -32,15 +39,65 @@ export default function NotificationsSettingsScreen() {
             onValueChange={notifications.setEnabled}
           />
           {overviews.map((entry) => (
-            <SettingsSwitchRow
-              key={entry.profile.id}
-              label={runtimeComputerName(entry)}
-              disabled={!notifications.supported || notifications.busy || !notifications.enabled}
-              value={notifications.serverEnabled(entry.profile.id)}
-              onValueChange={(value) => notifications.setServerEnabled(entry.profile.id, value)}
-            />
+            <View key={entry.profile.id}>
+              <SettingsSwitchRow
+                label={runtimeComputerName(entry)}
+                disabled={!notifications.supported || notifications.busy || !notifications.enabled}
+                value={notifications.serverEnabled(entry.profile.id)}
+                onValueChange={(value) => notifications.setServerEnabled(entry.profile.id, value)}
+              />
+              <Text style={styles.muted}>
+                {!notifications.enabled || !notifications.serverEnabled(entry.profile.id)
+                  ? 'Disabled'
+                  : !entry.connected
+                    ? 'Computer offline'
+                    : notifications.permission === 'denied'
+                      ? 'Blocked by system settings'
+                      : (notifications.registrations[entry.profile.id]?.error ??
+                        (notifications.registrations[entry.profile.id]?.registered
+                          ? 'Registered · delivery can be tested'
+                          : 'Registering…'))}
+              </Text>
+              <Action
+                secondary
+                label={`Test notification from ${runtimeComputerName(entry)}`}
+                disabled={
+                  busy ||
+                  !entry.connected ||
+                  !notifications.enabled ||
+                  !notifications.serverEnabled(entry.profile.id) ||
+                  !notifications.registrations[entry.profile.id]?.registered ||
+                  notifications.permission !== 'granted'
+                }
+                onPress={() =>
+                  act(async () => {
+                    setMessage('')
+                    await readRuntime(entry.profile, '/api/notifications/test', {}, responses.ok)
+                    setMessage(
+                      'Test accepted by the notification service. Confirm it appears on this device. If it does not, check Focus and system notification settings.',
+                    )
+                  })
+                }
+              />
+            </View>
           ))}
         </SettingsGroup>
+        <Text style={styles.muted}>System permission: {notifications.permission}</Text>
+        <Action
+          secondary
+          label="Open system notification settings"
+          onPress={() => act(() => Linking.openSettings())}
+        />
+        {!!message && (
+          <Text accessibilityLiveRegion="polite" style={styles.muted}>
+            {message}
+          </Text>
+        )}
+        {!!error && (
+          <Text accessibilityRole="alert" style={styles.error}>
+            {diagnosticMessage(error)}
+          </Text>
+        )}
         {!notifications.supported && (
           <Text style={styles.muted}>Push notifications require a new native app build.</Text>
         )}

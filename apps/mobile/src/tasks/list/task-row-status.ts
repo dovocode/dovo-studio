@@ -1,4 +1,4 @@
-import { isSnoozed, hasUnviewedTaskCompletion, type Task } from '@dovo/protocol'
+import { taskIsWorking, isSnoozed, hasUnviewedTaskCompletion, type Task } from '@dovo/protocol'
 function age(date: string, now: number) {
   const minutes = Math.max(0, Math.floor((now - Date.parse(date)) / 60000))
   return minutes < 1
@@ -18,6 +18,7 @@ export function showTaskDone(task: Task, needsInput: boolean, now: number) {
 /** Time supplements state without hiding warnings or unread results. */
 export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, now: number) {
   const turn = task.turns?.at(-1)
+  const working = taskIsWorking(task)
   const state = task.archivedAt
     ? 'Archived'
     : task.archived
@@ -26,9 +27,9 @@ export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, 
         ? 'Needs input'
         : isSnoozed(task, now)
           ? 'Snoozed'
-          : task.status === 'running'
+          : working
             ? online
-              ? task.runPhase === 'finalizing'
+              ? task.status === 'running' && task.runPhase === 'finalizing'
                 ? 'Saving changes'
                 : 'Working'
               : 'Was working'
@@ -46,6 +47,10 @@ export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, 
                         ? 'Stopped'
                         : 'Draft'
   const date =
-    task.status === 'running' && task.runPhase !== 'finalizing' ? turn?.startedAt : turn?.finishedAt
+    working && task.status !== 'running'
+      ? undefined
+      : task.status === 'running' && task.runPhase !== 'finalizing'
+        ? turn?.startedAt
+        : turn?.finishedAt
   return date && !needsInput ? `${state} · ${age(date, now)}` : state
 }

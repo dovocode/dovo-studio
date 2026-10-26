@@ -439,47 +439,18 @@ jobs:
             grep -Fx "$pattern" /tmp/dovo-release-assets || { echo "::error::Missing release asset: $pattern"; exit 1; }
           done
           echo "Release $TAG has all required assets." >> "$GITHUB_STEP_SUMMARY"
-  publish-nightly:
+  publication-ready:
     needs: [draft, verify]
     if: ${{ needs.draft.outputs.channel == 'nightly' && needs.verify.result == 'success' }}
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-      actions: write
     steps:
-      - name: Require passing Check workflow
+      - name: Record verified nightly provenance
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          SHA: ${{ github.sha }}
+          TAG: ${{ needs.draft.outputs.tag }}
         run: |
-          for attempt in {1..40}; do
-            result=$(gh run list --workflow Check --commit "$SHA" --limit 1 --json status,conclusion --jq '.[0] | if . == null then "missing" else (.status + ":" + .conclusion) end')
-            if test "$result" = completed:success; then exit 0; fi
-            if [[ "$result" == completed:* ]]; then
-              echo "::error::Check workflow did not pass for $SHA: $result"
-              exit 1
-            fi
-            echo "Waiting for Check ($attempt/40): $result"
-            sleep 15
-          done
-          echo "::error::Check workflow did not complete for $SHA"
-          exit 1
-      - name: Publish verified nightly
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.draft.outputs.tag }}
-        run: gh release edit "$TAG" --draft=false --prerelease --latest=false
-      - name: Update Homebrew and mise distribution
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.draft.outputs.tag }}
-        run: gh workflow run distribution.yml -f tag="$TAG"
-      - name: Start mobile nightly from the same source tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.draft.outputs.tag }}
-        run: gh workflow run release-mobile.yml --ref "$TAG" -f release_tag="$TAG" -f platform=all -f upload=true
+          node -e 'require("fs").writeFileSync("nightly.json", JSON.stringify({tag:process.env.TAG,sha:process.env.GITHUB_SHA,channel:"nightly"}))'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nightly-publication
+          path: nightly.json
+          if-no-files-found: error

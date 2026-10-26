@@ -121,3 +121,21 @@ The signed IPA/AAB and provenance (source SHA, version, native build number and 
 as Actions artifacts for 14 days and attached to the matching GitHub nightly when provided. App
 Store IPAs are not a replacement for TestFlight enrollment. Build, GitHub attachment, upload, review
 and distribution are distinct statuses; a failed store upload preserves the already-built artifact.
+
+## Installed-app release gate
+
+Check builds a Release iOS simulator app, signs it ad hoc with its normal entitlements, and installs
+it on a fresh disposable simulator. The Maestro release smoke pairs with an isolated HTTP runtime,
+sends into an existing thread and a new thread, checks draft retention through navigation, and opens
+App & updates. This job gates automatic nightly publication and mobile store dispatch. It does not
+verify Android, physical-device signing, push delivery, or microphone/camera permissions.
+
+On a Mac with Xcode, CocoaPods and Maestro 2.11.0, run:
+
+```sh
+node scripts/ci/mobile-native-smoke.mjs
+```
+
+The script owns and deletes only the simulator it creates. Its fixture pairing approval is limited
+to the named test phone; it does not use a user's paired computers or phone. Failure screenshots and
+Maestro diagnostics are retained in the Check run.

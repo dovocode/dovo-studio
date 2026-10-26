@@ -1,6 +1,7 @@
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
   taskSnoozeOptions,
+  taskIsWorking,
   watchRuntimeSettled,
   settledSummaryPageSize,
   supportsSettledSummaryPaging,
@@ -472,7 +473,7 @@ export function TaskList({
         !task.archived &&
         !task.archivedAt &&
         !isSnoozed(task, now) &&
-        !task.waitingForFeedback,
+        (!task.waitingForFeedback || taskIsWorking(task)),
     )
     const settledTasks = tasks.filter(({ task }) => task.archived || !!task.archivedAt)
     const statusGroups = [
@@ -488,8 +489,7 @@ export function TaskList({
         name: 'Open',
         tasks: active.filter(
           ({ task, needsInput }) =>
-            !task.pinned &&
-            !(preferences.workingSection && task.status === 'running' && !needsInput),
+            !task.pinned && !(preferences.workingSection && taskIsWorking(task) && !needsInput),
         ),
         open: true,
       },
@@ -499,7 +499,7 @@ export function TaskList({
               id: 'working',
               name: 'Working',
               tasks: active.filter(
-                ({ task, needsInput }) => !task.pinned && task.status === 'running' && !needsInput,
+                ({ task, needsInput }) => !task.pinned && taskIsWorking(task) && !needsInput,
               ),
               open: false,
             },
@@ -511,6 +511,7 @@ export function TaskList({
         tasks: tasks.filter(
           ({ task, needsInput }) =>
             task.waitingForFeedback &&
+            !taskIsWorking(task) &&
             !needsInput &&
             !task.archived &&
             !task.archivedAt &&

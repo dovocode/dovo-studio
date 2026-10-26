@@ -1,12 +1,13 @@
 import { startRuntime } from '../packages/runtime/dist/index.js'
 import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { tmpdir, networkInterfaces } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer, request as httpRequest } from 'node:http'
 
 const device = process.argv[2]
+const releaseSmoke = process.argv.includes('--release-smoke')
 const terminalOnly = process.argv.includes('--terminal-only')
 const composerOnly = process.argv.includes('--composer-only')
 const navigationOnly = process.argv.includes('--navigation-only')
@@ -29,10 +30,17 @@ const appData = execFileSync(
 ).trim()
 await writeFile(join(appData, 'Documents', 'dovo-attachment.txt'), 'Attachment fixture context')
 const directory = await mkdtemp(join(tmpdir(), 'dovo-mobile-check-'))
+// Pairing deliberately rejects phone-local loopback addresses. Use the host's actual
+// interface even on a simulator so the release gate exercises the supported HTTP path.
+const fixtureHost = Object.values(networkInterfaces())
+  .flat()
+  .find((entry) => entry && entry.family === 'IPv4' && !entry.internal)?.address
+if (!fixtureHost) throw new Error('Native mobile verification requires a LAN or VPN IPv4 address')
 const runtime = await startRuntime({
   databasePath: ':memory:',
   ownerToken: randomBytes(32).toString('base64url'),
   port: 0,
+  host: fixtureHost,
 })
 let approve
 let settingsProxy
@@ -220,23 +228,25 @@ try {
       if (request.name === 'Dovo simulator test') runtime.services.pairing.approve(request.id, true)
   }, 250)
   let flowPath = resolve(
-    settingsOnly
-      ? 'apps/mobile/maestro/settings-save.yaml'
-      : modesOnly
-        ? 'apps/mobile/maestro/codex-modes.yaml'
-        : jobsOnly
-          ? 'apps/mobile/maestro/jobs.yaml'
-          : dictationOnly
-            ? 'apps/mobile/maestro/dictation.yaml'
-            : conversationOnly
-              ? 'apps/mobile/maestro/conversation.yaml'
-              : navigationOnly
-                ? 'apps/mobile/maestro/navigation.yaml'
-                : composerOnly
-                  ? 'apps/mobile/maestro/composer.yaml'
-                  : terminalOnly
-                    ? 'apps/mobile/maestro/terminal.yaml'
-                    : 'apps/mobile/maestro/workspace.yaml',
+    releaseSmoke
+      ? 'apps/mobile/maestro/release-smoke.yaml'
+      : settingsOnly
+        ? 'apps/mobile/maestro/settings-save.yaml'
+        : modesOnly
+          ? 'apps/mobile/maestro/codex-modes.yaml'
+          : jobsOnly
+            ? 'apps/mobile/maestro/jobs.yaml'
+            : dictationOnly
+              ? 'apps/mobile/maestro/dictation.yaml'
+              : conversationOnly
+                ? 'apps/mobile/maestro/conversation.yaml'
+                : navigationOnly
+                  ? 'apps/mobile/maestro/navigation.yaml'
+                  : composerOnly
+                    ? 'apps/mobile/maestro/composer.yaml'
+                    : terminalOnly
+                      ? 'apps/mobile/maestro/terminal.yaml'
+                      : 'apps/mobile/maestro/workspace.yaml',
   )
   if (navigationOnly) {
     const hierarchy = JSON.parse(
@@ -287,7 +297,7 @@ try {
         device,
         'test',
         '-e',
-        `RUNTIME_ADDRESS=http://127.0.0.1:${settingsProxy?.port ?? runtime.port}`,
+        `RUNTIME_ADDRESS=http://${fixtureHost}:${settingsProxy?.port ?? runtime.port}`,
         '-e',
         `PAIRING_CODE=${code}`,
         entrypoint,
@@ -314,6 +324,7 @@ try {
   }
   await runFlow(flowPath)
   if (
+    !releaseSmoke &&
     !composerOnly &&
     !navigationOnly &&
     !conversationOnly &&
@@ -374,6 +385,7 @@ try {
   }
   if (
     !terminalOnly &&
+    !releaseSmoke &&
     !composerOnly &&
     !navigationOnly &&
     !conversationOnly &&
@@ -531,24 +543,45 @@ try {
     )
       throw new Error('Saving task settings changed the base agent or submitted a message')
   }
+  if (releaseSmoke) {
+    const task = runtime.services.store.task('mobile-task')
+    if (
+      task.messages.filter(
+        (message) => message.role === 'user' && message.text === 'Installed app smoke request',
+      ).length !== 1
+    )
+      throw new Error('The installed app did not deliver the smoke message')
+    const first = runtime.services.store
+      .get()
+      .tasks.map((task) => runtime.services.store.task(task.id))
+      .find((task) =>
+        task.messages.some(
+          (message) => message.role === 'user' && message.text === 'Installed app first send',
+        ),
+      )
+    if (!first || first.messages.filter((message) => message.role === 'user').length !== 1)
+      throw new Error('First send was missing or duplicated')
+  }
   console.log(
-    settingsOnly
-      ? 'Native inline model settings guard Back, Close and edits during a pending save; visible failure retains values and retry persists exactly once.'
-      : modesOnly
-        ? 'Native Codex Fast, Daybreak Blue, inline long-catalog search, saved selections, Standard/Automatic resets and provider-default model capabilities verified.'
-        : jobsOnly
-          ? 'Native automation progress, failed-step retry without repeating completed work, review approval and mobile creation/editing verified.'
-          : dictationOnly
-            ? 'Native dictation permission errors preserve the draft and never submit a message.'
-            : conversationOnly
-              ? 'Native assistant-ui streaming, tool output and turn checkpoint navigation verified.'
-              : navigationOnly
-                ? 'Mobile native tabs, Projects, task details and cold Shortcut navigation verified.'
-                : composerOnly
-                  ? 'Mobile new-draft keyboard geometry, pane state, idempotent retry, attachments, queue, stop and keyboard verified.'
-                  : terminalOnly
-                    ? 'Mobile terminal keyboard, command execution and session lifecycle verified.'
-                    : 'Mobile pairing, relaunch, native diff, terminal, queued follow-ups, agent questions, attachments, branch switching, task settings, cold Shortcut task and activity retention verified.',
+    releaseSmoke
+      ? 'Installed native app: pairing over HTTP, thread send, first send, saved draft, navigation and update settings verified.'
+      : settingsOnly
+        ? 'Native inline model settings guard Back, Close and edits during a pending save; visible failure retains values and retry persists exactly once.'
+        : modesOnly
+          ? 'Native Codex Fast, Daybreak Blue, inline long-catalog search, saved selections, Standard/Automatic resets and provider-default model capabilities verified.'
+          : jobsOnly
+            ? 'Native automation progress, failed-step retry without repeating completed work, review approval and mobile creation/editing verified.'
+            : dictationOnly
+              ? 'Native dictation permission errors preserve the draft and never submit a message.'
+              : conversationOnly
+                ? 'Native assistant-ui streaming, tool output and turn checkpoint navigation verified.'
+                : navigationOnly
+                  ? 'Mobile native tabs, Projects, task details and cold Shortcut navigation verified.'
+                  : composerOnly
+                    ? 'Mobile new-draft keyboard geometry, pane state, idempotent retry, attachments, queue, stop and keyboard verified.'
+                    : terminalOnly
+                      ? 'Mobile terminal keyboard, command execution and session lifecycle verified.'
+                      : 'Mobile pairing, relaunch, native diff, terminal, queued follow-ups, agent questions, attachments, branch switching, task settings, cold Shortcut task and activity retention verified.',
   )
 } finally {
   if (modesOnly) {
@@ -687,11 +720,11 @@ async function settingsSaveProxy(runtimePort) {
       }
       const upstream = httpRequest(
         {
-          hostname: '127.0.0.1',
+          hostname: fixtureHost,
           port: runtimePort,
           path: request.url,
           method: request.method,
-          headers: { ...request.headers, host: `127.0.0.1:${runtimePort}` },
+          headers: { ...request.headers, host: `${fixtureHost}:${runtimePort}` },
         },
         (result) => {
           response.writeHead(result.statusCode ?? 502, result.headers)
@@ -711,7 +744,7 @@ async function settingsSaveProxy(runtimePort) {
   })
   await new Promise((resolve, reject) => {
     server.once('error', reject)
-    server.listen(0, '127.0.0.1', resolve)
+    server.listen(0, fixtureHost, resolve)
   })
   return {
     port: server.address().port,

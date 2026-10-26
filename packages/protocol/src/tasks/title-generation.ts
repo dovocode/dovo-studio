@@ -28,6 +28,8 @@ export const titleGenerationSettingsSchema = mutableStruct({
   ),
 })
 export const generateTitleSchema = mutableStruct({
+  taskId: Schema.optional(minValue(maxValue(Schema.String, 200), 1)),
+  expectedTitle: Schema.optional(maxValue(Schema.String, 1000)),
   text: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 120000),
 })
 export const generatedTitleSchema = mutableStruct({

@@ -384,7 +384,7 @@ export function useConversationActions(task: Task) {
       if (firstMessage && task.autoProject) {
         yield* callEffect(
           '/api/tasks/projects/select',
-          { id: task.id, text: text || 'Work with the attached files' },
+          { id: task.id, requestId: attempt.id, text: text || 'Work with the attached files' },
           taskSchema,
         )
       }
@@ -392,16 +392,7 @@ export function useConversationActions(task: Task) {
         const summary =
           text ||
           `Work with attached files: ${task.draftAttachments?.map((file) => file.name).join(', ')}`
-        // A title is a convenience; the first message must still send when no title harness
-        // is configured or the model is slow.
-        const title =
-          attempt.title ??
-          (yield* readEffect('/api/tasks/title', { text: summary }, generatedTitleSchema).pipe(
-            Effect.map((value) => value.title),
-            Effect.catch(() =>
-              Effect.succeed(summary.split('\n')[0]?.trim().slice(0, 80) || 'New task'),
-            ),
-          ))
+        const title = attempt.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New task')
         sendAttempts.setTitle(scope, attempt.id, title)
         yield* storedDraft.stageEffect(attempt)
         yield* patchEffect(
@@ -441,6 +432,19 @@ export function useConversationActions(task: Task) {
           ),
         )
         yield* storedDraft.confirmEffect(attempt, clearDraft)
+        if (firstMessage)
+          void runClientEffect(
+            readEffect(
+              '/api/tasks/title',
+              {
+                taskId: task.id,
+                expectedTitle: attempt.title,
+                text: text || 'Work with the attached files',
+              },
+              generatedTitleSchema,
+            ).pipe(Effect.catch(() => Effect.succeed(undefined))),
+          )
+
         setTurnSettings(null)
       }).pipe(
         Effect.catch((error) =>

@@ -8,7 +8,7 @@ import {
 import { isDeepStrictEqual } from 'node:util'
 import { type TitleGenerationSettings } from '@dovo/protocol'
 import { supportsUtilities } from '@dovo/protocol'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { RuntimeDefaults } from '../../storage/runtime-defaults.js'
 import { runClientEffect } from '@dovo/client-runtime'
 import { maxValue, minValue, mutableStruct, taskTranscript } from '@dovo/protocol'
@@ -146,7 +146,7 @@ export class TitleGeneration {
   generateEffect(value: unknown) {
     return runtimeProgram(
       Effect.gen({ self: this }, function* () {
-        const { text } = decode(generateTitleSchema, value)
+        const { text, taskId, expectedTitle } = decode(generateTitleSchema, value)
         return yield* this.trackEffect((controller) =>
           runtimeProgram(
             Effect.gen({ self: this }, function* () {
@@ -162,6 +162,15 @@ export class TitleGeneration {
               })
               if (!parsed.success)
                 throw new HttpError(502, 'The title model did not return a valid title. Try again.')
+              if (taskId && expectedTitle !== undefined) {
+                const task = this.store.get().tasks.find((task) => task.id === taskId)
+                // A delayed utility response must not overwrite a rename or restore deleted work.
+                if (task && !task.archivedAt && task.title === expectedTitle)
+                  this.store.updateTask(taskId, (current) => ({
+                    ...current,
+                    title: parsed.data.title,
+                  }))
+              }
               return parsed.data
             }),
           ),
@@ -187,11 +196,55 @@ export class TitleGeneration {
   selectProjectsEffect(value: unknown) {
     return runtimeProgram(
       Effect.gen({ self: this }, function* () {
-        const { id, text } = decode(
-          mutableStruct({ id: Schema.String, text: minValue(maxValue(Schema.String, 120000), 1) }),
+        const { id, text, requestId } = decode(
+          mutableStruct({
+            id: Schema.String,
+            text: minValue(maxValue(Schema.String, 120000), 1),
+            requestId: Schema.optional(minValue(maxValue(Schema.String, 200), 1)),
+          }),
           value,
         )
         this.requireAutoProjectSelection()
+        const fingerprint = createHash('sha256').update(text).digest('hex')
+        const identity = requestId ?? fingerprint
+        const receiptKey = 'scope-selection:' + id
+        const recover = () => {
+          const row = decode(
+            Schema.UndefinedOr(mutableStruct({ value: Schema.String })),
+            this.db.prepare('SELECT value FROM documents WHERE id=?').get(receiptKey),
+          )
+          if (!row) return undefined
+          const receipt = decode(
+            mutableStruct({
+              requestId: Schema.String,
+              fingerprint: Schema.String,
+              selection: mutableStruct({
+                repositoryId: Schema.String,
+                linkedCheckouts: Schema.optional(linkedCheckoutsSchema),
+              }),
+            }),
+            JSON.parse(row.value),
+          )
+          if (receipt.requestId !== identity) return undefined
+          if (receipt.fingerprint !== fingerprint)
+            throw new HttpError(409, 'This Scope request ID belongs to another prompt.')
+          const current = this.store.task(id)
+          if (current.autoProject) return undefined
+          if (
+            current.repositoryId !== receipt.selection.repositoryId ||
+            !isDeepStrictEqual(current.linkedCheckouts, receipt.selection.linkedCheckouts)
+          )
+            throw new HttpError(
+              409,
+              'The project changed after Scope selected it. Review the thread before sending.',
+            )
+          return current
+        }
+        const recovered = recover()
+        if (recovered) return recovered
+        const receiptBefore = this.db
+          .prepare('SELECT value FROM documents WHERE id=?')
+          .get(receiptKey)
         const before = this.store.taskSummary(id)
         if (
           !before.autoProject ||
@@ -300,28 +353,55 @@ export class TitleGeneration {
           }),
         )
         this.requireAutoProjectSelection()
+        if (
+          !isDeepStrictEqual(
+            receiptBefore,
+            this.db.prepare('SELECT value FROM documents WHERE id=?').get(receiptKey),
+          )
+        ) {
+          const completed = recover()
+          if (completed) return completed
+        }
         const current = this.store.taskSummary(id)
         if (!isDeepStrictEqual(current, before))
           throw new HttpError(409, 'The thread changed during Scope selection. Try again.')
-        this.store.updateTask(id, (task) => ({
-          ...changeTaskProject(
-            task,
-            this.store.get().repositories.find((repo) => repo.id === task.repositoryId),
-            repository,
-            defaults,
-            this.store.get().agents,
-          ),
-          ...(task.autoProjectExecution && !repository.kind
-            ? { execution: task.autoProjectExecution }
-            : {}),
-          linkedCheckouts: links,
-          autoProjectFallback: selection.repositoryId === null || undefined,
-          modelSelection:
-            task.harnessCustomized && task.modelSelection
-              ? task.modelSelection
-              : new RuntimePreferences(this.db).get().autoProjectModelSelection,
-        }))
-        return this.store.task(id)
+        return this.store.transaction(() => {
+          this.store.updateTask(id, (task) => ({
+            ...changeTaskProject(
+              task,
+              this.store.get().repositories.find((repo) => repo.id === task.repositoryId),
+              repository,
+              defaults,
+              this.store.get().agents,
+            ),
+            ...(task.autoProjectExecution && !repository.kind
+              ? { execution: task.autoProjectExecution }
+              : {}),
+            linkedCheckouts: links,
+            autoProjectFallback: selection.repositoryId === null || undefined,
+            modelSelection:
+              task.harnessCustomized && task.modelSelection
+                ? task.modelSelection
+                : new RuntimePreferences(this.db).get().autoProjectModelSelection,
+          }))
+          const selected = this.store.task(id)
+          this.db
+            .prepare(
+              'INSERT INTO documents VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
+            )
+            .run(
+              receiptKey,
+              JSON.stringify({
+                requestId: identity,
+                fingerprint,
+                selection: {
+                  repositoryId: selected.repositoryId,
+                  linkedCheckouts: selected.linkedCheckouts,
+                },
+              }),
+            )
+          return selected
+        })
       }),
     )
   }

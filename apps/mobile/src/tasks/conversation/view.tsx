@@ -456,6 +456,9 @@ function Message() {
         <WatchMessageCard update={watch} taskId={taskId} />
       ) : (
         <Pressable
+          // Keep rich assistant text, links and tool controls independently accessible.
+          // Grouping this whole gesture target hides native Markdown descendants on iOS.
+          accessible={user}
           onPress={() => setShowActions((value) => !value)}
           accessibilityHint="Tap to show message actions and time"
           style={

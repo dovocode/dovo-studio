@@ -26,6 +26,8 @@ it('registers only the authenticated device, excludes tokens from snapshots and 
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       ...(input ? { body: JSON.stringify(input) } : {}),
     })
+  expect((await call('test', 'invalid', {})).status).toBe(401)
+  expect((await call('test', ownerToken, {})).status).toBe(409)
   expect((await call('register', 'invalid', registration)).status).toBe(401)
   expect((await call('register', phoneToken, registration)).status).toBe(200)
   expect(await (await call('status', phoneToken)).json()).toMatchObject({

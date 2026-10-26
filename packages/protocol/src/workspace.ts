@@ -1,3 +1,4 @@
+import { taskIsWorking } from './tasks/task-working.js'
 import { usageAccountSchema, planLimitSchema } from './conversation/workflow/plan-limits.js'
 export { usageAccountSchema } from './conversation/workflow/plan-limits.js'
 import {
@@ -1048,7 +1049,7 @@ export function firstTaskTurnProvider(task: Task | TaskSummary) {
 export function latestCompletedTaskTurn(task: Task): TaskTurn | undefined
 export function latestCompletedTaskTurn(task: Task | TaskSummary): TaskTurnSummary | undefined
 export function latestCompletedTaskTurn(task: Task | TaskSummary) {
-  if (task.status !== 'review' && task.status !== 'done') return undefined
+  if (taskIsWorking(task) || (task.status !== 'review' && task.status !== 'done')) return undefined
   const turn = latestTaskTurn(task)
   return turn?.status === 'completed' ? turn : undefined
 }
@@ -1061,7 +1062,7 @@ export function hasUnviewedTaskCompletion(task: Task | TaskSummary): boolean {
 /** Keep active work unread until its completed response has been viewed. */
 export function hasUnreadTaskActivity(task: Task | TaskSummary): boolean {
   if (task.archived || task.archivedAt) return false
-  return task.status === 'running' || hasUnviewedTaskCompletion(task)
+  return taskIsWorking(task) || hasUnviewedTaskCompletion(task)
 }
 
 /** A submitted message binds a task to its project and checkout, including queued input. */

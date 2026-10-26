@@ -541,7 +541,11 @@ export function Composer({
       if (firstMessage && task.autoProject) {
         const selected = await request(
           '/api/tasks/projects/select',
-          { id: task.id, text: text || 'Work with the attached files' },
+          {
+            id: task.id,
+            requestId: attempt.current.id,
+            text: text || 'Work with the attached files',
+          },
           taskSchema,
         )
         setWorkspace((w) => updateTask(w, task.id, (current) => ({ ...current, ...selected })))
@@ -550,14 +554,8 @@ export function Composer({
         const summary =
           text ||
           `Work with the attached files: ${attachments.files.map((file) => file.name).join(', ')}`
-        // A title is a convenience: without a title harness, or when it is slow or failing,
-        // the first message still sends under its first line.
         const title =
-          attempt.current.title ??
-          (await request('/api/tasks/title', { text: summary }, generatedTitleSchema).then(
-            (result) => result.title,
-            () => summary.split('\n')[0]?.trim().slice(0, 80) || 'New task',
-          ))
+          attempt.current.title ?? (summary.split('\n')[0]?.trim().slice(0, 80) || 'New task')
         attempt.current.title = title
         setWorkspace((w) =>
           updateTask(w, task.id, (t) => ({
@@ -581,6 +579,18 @@ export function Composer({
           responses.ok,
         )
         if (result.pending) onPending({ ...pending, state: 'saved' })
+        if (firstMessage)
+          void request(
+            '/api/tasks/title',
+            {
+              taskId: task.id,
+              expectedTitle: attempt.current.title,
+              text: text || 'Work with the attached files',
+            },
+            generatedTitleSchema,
+          ).catch(() => {
+            // Optional enrichment: the accepted message keeps its provisional title on failure.
+          })
       } else
         setWorkspace((w) =>
           updateTask(w, task.id, (t) => ({

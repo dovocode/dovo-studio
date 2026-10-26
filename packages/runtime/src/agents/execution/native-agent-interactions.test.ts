@@ -7,6 +7,7 @@ import {
   questionPromptSchema,
   taskFamilyRunToken,
   taskFamilyWorking,
+  taskIsWorking,
 } from '@dovo/protocol'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
@@ -139,6 +140,8 @@ it.each(['permission', 'session', 'approvalPolicy', 'sandboxMode'] as const)(
 it('keeps checkout and task settings owned until native children stop, including while idle', async () => {
   const { s, task, owner, stop } = await setup()
   expect(s.store.task(task.id).status).toBe('review')
+  expect(taskIsWorking(s.store.task(task.id))).toBe(true)
+  expect(s.store.task(task.id).waitingForFeedback).toBeUndefined()
   expect(taskFamilyWorking(s.store.get().tasks, task.id)).toBe(true)
   expect(() => s.tasks.requireIdle(task.id)).toThrow('Stop')
   await expect(s.tasks.withCheckoutMutation(owner.cwd, async () => {})).rejects.toThrow(
@@ -152,6 +155,7 @@ it('keeps checkout and task settings owned until native children stop, including
     completion: 'disposed',
   })
   expect(taskFamilyWorking(s.store.get().tasks, task.id)).toBe(false)
+  expect(taskIsWorking(s.store.task(task.id))).toBe(false)
   expect(() => s.tasks.stopAgents(task.id, token)).toThrow('Agent state changed')
   s.tasks.requireIdle(task.id)
   await s.tasks.withCheckoutMutation(owner.cwd, async () => {})

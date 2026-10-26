@@ -5,11 +5,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const buildNumber = process.env.DOVO_MOBILE_BUILD_NUMBER
   if (buildNumber && (!/^[1-9][0-9]*$/.test(buildNumber) || Number(buildNumber) > 2_100_000_000))
     throw new Error('Invalid DOVO_MOBILE_BUILD_NUMBER')
+  const channel = process.env.DOVO_MOBILE_CHANNEL ?? (buildNumber ? 'nightly' : 'dev')
+  if (!['stable', 'nightly', 'dev'].includes(channel))
+    throw new Error('Invalid DOVO_MOBILE_CHANNEL')
   const notifications = process.env.DOVO_PUSH_NOTIFICATIONS !== '0'
   return {
     ...config,
     extra: {
       ...config.extra,
+      releaseChannel: channel,
+      sourceCommit: process.env.DOVO_SOURCE_COMMIT ?? process.env.GITHUB_SHA ?? null,
       pushEnvironment:
         process.env.DOVO_APNS_ENVIRONMENT === 'production' ? 'production' : 'sandbox',
     },

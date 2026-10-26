@@ -88,14 +88,18 @@ an empty tag to build a nightly. Both triggers build only when application commi
 most recent published Stable or Nightly release on that branch. Distribution-only commits in
 `Formula` and `Casks` are ignored; failed drafts do not advance the baseline. Pushes to `main` run
 checks but no longer start release builds. Nightlies publish as `vX.Y.Z-nightly.N` after all
-platform artifacts and the Check workflow pass verification. Nightly releases are GitHub prereleases
-and do not replace the latest Stable release. Their release notes list commit messages since the
-previous published nightly, including direct commits to main. Failed draft builds do not advance
-that baseline. They include separate signed **Dovo Studio (Nightly)** Mac bundles, Windows/Linux
-installers, server archives, update metadata, Homebrew definitions, and a pinned mise config. The
-Stable release remains an explicit review and publish step. When preparing the next Stable version,
-update the `version_prefix` for both Nightly tools in `distribution/mise.toml` to the new base
-version.
+platform artifacts and the Check workflow pass verification. **Publish nightly** reacts to
+completion of either workflow and validates the exact commit and release provenance before
+publishing; a slow Check run leaves a verified draft pending. Retry publication without rebuilding
+with `gh workflow run publish-nightly.yml -f sha=COMMIT_SHA`. Already-published tags are skipped to
+avoid duplicate mobile builds. If a downstream dispatch fails after publication, rerun Distribution
+or Mobile nightly directly with that tag. Nightly releases are GitHub prereleases and do not replace
+the latest Stable release. Their release notes list commit messages since the previous published
+nightly, including direct commits to main. Failed draft builds do not advance that baseline. They
+include separate signed **Dovo Studio (Nightly)** Mac bundles, Windows/Linux installers, server
+archives, update metadata, Homebrew definitions, and a pinned mise config. The Stable release
+remains an explicit review and publish step. When preparing the next Stable version, update the
+`version_prefix` for both Nightly tools in `distribution/mise.toml` to the new base version.
 
 Use Node 24, `pnpm build`, then `pnpm exec node scripts/packaging/package-desktop.mjs` on the target
 OS and architecture. Append `--dir` for an unpacked build. Linux packaging requires Ruby/FPM and RPM
@@ -145,7 +149,8 @@ manual artifact-only runs, increasing build numbers and initial store setup.
 
 Local device installs remain supported alongside
 [TestFlight and Play beta builds](mobile-beta-testing.md). Settings → App & updates shows the
-installed version, checks published GitHub release notes and explains the local install flow. No EAS
+installed version, build number, channel and source commit. It offers matching Stable/Nightly
+desktop release notes, platform-specific beta-store links and the local iPhone install flow. No EAS
 Update service is required.
 
 ```sh

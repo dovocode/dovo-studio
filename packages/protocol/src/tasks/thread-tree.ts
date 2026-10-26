@@ -1,4 +1,4 @@
-import { nativeAgentWorking } from '../conversation/workflow/subagents.js'
+import { taskIsWorking } from './task-working.js'
 import {
   compareThreadWatchSources,
   type ThreadWatchSummary,
@@ -89,23 +89,21 @@ function threadNode(entry: ThreadTreeEntry): NestedThread {
     repositoryId: task.repositoryId,
     nativeAgents: threadNativeAgents(task),
     nativeAgentOverflow: threadNativeAgentOverflow(task),
-    phase:
-      task.status === 'failed'
-        ? 'failed'
-        : needsInput
-          ? 'needs-input'
-          : task.status === 'running' ||
-              (!task.waitingForFeedback && task.subagents?.some(nativeAgentWorking))
-            ? 'running'
-            : task.status === 'cancelled'
-              ? 'stopped'
-              : task.waitingForFeedback
-                ? 'waiting'
-                : task.status === 'draft'
-                  ? 'draft'
-                  : task.status === 'review'
-                    ? 'review'
-                    : 'completed',
+    phase: needsInput
+      ? 'needs-input'
+      : taskIsWorking(task)
+        ? 'running'
+        : task.status === 'failed'
+          ? 'failed'
+          : task.status === 'cancelled'
+            ? 'stopped'
+            : task.waitingForFeedback
+              ? 'waiting'
+              : task.status === 'draft'
+                ? 'draft'
+                : task.status === 'review'
+                  ? 'review'
+                  : 'completed',
     online: source.online,
     paused: false,
     children: [],

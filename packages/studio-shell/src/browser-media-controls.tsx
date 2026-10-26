@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
-import { decode, threadWindowTargetSchema, mutableArray } from '@dovo/protocol'
+import { decode, threadWindowTargetSchema, mutableArray, runtimeComputerName } from '@dovo/protocol'
 import type { BrowserCommand, BrowserMediaRequest, BrowserCapture } from '@dovo/protocol'
 import {
   Button,
   Checkbox,
+  Input,
   Dialog,
   DialogContent,
   DialogTitle,
@@ -14,31 +15,34 @@ import {
 } from '@dovo/studio-ui'
 
 type Snapshot = { requests: BrowserMediaRequest[]; captures: BrowserCapture[] }
+const sourceTypes = [
+  { id: 'tab', label: 'Tabs' },
+  { id: 'thread', label: 'Threads' },
+  { id: 'window', label: 'Windows' },
+  { id: 'screen', label: 'Screens' },
+] as const
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))
 
 /** Outside the Browser view: sharing remains visible when the user switches to a thread. */
 export function BrowserMediaControls() {
   const { browser } = useStudioHost()
   const { runtimes } = useWorkspace()
-  const threadSignature = JSON.stringify(
-    runtimes
-      .flatMap((entry) =>
+  const threads = useMemo(
+    () =>
+      runtimes.flatMap((entry) =>
         entry.connected
           ? (entry.snapshot?.workspace.tasks ?? [])
               .filter((task) => !task.example && !task.archivedAt)
-              .map((task) => ({ runtimeId: entry.profile.id, taskId: task.id, title: task.title }))
+              .map((task) => ({
+                runtimeId: entry.profile.id,
+                taskId: task.id,
+                title: task.title,
+                computerName: runtimeComputerName(entry),
+              }))
           : [],
-      )
-      .slice(0, 200),
+      ),
+    [runtimes],
   )
-  useEffect(() => {
-    if (!browser) return
-    void browser({
-      action: 'thread-media-sources',
-      key: 'studio-media',
-      sources: decode(mutableArray(threadWindowTargetSchema), JSON.parse(threadSignature)),
-    }).catch((cause) => setError(`Thread sharing sources could not be updated: ${message(cause)}`))
-  }, [browser, threadSignature])
   const [snapshot, setSnapshot] = useState<Snapshot>({ requests: [], captures: [] })
   const [pollError, setPollError] = useState('')
   const [error, setError] = useState('')
@@ -70,12 +74,13 @@ export function BrowserMediaControls() {
       void polling.stop()
     }
   }, [browser, refresh])
-  const act = async (command: BrowserCommand) => {
+  const act = async (command: BrowserCommand, prepare?: () => Promise<unknown>) => {
     if (!browser || locked.current) return
     locked.current = true
     setBusy(true)
     setError('')
     try {
+      await prepare?.()
       await browser(command)
       await refresh()
     } catch (cause) {
@@ -146,18 +151,32 @@ export function BrowserMediaControls() {
         <MediaPermission
           key={request.id}
           request={request}
+          threads={threads}
           busy={busy}
           error={error}
-          onAnswer={(decision, source, audio) =>
-            void act({
-              action: 'media',
-              key: request.key,
-              requestId: request.id,
-              decision,
-              source,
-              audio,
-            })
-          }
+          onAnswer={(decision, source, audio) => {
+            const target = threads.find(
+              (thread) => source === `thread:${thread.runtimeId}:${thread.taskId}`,
+            )
+            void act(
+              {
+                action: 'media',
+                key: request.key,
+                requestId: request.id,
+                decision,
+                source,
+                audio,
+              },
+              decision === 'allow' && target
+                ? () =>
+                    browser({
+                      action: 'thread-media-sources',
+                      key: 'studio-media',
+                      sources: decode(mutableArray(threadWindowTargetSchema), [target]),
+                    })
+                : undefined,
+            )
+          }}
         />
       )}
     </>
@@ -166,21 +185,46 @@ export function BrowserMediaControls() {
 
 function MediaPermission({
   request,
+  threads,
   busy,
   error,
   onAnswer,
 }: {
   request: BrowserMediaRequest
+  threads: readonly { runtimeId: string; taskId: string; title: string; computerName: string }[]
   busy: boolean
   error: string
   onAnswer: (decision: 'allow' | 'deny', source?: string, audio?: boolean) => void
 }) {
   const [source, setSource] = useState('')
+  const [query, setQuery] = useState('')
+  const [kind, setKind] = useState<(typeof sourceTypes)[number]['id']>('tab')
+  const sources = [
+    ...(request.sources ?? []).filter((item) => item.kind !== 'thread'),
+    ...threads.map((thread) => ({
+      key: `thread:${thread.runtimeId}:${thread.taskId}`,
+      title: thread.title,
+      url: thread.computerName,
+      kind: 'thread' as const,
+      audioSupported: false,
+      requester: false,
+    })),
+  ]
+  const matches = sources.filter(
+    (item) =>
+      (kind === 'tab'
+        ? !item.kind || item.kind === 'tab' || item.kind === 'remote'
+        : item.kind === kind) &&
+      `${item.title} ${item.url} ${'profileId' in item ? item.profileId : ''} ${item.key}`
+        .toLocaleLowerCase()
+        .includes(query.toLocaleLowerCase()),
+  )
+
   const [audio, setAudio] = useState(false)
   const group = useId()
   const display = request.kind === 'display'
   const notifications = request.kind === 'notifications'
-  const selected = request.sources?.find((item) => item.key === source)
+  const selected = sources.find((item) => item.key === source)
   const audioSupported = selected?.audioSupported !== false
   const devices = [request.video ? 'camera' : '', request.audio ? 'microphone' : '']
     .filter(Boolean)
@@ -210,64 +254,123 @@ function MediaPermission({
         </DialogDescription>
         {display && (
           <>
-            <fieldset disabled={busy} className="max-h-[40vh] space-y-2 overflow-y-auto">
-              <legend className="mb-2 text-xs text-muted-foreground">
-                Browser tabs, threads, windows and screens
-              </legend>
-              {(request.sources ?? []).map((tab) => (
-                <label
-                  key={tab.key}
-                  className="flex min-w-0 cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-accent"
+            <Input
+              aria-label="Search sharing sources"
+              placeholder="Search tabs, threads, computers…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <div
+              role="tablist"
+              aria-label="Sharing source type"
+              className="flex min-w-0 gap-1 overflow-x-auto border-b"
+            >
+              {sourceTypes.map((type, index) => (
+                <button
+                  key={type.id}
+                  type="button"
+                  role="tab"
+                  id={`${group}-tab-${type.id}`}
+                  aria-controls={`${group}-sources`}
+                  aria-selected={kind === type.id}
+                  tabIndex={kind === type.id ? 0 : -1}
+                  disabled={busy}
+                  className={`shrink-0 border-b-2 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring ${kind === type.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                  onClick={() => {
+                    if (kind === type.id) return
+                    setKind(type.id)
+                    setSource('')
+                    setAudio(false)
+                  }}
+                  onKeyDown={(event) => {
+                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                    event.preventDefault()
+                    const next =
+                      event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? sourceTypes.length - 1
+                          : (index + (event.key === 'ArrowRight' ? 1 : -1) + sourceTypes.length) %
+                            sourceTypes.length
+                    const target =
+                      event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                        '[role="tab"]',
+                      )[next]
+                    target?.click()
+                    target?.focus({ preventScroll: true })
+                    target?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+                  }}
                 >
-                  <input
-                    type="radio"
-                    name={group}
-                    value={tab.key}
-                    checked={source === tab.key}
-                    onChange={() => {
-                      setSource(tab.key)
-                      setAudio(false)
-                    }}
-                    className="mt-1 shrink-0 accent-primary"
-                  />
-                  {tab.thumbnail && (
-                    <img
-                      src={tab.thumbnail}
-                      alt=""
-                      className="h-12 w-20 shrink-0 rounded object-contain"
-                    />
-                  )}
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">
-                      {tab.title || tab.url}
-                      {tab.requester ? ' (this tab)' : ''}
-                    </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {[
-                        tab.kind === 'remote'
-                          ? 'Remote tab'
-                          : tab.kind === 'thread'
-                            ? 'Thread'
-                            : tab.kind === 'screen'
-                              ? 'Screen'
-                              : tab.kind === 'window'
-                                ? 'Window'
-                                : 'Tab',
-                        tab.profileId,
-                        tab.url,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                  </span>
-                </label>
+                  {type.label}
+                </button>
               ))}
-              {!request.sources?.length && (
-                <p className="text-sm text-muted-foreground">
-                  Open a browser tab or choose an available window or screen.
+            </div>
+            <div role="tabpanel" id={`${group}-sources`} aria-labelledby={`${group}-tab-${kind}`}>
+              <fieldset disabled={busy} className="max-h-[40vh] space-y-2 overflow-y-auto">
+                <legend className="sr-only">Choose a sharing source</legend>
+                {matches.slice(0, 200).map((tab) => (
+                  <label
+                    key={tab.key}
+                    className="flex min-w-0 cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-accent"
+                  >
+                    <input
+                      type="radio"
+                      name={group}
+                      value={tab.key}
+                      checked={source === tab.key}
+                      onChange={() => {
+                        setSource(tab.key)
+                        setAudio(false)
+                      }}
+                      className="mt-1 shrink-0 accent-primary"
+                    />
+                    {'thumbnail' in tab && tab.thumbnail && (
+                      <img
+                        src={tab.thumbnail}
+                        alt=""
+                        className="h-12 w-20 shrink-0 rounded object-contain"
+                      />
+                    )}
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">
+                        {tab.title || tab.url}
+                        {tab.requester ? ' (this tab)' : ''}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {[
+                          tab.kind === 'remote'
+                            ? 'Remote tab'
+                            : tab.kind === 'thread'
+                              ? 'Thread'
+                              : tab.kind === 'screen'
+                                ? 'Screen'
+                                : tab.kind === 'window'
+                                  ? 'Window'
+                                  : 'Tab',
+                          'profileId' in tab ? tab.profileId : undefined,
+                          tab.url,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+              {matches.length === 0 && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {query
+                    ? 'No matching sources.'
+                    : `No ${sourceTypes.find((type) => type.id === kind)?.label.toLowerCase()} available.`}
                 </p>
               )}
-            </fieldset>
+              {matches.length > 200 && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  Showing 200 of {matches.length} matches. Refine your search to find another
+                  source.
+                </p>
+              )}
+            </div>
             {request.audio && audioSupported && (
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox
@@ -295,7 +398,7 @@ function MediaPermission({
             Cancel
           </Button>
           <Button
-            disabled={busy || (display && !request.sources?.some((tab) => tab.key === source))}
+            disabled={busy || (display && !selected)}
             onClick={() =>
               onAnswer(
                 'allow',

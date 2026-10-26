@@ -242,6 +242,7 @@ export * from './runtime/connection/runtime-icon.js'
 export * from './tasks/thread-sections.js'
 
 export * from './tasks/task-waiting.js'
+export * from './tasks/task-working.js'
 
 export * from './scm/task-review.js'
 export * from './scm/task-review-session.js'
@@ -313,3 +314,5 @@ export { connectionProgress } from './runtime/connection/connection-progress.js'
 export * from './tasks/watch-message.js'
 
 export * from './tasks/settled-page.js'
+
+export * from './shared/client-diagnostics.js'

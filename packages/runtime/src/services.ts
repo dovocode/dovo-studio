@@ -1,5 +1,5 @@
 import { taskInputOwner, taskRemoteHumanInputs } from '@dovo/protocol'
-import { indexTaskFamilyWorking } from '@dovo/protocol'
+import { indexTaskFamilyWorking, taskIsWorking } from '@dovo/protocol'
 import { PeerConnections } from './http/peer-connections.js'
 import { RemoteDesktop } from './computer-use/remote-desktop.js'
 import { familyWatchCounts } from './studio/thread-snapshot.js'
@@ -400,6 +400,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
         (task.status === 'review' || task.status === 'done') &&
         !task.runPhase &&
         !task.activeRunId &&
+        !taskIsWorking({ ...task, threadWatches }) &&
         !task.queue?.length &&
         !task.draft.trim() &&
         !task.draftAttachments?.length &&

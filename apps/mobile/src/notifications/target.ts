@@ -1,4 +1,10 @@
-import { decodeResult, maxValue, minValue, mutableStruct } from '@dovo/protocol'
+import {
+  notificationTestTaskId,
+  decodeResult,
+  maxValue,
+  minValue,
+  mutableStruct,
+} from '@dovo/protocol'
 import { Schema } from 'effect'
 import { taskHref } from '../shell/task-route'
 const identity = maxValue(minValue(Schema.String, 1), 200)
@@ -10,7 +16,12 @@ const targetSchema = mutableStruct({
 })
 export function notificationTarget(data: unknown) {
   const result = decodeResult(targetSchema, data)
-  if (!result.success || (result.data.inputType === 'question' && !result.data.inputId)) return null
+  if (
+    !result.success ||
+    result.data.taskId === notificationTestTaskId ||
+    (result.data.inputType === 'question' && !result.data.inputId)
+  )
+    return null
   return result.data
 }
 export type NotificationTarget = NonNullable<ReturnType<typeof notificationTarget>>

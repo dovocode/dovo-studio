@@ -1,4 +1,4 @@
-import { formatTurnDuration } from '@dovo/protocol'
+import { formatTurnDuration, taskIsWorking } from '@dovo/protocol'
 import { hasUnviewedTaskCompletion, type Task } from '@dovo/studio-core'
 import { isSnoozed } from './task-priority'
 export function taskPresentation(task: Task, needsInput: boolean, now: number) {
@@ -7,7 +7,8 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
   const started = latest?.startedAt ? Date.parse(latest.startedAt) : NaN
   const elapsed =
     task.status === 'running' && task.runPhase !== 'finalizing' && Number.isFinite(started)
-  const date = elapsed ? started : finished
+  const working = taskIsWorking(task)
+  const date = working && task.status !== 'running' ? NaN : elapsed ? started : finished
   const seconds = Math.max(0, Math.floor((now - date) / 1000))
   const time = !Number.isFinite(date)
     ? ''
@@ -28,18 +29,22 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
         ? 'Snoozed'
         : needsInput
           ? 'Needs input'
-          : task.waitingForFeedback
-            ? 'Waiting'
-            : hasUnviewedTaskCompletion(task)
-              ? 'Done'
-              : {
-                  draft: 'Draft',
-                  running: task.runPhase === 'finalizing' ? 'Saving changes' : 'Working',
-                  review: 'Review',
-                  done: 'Finished',
-                  failed: 'Failed',
-                  cancelled: 'Stopped',
-                }[task.status]
+          : working
+            ? task.status === 'running' && task.runPhase === 'finalizing'
+              ? 'Saving changes'
+              : 'Working'
+            : task.waitingForFeedback
+              ? 'Waiting'
+              : hasUnviewedTaskCompletion(task)
+                ? 'Done'
+                : {
+                    draft: 'Draft',
+                    running: task.runPhase === 'finalizing' ? 'Saving changes' : 'Working',
+                    review: 'Review',
+                    done: 'Finished',
+                    failed: 'Failed',
+                    cancelled: 'Stopped',
+                  }[task.status]
   const compactLabel =
     state === 'Working'
       ? `Working ${time}`.trim()

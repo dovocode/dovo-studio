@@ -48,7 +48,7 @@ import { PullRequestIcon, usePullRequestColor } from '../../ui/content/pull-requ
 import { DeviceLabel } from './device-label'
 import { TaskRowMenu } from './task-row-menu'
 import { TaskSwipeActions } from './task-swipe-actions'
-import { isSnoozed } from '@dovo/protocol'
+import { isSnoozed, taskIsWorking } from '@dovo/protocol'
 import { chooseSnoozeDuration, useTaskLifecycle } from '../detail/use-task-lifecycle'
 import { useTheme } from '../../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
@@ -152,7 +152,7 @@ function TaskListRowView({
   const worktree = !general && task.execution === 'worktree'
   // "Review · 23m" → state "Review" and a right-aligned age "23m".
   const [state, age] = /^(.*) · (now|\d+[mhd])$/.exec(status)?.slice(1) ?? [status, '']
-  const working = task.status === 'running' && !needsInput
+  const working = taskIsWorking(task) && !needsInput
   const stateColor = needsInput
     ? colors.accent
     : failed

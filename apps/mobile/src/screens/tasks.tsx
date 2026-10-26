@@ -1,4 +1,5 @@
 import {
+  taskIsWorking,
   watchRuntimeSettled,
   settledSummaryPageSize,
   supportsSettledSummaryPaging,
@@ -236,7 +237,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           (!car ||
             (!task.archived &&
               !isSnoozed(task, now) &&
-              (!task.waitingForFeedback || needsInput))) &&
+              (!task.waitingForFeedback || taskIsWorking(task) || needsInput))) &&
           (!query ||
             historySearch.keys.has(key) ||
             threadDescendants(tree.nodes.get(key)?.children ?? []).some((child) =>
@@ -299,12 +300,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       : []
     const active = tasks.filter(
       ({ task, needsInput }) =>
-        !needsInput && !task.archived && !isSnoozed(task, now) && !task.waitingForFeedback,
+        !needsInput &&
+        !task.archived &&
+        !isSnoozed(task, now) &&
+        (!task.waitingForFeedback || taskIsWorking(task)),
     )
     const working = preferences.workingSection
-      ? active.filter(
-          ({ task, needsInput }) => !task.pinned && task.status === 'running' && !needsInput,
-        )
+      ? active.filter(({ task, needsInput }) => !task.pinned && taskIsWorking(task) && !needsInput)
       : []
     const workingKeys = new Set(working.map((entry) => entry.key))
     const unsettled = active.filter((entry) => !workingKeys.has(entry.key))
@@ -318,7 +320,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       : []
     const waiting = tasks.filter(
       ({ task, needsInput }) =>
-        task.waitingForFeedback && !needsInput && !task.archived && !isSnoozed(task, now),
+        task.waitingForFeedback &&
+        !taskIsWorking(task) &&
+        !needsInput &&
+        !task.archived &&
+        !isSnoozed(task, now),
     )
     const waitingItems: TaskListItem[] = waiting.length
       ? [

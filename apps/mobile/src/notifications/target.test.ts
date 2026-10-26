@@ -37,3 +37,8 @@ it('rejects malformed or incomplete notification identities', () => {
   ])
     expect(notificationTarget(data)).toBeNull()
 })
+it('does not navigate to a fake thread when opening a test notification', () => {
+  expect(
+    notificationTarget({ runtimeId: 'computer', taskId: 'dovo-notification-test', kind: 'done' }),
+  ).toBeNull()
+})

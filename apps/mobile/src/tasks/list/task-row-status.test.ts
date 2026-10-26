@@ -167,3 +167,25 @@ it('presents finished watched threads as Waiting while preserving input priority
   expect(showTaskDone(waiting, false, now)).toBe(false)
   expect(taskRowStatus(waiting, true, true, now)).toBe('Needs input')
 })
+
+it('keeps an idle parent Working until its native child finishes, with input taking priority', () => {
+  const parent = {
+    ...task,
+    waitingForFeedback: true,
+    subagents: [
+      {
+        id: 'child',
+        name: 'Child',
+        provider: 'codex',
+        status: 'working' as const,
+        sessionLive: true,
+        startedAt: '2026-09-20T10:00:00Z',
+        updatedAt: '2026-09-20T10:00:00Z',
+      },
+    ],
+  }
+  expect(taskRowStatus(parent, false, true, now)).toBe('Working')
+  expect(taskRowStatus(parent, true, true, now)).toBe('Needs input')
+  parent.subagents = [{ ...parent.subagents[0]!, sessionLive: false }]
+  expect(taskRowStatus(parent, false, true, now)).toBe('Waiting · 4m')
+})

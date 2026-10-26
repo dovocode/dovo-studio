@@ -1049,3 +1049,66 @@ it('keeps additional selector prompts separate when inheriting the title model',
     s.db.close()
   }
 })
+
+it('recovers a committed Scope selection after a lost reply and runtime restart without rerunning the model', async () => {
+  const s = autoFixture()
+  s.store.update((w) => ({
+    ...w,
+    repositories: w.repositories.filter((repo) => repo.kind === 'scratch'),
+  }))
+  const input = { id: 'auto', requestId: 'first-send', text: 'General planning question' }
+  try {
+    const selected = await runClientEffect(s.titles.selectProjectsEffect(input))
+    const restarted = new TitleGeneration(s.db, s.store, s.registry)
+    try {
+      expect(await runClientEffect(restarted.selectProjectsEffect(input))).toEqual(selected)
+      await expect(
+        runClientEffect(restarted.selectProjectsEffect({ ...input, text: 'Different prompt' })),
+      ).rejects.toThrow('another prompt')
+      s.store.updateTask('auto', (current) => ({
+        ...current,
+        linkedCheckouts: [
+          { id: 'manual', repositoryId: 'other', access: 'read-only', execution: 'main' },
+        ],
+      }))
+      await expect(runClientEffect(restarted.selectProjectsEffect(input))).rejects.toThrow(
+        'project changed',
+      )
+    } finally {
+      await restarted.dispose()
+    }
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+
+it.each([false, true])(
+  'generates titles without overwriting an intervening manual rename (%s)',
+  async (rename) => {
+    const s = autoFixture()
+    s.store.updateTask('auto', (task) => ({ ...task, title: 'Provisional title' }))
+    vi.spyOn(s.registry, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        if (rename) s.store.updateTask('auto', (task) => ({ ...task, title: 'My title' }))
+        run.onText('Generated title')
+      },
+    })
+    try {
+      await runClientEffect(
+        s.titles.generateEffect({
+          text: 'Summarize this task',
+          taskId: 'auto',
+          expectedTitle: 'Provisional title',
+        }),
+      )
+      expect(s.store.task('auto').title).toBe(rename ? 'My title' : 'Generated title')
+    } finally {
+      await s.titles.dispose()
+      await s.registry.dispose()
+      s.db.close()
+    }
+  },
+)

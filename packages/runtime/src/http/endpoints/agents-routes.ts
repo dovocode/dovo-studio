@@ -490,9 +490,14 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         return yield* s.titles.selectProjectsEffect(yield* serviceResult(body(request)))
       if (method === 'POST' && path === '/api/tasks/title') {
         const input = yield* serviceResult(body(request))
-        const taskInput = decodeResult(mutableStruct({ taskId: idSchema }), input)
+        const taskInput = decodeResult(
+          mutableStruct({ taskId: idSchema, expectedTitle: Schema.optional(Schema.String) }),
+          input,
+        )
         const value = taskInput.success
           ? {
+              taskId: taskInput.data.taskId,
+              expectedTitle: taskInput.data.expectedTitle,
               text:
                 s.store
                   .task(taskInput.data.taskId)

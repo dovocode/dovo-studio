@@ -1,9 +1,10 @@
 import type Database from 'better-sqlite3'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { Effect, Schema } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import {
   ACCOUNT_DIRECTORY_URL,
+  notificationTestTaskId,
   connectServiceOrigin,
   decode,
   mutableStruct,
@@ -137,6 +138,35 @@ export class PushNotifications {
       registered: !!registration,
       error: this.error,
     }
+  }
+  async test(deviceId: string) {
+    const registration = this.registration(deviceId)
+    if (!registration) throw new HttpError(409, 'Enable notifications for this computer first.')
+    const value = decode(relayNotificationSchema, {
+      platform: registration.platform,
+      token: registration.token,
+      environment: registration.environment,
+      id: createHash('sha256').update(randomUUID()).digest('hex'),
+      title: 'Dovo test notification',
+      body: 'Notification delivery from your computer is working.',
+      data: { runtimeId: registration.runtimeId, taskId: notificationTestTaskId, kind: 'done' },
+    })
+    const result = registration.managedToken
+      ? await this.managedSend(value, registration.managedToken, registration.managedOrigin)
+      : await this.relay.send?.(value)
+    if (result?.invalidToken) {
+      this.remove(deviceId)
+      throw new HttpError(
+        409,
+        'This device’s push token expired. Disable and enable notifications to register it again.',
+      )
+    }
+    if (!result?.delivered)
+      throw new HttpError(
+        502,
+        'The notification service did not accept the test. Check delivery settings.',
+      )
+    return { ok: true }
   }
   register(deviceId: string, value: unknown) {
     const registration = decode(pushRegistrationSchema, value)

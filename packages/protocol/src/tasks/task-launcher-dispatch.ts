@@ -33,7 +33,7 @@ export async function dispatchLauncherTask(attempt: LauncherAttempt, request: La
     attempt.task = await request(
       attempt.profile,
       '/api/tasks/projects/select',
-      { id: attempt.task.id, text: attempt.text },
+      { id: attempt.task.id, requestId: attempt.messageId, text: attempt.text },
       taskSchema,
     )
   }

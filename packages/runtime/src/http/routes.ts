@@ -770,6 +770,8 @@ export function route(
         return yield* serviceResult(
           s.pushNotifications.register(device.id, yield* serviceResult(body(request))),
         )
+      if (method === 'POST' && path === '/api/notifications/test')
+        return yield* serviceResult(s.pushNotifications.test(device.id))
       if (method === 'POST' && path === '/api/notifications/remove') {
         s.pushNotifications.remove(device.id)
         return yield* serviceResult({ ok: true })

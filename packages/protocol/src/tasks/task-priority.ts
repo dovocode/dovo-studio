@@ -1,3 +1,4 @@
+import { taskIsWorking } from './task-working.js'
 import type { Task } from '../workspace.js'
 
 export const taskSnoozeOptions = [
@@ -66,7 +67,10 @@ export function compareTasks(
   switch (sort) {
     case 'status': {
       const order = ['running', 'review', 'failed', 'draft', 'done', 'cancelled']
-      return order.indexOf(a.status) - order.indexOf(b.status) || recent()
+      return (
+        order.indexOf(taskIsWorking(a) ? 'running' : a.status) -
+          order.indexOf(taskIsWorking(b) ? 'running' : b.status) || recent()
+      )
     }
     case 'activity':
       return recent()

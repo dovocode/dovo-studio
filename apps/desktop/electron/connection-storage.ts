@@ -29,10 +29,13 @@ export function registerConnectionStorage(rendererPath: string) {
     // The launcher may read appearance settings. Thread windows run the trusted
     // workbench and need its normal settings and connection storage access.
     if (allowLauncher && source.hash === '#task-launcher') source.hash = ''
-    if (source.hash.startsWith('#thread=')) {
+    const threadHash = ['#thread=', '#thread-share='].find((prefix) =>
+      source.hash.startsWith(prefix),
+    )
+    if (threadHash) {
       decode(
         threadWindowTargetSchema,
-        JSON.parse(decodeURIComponent(source.hash.slice('#thread='.length))),
+        JSON.parse(decodeURIComponent(source.hash.slice(threadHash.length))),
       )
       source.hash = ''
     }

@@ -13,7 +13,15 @@ if (!device || device.startsWith('--'))
     'Usage: pnpm mobile:update -- --device <UDID>. Find IDs with: xcrun devicectl list devices',
   )
 if (args.length !== 2 || index !== 0) throw new Error('Only --device <UDID> is supported.')
-const run = (command, args, cwd = root) => execFileSync(command, args, { cwd, stdio: 'inherit' })
+const env = {
+  ...process.env,
+  DOVO_SOURCE_COMMIT: execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim(),
+}
+const run = (command, args, cwd = root) =>
+  execFileSync(command, args, { cwd, env, stdio: 'inherit' })
 const mobile = join(root, 'apps/mobile')
 const temporary = mkdtempSync(join(tmpdir(), 'dovo-ios-update-'))
 try {

@@ -1,4 +1,4 @@
-import { ACCOUNT_DIRECTORY_URL } from '@dovo/protocol'
+import { ACCOUNT_DIRECTORY_URL, diagnosticMessage, notificationTestTaskId } from '@dovo/protocol'
 import { useMobileAccount } from '../runtime/connection/account-provider'
 import { runtimeComputerName } from '@dovo/protocol'
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
@@ -21,6 +21,11 @@ const Context = createContext({
   supported: false,
   busy: false,
   error: '',
+  permission: 'unknown',
+  registrations: {} as Record<
+    string,
+    { registered: boolean; error: string | null; checkedAt: string }
+  >,
   setEnabled: (_enabled: boolean) => {},
   serverEnabled: (_id: string): boolean => true,
   setServerEnabled: (_id: string, _enabled: boolean) => {},
@@ -52,6 +57,10 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       (Platform.OS === 'ios' || Platform.OS === 'android') &&
       !!requireOptionalNativeModule('ExpoPushTokenManager'),
   )
+  const [permission, setPermission] = useApplicationState('unknown')
+  const [registrations, setRegistrations] = useApplicationState<
+    Record<string, { registered: boolean; error: string | null; checkedAt: string }>
+  >({})
   const refreshRegistration = useRef<() => void>(() => {})
   const hosts = JSON.stringify(
     runtime.overviews.map((entry) => [entry.profile.id, entry.profile.connection, entry.connected]),
@@ -84,9 +93,13 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       if (disposed) return
       Notifications.setNotificationHandler({
         handleNotification: async (notification) => ({
-          shouldPlaySound: notification.request.content.data?.kind === 'input',
+          shouldPlaySound:
+            notification.request.content.data?.kind === 'input' ||
+            notification.request.content.data?.taskId === notificationTestTaskId,
           shouldSetBadge: false,
-          shouldShowBanner: notification.request.content.data?.kind === 'input',
+          shouldShowBanner:
+            notification.request.content.data?.kind === 'input' ||
+            notification.request.content.data?.taskId === notificationTestTaskId,
           shouldShowList: true,
         }),
       })
@@ -132,6 +145,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
           const permission = enabledRef.current
             ? await Notifications.getPermissionsAsync()
             : undefined
+          if (permission) setPermission(permission.granted ? 'granted' : permission.status)
           const permitted = permission?.granted !== false
           if (!permitted) errors.push('Notifications are disabled in system settings.')
           if (enabledRef.current && permitted && !nativeToken) {
@@ -222,6 +236,14 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
                   },
                   pushStatusSchema,
                 )
+                setRegistrations((current) => ({
+                  ...current,
+                  [entry.profile.id]: {
+                    registered: status.configured && status.registered,
+                    error: status.error,
+                    checkedAt: new Date().toISOString(),
+                  },
+                }))
                 if (!status.configured || !status.registered || status.error) {
                   errors.push(
                     `${runtimeComputerName(entry)}: ${status.error ?? 'Push registration is not ready.'}`,
@@ -236,10 +258,17 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
                   responses.ok,
                 )
               registered.set(entry.profile.id, { key, at: Date.now() })
-            } catch {
-              errors.push(
-                `${runtimeComputerName(entry)}: could not enable notifications. Check Connect delivery and update this runtime, or configure its standalone relay.`,
-              )
+            } catch (cause) {
+              const message = diagnosticMessage(cause)
+              setRegistrations((current) => ({
+                ...current,
+                [entry.profile.id]: {
+                  registered: false,
+                  error: message,
+                  checkedAt: new Date().toISOString(),
+                },
+              }))
+              errors.push(`${runtimeComputerName(entry)}: ${message}`)
             }
           }
           if (!disposed && !syncAgain) setError(errors.join('\n'))
@@ -351,9 +380,8 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       )
       refresh()
     }
-    void initialize().catch(() => {
-      if (!disposed)
-        setError('Push notifications need a new native app build and valid platform credentials')
+    void initialize().catch((cause) => {
+      if (!disposed) setError(diagnosticMessage(cause))
     })
     return () => {
       disposed = true
@@ -370,6 +398,8 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
         supported,
         busy,
         error,
+        permission,
+        registrations,
         serverEnabled: (id) => !disabledServers.includes(id),
         setServerEnabled: (id, value) => {
           void setServer.current(id, value)

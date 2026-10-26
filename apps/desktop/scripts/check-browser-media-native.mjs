@@ -30,31 +30,47 @@ const write = (path, contents) => {
   writeFileSync(path, contents)
 }
 
-write(join(work, 'studio', 'index.html'), '<!doctype html><title>Studio</title>')
+write(
+  join(work, 'studio', 'index.html'),
+  `<!doctype html><title>Studio</title><script>
+if (location.hash.startsWith('#thread-share=')) {
+  const settings = window.bridge.settingsRead()
+  if (settings.error) throw new Error(settings.error)
+  document.addEventListener('DOMContentLoaded',()=>{
+    document.body.style.background='rgb(230,40,120)'
+    document.body.dataset.threadShareReady=''
+  })
+}
+</script>`,
+)
 write(
   join(work, 'studio', 'preload.js'),
   `const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('bridge', {
   browser: (command) => ipcRenderer.invoke('preview:browser', command),
+  settingsRead: () => ipcRenderer.sendSync('app:settings-read'),
   settingsWritten: () => ipcRenderer.send('app:settings-write', '{}'),
 })
 `,
 )
+const connectionModule = join(desktop, 'electron', 'connection-storage.ts')
 const browserModule = join(desktop, 'electron', 'browser.ts')
 write(
   join(work, 'harness', 'main.ts'),
   `import assert from 'node:assert/strict'
-import { app, BrowserWindow, session, webContents } from 'electron'
+import { app, BrowserWindow, session, webContents, nativeImage } from 'electron'
 import { createServer } from 'node:http'
 import { WebSocketServer } from ${JSON.stringify(require.resolve('ws'))}
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerBrowser } from ${JSON.stringify(browserModule)}
+import { registerConnectionStorage } from ${JSON.stringify(connectionModule)}
 
 const work = process.env.SMOKE_DIR!
 app.setPath('userData', join(work, 'user-data'))
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const report: Record<string, unknown> = {}
+const stage = (name: string) => {report.stage=name;writeFileSync(join(work,'result.json'),JSON.stringify(report));console.log('[media-stage]',name)}
 const pages: Record<string, string> = {
   '/source': \`<!doctype html><title>Tone source</title><canvas id=c width=320 height=180></canvas><script>
     const context = new AudioContext()
@@ -107,7 +123,7 @@ const pages: Record<string, string> = {
       const video = document.createElement('video')
       video.muted = true
       video.srcObject = new MediaStream(window.stream.getVideoTracks())
-      await video.play()
+      await Promise.race([video.play(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Shared video never produced a frame.')),15000))])
       await new Promise((resolve) => setTimeout(resolve, 500))
       const canvas = document.createElement('canvas')
       canvas.width = video.videoWidth
@@ -159,6 +175,7 @@ server.on('upgrade', (request, socket, head) => {
   })
 })
 
+if (process.env.SMOKE_DEBUG) app.on('web-contents-created',(_event, contents)=>{contents.on('console-message',(_event,level,message)=>console.log('[page]',level,message))})
 app.whenReady().then(async () => {
   try {
     if (process.env.SMOKE_DEBUG) {
@@ -178,7 +195,8 @@ app.whenReady().then(async () => {
       }
     }
     const index = join(work, 'studio', 'index.html')
-    const bridge = registerBrowser(index)
+    registerConnectionStorage(index)
+    const bridge = registerBrowser(index, undefined, join(work, 'studio', 'preload.js'))
     const studio = new BrowserWindow({
       width: 1200,
       height: 800,
@@ -221,6 +239,7 @@ app.whenReady().then(async () => {
       throw new Error('Capture state never reached the expected value.')
     }
 
+    stage('gesture')
     await show('thread', '/requester', 'work', false)
     refused(
       await run('/requester', 'window.share({ video: true, audio: true })', true, 'persist:dovo-preview:work'),
@@ -236,6 +255,7 @@ app.whenReady().then(async () => {
     await requests(0)
     report.threadAndGesture = 'refused'
 
+    stage('tab')
     const sharing = run('/requester', 'window.share({ video: true, audio: true })', true)
     const [request] = await requests(1)
     assert.equal(request.kind, 'display')
@@ -304,6 +324,7 @@ app.whenReady().then(async () => {
     await captures((list) => list.length === 0)
     report.stopAndCancel = 'ok'
 
+    stage('devices')
     const camera = run('/requester', 'window.devices({ audio: true, video: true })', false)
     const [devices] = await requests(1)
     assert.equal(devices.kind, 'user-media')
@@ -337,8 +358,13 @@ app.whenReady().then(async () => {
     assert.deepEqual(await other, { ok: false, name: 'NotAllowedError' })
     report.devices = 'ok'
 
+    stage('remote')
     // A remote tab is captured through an isolated viewer, over real authenticated HTTP/WS.
-    remoteImage = (await source.capturePage()).toJPEG(90)
+    // Capturing an invisible WebContentsView can wait indefinitely for a compositor frame.
+    // This HTTP/WS fixture owns its pixels; a fixed image verifies the remote transport directly.
+    const remotePixels = Buffer.alloc(320 * 180 * 4)
+    for (let i=0; i<remotePixels.length; i+=4) { remotePixels[i]=30; remotePixels[i+1]=220; remotePixels[i+2]=90; remotePixels[i+3]=255 }
+    remoteImage = nativeImage.createFromBitmap(remotePixels,{width:320,height:180}).toJPEG(90)
     await call({ action: 'remote-media-sources', key: 'studio-media', sources: [{ key: 'remote-source', tabId: 'remote-source', profileId: 'work', title: 'Remote source', url: 'http://remote.example', connection: { address: url(''), token: 'remote-test-device-token-at-least-32-characters' } }] })
     const remoteShare = run('/requester', 'window.share({ video: true })', true)
     const [remoteRequest] = await requests(1)
@@ -355,6 +381,24 @@ app.whenReady().then(async () => {
     assert.equal(remoteConnections, 0, 'Stopping sharing releases the remote viewer connection.')
     report.remoteCapture = remoteFrame
 
+    stage('thread')
+    await call({action:'thread-media-sources',key:'studio-media',sources:[{runtimeId:'fixture',taskId:'thread',title:'Shared thread'}]})
+    const threadShare = run('/requester', 'window.share({video:true})', true)
+    const [threadRequest] = await requests(1)
+    await call({action:'media',key:threadRequest.key,requestId:threadRequest.id,decision:'allow',source:'thread:fixture:thread'})
+    stage('thread-approved')
+    assert.deepEqual(await threadShare,{ok:true,kinds:['video']})
+    stage('thread-stream')
+    const [threadCapture] = await captures(list=>list[0]?.state==='active')
+    assert.equal(threadCapture.sourceKind,'thread')
+    stage('thread-frame')
+    const threadFrame = await run('/requester','window.videoFrame()',false)
+    assert.ok(threadFrame.vibrant>1000,'Shared thread must render real frames: '+JSON.stringify(threadFrame))
+    await call({action:'stop-capture',key:threadCapture.key,captureId:threadCapture.id})
+    await captures(list=>list.length===0)
+    report.threadCapture = threadFrame
+
+    stage('desktop')
     for (const kind of ['screen', 'window']) {
       const sharing = run('/requester', 'window.share({ video: true })', true)
       let ask, chosen
@@ -376,6 +420,7 @@ app.whenReady().then(async () => {
       report[kind+'Capture'] = {width:frame.width,height:frame.height}
     }
 
+    stage('endings')
     // Closing the capturing tab, or turning Browser off, really ends a capture.
     const approve = async () => {
       const pending = run('/requester', 'window.share({ video: true, audio: true })', true)
@@ -467,7 +512,16 @@ if (process.env.SMOKE_DEBUG)
       .join('\n'),
   )
 if (!result.ok) {
-  console.error(result.error)
+  console.error(
+    JSON.stringify({
+      ...result,
+      processError: child.error?.message,
+      exitCode: child.status,
+      signal: child.signal,
+    }),
+  )
+  console.error(child.stdout?.slice(-4000))
+  console.error(child.stderr?.slice(-4000))
   if (result.output) console.error(result.output)
 }
 if (keep || !result.ok) console.log(`Smoke files kept in ${work}`)

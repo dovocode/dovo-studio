@@ -15,6 +15,9 @@ export async function openThreadMedia(
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
+      // A hidden static conversation may never repaint after capture starts.
+      // Offscreen rendering gives Chromium a live surface even before new messages arrive.
+      offscreen: true,
       preload,
     },
   })

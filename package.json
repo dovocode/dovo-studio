@@ -152,7 +152,7 @@
     "test:usage-overview:browser": "pnpm --filter @dovo/desktop build && node scripts/check-usage-overview-browser.mjs && node scripts/check-mobile-usage-browser.mjs",
     "test:remote-browser-sessions:browser": "node scripts/check-remote-browser-sessions.mjs",
     "test:mobile-registry-recovery:browser": "node scripts/check-mobile-registry-recovery-browser.mjs",
-    "test:workspace-recovery:browser": "node scripts/check-workspace-recovery-browser.mjs",
+    "test:workspace-recovery:browser": "node scripts/check-workspace-recovery-browser.mjs && node scripts/check-error-diagnostics-browser.mjs",
     "test:browser": "node scripts/run-browser-suites.mjs",
     "test:code-review:browser": "node scripts/check-code-review-browser.mjs && node scripts/check-mobile-review-browser.mjs && node scripts/check-mobile-review-report-browser.mjs",
     "test:attachment-images:browser": "node scripts/build-image-editor.mjs --check && node scripts/build-browser-viewer.mjs && node scripts/check-preview-screenshots-browser.mjs && node scripts/check-image-editor-browser.mjs && node scripts/check-image-attachments-browser.mjs && node scripts/check-mobile-image-editor-browser.mjs && node scripts/check-mobile-attachments-browser.mjs && node scripts/check-attachment-images-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs",
