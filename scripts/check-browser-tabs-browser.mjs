@@ -28,6 +28,18 @@ const built = await build({
     {
       name: 'fixture',
       setup(builder) {
+        // This fixture covers the per-thread browser. Shared-browser panels are
+        // exercised with their real components in check-shared-browser-browser.
+        builder.onResolve(
+          { filter: /^(\.\/browser-thread-panel|\.\.\/detail\/resizable-sidebar)$/ },
+          ({ path, importer }) =>
+            importer === root + 'packages/extension-tasks/src/browser/browser-pane.tsx'
+              ? { path, namespace: 'shared-panel-fixture' }
+              : undefined,
+        )
+        builder.onLoad({ filter: /.*/, namespace: 'shared-panel-fixture' }, ({ path }) => ({
+          contents: `export function ${path === './browser-thread-panel' ? 'BrowserThreadPanel' : 'ResizableSidebar'}(){throw new Error('Shared browser panel rendered in per-thread browser fixture')}`,
+        }))
         builder.onResolve({ filter: /^@dovo\/studio-core(\/state)?$/ }, ({ path }) => ({
           path,
           namespace: 'fixture',
