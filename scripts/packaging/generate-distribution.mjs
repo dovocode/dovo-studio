@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 const assets = resolve(process.argv[2] ?? 'release')
 const output = resolve(process.argv[3] ?? 'release/distribution')
@@ -21,8 +21,11 @@ const names = [
   `${serverPrefix}-${version}-linux-x64.tar.gz`,
   `${studioPrefix}-${version}-arm64.zip`,
   `${studioPrefix}-mise-${version}-macos-arm64.tar.gz`,
-  `${serverPrefix}-${version}-windows-x64.zip`,
 ]
+// Windows builds are paused in CI. Publish its mise entry only when an archive exists;
+// the Mac and Linux artifacts above remain required for a complete distribution.
+const windowsServer = `${serverPrefix}-${version}-windows-x64.zip`
+if ((await readdir(assets)).includes(windowsServer)) names.push(windowsServer)
 const hashes = new Map()
 for (const name of names)
   hashes.set(
@@ -97,7 +100,7 @@ await writeFile(
       ['macos-arm64', names[0]],
       ['linux-arm64', names[1]],
       ['linux-x64', names[2]],
-      ['windows-x64', names[5]],
+      ...(hashes.has(windowsServer) ? [['windows-x64', windowsServer]] : []),
     ]) +
     tool(studioName, [['macos-arm64', names[4]]]),
 )

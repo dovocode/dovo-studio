@@ -92,6 +92,46 @@ await test('generates separate nightly Homebrew and mise definitions', async () 
   }
 })
 
+await test('omits paused Windows builds while still requiring every Mac and Linux artifact', async () => {
+  for (const version of ['1.2.3', '1.2.3-nightly.42']) {
+    const temporary = await mkdtemp(join(tmpdir(), 'dovo-distribution-paused-windows-'))
+    try {
+      const nightly = version.includes('-nightly.')
+      const server = nightly ? 'Dovo-Server-Nightly' : 'Dovo-Server'
+      const studio = nightly ? 'Dovo-Studio-Nightly' : 'Dovo-Studio'
+      const files = [
+        `${server}-${version}-macos-arm64.tar.gz`,
+        `${server}-${version}-linux-arm64.tar.gz`,
+        `${server}-${version}-linux-x64.tar.gz`,
+        `${studio}-${version}-arm64.zip`,
+        `${studio}-mise-${version}-macos-arm64.tar.gz`,
+      ]
+      for (const file of files) await writeFile(join(temporary, file), file)
+      const output = join(temporary, 'distribution')
+      const generate = () =>
+        execFileSync(process.execPath, [script.pathname, temporary, output, version], {
+          stdio: 'pipe',
+        })
+      generate()
+      const mise = await readFile(join(output, 'mise.toml'), 'utf8')
+      assert.doesNotMatch(mise, /windows|undefined/)
+      const sums = await readFile(join(output, 'SHA256SUMS'), 'utf8')
+      assert.equal(sums.trim().split('\n').length, files.length)
+      for (const file of files) {
+        const hash = createHash('sha256').update(file).digest('hex')
+        assert.ok(sums.includes(`${hash}  ${file}`))
+      }
+      for (const file of files) {
+        await rm(join(temporary, file))
+        assert.throws(generate)
+        await writeFile(join(temporary, file), file)
+      }
+    } finally {
+      await rm(temporary, { recursive: true, force: true })
+    }
+  }
+})
+
 await test('stages the release version for server diagnostics without editing source manifests', async () => {
   const { stageWorkspace } = await import('./stage-workspace.mjs')
   const { mkdir } = await import('node:fs/promises')
