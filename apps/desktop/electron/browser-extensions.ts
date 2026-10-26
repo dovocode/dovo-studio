@@ -10,7 +10,7 @@ import {
 } from '@dovo/protocol'
 import { ElectronChromeExtensions } from 'electron-chrome-extensions'
 import crxPreload from 'electron-chrome-extensions/preload?raw'
-import { app, dialog, session, type BaseWindow, type BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog, session, type BaseWindow } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { chromeStoreId, downloadStoreExtension, unpackStoreExtension } from './browser-web-store.js'
@@ -27,6 +27,7 @@ import {
 } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
 import { Schema } from 'effect'
+import { attachNativeMessaging } from './browser-native-messaging.js'
 
 /** Shared-browser profiles never share storage with agent-enabled thread previews. */
 export const workspacePartition = (profileId: string) =>
@@ -39,7 +40,6 @@ const MAX_ENTRIES = 10_000
 const MAX_BYTES = 256 * 1024 * 1024
 const MAX_MANIFEST_BYTES = 1024 * 1024
 const MAX_ICON_BYTES = 256 * 1024
-const REMOVED_PERMISSIONS = ['nativeMessaging']
 /** Chrome match patterns for web pages only; `file:` and other schemes are never granted. */
 const MATCH_PATTERN = /^(?:<all_urls>|(?:\*|https?):\/\/(?:\*|(?:\*\.)?[^/*:]+)(?::\d{1,5})?\/.*)$/
 /** Provided by Electron or electron-chrome-extensions 4.10.0; everything else is reported. */
@@ -50,6 +50,7 @@ const SUPPORTED_PERMISSIONS = new Set([
   'cookies',
   'management',
   'notifications',
+  'nativeMessaging',
   'offscreen',
   'scripting',
   'storage',
@@ -60,7 +61,7 @@ const SUPPORTED_PERMISSIONS = new Set([
 ])
 const CAPABILITIES = {
   unpackedFolders: true,
-  nativeMessaging: false,
+  nativeMessaging: true,
   chromeWebStore: true,
   remoteRuntimes: false,
 } as const
@@ -101,6 +102,8 @@ type Profile = {
   registry: Registry
   errors: Map<string, string>
   queue: Promise<unknown>
+  native: ReturnType<typeof attachNativeMessaging>
+  helperApprovals: Set<string>
 }
 type ActionClick = (details: {
   eventType: 'click'
@@ -126,6 +129,14 @@ const actionInternals = Schema.Struct({
   }),
 })
 const hasActionInternals = Schema.is(actionInternals)
+const popupInternals = Schema.Struct({
+  browserWindow: Schema.declare(
+    (value: unknown): value is BrowserWindow => value instanceof BrowserWindow,
+  ),
+  parent: Schema.declare(
+    (value: unknown): value is BrowserWindow => value instanceof BrowserWindow,
+  ),
+})
 function clickAction(library: unknown, details: Parameters<ActionClick>[0]) {
   if (!hasActionInternals(library))
     throw new Error('Extension popups are unavailable in this build.')
@@ -157,6 +168,17 @@ const enabled = () => {
 const requireEnabled = () => {
   if (!enabled())
     throw new Error('Enable experimental Browser in Settings → General before adding extensions.')
+}
+const profileName = (id: string) => {
+  const settings = readLocalSettingsSection('app')
+  const schema = Schema.Struct({
+    browserProfiles: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
+  })
+  return (
+    (Schema.is(schema)(settings)
+      ? settings.browserProfiles.find((profile) => profile.id === id)?.name
+      : undefined) ?? (id === 'default' ? 'Default' : 'Unavailable profile')
+  )
 }
 const inside = (root: string, path: string) => {
   const target = resolve(root, path)
@@ -319,14 +341,6 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
   const load = async (profile: Profile, record: Installed) => {
     profile.errors.delete(record.id)
     try {
-      // Dovo's copy never declares removed permissions; refuse a copy changed after install.
-      const manifest = await readManifest(installed(profile.id, record.directory))
-      if (
-        [...strings(manifest.permissions), ...strings(manifest.optional_permissions)].some((p) =>
-          REMOVED_PERMISSIONS.includes(p),
-        )
-      )
-        throw new Error('This copy requests native messaging, which Dovo does not support.')
       const extension = await profile.session.extensions.loadExtension(
         installed(profile.id, record.directory),
       )
@@ -344,6 +358,9 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     }
   }
   const unload = (profile: Profile, id: string) => {
+    profile.native.close(id)
+    for (const key of profile.helperApprovals)
+      if (key.startsWith(`${id}:`)) profile.helperApprovals.delete(key)
     if (profile.session.extensions.getExtension(id)) profile.session.extensions.removeExtension(id)
   }
 
@@ -367,13 +384,74 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
           requestPermissions: (extension, request) =>
             requestPermissions(profileId, extension, request),
         })
+        // The library's native child window is the overlay: keep it anchored and within Studio.
+        extensions.on('browser-action-popup-created', (raw: unknown) => {
+          if (!Schema.is(popupInternals)(raw)) return
+          const popup = raw.browserWindow
+          const parent = raw.parent
+          const fit = () => {
+            if (popup.isDestroyed() || parent.isDestroyed()) return
+            const area = parent.getContentBounds()
+            const bounds = popup.getBounds()
+            const width = Math.min(bounds.width, area.width - 16)
+            const height = Math.min(bounds.height, area.height - 16)
+            const next = {
+              width,
+              height,
+              x: Math.max(area.x + 8, Math.min(bounds.x, area.x + area.width - width - 8)),
+              y: Math.max(area.y + 8, Math.min(bounds.y, area.y + area.height - height - 8)),
+            }
+            if (
+              Object.keys(next).some((key) => Reflect.get(next, key) !== Reflect.get(bounds, key))
+            )
+              popup.setBounds(next)
+          }
+          popup.setHasShadow(true)
+          popup.on('show', fit)
+          popup.on('resize', fit)
+          parent.on('resize', fit)
+          popup.once('closed', () => parent.off('resize', fit))
+        })
         for (const type of ['frame', 'service-worker'] as const)
           browserSession.registerPreloadScript({
             id: `dovo-browser-alias-${type}`,
             type,
             filePath: alias,
           })
+        const helperApprovals = new Set<string>()
+        const native = attachNativeMessaging(extensions, {
+          session: browserSession,
+          enabled,
+          allow: async (extension, host, executable) => {
+            const key = `${extension.id}:${host}:${executable}`
+            if (helperApprovals.has(key)) return true
+            const options: Electron.MessageBoxOptions = {
+              type: 'warning',
+              title: 'Connect desktop application',
+              message: `Allow “${extension.name}” to connect to a desktop app?`,
+              detail: `Desktop helper: ${host}\nExecutable: ${executable}\nBrowser profile: ${profileName(profileId)}\n\nThe extension can exchange data with this installed application. Your desktop app may also ask you to trust Dovo Studio.`,
+              buttons: ['Connect', 'Cancel'],
+              defaultId: 1,
+              cancelId: 1,
+              noLink: true,
+            }
+            const parent = tabs.window(profileId)
+            const { response } = await (parent
+              ? dialog.showMessageBox(parent, options)
+              : dialog.showMessageBox(options))
+            if (
+              response !== 0 ||
+              !enabled() ||
+              browserSession.extensions.getExtension(extension.id)?.path !== extension.path
+            )
+              return false
+            helperApprovals.add(key)
+            return true
+          },
+        })
         const profile: Profile = {
+          native,
+          helperApprovals,
           id: profileId,
           session: browserSession,
           extensions,
@@ -400,7 +478,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     )
   const unloadAll = (profile: Profile) => {
     for (const extension of profile.session.extensions.getAllExtensions())
-      profile.session.extensions.removeExtension(extension.id)
+      unload(profile, extension.id)
     profile.errors.clear()
   }
   /** Serialize changes per profile so installs, removals and toggles never interleave. */
@@ -490,7 +568,6 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     const permissions = field('permissions')
     const origins = field('origins')
     if (!permissions || !origins || (!permissions.length && !origins.length)) return false
-    if (permissions.some((p) => REMOVED_PERMISSIONS.includes(p))) return false
     const manifest: unknown = extension.manifest
     const declared = (key: string) =>
       manifest && typeof manifest === 'object' ? strings(Reflect.get(manifest, key)) : []
@@ -505,12 +582,12 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     const detail = [
       ...(permissions.length ? [`Permissions: ${permissions.join(', ')}`] : []),
       ...(origins.length ? [`Site access: ${origins.join(', ')}`] : []),
-      `This only applies to the browser profile “${profileId}”.`,
+      `This only applies to the browser profile “${profileName(profileId)}”.`,
     ].join('\n\n')
     const options: Electron.MessageBoxOptions = {
       type: 'warning',
       title: 'Extension permission request',
-      message: `Allow “${name}” more access in browser profile “${profileId}”?`,
+      message: `Allow “${name}” more access in browser profile “${profileName(profileId)}”?`,
       detail: detail.slice(0, 4000),
       buttons: ['Allow', 'Cancel'],
       defaultId: 1,
@@ -533,7 +610,6 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     window: BrowserWindow,
     directory: string,
     manifest: { [key: string]: unknown },
-    removedPermissions: string[],
   ) => {
     const permissions = strings(manifest.permissions)
     const optional = strings(manifest.optional_permissions)
@@ -559,9 +635,9 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
       ...(optional.length ? [`Optional permissions: ${list(optional)}`] : []),
       `Site access: ${list(sites) || 'none'}`,
       ...(unsupported.length ? [`Not available in Dovo: ${list(unsupported)}`] : []),
-      ...(removedPermissions.length
+      ...([permissions, optional].some((list) => list.includes('nativeMessaging'))
         ? [
-            `Removed by Dovo: ${list(removedPermissions)}. Dovo never starts desktop helper programs.`,
+            'Desktop app access: can connect to installed Chrome native helpers after you approve the connection.',
           ]
         : []),
       'It runs only in this browser profile and can read and change the pages it can access there.',
@@ -589,16 +665,9 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     let committed = false
     try {
       await copyTree(source, staging, { entries: 0, bytes: 0 })
-      // Strip unsupported host access from Dovo's copy; the user's folder is never modified.
       const copy = await readManifest(staging)
-      const removedPermissions = REMOVED_PERMISSIONS.filter((permission) =>
-        [...strings(copy.permissions), ...strings(copy.optional_permissions)].includes(permission),
-      )
-      for (const key of ['permissions', 'optional_permissions'])
-        if (Array.isArray(copy[key]))
-          copy[key] = strings(copy[key]).filter((p) => !REMOVED_PERMISSIONS.includes(p))
-      await writeFile(join(staging, 'manifest.json'), JSON.stringify(copy, null, 2))
-      if (!(await review(window, staging, copy, removedPermissions))) return
+      const removedPermissions: string[] = []
+      if (!(await review(window, staging, copy))) return
       // Browser can be turned off while the folder picker or review is open.
       requireEnabled()
       await rename(staging, target)

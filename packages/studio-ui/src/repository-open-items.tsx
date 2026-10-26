@@ -6,11 +6,12 @@ import {
   repositoryOpenTargets,
   isRepositoryOpenTarget,
   type RepositoryOpenTarget,
+  sshRepositoryOpenTargets,
 } from '@dovo/protocol'
-import { responses, useWorkspace } from '@dovo/studio-core'
+import { useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 
-/** Mounted when a menu opens: never advertise applications before the runtime detects them. */
+/** Detect only applications on the desktop client that will launch the editor. */
 export function RepositoryOpenItems({
   disabled = false,
   itemClass,
@@ -20,19 +21,30 @@ export function RepositoryOpenItems({
   itemClass: string
   onSelect: (target: RepositoryOpenTarget, name: string) => void
 }) {
-  const { request, connected } = useWorkspace()
+  const { connected, snapshot } = useWorkspace()
+  const { repositoryOpener } = useStudioHost()
   const [revision, setRevision] = useApplicationState(0)
   const [state, setState] = useApplicationState<{
     targets: RepositoryOpenTarget[] | null
     error: string
   }>({ targets: null, error: '' })
   useEffect(() => {
-    if (!connected) return
+    if (!connected || !repositoryOpener) return
     let cancelled = false
     setState({ targets: null, error: '' })
-    void request('/api/scm/open-targets', {}, responses.repositoryOpenTargets).then(
-      ({ targets }) => {
-        if (!cancelled) setState({ targets: targets.filter(isRepositoryOpenTarget), error: '' })
+    void repositoryOpener.list().then(
+      ({ targets, localRuntimeId }) => {
+        if (!cancelled)
+          setState({
+            targets: targets
+              .filter(isRepositoryOpenTarget)
+              .filter(
+                (target) =>
+                  snapshot?.runtimeId === localRuntimeId ||
+                  sshRepositoryOpenTargets.includes(target),
+              ),
+            error: '',
+          })
       },
       (error: unknown) => {
         if (!cancelled)
@@ -42,7 +54,13 @@ export function RepositoryOpenItems({
     return () => {
       cancelled = true
     }
-  }, [connected, request, revision, setState])
+  }, [connected, repositoryOpener, snapshot?.runtimeId, revision, setState])
+  if (!repositoryOpener)
+    return (
+      <p className="max-w-64 px-2 py-2 text-xs text-muted-foreground">
+        Use the Dovo Studio desktop app to open editors on your computer.
+      </p>
+    )
   if (!connected)
     return (
       <p className="px-2 py-2 text-xs text-muted-foreground">
@@ -95,7 +113,7 @@ export function RepositoryOpenItems({
   if (!choices.length)
     return (
       <p role="status" className="px-2 py-2 text-xs text-muted-foreground">
-        No supported applications found on the runtime computer.
+        No supported editors found on your computer.
       </p>
     )
   return (

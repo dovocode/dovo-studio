@@ -12,7 +12,7 @@ const built = await bundleBrowser(
         import {BrowserExtensions} from './src/browser/browser-extensions.tsx';
         import {TooltipProvider} from '@dovo/studio-ui';
         import {decode,browserExtensionCommandSchema} from '@dovo/protocol';
-        const capabilities={unpackedFolders:true,nativeMessaging:false,chromeWebStore:true,remoteRuntimes:false};
+        const capabilities={unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false};
         const extension=(id,name,extra={})=>({id,name,version:'1.2.3',enabled:true,loaded:true,popup:true,unsupportedPermissions:[],removedPermissions:[],...extra});
         window.catalogs={
           work:[extension('a'.repeat(32),'Work helper',{unsupportedPermissions:['debugger'],removedPermissions:['nativeMessaging']}),extension('b'.repeat(32),'Broken helper',{loaded:false,error:'Extension manifest could not load'})],
@@ -33,8 +33,8 @@ const built = await bundleBrowser(
         };
         const root=createRoot(document.getElementById('app'));
         let generation=0;
-        window.renderExtensions=(profileId='work',tabKey='current-work-tab',hasPage=true)=>root.render(
-          <TooltipProvider><BrowserExtensions key={++generation} profileId={profileId} tabKey={tabKey} hasPage={hasPage}/></TooltipProvider>
+        window.renderExtensions=(profileId='work',tabKey='current-work-tab',hasPage=true,pageUrl='')=>root.render(
+          <TooltipProvider><BrowserExtensions key={++generation} profileId={profileId} tabKey={tabKey} hasPage={hasPage} pageUrl={pageUrl}/></TooltipProvider>
         );
         window.hostEnabled=false;
         window.renderExtensions();
@@ -63,6 +63,7 @@ const built = await bundleBrowser(
       export {Input} from '${root}packages/studio-ui/src/components/ui/input';export {Button} from '${root}packages/studio-ui/src/components/ui/button.tsx';
       export {IconButton} from '${root}packages/studio-ui/src/components/icon-button.tsx';
       export {TooltipProvider} from '${root}packages/studio-ui/src/components/ui/tooltip.tsx';
+      export * as DropdownMenu from '${root}packages/studio-ui/node_modules/@radix-ui/react-dropdown-menu/dist/index.mjs';
       export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}packages/studio-ui/src/components/ui/dialog.tsx';
     `,
     },
@@ -96,19 +97,25 @@ try {
   // A bridge-less host must not advertise extension controls or make requests.
   assert.equal(await page.getByRole('button', { name: 'Extensions', exact: true }).count(), 0)
   assert.deepEqual(await page.evaluate(() => window.commands), [])
-  const render = async (profileId = 'work', tabKey = 'current-work-tab', hasPage = true) => {
+  const render = async (
+    profileId = 'work',
+    tabKey = 'current-work-tab',
+    hasPage = true,
+    pageUrl = '',
+  ) => {
     await page.evaluate(
-      ({ profileId, tabKey, hasPage }) => {
+      ({ profileId, tabKey, hasPage, pageUrl }) => {
         window.hostEnabled = true
-        window.renderExtensions(profileId, tabKey, hasPage)
+        window.renderExtensions(profileId, tabKey, hasPage, pageUrl)
       },
-      { profileId, tabKey, hasPage },
+      { profileId, tabKey, hasPage, pageUrl },
     )
     await page.getByRole('button', { name: 'Extensions', exact: true }).waitFor()
   }
   const dialog = page.getByRole('dialog', { name: 'Browser extensions' })
   const show = async () => {
     await page.getByRole('button', { name: 'Extensions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Manage extensions', exact: true }).click()
     await dialog.waitFor()
     await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'))
   }
@@ -119,7 +126,7 @@ try {
   await show()
   assert.deepEqual((await calls()).at(-1), { action: 'list', profileId: 'work' })
   await dialog.getByText('Unsupported access: debugger.', { exact: false }).waitFor()
-  await dialog.getByText('Blocked access: nativeMessaging.', { exact: true }).waitFor()
+  await dialog.getByText('Previously removed access: nativeMessaging.', { exact: false }).waitFor()
   await dialog.getByRole('alert').filter({ hasText: 'Extension manifest could not load' }).waitFor()
   assert.equal(
     await row('Broken helper').getByRole('button', { name: 'Open popup' }).isEnabled(),
@@ -174,7 +181,9 @@ try {
   })
 
   const popup = row('Work helper').getByRole('button', { name: 'Open popup' })
-  const bounds = await popup.boundingBox()
+  const bounds = await page
+    .getByRole('button', { name: 'Extensions', exact: true, includeHidden: true })
+    .boundingBox()
   assert.ok(bounds)
   await popup.click()
   await dialog.waitFor({ state: 'hidden' })
@@ -234,6 +243,24 @@ try {
     false,
   )
   await render()
+  await page.getByRole('button', { name: 'Extensions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Work helper', exact: true }).click()
+  await page.waitForFunction(() => window.commands.at(-1)?.action === 'open')
+  assert.equal(await dialog.count(), 0, 'Installed extensions open directly from the toolbar menu')
+  const url = 'https://chromewebstore.google.com/detail/test/' + 'a'.repeat(32)
+  await render('work', 'current-work-tab', true, url)
+  await page.getByRole('button', { name: 'Add to Dovo', exact: true }).click()
+  await dialog.waitFor()
+  await page.waitForFunction(() => window.commands.at(-1)?.action === 'installStore')
+  assert.deepEqual((await calls()).at(-1), { action: 'installStore', profileId: 'work', url })
+  await page.keyboard.press('Escape')
+  await render(
+    'work',
+    'current-work-tab',
+    true,
+    'https://chromewebstore.google.com.evil.test/detail/test/' + 'a'.repeat(32),
+  )
+  assert.equal(await page.getByRole('button', { name: 'Add to Dovo', exact: true }).count(), 0)
   await page.evaluate(() => {
     window.failAction = 'list'
   })

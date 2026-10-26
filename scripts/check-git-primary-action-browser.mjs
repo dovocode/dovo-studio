@@ -13,17 +13,16 @@ const built = await build({
       import {TaskBranchMenu} from '../extension-tasks/src/detail/task-branch-menu';
       import {TaskProjectPanel} from '../extension-tasks/src/detail/task-project-panel';
       const initial=createTask({title:'Task',objective:'',agentId:'',repositoryId:'repo',execution:'local'});
-      window.reads=[];window.writes=[];window.opens=[];window.folderOpener=undefined;window.installed=['finder','vscode'];window.holdDetection=false;window.failDetection=false;
+      window.reads=[];window.writes=[];window.opens=[];window.locations=[];window.client={list:async()=>{if(window.failDetection)throw new Error('Detection unavailable');if(window.holdDetection)await new Promise(resolve=>window.releaseDetection=resolve);return {targets:window.installed,localRuntimeId:'client'}},open:async input=>window.opens.push(input)};window.folderOpener=undefined;window.installed=['finder','vscode'];window.holdDetection=false;window.failDetection=false;
       function App(){
         const [revision,setRevision]=useState(0),[task,setTask]=useState(initial);
         window.switchRuntime=folderOpener=>{window.folderOpener=folderOpener;window.installed=[folderOpener,'vscode'].filter(Boolean);setRevision(value=>value+1)};
         window.rerender=()=>setRevision(value=>value+1);
         window.switchTask=()=>setTask({...initial,id:'second'});
-        window.store={workspace:{tasks:[task],agents:[],repositories:[{id:'repo',name:'Project',path:'/repo',branch:'feature'}]},snapshot:{folderOpener:window.folderOpener,questions:[],approvals:[],terminals:[]},connected:true,runtimes:[],activeRuntimeId:'local',
+        window.store={workspace:{tasks:[task],agents:[],repositories:[{id:'repo',name:'Project',path:'/repo',branch:'feature'}]},snapshot:{runtimeId:'client',folderOpener:window.folderOpener,questions:[],approvals:[],terminals:[]},connected:true,runtimes:[],activeRuntimeId:'local',
           request:async(path,input)=>{
             if(path==='/api/scm/action-state')return new Promise(resolve=>window.reads.push({resolve,input,revision}));
-            if(path==='/api/scm/open-targets'){if(window.failDetection)throw new Error('Detection unavailable');if(window.holdDetection)await new Promise(resolve=>window.releaseDetection=resolve);return {targets:window.installed}}
-            if(path==='/api/scm/open-folder'){window.opens.push(input);return {ok:true}}
+            if(path==='/api/scm/open-location'){window.locations.push(input);return {path:'/repo/task',runtimeId:'client',kind:'folder'}}
             window.writes.push(path);
             if(path==='/api/tasks/commit-message')return {message:'Commit'};
             if(path==='/api/tasks/commit')return {commit:'123456789'};
@@ -40,7 +39,7 @@ const built = await build({
       setup(builder) {
         const mocks = {
           '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-          '@dovo/studio-core': `export * from '@dovo/protocol';export {createTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});export const useAppPreferences=()=>({});export const updateAppPreferences=()=>{};export const useRuntimeReleaseCheck=()=>({releases:[]});export const runtimeUpdate=()=>({available:false});`,
+          '@dovo/studio-core': `export * from '@dovo/protocol';export {createTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({repositoryOpener:window.client});export const useAppPreferences=()=>({});export const updateAppPreferences=()=>{};export const useRuntimeReleaseCheck=()=>({releases:[]});export const runtimeUpdate=()=>({available:false});`,
           '@dovo/studio-ui': `export {RepositoryOpenItems} from '../studio-ui/src/repository-open-items';export {Button} from '../studio-ui/src/components/ui/button';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const cn=(...values)=>values.filter(Boolean).join(' ');export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;export const FileTypeIcon=()=>null;export const ProjectIcon=()=>null;export const Dialog=({children})=><div>{children}</div>;export const DialogContent=Dialog,DialogTitle=Dialog,DialogDescription=Dialog;`,
           '@dovo/extension-scm/repository-actions': 'export const RepositoryActions=()=>null;',
           './task-waiting-panel': 'export const TaskWaitingPanel=()=>null;',
@@ -178,7 +177,9 @@ try {
     ],
   )
   assert.ok(
-    opens.every((input) => input.repositoryId === 'repo' && input.taskId === 'second'),
+    (await page.evaluate(() => window.locations)).every(
+      (input) => input.repositoryId === 'repo' && input.taskId === 'second',
+    ),
     'Open actions use the selected task checkout',
   )
   // No speculative choices while detection is pending, and only installed JetBrains IDEs.
@@ -215,7 +216,7 @@ try {
     window.installed = []
   })
   await open.click()
-  await page.getByRole('status').filter({ hasText: 'No supported applications' }).waitFor()
+  await page.getByRole('status').filter({ hasText: 'No supported editors' }).waitFor()
   assert.equal(await page.getByRole('menuitem').count(), 0)
   await page.keyboard.press('Escape')
   await page.evaluate(() => {

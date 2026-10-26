@@ -1,3 +1,4 @@
+import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { TaskAgentLineage } from './task-agent-lineage'
 import { taskPullStatusFor } from '@dovo/protocol'
 import { WorkingSubagents } from '../list/working-subagents'
@@ -111,15 +112,12 @@ export function TaskProjectPanel({
   const [openError, setOpenError] = useApplicationState('')
   const [openBusy, setOpenBusy] = useApplicationState(false)
   const { preferredRepositoryOpenTarget } = useAppPreferences()
+  const openRepository = useRepositoryOpen()
   const openTarget = (target: RepositoryOpenTarget) => {
     if (openBusy || !repo) return
     setOpenBusy(true)
     setOpenError('')
-    void request(
-      '/api/scm/open-folder',
-      { repositoryId: repo.id, taskId: task.id, target },
-      responses.ok,
-    )
+    void openRepository({ repositoryId: repo.id, taskId: task.id }, target)
       .then(() => updateAppPreferences({ preferredRepositoryOpenTarget: target }))
       .catch((cause: unknown) =>
         setOpenError(cause instanceof Error ? cause.message : String(cause)),
@@ -484,6 +482,36 @@ export function TaskProjectPanel({
               )}
             </div>
           </div>
+          {repo && !repo.kind && (
+            <div className="studio-project-checkout mb-3">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {task.execution === 'worktree' ? 'Active worktree' : 'Local checkout'}
+              </p>
+              <TaskBranchMenu
+                panel
+                task={task}
+                label={gitState?.branch || task.checkoutBranch || repo.branch || 'Local checkout'}
+              />
+              <p className="mt-1.5 text-[11px] text-muted-foreground" role="status">
+                {gitError
+                  ? `Git status unavailable: ${gitError}`
+                  : !connected
+                    ? 'Connect to refresh Git status'
+                    : !gitState
+                      ? 'Checking Git status…'
+                      : `${gitState.dirty ? 'Uncommitted changes' : 'Clean'} · ${!gitState.tracking ? 'No upstream' : gitState.ahead || gitState.behind ? `${gitState.ahead} ahead · ${gitState.behind} behind` : 'Synced'}`}
+              </p>
+            </div>
+          )}
+          {actions}
+        </div>
+        <section
+          aria-label="Pull requests"
+          className="studio-project-section border-t border-border/60"
+        >
+          <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            Pull requests
+          </h3>
           {!!displayedPulls.length && (
             <div
               aria-label="Linked pull requests"
@@ -515,33 +543,6 @@ export function TaskProjectPanel({
               )}
             </div>
           )}
-          {repo && !repo.kind && (
-            <div className="studio-project-checkout mb-3">
-              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                {task.execution === 'worktree' ? 'Active worktree' : 'Local checkout'}
-              </p>
-              <TaskBranchMenu
-                panel
-                task={task}
-                label={gitState?.branch || task.checkoutBranch || repo.branch || 'Local checkout'}
-              />
-              <p className="mt-1.5 text-[11px] text-muted-foreground" role="status">
-                {gitError
-                  ? `Git status unavailable: ${gitError}`
-                  : !connected
-                    ? 'Connect to refresh Git status'
-                    : !gitState
-                      ? 'Checking Git status…'
-                      : `${gitState.dirty ? 'Uncommitted changes' : 'Clean'} · ${!gitState.tracking ? 'No upstream' : gitState.ahead || gitState.behind ? `${gitState.ahead} ahead · ${gitState.behind} behind` : 'Synced'}`}
-              </p>
-            </div>
-          )}
-          {actions}
-        </div>
-        <div className="studio-project-section border-t border-border/60">
-          <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Changes
-          </h3>
           {!displayedPulls.length && (
             <Button
               variant="ghost"
@@ -552,6 +553,11 @@ export function TaskProjectPanel({
               <GitPullRequest size={18} /> Link pull request
             </Button>
           )}
+        </section>
+        <div className="studio-project-section border-t border-border/60">
+          <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            Changes
+          </h3>
           {gitActions}
           <Button
             variant="ghost"

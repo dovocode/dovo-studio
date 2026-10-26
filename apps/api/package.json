@@ -30,6 +30,12 @@
       "development": "./src/listen-address.ts",
       "import": "./dist/listen-address.js",
       "default": "./dist/listen-address.js"
+    },
+    "./desktop-openers": {
+      "types": "./src/desktop-openers.ts",
+      "development": "./src/desktop-openers.ts",
+      "import": "./dist/desktop-openers.js",
+      "default": "./dist/desktop-openers.js"
     }
   },
   "scripts": {

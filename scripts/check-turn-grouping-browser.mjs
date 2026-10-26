@@ -31,6 +31,8 @@ export const ConversationRail=()=>null,ConversationScrollButton=()=>null;
 `
 async function bundle(mobile) {
   const mocks = {
+    './components/failed-task-retry': 'export const FailedTaskRetry=()=>null;',
+
     'fixture-projection': `export * from '@dovo/protocol';export {conversationMessages} from '${root}/apps/mobile/src/tasks/conversation/state/messages.ts';`,
     '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export {startPolling,clientScopeKey} from '@dovo/client-runtime';import {useFixture} from 'fixture';export {useFixture as useWorkspace} from 'fixture';export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({themePalette:'dovo',...useFixture().preferences});export const useResolvedTheme=()=> 'dark';export const readAppPreferences=()=>window.fixturePreferences;export const completedStreamingText=text=>text;`,
     '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,

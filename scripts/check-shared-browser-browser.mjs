@@ -66,7 +66,7 @@ export const remoteBrowserHtml=${JSON.stringify(viewer)};
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return remoteTicket(body)};
-const nativePages=new Map();window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const nativePages=new Map();window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='screenshot')return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
 const task={id:'target',title:'Destination thread',repositoryId:'repo',agentId:'',status:'draft',draft:'Existing draft',createdAt:'2026-10-25T00:00:00Z',messages:[],files:[],example:false};
@@ -450,7 +450,7 @@ try {
     const state = await persisted()
     return state.tabs.find((tab) => tab.id === state.active)
   }
-  await recent.getByRole('button', { name: /Remote.*remote-work/ }).click()
+  await recent.getByRole('button', { name: /Remote.*Remote Work/ }).click()
   const source = await selected()
   await page.keyboard.press('Control+d')
   await page.waitForFunction(
@@ -500,7 +500,7 @@ try {
   assert.equal(newSourceTab.profileId, 'remote-work')
   await page.keyboard.press('Control+w')
   await recent
-    .getByRole('button', { name: /Local.*default/ })
+    .getByRole('button', { name: /Local.*Local Default/ })
     .first()
     .click()
   await page.keyboard.press('Control+l')
@@ -515,6 +515,11 @@ try {
   )
   await page.keyboard.press('Control+r')
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'reload'))
+  // Keep a screenshot in the DOM while native views are hidden beneath the menu.
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.locator('img[aria-hidden][src^="data:image/png"]').waitFor()
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.locator('img[aria-hidden][src^="data:image/png"]').waitFor({ state: 'detached' })
   // Simulate the native status queue consumed by production BrowserPane.
   await page.getByRole('button', { name: 'Browser options', exact: true }).click()
   await page.getByRole('combobox', { name: 'Profile for this tab' }).selectOption('local-work')

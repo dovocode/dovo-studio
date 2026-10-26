@@ -7,7 +7,7 @@
  * Only Electron's folder picker and message boxes are scripted, because no person answers them.
  *
  * Covers a small MV3 fixture, not arbitrary extensions: review before load, nativeMessaging
- * removal, content script and popup messaging, tabs/windows/storage/action APIs, extension tab
+ * permission review, content script and popup messaging, tabs/windows/storage/action APIs, extension tab
  * adoption, runtime permission prompts, profile isolation, opt-out stopping workers, restart
  * persistence and removal. Run after upgrading electron-chrome-extensions or Electron.
  *
@@ -15,7 +15,7 @@
  * Linux without a display needs `xvfb-run`. The Chromium sandbox must be available.
  */
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -31,6 +31,21 @@ const work = mkdtempSync(join(tmpdir(), 'dovo-browser-extensions-native-'))
 const write = (path, contents) => {
   mkdirSync(join(path, '..'), { recursive: true })
   writeFileSync(path, contents)
+}
+if (process.platform !== 'win32') {
+  write(
+    join(work, 'native-echo.py'),
+    `#!/usr/bin/env python3
+import json,struct,sys
+header=sys.stdin.buffer.read(4)
+if len(header)==4:
+    message=sys.stdin.buffer.read(struct.unpack('<I',header)[0])
+    data=json.dumps({'echo':json.loads(message)}).encode('utf-8')
+    sys.stdout.buffer.write(struct.pack('<I',len(data))+data)
+    sys.stdout.buffer.flush()
+`,
+  )
+  chmodSync(join(work, 'native-echo.py'), 0o700)
 }
 const fixture = join(work, 'fixture')
 const manifest = {
@@ -67,7 +82,10 @@ write(
 })
 `,
 )
-write(join(fixture, 'popup.html'), '<!doctype html><p>smoke</p><script src="popup.js"></script>')
+write(
+  join(fixture, 'popup.html'),
+  '<!doctype html><meta charset="utf-8"><p>smoke</p><script src="popup.js"></script>',
+)
 write(
   join(fixture, 'popup.js'),
   `chrome.runtime.sendMessage({ from: 'popup', openTab: true }, async (result) => {
@@ -78,6 +96,10 @@ write(
   await request('bookmarks', { permissions: ['bookmarks'] })
   await request('undeclaredSite', { origins: ['https://undeclared.example/*'] })
   await request('nativeMessaging', { permissions: ['nativeMessaging'] })
+  if (navigator.platform !== 'Win32') {
+    try { result.nativeEcho = await chrome.runtime.sendNativeMessage('com.dovo.smoke', {text:'Dovo naïve 🔑'}) }
+    catch(error) { result.nativeEcho = String(error) }
+  }
   document.title = 'POPUP:' + JSON.stringify(result)
 })
 `,
@@ -105,7 +127,7 @@ write(
   `import assert from 'node:assert/strict'
 import { app, BrowserWindow, dialog, session } from 'electron'
 import { createServer } from 'node:http'
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerBrowser } from ${JSON.stringify(browserModule)}
 
@@ -115,7 +137,7 @@ const settings = process.env.DOVO_SETTINGS_PATH!
 app.setPath('userData', join(work, 'user-data'))
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const setBrowser = (enabled: boolean) =>
-  writeFileSync(settings, JSON.stringify({ app: { browserWorkspaceEnabled: enabled } }))
+  writeFileSync(settings, JSON.stringify({ app: { browserWorkspaceEnabled: enabled, browserProfiles: [{id:"work",name:"Work"},{id:"personal",name:"Personal"}] } }))
 const prompts: { message: string; detail?: string }[] = []
 const loads: string[] = []
 const report: Record<string, unknown> = { run }
@@ -176,15 +198,15 @@ app.whenReady().then(async () => {
       const [extension] = installed.extensions
       assert.equal(installed.installed, extension.id)
       assert.equal(extension.loaded, true)
-      assert.deepEqual(extension.removedPermissions, ['nativeMessaging'])
+      assert.deepEqual(extension.removedPermissions, [])
       assert.deepEqual(installed.capabilities, {
         unpackedFolders: true,
-        nativeMessaging: false,
+        nativeMessaging: true,
         chromeWebStore: true,
         remoteRuntimes: false,
       })
       assert.match(prompts[0]!.message, /^Add “Dovo native smoke” to this browser profile\\?$/)
-      assert.match(prompts[0]!.detail!, /Removed by Dovo: nativeMessaging/)
+      assert.match(prompts[0]!.detail!, /Desktop app access/)
       assert.ok(
         readFileSync(join(work, 'fixture', 'manifest.json'), 'utf8').includes('nativeMessaging'),
         'The chosen folder must stay unchanged.',
@@ -213,6 +235,13 @@ app.whenReady().then(async () => {
         report.chromeWebStore=true
       }
 
+      if (process.platform !== 'win32') {
+        const hostDirectory = join(app.getPath('userData'), 'NativeMessagingHosts')
+        mkdirSync(hostDirectory, {recursive:true})
+        writeFileSync(join(hostDirectory,'com.dovo.smoke.json'), JSON.stringify({name:'com.dovo.smoke',type:'stdio',path:join(work,'native-echo.py'),allowed_origins:[\`chrome-extension://\${extension.id}/\`]}))
+      }
+      const screenshot = await call('browser',{action:'screenshot',key:tab})
+      assert.ok(screenshot?.image?.startsWith('data:image/png;base64,'))
       const before = new Set(BrowserWindow.getAllWindows())
       await call('extensions', {
         action: 'open',
@@ -234,11 +263,12 @@ app.whenReady().then(async () => {
       assert.equal(popup.bookmarks, true)
       assert.equal(popup.undeclaredSite, false)
       // The library refuses it as undeclared (no grant, no prompt); how it reports that varies.
-      assert.notEqual(popup.nativeMessaging, true)
-      const permissionPrompts = prompts.filter((p) => p.message.startsWith('Allow '))
+      assert.equal(popup.nativeMessaging, true)
+      if (process.platform !== 'win32') assert.deepEqual(popup.nativeEcho,{echo:{text:'Dovo naïve 🔑'}})
+      const permissionPrompts = prompts.filter((p) => p.message.includes('more access in browser profile'))
       assert.deepEqual(
         permissionPrompts.map((p) => p.message),
-        ['Allow “Dovo native smoke” more access in browser profile “work”?'],
+        ['Allow “Dovo native smoke” more access in browser profile “Work”?', 'Allow “Dovo native smoke” more access in browser profile “Work”?'],
       )
 
       const status = await call('browser', { action: 'status', key: tab })

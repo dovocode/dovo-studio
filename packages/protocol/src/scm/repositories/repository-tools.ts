@@ -68,3 +68,23 @@ export function repositoryOpenTargets(folderOpener: typeof folderOpenerSchema.Ty
     ...jetbrainsOpenTargets,
   ] as const
 }
+
+/** A validated path on its owning runtime; launch is always performed by the desktop client. */
+export const repositoryLocationSchema = mutableStruct({
+  path: minValue(Schema.String, 1),
+  runtimeId: minValue(Schema.String, 1),
+  sshAddress: Schema.optional(Schema.String),
+  kind: Schema.Literals(['folder', 'file']),
+})
+export const clientRepositoryOpenSchema = mutableStruct({
+  ...repositoryLocationSchema.fields,
+  target: repositoryOpenTargetSchema,
+})
+export interface RepositoryOpenerBridge {
+  list: () => Promise<{ targets: string[]; localRuntimeId: string | null }>
+  open: (input: typeof clientRepositoryOpenSchema.Type) => Promise<void>
+}
+export const sshRepositoryOpenTargets: readonly RepositoryOpenTarget[] = [
+  ...codeEditorOpenTargets.map(([target]) => target),
+  'zed',
+]

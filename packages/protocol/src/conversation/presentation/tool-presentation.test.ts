@@ -427,3 +427,24 @@ it('keeps terminal command identity through compact activity and preserves faile
   const otherTurn = { ...native, payload: native.payload.replace('"turn"', '"other-turn"') }
   expect(recentTools([recorded, otherTurn])).toHaveLength(2)
 })
+
+it('renders legacy compacted child search tools without recursing on the same presentation', () => {
+  const presentation = {
+    title: 'Search **/AGENTS.md',
+    input: '',
+    output: '',
+    kind: 'search',
+    detail: '**/AGENTS.md',
+  }
+  expect(toolPresentation(JSON.stringify({ presentation }), 'Glob')).toEqual(presentation)
+  const raw = { event: { type: 'tool_use', name: 'Glob', input: { pattern: '**/AGENTS.md' } } }
+  expect(toolPresentation(JSON.stringify({ ...raw, presentation }), 'Glob')).toEqual(
+    toolPresentation(JSON.stringify(raw), 'Glob'),
+  )
+  expect(
+    toolPresentation(
+      JSON.stringify({ ...raw, presentation: { ...presentation, contextAt: 0 } }),
+      'Glob',
+    ),
+  ).toEqual({ ...presentation, contextAt: 0 })
+})

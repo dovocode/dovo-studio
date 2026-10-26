@@ -1080,6 +1080,7 @@ export class Tasks {
     pauseQueue = false,
     admit?: () => boolean,
     continuingRunId?: string,
+    retryFailed = false,
   ): Effect.Effect<{ completion: Effect.Effect<void, RuntimeFailure> }, RuntimeFailure> {
     return Effect.suspend(() => {
       if (this.deletionReservations.has(id))
@@ -1088,7 +1089,10 @@ export class Tasks {
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
       if (admit && !admit()) return Effect.succeed({ completion: Effect.void })
       const next = this.store.taskSummary(id)
+      if (retryFailed && next.status !== 'failed')
+        return Effect.fail(new HttpError(409, 'Only a failed task can be retried.'))
       if (
+        !retryFailed &&
         next.queue?.length &&
         !hasAgentInput(next) &&
         next.restartRecovery?.kind !== 'turn' &&
@@ -1096,12 +1100,15 @@ export class Tasks {
       )
         return Effect.fail(new HttpError(409, 'Resume the first queued message to continue'))
       return (
-        nextQueuedMessage(next)?.turnSettings || (continuingRunId && next.runAttempt?.turnSettings)
+        (!retryFailed && nextQueuedMessage(next)?.turnSettings) ||
+        (continuingRunId && next.runAttempt?.turnSettings)
           ? Effect.void
           : this.resolveModel(id)
       ).pipe(
         Effect.flatMap(() => runtimeOperation(() => this.store.task(id))),
         Effect.flatMap((task) => {
+          if (retryFailed && task.status !== 'failed')
+            return Effect.fail(new HttpError(409, 'The failed task changed before retrying.'))
           // The native boundary above yields. Admission must be rechecked in the
           // same synchronous turn that registers the worker with its executor.
           if (this.deletionReservations.has(id))
@@ -1200,6 +1207,7 @@ export class Tasks {
           if (this.running.has(id))
             return Effect.fail(new HttpError(409, 'This task is already running'))
           if (
+            !retryFailed &&
             task.queue?.length &&
             !hasAgentInput(task) &&
             task.restartRecovery?.kind !== 'turn' &&
@@ -1250,7 +1258,7 @@ export class Tasks {
               runPhase: task.runPhase === 'finalizing' ? 'finalizing' : 'preparing',
               runAttempt: recoveringTurn ? task.runAttempt : undefined,
               restartRecovery: undefined,
-              queuePaused: pauseQueue,
+              queuePaused: retryFailed || pauseQueue,
               error: undefined,
               preparation: undefined,
               activity: 'Starting agent',
@@ -1334,14 +1342,15 @@ export class Tasks {
               yield* this.drainChildren(id, run.id)
               yield* this.runner.finalizeEffect(id, cwd, hasGit)
               resumeInterruptedTurn = false
-              if (pauseQueue || !hasAgentInput(this.store.taskSummary(id))) return
+              if (retryFailed || pauseQueue || !hasAgentInput(this.store.taskSummary(id))) return
             }
             let firstAttempt = true
             do {
               yield* runtimeOperation(() => run.controller.signal.throwIfAborted())
               if (
                 (recoveringQueue && !hasAgentInput(this.store.taskSummary(id))) ||
-                (!resumeInterruptedTurn &&
+                (!(firstAttempt && retryFailed) &&
+                  !resumeInterruptedTurn &&
                   this.store.taskSummary(id).queue?.length &&
                   !hasAgentInput(this.store.taskSummary(id)))
               ) {
@@ -1362,8 +1371,12 @@ export class Tasks {
                 run.runId = randomUUID()
               }
               run.retiring = false
+              const retryingFailedAttempt = firstAttempt && retryFailed
               firstAttempt = false
-              if (!resumeInterruptedTurn) this.queue.take(id, run.runId, run.id)
+              // Retrying a provider failure continues existing context and files, without
+              // consuming queued user messages or undoing the previous attempt's work.
+              if (!resumeInterruptedTurn && !retryingFailedAttempt)
+                this.queue.take(id, run.runId, run.id)
               this.deliverCompletions()
               resumeInterruptedTurn = false
               const attemptId = run.id

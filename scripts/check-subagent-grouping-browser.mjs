@@ -1207,6 +1207,96 @@ try {
         .getByRole('button', { name: 'Open child thread Scoped background child' })
         .waitFor()
     }
+    if (!mobile) {
+      await page.evaluate(() => {
+        const base = window.workspace.tasks[0]
+        window.updatePreferences({ hideFinishedSubagents: false })
+        window.publishTasks([
+          {
+            ...base,
+            id: 'parent',
+            title: 'Parent',
+            activeRunId: undefined,
+            status: 'review',
+            threadWatches: [],
+            subagents: [
+              {
+                id: 'solo',
+                taskId: 'solo',
+                name: 'Solo worker',
+                provider: 'codex',
+                source: 'dovo',
+                status: 'completed',
+              },
+            ],
+          },
+          {
+            ...base,
+            id: 'solo',
+            title: 'Solo worker',
+            activeRunId: undefined,
+            status: 'review',
+            threadWatches: [],
+            subagents: [],
+            delegation: { parentTaskId: 'parent', parentRunId: 'run', key: 'solo' },
+          },
+          {
+            ...base,
+            id: 'sibling',
+            title: 'Sibling',
+            activeRunId: undefined,
+            status: 'review',
+            threadWatches: [],
+            subagents: [],
+          },
+        ])
+        const original = window.store.request
+        window.store.request = async (path, input) => {
+          if (path !== '/api/workspace') return original(path, input)
+          window.requests.push({ path, input })
+          if (window.failComplete) throw Error('Could not complete child')
+          window.publishTasks(
+            window.workspace.tasks.map((task) =>
+              task.id === input.id
+                ? {
+                    ...task,
+                    ...Object.fromEntries(
+                      Object.entries(input.changes).map(([key, value]) => [key, value.after]),
+                    ),
+                  }
+                : task,
+            ),
+          )
+          window.renderAgents()
+          return { ok: true }
+        }
+        window.renderAgents()
+      })
+      await page.locator('summary').filter({ hasText: 'Solo worker' }).click()
+      await page.getByRole('button', { name: 'Mark completed', exact: true }).click()
+      await page.getByRole('button', { name: 'Reopen child', exact: true }).waitFor()
+      assert.deepEqual(
+        await page.evaluate(() => window.workspace.tasks.map((task) => [task.id, !!task.archived])),
+        [
+          ['parent', false],
+          ['solo', true],
+          ['sibling', false],
+        ],
+      )
+      await page.getByRole('button', { name: 'Reopen child', exact: true }).click()
+      await page.getByRole('button', { name: 'Mark completed', exact: true }).waitFor()
+      await page.evaluate(() => {
+        window.failComplete = true
+      })
+      await page.getByRole('button', { name: 'Mark completed', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'Could not complete child' }).waitFor()
+      assert.equal(
+        await page.evaluate(
+          () => !!window.workspace.tasks.find((task) => task.id === 'solo').archived,
+        ),
+        false,
+      )
+    }
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'}: grouping, stop controls, native thread viewing and paging, finished-agent filtering, offline visibility and navigation passed.`,

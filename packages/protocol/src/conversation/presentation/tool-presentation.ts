@@ -120,8 +120,11 @@ function computePresentation(
   if (compact) {
     // Compacted starts lose the raw args; deriving context again is only safe while the
     // full raw payload is retained. The marker keeps later raw updates on this path.
-    if (compact.kind === 'search' && !compact.contextAt)
-      return computePresentation(payload, summary)
+    if (compact.kind === 'search' && compact.contextAt === undefined && envelope.event)
+      return computePresentation(payload, summary, inputPayload, {
+        ...envelope,
+        presentation: undefined,
+      })
     if (!inputPayload || inputPayload === payload) return compact
     const start = toolPresentation(inputPayload, summary)
     return {

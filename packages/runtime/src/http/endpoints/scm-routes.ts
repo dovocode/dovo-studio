@@ -531,6 +531,13 @@ export function scmRoute(request: IncomingMessage, path: string) {
           input.refresh === true
             ? yield* serviceResult(s.pulls.guard(cwd, input))
             : undefined
+        if (path === '/api/scm/open-location')
+          return {
+            path: cwd,
+            runtimeId: s.runtimeId,
+            sshAddress: s.preferences.get().sshAddress,
+            kind: 'folder',
+          }
         if (path === '/api/scm/action-state') {
           const [status, remotes] = yield* serviceResult(
             Promise.all([

@@ -32,6 +32,7 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
       minHeight: 560,
       title: 'Dovo Browser',
       show: false,
+      acceptFirstMouse: true,
       backgroundColor: colors.background,
       titleBarStyle: 'hidden',
       ...(process.platform === 'darwin'

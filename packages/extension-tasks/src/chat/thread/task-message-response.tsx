@@ -1,3 +1,4 @@
+import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import {
   createRuntimeClient,
   taskFileShareSchema,
@@ -6,7 +7,6 @@ import {
   localMarkdownPath,
   markdownFileName,
   artifactTemplatePrompt,
-  responses,
 } from '@dovo/protocol'
 import { TaskVisualization } from './task-visualization'
 import { EditChatImage } from '../composer/chat-image-edit-context'
@@ -137,6 +137,7 @@ export function TaskMessageResponse({
     }),
     [taskId, openFile],
   )
+  const openRepository = useRepositoryOpen()
   const parts = useMemo(() => richMarkdown(children), [children])
   const fileCard = (path: string, label: string) => (
     <div className="my-2 flex min-w-0 max-w-full flex-wrap items-center gap-2 rounded-xl border bg-card/60 p-3">
@@ -166,13 +167,12 @@ export function TaskMessageResponse({
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content className="z-50 min-w-48 rounded-md border bg-popover p-1 text-xs shadow-md">
-            <p className="px-2 py-1 text-muted-foreground">On the runtime computer</p>
+            <p className="px-2 py-1 text-muted-foreground">On your computer</p>
             <RepositoryOpenItems
               itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent"
               onSelect={(target) => {
-                void request('/api/tasks/files/open', { taskId, path, target }, responses.ok).catch(
-                  (cause: unknown) =>
-                    setError(cause instanceof Error ? cause.message : String(cause)),
+                void openRepository({ taskId, path }, target).catch((cause: unknown) =>
+                  setError(cause instanceof Error ? cause.message : String(cause)),
                 )
               }}
             />

@@ -87,6 +87,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('electron-chrome-extensions', () => ({
   ElectronChromeExtensions: class {
+    on = vi.fn<(...args: unknown[]) => void>()
     addTab = vi.fn<(...args: unknown[]) => void>()
     selectTab = vi.fn<(...args: unknown[]) => void>()
     removeTab = vi.fn<(...args: unknown[]) => void>()
@@ -96,9 +97,15 @@ vi.mock('electron-chrome-extensions', () => ({
     }
   },
 }))
+vi.mock('./browser-native-messaging', () => ({
+  attachNativeMessaging: () => ({ close: vi.fn<() => void>() }),
+}))
 vi.mock('electron-chrome-extensions/preload?raw', () => ({ default: '/* crx preload */' }))
 vi.mock('@dovo/protocol/local-settings', () => ({
-  readLocalSettingsSection: () => ({ browserWorkspaceEnabled: f.enabled }),
+  readLocalSettingsSection: () => ({
+    browserWorkspaceEnabled: f.enabled,
+    browserProfiles: [{ id: 'work', name: 'Work' }],
+  }),
 }))
 import {
   ACTION_LIBRARY_VERSION,
@@ -168,7 +175,7 @@ it('refuses commands and stays unloaded while the experimental browser is disabl
   )
 })
 
-it('installs a managed copy without nativeMessaging, leaving the chosen folder untouched', async () => {
+it('reviews and preserves nativeMessaging in a managed copy, leaving the chosen folder untouched', async () => {
   const source = await fixture('Fixture')
   const original = await readFile(join(source, 'manifest.json'), 'utf8')
   const extensions = createBrowserExtensions(tabs)
@@ -182,7 +189,7 @@ it('installs a managed copy without nativeMessaging, leaving the chosen folder u
     installed: expect.stringMatching(/^[a-p]{32}$/),
     capabilities: {
       unpackedFolders: true,
-      nativeMessaging: false,
+      nativeMessaging: true,
       chromeWebStore: true,
       remoteRuntimes: false,
     },
@@ -196,7 +203,7 @@ it('installs a managed copy without nativeMessaging, leaving the chosen folder u
         popup: true,
         icon: `data:image/png;base64,${PNG.toString('base64')}`,
         unsupportedPermissions: ['downloads'],
-        removedPermissions: ['nativeMessaging'],
+        removedPermissions: [],
       },
     ],
   })
@@ -216,7 +223,7 @@ it('installs a managed copy without nativeMessaging, leaving the chosen folder u
       'utf8',
     ),
   )
-  expect(managed.permissions).toEqual(['storage', 'tabs', 'downloads'])
+  expect(managed.permissions).toEqual(['storage', 'tabs', 'nativeMessaging', 'downloads'])
   const session = workSession()
   expect(session.registerPreloadScript.mock.calls.map(([script]) => script)).toEqual([
     {
@@ -484,7 +491,7 @@ it('does not start extensions for a profile that finishes opening after Browser 
   expect(workSession().loaded.size).toBe(0)
 })
 
-it('removes nativeMessaging from optional permissions and never grants it at runtime', async () => {
+it('reviews optional nativeMessaging without granting undeclared access', async () => {
   const source = await fixture('Optional', {
     permissions: ['storage'],
     optional_permissions: ['nativeMessaging', 'bookmarks'],
@@ -494,7 +501,7 @@ it('removes nativeMessaging from optional permissions and never grants it at run
   await expect(
     extensions.handle(window, { action: 'install', profileId: 'work' }),
   ).resolves.toMatchObject({
-    extensions: [{ removedPermissions: ['nativeMessaging'] }],
+    extensions: [{ removedPermissions: [] }],
   })
   const [copy] = await installedCopies('work')
   const managed = JSON.parse(
@@ -511,46 +518,34 @@ it('removes nativeMessaging from optional permissions and never grants it at run
       'utf8',
     ),
   )
-  expect(managed.optional_permissions).toEqual(['bookmarks'])
+  expect(managed.optional_permissions).toEqual(['nativeMessaging', 'bookmarks'])
   const { requestPermissions } = f.instances[0]!.options
   const [loadedId] = workSession().loaded.keys()
   const extension = { id: loadedId!, name: 'Optional', manifest: managed }
   f.review.mockClear()
   await expect(requestPermissions(extension, { permissions: ['nativeMessaging'] })).resolves.toBe(
-    false,
+    true,
   )
   await expect(
     requestPermissions(extension, { permissions: ['tabs', 'nativeMessaging'] }),
   ).resolves.toBe(false)
-  expect(f.review).not.toHaveBeenCalled()
-  await expect(requestPermissions(extension, { permissions: ['bookmarks'] })).resolves.toBe(true)
   expect(f.review).toHaveBeenCalledOnce()
+  await expect(requestPermissions(extension, { permissions: ['bookmarks'] })).resolves.toBe(true)
+  expect(f.review).toHaveBeenCalledTimes(2)
 })
 
-it('refuses to load a managed copy that declares nativeMessaging again', async () => {
+it('restores a reviewed nativeMessaging extension after restart', async () => {
   const first = createBrowserExtensions(tabs)
   choose(await fixture('Fixture'))
   const id = (await first.handle(window, { action: 'install', profileId: 'work' }))!.installed!
-  const [copy] = await installedCopies('work')
-  const path = join(
-    f.userData,
-    'browser-extensions',
-    'profiles',
-    'work',
-    'installed',
-    copy!,
-    'manifest.json',
-  )
-  const manifest = JSON.parse(await readFile(path, 'utf8'))
-  await writeFile(path, JSON.stringify({ ...manifest, optional_permissions: ['nativeMessaging'] }))
   f.sessions.clear()
   const restarted = createBrowserExtensions(tabs)
   await restarted.prepare('work')
-  expect(workSession().loaded.size).toBe(0)
+  expect(workSession().loaded.size).toBe(1)
   await expect(
     restarted.handle(window, { action: 'list', profileId: 'work' }),
   ).resolves.toMatchObject({
-    extensions: [{ id, loaded: false, error: expect.stringContaining('native messaging') }],
+    extensions: [{ id, loaded: true }],
   })
 })
 
@@ -572,10 +567,12 @@ it('shows permissions for review before anything from the copy loads, and cancel
   const [, options] = f.review.mock.calls[0]!
   expect(options.message).toBe('Add “Reviewed” to this browser profile?')
   expect(options.buttons).toEqual(['Add extension', 'Cancel'])
-  expect(options.detail).toContain('Permissions: storage, tabs, downloads')
+  expect(options.detail).toContain('Permissions: storage, tabs, nativeMessaging, downloads')
   expect(options.detail).toContain('Site access: https://example.com/*, https://docs.example.com/*')
   expect(options.detail).toContain('Not available in Dovo: downloads')
-  expect(options.detail).toContain('Removed by Dovo: nativeMessaging')
+  expect(options.detail).toContain(
+    'Desktop app access: can connect to installed Chrome native helpers',
+  )
   expect(workSession().extensions.loadExtension).not.toHaveBeenCalled()
   expect(await installedCopies('work')).toEqual([])
   await expect(
@@ -685,7 +682,7 @@ it('asks before granting optional permissions or declared sites at runtime, canc
   const [window, options] = f.review.mock.calls[0]!
   expect(window).toBe(parent)
   expect(options).toMatchObject({
-    message: 'Allow “Helper” more access in browser profile “work”?',
+    message: 'Allow “Helper” more access in browser profile “Work”?',
     buttons: ['Allow', 'Cancel'],
     defaultId: 1,
     cancelId: 1,

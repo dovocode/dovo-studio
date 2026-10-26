@@ -115,6 +115,21 @@ export async function shareTaskFile(s: Services, value: unknown, token: string) 
   entries.set(hashSecret(ticket), { ...input, token, expires: Date.now() + 15 * 60_000 })
   return { url: `/api/tasks/files/shared/${ticket}` }
 }
+export async function taskFileLocation(s: Services, value: unknown) {
+  const input = decode(taskFileRequestSchema, value)
+  const { target, handle } = await openSharedFile(s, input.taskId, input.path)
+  try {
+    if (!(await handle.stat()).isFile()) throw new HttpError(400, 'Choose a regular file')
+    return {
+      path: target,
+      runtimeId: s.runtimeId,
+      sshAddress: s.preferences.get().sshAddress,
+      kind: 'file',
+    }
+  } finally {
+    await handle.close()
+  }
+}
 export async function openTaskFile(s: Services, value: unknown) {
   const input = decode(taskFileOpenSchema, value)
   const { target, handle } = await openSharedFile(s, input.taskId, input.path)

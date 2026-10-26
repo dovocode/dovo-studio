@@ -78,6 +78,7 @@ export function RunControls({ task }: { task: Task }) {
     !error &&
     !task.error &&
     !task.restartRecovery &&
+    task.status !== 'failed' &&
     task.status !== 'cancelled'
   )
     return null
@@ -155,10 +156,37 @@ export function RunControls({ task }: { task: Task }) {
           </div>
         </div>
       ))}
-      {(error || (task.status !== 'cancelled' && task.error)) && (
-        <p role="alert" className="mx-auto max-w-[var(--chat-max)] text-xs text-destructive">
-          {error || task.error}
-        </p>
+      {(error || (task.status !== 'cancelled' && task.error) || task.status === 'failed') && (
+        <div className="mx-auto max-w-[var(--chat-max)] space-y-2 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5">
+          {(error || (task.status !== 'cancelled' && task.error)) && (
+            <p role="alert" className="break-words text-xs text-destructive">
+              {error || task.error}
+            </p>
+          )}
+          {task.status === 'failed' &&
+            !task.archived &&
+            !task.archivedAt &&
+            !task.restartRecovery && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    !connected ||
+                    busy ||
+                    !!task.activeRunId ||
+                    !!snapshot?.runs.some((run) => run.taskIds.includes(task.id))
+                  }
+                  onClick={() => act('/api/tasks/retry-failed', { id: task.id })}
+                >
+                  {busy ? 'Retrying…' : 'Retry'}
+                </Button>
+                <span className="text-[0.6875rem] text-muted-foreground">
+                  Current files are kept. Queued messages stay paused.
+                </span>
+              </div>
+            )}
+        </div>
       )}
     </div>
   )

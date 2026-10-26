@@ -1,3 +1,4 @@
+import { registerRepositoryOpeners } from './repository-openers.js'
 import { registerBrowserWindows } from './browser-window.js'
 import { registerDictation } from './dictation.js'
 import { checkRuntimeConnection } from './runtime-connection-health.js'
@@ -158,6 +159,7 @@ const dictation = registerDictation(
 app.once('will-quit', () => dictation.dispose())
 const inputPreview = registerInputPreview(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => inputPreview.dispose())
+registerRepositoryOpeners(rendererPath)
 const browserBridge = registerBrowser(join(__dirname, '../dist/index.html'), dataDirectory)
 app.once('will-quit', () => {
   void browserBridge.dispose()
@@ -203,6 +205,7 @@ function createWindow(): void {
     minWidth: 840,
     minHeight: 560,
     title: appName,
+    acceptFirstMouse: true,
     backgroundColor: colors.background,
     titleBarStyle: 'hidden',
     ...(process.platform === 'darwin'

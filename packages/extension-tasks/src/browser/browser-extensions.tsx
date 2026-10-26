@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Puzzle } from 'lucide-react'
+import { Puzzle, Plus, Settings2, ExternalLink } from 'lucide-react'
 import type { BrowserExtensionCommand, BrowserExtensionsResult } from '@dovo/protocol'
 import { useStudioHost } from '@dovo/studio-core'
 import {
@@ -10,18 +10,28 @@ import {
   DialogTitle,
   IconButton,
   Input,
+  DropdownMenu,
 } from '@dovo/studio-ui'
 
 export function BrowserExtensions({
   profileId,
   tabKey,
   hasPage,
+  profileName = 'Default',
+  pageUrl = '',
+  onBrowseStore,
 }: {
   profileId: string
   tabKey: string
   hasPage: boolean
+  profileName?: string
+  pageUrl?: string
+  onBrowseStore?: () => void
 }) {
   const { browserExtensions } = useStudioHost()
+  const trigger = useRef<HTMLButtonElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const storePage = chromeWebStorePage(pageUrl)
   const [storeUrl, setStoreUrl] = useState('')
   const [open, setOpen] = useState(false)
   const [result, setResult] = useState<BrowserExtensionsResult>()
@@ -50,22 +60,125 @@ export function BrowserExtensions({
       if (attempt === generation.current) setBusy(false)
     }
   }
+  const launch = (id: string) => {
+    const bounds = trigger.current?.getBoundingClientRect()
+    if (!bounds) return
+    // Let the DOM menu close and its focus restoration finish before opening a native popup.
+    requestAnimationFrame(() => {
+      void call({
+        action: 'open',
+        profileId,
+        id,
+        key: tabKey,
+        anchor: {
+          x: Math.max(0, Math.round(bounds.x)),
+          y: Math.max(0, Math.round(bounds.y)),
+          width: Math.max(1, Math.round(bounds.width)),
+          height: Math.max(1, Math.round(bounds.height)),
+        },
+      }).then((succeeded) => {
+        if (!succeeded) setOpen(true)
+      })
+    })
+  }
   if (!browserExtensions) return null
   return (
     <>
-      <IconButton
-        label="Extensions"
-        type="button"
-        className="size-8 shrink-0"
-        onClick={() => {
-          setResult(undefined)
-          setRemoveId('')
-          setOpen(true)
-          void call({ action: 'list', profileId })
+      {storePage && (
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy}
+          className="shrink-0 gap-1.5"
+          onClick={() => {
+            setOpen(true)
+            void call({ action: 'installStore', profileId, url: storePage })
+          }}
+        >
+          <Plus size={14} />
+          Add to Dovo
+        </Button>
+      )}
+      <DropdownMenu.Root
+        open={menuOpen}
+        onOpenChange={(value) => {
+          setMenuOpen(value)
+          if (value) void call({ action: 'list', profileId })
         }}
       >
-        <Puzzle size={15} />
-      </IconButton>
+        <DropdownMenu.Trigger asChild>
+          <IconButton ref={trigger} label="Extensions" type="button" className="size-8 shrink-0">
+            <Puzzle size={15} />
+          </IconButton>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="end"
+            sideOffset={8}
+            className="z-50 w-72 rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+            }}
+          >
+            <div className="px-2 py-2">
+              <p className="text-sm font-medium">Extensions</p>
+              <p className="text-xs text-muted-foreground">{profileName}</p>
+            </div>
+            {error && (
+              <p role="alert" className="px-2 py-1 text-xs text-destructive">
+                {error}
+              </p>
+            )}
+            {!result && (
+              <p className="px-2 py-2 text-xs text-muted-foreground">Loading extensions…</p>
+            )}
+            {result && !result.extensions.length && (
+              <p className="px-2 py-2 text-xs text-muted-foreground">
+                No extensions in this profile.
+              </p>
+            )}
+            {result?.extensions.map((extension) => (
+              <DropdownMenu.Item
+                key={extension.id}
+                disabled={busy || !extension.loaded || !hasPage}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm outline-none focus:bg-accent data-[disabled]:opacity-50"
+                onSelect={() => {
+                  setMenuOpen(false)
+                  launch(extension.id)
+                }}
+              >
+                {extension.icon ? (
+                  <img src={extension.icon} alt="" className="size-5 shrink-0 object-contain" />
+                ) : (
+                  <Puzzle size={18} className="shrink-0 text-muted-foreground" />
+                )}
+                <span className="min-w-0 flex-1 truncate">{extension.name}</span>
+                {!extension.enabled && <span className="text-xs text-muted-foreground">Off</span>}
+              </DropdownMenu.Item>
+            ))}
+            <DropdownMenu.Separator className="my-1 h-px bg-border" />
+            {onBrowseStore && (
+              <DropdownMenu.Item
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm outline-none focus:bg-accent"
+                onSelect={onBrowseStore}
+              >
+                <ExternalLink size={14} />
+                Chrome Web Store
+              </DropdownMenu.Item>
+            )}
+            <DropdownMenu.Item
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm outline-none focus:bg-accent"
+              onSelect={() => {
+                setRemoveId('')
+                setOpen(true)
+              }}
+            >
+              <Settings2 size={14} />
+              Manage extensions
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
       <Dialog
         open={open}
         onOpenChange={(value) => {
@@ -77,14 +190,13 @@ export function BrowserExtensions({
         <DialogContent className="max-w-xl">
           <DialogTitle>Browser extensions</DialogTitle>
           <DialogDescription>
-            Experimental · Installed in this local browser profile. Chrome API compatibility varies
-            by extension.
+            Installed in {profileName}. Permissions and website access apply only to this profile.
           </DialogDescription>
           <div className="max-h-[60vh] space-y-3 overflow-y-auto" aria-busy={busy}>
             <p className="text-sm text-muted-foreground">
               Paste a Chrome Web Store link or load an extension folder. Review its access before
-              installing in this profile. Native messaging remains unavailable. Store extensions are
-              updated manually by installing their link again.
+              installing in this profile. Desktop app connections require your approval. Store
+              extensions update when you install their link again.
             </p>
             {result?.capabilities.chromeWebStore && (
               <form
@@ -159,7 +271,8 @@ export function BrowserExtensions({
                 )}
                 {!!extension.removedPermissions.length && (
                   <p className="text-xs text-muted-foreground">
-                    Blocked access: {extension.removedPermissions.join(', ')}.
+                    Previously removed access: {extension.removedPermissions.join(', ')}. Reinstall
+                    from the store to review and enable it.
                   </p>
                 )}
                 <div className="flex flex-wrap gap-2">
@@ -167,23 +280,9 @@ export function BrowserExtensions({
                     size="sm"
                     variant="outline"
                     disabled={busy || !extension.loaded || !hasPage}
-                    onClick={(event) => {
-                      const bounds = event.currentTarget.getBoundingClientRect()
+                    onClick={() => {
                       setOpen(false)
-                      void call({
-                        action: 'open',
-                        profileId,
-                        id: extension.id,
-                        key: tabKey,
-                        anchor: {
-                          x: Math.max(0, Math.round(bounds.x)),
-                          y: Math.max(0, Math.round(bounds.y)),
-                          width: Math.max(1, Math.round(bounds.width)),
-                          height: Math.max(1, Math.round(bounds.height)),
-                        },
-                      }).then((succeeded) => {
-                        if (!succeeded) setOpen(true)
-                      })
+                      launch(extension.id)
                     }}
                   >
                     {extension.popup ? 'Open popup' : 'Run action'}
@@ -244,4 +343,21 @@ export function BrowserExtensions({
       </Dialog>
     </>
   )
+}
+
+export function chromeWebStorePage(value: string) {
+  try {
+    const url = new URL(value)
+    if (
+      url.protocol === 'https:' &&
+      url.hostname === 'chromewebstore.google.com' &&
+      !url.username &&
+      !url.password &&
+      /^\/detail\/(?:[^/]+\/)?[a-p]{32}\/?$/.test(url.pathname)
+    )
+      return url.href
+  } catch {
+    /* Ordinary pages do not offer an extension install. */
+  }
+  return undefined
 }

@@ -38,6 +38,7 @@ createRoot(root).render(
           popOutThread={window.dovo?.popOutThread}
           appInfo={window.dovo?.appInfo}
           desktopPlatform={window.dovo?.platform}
+          repositoryOpener={window.dovo?.repositoryOpener}
           pickDirectory={window.dovo?.pickDirectory}
           browser={window.dovo?.browser}
           browserExtensions={window.dovo?.browserExtensions}
