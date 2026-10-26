@@ -31,6 +31,7 @@ import type { AgentRegistry } from '../configuration/registry.js'
 import { HttpError, runtimeFailure, runtimeOperation, runtimeProgram } from '../../errors.js'
 import type { AgentRun } from '../execution/types.js'
 import { projectScopeContext } from './project-scope.js'
+import { parseProjectSelection, projectSelectionSchema } from './project-selection-output.js'
 import { cleanDictationOutput, dictationInstructions } from '../execution/dictation-cleanup.js'
 export class TitleGeneration {
   private running = new Map<AbortController, Fiber.Fiber<unknown, unknown>>()
@@ -204,7 +205,7 @@ export class TitleGeneration {
         const projects = this.store
           .get()
           .repositories.filter((repo) => repo.kind !== 'scratch' && !repo.gitIdentityError)
-        let raw: unknown = {
+        let selection: typeof projectSelectionSchema.Type = {
           status: 'selected',
           repositoryId: null,
           links: [],
@@ -226,7 +227,7 @@ export class TitleGeneration {
             ),
           )
           try {
-            raw = JSON.parse(cleanGenerated(output))
+            selection = parseProjectSelection(output)
           } catch {
             throw new HttpError(
               502,
@@ -234,31 +235,10 @@ export class TitleGeneration {
             )
           }
         }
-        const parsed = decodeResult(
-          mutableStruct({
-            status: Schema.Literals(['selected', 'ambiguous']),
-            repositoryId: Schema.NullOr(Schema.String),
-            links: Schema.Array(
-              mutableStruct({
-                repositoryId: Schema.String,
-                access: Schema.Literals(['read-only', 'edit']),
-              }),
-            ),
-            reason: maxValue(Schema.String, 1000),
-          }),
-          raw,
-        )
-        if (!parsed.success)
-          throw new HttpError(
-            502,
-            'Scope returned an invalid selection. Choose a project manually or try again.',
-          )
         // An uncertain match is not a project choice. Start in General and let the
         // conversation establish context instead of blocking the first message.
-        const selection =
-          parsed.data.status === 'ambiguous'
-            ? { ...parsed.data, repositoryId: null, links: [] }
-            : parsed.data
+        if (selection.status === 'ambiguous')
+          selection = { ...selection, repositoryId: null, links: [] }
         const available = this.store.get().repositories.filter((repo) => !repo.gitIdentityError)
         const repository =
           selection.repositoryId === null
@@ -694,6 +674,7 @@ export class TitleGeneration {
             ),
           )
           let output = ''
+          let nextMessage = false
           const adapter = yield* runtimeOperation(() => this.agents.get(harness.provider))
           yield* runtimeOperation(() =>
             adapter.run({
@@ -714,6 +695,13 @@ export class TitleGeneration {
               cwd: directory,
               ...(linkedDirectories?.length ? { linkedDirectories } : {}),
               signal: controller.signal,
+              ...(mode === 'projects'
+                ? {
+                    outputSchema: Schema.toJsonSchemaDocument(projectSelectionSchema, {
+                      onExcessProperty: 'error',
+                    }).schema,
+                  }
+                : {}),
               ...(noTools ? { tools: 'none' as const } : {}),
               prompt: config.prompt(text),
               onSession: () => {},
@@ -725,6 +713,10 @@ export class TitleGeneration {
               },
               onText: (chunk) => {
                 if (controller.signal.aborted) return
+                if (mode === 'projects' && nextMessage) {
+                  output = ''
+                  nextMessage = false
+                }
                 if (output.length + chunk.length > config.limit)
                   controller.abort(new Error(`The ${config.label} model returned too much text`))
                 else output += chunk
@@ -735,6 +727,9 @@ export class TitleGeneration {
                 if (replacement.length > config.limit)
                   controller.abort(new Error(`The ${config.label} model returned too much text`))
                 else output = replacement
+              },
+              onTextBoundary: () => {
+                nextMessage = true
               },
               approve: async () => 'deny' as const,
               ask: async () => null,

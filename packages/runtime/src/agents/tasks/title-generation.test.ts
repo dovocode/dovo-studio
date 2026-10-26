@@ -553,6 +553,64 @@ it('selects primary and linked projects with the title model before creating any
     s.db.close()
   }
 })
+it.each(['direct', 'progress', 'wrapped'] as const)(
+  'resolves Scope from its final %s response after read-only investigation',
+  async (format) => {
+    const s = autoFixture()
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'dovo-scope-output-')))
+    s.store.update((workspace) => ({
+      ...workspace,
+      repositories: workspace.repositories.map((repo) =>
+        repo.kind === 'scratch' ? repo : { ...repo, path: root },
+      ),
+    }))
+    vi.spyOn(s.registry, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (run) => {
+        expect(run.outputSchema).toMatchObject({
+          type: 'object',
+          required: ['status', 'repositoryId', 'links', 'reason'],
+          additionalProperties: false,
+        })
+        if (format === 'progress') {
+          run.onText('I will inspect the dashboard and billing contracts.')
+          run.onTextBoundary?.()
+          run.onActivity('Read')
+          run.onTextBoundary?.()
+        }
+        const result = JSON.stringify({
+          status: 'selected',
+          repositoryId: 'web',
+          links: [],
+          reason: 'Dashboard owns the feature',
+        })
+        run.onText(
+          format === 'wrapped'
+            ? `Selected project:\n\`\`\`json ${result}\`\`\``
+            : result.slice(0, 50),
+        )
+        if (format !== 'wrapped') run.onText(result.slice(50))
+        run.onTextBoundary?.()
+      },
+    })
+    try {
+      const result = await runClientEffect(
+        s.titles.selectProjectsEffect({ id: 'auto', text: 'Fix the dashboard' }),
+      )
+      expect(result).toMatchObject({
+        repositoryId: 'web',
+        linkedCheckouts: [],
+        autoProject: undefined,
+      })
+    } finally {
+      await s.titles.dispose()
+      await s.registry.dispose()
+      s.db.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+)
+
 it.each([
   { status: 'selected', repositoryId: 'unknown', links: [], reason: '' },
   {

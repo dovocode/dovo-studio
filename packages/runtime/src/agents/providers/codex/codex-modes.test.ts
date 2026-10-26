@@ -286,6 +286,31 @@ it('disables bundled desktop control only while Dovo Cua is enabled, including r
   }
 })
 
+it('passes a utility response schema to its Codex turn without changing later turns', async () => {
+  const { run, requests } = await fixture()
+  const adapter = createCodexAdapter()
+  try {
+    run.ephemeral = true
+    run.outputSchema = {
+      type: 'object',
+      properties: { repositoryId: { type: 'string' } },
+      required: ['repositoryId'],
+      additionalProperties: false,
+    }
+    await adapter.run(run)
+    expect(
+      (await requests()).find((row) => row.method === 'turn/start')?.params?.outputSchema,
+    ).toEqual(run.outputSchema)
+    run.outputSchema = undefined
+    await adapter.run(run)
+    expect(
+      (await requests()).filter((row) => row.method === 'turn/start').at(-1)?.params,
+    ).not.toHaveProperty('outputSchema')
+  } finally {
+    await adapter.dispose?.()
+  }
+})
+
 it('compacts an existing thread without starting a model turn', async () => {
   const { run, requests } = await fixture()
   run.sessionId = 'thread'

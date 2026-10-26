@@ -716,6 +716,7 @@ export function createCodexAdapter(): AgentAdapter {
         awaitingTurn = true
         const started = await request('turn/start', {
           threadId: thread.id,
+          ...(run.outputSchema ? { outputSchema: run.outputSchema } : {}),
           ...(run.agent.approvalPolicy || run.agent.sandboxMode
             ? {
                 approvalPolicy: policy.approvalPolicy,

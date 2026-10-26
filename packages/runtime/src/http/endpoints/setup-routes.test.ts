@@ -330,78 +330,87 @@ it('keeps Scope selection off by default and publishes the per-computer opt-in',
   expect(s.store.task(task.id).repositoryId).toBe('project')
 })
 
-it('lets a paired device send the first message after Scope falls back to General', async () => {
-  const { runtime } = await setup()
-  const s = runtime.services
-  const phoneToken = 'scope-paired-phone-token-at-least-thirty-two-characters'
-  s.devices.add('Phone', phoneToken)
-  s.preferences.save({ enableAutoProjectSelection: true })
-  s.titles.save({ harness: { provider: 'codex', endpoint: '' }, model: 'title-model' })
-  const scratch = await s.scratch.ensure()
-  s.store.update((workspace) => ({
-    ...workspace,
-    repositories: [
-      scratch,
-      { id: 'project', kind: 'folder', name: 'Project', path: tmpdir(), branch: '' },
-    ],
-  }))
-  const task = s.tasks.create({
-    title: 'Scope draft',
-    repositoryId: scratch.id,
-    agentId: '',
-    objective: '',
-  })
-  s.store.updateTask(task.id, (current) => ({
-    ...current,
-    autoProject: true,
-    autoProjectExecution: 'worktree',
-  }))
-  vi.spyOn(s.agents, 'get').mockResolvedValue({
-    probe: vi.fn<AgentAdapter['probe']>(),
-    run: async (input) =>
-      input.onText(
-        input.agent.model === 'title-model'
-          ? JSON.stringify({
-              status: 'ambiguous',
-              repositoryId: null,
-              links: [],
-              reason: 'No project matches',
-            })
-          : 'Ready to help in General',
-      ),
-  })
-  const post = (path: string, body: unknown) =>
-    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${phoneToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+it.each(['plain', 'progress', 'fenced'] as const)(
+  'lets a paired device send the first message after a %s Scope response falls back to General',
+  async (format) => {
+    const { runtime } = await setup()
+    const s = runtime.services
+    const phoneToken = 'scope-paired-phone-token-at-least-thirty-two-characters'
+    s.devices.add('Phone', phoneToken)
+    s.preferences.save({ enableAutoProjectSelection: true })
+    s.titles.save({ harness: { provider: 'codex', endpoint: '' }, model: 'title-model' })
+    const scratch = await s.scratch.ensure()
+    s.store.update((workspace) => ({
+      ...workspace,
+      repositories: [
+        scratch,
+        { id: 'project', kind: 'folder', name: 'Project', path: tmpdir(), branch: '' },
+      ],
+    }))
+    const task = s.tasks.create({
+      title: 'Scope draft',
+      repositoryId: scratch.id,
+      agentId: '',
+      objective: '',
     })
-  const resolved = await post('/api/tasks/projects/select', {
-    id: task.id,
-    text: 'Plan a new service',
-  })
-  expect(resolved.status).toBe(200)
-  const general = decode(taskSchema, await resolved.json())
-  expect(general).toMatchObject({
-    repositoryId: scratch.id,
-    autoProjectFallback: true,
-    linkedCheckouts: [],
-  })
-  expect(general.autoProject).toBeUndefined()
-  expect(general.autoProjectExecution).toBeUndefined()
-  expect(
-    (
-      await post('/api/tasks/message', {
-        id: task.id,
-        text: 'Plan a new service',
-        messageId: 'first',
+    s.store.updateTask(task.id, (current) => ({
+      ...current,
+      autoProject: true,
+      autoProjectExecution: 'worktree',
+    }))
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (input) => {
+        if (input.agent.model === 'title-model') {
+          if (format === 'progress') {
+            input.onText('I will compare the available projects.')
+            input.onTextBoundary?.()
+          }
+          const result = JSON.stringify({
+            status: 'ambiguous',
+            repositoryId: null,
+            links: [],
+            reason: 'No project matches',
+          })
+          input.onText(
+            format === 'fenced' ? `Here is the selection:\n\`\`\`json\n${result}\n\`\`\`` : result,
+          )
+        } else input.onText('Ready to help in General')
+      },
+    })
+    const post = (path: string, body: unknown) =>
+      fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${phoneToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       })
-    ).status,
-  ).toBe(200)
-  await vi.waitFor(() => expect(s.store.task(task.id).turns?.at(-1)?.status).toBe('completed'))
-  expect(s.store.task(task.id)).toMatchObject({ repositoryId: scratch.id, linkedCheckouts: [] })
-  expect(s.store.task(task.id).checkoutBranch).toBeUndefined()
-})
+    const resolved = await post('/api/tasks/projects/select', {
+      id: task.id,
+      text: 'Plan a new service',
+    })
+    expect(resolved.status).toBe(200)
+    const general = decode(taskSchema, await resolved.json())
+    expect(general).toMatchObject({
+      repositoryId: scratch.id,
+      autoProjectFallback: true,
+      linkedCheckouts: [],
+    })
+    expect(general.autoProject).toBeUndefined()
+    expect(general.autoProjectExecution).toBeUndefined()
+    expect(
+      (
+        await post('/api/tasks/message', {
+          id: task.id,
+          text: 'Plan a new service',
+          messageId: 'first',
+        })
+      ).status,
+    ).toBe(200)
+    await vi.waitFor(() => expect(s.store.task(task.id).turns?.at(-1)?.status).toBe('completed'))
+    expect(s.store.task(task.id)).toMatchObject({ repositoryId: scratch.id, linkedCheckouts: [] })
+    expect(s.store.task(task.id).checkoutBranch).toBeUndefined()
+  },
+)
 
 it('resolves a Maestro default before accepting the first message and keeps the concrete choice', async () => {
   const { runtime, options } = await setup()

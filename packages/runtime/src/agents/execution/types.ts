@@ -40,6 +40,8 @@ export interface AgentRun {
   signal: AbortSignal
   /** Request a text-only utility turn. Adapters disable tools where supported. */
   tools?: 'none'
+  /** Constrain the final utility response where the provider supports JSON Schema. */
+  outputSchema?: Record<string, unknown>
   /** Evidence that the provider accepted this prompt, distinct from session allocation. */
   onPromptAccepted?: () => void
   onSession: (id: string) => void

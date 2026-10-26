@@ -38,6 +38,8 @@ export function runtimeRequestTimeout(path: string, input?: unknown) {
   )
     return 120000
   if (path === '/api/tasks/commit-message') return 120000
+  // Scope may investigate source for two minutes before returning its selection.
+  if (path === '/api/tasks/projects/select') return 180000
   if (path === '/api/tasks/commit') return 180000
   // Authentication, optional Git initialization, creation and final inspection are sequential.
   if (path === '/api/scm/repositories/github/create') return 300000

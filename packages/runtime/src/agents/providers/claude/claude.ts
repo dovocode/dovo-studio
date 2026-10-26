@@ -67,6 +67,9 @@ function claudeStream(
         : {}),
       pathToClaudeCodeExecutable: command,
       ...(run.ephemeral ? { persistSession: false } : {}),
+      ...(run.outputSchema
+        ? { outputFormat: { type: 'json_schema' as const, schema: run.outputSchema } }
+        : {}),
       systemPrompt:
         run.tools === 'none'
           ? run.agent.instructions
@@ -230,6 +233,16 @@ function handleMessage(
     throw new Error(message.errors.join('\n'))
   if (message.type === 'result' && message.subtype === 'success' && message.is_error)
     throw new Error(message.result)
+  if (
+    run.outputSchema &&
+    message.type === 'result' &&
+    message.subtype === 'success' &&
+    message.structured_output !== undefined
+  ) {
+    // The SDK delivers canonical structured output separately from streamed prose.
+    run.onTextBoundary?.()
+    run.onText(JSON.stringify(message.structured_output))
+  }
 }
 class MessageQueue implements AsyncIterable<SDKUserMessage> {
   private items: SDKUserMessage[] = []

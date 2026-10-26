@@ -97,6 +97,72 @@ it('runs the Claude compact command and reports its boundary', async () => {
     }),
   )
 })
+it('requests native JSON output and delivers the canonical result separately from streamed prose', async () => {
+  mocks.query.mockClear()
+  const result = { status: 'selected', repositoryId: 'shop', links: [], reason: 'Cart owner' }
+  mocks.query.mockImplementation(() => ({
+    async *[Symbol.asyncIterator]() {
+      yield {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'I inspected the shopping code.' },
+        },
+      }
+      yield {
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        structured_output: result,
+        session_id: 'utility',
+      }
+    },
+    close: vi.fn<() => void>(),
+  }))
+  const output: string[] = []
+  const outputSchema = {
+    type: 'object',
+    properties: { repositoryId: { type: 'string' } },
+    required: ['repositoryId'],
+    additionalProperties: false,
+  }
+  const adapter = createClaudeAdapter()
+  try {
+    await adapter.run({
+      agent: {
+        id: 'utility',
+        name: 'Utility',
+        provider: 'claude',
+        endpoint: '',
+        model: '',
+        instructions: 'Select a project',
+        permission: 'read-only',
+      },
+      ephemeral: true,
+      outputSchema,
+      cwd: '/tmp',
+      prompt: 'Fix cart totals',
+      signal: new AbortController().signal,
+      onSession: () => {},
+      onText: (text) => output.push(text),
+      onTextBoundary: () => output.push('boundary'),
+      onActivity: () => {},
+      approve: async () => 'deny',
+      ask: async () => null,
+    })
+    expect(mocks.query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          outputFormat: { type: 'json_schema', schema: outputSchema },
+        }),
+      }),
+    )
+    expect(output).toEqual(['I inspected the shopping code.', 'boundary', JSON.stringify(result)])
+  } finally {
+    await adapter.dispose?.()
+  }
+})
+
 it('keeps a streaming Claude connection across turns', async () => {
   const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
   mocks.query.mockClear()

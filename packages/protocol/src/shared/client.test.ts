@@ -197,6 +197,32 @@ it.each([
   expect(request).toHaveBeenCalledTimes(1)
   expect(request.mock.calls[0][1]?.signal?.aborted).toBe(true)
 })
+it('lets Scope finish its two-minute investigation without an early timeout or replay', async () => {
+  vi.useFakeTimers()
+  const request = vi.fn<typeof fetch>(async (_url, options) => {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, 125000)
+      options?.signal?.addEventListener('abort', () => {
+        clearTimeout(timer)
+        reject(new Error('Request aborted'))
+      })
+    })
+    return Response.json({ revision: 1 })
+  })
+  vi.stubGlobal('fetch', request)
+  const pending = runtimeRequest(
+    connection,
+    connection.address,
+    '/api/tasks/projects/select',
+    { id: 'scope', text: 'Fix cart totals' },
+    dataSchema,
+  )
+  await vi.advanceTimersByTimeAsync(125000)
+  expect(await pending).toEqual({ revision: 1 })
+  expect(request).toHaveBeenCalledOnce()
+  expect(request.mock.calls[0][1]?.signal?.aborted).toBe(false)
+})
+
 it.each([
   '/api/scm/work/issues/list',
   '/api/scm/work/issues/action',
