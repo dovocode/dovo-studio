@@ -85,8 +85,9 @@ not been tested.
 iOS does not support arbitrary-tab video/audio capture through `getDisplayMedia`; Dovo does not
 provide a fake polyfill. Website calls can request camera and microphone access with separate
 approval; this does not enable arbitrary-tab sharing. Mobile **Browser options** explains these
-engine limits without interrupting navigation. The Android backend preserves upstream Chromium's
-capture picker and Stop controls, but its APK build and device verification remain pending.
+engine limits without interrupting navigation. Android uses the platform WebView through React
+Native WebView; website tab/audio capture is not advertised or polyfilled and remains unverified on
+an Android device.
 
 ## Comparison reference
 
@@ -145,14 +146,29 @@ managers.
 The experimental mobile Browser works without pairing for device browsing. It keeps bounded tabs
 (100), bookmarks (100), history (200) and recently closed tabs (20) on this phone. Use **Tabs** to
 choose the device or a paired computer for a new tab; remote tabs retain their computer and named
-profile. The optional iOS native module provides separate website data profiles on **iOS 17+** and
-WebKit WebExtensions on **iOS 18.4+**. Older binaries and unsupported systems retain the RNWebView
-baseline: one device login session, without separate local profiles. Saved named-profile tabs stay
-blocked on that fallback rather than sharing its cookies. Localhost means this phone for device tabs
-and the paired host for remote tabs; explicit HTTP stays HTTP. Use **Bookmarks and history** to find
-or reopen pages. Copy preserves selected text; adding a page or selection appends to the chosen
-thread's **phone draft**, preserves existing text and never sends. Review in the composer. If saving
-fails, the quotation may already be visible there: inspect the composer before adding it again.
+profile. **Browser options** holds profile management so those controls do not crowd the page. Use
+the header Back action to return to threads; page Back and Forward control website history.
+
+**Browser extensions are desktop-only.** Mobile does not install or run browser extensions. Android
+uses the existing platform WebView through React Native WebView, with OS-managed browser-engine
+updates. The custom upstream Chromium APK effort has been stopped; its unpublished proof sources and
+build cache are preserved locally, outside the shipped app. No Chromium companion or additional
+browser activity ships with Studio.
+
+The optional iOS native module provides separate website data profiles on **iOS 17+**. Android and
+older iOS binaries use the RNWebView baseline: one device login session, without separate local
+profiles. Saved named-profile tabs remain blocked on that fallback rather than silently sharing its
+cookies. Localhost means this phone for device tabs and the paired host for remote tabs; explicit
+HTTP stays HTTP. Use **Bookmarks and history** to find or reopen pages. Copy preserves selected
+text; adding a page or selection appends to the chosen thread's **phone draft**, preserves existing
+text and never sends. Review in the composer. If saving fails, the quotation may already be visible
+there: inspect the composer before adding it again.
+
+The optional native iOS engine follows the experimental app setting. Switching between Browser and a
+thread detaches its view while retaining live tabs. Feature-off or app-shell teardown disables the
+engine. A bounded registry reconciles tabs created or closed while the Browser route was hidden;
+native instance identities prevent stale close events from removing a newer tab. Native status
+reports the live-tab limit, currently 100 across profiles.
 
 Run `pnpm exec playwright install chromium`, then
 `node scripts/check-mobile-shared-browser-browser.mjs`. This bundles the real `BrowserScreen`, route
@@ -160,53 +176,27 @@ gate, remote browser/toolbar, state model and draft append/storage implementatio
 DOM adapters and mock WebViews, remote viewer, clipboard and runtimes. It checks the default-off
 gate without native calls, local HTTP/search, remote ownership/profiles, MRU, persistence,
 library/reopen, exact selection copy, targeted draft preservation, persistence errors and absence of
-workspace PATCH/send calls. Reviewed 390-pixel dark screenshots are written to
-`work/mobile-shared-browser/narrow.png` and `narrow-library.png`. Adapter screenshots verify UI flow
-and narrow document overflow, not native layout fidelity. This suite does not verify WKWebView, an
-Android Chromium backend, extension engines, real clipboard permissions or a paired-host connection.
-Native engine work remains separate; no Chrome extension compatibility is established by these UI
-checks.
+workspace PATCH/send calls. Its separate native-contract fixture checks profiles in Browser options,
+live-tab reuse, route changes, stale events and engine disable. These mocks do not prove either
+native engine or a paired-host connection. Adapter screenshots verify UI flow and narrow overflow,
+not native layout fidelity.
 
-The optional native iOS engine follows the app experimental setting: switching between Browser and a
-thread detaches its native view while retaining live tabs and extension workers. Feature-off or
-app-shell teardown disables the engine. WebKit WebExtension controls appear only when the module
-reports extension availability: choose an unpacked folder, review supported permissions and website
-patterns, then install with only checked grants. Unsupported permissions are never offered.
-Enable/disable and removal require confirmation; extension actions use native popups. Later access
-requests require another review and are denied on dismissal. Changes to installed grants apply on
-the next page load; reload the page to apply them. Unpacked folders are supported; `.crx` and Chrome
-Web Store installs are not. This is WebKit WebExtension integration, not a claim of Chrome
-compatibility. The UI suite separately mocks this contract to check native profile changes, live-tab
-reuse, tab events while visiting a thread, exact copy, permission subsets, confirmations and engine
-disable. It does not prove the Swift module, popup presentation or extension execution on a device.
+A review copy of the full DovoStudio Debug simulator app was installed with a separate bundle ID,
+`com.dovo.studio.browserreview`, and loaded the checkout's actual Studio JavaScript through Metro.
+The iOS 27 simulator check navigated an HTTP fixture through native WebKit, copied its exact
+selected text to the simulator clipboard, and switched to a named profile with independent
+localStorage (the original profile reported two visits, the new profile one). This verifies the
+actual JS/native browsing path, rather than only a standalone native harness. The unsigned review
+copy showed a keychain-entitlement warning, so pairing and authenticated flows were not verified.
+The normal app and its pairings were preserved. After removing native extensions, the revised module
+passed Mac Swift typechecking, a browser-only simulator harness (53 checks plus 7 in a fresh
+process), and a full Debug simulator app build. The rebuilt isolated Studio app also passed HTTP
+navigation and exact selection-to-clipboard through the actual JS/native bridge. Returning from
+threads reused the live page. Earlier profile-isolation proof preceded this rebuild; the revised
+standalone harness independently verifies profile isolation and persistence.
 
-The native owner reports a passing full DovoStudio Debug simulator build from a scratch copy on Mac
-Studio (Xcode 27.1, iOS 27.1 SDK): the pod autolinks without Podfile/app changes and the native
-module compiles with zero warnings. The TypeScript contract also passes the mobile typecheck. The
-real core passed **120/120** checks in phase 1 and **31/31** in a fresh phase-2 process using
-`apps/mobile/modules/dovo-webkit-browser/tests/run-simulator-harness.sh` on the iOS 27 simulator.
-This standalone harness uses WKWebView/WKWebExtension directly, separate from the Dovo app. The
-final hardening run also verifies corrupt/duplicate catalogue rejection, failed deletion without
-enabled worker resurrection, credential-URL rejection, password/non-text input selection exclusion,
-persisted-profile discovery without starting workers, native prompt cancellation and profile-loading
-opt-out races. Final logs are `/tmp/dovo-ios-hardening-harness-final.log` and
-`/tmp/dovo-ios-hardening-app-build.log`; the latter is a successful full Debug simulator build of
-the updated native sources. `websiteTabCaptureAvailable: false` and its reason are native status
-fields, not an inferred result from the UI fixture.
-
-Its MV3 fixture proves host-granted isolated-world content scripts, native action popups, refused
-`nativeMessaging`, profile isolation, extension/grant/storage persistence, revoke/disable/remove,
-profile removal, same-profile `target=_blank` and OAuth opener/close behavior, exact bounded
-selection, and gate shutdown. Device Hub screenshots show the work profile’s injected banner and
-native popup, and the personal profile without the extension. This proves the fixture, not general
-Chrome compatibility. Native-to-JS calls inside the actual Dovo app remain unverified: that app was
-compiled but not installed. Runtime behavior on iOS 17–18.3 also remains unverified. See the
-module’s [README](../apps/mobile/modules/dovo-webkit-browser/README.md) for security details and API
-limits. Native status reports the live-tab limit (currently 100 across profiles); the saved
-workspace also allows 100 tabs.
-
-Android’s chosen direction is **one APK with separate Chrome and Studio activities**, using an
-upstream Chromium build rather than a claim of Chrome extensions inside Android WebView. That build
-and integration are in progress with the Android backend owner; no successful build, extension
-execution or device verification is claimed here. RNWebView remains the baseline until an available,
-integrated native backend is verified.
+Physical iPhone behavior, iOS 17–18.3 runtime behavior and Android device browsing remain
+unverified. Device Hub discovery on 26 October found no Android target. Website camera/microphone
+access and arbitrary-tab capture are separate capabilities; see the media limits above. The native
+iOS module's [README](../apps/mobile/modules/dovo-webkit-browser/README.md) documents its API and
+verification commands.

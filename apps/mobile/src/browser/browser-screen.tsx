@@ -24,7 +24,6 @@ import {
   type BrowserTabState,
 } from './native-browser'
 import { prepareNativeTab, closeNativeTab } from './native-session'
-import { NativeExtensions } from './native-extensions'
 import { Action } from '../ui/controls/action'
 import { Choice } from '../ui/controls/choice'
 import { Field, SearchField } from '../ui/controls/field'
@@ -549,7 +548,7 @@ export function BrowserScreen() {
     )
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="Browser" />
+      <ScreenHeader title="Browser" onBack={() => navigate('tasks')} />
       <View style={{ padding: 8, gap: 4, borderBottomWidth: 1, borderColor: colors.border }}>
         <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
           <Action secondary label="Browser options" onPress={() => setOptionsOpen(true)} />
@@ -580,71 +579,6 @@ export function BrowserScreen() {
             onPress={() => void act(async () => change((state) => toggleBookmark(state, active)))}
           />
         </View>
-        {active.kind === 'local' ? (
-          nativeAvailable ? (
-            <>
-              <Choice
-                label="Local profile for this tab"
-                value={active.profileId}
-                items={[
-                  ...new Set([
-                    ...localProfiles,
-                    ...[...state.tabs, ...state.bookmarks, ...state.history, ...state.closed]
-                      .filter((tab) => tab.kind === 'local')
-                      .map((tab) => tab.profileId),
-                    active.profileId,
-                    ...(native.status?.profiles.map((profile) => profile.profileId) ?? []),
-                  ]),
-                ].map((id) => ({ id, name: id }))}
-                disabled={busy || nativeOpening}
-                onChange={(id) => void act(() => localProfile(id))}
-              />
-              <Field
-                label="New local profile ID"
-                value={nativeProfileId}
-                onChangeText={setNativeProfileId}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <Action
-                label="Use new local profile"
-                disabled={busy || nativeOpening || !nativeProfileId}
-                onPress={() => void act(() => localProfile(nativeProfileId))}
-              />
-              <Text style={styles.muted}>Native WebKit · separate website data per profile</Text>
-            </>
-          ) : (
-            <Text style={styles.muted}>
-              {active.profileId === 'device'
-                ? 'This device · one shared device session (no separate local profiles)'
-                : `Native WebKit profile ${active.profileId} is required for this tab.`}
-            </Text>
-          )
-        ) : (
-          <Choice
-            label="Profile for this tab"
-            value={active.profileId}
-            items={profiles}
-            disabled={busy || !owner?.connected}
-            onChange={(id) =>
-              void act(async () => {
-                if (!owner?.connected) throw new Error('This computer is offline.')
-                await runtime.readRuntime(
-                  owner.profile,
-                  '/api/previews/browser/close',
-                  { taskId: STUDIO_BROWSER_SCOPE, tabId: active.id, profileId: active.profileId },
-                  responses.ok,
-                )
-                change((state) => ({
-                  ...state,
-                  tabs: state.tabs.map((tab) =>
-                    tab.id === active.id && tab.kind === 'remote' ? { ...tab, profileId: id } : tab,
-                  ),
-                }))
-              })
-            }
-          />
-        )}
         {native.error ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {native.error}
@@ -882,16 +816,81 @@ export function BrowserScreen() {
           }}
         />
       </ScrollView>
-      {nativeAvailable && native.status?.extensionsAvailable && (
-        <NativeExtensions
-          profileId={active.kind === 'local' ? active.profileId : 'device'}
-          tabId={active.kind === 'local' ? active.id : null}
-          visible={active.kind === 'local'}
-          onError={setError}
-        />
-      )}
       {optionsOpen && (
         <Sheet title="Browser options" onClose={() => setOptionsOpen(false)}>
+          <Text style={styles.title}>Tab profile</Text>
+          {active.kind === 'local' ? (
+            nativeAvailable ? (
+              <>
+                <Choice
+                  label="Local profile for this tab"
+                  value={active.profileId}
+                  items={[
+                    ...new Set([
+                      ...localProfiles,
+                      ...[...state.tabs, ...state.bookmarks, ...state.history, ...state.closed]
+                        .filter((tab) => tab.kind === 'local')
+                        .map((tab) => tab.profileId),
+                      active.profileId,
+                      ...(native.status?.profiles.map((profile) => profile.profileId) ?? []),
+                    ]),
+                  ].map((id) => ({ id, name: id }))}
+                  disabled={busy || nativeOpening}
+                  onChange={(id) => void act(() => localProfile(id))}
+                />
+                <Field
+                  label="New local profile ID"
+                  value={nativeProfileId}
+                  onChangeText={setNativeProfileId}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Action
+                  label="Use new local profile"
+                  disabled={busy || nativeOpening || !nativeProfileId}
+                  onPress={() => void act(() => localProfile(nativeProfileId))}
+                />
+                <Text style={styles.muted}>Native WebKit · separate website data per profile</Text>
+              </>
+            ) : (
+              <Text style={styles.muted}>
+                {active.profileId === 'device'
+                  ? 'This device · one shared device session (no separate local profiles)'
+                  : `Native WebKit profile ${active.profileId} is required for this tab.`}
+              </Text>
+            )
+          ) : (
+            <Choice
+              label="Profile for this tab"
+              value={active.profileId}
+              items={profiles}
+              disabled={busy || !owner?.connected}
+              onChange={(id) =>
+                void act(async () => {
+                  if (!owner?.connected) throw new Error('This computer is offline.')
+                  await runtime.readRuntime(
+                    owner.profile,
+                    '/api/previews/browser/close',
+                    { taskId: STUDIO_BROWSER_SCOPE, tabId: active.id, profileId: active.profileId },
+                    responses.ok,
+                  )
+                  change((state) => ({
+                    ...state,
+                    tabs: state.tabs.map((tab) =>
+                      tab.id === active.id && tab.kind === 'remote'
+                        ? { ...tab, profileId: id }
+                        : tab,
+                    ),
+                  }))
+                })
+              }
+            />
+          )}
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          ) : null}
           <Text style={styles.title}>Engine limitations</Text>
           {active.kind === 'remote' ? (
             <Text style={styles.muted}>
@@ -901,9 +900,8 @@ export function BrowserScreen() {
           ) : (
             <>
               <Text style={styles.muted}>
-                Website calls can request camera and microphone access with separate approval. On
-                iOS, sharing an arbitrary browser tab and its audio is unsupported; no capture
-                polyfill is provided.
+                Website calls can request camera and microphone access with separate approval.
+                Sharing another browser tab and its audio is unavailable in this mobile browser.
               </Text>
               {native.status &&
                 'websiteTabCaptureAvailable' in native.status &&

@@ -16,7 +16,6 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
   private(set) var lastError: String?
   private var observations: [NSKeyValueObservation] = []
   private var updateScheduled = false
-  private var pendingChanges: Set<String> = []
   weak var engine: BrowserEngine?
 
   init(id: String, profileId: String, openerTabId: String?, configuration: WKWebViewConfiguration, engine: BrowserEngine) {
@@ -46,7 +45,6 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
   }
 
   private func scheduleUpdate(_ change: String) {
-    pendingChanges.insert(change)
     if change == "loading" {
       if webView.isLoading { loadState = "loading"; lastError = nil } else if loadState == "loading" { loadState = "loaded" }
     }
@@ -56,9 +54,7 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
       MainActor.assumeIsolated {
         guard let self else { return }
         self.updateScheduled = false
-        let changes = self.pendingChanges
-        self.pendingChanges = []
-        self.engine?.tabDidUpdate(self, changes: changes)
+        self.engine?.tabDidUpdate(self)
       }
     }
   }
@@ -140,7 +136,7 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
     guard let url = navigationAction.request.url, let scheme = url.scheme?.lowercased() else { return decisionHandler(.cancel) }
     let mainFrame = navigationAction.targetFrame?.isMainFrame ?? true
     switch scheme {
-    case "http", "https", "about", "blob", "webkit-extension":
+    case "http", "https", "about", "blob":
       decisionHandler(.allow)
     case "data":
       // Top-level data: navigations are a phishing vector; subframes keep working.
@@ -199,15 +195,15 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
 
   // MARK: WKUIDelegate
 
-  /// target=_blank links, window.open (including OAuth popups) and extension-opened windows.
+  /// target=_blank links, window.open (including OAuth popups).
   /// The returned web view must use WebKit's configuration so it shares the opener's profile data
-  /// store, extension controller and window.opener relationship.
+  /// store and window.opener relationship.
   func webView(
     _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
     for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures
   ) -> WKWebView? {
     guard let engine else { return nil }
-    if let scheme = navigationAction.request.url?.scheme?.lowercased(), !["http", "https", "about", "blob", "webkit-extension"].contains(scheme) {
+    if let scheme = navigationAction.request.url?.scheme?.lowercased(), !["http", "https", "about", "blob"].contains(scheme) {
       return nil
     }
     let reason = navigationAction.navigationType == .linkActivated ? "targetBlank" : "windowOpen"

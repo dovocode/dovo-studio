@@ -2,8 +2,7 @@
 # Builds the core Swift sources into a standalone harness app, installs it on a booted
 # simulator (bundle id com.dovo.webkitbrowser.harness, separate from Dovo) and runs both phases.
 # Usage: [PHASES="1 2"] run-simulator-harness.sh <simulator-udid> [port]
-# Phases 3-5 are first-load latency diagnostics for plain WKWebViews; phase 6 is a visual
-# showcase for screenshots and needs phase 1 state.
+# Phases 3-5 are first-load latency diagnostics for plain WKWebViews; all phases use browser-only fixtures.
 set -euo pipefail
 UDID=${1:?simulator udid}
 PORT=${2:-8765}
@@ -14,11 +13,10 @@ mkdir -p $APP
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 ARCH=$(uname -m)
 xcrun -sdk iphonesimulator swiftc -parse-as-library -swift-version 5 -Onone -g \
-  -target $ARCH-apple-ios18.4-simulator -sdk $SDK -module-name DovoWebKitHarness \
+  -target $ARCH-apple-ios17.0-simulator -sdk $SDK -module-name DovoWebKitHarness \
   $HERE/../ios/BrowserSupport.swift $HERE/../ios/BrowserTab.swift $HERE/../ios/BrowserEngine.swift \
-  $HERE/../ios/BrowserExtensions.swift $HERE/../ios/ExtensionFolderPicker.swift $HERE/harness/HarnessApp.swift \
+  $HERE/harness/HarnessApp.swift \
   -o $APP/DovoWebKitHarness
-cp -R $HERE/fixture-extension $APP/fixture-extension
 cat > $APP/Info.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -29,7 +27,7 @@ cat > $APP/Info.plist <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
-  <key>MinimumOSVersion</key><string>18.4</string>
+  <key>MinimumOSVersion</key><string>17.0</string>
   <key>LSRequiresIPhoneOS</key><true/>
   <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
   <key>UILaunchScreen</key><dict/>

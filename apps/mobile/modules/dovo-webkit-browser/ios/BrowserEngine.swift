@@ -1,18 +1,13 @@
 import UIKit
 import WebKit
 
-/// One named browser profile: a persistent WKWebsiteDataStore keyed by a stable UUID and, on
-/// iOS 18.4+, a WKWebExtensionController whose persistent storage uses the same UUID.
+/// One named browser profile: a persistent WKWebsiteDataStore keyed by a stable UUID.
 @available(iOS 17.0, *)
 @MainActor
 final class BrowserProfileRuntime {
   let record: ProfileRecord
   let dataStore: WKWebsiteDataStore
   var activeTabId: String?
-  var loading: Task<Void, Error>?
-  /// ProfileExtensions on iOS 18.4+. Stored untyped because stored properties cannot carry a
-  /// newer availability than the enclosing type.
-  var extensionHost: AnyObject?
 
   init(record: ProfileRecord) {
     self.record = record
@@ -21,15 +16,11 @@ final class BrowserProfileRuntime {
 
   var id: String { record.profileId }
 
-  @available(iOS 18.4, *)
-  var extensions: ProfileExtensions? { extensionHost as? ProfileExtensions }
-
   func makeConfiguration() -> WKWebViewConfiguration {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = dataStore
     configuration.allowsInlineMediaPlayback = true
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-    if #available(iOS 18.4, *), let extensions { configuration.webExtensionController = extensions.controller }
     return configuration
   }
 
@@ -48,13 +39,6 @@ final class BrowserEngine {
   private(set) var tabs: [BrowserTab] = []
   private var cancelDialog: (() -> Void)?
   private var hostViews = NSHashTable<BrowserHostView>.weakObjects()
-  /// Staged extension folders awaiting review, keyed by staging id.
-  var staged: [String: [String: Any]] = [:]
-
-  static var extensionsAvailable: Bool {
-    if #available(iOS 18.4, *) { return true }
-    return false
-  }
 
   func emit(_ name: String, _ body: [String: Any]) {
     guard enabled else { return }
@@ -77,17 +61,7 @@ final class BrowserEngine {
     cancelDialog?()
     for tab in tabs { removeTab(tab, reason: nil) }
     tabs = []
-    if #available(iOS 18.4, *) {
-      for profile in profiles.values { profile.extensions?.shutdown() }
-    }
-    for profile in profiles.values { profile.loading?.cancel() }
     profiles = [:]
-    for (stagingId, _) in staged {
-      do { try storage.remove(storage.stagingURL(stagingId)) }
-      catch { NSLog("DovoWebKitBrowser: staging cleanup failed: %@", error.localizedDescription) }
-    }
-    staged = [:]
-    enabled = false
     refreshHostViews()
   }
 
@@ -95,7 +69,6 @@ final class BrowserEngine {
     [
       "enabled": enabled,
       "browsingAvailable": true,
-      "extensionsAvailable": Self.extensionsAvailable,
       "systemVersion": UIDevice.current.systemVersion,
       "maxTabs": BrowserLimits.maxTabs,
       "profiles": try storage.loadProfiles().values.sorted { $0.profileId < $1.profileId }.map { ["profileId": $0.profileId, "dataStoreIdentifier": $0.dataStoreIdentifier.uuidString] },
@@ -111,7 +84,6 @@ final class BrowserEngine {
     try requireEnabled()
     let profileId = try BrowserInput.id(rawId, "profileId")
     if let profile = profiles[profileId] {
-      try await profile.loading?.value
       try requireEnabled()
       guard profiles[profileId] === profile else { throw BrowserError.disabled }
       return profile
@@ -128,12 +100,6 @@ final class BrowserEngine {
     }
     let profile = BrowserProfileRuntime(record: record)
     profiles[profileId] = profile
-    if #available(iOS 18.4, *) {
-      let extensions = ProfileExtensions(profile: profile, engine: self)
-      profile.extensionHost = extensions
-      profile.loading = Task { @MainActor in try await extensions.loadInstalled() }
-      try await profile.loading?.value
-    }
     try requireEnabled()
     guard profiles[profileId] === profile else { throw BrowserError.disabled }
     return profile
@@ -145,12 +111,7 @@ final class BrowserEngine {
     var records = try storage.loadProfiles()
     let profile = try await ensureProfile(profileId)
     for tab in tabs where tab.profileId == profileId { removeTab(tab, reason: "profileRemoved") }
-    if #available(iOS 18.4, *), let extensions = profile.extensions {
-      try await extensions.removeAll()
-      extensions.shutdown()
-    }
     profiles[profileId] = nil
-    try storage.remove(storage.profileExtensionsURL(profileId))
     records[profileId] = nil
     try storage.saveProfiles(records)
     do {
@@ -169,8 +130,6 @@ final class BrowserEngine {
     guard let tab = tabs.first(where: { $0.id == tabId }) else { throw BrowserError.notFound("No open browser tab \(tabId).") }
     return tab
   }
-
-  func tabs(in profileId: String) -> [BrowserTab] { tabs.filter { $0.profileId == profileId } }
 
   func openTab(tabId rawTabId: String, profileId: String, url rawUrl: String?) async throws -> BrowserTab {
     try requireEnabled()
@@ -192,26 +151,15 @@ final class BrowserEngine {
 
   /// Opens a tab for target=_blank/window.open using WebKit's configuration for the opener.
   func openChildTab(opener: BrowserTab, configuration: WKWebViewConfiguration, reason: String) -> BrowserTab? {
-    guard enabled, tabs.count < BrowserLimits.maxTabs, profiles[opener.profileId] != nil else { return nil }
+    guard enabled, tabs.contains(where: { $0 === opener }), tabs.count < BrowserLimits.maxTabs, profiles[opener.profileId] != nil else { return nil }
     let tab = BrowserTab(id: Self.generatedId(), profileId: opener.profileId, openerTabId: opener.id, configuration: configuration, engine: self)
     return register(tab, reason: reason)
-  }
-
-  /// Opens a tab on behalf of an extension (tabs.create, options page) in the extension's profile.
-  func openExtensionTab(profile: BrowserProfileRuntime, url: URL?, opener: BrowserTab?, activate: Bool) throws -> BrowserTab {
-    try requireEnabled()
-    guard tabs.count < BrowserLimits.maxTabs else { throw BrowserError(code: "ERR_LIMIT", message: "Up to \(BrowserLimits.maxTabs) browser tabs can be open.") }
-    let tab = register(BrowserTab(id: Self.generatedId(), profileId: profile.id, openerTabId: opener?.id, configuration: profile.makeConfiguration(), engine: self), reason: "extension")
-    if let url { tab.load(url) }
-    if activate { try? activateTab(tab.id) }
-    return tab
   }
 
   private func register(_ tab: BrowserTab, reason: String) -> BrowserTab {
     tabs.append(tab)
     let profile = profiles[tab.profileId]
     if profile?.activeTabId == nil { profile?.activeTabId = tab.id }
-    if #available(iOS 18.4, *) { profile?.extensions?.tabOpened(tab) }
     refreshHostViews()
     emit("onTabCreated", tab.state.merging(["reason": reason]) { current, _ in current })
     return tab
@@ -220,9 +168,7 @@ final class BrowserEngine {
   func activateTab(_ tabId: String) throws {
     let tab = try tab(tabId)
     guard let profile = profiles[tab.profileId] else { return }
-    let previous = profile.activeTabId.flatMap { id in tabs.first { $0.id == id } }
     profile.activeTabId = tab.id
-    if previous !== tab, #available(iOS 18.4, *) { profile.extensions?.tabActivated(tab, previous: previous) }
   }
 
   /// Idempotent: closing a tab that is not open resolves without an event.
@@ -233,7 +179,7 @@ final class BrowserEngine {
     removeTab(tab, reason: "api")
   }
 
-  /// Closes from window.close() or an extension; ignores a newer tab that reused the id.
+  /// Closes from window.close(); ignores a newer tab that reused the id.
   func closeTabFromPage(_ tabId: String, instanceId: String, reason: String) {
     guard let tab = tabs.first(where: { $0.id == tabId && $0.instanceId == instanceId }) else { return }
     removeTab(tab, reason: reason)
@@ -244,16 +190,14 @@ final class BrowserEngine {
     guard let index = tabs.firstIndex(where: { $0 === tab }) else { return }
     tabs.remove(at: index)
     let profile = profiles[tab.profileId]
-    if #available(iOS 18.4, *) { profile?.extensions?.tabClosed(tab) }
     if profile?.activeTabId == tab.id { profile?.activeTabId = tabs.last { $0.profileId == tab.profileId }?.id }
     tab.close()
     refreshHostViews()
     if let reason { emit("onTabClosed", ["tabId": tab.id, "instanceId": tab.instanceId, "profileId": tab.profileId, "reason": reason]) }
   }
 
-  func tabDidUpdate(_ tab: BrowserTab, changes: Set<String>) {
+  func tabDidUpdate(_ tab: BrowserTab) {
     guard tabs.contains(where: { $0 === tab }) else { return }
-    if #available(iOS 18.4, *) { profiles[tab.profileId]?.extensions?.tabChanged(tab, changes: changes) }
     emit("onTabUpdated", tab.state)
   }
 

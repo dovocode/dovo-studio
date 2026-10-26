@@ -21,7 +21,7 @@ export const Action=({label,onPress,disabled})=><button disabled={disabled} onCl
 export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id} disabled={i.disabled}>{i.name}</option>)}</select></label>;
 export const Field=({label,value,onChangeText,onSubmitEditing,onFocus,onBlur})=><label>{label}<input aria-label={label} value={value} onFocus={onFocus} onBlur={onBlur} onChange={e=>onChangeText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSubmitEditing?.()}}/></label>;export const SearchField=Field;
 export const Sheet=forwardRef(({title,children,onClose},ref)=>{useImperativeHandle(ref,()=>({dismiss:cb=>{onClose();cb?.()}}));return <section role="dialog" aria-label={title}><h2>{title}</h2><button aria-label="Dismiss sheet" onClick={onClose}>Done</button>{children}</section>});
-export const ScreenHeader=({title})=><h1>{title}</h1>;
+export const ScreenHeader=({title,onBack})=><header><h1>{title}</h1>{onBack&&<button onClick={onBack}>Back</button>}</header>;
 export const useTheme=()=>({mode:'dark',colors:{border:'#455063'},styles:{screen:{height:'100vh',display:'flex',flexDirection:'column'},content:{padding:12},muted:{color:'#b8c4d8'},error:{color:'#ff9999'},title:{fontWeight:'bold'}}});
 export const router={push:path=>window.navigation.push(path)};
 let enabled=false;const listeners=new Set();window.setExperimental=value=>{enabled=value;listeners.forEach(f=>f())};export const useMobilePreferences=()=>({browserWorkspaceEnabled:useSyncExternalStore(f=>{listeners.add(f);return ()=>listeners.delete(f)},()=>enabled)});
@@ -32,9 +32,9 @@ const readRuntime=async(owner,path,body)=>{window.calls.push({owner:owner.id,pat
 export const useRuntime=()=>{const id=useContext(scope);return {activeId:id,connection:{address:'http://'+id+'.fixture',token:'paired'},profiles,overviews,readRuntime,readEffect:(path,body)=>Effect.tryPromise(()=>readRuntime(profiles.find(p=>p.id===id),path,body))}};export const useNavigation=()=>({navigate:(...args)=>window.navigation.push(args)});export const usePreviewActive=()=>true;
 export const WebView=forwardRef(({source,onMessage,onError},ref)=>{const frame=useRef();const owner=useContext(scope);useImperativeHandle(ref,()=>({reload:()=>window.calls.push({reload:true}),goBack:()=>{},goForward:()=>{},injectJavaScript:code=>frame.current.contentWindow.eval(code)}));window.webError=()=>onError?.({nativeEvent:{description:'Fixture page failed'}});return <iframe title={source.html?'Remote page':'Device page'} ref={frame} data-url={source.uri} onLoad={()=>{const w=frame.current.contentWindow;w.ReactNativeWebView={postMessage:data=>onMessage({nativeEvent:{data}})};if(source.html){let url='about:blank';const emit=m=>w.ReactNativeWebView.postMessage(JSON.stringify({channel:'dovo-browser',...m}));const state=()=>emit({type:'state',url,title:'Remote page',back:false,forward:false,loading:false,editable:false});w.addEventListener('message',e=>{const m=e.data;if(m.type==='connect'){const call=window.calls.findLast(c=>c.owner===owner&&c.path?.endsWith('/open'));url=call?.body.url||'about:blank';emit({type:'connection',online:true});state()}if(m.type==='input'&&m.input.type==='navigate'){url=m.input.url;setTimeout(state,25)}});emit({type:'ready'})}}} srcDoc={source.html?'Remote viewer fixture':'<title>Local fixture</title><pre id="selection">  Keep  spaces\\nSecond line </pre>'}/>});
 export const Glass=View;export const Icon=()=>null;export const IconButton=Action;export const TextInput='input';export const StyleSheet={hairlineWidth:1};export const AppState={currentState:'active'};export const Alert={alert:(...args)=>window.calls.push({alert:args})};export const useOpenAppLink=()=>()=>{throw Error('Unexpected external navigation')};export const remoteBrowserHtml='fixture';export const deviceHostMessage=message=>message;export const useScreenshotAttachment=()=>{throw Error('Shared browser must not create screenshot attachment')};
-window.nativeCalls=[];const nativeListeners=new Map(),nativeTabs=new Map(),nativeProfiles=new Set(['device']);let nativeEnabled=false;let installed=[];let nativeInstance=0;
+window.nativeCalls=[];const nativeListeners=new Map(),nativeTabs=new Map(),nativeProfiles=new Set(['device']);let nativeEnabled=false;let nativeInstance=0;
 const emit=(name,event)=>{for(const f of nativeListeners.get(name)||[])f(event)};window.nativeEmit=(name,page)=>{if(name==='onTabCreated')nativeTabs.set(page.tabId,page);if(name==='onTabClosed'&&nativeTabs.get(page.tabId)?.instanceId===page.instanceId)nativeTabs.delete(page.tabId);emit(name,page)};
-const nativeStatus=()=>({enabled:nativeEnabled,browsingAvailable:window.nativeBrowsing!==false,extensionsAvailable:true,websiteTabCaptureAvailable:false,websiteTabCaptureUnavailableReason:'No public arbitrary-tab capture API.',systemVersion:'mock',maxTabs:100,profiles:[...nativeProfiles].map(profileId=>({profileId,dataStoreIdentifier:profileId})),tabs:[...nativeTabs.values()]});
+const nativeStatus=()=>({enabled:nativeEnabled,browsingAvailable:window.nativeBrowsing!==false,websiteTabCaptureAvailable:false,websiteTabCaptureUnavailableReason:'No public arbitrary-tab capture API.',systemVersion:'mock',maxTabs:100,profiles:[...nativeProfiles].map(profileId=>({profileId,dataStoreIdentifier:profileId})),tabs:[...nativeTabs.values()]});
 const nativeModule={
 addListener:(name,f)=>{const listeners=nativeListeners.get(name)||new Set();nativeListeners.set(name,listeners);listeners.add(f);return {remove:()=>listeners.delete(f)}},
 setEnabled:async enabled=>{window.nativeCalls.push({enabled});nativeEnabled=enabled;if(!enabled)nativeTabs.clear();return nativeStatus()},getStatus:async()=>nativeStatus(),
@@ -44,15 +44,6 @@ activateTab:async tabId=>{window.nativeCalls.push({activate:tabId})},
 closeTab:async tabId=>{const tab=nativeTabs.get(tabId);nativeTabs.delete(tabId);if(tab)setTimeout(()=>emit('onTabClosed',{...tab,reason:'api'}),20)},
 navigate:async(tabId,url)=>{if(window.nativeFail)throw Error('Native fixture navigation failed');const tab={...nativeTabs.get(tabId),url,title:'Native page'};nativeTabs.set(tabId,tab);emit('onTabUpdated',tab)},
 reload:async tabId=>window.nativeCalls.push({reload:tabId}),goBack:async()=>{},goForward:async()=>{},getSelection:async()=>({text:'  Native exact\\nselection ',truncated:false}),
-pickExtensionFolder:async()=>({stagingId:'stage',name:'Fixture extension',version:'1',description:'Review fixture',manifestVersion:3,hasAction:true,hasPopup:true,hasBackground:true,hasContentScripts:false,hasOptionsPage:false,requestedPermissions:['tabs','nativeMessaging'],optionalPermissions:[],requestedMatchPatterns:['http://localhost/*'],optionalMatchPatterns:[],unsupportedPermissions:['nativeMessaging'],warnings:['Fixture warning']}),
-discardStagedExtension:async id=>window.nativeCalls.push({discard:id}),
-installExtension:async options=>{window.nativeCalls.push({install:options});const extension={extensionId:'ext',profileId:options.profileId,name:'Fixture extension',version:'1',enabled:true,loaded:true,hasAction:true,grantedPermissions:options.grant.permissions,grantedMatchPatterns:options.grant.matchPatterns,requestedPermissions:['tabs','nativeMessaging'],optionalPermissions:[],requestedMatchPatterns:['http://localhost/*'],optionalMatchPatterns:[],unsupportedPermissions:['nativeMessaging'],unsupportedApis:['nativeMessaging'],errors:[]};installed=[extension];emit('onExtensionsChanged',{profileId:options.profileId});return extension},
-listExtensions:async profileId=>installed.filter(e=>e.profileId===profileId),
-setExtensionEnabled:async(profileId,id,enabled)=>{window.nativeCalls.push({extensionEnabled:enabled});installed=installed.map(e=>({...e,enabled}));return installed[0]},
-setExtensionGrant:async(profileId,id,grant)=>{window.nativeCalls.push({grant});installed=installed.map(e=>({...e,grantedPermissions:grant.permissions,grantedMatchPatterns:grant.matchPatterns}));return installed[0]},
-removeExtension:async()=>{window.nativeCalls.push({removeExtension:true});installed=[]},
-performExtensionAction:async(profileId,extensionId,tabId)=>window.nativeCalls.push({popup:{profileId,extensionId,tabId}}),closeExtensionPopup:async()=>{},
-resolveExtensionPermissionPrompt:async(requestId,grant)=>window.nativeCalls.push({prompt:requestId,grant}),
 };export const requireOptionalNativeModule=()=>window.fixtureNative?nativeModule:null;export const requireNativeView=()=>({tabId})=><div data-native-tab={tabId}>Native view adapter</div>;
 export const useApplicationState=React.useState;
 export const runClientEffect=effect=>Effect.runPromise(effect);import {Effect} from 'effect';
@@ -183,7 +174,9 @@ try {
   await button('Tabs (1)').click()
   await page.getByLabel('Computer for new tab').selectOption('lan')
   await button('New tab').click()
+  await button('Browser options').click()
   await page.getByLabel('Profile for this tab').selectOption('work')
+  await page.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   await page.waitForFunction(() =>
     [...document.querySelectorAll('button')].some(
       (button) => button.textContent === 'Keyboard' && !button.disabled,
@@ -318,9 +311,7 @@ try {
   await nativeButton('Browser options').click()
   await nativePage.getByText('Engine limitations', { exact: true }).waitFor()
   await nativePage.getByText('No public arbitrary-tab capture API.', { exact: true }).waitFor()
-  await nativePage
-    .getByText(/sharing an arbitrary browser tab and its audio is unsupported/)
-    .waitFor()
+  await nativePage.getByText(/Sharing another browser tab and its audio is unavailable/).waitFor()
   await nativePage.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   assert.equal(await nativePage.getByText('Engine limitations', { exact: true }).count(), 0)
   const originalTab = await nativePage.locator('[data-native-tab]').getAttribute('data-native-tab')
@@ -331,6 +322,8 @@ try {
   const openedBeforeThread = await nativePage.evaluate(
     () => window.nativeCalls.filter((c) => c.open).length,
   )
+  await nativePage.getByRole('banner').getByRole('button', { name: 'Back', exact: true }).click()
+  assert.deepEqual(await nativePage.evaluate(() => window.navigation.at(-1)), ['tasks'])
   await nativePage.evaluate(() => window.showBrowser(false))
   await nativePage.getByText('Thread fixture', { exact: true }).waitFor()
   assert.equal(await nativePage.locator('[data-native-tab]').count(), 0)
@@ -345,7 +338,7 @@ try {
       profileId: 'device',
       url: 'http://localhost:3000/worker',
       title: 'Worker tab',
-      reason: 'extension',
+      reason: 'windowOpen',
       openerTabId: null,
       loadState: 'loaded',
       progress: 1,
@@ -378,8 +371,11 @@ try {
     await nativePage.evaluate(() => window.nativeCalls.filter((c) => c.open).length),
     openedBeforeThread,
   )
+  assert.equal(await nativePage.getByLabel('New local profile ID').count(), 0)
+  await nativeButton('Browser options').click()
   await nativePage.getByLabel('New local profile ID').fill('Work_1')
   await nativeButton('Use new local profile').click()
+  await nativePage.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   await nativePage.waitForFunction(() =>
     window.nativeCalls.some((c) => c.open?.profileId === 'Work_1'),
   )
@@ -446,7 +442,9 @@ try {
       }),
     originalTab,
   )
+  await nativeButton('Browser options').click()
   await nativePage.getByLabel('Local profile for this tab').selectOption('Work_1')
+  await nativePage.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   assert.equal(
     await nativePage.locator('[data-native-tab]').getAttribute('data-native-tab'),
     originalTab,
@@ -458,119 +456,7 @@ try {
     .fill('http://localhost:3000/fail')
   await nativeButton('Go').click()
   await nativePage.getByText('Native fixture navigation failed', { exact: true }).waitFor()
-  await nativeButton('WebKit WebExtensions').click()
-  await nativeButton('Choose extension folder').click()
-  await nativePage.getByRole('dialog', { name: 'Review Fixture extension' }).waitFor()
-  assert.equal(
-    await nativePage
-      .getByRole('checkbox', { name: 'tabs', exact: true })
-      .getAttribute('aria-checked'),
-    'false',
-  )
-  assert.equal(
-    await nativePage.getByRole('checkbox', { name: 'nativeMessaging', exact: true }).count(),
-    0,
-  )
-  await nativeButton('Cancel review').click()
-  await nativePage.waitForFunction(() => window.nativeCalls.some((c) => c.discard === 'stage'))
-  assert.equal(await nativePage.evaluate(() => window.nativeCalls.some((c) => c.install)), false)
-  await nativeButton('Choose extension folder').click()
-  await nativePage.getByRole('checkbox', { name: 'tabs', exact: true }).click()
-  await nativeButton('Install with selected grants').click()
-  await nativePage.waitForFunction(() => window.nativeCalls.some((c) => c.install))
-  assert.deepEqual(
-    await nativePage.evaluate(() => window.nativeCalls.find((c) => c.install).install.grant),
-    { permissions: ['tabs'], matchPatterns: [] },
-  )
-  await nativeButton('Review permissions for Fixture extension').click()
-  await nativePage.getByRole('checkbox', { name: 'tabs', exact: true }).click()
-  await nativeButton('Save selected grants').click()
-  await nativePage.waitForFunction(() => window.nativeCalls.some((c) => c.grant && !c.prompt))
-  assert.deepEqual(
-    await nativePage.evaluate(() => window.nativeCalls.find((c) => c.grant && !c.prompt).grant),
-    { permissions: [], matchPatterns: [] },
-  )
-  await nativePage
-    .getByText('Permission changes apply on the next page load. Reload the page to apply them.', {
-      exact: true,
-    })
-    .waitFor()
-  await nativeButton('Open Fixture extension action').click()
-  await nativePage.waitForFunction(() => window.nativeCalls.some((c) => c.popup))
-  await nativeButton('Disable Fixture extension').click()
-  assert.equal(
-    await nativePage.evaluate(() => window.nativeCalls.some((c) => 'extensionEnabled' in c)),
-    false,
-  )
-  await nativeButton('Confirm extension change').click()
-  await nativePage.waitForFunction(() =>
-    window.nativeCalls.some((c) => c.extensionEnabled === false),
-  )
-  await nativeButton('Remove Fixture extension').click()
-  assert.equal(
-    await nativePage.evaluate(() => window.nativeCalls.some((c) => c.removeExtension)),
-    false,
-  )
-  await nativeButton('Confirm extension change').click()
-  await nativePage.waitForFunction(() => window.nativeCalls.some((c) => c.removeExtension))
-  await nativePage.evaluate(() =>
-    window.nativeEmit('onExtensionPermissionPrompt', {
-      requestId: 'request',
-      profileId: 'Work_1',
-      extensionId: 'ext',
-      tabId: null,
-      permissions: ['tabs'],
-      matchPatterns: ['http://localhost/*'],
-      urls: ['http://localhost/'],
-    }),
-  )
-  await nativePage.getByRole('checkbox', { name: 'http://localhost/*', exact: true }).click()
-  await nativeButton('Allow checked access').click()
-  await nativePage.waitForFunction(() => window.nativeCalls.some((c) => c.prompt))
-  assert.deepEqual(
-    await nativePage.evaluate(() => window.nativeCalls.find((c) => c.prompt).grant),
-    { permissions: [], matchPatterns: ['http://localhost/*'] },
-  )
-  await nativePage.evaluate(() =>
-    window.nativeEmit('onExtensionPermissionPrompt', {
-      requestId: 'deny',
-      profileId: 'Work_1',
-      extensionId: 'ext',
-      tabId: null,
-      permissions: ['tabs'],
-      matchPatterns: [],
-      urls: [],
-    }),
-  )
-  await nativePage
-    .getByRole('dialog', { name: 'Extension requests more access' })
-    .getByRole('button', { name: 'Dismiss sheet', exact: true })
-    .click()
-  await nativePage.waitForFunction(() => window.nativeCalls.some((c) => c.prompt === 'deny'))
-  assert.deepEqual(
-    await nativePage.evaluate(() => window.nativeCalls.find((c) => c.prompt === 'deny').grant),
-    { permissions: [], matchPatterns: [] },
-  )
-  await nativePage.evaluate(() =>
-    window.nativeEmit('onExtensionPermissionPrompt', {
-      requestId: 'url-only',
-      profileId: 'Work_1',
-      extensionId: 'ext',
-      tabId: null,
-      permissions: [],
-      matchPatterns: [],
-      urls: ['http://localhost:3000/exact'],
-    }),
-  )
-  await nativePage
-    .getByRole('checkbox', { name: 'http://localhost:3000/exact', exact: true })
-    .click()
-  await nativeButton('Allow checked access').click()
-  await nativePage.waitForFunction(() => window.nativeCalls.some((c) => c.prompt === 'url-only'))
-  assert.deepEqual(
-    await nativePage.evaluate(() => window.nativeCalls.find((c) => c.prompt === 'url-only').grant),
-    { permissions: [], matchPatterns: ['http://localhost:3000/exact'] },
-  )
+  assert.equal(await nativeButton('WebKit WebExtensions').count(), 0)
   await nativePage.evaluate(() => window.setExperimental(false))
   await nativePage.waitForFunction(() => window.nativeCalls.some((c) => c.enabled === false))
   assert.equal(await nativePage.locator('[data-native-tab]').count(), 0)
@@ -591,7 +477,9 @@ try {
   })
   await nativePage.addScriptTag({ content: built.outputFiles[0].text })
   await nativePage.evaluate(() => window.setExperimental(true))
+  await nativeButton('Browser options').click()
   await nativePage.getByText(/one shared device session/).waitFor()
+  await nativePage.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   await nativePage
     .getByLabel('Search or enter address', { exact: true })
     .fill('http://localhost:3000/legacy')

@@ -7,15 +7,7 @@ import {
 } from '../../modules/dovo-webkit-browser'
 
 export { DovoWebKitBrowser, DovoWebKitBrowserView }
-export type {
-  BrowserTabState,
-  DovoWebKitBrowserModule,
-  ExtensionGrant,
-  ExtensionPermissionReview,
-  ExtensionPermissionPrompt,
-  InstalledExtension,
-  StagedExtension,
-} from '../../modules/dovo-webkit-browser'
+export type { BrowserTabState, DovoWebKitBrowserModule } from '../../modules/dovo-webkit-browser'
 
 type ClosedTab = { tabId: string; profileId: string; instanceId: string }
 type Capability = { status: BrowserStatus | null; error: string; closedTabs: ClosedTab[] }

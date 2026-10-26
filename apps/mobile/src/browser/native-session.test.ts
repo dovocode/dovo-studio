@@ -5,7 +5,6 @@ it('serializes live tab reuse and ignores closing unlaunched saved tabs', async 
   const status: BrowserStatus = {
     enabled: true,
     browsingAvailable: true,
-    extensionsAvailable: false,
     websiteTabCaptureAvailable: false,
     websiteTabCaptureUnavailableReason: 'Unsupported on iOS',
     systemVersion: 'mock',
