@@ -407,7 +407,8 @@ it('keeps children working after a reply and delivers completion once without es
     })
     expect(
       s.store.task(parent.id).messages.filter((message) => message.subagentResultId === childId),
-    ).toHaveLength(1)
+    ).toHaveLength(0)
+    expect(s.store.task(parent.id).queue ?? []).toEqual([])
     expect(s.store.task(parent.id).lastPromptAt).toBe(lastPromptAt)
     expect(s.store.task(childId).delegation?.completion).toBe('queued')
     expect(receivedPrompt).toContain('Child async answer')
@@ -696,7 +697,7 @@ it.each(['failed', 'cancelled'] as const)(
   },
 )
 
-it('holds asynchronous results in a paused queue and lets a read remove the pending wake', async () => {
+it('holds asynchronous results in a paused inbox and lets a read remove the pending wake', async () => {
   const s = await setup()
   const started = barrier()
   const release = barrier()
@@ -736,7 +737,7 @@ it('holds asynchronous results in a paused queue and lets a read remove the pend
     ).done
     release.resolve()
     await waitForRuntime(() =>
-      expect(s.store.task(parent.id).queue?.[0]?.subagentResultId).toBe(childId),
+      expect(s.store.task(parent.id).subagentInbox?.[0]?.subagentResultId).toBe(childId),
     )
     expect(parentTurns).toBe(1)
     expect(s.store.task(parent.id).queuePaused).toBe(true)
@@ -745,10 +746,11 @@ it('holds asynchronous results in a paused queue and lets a read remove the pend
     )
     expect(s.store.task(childId).delegation?.completion).toBe('queued')
     expect(s.tasks.subagentResult(parent.id, childId).result).toBe('Paused result')
-    expect(s.store.task(parent.id).queue).toEqual([])
+    expect(s.store.task(parent.id).queue ?? []).toEqual([])
     expect(s.store.task(childId).delegation?.completion).toBe('read')
+    expect(s.store.task(parent.id).subagentInbox).toEqual([])
     await s.tasks.runScheduled()
-    expect(s.store.task(parent.id).queue).toEqual([])
+    expect(s.store.task(parent.id).queue ?? []).toEqual([])
     expect(parentTurns).toBe(1)
   } finally {
     release.resolve()
@@ -877,7 +879,7 @@ it('waits for nested results to be incorporated before delivering the child to t
   }
 })
 
-it('retains a completion when the queue is full and retries delivery once space is available', async () => {
+it('delivers a completion independently of a full user queue', async () => {
   const s = await setup()
   const started = barrier()
   const release = barrier()
@@ -916,14 +918,14 @@ it('retains a completion when the queue is full and retries delivery once space 
     ).done
     release.resolve()
     await waitForRuntime(() => expect(s.store.task(childId).activeRunId).toBeUndefined())
-    expect(s.store.task(childId).delegation?.completion).toBe('pending')
-    s.tasks.queue.change(parent.id, 'remove', 'queued-0')
-    await s.tasks.runScheduled()
     expect(s.store.task(childId).delegation?.completion).toBe('queued')
-    expect(
-      s.store.task(parent.id).queue?.filter((message) => message.subagentResultId === childId),
-    ).toHaveLength(1)
+    expect(s.store.task(parent.id).queue).toHaveLength(50)
+    expect(s.store.task(parent.id).subagentInbox).toHaveLength(1)
     await s.tasks.runScheduled()
+    expect(s.store.task(parent.id).queue).toHaveLength(50)
+    expect(s.store.task(parent.id).subagentInbox).toHaveLength(1)
+    expect(s.tasks.subagentResult(parent.id, childId).result).toBe('Full queue result')
+    expect(s.store.task(parent.id).subagentInbox).toEqual([])
     expect(s.store.task(parent.id).queue).toHaveLength(50)
   } finally {
     release.resolve()
@@ -971,13 +973,17 @@ it.each([false, true])(
     s.tasks.continueAfterRestart(() => automatic)
     expect(s.tasks.subagentResult(root.id, child.id, false).running).toBe(false)
     expect(
-      s.store.task(root.id).queue?.filter((message) => message.subagentResultId === child.id),
+      s.store
+        .task(root.id)
+        .subagentInbox?.filter((message) => message.subagentResultId === child.id),
     ).toHaveLength(1)
     expect(s.store.task(child.id).queue ?? []).toEqual([])
     expect(s.store.task(grandchild.id).status).toBe('cancelled')
     s.tasks.continueAfterRestart(() => automatic)
     expect(
-      s.store.task(root.id).queue?.filter((message) => message.subagentResultId === child.id),
+      s.store
+        .task(root.id)
+        .subagentInbox?.filter((message) => message.subagentResultId === child.id),
     ).toHaveLength(1)
   },
 )
@@ -1466,4 +1472,89 @@ it('revokes pending approvals and stops both an active parent and child when the
     'ask',
   )
   expect(await stopped).toMatchObject({ message: expect.stringContaining('Access was tightened') })
+})
+
+it('migrates legacy child notifications to the inbox without reordering user prompts', async () => {
+  const s = await setup()
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  s.store.updateTask(parent.id, (task) => ({
+    ...task,
+    status: 'review',
+    queuePaused: true,
+    draft: 'Keep my draft',
+    queue: [
+      { id: 'first', role: 'user', text: 'First', createdAt: '' },
+      {
+        id: 'legacy-result',
+        role: 'user',
+        text: 'Saved child answer',
+        subagentResultId: 'old-child',
+        createdAt: '',
+      },
+      { id: 'last', role: 'user', text: 'Last', createdAt: '' },
+    ],
+  }))
+  await s.tasks.runScheduled()
+  await s.tasks.runScheduled()
+  expect(s.store.task(parent.id).queue?.map((message) => message.id)).toEqual(['first', 'last'])
+  expect(s.store.task(parent.id).subagentInbox?.map((message) => message.id)).toEqual([
+    'legacy-result',
+  ])
+  expect(s.store.task(parent.id).draft).toBe('Keep my draft')
+  expect(s.store.task(parent.id).queuePaused).toBe(true)
+  expect(s.store.task(parent.id).messages.some((message) => message.subagentResultId)).toBe(false)
+})
+
+it('follows up in the same child conversation without duplicate work or stale completion receipts', async () => {
+  const s = await setup()
+  let childTurns = 0
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (run.agent.provider === 'claude') {
+        childTurns++
+        run.onText(`Answer ${childTurns}`)
+        return
+      }
+      const parentId = taskId(run)
+      const child = s.tasks.subagentSpawn({
+        taskId: parentId,
+        key: 'review',
+        name: 'Review',
+        prompt: 'First review',
+        provider: 'claude',
+      })
+      expect((await s.tasks.subagentWait(parentId, child.id)).result).toBe('Answer 1')
+      await s.tasks.subagentSend(parentId, child.id, 'follow-up', 'Review the fix')
+      await s.tasks.subagentSend(parentId, child.id, 'follow-up', 'Review the fix')
+      await expect(
+        s.tasks.subagentSend(parentId, child.id, 'follow-up', 'Changed prompt'),
+      ).rejects.toThrow('different text')
+      expect((await s.tasks.subagentWait(parentId, child.id)).result).toBe('Answer 2')
+      expect(
+        s.store
+          .task(child.id)
+          .messages.filter((message) => message.role === 'user')
+          .map((message) => message.text),
+      ).toEqual(['First review', 'Review the fix'])
+      expect(s.store.task(parentId).queue ?? []).toEqual([])
+      expect(s.store.task(parentId).subagentInbox ?? []).toEqual([])
+      run.onText('Both reviews handled')
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  await (
+    await s.tasks.start(parent.id)
+  ).done
+  expect(childTurns).toBe(2)
 })

@@ -113,3 +113,18 @@ it('waits for a finished child that is still releasing its run', () => {
   s.store.updateTask('child', (task) => ({ ...task, activeRunId: undefined }))
   expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
 })
+
+it('keeps ancestors waiting while a child has unread inbox results', () => {
+  const s = setup([
+    task('parent'),
+    {
+      ...task('child', 'parent'),
+      subagentInbox: [
+        { id: 'result', role: 'user', text: 'Answer', subagentResultId: 'nested', createdAt: '' },
+      ],
+    },
+  ])
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBe(true)
+  s.store.updateTask('child', (task) => ({ ...task, subagentInbox: [] }))
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
+})

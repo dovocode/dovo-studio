@@ -258,7 +258,7 @@ const tools: Array<
   {
     name: 'subagent_spawn',
     description:
-      'Launch a Dovo child agent with its own conversation. Omit targets to share this checkout; checkoutId selects an inherited linked checkout. repositoryId selects a project with its own checkout; runtimeId selects a paired computer (Studio Threads required). General threads can coordinate either kind. Discover IDs with studio_discover or subagent_list. Supply the goal, context and constraints in prompt. Access cannot exceed the parent. Targeted children use the target computer’s configurations, never copied credentials. Use the same key and arguments after a timeout; target keys remain stable across parent turns. Progress and final answers return to this thread. Explicit Stop requests cancellation; offline targets remain pending until confirmation. Use a fresh key for new work.',
+      'Launch a Dovo child agent with its own conversation. Omit targets to share this checkout; checkoutId selects an inherited linked checkout. repositoryId selects a project with its own checkout; runtimeId selects a paired computer (Studio Threads required). General threads can coordinate either kind. Discover IDs with studio_discover or subagent_list. Supply the goal, context and constraints in prompt. Access cannot exceed the parent. Targeted children use the target computer’s configurations, never copied credentials. Use the same key and arguments after a timeout; target keys remain stable across parent turns. Progress is available through subagent_list/read/wait. Final answers arrive in a durable subagent inbox, outside the user prompt queue. Explicit Stop requests cancellation; offline targets remain pending until confirmation. Use a fresh key for new work.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -328,7 +328,7 @@ const tools: Array<
   {
     name: 'subagent_list',
     description:
-      'List local and targeted child agents, available projects, inherited linked checkouts and named configurations. Optional runtimeId and repositoryId discover configurations on a paired computer/project. Returns metadata only; use read or wait for answers.',
+      'List local and targeted child agents, available projects, inherited linked checkouts and named configurations. Optional runtimeId and repositoryId discover configurations on a paired computer/project. Returns metadata and unread inbox references; use read or wait with an inbox id for answers.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -337,13 +337,27 @@ const tools: Array<
       },
     },
   },
+  {
+    name: 'subagent_send',
+    description:
+      'Send a follow-up to an owned child, reusing its conversation. Does not interrupt its active turn. Use a stable key and identical prompt on retries. Stopped children require a fresh spawn.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        id: { type: 'string' as const },
+        key: { type: 'string' as const },
+        prompt: { type: 'string' as const },
+      },
+      required: ['id', 'key', 'prompt'],
+    },
+  },
   ...(['read', 'wait', 'cancel'] as const).map((action) => ({
     name: `subagent_${action}`,
     description:
       action === 'wait'
         ? 'Wait up to 20 seconds for a child’s final answer. If still running, wait again. Returns only the answer and status, excluding raw events and tool output.'
         : action === 'read'
-          ? 'Read a child’s status and final answer.'
+          ? 'Read a child’s status and final answer; consumes its unread inbox notification without adding chat messages.'
           : 'Stop a child agent belonging to this parent thread.',
     inputSchema: {
       type: 'object' as const,
@@ -837,6 +851,8 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             repositoryId: input.repositoryId,
           }),
         )
+      case 'subagent_send':
+        return text(await post('/api/subagents/send', { ...input, taskId: task, parentRunId }))
       case 'subagent_read':
       case 'subagent_wait':
       case 'subagent_cancel':

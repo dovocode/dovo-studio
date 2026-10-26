@@ -170,6 +170,43 @@ export class TaskQueue {
     )
     return true
   }
+  /** Child output is internal input, never an editable user prompt or draft mutation. */
+  addSubagentResult(id: string, messageId: string, text: string, childId: string) {
+    const task = this.store.taskSummary(id)
+    const saved = task.subagentInbox?.find((message) => message.id === messageId)
+    if (saved) {
+      if (saved.text !== text || saved.subagentResultId !== childId)
+        throw new HttpError(409, 'This subagent notification id is already in use')
+      return false
+    }
+    const receipt = fingerprint(`${childId}\n${text}`, [])
+    const accepted = this.store.taskSubmission(id, messageId)
+    if (accepted) {
+      if (accepted !== receipt)
+        throw new HttpError(409, 'This subagent notification id is already in use')
+      return false
+    }
+    if ((task.subagentInbox?.length ?? 0) >= 100)
+      throw new HttpError(409, 'Subagent inbox is full; read results before collecting more')
+    this.store.updateTask(
+      id,
+      (current) => ({
+        ...current,
+        subagentInbox: [
+          ...(current.subagentInbox ?? []),
+          {
+            id: messageId,
+            role: 'user',
+            text,
+            subagentResultId: childId,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+      { id: messageId, fingerprint: receipt },
+    )
+    return true
+  }
   duplicate(id: string, messageId: string, duplicateMessageId: string) {
     const task = this.store.taskSummary(id)
     const receipt = createHash('sha256')
@@ -272,7 +309,17 @@ export class TaskQueue {
       id,
       (t) => {
         const message = nextQueuedMessage(t)
-        if (t.queue?.length && !message)
+        const pendingSubagentInputs = [
+          ...new Map(
+            [
+              ...(!t.runAttempt?.promptAccepted ? (t.runAttempt?.subagentInputs ?? []) : []),
+              ...(t.subagentInbox ?? []),
+            ].map((input) => [input.id, input]),
+          ).values(),
+        ]
+        // Compaction accepts no normal prompt; keep results for the following agent turn.
+        const subagentInputs = message?.text.trim() === '/compact' ? [] : pendingSubagentInputs
+        if (t.queue?.length && !message && !subagentInputs.length)
           throw new HttpError(409, 'Resume the first queued message to continue')
         const queue = t.queue?.filter((item) => item.id !== message?.id) ?? []
         const settings = message?.turnSettings
@@ -299,12 +346,14 @@ export class TaskQueue {
                 modelSelection: undefined,
               }
             : {}),
+          subagentInbox: subagentInputs.length ? [] : pendingSubagentInputs,
           status: 'running',
           runPhase: 'preparing',
           ...(attemptId ? { activeRunId: attemptId } : {}),
           runAttempt: {
             runId,
             inputMessageIds: message ? [message.id] : [],
+            ...(subagentInputs.length ? { subagentInputs } : {}),
             promptAccepted: false,
             ...(message?.turnSettings ? { turnSettings: message.turnSettings } : {}),
           },
