@@ -1,8 +1,19 @@
 import { browserQuote } from './shared-browser-tabs'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Copy, MessageSquarePlus } from 'lucide-react'
-import { watchRuntimeSettled, workspacePatchResultSchema } from '@dovo/protocol'
-import { updateTask, useStudioHost, useWorkspace } from '@dovo/studio-core'
+import {
+  browserContextActionSchema,
+  decodeResult,
+  watchRuntimeSettled,
+  workspacePatchResultSchema,
+} from '@dovo/protocol'
+import {
+  updateTask,
+  createTask,
+  resolveTaskDefaults,
+  useStudioHost,
+  useWorkspace,
+} from '@dovo/studio-core'
 import {
   Button,
   Dialog,
@@ -10,6 +21,11 @@ import {
   DialogTitle,
   DialogDescription,
   Input,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
 } from '@dovo/studio-ui'
 import { collectTasks, taskSources, type TaskEntry } from '../list/task-collection'
 
@@ -31,6 +47,8 @@ export function SharedBrowserActions({
   const host = useStudioHost()
   const [selection, setSelection] = useState<Selection | null>(null)
   const [query, setQuery] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const pending = useRef(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -38,6 +56,24 @@ export function SharedBrowserActions({
     setError('')
     setNotice('')
   }, [tabKey])
+  useEffect(
+    () =>
+      host.onBrowserContextAction?.((input) => {
+        const parsed = decodeResult(browserContextActionSchema, input)
+        if (!parsed.success) return
+        const action = parsed.data
+        if (action.key !== tabKey || busy) return
+        setError('')
+        setNotice('')
+        setQuery('')
+        setSelection({
+          text: action.action === 'selection' ? action.text : '',
+          url: action.url,
+          title: action.title,
+        })
+      }),
+    [host.onBrowserContextAction, tabKey, busy],
+  )
   const open = !!selection
   const entries = useMemo(
     () => (open ? collectTasks(taskSources(store)) : []),
@@ -86,8 +122,30 @@ export function SharedBrowserActions({
       setBusy(false)
     }
   }
+  const syncDraft = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        store.flush(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  'The draft is kept in this window, but syncing is taking too long. Reconnect Studio before opening it in another window.',
+                ),
+              ),
+            10000,
+          )
+        }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
   const insert = async (entry: TaskEntry) => {
-    if (!selection || busy) return
+    if (!selection || pending.current) return
+    pending.current = true
     setBusy(true)
     setError('')
     try {
@@ -103,7 +161,13 @@ export function SharedBrowserActions({
           }))
         })
         setSelection(null)
-        await store.flush()
+        if (host.browserWindowId) await syncDraft()
+        else
+          void store
+            .flush()
+            .catch((cause: unknown) =>
+              setError(`The draft is kept locally, but has not synced: ${String(cause)}`),
+            )
       } else {
         const profile = store.runtimeRegistry.profiles.find(
           (profile) => profile.id === entry.source.runtimeId,
@@ -152,6 +216,46 @@ export function SharedBrowserActions({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
+      pending.current = false
+      setBusy(false)
+    }
+  }
+  const createDraft = async () => {
+    if (!selection || pending.current || !store.connected) return
+    const repository = store.workspace.repositories.find((repo) => repo.id === projectId)
+    if (!repository) {
+      setError('Choose a project for the draft.')
+      return
+    }
+    pending.current = true
+    setBusy(true)
+    setError('')
+    try {
+      const task = {
+        ...createTask({
+          title: selection.title.slice(0, 100) || 'Browser selection',
+          objective: '',
+          agentId: '',
+          ...resolveTaskDefaults(store.snapshot?.defaults, repository),
+          repositoryId: repository.id,
+        }),
+        draft: browserQuote(selection),
+      }
+      store.setWorkspace((workspace) => ({ ...workspace, tasks: [task, ...workspace.tasks] }))
+      setSelection(null)
+      if (host.browserWindowId) await syncDraft()
+      else
+        void store
+          .flush()
+          .catch((cause: unknown) =>
+            setError(`The draft is kept locally, but has not synced: ${String(cause)}`),
+          )
+      setNotice('Created a draft thread. Review before sending.')
+      host.openThread?.({ runtimeId: store.activeRuntimeId, threadId: task.id, title: task.title })
+    } catch (cause) {
+      setError(String(cause))
+    } finally {
+      pending.current = false
       setBusy(false)
     }
   }
@@ -228,6 +332,35 @@ export function SharedBrowserActions({
               {selection?.title}
               <br />
               {selection?.url}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2 border-b pb-3">
+            <Select
+              value={projectId}
+              onValueChange={setProjectId}
+              disabled={busy || !store.connected}
+            >
+              <SelectTrigger aria-label="Project for new draft thread" className="min-w-0 flex-1">
+                <SelectValue placeholder="Choose project on this computer…" />
+              </SelectTrigger>
+              <SelectContent>
+                {store.workspace.repositories.map((repo) => (
+                  <SelectItem key={repo.id} value={repo.id}>
+                    {repo.kind === 'scratch' ? 'General' : repo.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              disabled={busy || !store.connected || !projectId}
+              onClick={() => void createDraft()}
+            >
+              Create draft thread
+            </Button>
+          </div>
+          {busy && (
+            <p role="status" className="text-xs text-muted-foreground">
+              Saving draft…
             </p>
           )}
           <Input

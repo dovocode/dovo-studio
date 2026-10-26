@@ -81,6 +81,9 @@ export interface StudioHostApi {
   browserWindowId?: string
   openBrowserWindow?: () => Promise<void>
   browser?: import('@dovo/protocol').BrowserBridge
+  onBrowserContextAction?: (
+    listener: (action: import('@dovo/protocol').BrowserContextAction) => void,
+  ) => () => void
   browserExtensions?: import('@dovo/protocol').BrowserExtensionBridge
   /** Opens a recognized forge PR in native details; false leaves normal link handling. */
   openPullLink?: (url: string, origin?: { runtimeId?: string; repositoryId?: string }) => boolean

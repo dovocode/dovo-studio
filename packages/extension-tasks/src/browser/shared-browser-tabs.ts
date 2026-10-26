@@ -7,6 +7,7 @@ export type BrowserTab = {
   kind: 'web' | 'remote'
   profileId: string
   runtimeId?: string
+  favicon?: string
   visitedAt?: number
 }
 const tabSchema = Schema.Struct({
@@ -16,6 +17,7 @@ const tabSchema = Schema.Struct({
   kind: Schema.Literals(['web', 'remote']),
   profileId: Schema.String,
   runtimeId: Schema.optional(Schema.String),
+  favicon: Schema.optional(Schema.String),
   visitedAt: Schema.optional(Schema.Number),
 })
 const schema = Schema.Struct({

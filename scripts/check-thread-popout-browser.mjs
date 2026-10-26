@@ -39,9 +39,9 @@ function Thread({entityId,threadParent}){const value=useWorkspace(),host=useStud
 window.taskViewLoads=0;
 window.featureLoads={};
 function Feature({view,threadConnection}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;window.threadConnection=threadConnection;return <output id="feature">{view+'|'+value.activeRuntimeId}</output>}
-const extensions=[defineStudioExtension({id:'dovo.tasks',name:'Tasks',version:'1'},[{id:'tasks',title:'Tasks',order:0,load:async()=>{window.taskViewLoads++;return {default:Thread}}}]),...['pulls','agents','runtime'].map(view=>defineStudioExtension({id:'fixture.'+view,name:view,version:'1'},[{id:view,title:view,order:1,load:async()=>{window.featureLoads[view]=(window.featureLoads[view]??0)+1;return {default:props=> <Feature view={view} {...props}/>}}}]))];
-const target=location.hash?{runtimeId:profiles[location.hash==='#local'?0:1].id,taskId:'thread',title:'Popped thread'}:undefined;
-createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensions={extensions} threadWindow={target} popOutThread={async target=>{window.popped.push(target)}}/></StrictMode>);
+const extensions=[defineStudioExtension({id:'dovo.tasks',name:'Tasks',version:'1'},[{id:'tasks',title:'Tasks',order:0,load:async()=>{window.taskViewLoads++;return {default:Thread}}}]),...['pulls','agents','runtime','browser'].map(view=>defineStudioExtension({id:'fixture.'+view,name:view,version:'1'},[{id:view,title:view,order:1,load:async()=>{window.featureLoads[view]=(window.featureLoads[view]??0)+1;return {default:props=> <Feature view={view} {...props}/>}}}]))];
+const target=location.hash&&location.hash!=='#browser'?{runtimeId:profiles[location.hash==='#local'?0:1].id,taskId:'thread',title:'Popped thread'}:undefined;
+createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensions={extensions} browserWindowId={location.hash==='#browser'?'test-browser':undefined} threadWindow={target} popOutThread={async target=>{window.popped.push(target)}}/></StrictMode>);
 `,
     },
     bundle: true,
@@ -129,6 +129,33 @@ try {
   await main.goto('http://popout.test/')
   await main.addScriptTag({ content: built.outputFiles[0].text })
   await main.waitForFunction(() => window.store?.ready)
+  const browserWindow = await context.newPage()
+  browserWindow.on('pageerror', (error) => errors.push(error.message))
+  await browserWindow.goto('http://popout.test/#browser')
+  await browserWindow.addScriptTag({ content: built.outputFiles[0].text })
+  await browserWindow.waitForFunction(() =>
+    document.getElementById('feature')?.textContent?.startsWith('browser|'),
+  )
+  assert.equal(await browserWindow.getByRole('navigation', { name: 'Main navigation' }).count(), 0)
+  await browserWindow.evaluate(() => {
+    window.host.navigate({ viewId: 'runtime' })
+    window.host.openThread({
+      runtimeId: 'http://host0.lan:8787',
+      threadId: 'thread',
+      title: 'Selection draft',
+    })
+  })
+  await browserWindow.waitForFunction(() => window.popped.length === 1)
+  assert.equal(
+    await browserWindow.locator('#feature').textContent(),
+    'browser|http://host0.lan:8787',
+  )
+  assert.equal(
+    await browserWindow.locator('#selection').count(),
+    0,
+    'Thread opens outside browser window',
+  )
+  await browserWindow.close()
   // Real extension activation in desktop StrictMode, including multiple screens and live updates.
   await main.waitForFunction(() => window.host && document.getElementById('selection'))
   await main.evaluate(() => {

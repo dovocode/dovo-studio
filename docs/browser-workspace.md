@@ -46,17 +46,21 @@ sessions; saved inactive tabs do not reserve those sessions.
 ## Desktop extensions
 
 In a local desktop Browser tab, open **Browser options → Browser extensions** and load an unpacked
-Manifest V3 folder. Review its permissions and website access before loading. Extensions belong to
-that Browser profile, can be enabled/disabled or removed, and can expose native action popups. They
-are not loaded into thread previews or paired-runtime browsers. Turning Browser workspace off
-unloads extensions, stops their workers and closes the affected native pages.
+Manifest V3 folder, or paste a Chrome Web Store detail URL/extension ID. Review its permissions and
+website access before loading. Extensions belong to that Browser profile, can be enabled/disabled or
+removed, and can expose native action popups. They are not loaded into thread previews or
+paired-runtime browsers. Turning Browser workspace off unloads extensions, stops their workers and
+closes the affected native pages.
 
 This uses Electron with `electron-chrome-extensions` 4.10.0; supported APIs are a subset of Chrome.
-`nativeMessaging` is removed and blocked. Chrome Web Store installation is unavailable. No 1Password
-compatibility, desktop password-manager integration or general Chrome extension compatibility is
-claimed. Unsupported APIs/permissions and load errors are reported by the extension manager.
-Extension-created tabs retain their native identity and profile, and native close events remove them
-from the tab list. Extension URL pages are session-only and are not restored from saved tabs.
+`nativeMessaging` is removed and blocked. Store packages are downloaded over official Google HTTPS
+endpoints; the CRX3 developer signature and requested extension ID are verified before bounded ZIP
+extraction and permission review. Store extensions update manually by installing the same link
+again. No 1Password compatibility, desktop password-manager integration or general Chrome extension
+compatibility is claimed. Unsupported APIs/permissions and load errors are reported by the extension
+manager. Extension-created tabs retain their native identity and profile, and native close events
+remove them from the tab list. Extension URL pages are session-only and are not restored from saved
+tabs.
 
 ## Website and call tab capture
 
@@ -200,3 +204,18 @@ unverified. Device Hub discovery on 26 October found no Android target. Website 
 access and arbitrary-tab capture are separate capabilities; see the media limits above. The native
 iOS module's [README](../apps/mobile/modules/dovo-webkit-browser/README.md) documents its API and
 verification commands.
+
+## Browser usability
+
+Selecting a tab preserves its position; navigating moves it to the top of the recent list. Desktop
+tabs, bookmarks and history show favicons when available, with a globe fallback. Remote localhost
+icons are never fetched from the local computer.
+
+Detached Browser windows contain Browser controls only. Page and selection actions create or append
+an unsent draft, preserving existing draft text. In the main window, workspace synchronization does
+not block opening the draft; detached windows synchronize before opening a separate thread window.
+Native desktop context menus provide copying, link navigation, editing and adding content to a
+draft. Password selections are excluded from copying to threads.
+
+Website requests use a standard Chromium user agent. Real Electron verification reached Teams'
+Microsoft sign-in page; authenticated Teams calls and enterprise-account policies remain unverified.

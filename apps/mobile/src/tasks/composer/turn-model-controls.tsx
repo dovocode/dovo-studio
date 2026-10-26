@@ -48,11 +48,11 @@ export function TurnModelControls({
     onChange({ ...agentTurnSettings(selected), ...change })
   return (
     <View style={{ gap: 12 }}>
-      <Text style={styles.muted}>
-        {snapshot?.persistentTurnModelsSupported
-          ? 'Model and reasoning stay selected for following turns. The active run stays unchanged.'
-          : 'Only this turn. The active run and thread defaults stay unchanged.'}
-      </Text>
+      {!snapshot?.persistentTurnModelsSupported && (
+        <Text style={styles.muted}>
+          Only this turn. The active run and thread defaults stay unchanged.
+        </Text>
+      )}
       {task ? (
         <HarnessModelPicker
           modelsOnly

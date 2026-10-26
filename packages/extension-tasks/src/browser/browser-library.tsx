@@ -1,3 +1,4 @@
+import { BrowserFavicon } from './browser-favicon'
 import { useState } from 'react'
 import { BookOpen, Trash2 } from 'lucide-react'
 import {
@@ -107,8 +108,11 @@ export function BrowserLibrary({
                             setOpen(false)
                           }}
                         >
-                          <span className="block truncate text-sm">
-                            {tab.title || tab.url || 'Untitled page'}
+                          <span className="flex min-w-0 items-center gap-2 text-sm">
+                            <BrowserFavicon tab={tab} />
+                            <span className="truncate">
+                              {tab.title || tab.url || 'Untitled page'}
+                            </span>
                           </span>
                           <span className="block truncate text-xs text-muted-foreground">
                             {tab.url}

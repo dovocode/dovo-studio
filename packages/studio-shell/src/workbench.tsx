@@ -60,6 +60,7 @@ type WorkbenchProps = {
   openBrowserWindow?: StudioHostApi['openBrowserWindow']
   browser?: StudioHostApi['browser']
   browserExtensions?: StudioHostApi['browserExtensions']
+  onBrowserContextAction?: StudioHostApi['onBrowserContextAction']
   onOpenLink?: (listener: (url: string) => void) => () => void
   openBrowserLink?: StudioHostApi['openBrowserLink']
   accountStorage?: StudioHostApi['accountStorage']
@@ -156,6 +157,7 @@ function WorkbenchContent({
   pickDirectory,
   browser,
   browserExtensions,
+  onBrowserContextAction,
   browserWindowId,
   openBrowserWindow,
   openBrowserLink,
@@ -251,6 +253,7 @@ function WorkbenchContent({
   }, [confirmSettingsNavigation])
   const navigate = useCallback(
     (next: StudioNavigation, options?: { replace?: boolean }) => {
+      if (browserWindowId && next.viewId !== 'browser') return
       // Keep existing links to the former device-only PR page working.
       if (next.viewId === 'pull-request-settings')
         next = { ...next, viewId: 'pull-request-monitoring-settings' }
@@ -276,7 +279,7 @@ function WorkbenchContent({
       updateTarget(next)
       setNavigationKey((key) => key + 1)
     },
-    [updateTarget, canLeave],
+    [updateTarget, canLeave, browserWindowId],
   )
   const goBack = useCallback(() => {
     const previous = history.current.at(-1)
@@ -371,6 +374,18 @@ function WorkbenchContent({
   }
   const openThread = useCallback<NonNullable<StudioHostApi['openThread']>>(
     (destination) => {
+      if (browserWindowId) {
+        if (!popOutThread || !destination.runtimeId) {
+          setSwitchError('Open this draft in the main Studio window.')
+          return
+        }
+        void popOutThread({
+          runtimeId: destination.runtimeId,
+          taskId: destination.threadId,
+          title: destination.title,
+        }).catch((cause: unknown) => setSwitchError(String(cause)))
+        return
+      }
       if (!canLeave()) return
       const previous = {
         target: settingsNavigation.current.target,
@@ -407,7 +422,7 @@ function WorkbenchContent({
           setSwitchError(error instanceof Error ? error.message : String(error))
       })
     },
-    [canLeave, switchRuntime, navigate, setSwitchError],
+    [canLeave, switchRuntime, navigate, setSwitchError, browserWindowId, popOutThread],
   )
   const openLinkTarget = (destination: LinkTarget) => {
     if (destination.kind === 'pull') {
@@ -550,6 +565,7 @@ function WorkbenchContent({
       pickDirectory,
       browser,
       browserExtensions,
+      onBrowserContextAction,
       browserWindowId,
       openBrowserWindow,
       openLink,
@@ -574,6 +590,7 @@ function WorkbenchContent({
       pickDirectory,
       browser,
       browserExtensions,
+      onBrowserContextAction,
       browserWindowId,
       openBrowserWindow,
       openLink,
@@ -721,14 +738,16 @@ function WorkbenchContent({
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
         brand={
-          <TitleBar
-            sidebar
-            platform={desktopPlatform}
-            online={0}
-            devices={0}
-            onDevices={() => navigate({ viewId: 'runtime' })}
-            onSearch={() => setPalette(true)}
-          />
+          !browserWindowId && (
+            <TitleBar
+              sidebar
+              platform={desktopPlatform}
+              online={0}
+              devices={0}
+              onDevices={() => navigate({ viewId: 'runtime' })}
+              onSearch={() => setPalette(true)}
+            />
+          )
         }
       >
         <div className="studio" data-platform={desktopPlatform} data-thread-window={!!threadWindow}>
@@ -752,44 +771,52 @@ function WorkbenchContent({
             </div>
           )}
           <HeaderFallback>
-            <TitleBar
-              platform={desktopPlatform}
-              section={
-                inSettings
-                  ? 'Settings'
-                  : catalog.views.find((view) => view.id === target.viewId)?.title
-              }
-              online={runtimes.filter((runtime) => runtime.connected).length}
-              devices={runtimeRegistry.profiles.length}
-              onDevices={() =>
-                navigate({
-                  viewId: 'runtime',
-                })
-              }
-              onSearch={() => setPalette(true)}
-            />
+            {browserWindowId ? (
+              <header className="studio-titlebar" data-platform={desktopPlatform}>
+                <span className="studio-titlebar-brand">Browser</span>
+              </header>
+            ) : (
+              <TitleBar
+                platform={desktopPlatform}
+                section={
+                  inSettings
+                    ? 'Settings'
+                    : catalog.views.find((view) => view.id === target.viewId)?.title
+                }
+                online={runtimes.filter((runtime) => runtime.connected).length}
+                devices={runtimeRegistry.profiles.length}
+                onDevices={() =>
+                  navigate({
+                    viewId: 'runtime',
+                  })
+                }
+                onSearch={() => setPalette(true)}
+              />
+            )}
           </HeaderFallback>
           <div className="studio-body">
-            <ActivityBar
-              update={update}
-              onUpdate={updates ? () => void updates.install() : undefined}
-              onCheckUpdates={updates ? () => void updates.check() : undefined}
-              views={catalog.views.filter((view) =>
-                view.id === 'browser'
-                  ? browserWorkspaceEnabled
-                  : view.id === 'artifacts'
-                    ? artifactsEnabled
-                    : view.id === 'issues'
-                      ? showIssues
-                      : view.id === 'jira'
-                        ? showJira
-                        : true,
-              )}
-              activeId={target.viewId}
-              onSelect={(viewId) => {
-                navigateSection(viewId)
-              }}
-            />
+            {!browserWindowId && (
+              <ActivityBar
+                update={update}
+                onUpdate={updates ? () => void updates.install() : undefined}
+                onCheckUpdates={updates ? () => void updates.check() : undefined}
+                views={catalog.views.filter((view) =>
+                  view.id === 'browser'
+                    ? browserWorkspaceEnabled
+                    : view.id === 'artifacts'
+                      ? artifactsEnabled
+                      : view.id === 'issues'
+                        ? showIssues
+                        : view.id === 'jira'
+                          ? showJira
+                          : true,
+                )}
+                activeId={target.viewId}
+                onSelect={(viewId) => {
+                  navigateSection(viewId)
+                }}
+              />
+            )}
             <main
               className="studio-main"
               tabIndex={-1}
@@ -854,7 +881,8 @@ function WorkbenchContent({
                   </ErrorBoundary>
                 </div>
               </div>
-              {connected &&
+              {!browserWindowId &&
+                connected &&
                 snapshot?.defaults &&
                 !configuredTaskHarness(snapshot.defaults) &&
                 target.viewId !== 'agents' && (

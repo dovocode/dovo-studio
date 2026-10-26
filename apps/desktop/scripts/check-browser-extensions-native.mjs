@@ -24,6 +24,8 @@ import { fileURLToPath } from 'node:url'
 const desktop = fileURLToPath(new URL('../', import.meta.url))
 const require = createRequire(join(desktop, 'package.json'))
 const keep = process.argv.includes('--keep')
+const websites = process.argv.includes('--websites')
+const store = process.argv.includes('--store')
 const work = mkdtempSync(join(tmpdir(), 'dovo-browser-extensions-native-'))
 
 const write = (path, contents) => {
@@ -178,7 +180,7 @@ app.whenReady().then(async () => {
       assert.deepEqual(installed.capabilities, {
         unpackedFolders: true,
         nativeMessaging: false,
-        chromeWebStore: false,
+        chromeWebStore: true,
         remoteRuntimes: false,
       })
       assert.match(prompts[0]!.message, /^Add “Dovo native smoke” to this browser profile\\?$/)
@@ -192,6 +194,24 @@ app.whenReady().then(async () => {
       assert.equal(typeof content.window, 'number')
       assert.equal(content.badge, 'ok')
       report.contentRuns = content.runs
+      if (process.env.SMOKE_WEBSITES === '1') {
+        await show('teams-proof','teams-proof','https://teams.microsoft.com')
+        let status
+        for(let i=0;i<100;i++) {
+          status=await call('browser',{action:'status',key:'teams-proof'})
+          if(status?.url?.startsWith('https://login.microsoftonline.com/')) break
+          await wait(300)
+        }
+        assert.ok(status?.url?.startsWith('https://login.microsoftonline.com/'), 'Teams must reach Microsoft sign-in; got '+status?.url)
+        report.teamsSignIn=true
+      }
+      if (process.env.SMOKE_STORE === '1') {
+        const added=await call('extensions',{action:'installStore',profileId:'store-proof',url:'https://chromewebstore.google.com/detail/dark-reader/eimadpbcbfnmbkopoojfekhnkhdbieeh'})
+        assert.equal(added.installed,'eimadpbcbfnmbkopoojfekhnkhdbieeh')
+        assert.ok(added.extensions[0].loaded)
+        await call('extensions',{action:'remove',profileId:'store-proof',id:added.installed})
+        report.chromeWebStore=true
+      }
 
       const before = new Set(BrowserWindow.getAllWindows())
       await call('extensions', {
@@ -274,6 +294,24 @@ app.whenReady().then(async () => {
       )
       assert.deepEqual(copies, [])
       report.contentRuns = content.runs
+      if (process.env.SMOKE_WEBSITES === '1') {
+        await show('teams-proof','teams-proof','https://teams.microsoft.com')
+        let status
+        for(let i=0;i<100;i++) {
+          status=await call('browser',{action:'status',key:'teams-proof'})
+          if(status?.url?.startsWith('https://login.microsoftonline.com/')) break
+          await wait(300)
+        }
+        assert.ok(status?.url?.startsWith('https://login.microsoftonline.com/'), 'Teams must reach Microsoft sign-in; got '+status?.url)
+        report.teamsSignIn=true
+      }
+      if (process.env.SMOKE_STORE === '1') {
+        const added=await call('extensions',{action:'installStore',profileId:'store-proof',url:'https://chromewebstore.google.com/detail/dark-reader/eimadpbcbfnmbkopoojfekhnkhdbieeh'})
+        assert.equal(added.installed,'eimadpbcbfnmbkopoojfekhnkhdbieeh')
+        assert.ok(added.extensions[0].loaded)
+        await call('extensions',{action:'remove',profileId:'store-proof',id:added.installed})
+        report.chromeWebStore=true
+      }
     }
     report.ok = true
     await bridge.dispose()
@@ -318,6 +356,8 @@ for (const run of ['1', '2']) {
         ...process.env,
         SMOKE_DIR: work,
         SMOKE_RUN: run,
+        SMOKE_WEBSITES: websites ? '1' : '0',
+        SMOKE_STORE: store ? '1' : '0',
         DOVO_SETTINGS_PATH: join(work, 'settings.json'),
         VITE_DEV_SERVER_URL: '',
         ELECTRON_ENABLE_LOGGING: '',

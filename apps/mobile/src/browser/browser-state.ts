@@ -72,7 +72,15 @@ export function recordPage(
 ): BrowserState {
   const tab = state.tabs.find((tab) => tab.id === id)
   if (!tab || !page.url || !/^https?:\/\//i.test(page.url)) return state
-  const next = { ...tab, url: previewUrl(page.url), title: page.title.slice(0, 500) }
+  const url = previewUrl(page.url)
+  const next = {
+    ...tab,
+    url,
+    title: page.title.slice(0, 500),
+    ...(tab.url !== url
+      ? { visitedAt: Math.max(Date.now(), ...state.tabs.map((item) => item.visitedAt + 1)) }
+      : {}),
+  }
   if (next.url.length > 4096) throw new Error('Page address is too long.')
   if (tab.url === next.url && tab.title === next.title) return state
   return {
@@ -84,13 +92,12 @@ export function recordPage(
     ),
   }
 }
-export function visitTab(state: BrowserState, id: string, now = Date.now()): BrowserState {
+export function visitTab(state: BrowserState, id: string): BrowserState {
   if (!state.tabs.some((tab) => tab.id === id)) return state
-  const visitedAt = Math.max(now, ...state.tabs.map((tab) => tab.visitedAt + 1))
   return {
     ...state,
     active: id,
-    tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, visitedAt } : tab)),
+    tabs: state.tabs,
   }
 }
 export function addTab(state: BrowserState, tab: BrowserTab): BrowserState {

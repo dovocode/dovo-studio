@@ -577,12 +577,7 @@ try {
 
   const defaultsBeforeTurn = await page.evaluate(() => window.rawTask.harness)
   await page.evaluate(() => window.openTurn())
-  await page
-    .getByText(
-      'Model and reasoning stay selected for following turns. Other settings apply only to this message.',
-      { exact: true },
-    )
-    .waitFor()
+  await page.getByText('Other settings apply only to this message.', { exact: true }).waitFor()
   await page.evaluate(() => window.setPersistent(false))
   await page.getByText('Applies to this message only.', { exact: true }).waitFor()
   await page.evaluate(() => window.setPersistent(true))

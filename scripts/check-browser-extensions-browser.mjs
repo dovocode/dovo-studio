@@ -12,7 +12,7 @@ const built = await bundleBrowser(
         import {BrowserExtensions} from './src/browser/browser-extensions.tsx';
         import {TooltipProvider} from '@dovo/studio-ui';
         import {decode,browserExtensionCommandSchema} from '@dovo/protocol';
-        const capabilities={unpackedFolders:true,nativeMessaging:false,chromeWebStore:false,remoteRuntimes:false};
+        const capabilities={unpackedFolders:true,nativeMessaging:false,chromeWebStore:true,remoteRuntimes:false};
         const extension=(id,name,extra={})=>({id,name,version:'1.2.3',enabled:true,loaded:true,popup:true,unsupportedPermissions:[],removedPermissions:[],...extra});
         window.catalogs={
           work:[extension('a'.repeat(32),'Work helper',{unsupportedPermissions:['debugger'],removedPermissions:['nativeMessaging']}),extension('b'.repeat(32),'Broken helper',{loaded:false,error:'Extension manifest could not load'})],
@@ -60,7 +60,7 @@ const built = await bundleBrowser(
     {
       path: '@dovo/studio-ui',
       contents: `
-      export {Button} from '${root}packages/studio-ui/src/components/ui/button.tsx';
+      export {Input} from '${root}packages/studio-ui/src/components/ui/input';export {Button} from '${root}packages/studio-ui/src/components/ui/button.tsx';
       export {IconButton} from '${root}packages/studio-ui/src/components/icon-button.tsx';
       export {TooltipProvider} from '${root}packages/studio-ui/src/components/ui/tooltip.tsx';
       export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}packages/studio-ui/src/components/ui/dialog.tsx';
@@ -126,6 +126,16 @@ try {
     false,
   )
 
+  await dialog
+    .getByRole('textbox', { name: 'Chrome Web Store URL or extension ID' })
+    .fill('https://chromewebstore.google.com/detail/helper/' + 'e'.repeat(32))
+  await dialog.getByRole('button', { name: 'Install from Web Store', exact: true }).click()
+  await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'))
+  assert.deepEqual((await calls()).at(-1), {
+    action: 'installStore',
+    profileId: 'work',
+    url: 'https://chromewebstore.google.com/detail/helper/' + 'e'.repeat(32),
+  })
   await dialog.getByRole('button', { name: 'Load extension folder…' }).click()
   await row('Installed helper').waitFor()
   assert.deepEqual((await calls()).at(-1), { action: 'install', profileId: 'work' })

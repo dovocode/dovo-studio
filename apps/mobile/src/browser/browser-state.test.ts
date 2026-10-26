@@ -124,14 +124,16 @@ it('appends literal selections and page sources without replacing draft text', (
   )
 })
 
-it('keeps MRU visits ordered even when the clock moves backwards or visits share a timestamp', () => {
+it('selection preserves order; navigation moves a tab up without title updates reordering it', () => {
   let state = addTab(initialBrowserState('device'), remote)
-  const latest = Math.max(...state.tabs.map((tab) => tab.visitedAt))
-  state = visitTab(state, 'device', 0)
-  expect(recentTabs(state.tabs)[0].id).toBe('device')
-  expect(state.tabs[0].visitedAt).toBeGreaterThan(latest)
-  state = visitTab(state, 'remote', 0)
+  const before = state.tabs
+  state = visitTab(state, 'remote')
+  expect(state.tabs).toBe(before)
+  state = recordPage(state, 'remote', { url: 'http://localhost/new', title: 'New' })
   expect(recentTabs(state.tabs)[0].id).toBe('remote')
+  const timestamp = state.tabs.find((tab) => tab.id === 'remote')?.visitedAt
+  state = recordPage(state, 'remote', { url: 'http://localhost/new', title: 'Renamed' })
+  expect(state.tabs.find((tab) => tab.id === 'remote')?.visitedAt).toBe(timestamp)
 })
 
 it('accepts legacy device and safe native profiles while retaining distinct bookmark keys', () => {

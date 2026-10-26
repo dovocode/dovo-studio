@@ -426,7 +426,7 @@ export function HarnessSettings({
           ) : (
             <Text style={styles.muted}>
               {turn && snapshot?.persistentTurnModelsSupported
-                ? 'Model and reasoning stay selected for following turns. Other settings apply only to this message.'
+                ? 'Other settings apply only to this message.'
                 : `Applies to ${turn ? 'this message only' : 'the next turn'}.`}
             </Text>
           )}

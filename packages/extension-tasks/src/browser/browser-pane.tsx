@@ -1,3 +1,4 @@
+import { BrowserFavicon } from './browser-favicon'
 import { BrowserExtensions } from './browser-extensions'
 import { BrowserLibrary } from './browser-library'
 import {
@@ -7,7 +8,6 @@ import {
   SHARED_BROWSER_LIBRARY_KEY,
   saveSharedBrowserTabs,
   recentBrowserTabs,
-  visitBrowserTab,
   browserAddress,
   browserPageKey,
   rememberBrowserVisit,
@@ -246,7 +246,6 @@ function BrowserContent({
   }, [scope, tabs, activeTab, closed])
   const selectTab = (tab: BrowserTab) => {
     setActiveTab(tab.id)
-    if (shared) setTabs((previous) => visitBrowserTab(previous, tab.id))
     setOpenedTabs((previous) => new Set([...previous, tab.id]))
     setRemoteOnline(false)
     setStreamDetails('')
@@ -272,7 +271,7 @@ function BrowserContent({
       kind,
       profileId,
       runtimeId,
-      visitedAt: Date.now(),
+      visitedAt: target ? Date.now() : 0,
     }
     setTabs((previous) => [...previous, tab])
     selectTab(tab)
@@ -493,7 +492,19 @@ function BrowserContent({
       setTabs((previous) =>
         previous.map((tab) =>
           tab.id === activeTab
-            ? { ...tab, url: target, title: '', ...(shared ? { visitedAt: Date.now() } : {}) }
+            ? {
+                ...tab,
+                url: target,
+                title: '',
+                ...(shared && tab.url !== target
+                  ? {
+                      visitedAt: Math.max(
+                        Date.now(),
+                        ...tabs.map((item) => (item.visitedAt ?? 0) + 1),
+                      ),
+                    }
+                  : {}),
+              }
             : tab,
         ),
       )
@@ -594,12 +605,30 @@ function BrowserContent({
             !previous.some(
               (tab) =>
                 tab.id === activeTab &&
-                (tab.url !== state.url || tab.title !== (state.title ?? '')),
+                (tab.url !== state.url ||
+                  tab.title !== (state.title ?? '') ||
+                  tab.favicon !== state.favicon),
             )
               ? previous
               : previous.map((tab) =>
-                  tab.id === activeTab && (tab.url !== state.url || tab.title !== state.title)
-                    ? { ...tab, url: state.url, title: state.title ?? '' }
+                  tab.id === activeTab &&
+                  (tab.url !== state.url ||
+                    tab.title !== state.title ||
+                    tab.favicon !== state.favicon)
+                    ? {
+                        ...tab,
+                        url: state.url,
+                        title: state.title ?? '',
+                        favicon: state.favicon,
+                        ...(shared && tab.url !== state.url
+                          ? {
+                              visitedAt: Math.max(
+                                Date.now(),
+                                ...previous.map((item) => (item.visitedAt ?? 0) + 1),
+                              ),
+                            }
+                          : {}),
+                      }
                     : tab,
                 ),
           )
@@ -1319,8 +1348,11 @@ function BrowserContent({
                     onClick={() => selectTab(tab)}
                     title={tab.url || 'New tab'}
                   >
-                    <span className="block truncate text-xs font-medium">
-                      {tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'}
+                    <span className="flex min-w-0 items-center gap-2 text-xs font-medium">
+                      <BrowserFavicon tab={tab} />
+                      <span className="truncate">
+                        {tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'}
+                      </span>
                     </span>
                     <span className="block truncate text-[11px] text-muted-foreground">
                       {tab.kind === 'web'
@@ -1638,7 +1670,21 @@ function BrowserContent({
                     )
                       return previous
                     return previous.map((item) =>
-                      item.id === tab.id ? { ...item, url, title: state.title } : item,
+                      item.id === tab.id
+                        ? {
+                            ...item,
+                            url,
+                            title: state.title,
+                            ...(shared && item.url !== url
+                              ? {
+                                  visitedAt: Math.max(
+                                    Date.now(),
+                                    ...previous.map((entry) => (entry.visitedAt ?? 0) + 1),
+                                  ),
+                                }
+                              : {}),
+                          }
+                        : item,
                     )
                   })
                 }}

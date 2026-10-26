@@ -9,6 +9,7 @@ import {
   DialogDescription,
   DialogTitle,
   IconButton,
+  Input,
 } from '@dovo/studio-ui'
 
 export function BrowserExtensions({
@@ -21,6 +22,7 @@ export function BrowserExtensions({
   hasPage: boolean
 }) {
   const { browserExtensions } = useStudioHost()
+  const [storeUrl, setStoreUrl] = useState('')
   const [open, setOpen] = useState(false)
   const [result, setResult] = useState<BrowserExtensionsResult>()
   const [busy, setBusy] = useState(false)
@@ -80,10 +82,32 @@ export function BrowserExtensions({
           </DialogDescription>
           <div className="max-h-[60vh] space-y-3 overflow-y-auto" aria-busy={busy}>
             <p className="text-sm text-muted-foreground">
-              Load an unpacked extension folder from this computer. The installer shows its
-              requested access before adding it. Native messaging and Chrome Web Store installation
-              are unavailable.
+              Paste a Chrome Web Store link or load an extension folder. Review its access before
+              installing in this profile. Native messaging remains unavailable. Store extensions are
+              updated manually by installing their link again.
             </p>
+            {result?.capabilities.chromeWebStore && (
+              <form
+                className="flex flex-wrap gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void call({ action: 'installStore', profileId, url: storeUrl.trim() })
+                }}
+              >
+                <Input
+                  aria-label="Chrome Web Store URL or extension ID"
+                  placeholder="Chrome Web Store URL or extension ID"
+                  value={storeUrl}
+                  onChange={(event) => setStoreUrl(event.target.value)}
+                  disabled={busy}
+                  maxLength={4096}
+                  className="min-w-0 flex-1"
+                />
+                <Button type="submit" disabled={busy || !storeUrl.trim()}>
+                  Install from Web Store
+                </Button>
+              </form>
+            )}
             <Button disabled={busy} onClick={() => void call({ action: 'install', profileId })}>
               Load extension folder…
             </Button>
