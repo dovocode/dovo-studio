@@ -30,5 +30,3 @@ export const tasksExtension = defineStudioExtension(
     },
   ],
 )
-
-export { ThreadShare } from './thread-share'
