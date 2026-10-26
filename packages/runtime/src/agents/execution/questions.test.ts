@@ -212,3 +212,36 @@ it('keeps failed form admission retryable and retains durable answer receipts ac
   expect(recovered.task('form-task').queue).toHaveLength(1)
   expect(s.store.questionResponse(id)).not.toContain('private-answer')
 })
+
+it('keeps secret questions human-controlled and falls back to a human if parent delivery fails', async () => {
+  const { Questions } = await import('./questions')
+  const questions = new Questions({ add: () => undefined })
+  let delivered = 0
+  questions.setRouting(
+    () => true,
+    () => {
+      delivered++
+      throw new Error('Parent inbox full')
+    },
+  )
+  const controller = new AbortController()
+  const secret = questions.request('child', prompt, controller.signal)
+  const sensitive = questions.list()[0]
+  expect(sensitive.routing).toBe('human')
+  expect(delivered).toBe(0)
+  expect(() =>
+    questions.answerByParent('child', sensitive.id, { choice: ['existing'], secret: ['private'] }),
+  ).toThrow('human')
+  controller.abort()
+  await secret
+  const next = new AbortController()
+  const regular = questions.request(
+    'child',
+    { ...prompt, questions: [prompt.questions[0]] },
+    next.signal,
+  )
+  expect(delivered).toBe(1)
+  expect(questions.list()[0].routing).toBe('human')
+  next.abort()
+  await regular
+})

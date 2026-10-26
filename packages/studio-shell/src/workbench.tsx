@@ -17,6 +17,7 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type ReactNode,
 } from 'react'
 import {
   type StudioViewProps,
@@ -51,6 +52,7 @@ import { CommandPalette } from './command-palette'
 import { TaskLauncher } from './task-launcher'
 import { TitleBar, type DesktopPlatform } from './title-bar'
 type WorkbenchProps = {
+  captureContent?: ReactNode
   threadWindow?: import('@dovo/protocol').ThreadWindowTarget
   popOutThread?: StudioHostApi['popOutThread']
   appInfo?: StudioHostApi['appInfo']
@@ -152,6 +154,7 @@ export function Workbench(props: WorkbenchProps) {
   )
 }
 function WorkbenchContent({
+  captureContent,
   extensions,
   threadWindow,
   popOutThread,
@@ -726,6 +729,7 @@ function WorkbenchContent({
       title: `Open ${view.title}`,
       run: () => navigateSection(view.id),
     }))
+  if (captureContent) return <StudioHostProvider api={api}>{captureContent}</StudioHostProvider>
   return (
     <StudioHostProvider api={api}>
       <RemoteDesktopSharing />

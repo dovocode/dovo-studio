@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { pendingQuestionSchema } from '../conversation/workflow/questions.js'
 import { mutableArray, mutableStruct, maxValue, minValue } from '../shared/schema.js'
 
 const id = maxValue(minValue(Schema.String, 1), 200)
@@ -53,7 +54,17 @@ const threadWatchEntrySchema = mutableStruct({
   revision: Schema.String,
 })
 export type ThreadWatchEntry = typeof threadWatchEntrySchema.Type
-export const threadWatchSnapshotSchema = mutableStruct({
+export const threadHumanInputSchema = mutableStruct({
+  id,
+  runtimeId: id,
+  taskId: id,
+  title: maxValue(Schema.String, 1000),
+  threadTitle: maxValue(Schema.String, 1000),
+  kind: Schema.Literals(['question', 'approval']),
+})
+const threadWatchSnapshotDefinition = mutableStruct({
+  humanInputs: Schema.optional(maxValue(mutableArray(threadHumanInputSchema), 100)),
+  questions: Schema.optional(maxValue(mutableArray(pendingQuestionSchema), 100)),
   ...threadPresentationFields,
   runtimeId: Schema.optional(id),
   title: maxValue(Schema.String, 1000),
@@ -73,6 +84,12 @@ export const threadWatchSnapshotSchema = mutableStruct({
   result: Schema.optional(maxValue(Schema.String, 20000)),
   resultTruncated: Schema.optional(Schema.Boolean),
 })
+export type ThreadWatchSnapshot = typeof threadWatchSnapshotDefinition.Type
+// Keep the shared codec named: snapshots also occur in task metadata and sync deltas.
+export const threadWatchSnapshotSchema: Schema.Codec<
+  ThreadWatchSnapshot,
+  typeof threadWatchSnapshotDefinition.Encoded
+> = threadWatchSnapshotDefinition
 export const threadWatchSummarySchema = mutableStruct({
   runtimeId: id,
   threadId: id,
@@ -87,7 +104,6 @@ export const threadWatchSummarySchema = mutableStruct({
   delegated: Schema.optional(Schema.Boolean),
   stopRequested: Schema.optional(Schema.Boolean),
 })
-export type ThreadWatchSnapshot = typeof threadWatchSnapshotSchema.Type
 export type ThreadWatchSummary = typeof threadWatchSummarySchema.Type
 
 /** Prefer the direct observer, then fresh and healthy paths. Profile IDs stay host-local. */

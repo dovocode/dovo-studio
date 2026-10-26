@@ -33,11 +33,11 @@ const built = await bundleBrowser(
       window.writes=[];window.ruleCloses=0;
       window.computerPreferences=decode(runtimePreferencesSchema,{});
       function App(){
-        const [mode,setMode]=useState('projects'),[globalWeb,setGlobalWeb]=useState(false),[supported,setSupported]=useState(true);window.webRulesSupported=setSupported;
+        const [childRequests,setChildRequests]=useState(false);window.childRequests=setChildRequests;const [mode,setMode]=useState('projects'),[globalWeb,setGlobalWeb]=useState(false),[supported,setSupported]=useState(true);window.webRulesSupported=setSupported;
         window.showSystem=setMode;
         const [approval,setApproval]=useState(initial),[online,setOnline]=useState(true),[project,setProject]=useState({id:'repo',name:'Project',approvedWebRequests:true});
         window.approval=value=>setApproval({...initial,...value});window.online=setOnline;
-        const snapshot={allowWebRequests:supported?globalWeb:undefined,workspace:{repositories:[project],tasks:[task],agents:[]},approvals:[approval],runs:[]};
+        const snapshot={allowWebRequests:supported?globalWeb:undefined,workspace:{repositories:[project],tasks:childRequests?[task,{...task,id:'child',title:'Focused worker',delegation:{parentTaskId:task.id,parentRunId:'run',key:'child'}}]:[task],agents:[]},approvals:[childRequests?{...approval,taskId:'child'}:approval],runs:[]};
         const request=async(path,input,schema,method)=>{
           if(path==='/api/runtime/preferences/read')return window.computerPreferences;
           if(path==='/api/memory/projects/read')return {projects:[]};
@@ -127,7 +127,7 @@ const built = await bundleBrowser(
     {
       path: '@dovo/studio-core',
       contents:
-        "export * from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.store;export const useSettingsDraft=()=>{};",
+        "export * from '@dovo/protocol';export {clientTaskScope} from '@dovo/client-runtime';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({openThread:target=>window.openedThread=target});export const useSettingsDraft=()=>{};",
     },
     {
       path: '@dovo/studio-ui',
@@ -449,6 +449,18 @@ try {
         .isDisabled(),
       true,
     )
+  }
+  await page.evaluate(() => {
+    window.showSystem('projects')
+    window.childRequests(true)
+    window.online(true)
+    window.approval({ id: 'child-permission', rememberRule: null })
+  })
+  for (const id of ['mobile', 'desktop']) {
+    const container = page.locator('#' + id)
+    await container.getByText(/For child thread.*Focused worker/).waitFor()
+    await container.getByRole('button', { name: /^Allow once/ }).click()
+    await page.waitForFunction(() => window.writes.at(-1)?.input?.id === 'child-permission')
   }
   assert.deepEqual(errors, [])
   console.log(

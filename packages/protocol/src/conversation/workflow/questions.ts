@@ -44,6 +44,8 @@ export const pendingQuestionSchema = mutableStruct({
   taskId: Schema.String,
   prompt: questionPromptSchema,
   createdAt: Schema.String,
+  /** Parent agent resolves ordinary child questions before a human is asked. */
+  routing: Schema.optional(Schema.Literals(['parent', 'human'])),
 })
 export const questionReplySchema = mutableStruct({
   id: maxValue(minValue(Schema.String, 1), 200),

@@ -271,7 +271,7 @@ export function runtimeSnapshot(
         : {}),
       workspace: selectedWorkspace,
       approvals: s.approvals.list(),
-      questions: s.questions.list(),
+      questions: s.questions.list().filter((question) => question.routing !== 'parent'),
       terminals: s.terminals.list(),
       runs: s.jobs.list(),
       devices: device.owner ? s.devices.list() : s.devices.list().filter((d) => d.id === device.id),

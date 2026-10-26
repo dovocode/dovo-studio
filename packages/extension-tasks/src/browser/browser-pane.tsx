@@ -238,6 +238,30 @@ function BrowserContent({
   const profileId = selectedTab.profileId ?? 'default'
   const nativeKey = (id: string) => nativeTabKeys.get(`${scope}:${id}`) ?? `${scope}:${id}`
   const browserKey = nativeKey(activeTab)
+  useEffect(() => {
+    if (!browser || !shared) return
+    const sources = tabs.flatMap((tab) => {
+      const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
+      return tab.kind === 'remote' &&
+        owner?.connected &&
+        owner.profile.connection &&
+        /^https?:\/\//i.test(tab.url)
+        ? [
+            {
+              key: nativeKey(tab.id),
+              tabId: tab.id,
+              profileId: tab.profileId,
+              title: tab.title,
+              url: tab.url,
+              connection: owner.profile.connection,
+            },
+          ]
+        : []
+    })
+    void browser({ action: 'remote-media-sources', key: 'studio-media', sources }).catch((cause) =>
+      setError(`Remote sharing sources could not be updated: ${String(cause)}`),
+    )
+  }, [browser, shared, tabs, runtimes])
   const openedLink = useRef('')
   const controlsId = useId()
   const [frozenPage, setFrozenPage] = useApplicationState<{

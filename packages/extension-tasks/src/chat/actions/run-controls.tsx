@@ -1,11 +1,18 @@
-import { runtimeComputerName, approvalActions } from '@dovo/protocol'
+import {
+  runtimeComputerName,
+  approvalActions,
+  taskInputVisible,
+  taskRemoteHumanInputs,
+} from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
-import { responses, useWorkspace, type Task } from '@dovo/studio-core'
+import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { ApprovalDetails } from './approval-details'
 export function RunControls({ task }: { task: Task }) {
+  const host = useStudioHost()
+  const remoteInputs = taskRemoteHumanInputs(task)
   const { request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
@@ -38,7 +45,10 @@ export function RunControls({ task }: { task: Task }) {
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(false))
   }
-  const approvals = snapshot?.approvals.filter((approval) => approval.taskId === task.id) ?? []
+  const approvals =
+    snapshot?.approvals.filter((approval) =>
+      taskInputVisible(snapshot.workspace.tasks, task.id, approval),
+    ) ?? []
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (
@@ -75,6 +85,7 @@ export function RunControls({ task }: { task: Task }) {
   if (
     connected &&
     !approvals.length &&
+    !remoteInputs.length &&
     !error &&
     !task.error &&
     !task.restartRecovery &&
@@ -116,6 +127,32 @@ export function RunControls({ task }: { task: Task }) {
           </Button>
         </div>
       )}
+      {remoteInputs.map((input) => (
+        <div
+          key={JSON.stringify([input.runtimeIdentity, input.id])}
+          className="mx-auto max-w-[var(--chat-max)] rounded-lg border bg-card p-3"
+        >
+          <p className="text-xs text-muted-foreground">
+            {input.kind === 'approval' ? 'Permission request' : 'Question'} · For child thread:{' '}
+            {input.threadTitle} · {input.computerName}
+          </p>
+          <p className="py-1 text-xs font-medium">{input.title}</p>
+          <Button
+            size="sm"
+            disabled={!host.openThread}
+            onClick={() =>
+              host.openThread?.({
+                runtimeId: input.runtimeId,
+                runtimeIdentity: input.runtimeIdentity,
+                threadId: input.taskId,
+                title: input.threadTitle,
+              })
+            }
+          >
+            Review request
+          </Button>
+        </div>
+      ))}
       {approvals.map((approval) => (
         <div
           key={approval.id}
@@ -127,6 +164,14 @@ export function RunControls({ task }: { task: Task }) {
         >
           <p className="mb-1 text-[0.6875rem] text-muted-foreground">
             Permission request · {executionHost}
+            {approval.taskId !== task.id && (
+              <>
+                {' '}
+                · For child thread:{' '}
+                {snapshot?.workspace.tasks.find((child) => child.id === approval.taskId)?.title ??
+                  approval.taskId}
+              </>
+            )}
           </p>
           <p className="text-xs font-medium">{approval.title}</p>
           <ApprovalDetails key={approval.id} detail={approval.detail} />

@@ -7,6 +7,7 @@ import {
   indexTaskSubagents,
   taskFamilyWorking,
   taskFamilyRunToken,
+  taskRemoteHumanInputs,
 } from './delegation.js'
 
 const task = (id: string, parentTaskId?: string): Task => ({
@@ -231,4 +232,48 @@ it('keeps a local family working while its targeted descendant is active or offl
       parent.id,
     ),
   ).toBe(false)
+})
+
+it('routes remote human review through a directly paired child and excludes paused or offline requests', () => {
+  const watch: NonNullable<Task['threadWatches']>[number] = {
+    runtimeId: 'paired-computer',
+    threadId: 'direct-child',
+    computerName: 'Desktop',
+    relation: 'spawned',
+    delegated: true,
+    status: 'watching',
+    offline: false,
+    snapshot: {
+      runtimeId: 'desktop-identity',
+      title: 'Child',
+      revision: '1',
+      phase: 'needs-input',
+      attention: ['approval'],
+      watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+      humanInputs: [
+        {
+          id: 'approval',
+          runtimeId: 'deeper-computer-identity',
+          taskId: 'nested-child',
+          threadTitle: 'Nested worker',
+          title: 'Deploy',
+          kind: 'approval',
+        },
+      ],
+    },
+  }
+  expect(taskRemoteHumanInputs({ threadWatches: [watch] })).toEqual([
+    expect.objectContaining({
+      taskId: 'direct-child',
+      runtimeId: 'paired-computer',
+      runtimeIdentity: 'desktop-identity',
+      threadTitle: 'Nested worker',
+    }),
+  ])
+  for (const changed of [
+    { ...watch, paused: true },
+    { ...watch, offline: true },
+    { ...watch, status: 'stopped' as const },
+  ])
+    expect(taskRemoteHumanInputs({ threadWatches: [changed] })).toEqual([])
 })

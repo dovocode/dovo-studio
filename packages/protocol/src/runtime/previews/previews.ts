@@ -1,6 +1,8 @@
 import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { minValue, maxValue, urlSchema } from '../../shared/schema.js'
 import { Schema } from 'effect'
+import { threadWindowTargetSchema } from '../../thread-window.js'
+import { connectionSchema } from '../connection/runtime.js'
 export function previewUrl(input: string, runtimeAddress?: string): string {
   const text = input.trim()
   if (
@@ -249,6 +251,26 @@ export const browserCommandSchema = Schema.Union([
     ]),
     key: maxValue(minValue(Schema.String, 1), 500),
   }),
+  /** Trusted Studio registers remote workspace tabs as potential sharing sources. */
+  mutableStruct({
+    action: Schema.Literal('remote-media-sources'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    sources: mutableArray(
+      mutableStruct({
+        key: maxValue(minValue(Schema.String, 1), 500),
+        tabId: maxValue(minValue(Schema.String, 1), 200),
+        profileId: maxValue(minValue(Schema.String, 1), 200),
+        title: maxValue(Schema.String, 200),
+        url: maxValue(Schema.String, 8192),
+        connection: connectionSchema,
+      }),
+    ).pipe(Schema.check(Schema.isMaxLength(100))),
+  }),
+  mutableStruct({
+    action: Schema.Literal('thread-media-sources'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    sources: mutableArray(threadWindowTargetSchema).pipe(Schema.check(Schema.isMaxLength(200))),
+  }),
   /** Answer a pending `mediaRequests` entry; only shared-browser tabs ever create one. */
   mutableStruct({
     action: Schema.Literal('media'),
@@ -272,7 +294,7 @@ export const browserCommandSchema = Schema.Union([
 export type BrowserMediaRequest = {
   id: string
   /** `display`: `getDisplayMedia` (tab sharing). `user-media`: camera and/or microphone. */
-  kind: 'display' | 'user-media'
+  kind: 'display' | 'user-media' | 'notifications'
   /** Requesting tab key and profile. */
   key: string
   profileId: string
@@ -282,8 +304,18 @@ export type BrowserMediaRequest = {
   audio: boolean
   /** Epoch milliseconds; afterwards the request is denied automatically. */
   expiresAt: number
-  /** Display requests: shareable tabs in the same window and profile, never thread previews. */
-  sources?: { key: string; title: string; url: string; requester: boolean }[]
+  /** Explicit choices across browser profiles and desktop surfaces; never thread previews. */
+  sources?: {
+    key: string
+    title: string
+    url: string
+    requester: boolean
+    kind?: 'tab' | 'remote' | 'thread' | 'window' | 'screen'
+    profileId?: string
+    audioSupported?: boolean
+    thumbnail?: string
+  }[]
+  sourceError?: string
 }
 /** A tab being captured. Listed until its tracks really end, never just because Stop was asked. */
 export type BrowserCapture = {
@@ -292,6 +324,7 @@ export type BrowserCapture = {
   key: string
   /** Tab key of the tab being shared. */
   sourceKey: string
+  sourceKind?: 'tab' | 'remote' | 'thread' | 'window' | 'screen'
   /** The shared tab's current title and address, for naming it in the sharing indicator. */
   sourceTitle?: string
   sourceUrl?: string

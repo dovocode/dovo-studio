@@ -41,7 +41,8 @@ const built = await bundleBrowser(
   [
     {
       path: '@dovo/studio-core',
-      contents: 'export const useStudioHost=()=>({browser:window.bridge});',
+      contents:
+        'export const useStudioHost=()=>({browser:window.bridge}); export const useWorkspace=()=>({runtimes:[]});',
     },
     {
       path: '@dovo/client-runtime',
@@ -81,10 +82,7 @@ try {
   await page.evaluate(() => window.requestCapture())
   const dialog = page.getByRole('dialog')
   await dialog.waitFor()
-  assert.equal(
-    await dialog.getByRole('button', { name: 'Share tab', exact: true }).isEnabled(),
-    false,
-  )
+  assert.equal(await dialog.getByRole('button', { name: 'Share', exact: true }).isEnabled(), false)
   assert.equal(await dialog.getByRole('checkbox', { name: 'Share tab audio' }).isChecked(), false)
   await dialog.getByRole('radio').check()
   await dialog.getByRole('checkbox', { name: 'Share tab audio' }).check()
@@ -96,7 +94,7 @@ try {
   await page.evaluate(() => {
     window.failure = 'media'
   })
-  await dialog.getByRole('button', { name: 'Share tab', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Share', exact: true }).click()
   await dialog.getByRole('alert').getByText('Fixture request failed').waitFor()
   assert.equal(
     await dialog.getByRole('radio').isChecked(),
@@ -106,7 +104,7 @@ try {
   await page.evaluate(() => {
     window.failure = ''
   })
-  await dialog.getByRole('button', { name: 'Share tab', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Share', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
   await page.getByRole('complementary', { name: 'Browser tab sharing' }).waitFor()
   assert.match(await page.getByRole('status').textContent(), /tab audio included/)
@@ -116,7 +114,7 @@ try {
   assert.equal(approved.source, 'source-tab')
   assert.equal(approved.audio, true)
   await page.getByRole('button', { name: 'Stop sharing', exact: true }).click()
-  await page.getByText(/Stopping tab sharing/).waitFor()
+  await page.getByText(/Stopping sharing/).waitFor()
   assert.equal(
     await page.getByRole('button', { name: 'Stop sharing', exact: true }).isEnabled(),
     false,

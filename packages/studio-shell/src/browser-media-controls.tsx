@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
-import { useStudioHost } from '@dovo/studio-core'
+import { useStudioHost, useWorkspace } from '@dovo/studio-core'
+import { decode, threadWindowTargetSchema, mutableArray } from '@dovo/protocol'
 import type { BrowserCommand, BrowserMediaRequest, BrowserCapture } from '@dovo/protocol'
 import {
   Button,
@@ -18,6 +19,26 @@ const message = (cause: unknown) => (cause instanceof Error ? cause.message : St
 /** Outside the Browser view: sharing remains visible when the user switches to a thread. */
 export function BrowserMediaControls() {
   const { browser } = useStudioHost()
+  const { runtimes } = useWorkspace()
+  const threadSignature = JSON.stringify(
+    runtimes
+      .flatMap((entry) =>
+        entry.connected
+          ? (entry.snapshot?.workspace.tasks ?? [])
+              .filter((task) => !task.example && !task.archivedAt)
+              .map((task) => ({ runtimeId: entry.profile.id, taskId: task.id, title: task.title }))
+          : [],
+      )
+      .slice(0, 200),
+  )
+  useEffect(() => {
+    if (!browser) return
+    void browser({
+      action: 'thread-media-sources',
+      key: 'studio-media',
+      sources: decode(mutableArray(threadWindowTargetSchema), JSON.parse(threadSignature)),
+    }).catch((cause) => setError(`Thread sharing sources could not be updated: ${message(cause)}`))
+  }, [browser, threadSignature])
   const [snapshot, setSnapshot] = useState<Snapshot>({ requests: [], captures: [] })
   const [pollError, setPollError] = useState('')
   const [error, setError] = useState('')
@@ -82,12 +103,12 @@ export function BrowserMediaControls() {
               <div className="min-w-0 space-y-1 text-xs">
                 <p role="status">
                   {capture.unresponsive
-                    ? 'Still sharing a browser tab with '
+                    ? 'Still sharing with '
                     : capture.state === 'starting'
-                      ? 'Preparing to share a tab with '
+                      ? 'Preparing to share with '
                       : capture.state === 'stopping'
-                        ? 'Stopping tab sharing with '
-                        : 'Sharing a browser tab with '}
+                        ? 'Stopping sharing with '
+                        : 'Sharing with '}
                   <span className="break-all font-medium">{capture.origin}</span>
                   {capture.audio ? ' · tab audio included' : ''}
                 </p>
@@ -158,6 +179,9 @@ function MediaPermission({
   const [audio, setAudio] = useState(false)
   const group = useId()
   const display = request.kind === 'display'
+  const notifications = request.kind === 'notifications'
+  const selected = request.sources?.find((item) => item.key === source)
+  const audioSupported = selected?.audioSupported !== false
   const devices = [request.video ? 'camera' : '', request.audio ? 'microphone' : '']
     .filter(Boolean)
     .join(' and ')
@@ -169,18 +193,26 @@ function MediaPermission({
       }}
     >
       <DialogContent className="max-w-lg">
-        <DialogTitle>{display ? 'Share a browser tab' : `Allow ${devices}?`}</DialogTitle>
+        <DialogTitle>
+          {display
+            ? 'Choose what to share'
+            : notifications
+              ? 'Allow desktop notifications?'
+              : `Allow ${devices}?`}
+        </DialogTitle>
         <DialogDescription>
           <span className="break-all font-medium">{request.origin}</span>
           {display
-            ? ' wants to share a tab. Choose what this website can see.'
-            : ` wants to use your ${devices} while this page is open.`}
+            ? ' wants to share your screen. Choose what this website can see.'
+            : notifications
+              ? ' wants to send desktop notifications. Your choice is saved for this website in this browser profile.'
+              : ` wants to use your ${devices} while this page is open.`}
         </DialogDescription>
         {display && (
           <>
             <fieldset disabled={busy} className="max-h-[40vh] space-y-2 overflow-y-auto">
               <legend className="mb-2 text-xs text-muted-foreground">
-                Tabs in this window and browser profile
+                Browser tabs, threads, windows and screens
               </legend>
               {(request.sources ?? []).map((tab) => (
                 <label
@@ -192,25 +224,51 @@ function MediaPermission({
                     name={group}
                     value={tab.key}
                     checked={source === tab.key}
-                    onChange={() => setSource(tab.key)}
+                    onChange={() => {
+                      setSource(tab.key)
+                      setAudio(false)
+                    }}
                     className="mt-1 shrink-0 accent-primary"
                   />
+                  {tab.thumbnail && (
+                    <img
+                      src={tab.thumbnail}
+                      alt=""
+                      className="h-12 w-20 shrink-0 rounded object-contain"
+                    />
+                  )}
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">
                       {tab.title || tab.url}
                       {tab.requester ? ' (this tab)' : ''}
                     </span>
-                    <span className="block truncate text-xs text-muted-foreground">{tab.url}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {[
+                        tab.kind === 'remote'
+                          ? 'Remote tab'
+                          : tab.kind === 'thread'
+                            ? 'Thread'
+                            : tab.kind === 'screen'
+                              ? 'Screen'
+                              : tab.kind === 'window'
+                                ? 'Window'
+                                : 'Tab',
+                        tab.profileId,
+                        tab.url,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
                   </span>
                 </label>
               ))}
               {!request.sources?.length && (
                 <p className="text-sm text-muted-foreground">
-                  Open a tab in this browser profile to share it.
+                  Open a browser tab or choose an available window or screen.
                 </p>
               )}
             </fieldset>
-            {request.audio && (
+            {request.audio && audioSupported && (
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox
                   checked={audio}
@@ -221,6 +279,11 @@ function MediaPermission({
               </label>
             )}
           </>
+        )}
+        {request.sourceError && (
+          <p role="alert" className="text-sm text-destructive">
+            Windows and screens unavailable: {request.sourceError}
+          </p>
         )}
         {error && (
           <p role="alert" className="text-sm text-destructive">
@@ -234,10 +297,14 @@ function MediaPermission({
           <Button
             disabled={busy || (display && !request.sources?.some((tab) => tab.key === source))}
             onClick={() =>
-              onAnswer('allow', display ? source : undefined, display && request.audio && audio)
+              onAnswer(
+                'allow',
+                display ? source : undefined,
+                display && request.audio && audioSupported && audio,
+              )
             }
           >
-            {display ? 'Share tab' : 'Allow'}
+            {display ? 'Share' : 'Allow'}
           </Button>
         </div>
       </DialogContent>

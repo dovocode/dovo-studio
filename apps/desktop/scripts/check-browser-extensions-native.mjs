@@ -225,6 +225,23 @@ app.whenReady().then(async () => {
           await wait(300)
         }
         assert.ok(status?.url?.startsWith('https://login.microsoftonline.com/'), 'Teams must reach Microsoft sign-in; got '+status?.url)
+        const login = studio.contentView.children.map((view: any) => view.webContents).find((contents: any) => contents?.getURL().startsWith('https://login.microsoftonline.com/'))
+        assert.ok(login, 'The native sign-in view must exist.')
+        let rect
+        for (let attempt=0; attempt<100; attempt++) {
+          rect = await login.executeJavaScript(\`(() => { const input=document.querySelector('input[type=email]'); if(!input)return null; const box=input.getBoundingClientRect(); return {x:Math.round(box.x+box.width/2),y:Math.round(box.y+box.height/2)} })()\`)
+          if (rect) break
+          await wait(100)
+        }
+        assert.ok(rect, 'Microsoft sign-in must show its email input.')
+        // Send genuine Chromium pointer/key events; do not fill or focus using page JavaScript.
+        login.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...rect})
+        login.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...rect})
+        login.sendInputEvent({type:'keyDown',keyCode:'a'})
+        login.sendInputEvent({type:'char',keyCode:'a'})
+        login.sendInputEvent({type:'keyUp',keyCode:'a'})
+        await wait(200)
+        assert.equal(await login.executeJavaScript(\`document.querySelector('input[type=email]').value\`), 'a', 'Mouse and keyboard must enter text on Microsoft sign-in.')
         report.teamsSignIn=true
       }
       if (process.env.SMOKE_STORE === '1') {
@@ -333,6 +350,23 @@ app.whenReady().then(async () => {
           await wait(300)
         }
         assert.ok(status?.url?.startsWith('https://login.microsoftonline.com/'), 'Teams must reach Microsoft sign-in; got '+status?.url)
+        const login = studio.contentView.children.map((view: any) => view.webContents).find((contents: any) => contents?.getURL().startsWith('https://login.microsoftonline.com/'))
+        assert.ok(login, 'The native sign-in view must exist.')
+        let rect
+        for (let attempt=0; attempt<100; attempt++) {
+          rect = await login.executeJavaScript(\`(() => { const input=document.querySelector('input[type=email]'); if(!input)return null; const box=input.getBoundingClientRect(); return {x:Math.round(box.x+box.width/2),y:Math.round(box.y+box.height/2)} })()\`)
+          if (rect) break
+          await wait(100)
+        }
+        assert.ok(rect, 'Microsoft sign-in must show its email input.')
+        // Send genuine Chromium pointer/key events; do not fill or focus using page JavaScript.
+        login.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...rect})
+        login.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...rect})
+        login.sendInputEvent({type:'keyDown',keyCode:'a'})
+        login.sendInputEvent({type:'char',keyCode:'a'})
+        login.sendInputEvent({type:'keyUp',keyCode:'a'})
+        await wait(200)
+        assert.equal(await login.executeJavaScript(\`document.querySelector('input[type=email]').value\`), 'a', 'Mouse and keyboard must enter text on Microsoft sign-in.')
         report.teamsSignIn=true
       }
       if (process.env.SMOKE_STORE === '1') {

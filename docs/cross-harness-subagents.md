@@ -1,9 +1,9 @@
 # Dovo child agents across harnesses
 
 Dovo's task MCP server exposes `subagent_spawn`, `subagent_list`, `subagent_read`, `subagent_wait`,
-`subagent_send` and `subagent_cancel` to Codex, Claude, OpenCode and ACP integrations. Agents
-delegate only when the user's instructions permit it. These tools supplement each harness's native
-subagent support.
+`subagent_send`, `subagent_answer` and `subagent_cancel` to Codex, Claude, OpenCode and ACP
+integrations. Agents delegate only when the user's instructions permit it. These tools supplement
+each harness's native subagent support.
 
 A parent can launch a child on another harness or choose a named configuration resolved for its
 project. The child has its own persisted thread, provider session, approvals, questions and usage,
@@ -52,6 +52,15 @@ clear drafts, update the latest user prompt, or consume user queue space. `subag
 unread inbox references; `subagent_read` and `subagent_wait` consume a finished child's pending
 notification and return its answer directly. Native late-result references can also be read this
 way. The Agents panel continues to expose saved child conversations and results.
+
+Ordinary child questions enter the parent inbox before being shown to the user. Read/list returns
+the pending question IDs and fields. Use `subagent_answer` with the child ID, `questionId` and
+`answers` keyed by field ID when the answer follows from known instructions or context. Omit
+`answers` when human input is required or wanted; this exposes the original form in the parent
+conversation without creating a duplicate. Answer validation and idempotent receipts remain owned by
+the child. Secret fields and permission requests always require a human. Local approval cards show
+the child's name in ancestor conversations; remote requests link to the owning thread for review.
+Full access is inherited like other parent permissions unless explicitly narrowed.
 
 Use `subagent_send` with the child ID, a stable key and a prompt to follow up in the same Dovo
 conversation. A running child receives it after its current turn; a finished child resumes.

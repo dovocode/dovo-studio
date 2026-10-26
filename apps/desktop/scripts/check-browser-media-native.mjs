@@ -6,7 +6,7 @@
  * trusted Studio window uses (`preview:browser`). Pages call the real `getDisplayMedia` and
  * `getUserMedia`; nothing is auto-picked. The shared tab plays a synthetic AudioContext tone and
  * animates a canvas, so no audio hardware is needed. Camera and microphone use Chromium's fake
- * devices. Checks: gesture and thread-preview refusal, same-profile sources only, real video
+ * devices. Checks: gesture and thread-preview refusal, explicit sources across profiles, real video
  * frames and tab audio in the capturing page, Stop ending the real tracks with `ended`, cancel,
  * and camera/microphone allow, remember and deny.
  *
@@ -45,6 +45,7 @@ write(
   `import assert from 'node:assert/strict'
 import { app, BrowserWindow, session, webContents } from 'electron'
 import { createServer } from 'node:http'
+import { WebSocketServer } from ${JSON.stringify(require.resolve('ws'))}
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerBrowser } from ${JSON.stringify(browserModule)}
@@ -124,10 +125,38 @@ const pages: Record<string, string> = {
   </script>\`,
   '/plain': '<!doctype html><title>Other profile</title>',
 }
-const server = createServer((request, response) => {
+let remoteImage = Buffer.alloc(0)
+let remoteOpens = 0
+let remoteConnections = 0
+const server = createServer(async (request, response) => {
+  if (request.url === '/api/previews/browser/open') {
+    assert.equal(request.headers.authorization, 'Bearer remote-test-device-token-at-least-32-characters')
+    const parts = []
+    for await (const part of request) parts.push(part)
+    const body = JSON.parse(Buffer.concat(parts).toString())
+    assert.equal(body.taskId, 'studio:browser')
+    assert.equal(body.tabId, 'remote-source')
+    remoteOpens++
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify({ ticket: 'remote-test-ticket', host: 'fixture', tabId: body.tabId, profileId: body.profileId }))
+    return
+  }
   response.setHeader('content-type', 'text/html')
   response.end(pages[request.url ?? ''] ?? 'missing')
 }).listen(0, '127.0.0.1')
+const websocket = new WebSocketServer({ noServer: true })
+server.on('upgrade', (request, socket, head) => {
+  assert.equal(new URL(request.url!, 'http://fixture').searchParams.get('ticket'), 'remote-test-ticket')
+  websocket.handleUpgrade(request, socket, head, (client) => {
+    remoteConnections++
+    const packet = Buffer.alloc(12 + remoteImage.length)
+    packet.writeUInt32BE(1, 0); packet.writeUInt32BE(1200, 4); packet.writeUInt32BE(732, 8)
+    remoteImage.copy(packet, 12)
+    client.send(JSON.stringify({ type:'state', url:'http://remote.example', title:'Remote', back:false, forward:false, loading:false, editable:false }))
+    client.send(packet)
+    client.on('close', () => remoteConnections--)
+  })
+})
 
 app.whenReady().then(async () => {
   try {
@@ -212,12 +241,12 @@ app.whenReady().then(async () => {
     assert.equal(request.origin, url('').replace(/\\/$/, ''))
     assert.equal(request.audio, true)
     assert.deepEqual(
-      request.sources.map((source: { key: string }) => source.key).sort(),
-      ['studio:browser:requester', 'studio:browser:source'],
+      request.sources.filter((source: { kind: string }) => source.kind === 'tab').map((source: { key: string }) => source.key).sort(),
+      ['studio:browser:personal', 'studio:browser:requester', 'studio:browser:source'],
     )
     await assert.rejects(
-      call({ action: 'media', key: request.key, requestId: request.id, decision: 'allow', source: 'studio:browser:personal', audio: true }),
-      /Choose a tab from this browser profile/,
+      call({ action: 'media', key: request.key, requestId: request.id, decision: 'allow', source: 'missing', audio: true }),
+      /Choose an available tab/,
     )
     await call({ action: 'media', key: request.key, requestId: request.id, decision: 'allow', source: 'studio:browser:source', audio: true })
     assert.deepEqual(await sharing, { ok: true, kinds: ['audio', 'video'] })
@@ -306,6 +335,45 @@ app.whenReady().then(async () => {
     }
     assert.deepEqual(await other, { ok: false, name: 'NotAllowedError' })
     report.devices = 'ok'
+
+    // A remote tab is captured through an isolated viewer, over real authenticated HTTP/WS.
+    remoteImage = (await source.capturePage()).toJPEG(90)
+    await call({ action: 'remote-media-sources', key: 'studio-media', sources: [{ key: 'remote-source', tabId: 'remote-source', profileId: 'work', title: 'Remote source', url: 'http://remote.example', connection: { address: url(''), token: 'remote-test-device-token-at-least-32-characters' } }] })
+    const remoteShare = run('/requester', 'window.share({ video: true })', true)
+    const [remoteRequest] = await requests(1)
+    assert.equal(remoteOpens, 0, 'Remote source opens only after explicit selection.')
+    await call({ action: 'media', key: remoteRequest.key, requestId: remoteRequest.id, decision: 'allow', source: 'remote-source' })
+    assert.deepEqual(await remoteShare, { ok: true, kinds: ['video'] })
+    const [remoteCapture] = await captures((list) => list[0]?.state === 'active')
+    assert.equal(remoteCapture.sourceKind, 'remote')
+    const remoteFrame = await run('/requester', 'window.videoFrame()', false)
+    assert.ok(remoteFrame.vibrant > 1000, 'Remote viewer must produce real video frames: ' + JSON.stringify(remoteFrame))
+    await call({ action: 'stop-capture', key: remoteCapture.key, captureId: remoteCapture.id })
+    await captures((list) => list.length === 0)
+    for (let attempt=0; attempt<20 && remoteConnections; attempt++) await wait(100)
+    assert.equal(remoteConnections, 0, 'Stopping sharing releases the remote viewer connection.')
+    report.remoteCapture = remoteFrame
+
+    for (const kind of ['screen', 'window']) {
+      const sharing = run('/requester', 'window.share({ video: true })', true)
+      let ask, chosen
+      for (let attempt=0; attempt<40; attempt++) {
+        [ask] = await requests(1)
+        chosen = ask.sources.find((source: {kind: string}) => source.kind === kind)
+        if (chosen) break
+        await wait(100)
+      }
+      assert.ok(chosen, kind + ' must be available in the picker.')
+      await call({ action:'media', key:ask.key, requestId:ask.id, decision:'allow', source:chosen.key })
+      assert.deepEqual(await sharing, {ok:true,kinds:['video']})
+      const [capture] = await captures((list) => list[0]?.state === 'active')
+      assert.equal(capture.sourceKind, kind)
+      const frame = await run('/requester', 'window.videoFrame()', false)
+      assert.ok(frame.width > 0 && frame.height > 0)
+      await call({action:'stop-capture',key:capture.key,captureId:capture.id})
+      await captures((list) => list.length === 0)
+      report[kind+'Capture'] = {width:frame.width,height:frame.height}
+    }
 
     // Closing the capturing tab, or turning Browser off, really ends a capture.
     const approve = async () => {

@@ -7,13 +7,17 @@ const f = vi.hoisted(() => ({
   userData: '',
   frames: new Map<unknown, unknown>(),
   access: vi.fn<(type: string) => string>(() => 'granted'),
+  remote: vi.fn<typeof import('./browser-remote-media').openRemoteMedia>(),
+  desktop: vi.fn<() => Promise<unknown[]>>(async () => []),
   ask: vi.fn<(type: string) => Promise<boolean>>(async () => true),
 }))
 vi.mock('electron', () => ({
   app: { getPath: () => f.userData },
+  desktopCapturer: { getSources: f.desktop },
   systemPreferences: { getMediaAccessStatus: f.access, askForMediaAccess: f.ask },
   webContents: { fromFrame: (frame: unknown) => f.frames.get(frame) },
 }))
+vi.mock('./browser-remote-media.js', () => ({ openRemoteMedia: f.remote }))
 import { createBrowserMedia, type MediaTab } from './browser-media'
 
 type Listener = (...args: unknown[]) => void
@@ -76,8 +80,7 @@ const tab = (key: string, contents: Page, profileId = 'work', windowId = 1): Med
 })
 const host = {
   tabFor: (contents: { id: number }) => tabs.find((item) => item.contents.id === contents.id),
-  tabs: (windowId: number, profileId: string) =>
-    tabs.filter((item) => item.windowId === windowId && item.profileId === profileId),
+  tabs: () => tabs,
 }
 beforeEach(async () => {
   vi.clearAllMocks()
@@ -137,11 +140,11 @@ it('installs the capture preload and handlers once per shared-browser session', 
   expect(preload).toContain('const devices = MediaDevices.prototype')
   expect(preload).toContain('const stopTrack = MediaStreamTrack.prototype.stop')
   // The page side may name a capture for Stop, but never reports one as ended.
-  expect(preload).not.toContain("report('ended'")
+  expect(preload).toContain("apply(readyState, tracks[index], []) === 'live'")
   expect(preload).not.toContain('loopback')
 })
 
-it('queues a display request without choosing anything, listing only same-profile tabs', () => {
+it('queues a display request without choosing anything, listing tabs across profiles', () => {
   const { media, session, call } = setup()
   const callback = share(session, call.mainFrame)
   expect(callback).not.toHaveBeenCalled()
@@ -157,8 +160,33 @@ it('queues a display request without choosing anything, listing only same-profil
       audio: true,
       expiresAt: expect.any(Number),
       sources: [
-        { key: 'call', title: 'Page 1', url: 'https://meet.example/abc', requester: true },
-        { key: 'docs', title: 'Page 2', url: 'https://docs.example/doc', requester: false },
+        {
+          key: 'call',
+          title: 'Page 1',
+          url: 'https://meet.example/abc',
+          requester: true,
+          profileId: 'work',
+          kind: 'tab',
+          audioSupported: true,
+        },
+        {
+          key: 'docs',
+          title: 'Page 2',
+          url: 'https://docs.example/doc',
+          requester: false,
+          profileId: 'work',
+          kind: 'tab',
+          audioSupported: true,
+        },
+        {
+          key: 'personal',
+          title: 'Page 3',
+          url: 'https://other.example/',
+          requester: false,
+          profileId: 'personal',
+          kind: 'tab',
+          audioSupported: true,
+        },
       ],
     },
   ])
@@ -190,8 +218,8 @@ it('shares the chosen whole tab with its own audio, never system loopback', asyn
   const callback = share(session, call.mainFrame)
   const [request] = media.snapshot(1).mediaRequests!
   await expect(
-    media.decide(1, { key: 'call', requestId: request!.id, decision: 'allow', source: 'personal' }),
-  ).rejects.toThrow('Choose a tab from this browser profile')
+    media.decide(1, { key: 'call', requestId: request!.id, decision: 'allow', source: 'missing' }),
+  ).rejects.toThrow('Choose an available tab')
   await media.decide(1, {
     key: 'call',
     requestId: request!.id,
@@ -526,6 +554,183 @@ it('excludes extension pages from shareable sources', () => {
   expect(media.snapshot(1).mediaRequests![0]!.sources!.map((source) => source.key)).toEqual([
     'call',
     'docs',
+    'personal',
   ])
   media.reset()
+})
+
+it('captures an explicitly selected tab from another profile', async () => {
+  const { media, session, call, personal } = setup()
+  const callback = share(session, call.mainFrame)
+  const [request] = media.snapshot(1).mediaRequests!
+  await media.decide(1, {
+    key: 'call',
+    requestId: request!.id,
+    decision: 'allow',
+    source: 'personal',
+    audio: true,
+  })
+  expect(callback).toHaveBeenCalledWith({
+    video: personal.mainFrame,
+    audio: personal.mainFrame,
+    enableLocalEcho: true,
+  })
+})
+
+it('requires website approval for notifications and retains it only for that origin/profile', async () => {
+  const { media, session, call } = setup()
+  const ask = vi.fn<(allow: boolean) => void>()
+  session.request?.(call, 'notifications', ask, {
+    isMainFrame: true,
+    requestingUrl: call.mainFrame.url,
+  })
+  expect(ask).not.toHaveBeenCalled()
+  expect(session.check?.(call, 'notifications', 'https://meet.example', {})).toBe(false)
+  const [request] = media.snapshot(1).mediaRequests!
+  expect(request!.kind).toBe('notifications')
+  await media.decide(1, { key: 'call', requestId: request!.id, decision: 'allow' })
+  expect(ask).toHaveBeenCalledWith(true)
+  call.emit('did-navigate')
+  expect(session.check?.(call, 'notifications', 'https://meet.example', {})).toBe(true)
+  expect(session.check?.(null, 'notifications', 'https://meet.example', {})).toBe(true)
+  expect(session.check?.(call, 'notifications', 'https://other.example', {})).toBe(false)
+  expect(session.check?.(null, 'notifications', 'https://other.example', {})).toBe(false)
+  const denied = page(40, 'https://denied.example')
+  tabs.push(tab('denied', denied))
+  const deny = vi.fn<(allow: boolean) => void>()
+  session.request?.(denied, 'notifications', deny, {
+    isMainFrame: true,
+    requestingUrl: denied.mainFrame.url,
+  })
+  const [second] = media.snapshot(1).mediaRequests!
+  await media.decide(1, { key: 'denied', requestId: second!.id, decision: 'deny' })
+  expect(deny).toHaveBeenCalledWith(false)
+  expect(session.check?.(denied, 'notifications', 'https://denied.example', {})).toBe(false)
+  session.request?.(denied, 'notifications', deny, {
+    isMainFrame: true,
+    requestingUrl: denied.mainFrame.url,
+  })
+  expect(media.snapshot(1).mediaRequests).toBeUndefined()
+})
+
+it('offers desktop windows and screens only after enumeration and stops their real tracks', async () => {
+  f.desktop.mockResolvedValueOnce([
+    {
+      id: 'window:12:0',
+      name: 'Editor',
+      thumbnail: { toDataURL: () => 'data:image/png;base64,AA==' },
+    },
+    {
+      id: 'screen:0:0',
+      name: 'Screen 1',
+      thumbnail: { toDataURL: () => 'data:image/png;base64,AA==' },
+    },
+  ])
+  const { media, session, call } = setup()
+  const callback = share(session, call.mainFrame)
+  await Promise.resolve()
+  const [request] = media.snapshot(1).mediaRequests!
+  expect(request!.sources).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ key: 'window:12:0', kind: 'window', audioSupported: false }),
+      expect.objectContaining({ key: 'screen:0:0', kind: 'screen', audioSupported: false }),
+    ]),
+  )
+  await expect(
+    media.decide(1, {
+      key: 'call',
+      requestId: request!.id,
+      decision: 'allow',
+      source: 'window:12:0',
+      audio: true,
+    }),
+  ).rejects.toThrow('local browser tabs only')
+  await media.decide(1, {
+    key: 'call',
+    requestId: request!.id,
+    decision: 'allow',
+    source: 'window:12:0',
+  })
+  expect(callback).toHaveBeenCalledWith({ video: expect.objectContaining({ id: 'window:12:0' }) })
+  call.report({ phase: 'started', id: '1' })
+  const [capture] = media.snapshot(1).captures!
+  expect(capture).toMatchObject({ state: 'active', sourceKind: 'window', sourceTitle: 'Editor' })
+  media.stop(1, { key: 'call', captureId: capture!.id })
+  expect(call.send).toHaveBeenCalledWith('browser-media:stop', '1')
+  call.report({ phase: 'ended', id: '1' })
+  expect(media.snapshot(1)).toEqual({})
+})
+
+it('opens only the chosen remote source, isolates its window and cleans up when tracks end', async () => {
+  const { media, session, call } = setup()
+  const source = page(50, 'data:text/html,remote')
+  const close = vi.fn<() => void>()
+  f.remote.mockResolvedValueOnce({ contents: source as never, close })
+  const remote = {
+    key: 'remote-tab',
+    tabId: 'tab-id',
+    profileId: 'remote-profile',
+    title: 'Remote',
+    url: 'http://lan.example',
+    connection: { address: 'http://runtime.example', token: 'paired-device-token-long-enough' },
+  }
+  media.setRemoteSources(1, [remote])
+  expect(media.snapshot(2)).toEqual({})
+  const callback = share(session, call.mainFrame)
+  expect(f.remote).not.toHaveBeenCalled()
+  const [request] = media.snapshot(1).mediaRequests!
+  expect(request!.sources).toEqual(
+    expect.arrayContaining([expect.objectContaining({ key: 'remote-tab', kind: 'remote' })]),
+  )
+  await media.decide(1, {
+    key: 'call',
+    requestId: request!.id,
+    decision: 'allow',
+    source: 'remote-tab',
+  })
+  expect(f.remote).toHaveBeenCalledWith(remote)
+  expect(callback).toHaveBeenCalledWith({ video: source.mainFrame })
+  source.state.captured = true
+  expect(media.snapshot(1).captures![0]).toMatchObject({
+    sourceKind: 'remote',
+    sourceUrl: remote.url,
+  })
+  source.state.captured = false
+  expect(media.snapshot(1)).toEqual({})
+  expect(close).toHaveBeenCalledOnce()
+})
+
+it('opens a dedicated presentation only after an explicit thread choice', async () => {
+  const { call } = setup()
+  const source = page(60, 'file:///studio/index.html#thread-share=fixture')
+  const close = vi.fn<() => void>()
+  const openThread = vi.fn<NonNullable<import('./browser-media').MediaHost['openThread']>>(
+    async () => ({ contents: source as never, close }),
+  )
+  const media = createBrowserMedia({ ...host, openThread })
+  const newSession = fakeSession()
+  media.attachSession(newSession as never, 'work')
+  media.setThreadSources(1, [{ runtimeId: 'computer', taskId: 'thread', title: 'Fix bug' }])
+  const callback = share(newSession, call.mainFrame)
+  const [request] = media.snapshot(1).mediaRequests!
+  expect(openThread).not.toHaveBeenCalled()
+  await media.decide(1, {
+    key: 'call',
+    requestId: request!.id,
+    decision: 'allow',
+    source: 'thread:computer:thread',
+  })
+  expect(callback).toHaveBeenCalledWith({ video: source.mainFrame })
+  expect(openThread).toHaveBeenCalledWith({
+    runtimeId: 'computer',
+    taskId: 'thread',
+    title: 'Fix bug',
+  })
+  expect(media.snapshot(1).captures![0]).toMatchObject({
+    sourceKind: 'thread',
+    sourceTitle: 'Fix bug',
+    sourceUrl: undefined,
+  })
+  media.reset()
+  expect(close).toHaveBeenCalledOnce()
 })

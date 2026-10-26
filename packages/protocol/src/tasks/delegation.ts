@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { questionAnswersSchema } from '../conversation/workflow/questions.js'
 import { mutableStruct, maxValue, minValue } from '../shared/schema.js'
 import { agentSchema, providerSchema, executionSchema, type Task } from '../workspace.js'
 import type { TaskMetadata } from './task-summary.js'
@@ -44,6 +45,52 @@ export const subagentSendSchema = mutableStruct({
   key: maxValue(minValue(Schema.String, 1), 100),
   prompt: maxValue(minValue(Schema.String, 1), 20000),
 })
+export const subagentAnswerSchema = mutableStruct({
+  ...subagentScopeSchema.fields,
+  id,
+  questionId: id,
+  /** Omit answers to escalate the existing question to the user. */
+  answers: Schema.optional(questionAnswersSchema),
+})
+
+/** The main conversation is the human notification destination for a local family. */
+export function taskInputOwner(tasks: readonly Pick<Task, 'id' | 'delegation'>[], id: string) {
+  const owners = new Map(tasks.map((task) => [task.id, task]))
+  const seen = new Set<string>()
+  while (!seen.has(id)) {
+    seen.add(id)
+    const parent = owners.get(id)?.delegation?.parentTaskId
+    if (!parent || !owners.has(parent)) break
+    id = parent
+  }
+  return id
+}
+
+/** Cards remain actionable in the child as well as its ancestor conversation. */
+export function taskInputVisible(
+  tasks: readonly Pick<Task, 'id' | 'delegation'>[],
+  viewId: string,
+  input: { taskId: string; routing?: 'parent' | 'human' },
+) {
+  return input.routing !== 'parent' && taskFamilyIds(tasks, viewId).has(input.taskId)
+}
+
+/** Review through the paired child, which can link onwards to deeper computers. */
+export function taskRemoteHumanInputs(task: Pick<TaskMetadata, 'threadWatches'>) {
+  return (task.threadWatches ?? []).flatMap((watch) =>
+    watch.delegated && watch.status === 'watching' && !watch.paused && !watch.offline
+      ? (watch.snapshot?.humanInputs ?? []).map((input) => ({
+          ...input,
+          runtimeId: watch.runtimeId,
+          // Review through the directly paired child; deeper computers may not be paired to this client.
+          taskId: watch.threadId,
+          runtimeIdentity: watch.snapshot?.runtimeId ?? input.runtimeId,
+          computerName: watch.computerName,
+        }))
+      : [],
+  )
+}
+
 /** Never grant a child wider access than its parent, even when selecting a saved preset. */
 export function delegatedAccess(
   parent: (typeof agentSchema.Type)['permission'],
@@ -205,7 +252,8 @@ export function taskFamilyInputIds(tasks: readonly TaskMetadata[], inputIds: Ite
           watch.status === 'watching' &&
           !watch.offline &&
           !watch.paused &&
-          watch.snapshot?.phase === 'needs-input',
+          watch.snapshot?.phase === 'needs-input' &&
+          (watch.snapshot.humanInputs?.length || !watch.snapshot.questions?.length),
       ),
     )
     .map((task) => task.id)

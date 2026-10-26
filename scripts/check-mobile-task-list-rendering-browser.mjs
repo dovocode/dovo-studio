@@ -17,9 +17,9 @@ export const Image=()=>null;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
 export const ScrollView=View;
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style})=><button style={window.rowLayout?{display:'flex',position:'relative',boxSizing:'border-box',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
-export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,testID,contentContainerStyle},ref){
+export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,ListFooterComponent,ListFooterComponentStyle,testID,contentContainerStyle},ref){
   useImperativeHandle(ref,()=>({scrollToOffset:()=>{}}),[]);
-  return <div data-testid={testID} style={window.rowLayout?{boxSizing:'border-box',display:'flex',flexDirection:'column',...nativeStyle(contentContainerStyle)}:undefined}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}</div>
+  return <div data-testid={testID} style={window.rowLayout?{boxSizing:'border-box',display:'flex',flexDirection:'column',...nativeStyle(contentContainerStyle)}:undefined}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}<div data-list-footer style={{display:'flex',flexDirection:'column',...nativeStyle(ListFooterComponentStyle)}}>{ListFooterComponent}</div></div>
 });
 export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};
 export const Platform={OS:'ios'};
@@ -197,7 +197,8 @@ import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
 import {TaskPanesContext} from './apps/mobile/src/shell/task-panes';
 import {runtimeProfile,runtimeSnapshotPath} from '@dovo/protocol';
 import {studioThemes} from './packages/studio-core/src/themes.ts';
-window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['light','dark'].map(mode=>({name:name+'/'+mode,...theme[mode]})));
+import {accessibleThemeColors} from './packages/studio-core/src/accessibility.ts';
+window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['light','dark'].map(mode=>({name:name+'/'+mode,...accessibleThemeColors(theme[mode],mode,false)})));
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {RuntimeProvider,useRuntime} from './apps/mobile/src/runtime/connection/provider.tsx';
 import {TaskListViewProvider} from './apps/mobile/src/tasks/list/task-list-view.tsx';
@@ -329,7 +330,13 @@ try {
           ids.map((id) => page.getByTestId('Task ' + id).boundingBox()),
         )
         assert.ok(
-          sizes.every((size) => size && Math.abs(size.height - sizes[0].height) < 0.5),
+          sizes.every(
+            (size, index) =>
+              size &&
+              (index === 4
+                ? size.height < sizes[0].height
+                : Math.abs(size.height - sizes[0].height) < 0.5),
+          ),
           JSON.stringify({ width, scale, sizes }),
         )
         assert.ok(sizes[0].height >= 44)
@@ -351,6 +358,11 @@ try {
               { exact: true },
             )
             .boundingBox()
+          if (id === 'task-2') {
+            assert.ok(sizes[4].height >= 44)
+            assert.ok(Math.abs(title.y + title.height / 2 - sizes[4].y - sizes[4].height / 2) < 1)
+            continue
+          }
           const project = await row
             .getByText(id === 'task-1' ? 'General' : 'Project', { exact: true })
             .boundingBox()
@@ -436,7 +448,7 @@ try {
     await page.screenshot({ path: '/tmp/dovo-compact-uniform-rows.png' })
     assert.deepEqual(errors, [])
     console.log(
-      'Compact row heights match across regular, General, settled, draft, long-checkout and subagent threads at phone, Split View, portrait and landscape iPad widths and 1/1.5/2x text sizes.',
+      'Single-line settled rows and uniform open rows verified across phone and iPad widths and 1/1.5/2x text sizes.',
     )
     await browser.close()
     process.exit(0)
@@ -722,7 +734,14 @@ try {
   let minimumContrast = Infinity
   for (const palette of await page.evaluate(() => window.titlePalettes)) {
     await page.evaluate((palette) => {
-      window.rowTheme = { styles: {}, colors: { text: palette.foreground, surface: palette.card } }
+      window.rowTheme = {
+        styles: {},
+        colors: {
+          text: palette.foreground,
+          muted: palette['muted-foreground'],
+          surface: palette.background,
+        },
+      }
       window.publish({ 'task-0': { title: palette.name + ' read', status: 'done' } })
     }, palette)
     const title = page.getByTestId('Task task-0').getByText(palette.name + ' read', { exact: true })
@@ -758,20 +777,19 @@ try {
     )
     const background = luminance(
       'rgb(' +
-        palette.card
+        palette.background
           .match(/\w\w/g)
           .map((c) => parseInt(c, 16))
           .join(',') +
         ')',
     )
-    assert.equal(
-      style.color,
-      unreadStyle.color,
-      palette.name + ' read and unread titles use the same accessible color',
-    )
+    assert.notEqual(style.color, unreadStyle.color, palette.name + ' read titles must look quieter')
     const foreground = luminance(unreadStyle.color)
-    const contrast =
-      (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05)
+    const readForeground = luminance(style.color)
+    const contrast = Math.min(
+      (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05),
+      (Math.max(background, readForeground) + 0.05) / (Math.min(background, readForeground) + 0.05),
+    )
     minimumContrast = Math.min(minimumContrast, contrast)
     assert.ok(contrast >= 4.5, `${palette.name} unread title contrast ${contrast}`)
   }
@@ -779,13 +797,14 @@ try {
   assert.equal(await page.getByTestId('Task task-0').getByText('Codex', { exact: true }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    `Mobile task titles: opaque read text and unread weight emphasis verified across 28 shipped palette/mode combinations; read/unread contrast >= ${minimumContrast.toFixed(2)}:1.`,
+    `Mobile task titles: quieter read text and stronger unread weight verified across 28 shipped palette/mode combinations; read/unread contrast >= ${minimumContrast.toFixed(2)}:1.`,
   )
-  // Settled rows retain project/status above the title, with details on the icon.
+  // Settled rows keep one line, with project details on the icon and in accessibility text.
   await page.evaluate(() => window.publish({ 'task-1': { archived: true } }))
   const settled = page.getByTestId('Task task-1')
   await settled.waitFor()
-  assert.equal(await settled.getByText('Project', { exact: true }).count(), 1)
+  assert.equal(await settled.getByText('Project', { exact: true }).count(), 0)
+  assert.match(await settled.getAttribute('aria-label'), /Project/)
   assert.equal(await settled.getByText('Settled', { exact: true }).count(), 1)
   assert.equal(await settled.getByText('Task 1', { exact: true }).count(), 1)
   assert.equal(await page.getByTestId('Task task-1 actions').count(), 0)
@@ -915,6 +934,42 @@ try {
   )
   assert.equal(await page.getByTestId('Task running').getAttribute('aria-pressed'), 'false')
   assert.deepEqual(errors, [])
+  await page.evaluate(() => {
+    window.rowLayout = true
+    window.setListPreferences({
+      taskGrouping: 'none',
+      workingSection: true,
+      collapsedThreadSections: ['settled'],
+    })
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      olderSettled: undefined,
+      workspace: {
+        ...window.snapshot.workspace,
+        tasks: window.snapshot.workspace.tasks
+          .filter((task) => ['running', 'task-0'].includes(task.id))
+          .map((task) => (task.id === 'task-0' ? { ...task, archived: true } : task)),
+      },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  const footer = page.getByLabel('Collapsed thread categories', { exact: true })
+  await footer.waitFor()
+  await page.getByTestId('Task list').evaluate((element) => (element.style.minHeight = '650px'))
+  const collapsedBox = await footer.boundingBox()
+  const listBox = await page.getByTestId('Task list').boundingBox()
+  assert.ok(listBox.height >= 650)
+  assert.ok(
+    Math.abs(collapsedBox.y + collapsedBox.height - listBox.y - listBox.height) < 50,
+    'Collapsed mobile categories sit at the bottom of available list space',
+  )
+  await footer.getByRole('button', { name: /^Settled,/ }).click()
+  await page.getByTestId('Task task-0').waitFor()
+  assert.equal(await page.getByLabel('Collapsed thread categories', { exact: true }).count(), 0)
+  await page.getByRole('button', { name: /^Settled,/ }).click()
+  await footer.waitFor()
+  assert.equal(await page.getByTestId('Task task-0').count(), 0)
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
   )

@@ -338,6 +338,23 @@ const tools: Array<
     },
   },
   {
+    name: 'subagent_answer',
+    description:
+      'Resolve an ordinary question from an owned child using the user’s instructions and repository context. Supply answers keyed by question field ID. Omit answers to escalate the existing form to the human in the parent conversation. Never guess user preferences. Permission approvals and secret questions always require a human.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        id: { type: 'string' as const },
+        questionId: { type: 'string' as const },
+        answers: {
+          type: 'object' as const,
+          additionalProperties: { type: 'array' as const, items: { type: 'string' as const } },
+        },
+      },
+      required: ['id', 'questionId'],
+    },
+  },
+  {
     name: 'subagent_send',
     description:
       'Send a follow-up to an owned child, reusing its conversation. Does not interrupt its active turn. Use a stable key and identical prompt on retries. Stopped children require a fresh spawn.',
@@ -851,6 +868,8 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             repositoryId: input.repositoryId,
           }),
         )
+      case 'subagent_answer':
+        return text(await post('/api/subagents/answer', { ...input, taskId: task, parentRunId }))
       case 'subagent_send':
         return text(await post('/api/subagents/send', { ...input, taskId: task, parentRunId }))
       case 'subagent_read':

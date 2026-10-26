@@ -458,6 +458,50 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     preferences.workingSection,
     preferences.threadSectionOrder,
   ])
+  const sectionKey = (key: string) =>
+    ['settled', 'snoozed', 'working', 'waiting', 'needs-input', 'active'].includes(key)
+      ? key
+      : `${grouping}:${key}`
+  const collapsedHeaders = listItems.filter(
+    (item): item is Extract<TaskListItem, { kind: 'group' }> =>
+      item.kind === 'group' && collapsed.has(sectionKey(item.key)),
+  )
+  const expandedItems = listItems.filter(
+    (item) => item.kind !== 'group' || !collapsed.has(sectionKey(item.key)),
+  )
+  const renderSectionHeader = (item: Extract<TaskListItem, { kind: 'group' }>) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}, ${item.count} tasks`}
+      accessibilityState={{
+        expanded: !collapsed.has(sectionKey(item.key)),
+      }}
+      onPress={() => {
+        const next = new Set(collapsed)
+        const key = sectionKey(item.key)
+        if (next.has(key)) next.delete(key)
+        else {
+          next.add(key)
+          if (key === 'settled') {
+            setShowAllSettled(false)
+            setSettledLimit(settledSummaryPageSize)
+          }
+        }
+        updateMobilePreferences({ collapsedThreadSections: [...next] })
+      }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 }}
+    >
+      <Icon
+        name={collapsed.has(sectionKey(item.key)) ? 'next' : 'down'}
+        size={12}
+        color={colors.muted}
+      />
+      <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontWeight: '600' }]}>
+        {item.name}
+      </Text>
+      <Text style={styles.muted}>{item.count}</Text>
+    </Pressable>
+  )
   const bulk = async (
     action: 'archive' | 'restore' | 'snooze' | 'pin' | 'delete',
     hours?: number,
@@ -755,7 +799,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       <FlatList
         {...listScroll}
         contentInsetAdjustmentBehavior="automatic"
-        data={listItems}
+        data={expandedItems}
         testID="Task list"
         scrollEventThrottle={32}
         keyboardDismissMode="on-drag"
@@ -837,67 +881,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               secondary
             />
           ) : item.kind === 'group' ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${item.name}, ${item.count} tasks`}
-              accessibilityState={{
-                expanded: !collapsed.has(
-                  item.key === 'settled' ||
-                    item.key === 'snoozed' ||
-                    item.key === 'working' ||
-                    item.key === 'waiting' ||
-                    item.key === 'needs-input' ||
-                    item.key === 'active'
-                    ? item.key
-                    : `${grouping}:${item.key}`,
-                ),
-              }}
-              onPress={() => {
-                const next = new Set(collapsed)
-                const key =
-                  item.key === 'settled' ||
-                  item.key === 'snoozed' ||
-                  item.key === 'working' ||
-                  item.key === 'waiting' ||
-                  item.key === 'needs-input' ||
-                  item.key === 'active'
-                    ? item.key
-                    : `${grouping}:${item.key}`
-                if (next.has(key)) next.delete(key)
-                else {
-                  next.add(key)
-                  if (key === 'settled') {
-                    setShowAllSettled(false)
-                    setSettledLimit(settledSummaryPageSize)
-                  }
-                }
-                updateMobilePreferences({ collapsedThreadSections: [...next] })
-              }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 }}
-            >
-              <Icon
-                name={
-                  collapsed.has(
-                    item.key === 'settled' ||
-                      item.key === 'snoozed' ||
-                      item.key === 'working' ||
-                      item.key === 'waiting' ||
-                      item.key === 'needs-input' ||
-                      item.key === 'active'
-                      ? item.key
-                      : `${grouping}:${item.key}`,
-                  )
-                    ? 'next'
-                    : 'down'
-                }
-                size={12}
-                color={colors.muted}
-              />
-              <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontWeight: '600' }]}>
-                {item.name}
-              </Text>
-              <Text style={styles.muted}>{item.count}</Text>
-            </Pressable>
+            renderSectionHeader(item)
           ) : (
             <View
               style={
@@ -944,8 +928,18 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             </View>
           )
         }
+        ListFooterComponentStyle={{ flexGrow: 1, justifyContent: 'flex-end' }}
+        ListFooterComponent={
+          collapsedHeaders.length ? (
+            <View accessibilityLabel="Collapsed thread categories">
+              {collapsedHeaders.map((item) => (
+                <View key={item.key}>{renderSectionHeader(item)}</View>
+              ))}
+            </View>
+          ) : undefined
+        }
         ListEmptyComponent={
-          historySearch.loading ? undefined : archived ? (
+          listItems.length || historySearch.loading ? undefined : archived ? (
             <EmptyState
               icon="archive"
               title={search ? 'No matching archived threads' : 'No archived threads'}

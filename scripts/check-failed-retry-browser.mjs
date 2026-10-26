@@ -28,7 +28,7 @@ function App(){const [state,setState]=useState({connected:true,task:{id:'task',s
       [
         {
           path: '@dovo/studio-core',
-          contents: `export {responses} from '@dovo/protocol';export const useWorkspace=()=>window.store;`,
+          contents: `export {responses} from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});`,
         },
         {
           path: '@dovo/studio-core/state',

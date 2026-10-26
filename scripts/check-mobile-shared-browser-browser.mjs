@@ -31,7 +31,7 @@ const overviews=profiles.map(profile=>({profile,connected:true,snapshot:{workspa
 const readRuntime=async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('profiles/read'))return {profiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]};if(path.endsWith('selection'))return {text:'  remote exact\\ntext ',url:'http://localhost:4000',title:'Remote page'};return {ok:true,ticket:'fixture-ticket',tabId:body.tabId,profileId:body.profileId}};
 export const useRuntime=()=>{const id=useContext(scope);return {activeId:id,connection:{address:'http://'+id+'.fixture',token:'paired'},profiles,overviews,readRuntime,readEffect:(path,body)=>Effect.tryPromise(()=>readRuntime(profiles.find(p=>p.id===id),path,body))}};export const useNavigation=()=>({navigate:(...args)=>window.navigation.push(args)});export const usePreviewActive=()=>true;
 export const WebView=forwardRef(({source,onMessage,onError},ref)=>{const frame=useRef();const owner=useContext(scope);useImperativeHandle(ref,()=>({reload:()=>window.calls.push({reload:true}),goBack:()=>{},goForward:()=>{},injectJavaScript:code=>frame.current.contentWindow.eval(code)}));window.webError=()=>onError?.({nativeEvent:{description:'Fixture page failed'}});return <iframe title={source.html?'Remote page':'Device page'} ref={frame} data-url={source.uri} onLoad={()=>{const w=frame.current.contentWindow;w.ReactNativeWebView={postMessage:data=>onMessage({nativeEvent:{data}})};if(source.html){let url='about:blank';const emit=m=>w.ReactNativeWebView.postMessage(JSON.stringify({channel:'dovo-browser',...m}));const state=()=>emit({type:'state',url,title:'Remote page',back:false,forward:false,loading:false,editable:false});w.addEventListener('message',e=>{const m=e.data;if(m.type==='connect'){const call=window.calls.findLast(c=>c.owner===owner&&c.path?.endsWith('/open'));url=call?.body.url||'about:blank';emit({type:'connection',online:true});state()}if(m.type==='input'&&m.input.type==='navigate'){url=m.input.url;setTimeout(state,25)}});emit({type:'ready'})}}} srcDoc={source.html?'Remote viewer fixture':'<title>Local fixture</title><pre id="selection">  Keep  spaces\\nSecond line </pre>'}/>});
-export const Glass=View;export const Icon=()=>null;export const IconButton=Action;export const TextInput='input';export const StyleSheet={hairlineWidth:1};export const AppState={currentState:'active'};export const Alert={alert:(...args)=>window.calls.push({alert:args})};export const useOpenAppLink=()=>()=>{throw Error('Unexpected external navigation')};export const remoteBrowserHtml='fixture';export const deviceHostMessage=message=>message;export const useScreenshotAttachment=()=>{throw Error('Shared browser must not create screenshot attachment')};
+export const Glass=View;export const Icon=()=>null;export const IconButton=Action;export const TextInput=({accessibilityLabel,value,onChangeText,onSubmitEditing,onFocus,onBlur,style})=><input aria-label={accessibilityLabel} value={value} onChange={e=>onChangeText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSubmitEditing?.()}} onFocus={onFocus} onBlur={onBlur} style={css(style)}/>;export const Keyboard={dismiss:()=>{}};export const KeyboardAvoidingView=View;export const Platform={OS:'ios'};export const Share={share:async value=>window.calls.push({share:value})};export const StyleSheet={hairlineWidth:1};export const AppState={currentState:'active'};export const Alert={alert:(...args)=>window.calls.push({alert:args})};export const useOpenAppLink=()=>()=>{throw Error('Unexpected external navigation')};export const remoteBrowserHtml='fixture';export const deviceHostMessage=message=>message;export const useScreenshotAttachment=()=>{throw Error('Shared browser must not create screenshot attachment')};
 window.nativeCalls=[];const nativeListeners=new Map(),nativeTabs=new Map(),nativeProfiles=new Set(['device']);let nativeEnabled=false;let nativeInstance=0;
 const emit=(name,event)=>{for(const f of nativeListeners.get(name)||[])f(event)};window.nativeEmit=(name,page)=>{if(name==='onTabCreated')nativeTabs.set(page.tabId,page);if(name==='onTabClosed'&&nativeTabs.get(page.tabId)?.instanceId===page.instanceId)nativeTabs.delete(page.tabId);emit(name,page)};
 const nativeStatus=()=>({enabled:nativeEnabled,browsingAvailable:window.nativeBrowsing!==false,websiteTabCaptureAvailable:false,websiteTabCaptureUnavailableReason:'No public arbitrary-tab capture API.',systemVersion:'mock',maxTabs:100,profiles:[...nativeProfiles].map(profileId=>({profileId,dataStoreIdentifier:profileId})),tabs:[...nativeTabs.values()]});
@@ -129,7 +129,8 @@ try {
   await button('Go').click()
   await page.locator('iframe').waitFor()
   assert.equal(await page.locator('iframe').getAttribute('data-url'), 'http://192.168.1.7:3000/dev')
-  await button('Star page').click()
+  await button('Page actions').click()
+  await button('Bookmark page').click()
   await page.waitForFunction(
     () => JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).bookmarks.length === 1,
   )
@@ -153,6 +154,7 @@ try {
     /^Existing phone edits[\s\S]*Keep  spaces\n> Second line/,
   )
   assert.equal(await page.evaluate(() => localStorage.getItem('dovo.draft.lan.target')), null)
+  await button('Page actions').click()
   await button('Add page to thread').click()
   await page.evaluate(() => (window.failDraft = true))
   await button('Destination · LAN computer').click()
@@ -383,7 +385,9 @@ try {
     const s = JSON.parse(localStorage.getItem('dovo.mobile-browser.v1'))
     return s.tabs.length === 1 && s.tabs[0].profileId === 'Work_1'
   })
+  await nativeButton('Page actions').click()
   await nativeButton('Copy selection').click()
+  await nativePage.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   await nativePage.waitForFunction(() => window.copied !== null)
   assert.equal(await nativePage.evaluate(() => window.copied), '  Native exact\nselection ')
   await nativePage.evaluate(() =>

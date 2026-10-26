@@ -191,6 +191,7 @@ it('rebinds Dovo task tools before a follow-up turn while resuming the same conv
               todos: { approval_mode: 'approve' },
               subagent_spawn: { approval_mode: 'approve' },
               subagent_list: { approval_mode: 'approve' },
+              subagent_answer: { approval_mode: 'approve' },
               subagent_send: { approval_mode: 'approve' },
               subagent_read: { approval_mode: 'approve' },
               subagent_wait: { approval_mode: 'approve' },

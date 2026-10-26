@@ -7,6 +7,7 @@ export const inputPreviewItemSchema = mutableStruct({
   runtimeId: Schema.String,
   runtimeName: Schema.String,
   taskTitle: Schema.String,
+  parentTaskId: Schema.optional(Schema.String),
   connection: connectionSchema,
   connected: Schema.Boolean,
   request: Schema.Union([

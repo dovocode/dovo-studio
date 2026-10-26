@@ -5,16 +5,18 @@ import './styles.css'
 import { ApplicationStateProvider } from '@dovo/studio-core/state'
 import { InputPreviewWindow } from './input-preview'
 import { Workbench, TaskLauncherWindow } from '@dovo/studio-shell'
-import { tasksExtension } from '@dovo/extension-tasks'
+import { ThreadShare, tasksExtension } from '@dovo/extension-tasks'
 import { scmExtension } from '@dovo/extension-scm'
 import { agentsExtension } from '@dovo/extension-agents'
 import { jobsExtension } from '@dovo/extension-jobs'
 import { runtimeExtension, WindowsRuntimeGate } from '@dovo/extension-runtime'
 const extensions = [tasksExtension, scmExtension, agentsExtension, jobsExtension, runtimeExtension]
-const threadWindow = window.location.hash.startsWith('#thread=')
+const captureThread = window.location.hash.startsWith('#thread-share=')
+const threadHash = captureThread ? '#thread-share=' : '#thread='
+const threadWindow = window.location.hash.startsWith(threadHash)
   ? decode(
       threadWindowTargetSchema,
-      JSON.parse(decodeURIComponent(window.location.hash.slice('#thread='.length))),
+      JSON.parse(decodeURIComponent(window.location.hash.slice(threadHash.length))),
     )
   : undefined
 const browserWindowId = /^#browser-window=([a-f0-9-]{36})$/.exec(window.location.hash)?.[1]
@@ -33,6 +35,11 @@ createRoot(root).render(
         <Workbench
           extensions={extensions}
           threadWindow={threadWindow}
+          captureContent={
+            captureThread && threadWindow ? (
+              <ThreadShare taskId={threadWindow.taskId} runtimeId={threadWindow.runtimeId} />
+            ) : undefined
+          }
           browserWindowId={browserWindowId}
           openBrowserWindow={window.dovo?.openBrowserWindow}
           popOutThread={window.dovo?.popOutThread}

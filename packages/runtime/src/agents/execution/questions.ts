@@ -32,6 +32,42 @@ export class Questions {
     private activity: Pick<Activity, 'add'>,
     private receipts?: { questionResponse: (id: string) => string | undefined },
   ) {}
+  private route?: (taskId: string) => boolean
+  private notificationOwner?: (taskId: string) => string
+  private routed?: (question: PendingQuestion) => void
+  setRouting(
+    route: (taskId: string) => boolean,
+    routed: (question: PendingQuestion) => void,
+    notificationOwner?: (taskId: string) => string,
+  ) {
+    this.notificationOwner = notificationOwner
+    this.route = route
+    this.routed = routed
+  }
+  /** Only ordinary questions may be answered by a coordinating agent. */
+  answerByParent(taskId: string, id: string, answers?: QuestionAnswers) {
+    const request = this.requests.get(id)
+    if (!request && answers) {
+      this.respond(id, answers)
+      return
+    }
+    if (!request || request.info.taskId !== taskId)
+      throw new HttpError(409, 'This child question is no longer pending')
+    if (!answers && request.info.routing === 'human') return
+    if (request.info.routing !== 'parent' || request.info.prompt.questions.some((q) => q.secret))
+      throw new HttpError(403, 'This question requires a human response')
+    if (answers) this.respond(id, answers)
+    else {
+      request.info = { ...request.info, routing: 'human' }
+      this.activity.add(
+        'question',
+        taskId,
+        request.info.prompt.title,
+        { ...request.info, status: 'requested' },
+        `question:${id}`,
+      )
+    }
+  }
   list() {
     return [...this.requests.values()].map((r) => r.info)
   }
@@ -67,11 +103,18 @@ export class Questions {
       }
       if (this.status(id) === 'answered') return Promise.resolve(null)
     }
-    const info = {
+    const info: PendingQuestion = {
       id,
       taskId,
       prompt,
       createdAt: new Date().toISOString(),
+      ...(this.route?.(taskId)
+        ? {
+            routing: prompt.questions.some((q) => q.secret)
+              ? ('human' as const)
+              : ('parent' as const),
+          }
+        : {}),
     }
     this.activity.add(
       'question',
@@ -136,6 +179,15 @@ export class Questions {
         once: true,
       })
       if (signal.aborted) abort()
+      else if (info.routing === 'parent') {
+        try {
+          this.routed?.(info)
+        } catch (error) {
+          // A full/stopped coordinator must never strand a question hidden from the human.
+          this.requests.get(id)!.info = { ...info, routing: 'human' }
+          console.error('Could not route child question to parent', error)
+        }
+      }
     })
   }
   respond(id: string, value: QuestionAnswers | null) {
@@ -163,7 +215,12 @@ export class Questions {
     const request = this.requests.get(input.id)
     if (request) {
       const question = notificationQuestion(request.info.prompt)
-      if (request.info.taskId !== input.taskId || !question || question.fieldId !== input.fieldId)
+      if (
+        (request.info.taskId !== input.taskId &&
+          this.notificationOwner?.(request.info.taskId) !== input.taskId) ||
+        !question ||
+        question.fieldId !== input.fieldId
+      )
         throw new HttpError(409, 'Open this question in Dovo to answer')
       if (question.mode === 'choice' && !question.choices.some((o) => o.value === input.value))
         throw new HttpError(400, 'Choose an available option')

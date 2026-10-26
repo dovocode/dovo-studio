@@ -262,7 +262,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
               {harness?.provider === 'acp' && (
                 <AcpRegistry
                   agent={{ ...harness, model: settings.model, reasoning: settings.reasoning }}
-                  onChange={(agent) => edit(titleSettingsForHarness(agent))}
+                  onChange={(agent) => edit({ ...settings, ...titleSettingsForHarness(agent) })}
                 />
               )}
               {selection && settings.inheritTitleModel ? (
@@ -293,6 +293,37 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 <p role="alert" className="text-xs text-destructive">
                   The selected profile is no longer available. Choose another provider.
                 </p>
+              )}
+              {selection && (
+                <details className="rounded-md border p-3">
+                  <summary className="cursor-pointer text-xs text-muted-foreground">
+                    Additional prompts (optional)
+                  </summary>
+                  <div className="mt-3 grid gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Add preferences to the built-in selection instructions. Leave blank to use
+                      defaults.
+                    </p>
+                    {(
+                      [
+                        ['scopePrompt', 'Scope'],
+                        ['tunePrompt', 'Tune'],
+                        ['maestroPrompt', 'Maestro'],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <FormField key={key} layout="settings" label={`${label} additional prompt`}>
+                        <Textarea
+                          aria-label={`${label} additional prompt`}
+                          maxLength={12000}
+                          value={settings[key] ?? ''}
+                          onChange={(event) =>
+                            edit({ ...settings, [key]: event.target.value || undefined })
+                          }
+                        />
+                      </FormField>
+                    ))}
+                  </div>
+                </details>
               )}
               <SettingsSaveBar
                 saveLabel={selection ? 'Save selection model' : 'Save title settings'}

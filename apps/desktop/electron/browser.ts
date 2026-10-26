@@ -5,6 +5,8 @@ import { BrowserWindow, WebContentsView, ipcMain, shell, Menu, clipboard } from 
 import { trustedRendererUrl } from './renderer-trust.js'
 import { createBrowserExtensions, workspacePartition } from './browser-extensions.js'
 import { createBrowserMedia, type MediaTab } from './browser-media.js'
+import { browserPermissions } from './browser-permissions.js'
+import { openThreadMedia } from './browser-thread-media.js'
 import { randomUUID } from 'node:crypto'
 import { browserCommandSchema, previewUrl } from '@dovo/protocol'
 type Entry = {
@@ -142,7 +144,7 @@ function postNavigation(details: Electron.HandlerDetails): Electron.LoadURLOptio
     ...(openableUrl(details.referrer.url) ? { httpReferrer: details.referrer } : {}),
   }
 }
-export function registerBrowser(indexPath: string, directory?: string) {
+export function registerBrowser(indexPath: string, directory?: string, preload?: string) {
   let cdp: Awaited<ReturnType<typeof createBrowserCdp>> | undefined
   let cdpPending: Promise<Awaited<ReturnType<typeof createBrowserCdp>>> | undefined
   // Identity distinguishes overlapping shows of the same tab after resize or a menu closes.
@@ -189,15 +191,13 @@ export function registerBrowser(indexPath: string, directory?: string) {
     contents: entry.view.webContents,
   })
   const media = createBrowserMedia({
+    openThread: preload ? (target) => openThreadMedia(target, indexPath, preload) : undefined,
     tabFor: (contents) => {
       for (const entry of views.values())
         // Handlers can receive a different wrapper object for the same page; compare by ID.
         if (entry.workspace && entry.view.webContents.id === contents.id) return mediaTab(entry)
     },
-    tabs: (windowId, profileId) =>
-      [...views.values()]
-        .filter((e) => e.workspace && e.windowId === windowId && e.profileId === profileId)
-        .map(mediaTab),
+    tabs: () => [...views.values()].filter((e) => e.workspace).map(mediaTab),
   })
   const extensions = createBrowserExtensions({
     create: async (profileId, details) => {
@@ -296,6 +296,7 @@ export function registerBrowser(indexPath: string, directory?: string) {
   const releaseWindow = (window: BrowserWindow, detach: boolean) => {
     activeViews.delete(window.id)
     windowTabs.delete(window.id)
+    media.releaseWindow(window.id)
     for (const [profileId, owner] of profileWindows)
       if (owner.window === window) profileWindows.delete(profileId)
     for (const [key, current] of views) {
@@ -434,6 +435,20 @@ export function registerBrowser(indexPath: string, directory?: string) {
             }),
         },
       )
+      const page = openableUrl(view.webContents.getURL())
+      if (page) {
+        const origin = new URL(page).origin
+        const permissions = browserPermissions(profileId)
+        items.push(
+          { type: 'separator' },
+          {
+            label: `Allow notifications from ${origin}`,
+            type: 'checkbox',
+            checked: permissions.notification(origin) === true,
+            click: (item) => permissions.setNotification(origin, item.checked),
+          },
+        )
+      }
       Menu.buildFromTemplate(items).popup({ window })
     })
     view.webContents.setIgnoreMenuShortcuts(workspace)
@@ -489,6 +504,12 @@ export function registerBrowser(indexPath: string, directory?: string) {
         else queueLink(created, details.url)
         return { action: 'deny' }
       })
+    })
+    view.webContents.on('before-mouse-event', (_event, input) => {
+      // A site-isolated redirect or extension popup may leave keyboard focus in another
+      // renderer. Give the page focus on deliberate clicks, never on polling or resizing.
+      if (input.type === 'mouseDown' && activeViews.get(window.id)?.key === viewKey)
+        view.webContents.focus()
     })
     view.webContents.on('before-input-event', (event, input) => {
       if (!created.workspace) return
@@ -752,6 +773,8 @@ export function registerBrowser(indexPath: string, directory?: string) {
           },
         })
       } else entry.view.webContents.disableDeviceEmulation()
+      // Reinsert the selected page above retained sibling views for native hit testing.
+      window.contentView.addChildView(entry.view)
       entry.view.setVisible(true)
       if (entry.restoreFocus) {
         entry.restoreFocus = false
@@ -759,6 +782,10 @@ export function registerBrowser(indexPath: string, directory?: string) {
       }
       return
     }
+    if (command.action === 'thread-media-sources')
+      return media.setThreadSources(window.id, command.sources)
+    if (command.action === 'remote-media-sources')
+      return media.setRemoteSources(window.id, command.sources)
     if (command.action === 'media') return media.decide(window.id, command)
     if (command.action === 'media-status')
       return { url: '', back: false, forward: false, ...media.snapshot(window.id) }
@@ -833,6 +860,7 @@ export function registerBrowser(indexPath: string, directory?: string) {
   return {
     dispose: async () => {
       clearInterval(reap)
+      media.reset()
       for (const [key, entry] of views) {
         cdp?.remove(key)
         closePopups(entry)

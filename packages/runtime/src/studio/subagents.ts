@@ -11,6 +11,7 @@ import {
   subagentListSchema,
   subagentReadSchema,
   subagentSendSchema,
+  subagentAnswerSchema,
   taskHarnessSchema,
   threadWatchSnapshotSchema,
   type SubagentSpawn,
@@ -69,6 +70,7 @@ function targetResult(
     paused: watch.paused,
     stopRequested: watch.stopRequested,
     error: snapshot?.error,
+    questions: snapshot?.questions,
     result:
       includeResult && !watch.paused && snapshot?.phase === 'completed'
         ? snapshot.result
@@ -383,7 +385,12 @@ export async function waitChild(
     return s.tasks.subagentWait(input.taskId, input.id, input.timeoutMs, input.parentRunId)
   const deadline = Date.now() + (input.timeoutMs ?? 20000)
   let result = await readChild(s, input, policy)
-  while (result.running && !('offline' in result && result.offline) && Date.now() < deadline) {
+  while (
+    result.running &&
+    !('questions' in result && result.questions?.length) &&
+    !('offline' in result && result.offline) &&
+    Date.now() < deadline
+  ) {
     await new Promise<void>((resolve) => setTimeout(resolve, Math.min(1000, deadline - Date.now())))
     result = await readChild(s, input, policy)
   }
@@ -464,4 +471,45 @@ export async function sendChild(
     true,
   )
   return readChild(s, input, supplied)
+}
+
+/** Permission approvals and secret fields are deliberately absent from this operation. */
+export async function answerChild(
+  s: Services,
+  input: typeof subagentAnswerSchema.Type,
+  supplied?: StudioPolicy,
+) {
+  s.tasks.assertToolScope(input.taskId, input.parentRunId)
+  const watch = ownedTarget(s, input.taskId, input.id)
+  if (watch) {
+    const policy = parentPolicy(s, input.taskId, supplied)
+    if (watch.paused || watch.stopRequested)
+      throw new HttpError(403, 'This child is paused or stopping')
+    await routedStudioTool(
+      s,
+      input.taskId,
+      'threads',
+      {
+        action: 'answer-child-question',
+        id: watch.threadId,
+        questionId: input.questionId,
+        answers: input.answers,
+      },
+      watch.runtimeId,
+      () => s.tasks.assertToolScope(input.taskId, input.parentRunId),
+      policy,
+    )
+  } else {
+    const child = s.store.taskSummary(input.id)
+    if (child.delegation?.parentTaskId !== input.taskId)
+      throw new HttpError(403, 'This child belongs to another thread')
+    s.questions.answerByParent(child.id, input.questionId, input.answers)
+  }
+  s.store.updateTask(input.taskId, (parent) => ({
+    ...parent,
+    subagentInbox: parent.subagentInbox?.filter(
+      (message) => message.id !== `subagent-question:${input.questionId}`,
+    ),
+  }))
+  return { ok: true }
 }

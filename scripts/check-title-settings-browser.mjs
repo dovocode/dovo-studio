@@ -109,6 +109,20 @@ try {
   await page.getByRole('option', { name: 'Inherit title model', exact: true }).click()
   await page.getByRole('button', { name: 'Save selection model', exact: true }).click()
   await page.waitForFunction(() => window.documentSettings.inheritTitleModel === true)
+  const scopePrompt = page.getByRole('textbox', { name: 'Scope additional prompt', exact: true })
+  assert.equal(await scopePrompt.isVisible(), false)
+  await page.getByText('Additional prompts (optional)', { exact: true }).click()
+  for (const name of ['Scope', 'Tune', 'Maestro'])
+    await page
+      .getByRole('textbox', { name: name + ' additional prompt', exact: true })
+      .fill(name + ' preference')
+  await page.getByRole('button', { name: 'Save selection model', exact: true }).click()
+  await page.waitForFunction(() => window.documentSettings.scopePrompt === 'Scope preference')
+  assert.equal(await page.evaluate(() => window.documentSettings.tunePrompt), 'Tune preference')
+  assert.equal(
+    await page.evaluate(() => window.documentSettings.maestroPrompt),
+    'Maestro preference',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Title settings: conflict feedback, cancelled reload retains edits, confirmed reload refreshes baseline, and subsequent save passed.',
@@ -129,7 +143,7 @@ try {
   }
   const mobileBuild = await build({
     stdin: {
-      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {TitleSettings} from '${root}/apps/mobile/src/agents/title-settings.tsx';window.documentSettings={harness:{provider:'opencode',endpoint:'initial'},agentId:'',model:'model',reasoning:''};window.writes=[];const call=async(path,input)=>{if(path.endsWith('/read'))return structuredClone(window.documentSettings);if(JSON.stringify(input.before)!==JSON.stringify(window.documentSettings))throw Error('Settings changed on another device');window.writes.push(input);window.documentSettings=structuredClone(input.after);return structuredClone(input.after)};window.runtime={connected:true,snapshot:{workspace:{agents:[]},defaults:{}},call,callEffect:(path,input)=>Effect.tryPromise({try:()=>call(path,input),catch:error=>error})};function App(){const [,render]=useState(0);window.setConnection=connected=>{window.runtime.connected=connected;render(value=>value+1)};return <TitleSettings/>}createRoot(document.getElementById('app')).render(<App/>);`,
+      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {TitleSettings} from '${root}/apps/mobile/src/agents/title-settings.tsx';window.documentSettings={harness:{provider:'opencode',endpoint:'initial'},agentId:'',model:'model',reasoning:''};window.writes=[];const call=async(path,input)=>{if(path.endsWith('/read'))return structuredClone(window.documentSettings);if(JSON.stringify(input.before)!==JSON.stringify(window.documentSettings))throw Error('Settings changed on another device');window.writes.push(input);window.documentSettings=structuredClone(input.after);return structuredClone(input.after)};window.runtime={connected:true,snapshot:{workspace:{agents:[]},defaults:{},smartModelSelectionEnabled:true},call,callEffect:(path,input)=>Effect.tryPromise({try:()=>call(path,input),catch:error=>error})};function App(){const [,render]=useState(0);window.setConnection=connected=>{window.runtime.connected=connected;render(value=>value+1)};return window.selectionMode?<TitleSettings key='selection' selection/>:<TitleSettings/>}const root=createRoot(document.getElementById('app'));window.showMobileSelection=()=>{window.selectionMode=true;root.render(<App/>)};root.render(<App/>);`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -201,6 +215,36 @@ try {
   assert.equal(
     (await mobilePage.evaluate(() => window.writes[0])).before.harness.endpoint,
     'remote edit',
+  )
+  await mobilePage.evaluate(() => {
+    window.documentSettings = { inheritTitleModel: true, agentId: '', model: '', reasoning: '' }
+    window.showMobileSelection()
+  })
+  const prompts = mobilePage.getByRole('button', {
+    name: 'Additional prompts (optional)',
+    exact: true,
+  })
+  await prompts.waitFor()
+  assert.equal(
+    await mobilePage.getByRole('textbox', { name: 'Scope additional prompt' }).count(),
+    0,
+  )
+  await prompts.click()
+  for (const name of ['Scope', 'Tune', 'Maestro'])
+    await mobilePage
+      .getByRole('textbox', { name: name + ' additional prompt', exact: true })
+      .fill(name + ' mobile preference')
+  await mobilePage.getByRole('button', { name: 'Save selection model', exact: true }).click()
+  await mobilePage.waitForFunction(
+    () => window.documentSettings.scopePrompt === 'Scope mobile preference',
+  )
+  assert.equal(
+    await mobilePage.evaluate(() => window.documentSettings.tunePrompt),
+    'Tune mobile preference',
+  )
+  assert.equal(
+    await mobilePage.evaluate(() => window.documentSettings.maestroPrompt),
+    'Maestro mobile preference',
   )
   assert.deepEqual(mobileErrors, [])
   await mobilePage.close()

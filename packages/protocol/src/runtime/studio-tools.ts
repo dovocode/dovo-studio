@@ -1,3 +1,4 @@
+import { questionAnswersSchema } from '../conversation/workflow/questions.js'
 import { threadParentSchema } from '../tasks/thread-watches.js'
 import { Schema } from 'effect'
 import { mutableStruct, minValue, maxValue } from '../shared/schema.js'
@@ -79,6 +80,12 @@ const timeout = Schema.optional(
 )
 const page = Schema.optional(id)
 export const studioThreadsCommandSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literal('answer-child-question'),
+    id,
+    questionId: id,
+    answers: Schema.optional(questionAnswersSchema),
+  }),
   mutableStruct({ action: Schema.Literal('list'), query: Schema.optional(text), before: page }),
   mutableStruct({ action: Schema.Literal('read'), id, before: page }),
   mutableStruct({ action: Schema.Literal('snapshot'), id }),

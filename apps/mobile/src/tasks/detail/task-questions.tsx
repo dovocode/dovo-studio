@@ -1,3 +1,4 @@
+import { taskInputVisible } from '@dovo/protocol'
 import { runtimeComputerName } from '@dovo/protocol'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -13,7 +14,8 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
   const { styles } = useTheme()
 
   const { snapshot, profile, connected, callEffect } = useRuntime()
-  const questions = snapshot?.questions.filter((q) => q.taskId === taskId) ?? []
+  const questions =
+    snapshot?.questions.filter((q) => taskInputVisible(snapshot.workspace.tasks, taskId, q)) ?? []
   const pending = questionId
     ? questions.find((q) => q.id === questionId)
     : (questions.find((q) => q.prompt.blocking !== false) ?? questions[0])
@@ -49,6 +51,13 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
           .filter(Boolean)
           .join(' · ')}
       </Text>
+      {pending.taskId !== taskId && (
+        <Text style={styles.muted}>
+          For child thread ·{' '}
+          {snapshot?.workspace.tasks.find((child) => child.id === pending.taskId)?.title ??
+            pending.taskId}
+        </Text>
+      )}
       <QuestionForm
         key={pending.id}
         request={pending}

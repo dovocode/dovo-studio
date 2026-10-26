@@ -8,7 +8,7 @@ import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
-import { Alert, View } from 'react-native'
+import { Alert, Pressable, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
   agentSchema,
@@ -41,6 +41,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
     [loadError, setLoadError] = useApplicationState('')
   const [retry, setRetry] = useApplicationState(0)
   const [saved, setSaved] = useApplicationState(false)
+  const [promptsOpen, setPromptsOpen] = useApplicationState(false)
   const dirty = !!settings && JSON.stringify(settings) !== JSON.stringify(baseline)
   const protectDraft = useRef(false)
   protectDraft.current = dirty
@@ -187,7 +188,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
       {!(selection && settings.inheritTitleModel) && agent.provider === 'acp' && (
         <AcpRegistry
           agent={agent}
-          onChange={(agent) => setSettings(titleSettingsForHarness(agent))}
+          onChange={(agent) => setSettings({ ...settings, ...titleSettingsForHarness(agent) })}
         />
       )}
       {!(selection && settings.inheritTitleModel) && (
@@ -238,6 +239,43 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
             })
           }
         />
+      )}
+      {selection && (
+        <View style={{ gap: 12 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Additional prompts (optional)"
+            accessibilityState={{ expanded: promptsOpen }}
+            onPress={() => setPromptsOpen(!promptsOpen)}
+            style={{ minHeight: 44, justifyContent: 'center' }}
+          >
+            <Text style={styles.text}>{promptsOpen ? '▾' : '▸'} Additional prompts (optional)</Text>
+          </Pressable>
+          {promptsOpen && (
+            <>
+              <Text style={styles.muted}>
+                Add preferences to the built-in selection instructions. Leave blank to use defaults.
+              </Text>
+              {(
+                [
+                  ['scopePrompt', 'Scope'],
+                  ['tunePrompt', 'Tune'],
+                  ['maestroPrompt', 'Maestro'],
+                ] as const
+              ).map(([key, label]) => (
+                <Field
+                  key={key}
+                  label={`${label} additional prompt`}
+                  multiline
+                  maxLength={12000}
+                  editable={!busy}
+                  value={settings[key] ?? ''}
+                  onChangeText={(value) => setSettings({ ...settings, [key]: value || undefined })}
+                />
+              ))}
+            </>
+          )}
+        </View>
       )}
       <SettingsSaveBar
         inline

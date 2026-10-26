@@ -13,6 +13,7 @@ import {StrictMode} from 'react';
 import {decode,runtimeProfile,snapshotSchema} from '@dovo/protocol';
 import {Workbench} from './packages/studio-shell/src/workbench.tsx';
 import {useWorkspace,useStudioHost,defineStudioExtension,updateAppPreferences} from '@dovo/studio-core';
+import {ThreadShare} from './packages/extension-tasks/src/thread-share.tsx';
 import {TaskContextMenu} from './packages/extension-tasks/src/detail/task-context-menu.tsx';
 import {mergeRuntimeRegistry} from './packages/studio-core/src/workspace/runtime-registry.ts';
 const profiles=[0,1].map(i=>runtimeProfile({address:'http://host'+i+'.lan:8787',token:'device-token-at-least-32-characters-'+i},'Computer '+i));
@@ -24,7 +25,7 @@ window.calls=[];window.popped=[];window.snapshotRevision=1;
 window.fetch=async(url,init={})=>{
  const parsed=new URL(url),path=parsed.pathname,input=init.body?JSON.parse(init.body):undefined;
  window.calls.push({host:parsed.host,path,input});
- if(path==='/api/snapshot')return Response.json(decode(snapshotSchema,{revision:window.snapshotRevision,owner:false,projectTransfersSupported:true,projectWorktreeTransfersSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'project',name:'Project',path:'/project',branch:'main'}],automations:[],tasks:[{id:'thread',title:'Thread on '+parsed.hostname+(window.snapshotRevision>1?' update '+window.snapshotRevision:''),agentId:'',repositoryId:'project',execution:'worktree',checkoutBranch:'feature',status:'draft',sessionId:'session',createdAt:'2026-10-12',messages:[],files:[],draft:'',example:false}]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]}));
+ if(path==='/api/snapshot')return Response.json(decode(snapshotSchema,{revision:window.snapshotRevision,owner:false,projectTransfersSupported:true,projectWorktreeTransfersSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'project',name:'Project',path:'/project',branch:'main'}],automations:[],tasks:[{id:'thread',title:'Thread on '+parsed.hostname+(window.snapshotRevision>1?' update '+window.snapshotRevision:''),agentId:'',repositoryId:'project',execution:'worktree',checkoutBranch:'feature',status:'draft',sessionId:'session',createdAt:'2026-10-12',messages:[{id:'shared-message',role:'user',text:'Shared conversation content',createdAt:'2026-10-12T10:00:00.000Z'}],files:[],draft:'',example:false}]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]}));
  if(path==='/api/scm/worktrees/read')return Response.json({root:'/worktrees',worktrees:[{path:'/worktrees/feature',branch:'feature',repositoryId:'project',repositoryName:'Project',taskId:'thread',threadIds:['thread'],state:'active',dirty:true,prunable:false}]});
  if(path==='/api/scm/worktrees/choices')return Response.json({worktrees:[{path:'/worktrees/feature',branch:'feature',dirty:true}]});
  if(path==='/api/scm/project-transfer/inspect')return Response.json({files:2,bytes:20,skippedLinks:0,ignoredFiles:[]});
@@ -42,7 +43,7 @@ window.featureLoads={};
 function Feature({view,threadConnection}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;window.threadConnection=threadConnection;return <output id="feature">{view+'|'+value.activeRuntimeId}</output>}
 const extensions=[defineStudioExtension({id:'dovo.tasks',name:'Tasks',version:'1'},[{id:'tasks',title:'Tasks',order:0,load:async()=>{window.taskViewLoads++;return {default:Thread}}}]),...['pulls','agents','runtime','browser'].map(view=>defineStudioExtension({id:'fixture.'+view,name:view,version:'1'},[{id:view,title:view,order:1,load:async()=>{window.featureLoads[view]=(window.featureLoads[view]??0)+1;return {default:props=> <Feature view={view} {...props}/>}}}]))];
 const target=location.hash&&location.hash!=='#browser'?{runtimeId:profiles[location.hash==='#local'?0:1].id,taskId:'thread',title:'Popped thread'}:undefined;
-createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensions={extensions} browserWindowId={location.hash==='#browser'?'test-browser':undefined} threadWindow={target} popOutThread={async target=>{window.popped.push(target)}}/></StrictMode>);
+createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensions={extensions} captureContent={location.hash==='#capture'?<ThreadShare taskId='thread' runtimeId={profiles[1].id}/>:undefined} browserWindowId={location.hash==='#browser'?'test-browser':undefined} threadWindow={target} popOutThread={async target=>{window.popped.push(target)}}/></StrictMode>);
 `,
     },
     bundle: true,
@@ -54,10 +55,14 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
     alias: {
       '@dovo/studio-core': root + 'packages/studio-core/src/index.ts',
       '@dovo/studio-core/repository-open': root + 'packages/studio-core/src/repository-open.ts',
+      '@dovo/studio-core/themes': root + 'packages/studio-core/src/themes.ts',
+      '@dovo/studio-ui/sharing-people': root + 'packages/studio-ui/src/sharing-people.tsx',
       '@dovo/studio-core/code-themes': root + 'packages/studio-core/src/code-themes.ts',
       '@dovo/studio-core/pierre-theme': root + 'packages/studio-core/src/pierre-theme.ts',
       '@dovo/studio-core/links': root + 'packages/studio-core/src/links/index.ts',
       '@dovo/studio-core/state': root + 'packages/studio-core/src/runtime/application-state.ts',
+      '@dovo/studio-ui/clipboard': root + 'packages/studio-ui/src/clipboard.ts',
+      '@dovo/studio-ui/code-themes': root + 'packages/studio-ui/src/code-themes.ts',
       '@dovo/studio-ui/runtime-icon': root + 'packages/studio-ui/src/runtime-icon.tsx',
       '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts',
     },
@@ -364,6 +369,20 @@ try {
     assert.equal(await main.evaluate(() => window.taskViewLoads), hostBefore)
   }
   assert.equal(await main.getByRole('button', { name: 'Retry view' }).count(), 0)
+  const capturePage = await context.newPage()
+  capturePage.on('pageerror', (error) => errors.push(error.message))
+  await capturePage.goto('http://popout.test/#capture')
+  await capturePage.addScriptTag({ content: built.outputFiles[0].text })
+  await capturePage.locator('[data-thread-share-ready]').waitFor()
+  await capturePage.getByText('Shared conversation content', { exact: true }).waitFor()
+  await capturePage
+    .locator('header')
+    .filter({ hasText: /^Thread on host1/ })
+    .waitFor()
+  assert.equal(await capturePage.locator('nav').count(), 0)
+  assert.equal(await capturePage.locator('textarea, input, [contenteditable=true]').count(), 0)
+  assert.equal(await capturePage.locator('section[inert]').count(), 1)
+  await capturePage.close()
   assert.deepEqual(errors, [])
   console.log(
     'Desktop extensions and thread popout: stable commands across screens/updates, remote navigation, and independent window requests pass.',

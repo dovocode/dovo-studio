@@ -231,7 +231,7 @@ function TaskListRowView({
       numberOfLines={1}
       style={{
         flex: 1,
-        color: colors.text,
+        color: unread ? colors.text : colors.muted,
         fontSize: dense ? 15 : 16,
         lineHeight: dense ? 18 : 20,
         fontWeight: unread ? '600' : '500',
@@ -275,7 +275,7 @@ function TaskListRowView({
             onPress={onDetails}
             style={{
               width: 44,
-              height: dense ? compactRowHeight : 44,
+              height: Math.max(44, compactTitleHeight + 12),
               alignItems: 'center',
               justifyContent: 'center',
             }}
@@ -311,8 +311,12 @@ function TaskListRowView({
             minWidth: 0,
             flexDirection: 'row',
             minHeight: settled ? 44 : undefined,
-            height: dense ? compactRowHeight : undefined,
-            alignItems: dense ? 'center' : undefined,
+            height: settled
+              ? Math.max(44, compactTitleHeight + 12)
+              : dense
+                ? compactRowHeight
+                : undefined,
+            alignItems: settled || dense ? 'center' : undefined,
             paddingVertical: 6,
             paddingLeft: settled ? 0 : 12,
             paddingRight: (dense && !settled) || (settled && childCount > 0) ? 44 : 12,
@@ -337,104 +341,122 @@ function TaskListRowView({
               </View>
             </View>
           )}
-          <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+          {settled ? (
             <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                minHeight: headerHeight,
-                height: dense ? compactContextHeight : undefined,
-                paddingRight:
-                  (car || dense || settled ? 0 : 32) + (!settled && childCount > 0 ? 44 : 0),
-              }}
-            >
-              {!settled && projectBadge}
-              <Text numberOfLines={1} style={[styles.muted, { flex: 1, ...contextText }]}>
-                {projectName}
-              </Text>
-              {task.pinned && <Pin size={12} color={colors.muted} />}
-              {worktree && <GitFork size={12} color={colors.muted} />}
-              {statusIndicator}
-              {!!agent && (!showDevice || car) && (
-                <HarnessIcon provider={agent.provider} size={12} />
-              )}
-            </View>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                height: dense ? compactTitleHeight : undefined,
-                // Comfortable titles start within the menu’s 44-point target.
-                paddingRight:
-                  (!car && !dense && !settled ? 32 : 0) + (!settled && childCount > 0 ? 44 : 0),
-              }}
+              style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}
             >
               {title}
+              {statusIndicator}
             </View>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                flexWrap: 'nowrap',
-                height: dense ? compactContextHeight : undefined,
-                overflow: dense ? 'hidden' : undefined,
-                gap: 6,
-              }}
-            >
-              {!general && (
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: dense ? 4 : 6,
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  <GitBranch size={12} color={colors.muted} />
-                  <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1, ...contextText }]}>
-                    {branch}
-                  </Text>
-                </View>
-              )}
-              {general && !dense && <View style={{ flex: 1 }} />}
-              {showDevice && !car && (
-                <DeviceLabel
-                  runtimeIcon={owner.runtimeIcon}
-                  task={task}
-                  runtimeHost={row.runtimeName}
-                  compact
-                  fontSize={contextSize}
-                  flexible={dense}
-                />
-              )}
-              {showDevice && !car && !!agent && <HarnessIcon provider={agent.provider} size={12} />}
-              {row.reachability === 'offline' &&
-                (dense ? (
-                  <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
-                ) : (
-                  <Text style={[styles.muted, contextText]}>Offline</Text>
-                ))}
-              {pulls.length > 0 && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <PullRequestIcon state={pullStatus?.state} draft={pullStatus?.draft} size={12} />
-                  <Text numberOfLines={1} style={{ color: pullColor, ...contextText }}>
-                    {pulls.length > 1 ? `${pulls.length} PRs` : `#${pulls[0].number}`}
-                  </Text>
-                </View>
-              )}
-              {pulls.length <= 1 && task.pullStatus?.stack && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <Icon name="stack" size={12} color={colors.accent} />
-                  <Text numberOfLines={1} style={{ color: colors.accent, ...contextText }}>
-                    {pullStackLabel(task.pullStatus.stack)}
-                  </Text>
-                </View>
-              )}
+          ) : (
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  minHeight: headerHeight,
+                  height: dense ? compactContextHeight : undefined,
+                  paddingRight:
+                    (car || dense || settled ? 0 : 32) + (!settled && childCount > 0 ? 44 : 0),
+                }}
+              >
+                {!settled && projectBadge}
+                <Text numberOfLines={1} style={[styles.muted, { flex: 1, ...contextText }]}>
+                  {projectName}
+                </Text>
+                {task.pinned && <Pin size={12} color={colors.muted} />}
+                {worktree && <GitFork size={12} color={colors.muted} />}
+                {statusIndicator}
+                {!!agent && (!showDevice || car) && (
+                  <HarnessIcon provider={agent.provider} size={12} />
+                )}
+              </View>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  height: dense ? compactTitleHeight : undefined,
+                  // Comfortable titles start within the menu’s 44-point target.
+                  paddingRight:
+                    (!car && !dense && !settled ? 32 : 0) + (!settled && childCount > 0 ? 44 : 0),
+                }}
+              >
+                {title}
+              </View>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  flexWrap: 'nowrap',
+                  height: dense ? compactContextHeight : undefined,
+                  overflow: dense ? 'hidden' : undefined,
+                  gap: 6,
+                }}
+              >
+                {!general && (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: dense ? 4 : 6,
+                      flex: 1,
+                      minWidth: 0,
+                    }}
+                  >
+                    <GitBranch size={12} color={colors.muted} />
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.muted, { flexShrink: 1, ...contextText }]}
+                    >
+                      {branch}
+                    </Text>
+                  </View>
+                )}
+                {general && !dense && <View style={{ flex: 1 }} />}
+                {showDevice && !car && (
+                  <DeviceLabel
+                    runtimeIcon={owner.runtimeIcon}
+                    task={task}
+                    runtimeHost={row.runtimeName}
+                    compact
+                    fontSize={contextSize}
+                    flexible={dense}
+                  />
+                )}
+                {showDevice && !car && !!agent && (
+                  <HarnessIcon provider={agent.provider} size={12} />
+                )}
+                {row.reachability === 'offline' &&
+                  (dense ? (
+                    <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
+                  ) : (
+                    <Text style={[styles.muted, contextText]}>Offline</Text>
+                  ))}
+                {pulls.length > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <PullRequestIcon
+                      state={pullStatus?.state}
+                      draft={pullStatus?.draft}
+                      size={12}
+                    />
+                    <Text numberOfLines={1} style={{ color: pullColor, ...contextText }}>
+                      {pulls.length > 1 ? `${pulls.length} PRs` : `#${pulls[0].number}`}
+                    </Text>
+                  </View>
+                )}
+                {pulls.length <= 1 && task.pullStatus?.stack && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <Icon name="stack" size={12} color={colors.accent} />
+                    <Text numberOfLines={1} style={{ color: colors.accent, ...contextText }}>
+                      {pullStackLabel(task.pullStatus.stack)}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
+          )}
         </Pressable>
         {childCount > 0 && (
           <Pressable

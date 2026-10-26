@@ -219,6 +219,37 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
     .get()
     .repositories.find((repository) => repository.id === task.repositoryId)
   return {
+    humanInputs: [
+      ...questions
+        .filter((question) => family.has(question.taskId) && question.routing !== 'parent')
+        .map((question) => ({
+          id: question.id,
+          runtimeId: s.runtimeId,
+          taskId: question.taskId,
+          kind: 'question' as const,
+          title: question.prompt.title.slice(0, 1000),
+          threadTitle: byId.get(question.taskId)?.title.slice(0, 1000) ?? 'Child thread',
+        })),
+      ...approvals
+        .filter((approval) => family.has(approval.taskId))
+        .map((approval) => ({
+          id: approval.id,
+          runtimeId: s.runtimeId,
+          taskId: approval.taskId,
+          kind: 'approval' as const,
+          title: approval.title.slice(0, 1000),
+          threadTitle: byId.get(approval.taskId)?.title.slice(0, 1000) ?? 'Child thread',
+        })),
+      ...remote
+        .filter(
+          (watch) =>
+            watch.delegated && !watch.offline && !watch.paused && watch.status === 'watching',
+        )
+        .flatMap((watch) => watch.snapshot?.humanInputs ?? []),
+    ].slice(0, 100),
+    questions: questions
+      .filter((question) => question.taskId === id && question.routing === 'parent')
+      .slice(0, 100),
     runtimeId: s.runtimeId,
     title: task.title.slice(0, 1000),
     repositoryId: task.repositoryId || undefined,

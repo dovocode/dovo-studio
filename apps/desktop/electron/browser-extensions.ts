@@ -28,6 +28,7 @@ import {
 import { extname, join, resolve, sep } from 'node:path'
 import { Schema } from 'effect'
 import { attachNativeMessaging } from './browser-native-messaging.js'
+import { browserPermissions } from './browser-permissions.js'
 
 /** Shared-browser profiles never share storage with agent-enabled thread previews. */
 export const workspacePartition = (profileId: string) =>
@@ -103,7 +104,6 @@ type Profile = {
   errors: Map<string, string>
   queue: Promise<unknown>
   native: ReturnType<typeof attachNativeMessaging>
-  helperApprovals: Set<string>
 }
 type ActionClick = (details: {
   eventType: 'click'
@@ -359,8 +359,6 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
   }
   const unload = (profile: Profile, id: string) => {
     profile.native.close(id)
-    for (const key of profile.helperApprovals)
-      if (key.startsWith(`${id}:`)) profile.helperApprovals.delete(key)
     if (profile.session.extensions.getExtension(id)) profile.session.extensions.removeExtension(id)
   }
 
@@ -418,40 +416,50 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
             type,
             filePath: alias,
           })
-        const helperApprovals = new Set<string>()
+        const permissions = browserPermissions(profileId)
+        const helperPrompts = new Map<string, Promise<boolean>>()
         const native = attachNativeMessaging(extensions, {
           session: browserSession,
           enabled,
           allow: async (extension, host, executable) => {
             const key = `${extension.id}:${host}:${executable}`
-            if (helperApprovals.has(key)) return true
-            const options: Electron.MessageBoxOptions = {
-              type: 'warning',
-              title: 'Connect desktop application',
-              message: `Allow “${extension.name}” to connect to a desktop app?`,
-              detail: `Desktop helper: ${host}\nExecutable: ${executable}\nBrowser profile: ${profileName(profileId)}\n\nThe extension can exchange data with this installed application. Your desktop app may also ask you to trust Dovo Studio.`,
-              buttons: ['Connect', 'Cancel'],
-              defaultId: 1,
-              cancelId: 1,
-              noLink: true,
+            if (permissions.helper(key)) return true
+            const waiting = helperPrompts.get(key)
+            if (waiting) return waiting
+            const review = (async () => {
+              const options: Electron.MessageBoxOptions = {
+                type: 'warning',
+                title: 'Connect desktop application',
+                message: `Allow “${extension.name}” to connect to a desktop app?`,
+                detail: `Desktop helper: ${host}\nExecutable: ${executable}\nBrowser profile: ${profileName(profileId)}\n\nThe extension can exchange data with this installed application. Your desktop app may also ask you to trust Dovo Studio.`,
+                buttons: ['Connect', 'Cancel'],
+                defaultId: 1,
+                cancelId: 1,
+                noLink: true,
+              }
+              const parent = tabs.window(profileId)
+              const { response } = await (parent
+                ? dialog.showMessageBox(parent, options)
+                : dialog.showMessageBox(options))
+              if (
+                response !== 0 ||
+                !enabled() ||
+                browserSession.extensions.getExtension(extension.id)?.path !== extension.path
+              )
+                return false
+              permissions.allowHelper(key)
+              return true
+            })()
+            helperPrompts.set(key, review)
+            try {
+              return await review
+            } finally {
+              helperPrompts.delete(key)
             }
-            const parent = tabs.window(profileId)
-            const { response } = await (parent
-              ? dialog.showMessageBox(parent, options)
-              : dialog.showMessageBox(options))
-            if (
-              response !== 0 ||
-              !enabled() ||
-              browserSession.extensions.getExtension(extension.id)?.path !== extension.path
-            )
-              return false
-            helperApprovals.add(key)
-            return true
           },
         })
         const profile: Profile = {
           native,
-          helperApprovals,
           id: profileId,
           session: browserSession,
           extensions,
@@ -530,6 +538,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
       profile,
       withRecords(profile.registry.extensions.filter((r) => r !== record)),
     )
+    browserPermissions(profile.id).revokeHelpers(record.id)
     unload(profile, record.id)
     profile.errors.delete(record.id)
     await rm(installed(profile.id, record.directory), { recursive: true, force: true })

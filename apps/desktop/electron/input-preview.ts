@@ -147,7 +147,7 @@ export function registerInputPreview(rendererPath: string, preload: string) {
     if (owner.isMinimized()) owner.restore()
     owner.webContents.send('input-preview:open-thread', {
       runtimeId: item.runtimeId,
-      entityId: item.request.value.taskId,
+      entityId: item.parentTaskId ?? item.request.value.taskId,
     })
     owner.show()
     owner.focus()

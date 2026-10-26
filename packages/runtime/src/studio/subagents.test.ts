@@ -103,11 +103,12 @@ async function setup(readOnly = false) {
     new AbortController().signal,
   )
   const origin = `http://127.0.0.1:${runtime.port}`
-  const post = (action: string, input: object = {}) =>
+  const post = (action: string, input: object = {}, signal?: AbortSignal) =>
     fetch(`${origin}/api/subagents/${action}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...input, taskId: parent.id, parentRunId: runId }),
+      signal,
     })
   return {
     s,
@@ -666,4 +667,191 @@ it('lists and reads a late native result without exposing it to the user queue',
   expect(await earlier.json()).toMatchObject({ result: 'Earlier native answer' })
   expect(source.s.store.taskSummary(source.parent.id).subagents?.[0].completion).toBe('pending')
   expect((await source.post('read', { id: 'native-result:someone-else' })).status).toBe(403)
+})
+
+it('routes local child questions to the parent inbox, validates answers and escalates the original form', async () => {
+  const source = await setup()
+  const prompt = decode((await import('@dovo/protocol')).questionPromptSchema, {
+    title: 'Choose test coverage',
+    questions: [
+      {
+        id: 'coverage',
+        header: 'Coverage',
+        question: 'Which tests?',
+        options: [{ value: 'targeted', label: 'Targeted' }],
+        custom: false,
+      },
+    ],
+  })
+  const answers: unknown[] = []
+  source.setChild(async (run) => {
+    answers.push(await source.s.questions.request(run.taskId!, prompt, run.signal))
+    answers.push(await source.s.questions.request(run.taskId!, prompt, run.signal))
+    run.onText('Child finished')
+  })
+  const response = await source.post('spawn', {
+    key: 'local-questions',
+    name: 'Test child',
+    prompt: 'Inspect tests',
+    provider: 'claude',
+  })
+  expect(response.status).toBe(200)
+  const child = decode(Schema.Struct({ id: Schema.String }), await response.json())
+  await waitForRuntime(() => expect(source.s.questions.list()).toHaveLength(1))
+  const first = source.s.questions.list()[0]
+  expect(first.routing).toBe('parent')
+  const waiting = await source.post(
+    'wait',
+    { id: child.id, timeoutMs: 20000 },
+    AbortSignal.timeout(5000),
+  )
+  expect(waiting.status).toBe(200)
+  expect(await waiting.json()).toMatchObject({
+    questions: [expect.objectContaining({ id: first.id })],
+  })
+  expect(source.s.store.taskSummary(source.parent.id).subagentInbox).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: `subagent-question:${first.id}`, subagentResultId: child.id }),
+    ]),
+  )
+  const publicSnapshot = await fetch(source.origin + '/api/snapshot', {
+    headers: { Authorization: `Bearer ${owner}` },
+  }).then((response) => response.json())
+  expect(publicSnapshot.questions).toEqual([])
+  expect(
+    (
+      await source.post('answer', {
+        id: source.parent.id,
+        questionId: first.id,
+        answers: { coverage: ['targeted'] },
+      })
+    ).status,
+  ).toBe(403)
+  expect(
+    (
+      await source.post('answer', {
+        id: child.id,
+        questionId: first.id,
+        answers: { coverage: ['invalid'] },
+      })
+    ).status,
+  ).toBe(400)
+  const answer = { id: child.id, questionId: first.id, answers: { coverage: ['targeted'] } }
+  expect((await source.post('answer', answer)).status).toBe(200)
+  expect((await source.post('answer', answer)).status).toBe(200)
+  await waitForRuntime(() => expect(source.s.questions.list()[0]?.id).not.toBe(first.id))
+  const second = source.s.questions.list()[0]
+  expect((await source.post('answer', { id: child.id, questionId: second.id })).status).toBe(200)
+  expect(source.s.questions.list()[0]).toMatchObject({
+    id: second.id,
+    taskId: child.id,
+    routing: 'human',
+  })
+  expect(
+    (
+      await source.post('answer', {
+        id: child.id,
+        questionId: second.id,
+        answers: { coverage: ['targeted'] },
+      })
+    ).status,
+  ).toBe(403)
+  const { taskInputVisible, taskInputOwner } = await import('@dovo/protocol')
+  expect(
+    taskInputVisible(source.s.store.get().tasks, source.parent.id, source.s.questions.list()[0]),
+  ).toBe(true)
+  expect(taskInputOwner(source.s.store.get().tasks, child.id)).toBe(source.parent.id)
+  source.s.questions.respondNotification({
+    taskId: source.parent.id,
+    id: second.id,
+    fieldId: 'coverage',
+    value: 'targeted',
+  })
+  await waitForRuntime(() =>
+    expect(answers).toEqual([{ coverage: ['targeted'] }, { coverage: ['targeted'] }]),
+  )
+})
+
+it('coordinates paired child questions and exposes human permission requests without granting the agent approval access', async () => {
+  const source = await setup(),
+    target = await setup()
+  const pairing = await pair(source, target)
+  const { questionPromptSchema } = await import('@dovo/protocol')
+  const prompt = decode(questionPromptSchema, {
+    title: 'Confirm approach',
+    questions: [{ id: 'approach', header: 'Approach', question: 'Use existing patterns?' }],
+  })
+  let remoteAnswer: unknown
+  target.setChild(async (run) => {
+    remoteAnswer = await target.s.questions.request(run.taskId!, prompt, run.signal)
+    await target.s.approvals.request(
+      run.taskId!,
+      'Run deployment',
+      'Human review required',
+      run.signal,
+    )
+    run.onText('Done')
+  })
+  const response = await source.post('spawn', { ...request, runtimeId: pairing.peer.id })
+  expect(response.status).toBe(200)
+  const child = decode(childSchema, await response.json())
+  await waitForRuntime(() =>
+    expect(threadSnapshot(target.s, child.threadId).questions).toHaveLength(1),
+  )
+  const question = target.s.questions.list()[0]
+  expect((await source.post('read', { id: child.id })).status).toBe(200)
+  const read = await source.post('read', { id: child.id }).then((response) => response.json())
+  expect(read.questions).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: question.id, routing: 'parent' })]),
+  )
+  expect(
+    (
+      await source.post('answer', {
+        id: child.id,
+        questionId: question.id,
+        answers: { approach: ['Use existing patterns'] },
+      })
+    ).status,
+  ).toBe(200)
+  await waitForRuntime(() => expect(remoteAnswer).toEqual({ approach: ['Use existing patterns'] }))
+  await waitForRuntime(() => expect(target.s.approvals.list()).toHaveLength(1))
+  const approval = target.s.approvals.list()[0]
+  expect(threadSnapshot(target.s, child.threadId).humanInputs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: approval.id, kind: 'approval', taskId: child.threadId }),
+    ]),
+  )
+  expect(
+    (
+      await source.post('answer', {
+        id: child.id,
+        questionId: approval.id,
+        answers: { allow: ['yes'] },
+      })
+    ).status,
+  ).toBe(409)
+  expect(target.s.approvals.list()).toHaveLength(1)
+  target.s.approvals.respond(approval.id, false)
+})
+
+it('exposes an unanswered child form to the human if its parent consumes it and ends without resolving it', async () => {
+  const source = await setup()
+  const { questionPromptSchema } = await import('@dovo/protocol')
+  const prompt = decode(questionPromptSchema, {
+    title: 'Choose behavior',
+    questions: [{ id: 'choice', header: 'Behavior', question: 'Which behavior is intended?' }],
+  })
+  source.setChild(async (run) => {
+    await source.s.questions.request(run.taskId!, prompt, run.signal)
+  })
+  const response = await source.post('spawn', {
+    key: 'unanswered',
+    name: 'Worker',
+    prompt: 'Inspect',
+    provider: 'claude',
+  })
+  expect(response.status).toBe(200)
+  await waitForRuntime(() => expect(source.s.questions.list()[0]?.routing).toBe('parent'))
+  source.release.resolve()
+  await waitForRuntime(() => expect(source.s.questions.list()[0]?.routing).toBe('human'))
 })

@@ -14,6 +14,7 @@ const allowed = new Set([
   '/api/subagents/spawn',
   '/api/subagents/list',
   '/api/subagents/send',
+  '/api/subagents/answer',
   '/api/subagents/read',
   '/api/subagents/wait',
   '/api/subagents/cancel',
@@ -108,6 +109,7 @@ export function authorizeRunRoute(
         '/api/subagents/wait',
         '/api/subagents/cancel',
         '/api/subagents/send',
+        '/api/subagents/answer',
       ].includes(path)
     ) {
       const child = s.store.get().tasks.find((task) => task.id === input.id)

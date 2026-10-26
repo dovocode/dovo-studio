@@ -137,6 +137,7 @@ export class ModelSelection {
                 }),
               ),
             }),
+            before.modelSelection,
           )
           let raw: unknown
           try {

@@ -554,13 +554,6 @@ it('selects primary and linked projects with the title model before creating any
   }
 })
 it.each([
-  { status: 'ambiguous', repositoryId: 'web', links: [], reason: 'Which app?' },
-  {
-    status: 'ambiguous',
-    repositoryId: null,
-    links: [{ repositoryId: 'api', access: 'edit' }],
-    reason: 'Which app?',
-  },
   { status: 'selected', repositoryId: 'unknown', links: [], reason: '' },
   {
     status: 'selected',
@@ -585,7 +578,7 @@ it.each([
   },
   { nonsense: true },
   'not JSON',
-])('preserves Scope drafts when the selection is ambiguous or invalid: %j', async (selection) => {
+])('preserves Scope drafts when the selection is invalid: %j', async (selection) => {
   const s = autoFixture()
   vi.spyOn(s.registry, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
@@ -604,9 +597,14 @@ it.each([
     s.db.close()
   }
 })
-it.each(['selected', 'ambiguous'])(
-  'falls back to General when Scope reports %s with no discovered project',
-  async (status) => {
+it.each([
+  { status: 'selected', repositoryId: null, links: [] },
+  { status: 'ambiguous', repositoryId: null, links: [] },
+  { status: 'ambiguous', repositoryId: 'web', links: [] },
+  { status: 'ambiguous', repositoryId: null, links: [{ repositoryId: 'api', access: 'edit' }] },
+])(
+  'falls back to General when Scope cannot confidently select a project: %j',
+  async (selection) => {
     const s = autoFixture()
     s.store.updateTask('auto', (task) => ({
       ...task,
@@ -621,9 +619,7 @@ it.each(['selected', 'ambiguous'])(
       probe: vi.fn<AgentAdapter['probe']>(),
       run: async (run) => {
         expect(run.agent.instructions).toContain('continue in General whenever no project')
-        run.onText(
-          JSON.stringify({ status, repositoryId: null, links: [], reason: 'No matching project' }),
-        )
+        run.onText(JSON.stringify({ ...selection, reason: 'No matching project' }))
       },
     })
     try {
@@ -940,6 +936,55 @@ it('rejects a project whose path changes during Scope investigation', async () =
       runClientEffect(s.titles.selectProjectsEffect({ id: 'auto', text: 'Change dashboard' })),
     ).rejects.toThrow('A project changed during Scope selection')
     expect(s.store.task('auto')).toEqual(before)
+  } finally {
+    await s.titles.dispose()
+    await s.registry.dispose()
+    s.db.close()
+  }
+})
+
+it('keeps additional selector prompts separate when inheriting the title model', async () => {
+  const s = autoFixture()
+  new RuntimePreferences(s.db).save({
+    enableAutoProjectSelection: true,
+    enableSmartModelSelection: true,
+  })
+  const prompts = {
+    scopePrompt: 'Prefer the implementation owner.',
+    tunePrompt: 'Prefer fast models for small fixes.',
+    maestroPrompt: 'Prefer Claude for interface work.',
+  }
+  s.titles.save({ inheritTitleModel: true, ...prompts }, 'auto-selection')
+  expect(new TitleGeneration(s.db, s.store, s.registry).read('auto-selection')).toMatchObject(
+    prompts,
+  )
+  const runs: AgentRun[] = []
+  vi.spyOn(s.registry, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      run.onText(
+        JSON.stringify({ status: 'selected', repositoryId: null, links: [], reason: 'General' }),
+      )
+    },
+  })
+  try {
+    await runClientEffect(s.titles.selectModelEffect('{}', 'auto'))
+    await runClientEffect(s.titles.selectModelEffect('{}', 'smart'))
+    await runClientEffect(s.titles.selectProjectsEffect({ id: 'auto', text: 'Plan a service' }))
+    for (const [index, key] of (
+      ['tunePrompt', 'maestroPrompt', 'scopePrompt'] as const
+    ).entries()) {
+      const instructions = runs[index]!.agent.instructions
+      expect(instructions).toContain(prompts[key])
+      for (const other of Object.keys(prompts).filter((other) => other !== key))
+        expect(instructions).not.toContain(Reflect.get(prompts, other))
+      expect(instructions).toContain('Return only JSON')
+      expect(runs[index]!.agent.model).toBe('small-title-model')
+    }
+    expect(() =>
+      s.titles.save({ inheritTitleModel: true, tunePrompt: 'x'.repeat(12001) }, 'auto-selection'),
+    ).toThrow('12000')
   } finally {
     await s.titles.dispose()
     await s.registry.dispose()

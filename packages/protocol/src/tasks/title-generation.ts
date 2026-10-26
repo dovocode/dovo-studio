@@ -5,6 +5,9 @@ import { agentSchema, defaultTaskHarness, type Agent, type TaskHarness } from '.
 export const titleGenerationSettingsSchema = mutableStruct({
   /** Only used by the Scope/Tune/Maestro selector settings. */
   inheritTitleModel: Schema.optional(Schema.Boolean),
+  scopePrompt: Schema.optional(maxValue(Schema.String, 12000)),
+  tunePrompt: Schema.optional(maxValue(Schema.String, 12000)),
+  maestroPrompt: Schema.optional(maxValue(Schema.String, 12000)),
   harness: Schema.optional(
     agentSchema.mapFields(
       Struct.pick([

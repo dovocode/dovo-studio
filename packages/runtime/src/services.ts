@@ -1,3 +1,4 @@
+import { taskInputOwner, taskRemoteHumanInputs } from '@dovo/protocol'
 import { indexTaskFamilyWorking } from '@dovo/protocol'
 import { PeerConnections } from './http/peer-connections.js'
 import { RemoteDesktop } from './computer-use/remote-desktop.js'
@@ -237,25 +238,39 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   )
   const pushNotifications = new PushNotifications(db, store, devices, (id) => {
     return [
+      ...taskRemoteHumanInputs(store.taskSummary(id)).map((input) => ({
+        id: `${input.runtimeIdentity}:${input.id}`,
+        type: input.kind,
+        preview: `For child thread ${input.threadTitle}: ${input.title}`,
+      })),
       ...questions
         .list()
-        .filter((item) => item.taskId === id)
+        .filter(
+          (item) =>
+            item.routing !== 'parent' && taskInputOwner(store.get().tasks, item.taskId) === id,
+        )
         .map((question) => ({
           id: question.id,
           type: 'question' as const,
           prompt: question.prompt,
           preview: [
+            ...(question.taskId === id
+              ? []
+              : [`For child thread ${store.taskSummary(question.taskId).title}`]),
             question.prompt.title,
             ...question.prompt.questions.filter((q) => !q.secret).map((q) => q.question),
           ].join(' · '),
         })),
       ...approvals
         .list()
-        .filter((item) => item.taskId === id)
+        .filter((item) => taskInputOwner(store.get().tasks, item.taskId) === id)
         .map((approval) => ({
           id: approval.id,
           type: 'approval' as const,
-          preview: approval.title,
+          preview:
+            approval.taskId === id
+              ? approval.title
+              : `For child thread ${store.taskSummary(approval.taskId).title}: ${approval.title}`,
         })),
     ]
   })

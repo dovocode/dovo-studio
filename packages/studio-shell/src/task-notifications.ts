@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, taskInputOwner } from '@dovo/protocol'
 import type { InputPreviewBridge, InputPreviewItem } from '@dovo/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { readAppPreferences, useAppPreferences, useWorkspace } from '@dovo/studio-core'
@@ -25,20 +25,33 @@ export type TaskState = {
   pullNumber?: number
 }
 
-function taskStates(entries: readonly RuntimeOverview[]) {
+export function taskNotificationStates(entries: readonly RuntimeOverview[]) {
   const states = new Map<string, TaskState>()
   for (const entry of entries) {
     const snapshot = entry.snapshot
     if (!snapshot || !entry.connected) continue
     const waiting = new Set(
-      [...snapshot.approvals, ...snapshot.questions].map((item) => item.taskId),
+      [
+        ...snapshot.approvals,
+        ...snapshot.questions.filter((question) => question.routing !== 'parent'),
+      ].map((item) => taskInputOwner(snapshot.workspace.tasks, item.taskId)),
     )
     for (const task of snapshot.workspace.tasks)
       states.set(JSON.stringify([entry.profile.id, task.id]), {
         title: task.title,
         target: { runtimeId: entry.profile.id, viewId: 'tasks', entityId: task.id },
         running: task.status === 'running',
-        needsInput: waiting.has(task.id),
+        needsInput:
+          waiting.has(task.id) ||
+          !!task.threadWatches?.some(
+            (watch) =>
+              watch.delegated &&
+              watch.status === 'watching' &&
+              !watch.offline &&
+              !watch.paused &&
+              watch.snapshot?.phase === 'needs-input' &&
+              (!!watch.snapshot.humanInputs?.length || !watch.snapshot.questions?.length),
+          ),
         failed: task.status === 'failed',
         checks: task.pullStatus?.state === 'open' ? task.pullStatus.checks : undefined,
         pullNumber: task.pullStatus?.number,
@@ -120,15 +133,21 @@ export function useTaskNotifications(
       const snapshot = entry.snapshot
       if (!snapshot) continue
       for (const request of [
-        ...snapshot.questions.map((value) => ({ kind: 'question' as const, value })),
+        ...snapshot.questions
+          .filter((question) => question.routing !== 'parent')
+          .map((value) => ({ kind: 'question' as const, value })),
         ...snapshot.approvals.map((value) => ({ kind: 'approval' as const, value })),
       ])
         items.push({
           runtimeId: entry.profile.id,
           runtimeName: runtimeComputerName(entry),
+          parentTaskId: taskInputOwner(snapshot.workspace.tasks, request.value.taskId),
           taskTitle:
-            snapshot.workspace.tasks.find((task) => task.id === request.value.taskId)?.title ??
-            'Task',
+            (taskInputOwner(snapshot.workspace.tasks, request.value.taskId) !== request.value.taskId
+              ? 'Child thread · '
+              : '') +
+            (snapshot.workspace.tasks.find((task) => task.id === request.value.taskId)?.title ??
+              'Task'),
           connection: entry.profile.connection,
           connected: entry.connected,
           request,
@@ -145,7 +164,7 @@ export function useTaskNotifications(
   const previous = useRef<Map<string, TaskState> | null>(null)
   useEffect(() => {
     if (!enabled) return
-    const current = taskStates(runtimes)
+    const current = taskNotificationStates(runtimes)
     const before = previous.current
     previous.current = current
     if (!before) return

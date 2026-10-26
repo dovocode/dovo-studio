@@ -160,7 +160,11 @@ app.once('will-quit', () => dictation.dispose())
 const inputPreview = registerInputPreview(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => inputPreview.dispose())
 registerRepositoryOpeners(rendererPath)
-const browserBridge = registerBrowser(join(__dirname, '../dist/index.html'), dataDirectory)
+const browserBridge = registerBrowser(
+  join(__dirname, '../dist/index.html'),
+  dataDirectory,
+  join(__dirname, 'preload.mjs'),
+)
 app.once('will-quit', () => {
   void browserBridge.dispose()
 })

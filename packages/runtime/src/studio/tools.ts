@@ -1,6 +1,6 @@
 import { nextQueuedMessage } from '@dovo/protocol'
 import { threadSnapshot } from './thread-snapshot.js'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
@@ -54,7 +54,9 @@ export function studioReadAction(part: string, action: unknown) {
   return (
     part === 'discover' ||
     (part === 'threads' &&
-      ['list', 'read', 'search', 'wait', 'snapshot', 'watches'].includes(String(action))) ||
+      ['list', 'read', 'search', 'wait', 'snapshot', 'watches', 'answer-child-question'].includes(
+        String(action),
+      )) ||
     (part === 'automations' &&
       ['list', 'read', 'validate', 'runs', 'wait'].includes(String(action))) ||
     (part === 'browsers' && ['list', 'snapshot', 'logs'].includes(String(action))) ||
@@ -194,6 +196,21 @@ export async function studioTool(
     }
     if (command.action === 'watches' || command.action === 'watch' || command.action === 'unwatch')
       throw new HttpError(400, 'Manage thread watches on the originating runtime')
+    if (command.action === 'answer-child-question') {
+      const child = s.store.taskSummary(command.id)
+      const parent = child.spawnParent
+      const coordinator =
+        parent &&
+        (parent.runtimeId === s.runtimeId
+          ? parent.threadId
+          : `paired:${createHash('sha256')
+              .update(JSON.stringify([parent.runtimeId, parent.threadId]))
+              .digest('hex')}`)
+      if (!coordinator || coordinator !== taskId)
+        throw new HttpError(403, 'This question belongs to another parent thread')
+      s.questions.answerByParent(child.id, command.questionId, command.answers)
+      return { ok: true }
+    }
     if (command.action === 'snapshot') return threadSnapshot(s, command.id)
     if (command.action === 'search') return s.store.searchHistory(command.query, command.id)
     if (command.action === 'create') {

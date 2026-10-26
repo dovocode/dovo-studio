@@ -836,10 +836,16 @@ Desktop/web thread rows show the task title, repository, checkout branch, agent/
 runtime host and agent icons, and working/input status or relative finish time in three compact
 lines. Queue details remain in the status tooltip. Both approval requests and agent questions appear
 in a **Needs input** group that stays above the other sidebar sections, including pinned threads.
-Child questions and approvals surface their parent there. Finished parents with active child threads
-or live native subagents move to **Waiting** until their family finishes; input requests take
-priority. Search includes branch, agent and host names. New turns record the runtime hostname for
-history; older data can lack that field.
+Ordinary child questions go to the coordinating parent agent first. It can answer from known
+instructions and repository context with `subagent_answer`, or omit answers to escalate the same
+form when human input is needed or wanted. Secret questions and permission approvals always require
+a human. Local child requests appear in ancestor conversations with the child's name; requests on
+another computer appear as labeled cards linking to their owning thread for review. Notifications
+open the main local conversation. Children inherit the parent's permissions, including Full access,
+unless explicitly restricted or attached to a read-only checkout. Finished parents with active child
+threads or live native subagents move to **Waiting** until their family finishes; input requests
+take priority. Search includes branch, agent and host names. New turns record the runtime hostname
+for history; older data can lack that field.
 
 Agent configuration and task overrides offer **Supervised**, **Auto-accept edits**, **Auto**, **Full
 access**, and **Read only**. Existing saved `ask` and `workspace-write` values retain their behavior

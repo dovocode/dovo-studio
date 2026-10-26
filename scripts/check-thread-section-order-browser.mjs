@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
+import { createServer } from 'vite-plus'
+import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -41,13 +43,26 @@ const built = await build({
     },
   ],
 })
+const cssServer = await createServer({
+  configFile: false,
+  root,
+  plugins: [tailwindcss()],
+  server: { middlewareMode: true },
+  logLevel: 'error',
+})
+let css
+try {
+  css = (await cssServer.transformRequest('/packages/studio-ui/src/styles.css?direct')).code
+} finally {
+  await cssServer.close()
+}
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('https://dovo.test/**', (route) =>
-    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+    route.fulfill({ contentType: 'text/html', body: '<div id="app" style="height:700px"></div>' }),
   )
   await page.goto('https://dovo.test')
   await page.evaluate(() => {
@@ -87,11 +102,18 @@ try {
       refreshRuntimes: async () => {},
     }
   })
+  await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const headings = () => page.locator('summary').allTextContents()
   const names = async () => (await headings()).map((text) => text.replace(/\d+$/, '').trim())
   await page.getByText('Active thread', { exact: true }).waitFor()
   assert.deepEqual(await names(), ['Working', 'Waiting'])
+  const bottom = await page.locator('details').last().boundingBox()
+  const sidebar = await page.getByRole('complementary', { name: 'Task sidebar' }).boundingBox()
+  assert.ok(
+    Math.abs(bottom.y + bottom.height - sidebar.y - sidebar.height) < 10,
+    'Collapsed sections align to the bottom of the desktop sidebar',
+  )
   const savedCollapse = await page.evaluate(() => window.collapsedSections())
   await page.evaluate(() => {
     window.temporary = {
@@ -133,7 +155,7 @@ try {
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
-  assert.deepEqual(await names(), ['Waiting', 'Open', 'Working'])
+  assert.deepEqual(await names(), ['Open', 'Waiting', 'Working'])
   assert.equal(
     await page
       .locator('details')
@@ -164,6 +186,7 @@ try {
     window.host = {}
     window.store = {}
   })
+  await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   assert.deepEqual(await page.evaluate(() => window.savedOrder()), [
     'pinned',

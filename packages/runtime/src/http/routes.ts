@@ -44,6 +44,7 @@ import {
   subagentListSchema,
   subagentReadSchema,
   subagentSendSchema,
+  subagentAnswerSchema,
 } from '@dovo/protocol'
 import {
   spawnChild,
@@ -52,6 +53,7 @@ import {
   waitChild,
   cancelChild,
   sendChild,
+  answerChild,
 } from '../studio/subagents.js'
 import { compactActivityEvents } from '@dovo/protocol'
 import { recoverableMutation } from '@dovo/protocol'
@@ -375,6 +377,8 @@ export function route(
         if (path === '/api/subagents/list') {
           return yield* serviceResult(listChildren(s, decode(subagentListSchema, raw), run))
         }
+        if (path === '/api/subagents/answer')
+          return yield* serviceResult(answerChild(s, decode(subagentAnswerSchema, raw), run))
         if (path === '/api/subagents/send')
           return yield* serviceResult(sendChild(s, decode(subagentSendSchema, raw), run))
         const input = decode(subagentReadSchema, raw)

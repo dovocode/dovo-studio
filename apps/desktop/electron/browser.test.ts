@@ -92,10 +92,19 @@ const mocks = vi.hoisted(() => {
       stop: vi.fn<(...args: unknown[]) => void>(),
       snapshot: vi.fn<(windowId: number) => object>(() => ({})),
       reset: vi.fn<() => void>(),
+      releaseWindow: vi.fn<(...args: unknown[]) => void>(),
+      setThreadSources: vi.fn<(...args: unknown[]) => void>(),
+      setRemoteSources: vi.fn<(...args: unknown[]) => void>(),
       keepAlive: vi.fn<(...args: unknown[]) => boolean>(() => false),
     },
   }
 })
+vi.mock('./browser-permissions.js', () => ({
+  browserPermissions: () => ({
+    notification: () => undefined,
+    setNotification: vi.fn<(origin: string, allow: boolean) => void>(),
+  }),
+}))
 vi.mock('./browser-media.js', () => ({
   createBrowserMedia: (host: import('./browser-media').MediaHost) => {
     mocks.media.host = host
@@ -1373,8 +1382,7 @@ it('gives shared-browser sessions media handling and keeps thread previews denyi
     windowId: 1,
     profileId: 'work',
   })
-  expect(host.tabs(1, 'work').map((tab) => tab.key)).toEqual(['shared'])
-  expect(host.tabs(1, 'personal')).toEqual([])
+  expect(host.tabs().map((tab) => tab.key)).toEqual(['shared'])
   await call(event, { action: 'close', key: 'shared' })
   expect(mocks.media.releaseTab).toHaveBeenCalledWith(mocks.contents)
 })
@@ -1534,4 +1542,22 @@ it('captures a bounded website favicon and exposes it in native status', async (
     'favicon',
     expect.any(String),
   )
+})
+
+it('raises the selected native view and returns input focus on a deliberate page click', async () => {
+  const call = handler()
+  await call(event, { ...workspaceShow, key: 'login' })
+  expect(mocks.window.contentView.addChildView).toHaveBeenLastCalledWith(mocks.view)
+  const click = mocks.contents.on.mock.calls.find(
+    ([name]) => name === 'before-mouse-event',
+  )?.[1] as (event: unknown, input: { type: string }) => void
+  expect(click).toBeDefined()
+  mocks.contents.focus.mockClear()
+  click({}, { type: 'mouseMove' })
+  expect(mocks.contents.focus).not.toHaveBeenCalled()
+  click({}, { type: 'mouseDown' })
+  expect(mocks.contents.focus).toHaveBeenCalledOnce()
+  await call(event, { action: 'hide', key: 'login' })
+  click({}, { type: 'mouseDown' })
+  expect(mocks.contents.focus).toHaveBeenCalledOnce()
 })

@@ -1,5 +1,9 @@
 import type { BrowserCapture, BrowserMediaRequest } from '@dovo/protocol'
-import { app, systemPreferences, webContents as allContents } from 'electron'
+import { app, desktopCapturer, systemPreferences, webContents as allContents } from 'electron'
+import { browserPermissions } from './browser-permissions.js'
+import { openRemoteMedia } from './browser-remote-media.js'
+import type { ThreadWindowTarget } from '@dovo/protocol'
+import type { BrowserCommand } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,14 +17,18 @@ export type MediaTab = {
 }
 export type MediaHost = {
   tabFor(contents: Electron.WebContents): MediaTab | undefined
-  /** Shared-browser tabs of one profile in one window. */
-  tabs(windowId: number, profileId: string): MediaTab[]
+  /** All local shared-browser tabs, including other profiles and windows. */
+  tabs(): MediaTab[]
+  openThread?(
+    target: ThreadWindowTarget,
+  ): Promise<{ contents: Electron.WebContents; close: () => void }>
 }
 type Pending = BrowserMediaRequest & {
   windowId: number
   contents: Electron.WebContents
   answer: (allow: false | Electron.Streams | true) => void
   timer: ReturnType<typeof setTimeout>
+  desktopSources?: Electron.DesktopCapturerSource[]
 }
 type Capture = BrowserCapture & {
   windowId: number
@@ -28,7 +36,8 @@ type Capture = BrowserCapture & {
   contents: Electron.WebContents
   frame: { processId: number; routingId: number }
   /** The shared tab. Chromium's capturer count on it is the only proof a capture is live. */
-  source: Electron.WebContents
+  source?: Electron.WebContents
+  closeSource?: () => void
   approvedAt: number
   /** Chromium has counted this tab as captured at least once since approval. */
   seen: boolean
@@ -61,6 +70,9 @@ if (process.isMainFrame) {
       const original = devices.getDisplayMedia
       if (typeof original !== 'function') return undefined
       const then = Promise.prototype.then
+      const interval = setInterval
+      const cancel = clearInterval
+      const readyState = Object.getOwnPropertyDescriptor(MediaStreamTrack.prototype, 'readyState').get
       const getTracks = MediaStream.prototype.getTracks
       const stopTrack = MediaStreamTrack.prototype.stop
       const kind = Object.getOwnPropertyDescriptor(MediaStreamTrack.prototype, 'kind').get
@@ -80,6 +92,12 @@ if (process.isMainFrame) {
             const id = '' + ++next
             own(captures, captures.length, { id, tracks })
             report('started', id, kinds)
+            const timer = interval(() => {
+              for (let index = 0; index < tracks.length; index++)
+                if (apply(readyState, tracks[index], []) === 'live') return
+              cancel(timer)
+              report('ended', id, [])
+            }, 500)
             return stream
           },
           (error) => {
@@ -140,7 +158,15 @@ export function createBrowserMedia(host: MediaHost) {
       video: boolean
     }
   >()
+  type RemoteSource = Extract<BrowserCommand, { action: 'remote-media-sources' }>['sources'][number]
+  const threadSources = new Map<number, ThreadWindowTarget[]>()
+  const remoteSources = new Map<number, RemoteSource[]>()
   const sessions = new WeakSet<Electron.Session>()
+  const removeCapture = (id: string) => {
+    const capture = captures.get(id)
+    captures.delete(id)
+    capture?.closeSource?.()
+  }
   const tabsAttached = new WeakSet<Electron.WebContents>()
   let preload: string | undefined
   const grantFor = (contents: Electron.WebContents, profileId: string, origin: string) => {
@@ -192,6 +218,8 @@ export function createBrowserMedia(host: MediaHost) {
   /** Pending requests die with their page; captures are judged only by Chromium (`refresh`). */
   const forgetContents = (contents: Electron.WebContents) => {
     grants.delete(contents.id)
+    for (const [id, capture] of captures)
+      if (!capture.source && capture.contents.id === contents.id) removeCapture(id)
     for (const request of [...pending.values()])
       if (request.contents.id === contents.id) settle(request, false)
   }
@@ -202,17 +230,20 @@ export function createBrowserMedia(host: MediaHost) {
   const refresh = () => {
     const now = Date.now()
     for (const [id, capture] of captures) {
-      if (capture.source.isDestroyed()) {
-        captures.delete(id)
+      if (capture.source?.isDestroyed() || (!capture.source && capture.contents.isDestroyed())) {
+        removeCapture(id)
         continue
       }
-      const live = capture.source.isBeingCaptured()
+      if (!capture.source && !capture.seen && now - capture.approvedAt >= START_GRACE)
+        capture.unresponsive = true
+      const live = capture.source ? capture.source.isBeingCaptured() : capture.seen
       if (live) {
         capture.seen = true
         if (capture.state === 'starting') capture.state = 'active'
         if (capture.state === 'stopping' && now - (capture.stopAt ?? now) >= STOP_GRACE)
           capture.unresponsive = true
-      } else if (capture.seen || now - capture.approvedAt >= START_GRACE) captures.delete(id)
+      } else if (capture.source && (capture.seen || now - capture.approvedAt >= START_GRACE))
+        removeCapture(id)
     }
   }
   const sameFrame = (frame: Electron.WebFrameMain | null | undefined, capture: Capture) =>
@@ -229,6 +260,16 @@ export function createBrowserMedia(host: MediaHost) {
   }
 
   return {
+    setRemoteSources: (windowId: number, sources: RemoteSource[]) => {
+      remoteSources.set(windowId, sources)
+    },
+    setThreadSources: (windowId: number, sources: ThreadWindowTarget[]) => {
+      threadSources.set(windowId, sources)
+    },
+    releaseWindow: (windowId: number) => {
+      remoteSources.delete(windowId)
+      threadSources.delete(windowId)
+    },
     /** Install media handling on a shared-browser profile session; thread previews never get it. */
     attachSession: (session: Electron.Session, profileId: string) => {
       if (sessions.has(session)) return
@@ -274,12 +315,44 @@ export function createBrowserMedia(host: MediaHost) {
             }
           },
         })
+        const entry = [...pending.values()].find(
+          (item) => item.contents.id === contents.id && item.kind === 'display',
+        )
+        if (entry)
+          void desktopCapturer
+            .getSources({ types: ['window', 'screen'], thumbnailSize: { width: 240, height: 150 } })
+            .then(
+              (sources) => {
+                if (pending.has(entry.id)) entry.desktopSources = sources
+              },
+              (error: unknown) => {
+                if (pending.has(entry.id))
+                  entry.sourceError =
+                    error instanceof Error ? error.message : 'Desktop sources are unavailable.'
+              },
+            )
       })
       session.setPermissionRequestHandler((contents, permission, callback, details) => {
         const tab = host.tabFor(contents)
         if (!tab || tab.profileId !== profileId || !details.isMainFrame) return callback(false)
         const origin = webOrigin(details.requestingUrl)
         if (!origin || webOrigin(contents.mainFrame.url) !== origin) return callback(false)
+        if (permission === 'notifications') {
+          const saved = browserPermissions(profileId).notification(origin)
+          if (saved !== undefined) return callback(saved)
+          add({
+            kind: 'notifications',
+            key: tab.key,
+            profileId,
+            origin,
+            video: false,
+            audio: false,
+            windowId: tab.windowId,
+            contents,
+            answer: (allow) => callback(allow === true),
+          })
+          return
+        }
         // getDisplayMedia still waits for the display handler above before anything is shared.
         if (permission === 'display-capture') return callback(true)
         const types = permission === 'media' ? mediaTypes(details) : undefined
@@ -299,13 +372,23 @@ export function createBrowserMedia(host: MediaHost) {
         })
       })
       session.setPermissionCheckHandler((contents, permission, origin, details) => {
-        if (!contents) return false
+        if (!contents)
+          return (
+            permission === 'notifications' &&
+            !!webOrigin(origin) &&
+            browserPermissions(profileId).notification(webOrigin(origin)!) === true
+          )
         const tab = host.tabFor(contents)
         const page = webOrigin(origin)
         if (!tab || tab.profileId !== profileId || !page) return false
         // Chromium checks this before getDisplayMedia reaches the display handler, which still
         // waits for the user's choice; only the tab's own page origin passes.
         if (permission === 'display-capture') return webOrigin(contents.mainFrame.url) === page
+        if (permission === 'notifications')
+          return (
+            webOrigin(contents.mainFrame.url) === page &&
+            browserPermissions(profileId).notification(page) === true
+          )
         if (permission !== 'media') return false
         const granted = grantFor(contents, profileId, page)
         const type: unknown = Reflect.get(details, 'mediaType')
@@ -327,14 +410,20 @@ export function createBrowserMedia(host: MediaHost) {
         const capture = [...captures.values()].find(
           (item) =>
             item.contents.id === contents.id &&
-            item.pageId === undefined &&
+            (phase === 'ended' ? item.pageId === id : item.pageId === undefined) &&
             sameFrame(event.senderFrame, item),
         )
         if (!capture) return
-        if (phase === 'started' && /^\d+$/.test(id)) capture.pageId = id
+        if (phase === 'started' && /^\d+$/.test(id)) {
+          capture.pageId = id
+          if (!capture.source) {
+            capture.seen = true
+            capture.state = 'active'
+          }
+        }
         // A rejected getDisplayMedia; dropped only if Chromium agrees nothing is captured.
-        else if (phase === 'failed' && !capture.source.isBeingCaptured())
-          captures.delete(capture.id)
+        else if (phase === 'failed' && !capture.source?.isBeingCaptured()) removeCapture(capture.id)
+        else if (phase === 'ended' && !capture.source) removeCapture(capture.id)
       })
       contents.on('did-navigate', () => forgetContents(contents))
       contents.on('did-start-navigation', (_event, _url, sameDocument, mainFrame) => {
@@ -363,10 +452,18 @@ export function createBrowserMedia(host: MediaHost) {
       const request = pending.get(command.requestId)
       if (!request || request.windowId !== windowId || request.key !== command.key)
         throw new Error('This media request is no longer waiting for an answer.')
-      if (command.decision === 'deny') return settle(request, false)
+      if (command.decision === 'deny') {
+        if (request.kind === 'notifications' && unchanged(request))
+          browserPermissions(request.profileId).setNotification(request.origin, false)
+        return settle(request, false)
+      }
       if (!unchanged(request)) {
         settle(request, false)
         throw new Error('The page changed before you answered, so its request was denied.')
+      }
+      if (request.kind === 'notifications') {
+        browserPermissions(request.profileId).setNotification(request.origin, true)
+        return settle(request, true)
       }
       if (request.kind === 'user-media') {
         if (process.platform === 'darwin')
@@ -400,20 +497,27 @@ export function createBrowserMedia(host: MediaHost) {
         return settle(request, true)
       }
       const source = host
-        .tabs(windowId, request.profileId)
+        .tabs()
         .find(
           (tab) =>
             tab.key === command.source &&
             !tab.contents.isDestroyed() &&
             webOrigin(tab.contents.mainFrame.url),
         )
-      if (!source) throw new Error('Choose a tab from this browser profile to share.')
+      const remote = remoteSources.get(windowId)?.find((tab) => tab.key === command.source)
+      const thread = threadSources
+        .get(windowId)
+        ?.find((item) => `thread:${item.runtimeId}:${item.taskId}` === command.source)
+      const desktop = request.desktopSources?.find((item) => item.id === command.source)
+      if (!source && !remote && !desktop && !thread)
+        throw new Error('Choose an available tab, window or screen to share.')
       refresh()
       // Chromium reports aggregate capturer counts. Keep one grant per source so a stopped
       // stream cannot be confused with another caller that still captures that source.
       if (
-        [...captures.values()].some((capture) => capture.source.id === source.contents.id) ||
-        source.contents.isBeingCaptured()
+        source &&
+        ([...captures.values()].some((capture) => capture.source?.id === source.contents.id) ||
+          source.contents.isBeingCaptured())
       )
         throw new Error('This tab is already being shared. Stop its current share first.')
       // Preload completion reports carry a page-local ID. Serialize approvals until that ID
@@ -426,15 +530,45 @@ export function createBrowserMedia(host: MediaHost) {
         throw new Error('Wait for this page’s previous share to start before sharing another tab.')
       const audio = !!command.audio
       if (audio && !request.audio) throw new Error('This page did not ask for tab audio.')
-      // The whole tab is shared through its main frame; audio is that tab's own, never the system's.
-      const frame = source.contents.mainFrame
-      settle(request, { video: frame, ...(audio ? { audio: frame, enableLocalEcho: true } : {}) })
+      if (audio && !source) throw new Error('Audio is available for local browser tabs only.')
+      const opened = remote
+        ? await openRemoteMedia(remote)
+        : thread
+          ? await host.openThread?.(thread)
+          : undefined
+      if (!unchanged(request) || !pending.has(request.id)) {
+        opened?.close()
+        throw new Error('The page changed before sharing could start.')
+      }
+      const contents = source?.contents ?? opened?.contents
+      const video = contents?.mainFrame ?? desktop
+      if (!video) {
+        opened?.close()
+        throw new Error('This source is no longer available.')
+      }
+      settle(request, {
+        video,
+        ...(audio && contents ? { audio: contents.mainFrame, enableLocalEcho: true } : {}),
+      })
       const id = randomUUID()
       const requester = request.contents.mainFrame
       captures.set(id, {
         id,
         key: request.key,
-        sourceKey: source.key,
+        sourceKey: command.source!,
+        ...(!source
+          ? {
+              sourceKind: thread
+                ? ('thread' as const)
+                : remote
+                  ? ('remote' as const)
+                  : desktop!.id.startsWith('screen:')
+                    ? ('screen' as const)
+                    : ('window' as const),
+              sourceTitle: thread?.title ?? remote?.title ?? desktop?.name,
+              sourceUrl: remote?.url,
+            }
+          : {}),
         profileId: request.profileId,
         origin: request.origin,
         audio,
@@ -442,7 +576,8 @@ export function createBrowserMedia(host: MediaHost) {
         windowId,
         contents: request.contents,
         frame: { processId: requester.processId, routingId: requester.routingId },
-        source: source.contents,
+        source: contents,
+        closeSource: opened?.close,
         approvedAt: Date.now(),
         seen: false,
       })
@@ -473,21 +608,62 @@ export function createBrowserMedia(host: MediaHost) {
       const requests = [...pending.values()]
         .filter((request) => request.windowId === windowId)
         .map(
-          ({ windowId: _w, contents, answer: _a, timer: _t, ...request }): BrowserMediaRequest => ({
+          ({
+            windowId: _w,
+            contents,
+            answer: _a,
+            timer: _t,
+            desktopSources: _d,
+            ...request
+          }): BrowserMediaRequest => ({
             ...request,
             ...(request.kind === 'display'
               ? {
-                  sources: host
-                    .tabs(windowId, request.profileId)
-                    .filter(
-                      (tab) => !tab.contents.isDestroyed() && webOrigin(tab.contents.mainFrame.url),
-                    )
-                    .map((tab) => ({
+                  sources: [
+                    ...host
+                      .tabs()
+                      .filter(
+                        (tab) =>
+                          !tab.contents.isDestroyed() && webOrigin(tab.contents.mainFrame.url),
+                      )
+                      .map((tab) => ({
+                        key: tab.key,
+                        title: tab.contents.getTitle().slice(0, 200),
+                        url: tab.contents.getURL().slice(0, 2000),
+                        requester: tab.contents.id === contents.id,
+                        profileId: tab.profileId,
+                        kind: 'tab' as const,
+                        audioSupported: true,
+                      })),
+                    ...(remoteSources.get(windowId) ?? []).map((tab) => ({
                       key: tab.key,
-                      title: tab.contents.getTitle().slice(0, 200),
-                      url: tab.contents.getURL().slice(0, 2000),
-                      requester: tab.contents.id === contents.id,
+                      title: tab.title,
+                      url: tab.url,
+                      profileId: tab.profileId,
+                      kind: 'remote' as const,
+                      requester: false,
+                      audioSupported: false,
                     })),
+                    ...(threadSources.get(windowId) ?? []).map((item) => ({
+                      key: `thread:${item.runtimeId}:${item.taskId}`,
+                      title: item.title,
+                      url: '',
+                      kind: 'thread' as const,
+                      requester: false,
+                      audioSupported: false,
+                    })),
+                    ...(_d ?? []).map((item) => ({
+                      key: item.id,
+                      title: item.name,
+                      url: '',
+                      kind: item.id.startsWith('screen:')
+                        ? ('screen' as const)
+                        : ('window' as const),
+                      requester: false,
+                      audioSupported: false,
+                      thumbnail: item.thumbnail.toDataURL(),
+                    })),
+                  ],
                 }
               : {}),
           }),
@@ -501,6 +677,7 @@ export function createBrowserMedia(host: MediaHost) {
             contents: _c,
             frame: _f,
             source,
+            closeSource: _close,
             approvedAt: _a,
             seen: _seen,
             stopAt: _t,
@@ -509,8 +686,8 @@ export function createBrowserMedia(host: MediaHost) {
             ...capture
           }): BrowserCapture => ({
             ...capture,
-            sourceTitle: source.getTitle().slice(0, 200),
-            sourceUrl: source.getURL().slice(0, 2000),
+            sourceTitle: capture.sourceTitle ?? source?.getTitle().slice(0, 200),
+            sourceUrl: capture.sourceKind ? capture.sourceUrl : source?.getURL().slice(0, 2000),
             ...(unresponsive ? { unresponsive } : {}),
           }),
         )
@@ -529,7 +706,7 @@ export function createBrowserMedia(host: MediaHost) {
         grants.has(contents.id) ||
         [...pending.values()].some((request) => request.contents.id === contents.id) ||
         [...captures.values()].some(
-          (capture) => capture.contents.id === contents.id || capture.source.id === contents.id,
+          (capture) => capture.contents.id === contents.id || capture.source?.id === contents.id,
         )
       )
     },
@@ -537,6 +714,9 @@ export function createBrowserMedia(host: MediaHost) {
     reset: () => {
       for (const request of [...pending.values()]) settle(request, false)
       grants.clear()
+      remoteSources.clear()
+      threadSources.clear()
+      for (const capture of captures.values()) capture.closeSource?.()
     },
   }
 }

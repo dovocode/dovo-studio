@@ -2,7 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Clipboard from 'expo-clipboard'
 import { randomUUID } from 'expo-crypto'
 import { useEffect, useRef, useState } from 'react'
-import { View, ScrollView, Pressable } from 'react-native'
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  Share,
+  TextInput,
+  View,
+} from 'react-native'
 import { WebView } from 'react-native-webview'
 import {
   browserProfilesResultSchema,
@@ -25,6 +33,8 @@ import {
 } from './native-browser'
 import { prepareNativeTab, closeNativeTab } from './native-session'
 import { Action } from '../ui/controls/action'
+import { Icon } from '../ui/controls/icon'
+import { IconButton } from '../ui/controls/icon-button'
 import { Choice } from '../ui/controls/choice'
 import { Field, SearchField } from '../ui/controls/field'
 import { Text } from '../ui/content/text'
@@ -84,10 +94,12 @@ export function BrowserScreen() {
   const [profiles, setProfiles] = useState([{ id: 'default', name: 'Default' }])
   const [library, setLibrary] = useState<'tabs' | 'library' | null>(null)
   const [optionsOpen, setOptionsOpen] = useState(false)
+  const [pageActionsOpen, setPageActionsOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState<BrowserSelection | null>(null)
   const consumedSelection = useRef<BrowserSelection | null>(null)
   const draftSheet = useRef<SheetHandle>(null)
+  const pageActionsSheet = useRef<SheetHandle>(null)
   const librarySheet = useRef<SheetHandle>(null)
   const web = useRef<WebView>(null)
   const pending = useRef<{
@@ -411,6 +423,7 @@ export function BrowserScreen() {
       } else if (url === active.url) web.current?.reload()
       else change((state) => recordPage(state, active.id, { url, title: '' }))
       setAddress(url)
+      Keyboard.dismiss()
     })
   const capture = async (): Promise<BrowserSelection> => {
     if (active.kind === 'remote') {
@@ -547,38 +560,12 @@ export function BrowserScreen() {
       </View>
     )
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScreenHeader title="Browser" onBack={() => navigate('tasks')} />
-      <View style={{ padding: 8, gap: 4, borderBottomWidth: 1, borderColor: colors.border }}>
-        <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
-          <Action secondary label="Browser options" onPress={() => setOptionsOpen(true)} />
-          <Action
-            secondary
-            label={`Tabs (${state.tabs.length})`}
-            onPress={() => {
-              setQuery('')
-              setLibrary('tabs')
-            }}
-          />
-          <Action
-            secondary
-            label="Bookmarks and history"
-            onPress={() => {
-              setQuery('')
-              setLibrary('library')
-            }}
-          />
-          <Action
-            secondary
-            label={
-              state.bookmarks.some((tab) => pageKey(tab) === pageKey(active))
-                ? 'Remove star'
-                : 'Star page'
-            }
-            disabled={!active.url || busy}
-            onPress={() => void act(async () => change((state) => toggleBookmark(state, active)))}
-          />
-        </View>
+      <View style={{ paddingHorizontal: 12 }}>
         {native.error ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {native.error}
@@ -720,102 +707,220 @@ export function BrowserScreen() {
           </View>
         )}
       </View>
-      {active.kind === 'local' && (
-        <View style={{ padding: 8, gap: 4 }}>
-          <Field
-            label="Search or enter address"
-            value={address}
-            onChangeText={setAddress}
-            autoCapitalize="none"
-            autoCorrect={false}
-            onFocus={() => {
-              editing.current = true
-            }}
-            onBlur={() => {
-              editing.current = false
-            }}
-            returnKeyType="go"
-            onSubmitEditing={navigateLocal}
-          />
-          <View style={{ flexDirection: 'row', gap: 16 }}>
-            <Action
-              secondary
-              label="Back"
-              disabled={!navigation.back}
-              onPress={() =>
-                void act(async () => {
-                  if (nativeAvailable && DovoWebKitBrowser)
-                    await DovoWebKitBrowser.goBack(active.id)
-                  else web.current?.goBack()
-                })
-              }
-            />
-            <Action
-              secondary
-              label="Forward"
-              disabled={!navigation.forward}
-              onPress={() =>
-                void act(async () => {
-                  if (nativeAvailable && DovoWebKitBrowser)
-                    await DovoWebKitBrowser.goForward(active.id)
-                  else web.current?.goForward()
-                })
-              }
-            />
-            <Action
-              secondary
-              label="Reload"
-              disabled={!active.url}
-              onPress={() =>
-                void act(async () => {
-                  if (nativeAvailable && DovoWebKitBrowser)
-                    await DovoWebKitBrowser.reload(active.id)
-                  else web.current?.reload()
-                })
-              }
-            />
-            <Action label="Go" disabled={nativeOpening} onPress={navigateLocal} />
-          </View>
-        </View>
-      )}
-      <ScrollView
-        horizontal
-        style={{ flexGrow: 0 }}
-        contentContainerStyle={{ paddingHorizontal: 8, gap: 16 }}
+      <View
+        style={{
+          backgroundColor: colors.surface,
+          borderTopWidth: 1,
+          borderColor: colors.border,
+          paddingHorizontal: 12,
+          paddingTop: 10,
+          paddingBottom: 4,
+          gap: 4,
+        }}
       >
-        <Action
-          secondary
-          label="Copy selection"
-          disabled={busy || !active.url || nativeOpening}
-          onPress={() =>
-            void act(async () => {
-              const value = await selected()
-              await Clipboard.setStringAsync(value.text)
-              setNotice('Selection copied.')
-            })
-          }
-        />
-        <Action
-          secondary
-          label="Add selection to thread"
-          disabled={busy || !active.url || nativeOpening}
-          onPress={() =>
-            void act(async () => {
-              setSelection(await selected())
+        {active.kind === 'local' && (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: colors.elevated,
+              borderRadius: 24,
+              minHeight: 48,
+            }}
+          >
+            <IconButton label="Browser options" icon="more" onPress={() => setOptionsOpen(true)} />
+            <TextInput
+              accessibilityLabel="Search or enter address"
+              testID="Search or enter address"
+              placeholder="Search or enter address"
+              placeholderTextColor={colors.muted}
+              selectionColor={colors.accent}
+              value={address}
+              onChangeText={setAddress}
+              autoCapitalize="none"
+              autoCorrect={false}
+              selectTextOnFocus
+              keyboardType="web-search"
+              onFocus={() => {
+                editing.current = true
+              }}
+              onBlur={() => {
+                editing.current = false
+              }}
+              returnKeyType="go"
+              onSubmitEditing={navigateLocal}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                minHeight: 48,
+                color: colors.text,
+                fontSize: 16,
+                textAlign: 'center',
+                paddingVertical: 8,
+              }}
+            />
+            <IconButton
+              label={address !== active.url || !active.url ? 'Go' : 'Reload'}
+              icon={address !== active.url || !active.url ? 'next' : 'refresh'}
+              disabled={busy || nativeOpening || !address.trim()}
+              onPress={navigateLocal}
+            />
+          </View>
+        )}
+        <View
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          {active.kind === 'local' ? (
+            <>
+              <IconButton
+                label="Back"
+                icon="back"
+                disabled={!navigation.back || busy || nativeOpening}
+                onPress={() =>
+                  void act(async () => {
+                    if (nativeAvailable && DovoWebKitBrowser)
+                      await DovoWebKitBrowser.goBack(active.id)
+                    else web.current?.goBack()
+                  })
+                }
+              />
+              <IconButton
+                label="Forward"
+                icon="next"
+                disabled={!navigation.forward || busy || nativeOpening}
+                onPress={() =>
+                  void act(async () => {
+                    if (nativeAvailable && DovoWebKitBrowser)
+                      await DovoWebKitBrowser.goForward(active.id)
+                    else web.current?.goForward()
+                  })
+                }
+              />
+            </>
+          ) : (
+            <IconButton label="Browser options" icon="more" onPress={() => setOptionsOpen(true)} />
+          )}
+          <IconButton
+            label="Page actions"
+            icon="share"
+            disabled={!active.url || nativeOpening}
+            onPress={() => setPageActionsOpen(true)}
+          />
+          <IconButton
+            label="Bookmarks and history"
+            icon="history"
+            onPress={() => {
               setQuery('')
-            })
-          }
-        />
-        <Action
-          secondary
-          label="Add page to thread"
-          disabled={busy || !active.url || nativeOpening}
-          onPress={() => {
-            setSelection({ text: '', url: active.url, title: active.title })
-            setQuery('')
-          }}
-        />
-      </ScrollView>
+              setLibrary('library')
+            }}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Tabs (${state.tabs.length})`}
+            onPress={() => {
+              setQuery('')
+              setLibrary('tabs')
+            }}
+            style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <View
+              style={{
+                borderWidth: 1.5,
+                borderColor: colors.text,
+                borderRadius: 6,
+                minWidth: 23,
+                height: 25,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>
+                {state.tabs.length}
+              </Text>
+            </View>
+          </Pressable>
+        </View>
+      </View>
+      {pageActionsOpen && (
+        <Sheet
+          ref={pageActionsSheet}
+          title="Page actions"
+          onClose={() => setPageActionsOpen(false)}
+        >
+          <Text numberOfLines={2} style={styles.title}>
+            {active.title || active.url}
+          </Text>
+          <Action
+            secondary
+            label="Share page"
+            disabled={busy}
+            onPress={() =>
+              void act(async () => {
+                await Share.share(
+                  Platform.OS === 'ios'
+                    ? { url: active.url, title: active.title }
+                    : { message: active.url, title: active.title },
+                )
+              })
+            }
+          />
+          <Action
+            secondary
+            label="Copy page address"
+            onPress={() =>
+              void act(async () => {
+                await Clipboard.setStringAsync(active.url)
+                setNotice('Page address copied.')
+              })
+            }
+          />
+          <Action
+            secondary
+            label={
+              state.bookmarks.some((tab) => pageKey(tab) === pageKey(active))
+                ? 'Remove bookmark'
+                : 'Bookmark page'
+            }
+            disabled={busy}
+            onPress={() => change((state) => toggleBookmark(state, active))}
+          />
+          <Action
+            secondary
+            label="Copy selection"
+            disabled={busy || !active.url || nativeOpening}
+            onPress={() =>
+              void act(async () => {
+                const value = await selected()
+                await Clipboard.setStringAsync(value.text)
+                setNotice('Selection copied.')
+              })
+            }
+          />
+          <Action
+            secondary
+            label="Add selection to thread"
+            disabled={busy || !active.url || nativeOpening}
+            onPress={() =>
+              void act(async () => {
+                const value = await selected()
+                pageActionsSheet.current?.dismiss(() => setSelection(value))
+                setQuery('')
+              })
+            }
+          />
+          <Action
+            secondary
+            label="Add page to thread"
+            disabled={busy || !active.url || nativeOpening}
+            onPress={() => {
+              pageActionsSheet.current?.dismiss(() =>
+                setSelection({ text: '', url: active.url, title: active.title }),
+              )
+              setQuery('')
+            }}
+          />
+        </Sheet>
+      )}
       {optionsOpen && (
         <Sheet title="Browser options" onClose={() => setOptionsOpen(false)}>
           <Text style={styles.title}>Tab profile</Text>
@@ -947,7 +1052,57 @@ export function BrowserScreen() {
           />
           <SearchField label="Search browser pages" value={query} onChangeText={setQuery} />
           {library === 'tabs' ? (
-            list(recentTabs(state.tabs), 'tabs')
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+              {recentTabs(state.tabs)
+                .filter(matches)
+                .map((tab) => (
+                  <View
+                    key={tab.id}
+                    style={{
+                      width: '47%',
+                      borderRadius: 18,
+                      borderWidth: tab.id === active.id ? 2 : 1,
+                      borderColor: tab.id === active.id ? colors.accent : colors.border,
+                      backgroundColor: colors.surface,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingLeft: 12,
+                      }}
+                    >
+                      <Icon name="web" size={18} color={colors.muted} />
+                      <IconButton
+                        label={`Close ${tab.title || 'tab'}`}
+                        icon="close"
+                        disabled={busy}
+                        onPress={() => void act(() => close(tab))}
+                      />
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${tab.title || tab.url || 'New tab'}`}
+                      accessibilityState={{ selected: tab.id === active.id }}
+                      onPress={() => open(tab)}
+                      style={{ minHeight: 116, padding: 12, gap: 8 }}
+                    >
+                      <Text numberOfLines={2} style={styles.text}>
+                        {tab.title || 'New tab'}
+                      </Text>
+                      <Text numberOfLines={2} style={styles.muted}>
+                        {tab.url || 'Search or enter address'}
+                      </Text>
+                      <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
+                        {describe(tab)}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ))}
+            </View>
           ) : (
             <>
               <Action
@@ -1015,6 +1170,6 @@ export function BrowserScreen() {
           )}
         </Sheet>
       )}
-    </View>
+    </KeyboardAvoidingView>
   )
 }

@@ -50,3 +50,14 @@ Reviewed T3 Code's [orchestrator v2 branch](https://github.com/pingdotgg/t3code/
 changes apply its durable-intent and runtime-ownership principles to Dovo's existing Effect 4
 runtime. They do not replace Dovo's workspace storage with T3's event log/outbox or change its
 provider lock, HTTP/VPN connectivity, device pairing, or restart-continuation preference.
+
+## Child questions and approvals
+
+Ordinary questions from Dovo children enter the parent’s internal subagent inbox. They remain hidden
+from human input cards until the parent uses `subagent_answer` without answers to escalate the
+original form. Supplied answers use the original validation and response receipts; only the owning
+parent can coordinate a child. Secret fields bypass agent routing. The coordination operation cannot
+approve permissions. Targeted children carry their questions in thread snapshots and use the same
+answer/escalation operation through the paired runtime. Human requests retain their original child
+identity; local ancestor conversations render their forms and approvals, and remote requests link to
+the owning thread for review. Notification destinations use the main local conversation.
