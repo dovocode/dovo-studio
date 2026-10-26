@@ -157,11 +157,28 @@ try {
     for (const archived of [false, true]) {
       await show('rows', { archived })
       const row = page.locator('.group\\/task')
-      const project = await row.getByText('Audit project', { exact: true }).boundingBox()
       const title = await row.getByText('Short title', { exact: true }).boundingBox()
-      const status = await row
-        .getByText(archived ? 'Settled' : 'Draft', { exact: true })
-        .boundingBox()
+      if (archived) {
+        const button = row.getByRole('button', { name: 'Short title', exact: true })
+        const bounds = await button.boundingBox()
+        assert.ok(bounds.height <= 38, 'Settled threads retain their compact height')
+        await contained(row.getByText('Short title', { exact: true }), button)
+        assert.equal(await row.getByText('Audit project', { exact: true }).count(), 0)
+        assert.equal(await row.locator('.studio-thread-card-context').count(), 0)
+        await page.mouse.move(width - 1, 699)
+        await button.hover()
+        const details = page.getByRole('tooltip')
+        await details.waitFor()
+        await details.getByText('Audit project', { exact: true }).waitFor()
+        await details.getByText('MacBook Pro', { exact: true }).waitFor()
+        await details.getByText('Agent · OpenAI Codex', { exact: true }).waitFor()
+        await details.getByText('Settled', { exact: true }).waitFor()
+        await page.keyboard.press('Escape')
+        await details.waitFor({ state: 'hidden' })
+        continue
+      }
+      const project = await row.getByText('Audit project', { exact: true }).boundingBox()
+      const status = await row.getByText('Draft', { exact: true }).boundingBox()
       const provider = row.locator('[data-agent-avatar]')
       assert.equal(await provider.count(), 1)
       assert.equal(
@@ -180,29 +197,22 @@ try {
         Math.abs(providerBox.y + providerBox.height / 2 - runtimeBox.y - runtimeBox.height / 2) < 1,
         'Runtime and harness share a row',
       )
-      if (archived)
-        assert.ok(
-          Math.abs(providerBox.y + providerBox.height / 2 - status.y - status.height / 2) < 1,
-        )
-      else
-        assert.ok(
-          title.y + title.height <= providerBox.y,
-          'Active thread machine and harness appear below its title',
-        )
-      if (!archived) {
-        const toggle = row.getByRole('button', { name: 'Subthreads for Short title', exact: true })
-        const icon = await toggle.locator('svg').boundingBox()
-        assert.ok(Math.abs(icon.y + icon.height / 2 - status.y - status.height / 2) <= 1.5)
-        await contained(toggle, row)
-        const bounds = await toggle.boundingBox()
-        assert.ok(
-          providerBox.x + providerBox.width <= bounds.x ||
-            bounds.x + bounds.width <= providerBox.x ||
-            providerBox.y + providerBox.height <= bounds.y ||
-            bounds.y + bounds.height <= providerBox.y,
-          'Provider and subthread controls do not overlap',
-        )
-      }
+      assert.ok(
+        title.y + title.height <= providerBox.y,
+        'Active thread machine and harness appear below its title',
+      )
+      const toggle = row.getByRole('button', { name: 'Subthreads for Short title', exact: true })
+      const icon = await toggle.locator('svg').boundingBox()
+      assert.ok(Math.abs(icon.y + icon.height / 2 - status.y - status.height / 2) <= 1.5)
+      await contained(toggle, row)
+      const bounds = await toggle.boundingBox()
+      assert.ok(
+        providerBox.x + providerBox.width <= bounds.x ||
+          bounds.x + bounds.width <= providerBox.x ||
+          providerBox.y + providerBox.height <= bounds.y ||
+          bounds.y + bounds.height <= providerBox.y,
+        'Provider and subthread controls do not overlap',
+      )
       assert.ok(
         project.y + project.height <= title.y,
         JSON.stringify({ width, archived, project, title }),
@@ -377,7 +387,6 @@ try {
           weight: getComputedStyle(title).fontWeight,
         }
       })
-      assert.equal(contrast.titleAlpha, 1)
       assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
       assert.deepEqual(contrast.metadataOpacity, [1, 1])
       assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
@@ -387,9 +396,7 @@ try {
   for (const mode of ['light', 'dark']) {
     const read = contrasts.find((value) => value.mode === mode && !value.unread)
     const unread = contrasts.find((value) => value.mode === mode && value.unread)
-    assert.equal(read.weight, '500')
-    assert.equal(unread.weight, '600')
-    assert.equal(unread.title, read.title)
+    assert.ok(unread.title > read.title, 'Unread titles have stronger contrast than read titles')
     assert.ok(unread.metadata > read.metadata)
   }
   console.log(
