@@ -1,5 +1,5 @@
 import { browserProfileIdSchema } from './browser-profiles.js'
-import { mutableStruct } from '../../shared/schema.js'
+import { mutableArray, mutableStruct } from '../../shared/schema.js'
 import { minValue, maxValue } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
 import { previewDeviceSchema } from './previews.js'
@@ -187,6 +187,9 @@ export const remoteBrowserMessageSchema = Schema.Union([
   }),
   mutableStruct({
     type: Schema.Literal('state'),
+    createdTabs: Schema.optional(
+      mutableArray(mutableStruct({ id: Schema.String, url: Schema.String })),
+    ),
     url: Schema.String,
     title: Schema.String,
     back: Schema.Boolean,
@@ -202,6 +205,7 @@ export const remoteBrowserMessageSchema = Schema.Union([
   }),
   mutableStruct({
     type: Schema.Literal('closed'),
+    byPage: Schema.optional(Schema.Boolean),
     message: Schema.String,
   }),
   remoteBrowserDialogSchema,

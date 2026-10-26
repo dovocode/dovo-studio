@@ -5,6 +5,7 @@ import {
   pullReference,
   stackSummary,
   taskFamilyIds,
+  taskIsWorking,
   taskPullLinks,
   taskPullStatusFor,
   gitRemoteIdentity,
@@ -643,6 +644,7 @@ export class TaskPullWatcher {
               (member) =>
                 !ids.has(member.id) ||
                 (!member.pinned &&
+                  !taskIsWorking(member) &&
                   !member.waitingForFeedback &&
                   !member.queue?.length &&
                   !member.draft.trim() &&

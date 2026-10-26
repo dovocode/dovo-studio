@@ -5,6 +5,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { STUDIO_BROWSER_SCOPE } from '../packages/protocol/dist/index.js'
 import { RemoteBrowsers } from '../packages/runtime/dist/previews/browser.js'
 const server = createServer((request, response) => {
   response.setHeader('Content-Type', 'text/html')
@@ -93,6 +95,51 @@ try {
   await browsers.open('restart-check', 'profiles', 'work', origin + '/profile-state')
   dispose.push(await browsers.attach('restart-check', listener('restart-check')))
   await wait(() => states.get('restart-check')?.title === 'profileLogin=work|work')
+  await browsers.close('restart-check')
+  const privateId = 'private-00000000-0000-4000-8000-000000000002'
+  const privateResource = JSON.stringify([STUDIO_BROWSER_SCOPE, 'private-tab', privateId])
+  await browsers.open(privateResource, STUDIO_BROWSER_SCOPE, privateId, origin + '/login')
+  const privatePage = (await browsers.sessions.get(privateResource)).page
+  assert.equal(await privatePage.evaluate(() => navigator.language), 'en-US')
+  assert.match(await privatePage.evaluate(() => document.cookie), /profileLogin=work/)
+  assert.equal(existsSync(join(profileDirectory, 'browser-workspace.profiles', privateId)), false)
+  await browsers.close(privateResource)
+  await browsers.open(privateResource, STUDIO_BROWSER_SCOPE, privateId, origin + '/profile-state')
+  const parent = (await browsers.sessions.get(privateResource)).page
+  assert.equal(
+    await parent.title(),
+    'empty|empty',
+    'Closing the private tab must discard cookies and local storage.',
+  )
+  dispose.push(await browsers.attach(privateResource, listener('private-parent')))
+  await parent.evaluate((origin) => {
+    window.child = window.open('', 'new')
+    setTimeout(() => (window.child.location.href = origin + '/child'), 40)
+  }, origin)
+  await wait(() => states.get('private-parent')?.createdTabs?.length === 1)
+  const childTab = states.get('private-parent').createdTabs[0]
+  const childResource = JSON.stringify([STUDIO_BROWSER_SCOPE, childTab.id, privateId])
+  const child = (await browsers.sessions.get(childResource)).page
+  await child.waitForURL(origin + '/child')
+  assert.equal(await child.evaluate(() => !!window.opener), true)
+  await child.evaluate(() => (window.opener.document.title = 'retained opener'))
+  assert.equal(await parent.title(), 'retained opener')
+  await parent.evaluate((origin) => {
+    window.sameChild = window.open(origin + '/child2', 'new') === window.child
+  }, origin)
+  assert.equal(await parent.evaluate(() => window.sameChild), true)
+  await child.waitForURL(origin + '/child2')
+  let closedMessage
+  dispose.push(
+    await browsers.attach(childResource, (message) => {
+      if (message.type === 'closed') closedMessage = message
+    }),
+  )
+  await child.evaluate(() => window.close())
+  await wait(() => !browsers.sessions.has(childResource))
+  assert.equal(closedMessage?.byPage, true)
+  assert.equal(parent.isClosed(), false)
+  await browsers.close(privateResource)
   console.log(
     'Real Chromium: independent tabs, paused streams, scoped cleanup, shared logins within a profile, profile isolation, and saved cookies/local storage across runtime restart passed.',
   )

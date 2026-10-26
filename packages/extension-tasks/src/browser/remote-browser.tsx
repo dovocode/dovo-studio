@@ -39,6 +39,7 @@ export function RemoteBrowser({
   deviceId,
   tabId,
   onState,
+  onClosed,
   reloadToken,
   ref,
   externalNavigation = false,
@@ -53,6 +54,7 @@ export function RemoteBrowser({
   deviceId?: string
   tabId?: string
   onState?: (state: Extract<RemoteBrowserMessage, { type: 'state' }>) => void
+  onClosed?: () => void
   reloadToken?: number
   ref?: Ref<RemoteBrowserControls>
   externalNavigation?: boolean
@@ -68,6 +70,7 @@ export function RemoteBrowser({
   const reportState = useEffectEvent((state: Extract<RemoteBrowserMessage, { type: 'state' }>) =>
     onState?.(state),
   )
+  const reportClosed = useEffectEvent(() => onClosed?.())
   const reportConnection = useEffectEvent((online: boolean) => onConnection?.(online))
   const reportPerformance = useEffectEvent((details: string) => onPerformance?.(details))
   const focusAddress = useEffectEvent(() => onFocusAddress?.())
@@ -166,6 +169,10 @@ export function RemoteBrowser({
         void attachScreenshot(data.image).catch((error) =>
           post({ type: 'error', message: String(error) }),
         )
+      if (data.type === 'closed') {
+        const result = decodeResult(remoteBrowserMessageSchema, data)
+        if (result.success && result.data.type === 'closed' && result.data.byPage) reportClosed()
+      }
       if (data.type === 'state') {
         const state = decodeResult(remoteBrowserMessageSchema, data)
         if (state.success && state.data.type === 'state') {

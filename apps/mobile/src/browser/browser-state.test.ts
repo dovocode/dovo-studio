@@ -8,6 +8,8 @@ import {
   closeTab,
   recordPage,
   toggleBookmark,
+  togglePinnedTab,
+  persistableBrowserState,
   appendBrowserDraft,
   pageKey,
   recentTabs,
@@ -36,6 +38,32 @@ it('round trips owners and native or remote profiles', () => {
   ).toThrow(/.+/)
   expect(pageKey(remote)).not.toBe(pageKey({ ...remote, runtimeId: 'other' }))
   expect(pageKey(remote)).not.toBe(pageKey({ ...remote, profileId: 'personal' }))
+})
+
+it('persists pinned local and remote tabs, keeps them first and protects them from close', () => {
+  let state = addTab(initialBrowserState('device'), remote)
+  state = togglePinnedTab(state, 'remote')
+  state = recordPage(state, 'device', { url: 'https://recent.example/', title: 'Recent' })
+  expect(recentTabs(state.tabs)[0]).toMatchObject({ ...remote, pinned: true })
+  expect(parseBrowserState(JSON.stringify(state))).toEqual(state)
+  expect(closeTab(state, 'remote', 'unused')).toBe(state)
+  state = togglePinnedTab(state, 'remote')
+  expect(closeTab(state, 'remote', 'unused').tabs.map((tab) => tab.id)).toEqual(['device'])
+})
+it('never persists private tabs or adds their pages to history, bookmarks or recently closed', () => {
+  const privateTab = { ...remote, profileId: 'private-11111111-1111-4111-8111-111111111111' }
+  let state = addTab(initialBrowserState('public'), privateTab)
+  state = recordPage(state, 'remote', { url: 'https://private.example/secret', title: 'Private' })
+  expect(state.history).toEqual([])
+  expect(toggleBookmark(state, state.tabs[1]!)).toBe(state)
+  const saved = persistableBrowserState(state, 'fallback')
+  expect(JSON.stringify(saved)).not.toContain('private.example')
+  expect(saved.active).toBe('public')
+  expect(closeTab(state, 'remote', 'fallback').closed).toEqual([])
+  const onlyPrivate = { ...state, tabs: [state.tabs[1]!], active: 'remote' }
+  expect(
+    parseBrowserState(JSON.stringify(persistableBrowserState(onlyPrivate, 'fallback'))).active,
+  ).toBe('fallback')
 })
 it('rejects invalid saved state and bounded collections before restoring', () => {
   const state = initialBrowserState('one')

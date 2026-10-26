@@ -1,6 +1,10 @@
 import UIKit
 import WebKit
 
+private func isPrivateBrowserProfile(_ id: String) -> Bool {
+  id.range(of: "^private-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", options: [.regularExpression, .caseInsensitive]) != nil
+}
+
 /// One named browser profile: a persistent WKWebsiteDataStore keyed by a stable UUID.
 @available(iOS 17.0, *)
 @MainActor
@@ -11,7 +15,7 @@ final class BrowserProfileRuntime {
 
   init(record: ProfileRecord) {
     self.record = record
-    dataStore = WKWebsiteDataStore(forIdentifier: record.dataStoreIdentifier)
+    dataStore = isPrivateBrowserProfile(record.profileId) ? WKWebsiteDataStore.nonPersistent() : WKWebsiteDataStore(forIdentifier: record.dataStoreIdentifier)
   }
 
   var id: String { record.profileId }
@@ -86,6 +90,12 @@ final class BrowserEngine {
     if let profile = profiles[profileId] {
       try requireEnabled()
       guard profiles[profileId] === profile else { throw BrowserError.disabled }
+      return profile
+    }
+    if isPrivateBrowserProfile(profileId) {
+      guard profiles.count < BrowserLimits.maxProfiles + BrowserLimits.maxTabs else { throw BrowserError.invalid("Too many browser profiles.") }
+      let profile = BrowserProfileRuntime(record: ProfileRecord(profileId: profileId, dataStoreIdentifier: UUID()))
+      profiles[profileId] = profile
       return profile
     }
     var records = try storage.loadProfiles()
@@ -192,6 +202,9 @@ final class BrowserEngine {
     let profile = profiles[tab.profileId]
     if profile?.activeTabId == tab.id { profile?.activeTabId = tabs.last { $0.profileId == tab.profileId }?.id }
     tab.close()
+    if isPrivateBrowserProfile(tab.profileId), !tabs.contains(where: { $0.profileId == tab.profileId }) {
+      profiles.removeValue(forKey: tab.profileId)
+    }
     refreshHostViews()
     if let reason { emit("onTabClosed", ["tabId": tab.id, "instanceId": tab.instanceId, "profileId": tab.profileId, "reason": reason]) }
   }

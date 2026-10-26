@@ -49,6 +49,14 @@ it('restores local and remote tabs with their profiles without storing runtime c
   expect(readSharedBrowserTabs()).toEqual({ state: { tabs: [local, remote], active: 'remote' } })
   expect([...values.values()][0]).not.toContain('token')
 })
+
+it('keeps pinned tabs ahead of recent visits and restores them in their original profile', () => {
+  storage()
+  const tabs = [{ ...local, pinned: true }, remote]
+  expect(recentBrowserTabs(visitBrowserTab(tabs, 'remote', 100))[0].id).toBe('local')
+  saveSharedBrowserTabs({ tabs, active: 'remote' })
+  expect(readSharedBrowserTabs().state?.tabs).toEqual(tabs)
+})
 it('rejects malformed, duplicate or stale active-tab storage instead of reassigning ownership', () => {
   for (const value of [
     'bad json',

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 const state = vi.hoisted(() => ({ root: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.root } }))
-import { browserPermissions } from './browser-permissions'
+import { browserPermissions, forgetPrivateBrowserPermissions } from './browser-permissions'
 beforeEach(async () => {
   state.root = await mkdtemp(join(tmpdir(), 'browser-permissions-'))
 })
@@ -32,4 +32,30 @@ it('retains helper consent for the exact extension, host and executable until re
   work.revokeHelpers('extension')
   expect(browserPermissions('work').helper(key)).toBe(false)
   expect(work.notification('http://lan.example:3000')).toBe(true)
+})
+
+it('persists device grants independently and preserves helper and notification approvals', () => {
+  const work = browserPermissions('work')
+  const origin = 'https://teams.microsoft.com'
+  work.allowHelper('extension:host:/Applications/helper')
+  work.setNotification(origin, true)
+  work.allowMedia(origin, { audio: true, video: false })
+  expect(browserPermissions('work').media(origin)).toEqual({ audio: true, video: false })
+  work.allowMedia(origin, { audio: false, video: true })
+  expect(browserPermissions('work').media(origin)).toEqual({ audio: true, video: true })
+  expect(browserPermissions('personal').media(origin)).toBeUndefined()
+  expect(work.media('https://other.example')).toBeUndefined()
+  expect(work.helper('extension:host:/Applications/helper')).toBe(true)
+  expect(work.notification(origin)).toBe(true)
+})
+
+it('keeps private approvals in memory and discards them on close', async () => {
+  const id = 'private-00000000-0000-4000-8000-000000000001'
+  const permissions = browserPermissions(id)
+  permissions.allowMedia('https://meet.example', { audio: true, video: true })
+  permissions.setNotification('https://meet.example', true)
+  expect(browserPermissions(id).media('https://meet.example')).toEqual({ audio: true, video: true })
+  expect(await readdir(state.root)).toEqual([])
+  forgetPrivateBrowserPermissions(id)
+  expect(browserPermissions(id).media('https://meet.example')).toBeUndefined()
 })

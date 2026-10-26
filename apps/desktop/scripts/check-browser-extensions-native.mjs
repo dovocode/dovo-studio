@@ -130,6 +130,7 @@ import { createServer } from 'node:http'
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerBrowser } from ${JSON.stringify(browserModule)}
+import { workspacePartition } from ${JSON.stringify(join(desktop, 'electron', 'browser-extensions.ts'))}
 
 const work = process.env.SMOKE_DIR!
 const run = process.env.SMOKE_RUN!
@@ -137,11 +138,16 @@ const settings = process.env.DOVO_SETTINGS_PATH!
 app.setPath('userData', join(work, 'user-data'))
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const setBrowser = (enabled: boolean) =>
-  writeFileSync(settings, JSON.stringify({ app: { browserWorkspaceEnabled: enabled, browserProfiles: [{id:"work",name:"Work"},{id:"personal",name:"Personal"}] } }))
+  writeFileSync(settings, JSON.stringify({ app: { browserWorkspaceEnabled: enabled, browserProfiles: [{id:"default",name:"Default"},{id:"work",name:"Work",language:"nl-NL"},{id:"personal",name:"Personal"}] } }))
 const prompts: { message: string; detail?: string }[] = []
 const loads: string[] = []
 const report: Record<string, unknown> = { run }
-const server = createServer((_request, response) => {
+const stage = (name: string) => { report.stage=name; writeFileSync(join(work,'progress-'+run+'.json'),JSON.stringify(report)) }
+process.on('uncaughtException',(error)=>{report.error=error.stack??error.message;report.liveWindows=BrowserWindow.getAllWindows().map(w=>({id:w.id,title:w.getTitle(),url:w.webContents.getURL()}));writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report));app.exit(1)})
+const watchdog = setTimeout(()=>{report.error='Native browser smoke timed out at '+report.stage;writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report));app.exit(1)},90_000)
+watchdog.unref()
+const server = createServer((request, response) => {
+  if(request.url==='/language') { response.end(request.headers['accept-language']||''); return }
   response.setHeader('content-type', 'text/html')
   response.end('<title>page</title>hello')
 }).listen(0, '127.0.0.1')
@@ -193,7 +199,52 @@ app.whenReady().then(async () => {
     }
 
     if (run === '1') {
+      stage('show work')
       await show(tab, 'work')
+      const contents = () => studio.contentView.children.map((view: any) => view.webContents).find((contents: any) => contents?.getURL() === page)
+      const main = contents()!
+      stage('language')
+      assert.deepEqual(await main.executeJavaScript('({language:navigator.language,languages:navigator.languages})'), {language:'nl-NL',languages:['nl-NL','nl']})
+      stage('language header')
+      assert.match(await main.executeJavaScript("fetch('/language').then(response=>response.text())"), /^nl-NL,nl/)
+      stage('open blank')
+      await main.executeJavaScript(\`window.child = window.open('', 'new'); setTimeout(() => child.location.href = '\${page}?child=1', 50)\`)
+      let createdChild: any
+      for (let i=0;i<60&&!createdChild;i++) { createdChild = (await call('browser',{action:'status',key:tab}))?.createdTabs?.[0]; if(!createdChild) await wait(50) }
+      assert.ok(createdChild, 'Deferred named window must become a native tab.')
+      stage('show child')
+      await show(createdChild.key, 'work', page+'?child=1')
+      const child = studio.contentView.children.map((view: any) => view.webContents).find((contents: any) => contents?.getURL() === page+'?child=1')!
+      stage('opener')
+      await child.executeJavaScript('window.opener.document.title = "opener retained"')
+      assert.equal(main.getTitle(), 'opener retained')
+      stage('named reuse')
+      await main.executeJavaScript(\`window.reused = window.open('\${page}?child=2', 'new'); window.sameChild = reused === child\`)
+      assert.equal(await main.executeJavaScript('window.sameChild'), true, 'Named target must reuse its original page.')
+      assert.equal((await call('browser',{action:'status',key:tab}))?.createdTabs, undefined)
+      stage('close child')
+      await new Promise<void>((resolve)=> { if(child.isLoading()) child.once('did-stop-loading',()=>resolve()); else resolve() })
+      report.childId=child.id; report.mainId=main.id;report.studioId=studio.webContents.id
+      stage('close child javascript')
+      await main.executeJavaScript('window.child.close(); true')
+      stage('close child status')
+      let childClosed=false
+      for(let i=0;i<60&&!childClosed;i++) { childClosed=!!(await call('browser',{action:'status',key:tab}))?.closedTabs?.includes(createdChild.key); if(!childClosed) await wait(50) }
+      assert.ok(childClosed, 'window.close must release a page-created tab')
+      const privateId = 'private-00000000-0000-4000-8000-000000000001'
+      assert.ok(!workspacePartition(privateId).startsWith('persist:'))
+      stage('private profile')
+      await show('private-proof', privateId)
+      const privateSession = session.fromPartition(workspacePartition(privateId))
+      assert.equal(privateSession.isPersistent(), false)
+      await privateSession.cookies.set({url:page,name:'private',value:'temporary'})
+      assert.equal((await work_.cookies.get({name:'private'})).length,0)
+      await call('browser',{action:'close',key:'private-proof'})
+      for(let i=0;i<60&&(await privateSession.cookies.get({name:'private'})).length;i++) await wait(50)
+      assert.equal((await privateSession.cookies.get({name:'private'})).length,0,'Closing the last private tab must clear website data.')
+      stage('show work')
+      await show(tab, 'work')
+      stage('install extension')
       const installed = await call('extensions', { action: 'install', profileId: 'work' })
       const [extension] = installed.extensions
       assert.equal(installed.installed, extension.id)
@@ -211,6 +262,7 @@ app.whenReady().then(async () => {
         readFileSync(join(work, 'fixture', 'manifest.json'), 'utf8').includes('nativeMessaging'),
         'The chosen folder must stay unchanged.',
       )
+      stage('content script')
       const content = await contentTitle()
       assert.equal(content.activeTab, page)
       assert.equal(typeof content.window, 'number')
@@ -304,6 +356,11 @@ app.whenReady().then(async () => {
         ['Allow “Dovo native smoke” more access in browser profile “Work”?', 'Allow “Dovo native smoke” more access in browser profile “Work”?'],
       )
 
+      const helperPrompts = prompts.filter((prompt) => prompt.detail?.includes('Desktop helper:'))
+      if (process.platform !== 'win32') assert.equal(helperPrompts.length, 1)
+      const popupWindow = BrowserWindow.getAllWindows().find((window) => !before.has(window))!
+      popupWindow.emit('blur')
+      assert.equal(popupWindow.isDestroyed(), true, 'Popup must dismiss when focus moves outside Studio.')
       const status = await call('browser', { action: 'status', key: tab })
       const created = status?.createdTabs?.[0]
       assert.ok(created, 'The extension-created tab was not reported.')
@@ -322,6 +379,7 @@ app.whenReady().then(async () => {
       const preview = session.fromPartition('persist:dovo-preview:work')
       assert.equal(preview.extensions.getAllExtensions().length, 0)
 
+      stage('show work')
       await show(tab, 'work')
       await contentTitle()
       assert.ok(Object.keys(work_.serviceWorkers.getAllRunning()).length > 0)
@@ -338,13 +396,26 @@ app.whenReady().then(async () => {
       assert.equal(restored.extensions[0].loaded, true)
       report.extension = extension.id
     } else {
+      stage('show work')
       await show(tab, 'work')
       const listed = await call('extensions', { action: 'list', profileId: 'work' })
       assert.equal(listed.extensions.length, 1)
       assert.equal(listed.extensions[0].loaded, true)
       assert.deepEqual(loads, ['Dovo native smoke'])
+      stage('content script')
       const content = await contentTitle()
       assert.ok(content.runs > 2, 'chrome.storage.local did not persist across restarts.')
+      const beforePopup = new Set(BrowserWindow.getAllWindows())
+      await call('extensions', {action:'open',profileId:'work',id:listed.extensions[0].id,key:tab,anchor:{x:1000,y:0,width:32,height:32}})
+      let reconnect: any
+      for(let i=0;i<60&&!reconnect;i++) {
+        const title=BrowserWindow.getAllWindows().find((window)=>!beforePopup.has(window))?.webContents.getTitle()
+        if(title?.startsWith('POPUP:')) reconnect=JSON.parse(title.slice(6))
+        else await wait(100)
+      }
+      assert.ok(reconnect, 'Restarted extension must connect to its desktop helper.')
+      if(process.platform!=='win32') assert.deepEqual(reconnect.nativeEcho,{echo:{text:'Dovo naïve 🔑'}})
+      assert.equal(prompts.filter((prompt)=>prompt.detail?.includes('Desktop helper:')).length,0,'Helper approval must survive restart for this profile.')
       const removed = await call('extensions', {
         action: 'remove',
         profileId: 'work',

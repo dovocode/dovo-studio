@@ -1,5 +1,12 @@
 import { afterEach, expect, it } from 'vite-plus/test'
-import { decode, defaultTaskHarness, taskSchema, type Task, type Subagent } from '@dovo/protocol'
+import {
+  decode,
+  defaultTaskHarness,
+  taskSchema,
+  taskIsWorking,
+  type Task,
+  type Subagent,
+} from '@dovo/protocol'
 import { createServices } from '../../services.js'
 import { openDatabase } from '../../storage/database.js'
 
@@ -43,22 +50,26 @@ const native: Subagent = {
   updatedAt: '',
 }
 
-it('keeps finished ancestors waiting until every delegated descendant finishes', () => {
+it('keeps finished ancestors working until every delegated descendant finishes', () => {
   const s = setup([
     task('parent'),
     task('child', 'parent'),
     { ...task('nested', 'child'), status: 'running' },
     { ...task('unrelated'), status: 'running' },
   ])
-  expect(s.store.taskSummary('parent').waitingForFeedback).toBe(true)
-  expect(s.store.taskSummary('child').waitingForFeedback).toBe(true)
+  expect(taskIsWorking(s.store.taskSummary('parent'))).toBe(true)
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
+  expect(taskIsWorking(s.store.taskSummary('child'))).toBe(true)
+  expect(s.store.taskSummary('child').waitingForFeedback).toBeUndefined()
   expect(s.store.taskSummary('nested').waitingForFeedback).toBeUndefined()
   s.store.updateTask('nested', (task) => ({ ...task, status: 'review' }))
+  expect(taskIsWorking(s.store.taskSummary('parent'))).toBe(false)
+  expect(taskIsWorking(s.store.taskSummary('child'))).toBe(false)
   expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
   expect(s.store.taskSummary('child').waitingForFeedback).toBeUndefined()
 })
 
-it('waits for live native agents and pending child results, including read-only parents', () => {
+it('keeps working for live native agents and pending child results, including read-only parents', () => {
   const s = setup([
     {
       ...task('parent'),
@@ -66,12 +77,14 @@ it('waits for live native agents and pending child results, including read-only 
       subagents: [native],
     },
   ])
-  expect(s.store.taskSummary('parent').waitingForFeedback).toBe(true)
+  expect(taskIsWorking(s.store.taskSummary('parent'))).toBe(true)
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
   s.store.updateTask('parent', (task) => ({
     ...task,
     subagents: [{ ...native, status: 'completed', finishedAt: 'now', completion: 'pending' }],
   }))
-  expect(s.store.taskSummary('parent').waitingForFeedback).toBe(true)
+  expect(taskIsWorking(s.store.taskSummary('parent'))).toBe(true)
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
   s.store.updateTask('parent', (task) => ({
     ...task,
     subagents: [{ ...native, status: 'completed', finishedAt: 'now', completion: 'read' }],
@@ -106,15 +119,16 @@ it('keeps a finished turn out of Waiting until its own run releases ownership', 
   expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
 })
 
-it('waits for a finished child that is still releasing its run', () => {
+it('keeps working for a finished child that is still releasing its run', () => {
   const s = setup([task('parent'), { ...task('child', 'parent'), activeRunId: 'finishing' }])
-  expect(s.store.taskSummary('parent').waitingForFeedback).toBe(true)
+  expect(taskIsWorking(s.store.taskSummary('parent'))).toBe(true)
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
   expect(s.store.taskSummary('child').waitingForFeedback).toBeUndefined()
   s.store.updateTask('child', (task) => ({ ...task, activeRunId: undefined }))
   expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
 })
 
-it('keeps ancestors waiting while a child has unread inbox results', () => {
+it('keeps ancestors working while a child has unread inbox results', () => {
   const s = setup([
     task('parent'),
     {
@@ -124,7 +138,8 @@ it('keeps ancestors waiting while a child has unread inbox results', () => {
       ],
     },
   ])
-  expect(s.store.taskSummary('parent').waitingForFeedback).toBe(true)
+  expect(taskIsWorking(s.store.taskSummary('parent'))).toBe(true)
+  expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
   s.store.updateTask('child', (task) => ({ ...task, subagentInbox: [] }))
   expect(s.store.taskSummary('parent').waitingForFeedback).toBeUndefined()
 })

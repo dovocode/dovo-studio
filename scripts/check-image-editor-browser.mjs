@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync, readdirSync } from 'node:fs'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = new URL('../', import.meta.url).pathname
 const built = await bundleBrowser(
@@ -180,6 +181,77 @@ try {
     ),
     null,
   )
+  // Use the production Radix dialog and built app CSS to cover its flex sizing, not a mock modal.
+  const dialogBundle = await bundleBrowser(
+    {
+      stdin: {
+        resolveDir: root + 'packages/extension-tasks',
+        loader: 'tsx',
+        contents: `import {createRoot} from 'react-dom/client';import {useImageEditor} from './src/chat/composer/image-editor';function Fixture(){const e=useImageEditor();window.edit=e.edit;return e.editor}createRoot(document.getElementById('app')).render(<Fixture/>);`,
+      },
+      bundle: true,
+      write: false,
+      format: 'iife',
+      jsx: 'automatic',
+      target: 'es2022',
+    },
+    [
+      {
+        path: '@dovo/studio-core',
+        contents: `export {imageEditorDocument,parseImageEditorResult} from '${root}packages/client-runtime/src/images/image-editor';`,
+      },
+      {
+        path: '@dovo/studio-ui',
+        contents: `export {Dialog,DialogContent,DialogTitle} from '${root}packages/studio-ui/src/components/ui/dialog';`,
+      },
+    ],
+  )
+  const dialogPage = await browser.newPage()
+  dialogPage.on('pageerror', (error) => errors.push(error.message))
+  await dialogPage.setContent('<html class="dark"><body><div id="app"></div></body></html>')
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+    file.endsWith('.css'),
+  ))
+    await dialogPage.addStyleTag({
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+    })
+  await dialogPage.addScriptTag({ content: dialogBundle.outputFiles[0].text })
+  await dialogPage.waitForFunction(() => window.edit)
+  for (const [width, height] of [
+    [1100, 850],
+    [390, 640],
+    [320, 400],
+  ]) {
+    await dialogPage.setViewportSize({ width, height })
+    await dialogPage.evaluate(() => {
+      const c = document.createElement('canvas')
+      c.width = 400
+      c.height = 240
+      c.toBlob((blob) => void window.edit(new File([blob], 'layout.png', { type: 'image/png' })))
+    })
+    const actualDialog = dialogPage.getByRole('dialog')
+    const actualFrame = dialogPage.frameLocator('iframe')
+    await actualFrame.locator('#attach:enabled').waitFor()
+    const box = await actualDialog.boundingBox(),
+      iframe = await dialogPage.locator('iframe').boundingBox()
+    assert.ok(
+      box.x >= 0 &&
+        box.y >= 0 &&
+        box.x + box.width <= width + 1 &&
+        box.y + box.height <= height + 1,
+      'Image dialog stays in viewport',
+    )
+    assert.ok(
+      iframe.height >= box.height - 4,
+      'Editor fills dialog instead of a partial grid track',
+    )
+    await actualFrame
+      .getByRole('button', { name: 'Attach image', exact: true })
+      .scrollIntoViewIfNeeded()
+    await actualFrame.getByRole('button', { name: 'Attach image', exact: true }).click()
+    await actualDialog.waitFor({ state: 'hidden' })
+  }
+  await dialogPage.close()
   assert.deepEqual(errors, [])
   console.log(
     'Image editor: pen pixels, crop bounds, undo/redo/reset, icon tools, keyboard shortcuts, input isolation, narrow layouts, cancel/original, native bridge and result validation passed.',

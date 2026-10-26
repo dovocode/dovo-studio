@@ -2,6 +2,7 @@ import type { BrowserCapture, BrowserMediaRequest } from '@dovo/protocol'
 import { app, desktopCapturer, systemPreferences, webContents as allContents } from 'electron'
 import { browserPermissions } from './browser-permissions.js'
 import { openRemoteMedia } from './browser-remote-media.js'
+import { prepareScreenRecording } from './browser-screen-permission.js'
 import type { ThreadWindowTarget } from '@dovo/protocol'
 import type { BrowserCommand } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
@@ -319,8 +320,19 @@ export function createBrowserMedia(host: MediaHost) {
           (item) => item.contents.id === contents.id && item.kind === 'display',
         )
         if (entry)
-          void desktopCapturer
-            .getSources({ types: ['window', 'screen'], thumbnailSize: { width: 240, height: 150 } })
+          void prepareScreenRecording(tab.windowId, origin)
+            .then((allowed) => {
+              if (!pending.has(entry.id)) return []
+              if (!allowed) {
+                entry.sourceError =
+                  'macOS Screen Recording permission is needed for windows and screens. Start sharing again after enabling Dovo in System Settings → Privacy & Security → Screen & System Audio Recording. Tabs and threads remain available.'
+                return []
+              }
+              return desktopCapturer.getSources({
+                types: ['window', 'screen'],
+                thumbnailSize: { width: 240, height: 150 },
+              })
+            })
             .then(
               (sources) => {
                 if (pending.has(entry.id)) entry.desktopSources = sources
@@ -358,6 +370,9 @@ export function createBrowserMedia(host: MediaHost) {
         const types = permission === 'media' ? mediaTypes(details) : undefined
         if (!types) return callback(false)
         const granted = grantFor(contents, profileId, origin)
+        const saved = browserPermissions(profileId).media(origin)
+        if (saved && (!types.audio || saved.audio) && (!types.video || saved.video))
+          return callback(true)
         if (granted && (!types.audio || granted.audio) && (!types.video || granted.video))
           return callback(true)
         add({
@@ -390,11 +405,15 @@ export function createBrowserMedia(host: MediaHost) {
             browserPermissions(profileId).notification(page) === true
           )
         if (permission !== 'media') return false
+        if (webOrigin(contents.mainFrame.url) !== page) return false
         const granted = grantFor(contents, profileId, page)
+        const saved = browserPermissions(profileId).media(page)
         const type: unknown = Reflect.get(details, 'mediaType')
-        return (
-          !!granted && (type === 'audio' ? granted.audio : type === 'video' ? granted.video : false)
-        )
+        return type === 'audio'
+          ? !!(granted?.audio || saved?.audio)
+          : type === 'video'
+            ? !!(granted?.video || saved?.video)
+            : false
       })
     },
     /** Track the page's capture lifecycle for one shared-browser tab. */
@@ -447,6 +466,7 @@ export function createBrowserMedia(host: MediaHost) {
         decision: 'allow' | 'deny'
         source?: string
         audio?: boolean
+        remember?: boolean
       },
     ) => {
       const request = pending.get(command.requestId)
@@ -485,6 +505,8 @@ export function createBrowserMedia(host: MediaHost) {
           settle(request, false)
           throw new Error('The page changed before you answered, so its request was denied.')
         }
+        if (command.remember)
+          browserPermissions(request.profileId).allowMedia(request.origin, request)
         const previous = grantFor(request.contents, request.profileId, request.origin)
         grants.set(request.contents.id, {
           profileId: request.profileId,

@@ -278,6 +278,8 @@ export const browserCommandSchema = Schema.Union([
     key: maxValue(minValue(Schema.String, 1), 500),
     requestId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f-]{36}$/))),
     decision: Schema.Literals(['allow', 'deny']),
+    /** Camera/microphone only: remember this website's requested devices in this profile. */
+    remember: Schema.optional(Schema.Boolean),
     /** Display requests: key of one of the request's `sources` to share as a whole tab. */
     source: Schema.optional(maxValue(minValue(Schema.String, 1), 500)),
     /** Display requests: also share that tab's audio (needs `audio` in the request). */
@@ -351,7 +353,7 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
        * Hidden tabs an extension opened in this window. Adopt each with `show` using its key and
        * exact URL; drained by any `status` in the window.
        */
-      createdTabs?: { key: string; url: string; profileId: string }[]
+      createdTabs?: { key: string; url: string; profileId: string; active?: boolean }[]
       /** Keys of tabs an extension closed in this window; drained by any `status` in the window. */
       closedTabs?: string[]
       /** Pending media requests in this window; a snapshot, repeated until answered or expired. */

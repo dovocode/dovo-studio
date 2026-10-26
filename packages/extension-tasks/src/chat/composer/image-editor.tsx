@@ -83,7 +83,7 @@ export function useImageEditor() {
           if (!open) finish(null)
         }}
       >
-        <DialogContent className="h-[min(850px,90dvh)] w-[min(1100px,95vw)] max-w-none overflow-hidden p-0 gap-0 [&_[data-dialog-close]]:hidden">
+        <DialogContent className="flex flex-col h-[min(850px,90dvh)] w-[min(1100px,95vw)] max-w-none overflow-hidden p-0 gap-0 [&_[data-dialog-close]]:hidden">
           <DialogTitle className="sr-only">Edit image attachment</DialogTitle>
           {document && (
             <iframe
@@ -91,7 +91,7 @@ export function useImageEditor() {
               title="Image editor"
               sandbox="allow-scripts"
               srcDoc={document}
-              className="h-full w-full border-0"
+              className="min-h-0 w-full flex-1 border-0"
             />
           )}
         </DialogContent>

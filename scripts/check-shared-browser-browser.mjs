@@ -543,13 +543,12 @@ try {
   await page.waitForFunction(
     () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 1,
   )
-  await recent.getByRole('button', { name: 'Bookmarks and history', exact: true }).click()
-  const library = page.getByRole('dialog', { name: 'Bookmarks and history', exact: true })
-  await library
-    .getByRole('textbox', { name: 'Search bookmarks and history' })
-    .fill('no-such-page-unique')
-  assert.equal(await library.getByText('No matching pages.', { exact: true }).count(), 3)
-  await library.getByRole('textbox', { name: 'Search bookmarks and history' }).fill('Mac Studio')
+  await recent.getByRole('button', { name: 'Bookmarks', exact: true }).click()
+  const library = page.getByRole('dialog', { name: 'Bookmarks', exact: true })
+  await library.getByRole('textbox', { name: 'Search bookmarks' }).fill('no-such-page-unique')
+  assert.equal(await library.getByText('No matching pages.', { exact: true }).count(), 1)
+  assert.equal(await library.getByRole('region', { name: 'History', exact: true }).count(), 0)
+  await library.getByRole('textbox', { name: 'Search bookmarks' }).fill('Mac Studio')
   const bookmarks = library.getByRole('region', { name: 'Bookmarks', exact: true })
   assert.equal(
     await bookmarks.getByRole('button').count(),
@@ -712,11 +711,15 @@ try {
     true,
     'Search history persists',
   )
-  await recent.getByRole('button', { name: 'Bookmarks and history', exact: true }).click()
-  await library.getByRole('button', { name: 'Clear history', exact: true }).click()
+  await recent.getByRole('button', { name: 'History', exact: true }).click()
+  const historyDialog = page.getByRole('dialog', { name: 'History', exact: true })
+  assert.equal(await historyDialog.getByRole('region', { name: 'Bookmarks' }).count(), 0)
+  await historyDialog.getByRole('button', { name: 'Clear history', exact: true }).click()
   await page.waitForFunction(
     () => JSON.parse(localStorage.getItem('dovo.shared-browser-library.v1')).visits.length === 0,
   )
+  await page.keyboard.press('Escape')
+  await recent.getByRole('button', { name: 'Bookmarks', exact: true }).click()
   await library.getByRole('button', { name: /Remove bookmark/ }).click()
   await page.waitForFunction(
     () => JSON.parse(localStorage.getItem('dovo.shared-browser-library.v1')).bookmarks.length === 0,
@@ -730,10 +733,52 @@ try {
   )
   await page.setViewportSize({ width: 1200, height: 800 })
   const closedSource = (await persisted()).closed[0]
-  await library.getByRole('button', { name: 'Reopen last closed tab', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await recent.getByRole('button', { name: 'History', exact: true }).click()
+  await historyDialog.getByRole('button', { name: 'Reopen last closed tab', exact: true }).click()
   const libraryReopened = await selected()
   for (const key of ['url', 'kind', 'runtimeId', 'profileId'])
     assert.equal(libraryReopened[key], closedSource[key], 'Library reopen source ' + key)
+  await pageAction('Pin tab')
+  const pinnedSource = await selected()
+  assert.equal(pinnedSource.pinned, true)
+  const pinnedCount = (await persisted()).tabs.length
+  await page.keyboard.press('Control+w')
+  assert.equal((await persisted()).tabs.length, pinnedCount, 'Pinned tabs resist accidental close')
+  await pageAction('Unpin tab')
+  await recent.getByRole('button', { name: /^localhost:3000\/new-window Local/ }).click()
+  const beforePrivate = (await persisted()).tabs.length
+  await recent.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New private tab', exact: true }).click()
+  await page.getByLabel('Preview URL', { exact: true }).fill('http://localhost:3000/private-secret')
+  await page.getByRole('button', { name: 'Go to address', exact: true }).click()
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (call) => call.action === 'show' && call.url === 'http://localhost:3000/private-secret',
+    ),
+  )
+  const privateShow = await page.evaluate(() =>
+    window.calls.findLast(
+      (call) => call.action === 'show' && call.url === 'http://localhost:3000/private-secret',
+    ),
+  )
+  assert.match(privateShow.profileId, /^private-/)
+  assert.equal((await persisted()).tabs.length, beforePrivate, 'Private tabs are not saved')
+  assert.equal(
+    await page.getByRole('button', { name: 'Bookmark page', exact: true }).isDisabled(),
+    true,
+  )
+  assert.equal(await page.getByRole('button', { name: 'Extensions', exact: true }).count(), 0)
+  assert.equal(
+    await page.evaluate(() => Object.values(localStorage).join('').includes('private-secret')),
+    false,
+    'Private URL never reaches saved tabs or history',
+  )
+  await page.keyboard.press('Control+w')
+  await page.waitForFunction(
+    (key) => window.calls.some((call) => call.action === 'close' && call.key === key),
+    privateShow.key,
+  )
   // Drain multiple page-created link batches against current state, without stealing focus.
   await recent.getByRole('button', { name: /^localhost:3000\/new-window Local/ }).click()
   await page.waitForFunction(() =>
@@ -981,51 +1026,59 @@ try {
     )
   })
   await libraryPage.addScriptTag({ content: built.outputFiles[0].text })
-  await libraryPage.getByRole('button', { name: 'Bookmarks and history', exact: true }).click()
-  const sourceLibrary = libraryPage.getByRole('dialog', { name: 'Bookmarks and history' })
-  const sourceSearch = sourceLibrary.getByRole('textbox', { name: 'Search bookmarks and history' })
-  for (const sectionName of ['Bookmarks', 'History', 'Recently closed']) {
-    const section = sourceLibrary.getByRole('region', { name: sectionName, exact: true })
-    assert.match(
-      await section.getByRole('button', { name: /^LAN saved page/ }).innerText(),
-      /LAN Work/,
-    )
-    assert.match(
-      await section.getByRole('button', { name: /^Mac saved page/ }).innerText(),
-      /Remote Work/,
-    )
-    assert.match(
-      await section.getByRole('button', { name: /^Unpaired saved page/ }).innerText(),
-      /Unavailable profile/,
-    )
-    assert.equal(
-      await section.getByText(`No ${sectionName.toLowerCase()} yet.`, { exact: true }).isVisible(),
-      false,
-    )
-  }
-  for (const profileName of ['LAN Work', 'Remote Work']) {
-    await sourceSearch.fill(profileName)
-    for (const sectionName of ['Bookmarks', 'History', 'Recently closed']) {
+  for (const view of ['Bookmarks', 'History']) {
+    await libraryPage.getByRole('button', { name: view, exact: true }).click()
+    const sourceLibrary = libraryPage.getByRole('dialog', { name: view, exact: true })
+    const sourceSearch = sourceLibrary.getByRole('textbox', {
+      name: `Search ${view.toLowerCase()}`,
+    })
+    const sectionNames = view === 'Bookmarks' ? ['Bookmarks'] : ['History', 'Recently closed']
+    for (const sectionName of sectionNames) {
       const section = sourceLibrary.getByRole('region', { name: sectionName, exact: true })
-      const entry = section
-        .locator('button[type="button"]')
-        .filter({ hasText: 'saved page' })
-        .first()
-      assert.match(await entry.innerText(), new RegExp(profileName))
-      assert.equal(
-        await section.getByRole('button', { name: /^(LAN|Mac|Unpaired) saved page/ }).count(),
-        1,
+      assert.match(
+        await section.getByRole('button', { name: /^LAN saved page/ }).innerText(),
+        /LAN Work/,
+      )
+      assert.match(
+        await section.getByRole('button', { name: /^Mac saved page/ }).innerText(),
+        /Remote Work/,
+      )
+      assert.match(
+        await section.getByRole('button', { name: /^Unpaired saved page/ }).innerText(),
+        /Unavailable profile/,
       )
       assert.equal(
-        await section.getByText('No matching pages.', { exact: true }).isVisible(),
+        await section
+          .getByText(`No ${sectionName.toLowerCase()} yet.`, { exact: true })
+          .isVisible(),
         false,
       )
     }
+    for (const profileName of ['LAN Work', 'Remote Work']) {
+      await sourceSearch.fill(profileName)
+      for (const sectionName of sectionNames) {
+        const section = sourceLibrary.getByRole('region', { name: sectionName, exact: true })
+        const entry = section
+          .locator('button[type="button"]')
+          .filter({ hasText: 'saved page' })
+          .first()
+        assert.match(await entry.innerText(), new RegExp(profileName))
+        assert.equal(
+          await section.getByRole('button', { name: /^(LAN|Mac|Unpaired) saved page/ }).count(),
+          1,
+        )
+        assert.equal(
+          await section.getByText('No matching pages.', { exact: true }).isVisible(),
+          false,
+        )
+      }
+    }
+    await sourceSearch.fill('no-profile-with-this-name')
+    const emptySections = sourceLibrary.getByText('No matching pages.', { exact: true })
+    assert.equal(await emptySections.count(), sectionNames.length)
+    for (const message of await emptySections.all()) assert.equal(await message.isVisible(), true)
+    await libraryPage.keyboard.press('Escape')
   }
-  await sourceSearch.fill('no-profile-with-this-name')
-  const emptySections = sourceLibrary.getByText('No matching pages.', { exact: true })
-  assert.equal(await emptySections.count(), 3)
-  for (const message of await emptySections.all()) assert.equal(await message.isVisible(), true)
   await libraryPage.close()
   await page.evaluate(() => (window.fixtureSelection = 'Remote selection'))
   await pageAction('Add selection to thread…')

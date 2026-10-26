@@ -504,6 +504,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     simulatorTickets: new SocketTickets(),
     browsers: new RemoteBrowsers(
       db.name === ':memory:' ? undefined : join(dirname(resolve(db.name)), 'browser-profiles'),
+      () => preferences.get().browserProfiles,
     ),
     browserTickets: new SocketTickets(),
     checkouts,

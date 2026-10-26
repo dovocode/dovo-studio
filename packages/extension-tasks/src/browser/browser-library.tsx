@@ -3,7 +3,7 @@ import { useBrowserProfileName } from './browser-profile-label'
 import { useWorkspace } from '@dovo/studio-core'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useState } from 'react'
-import { BookOpen, Trash2 } from 'lucide-react'
+import { BookOpen, History, Trash2 } from 'lucide-react'
 import {
   Button,
   Dialog,
@@ -82,57 +82,77 @@ export function BrowserLibrary({
   onClearHistory,
   onReopen,
 }: BrowserLibraryProps) {
-  const [open, setOpen] = useState(false)
+  const [view, setView] = useState<'bookmarks' | 'history' | null>(null)
   const [query, setQuery] = useState('')
-  const sections = [
-    { title: 'Bookmarks', tabs: bookmarks },
-    { title: 'History', tabs: visits },
-    { title: 'Recently closed', tabs: closed },
-  ]
+  const title = view === 'history' ? 'History' : 'Bookmarks'
+  const sections =
+    view === 'history'
+      ? [
+          { title: 'History', tabs: visits },
+          { title: 'Recently closed', tabs: closed },
+        ]
+      : [{ title: 'Bookmarks', tabs: bookmarks }]
   return (
     <>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="w-full min-w-0 justify-start"
-        aria-label="Bookmarks and history"
-        title="Bookmarks and history"
-        onClick={() => {
-          setQuery('')
-          setOpen(true)
+      <div className="flex flex-wrap gap-1">
+        {(['bookmarks', 'history'] as const).map((kind) => (
+          <Button
+            key={kind}
+            size="sm"
+            variant="ghost"
+            className="min-w-0 flex-1 justify-start"
+            aria-label={kind === 'bookmarks' ? 'Bookmarks' : 'History'}
+            onClick={() => {
+              setQuery('')
+              setView(kind)
+            }}
+          >
+            {kind === 'bookmarks' ? (
+              <BookOpen size={14} className="shrink-0" />
+            ) : (
+              <History size={14} className="shrink-0" />
+            )}
+            <span className="min-w-0 truncate">
+              {kind === 'bookmarks' ? 'Bookmarks' : 'History'}
+            </span>
+          </Button>
+        ))}
+      </div>
+      <Dialog
+        open={view !== null}
+        onOpenChange={(open) => {
+          if (!open) setView(null)
         }}
       >
-        <BookOpen size={14} className="shrink-0" />
-        <span className="min-w-0 truncate">Bookmarks and history</span>
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl">
-          <DialogTitle>Bookmarks and history</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             Open a saved page on its original computer and browser profile.
           </DialogDescription>
           <Input
-            aria-label="Search bookmarks and history"
+            aria-label={`Search ${title.toLowerCase()}`}
             placeholder="Search pages, computers or profiles…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!closed.length}
-              onClick={() => {
-                onReopen()
-                setOpen(false)
-              }}
-            >
-              Reopen last closed tab
-            </Button>
-            <Button size="sm" variant="ghost" disabled={!visits.length} onClick={onClearHistory}>
-              Clear history
-            </Button>
-          </div>
+          {view === 'history' && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!closed.length}
+                onClick={() => {
+                  onReopen()
+                  setView(null)
+                }}
+              >
+                Reopen last closed tab
+              </Button>
+              <Button size="sm" variant="ghost" disabled={!visits.length} onClick={onClearHistory}>
+                Clear history
+              </Button>
+            </div>
+          )}
           <div className="max-h-[55vh] space-y-4 overflow-y-auto">
             {sections.map(({ title, tabs }) => (
               <section key={title} aria-label={title}>
@@ -145,7 +165,7 @@ export function BrowserLibrary({
                       query={query}
                       onOpen={() => {
                         onOpen(tab)
-                        setOpen(false)
+                        setView(null)
                       }}
                       onRemove={title === 'Bookmarks' ? () => onRemoveBookmark(tab) : undefined}
                     />

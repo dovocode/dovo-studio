@@ -237,7 +237,8 @@ try {
     .getByRole('button', { name: 'Close Remote page', exact: true })
     .click()
   await page.getByRole('button', { name: 'Dismiss sheet' }).click()
-  await button('Bookmarks and history').click()
+  await button('Browser options').click()
+  await button('History').click()
   await button('Reopen last closed tab').click()
   assert.equal(
     await page.evaluate(() => {
@@ -246,7 +247,7 @@ try {
     }),
     'work',
   )
-  await button('Bookmarks and history').click()
+  await button('Bookmarks').click()
   await page.getByLabel('Search browser pages').fill('192.168')
   assert.ok(await page.getByRole('button', { name: /Open http:\/\/192/ }).count())
   await page
@@ -283,7 +284,7 @@ try {
   )
   mkdirSync(root + 'work/mobile-shared-browser', { recursive: true })
   await page.screenshot({ path: root + 'work/mobile-shared-browser/narrow.png' })
-  await button('Bookmarks and history').click()
+  await button('Bookmarks').click()
   await page.screenshot({ path: root + 'work/mobile-shared-browser/narrow-library.png' })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   await page.getByRole('button', { name: 'Dismiss sheet' }).click()

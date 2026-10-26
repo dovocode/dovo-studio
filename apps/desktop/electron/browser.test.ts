@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
       setPermissionCheckHandler: vi.fn<(...args: unknown[]) => void>(),
     },
     on: vi.fn<(...args: unknown[]) => void>(),
+    once: vi.fn<(...args: unknown[]) => void>(),
     removeListener: vi.fn<(...args: unknown[]) => void>(),
     close: vi.fn<(...args: unknown[]) => void>(),
     isDestroyed: vi.fn<() => boolean>(() => false),
@@ -119,6 +120,13 @@ vi.mock('./browser-extensions.js', () => ({
   },
 }))
 vi.mock('./browser-cdp.js', () => ({ createBrowserCdp: mocks.cdpCreate }))
+vi.mock('./browser-language.js', () => ({
+  configureBrowserLanguage: (
+    session: typeof mocks.contents.session,
+    _profileId: string,
+    userAgent: string,
+  ) => session.setUserAgent(userAgent),
+}))
 vi.mock('electron', () => ({
   Menu: { buildFromTemplate: mocks.menu },
   clipboard: { writeText: mocks.clipboard },
@@ -735,7 +743,11 @@ type OpenHandler = (details: {
   features: string
   referrer?: { url: string; policy: string }
   postBody?: { contentType: string; boundary?: string; data: unknown[] }
-}) => { action: string; overrideBrowserWindowOptions?: { webPreferences?: object } }
+}) => {
+  action: string
+  overrideBrowserWindowOptions?: { webPreferences?: object }
+  createWindow?: (options: Electron.BrowserWindowConstructorOptions) => Electron.WebContents
+}
 const listener = (name: string) =>
   mocks.contents.on.mock.calls.findLast(([event]) => event === name)?.[1] as
     | ((...args: unknown[]) => void)
@@ -786,7 +798,7 @@ it('keeps denying every new window and shortcut for thread-side previews', async
   expect(status).not.toHaveProperty('openedLinks')
 })
 
-it('queues bounded HTTP(S) new-tab requests for the workspace browser and drains them in status', async () => {
+it('adopts bounded native new tabs with their profile, background disposition and opener preferences', async () => {
   const call = handler()
   await call(event, workspaceShow)
   const open = openHandler()
@@ -798,23 +810,38 @@ it('queues bounded HTTP(S) new-tab requests for the workspace browser and drains
     ['file:///etc/passwd', 'foreground-tab'],
     ['https://user:secret@example.com/', 'foreground-tab'],
     ['https://example.com/download', 'other'],
-  ])
-    expect(open({ url, disposition, features: '' })).toEqual({ action: 'deny' })
+  ]) {
+    const result = open({ url, disposition, features: '' })
+    if (
+      [
+        'https://example.com/tab',
+        'http://192.168.1.20:3000/',
+        'https://example.com/shift',
+      ].includes(url)
+    ) {
+      expect(result.action).toBe('allow')
+      result.createWindow?.({ webPreferences: { javascript: true } })
+    } else expect(result).toEqual({ action: 'deny' })
+  }
   await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
-    openedLinks: [
-      'https://example.com/tab',
-      'http://192.168.1.20:3000/',
-      'https://example.com/shift',
+    createdTabs: [
+      { url: 'https://example.com/tab', active: true },
+      { url: 'http://192.168.1.20:3000/', active: false },
+      { url: 'https://example.com/shift', active: true },
     ],
   })
-  expect(await call(event, { action: 'status', key: 'shared' })).not.toHaveProperty('openedLinks')
+  expect(await call(event, { action: 'status', key: 'shared' })).not.toHaveProperty('createdTabs')
   for (let i = 0; i < 30; i++)
-    open({ url: `https://example.com/${i}`, disposition: 'foreground-tab', features: '' })
+    open({
+      url: `https://example.com/${i}`,
+      disposition: 'foreground-tab',
+      features: '',
+    }).createWindow?.({})
   const status = (await call(event, { action: 'status', key: 'shared' })) as {
-    openedLinks: string[]
+    createdTabs: { url: string }[]
   }
-  expect(status.openedLinks).toHaveLength(20)
-  expect(status.openedLinks[0]).toBe('https://example.com/0')
+  expect(status.createdTabs).toHaveLength(20)
+  expect(status.createdTabs[0]!.url).toBe('https://example.com/0')
 })
 
 it('allows bounded sandboxed OAuth popups that keep the opener and close with their tab', async () => {
@@ -836,13 +863,15 @@ it('allows bounded sandboxed OAuth popups that keep the opener and close with th
   })
   expect(JSON.stringify(allowed)).not.toContain('partition')
   expect(open({ ...request, url: 'data:text/html,hi' })).toEqual({ action: 'deny' })
-  expect(open({ ...request, features: 'noopener,width=500' })).toEqual({ action: 'deny' })
+  const noOpener = open({ ...request, features: 'noopener,width=500' })
+  expect(noOpener.action).toBe('allow')
   const created = listener('did-create-window')
   const first = popupWindow()
   const second = popupWindow()
   created?.(first)
   created?.(second)
   expect(open(request)).toEqual({ action: 'deny' })
+  noOpener.createWindow?.({})
   const navigate = first.webContents.on.mock.calls.find(([name]) => name === 'will-navigate')?.[1]
   const blocked = vi.fn<() => void>()
   navigate?.({ preventDefault: blocked }, 'file:///etc/passwd')
@@ -854,7 +883,8 @@ it('allows bounded sandboxed OAuth popups that keep the opener and close with th
   ).toEqual({ action: 'deny' })
   // A noopener popup cannot report back to its opener, so it becomes an ordinary tab.
   await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
-    openedLinks: ['https://accounts.example.com/authorize', 'https://example.com/help'],
+    openedLinks: ['https://example.com/help'],
+    createdTabs: [{ url: 'https://accounts.example.com/authorize' }],
   })
   await call(event, { action: 'close', key: 'shared' })
   expect(first.close).toHaveBeenCalledOnce()

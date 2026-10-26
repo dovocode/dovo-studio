@@ -154,7 +154,7 @@ export function BrowserMediaControls() {
           threads={threads}
           busy={busy}
           error={error}
-          onAnswer={(decision, source, audio) => {
+          onAnswer={(decision, source, audio, remember) => {
             const target = threads.find(
               (thread) => source === `thread:${thread.runtimeId}:${thread.taskId}`,
             )
@@ -166,6 +166,7 @@ export function BrowserMediaControls() {
                 decision,
                 source,
                 audio,
+                remember,
               },
               decision === 'allow' && target
                 ? () =>
@@ -194,7 +195,12 @@ function MediaPermission({
   threads: readonly { runtimeId: string; taskId: string; title: string; computerName: string }[]
   busy: boolean
   error: string
-  onAnswer: (decision: 'allow' | 'deny', source?: string, audio?: boolean) => void
+  onAnswer: (
+    decision: 'allow' | 'deny',
+    source?: string,
+    audio?: boolean,
+    remember?: boolean,
+  ) => void
 }) {
   const [source, setSource] = useState('')
   const [query, setQuery] = useState('')
@@ -252,6 +258,12 @@ function MediaPermission({
               ? ' wants to send desktop notifications. Your choice is saved for this website in this browser profile.'
               : ` wants to use your ${devices} while this page is open.`}
         </DialogDescription>
+        {request.kind === 'user-media' && (
+          <p className="text-sm text-muted-foreground">
+            Always allow remembers these devices for this website in this browser profile. Allow
+            this time lasts until this page is closed or reloaded. Deny only rejects this request.
+          </p>
+        )}
         {display && (
           <>
             <Input
@@ -393,10 +405,19 @@ function MediaPermission({
             {error}
           </p>
         )}
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" disabled={busy} onClick={() => onAnswer('deny')}>
-            Cancel
+            {request.kind === 'user-media' ? 'Deny' : 'Cancel'}
           </Button>
+          {request.kind === 'user-media' && (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => onAnswer('allow', undefined, undefined, false)}
+            >
+              Allow this time
+            </Button>
+          )}
           <Button
             disabled={busy || (display && !selected)}
             onClick={() =>
@@ -404,10 +425,11 @@ function MediaPermission({
                 'allow',
                 display ? source : undefined,
                 display && request.audio && audioSupported && audio,
+                request.kind === 'user-media' ? true : undefined,
               )
             }
           >
-            {display ? 'Share' : 'Allow'}
+            {display ? 'Share' : request.kind === 'user-media' ? 'Always allow' : 'Allow'}
           </Button>
         </div>
       </DialogContent>

@@ -3,7 +3,12 @@ import { dirname, resolve } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { startPolling } from '@dovo/client-runtime'
 import { Effect } from 'effect'
-import { DIAGNOSTIC_RETENTION_DAYS, taskFamilyIds, type TaskSummary } from '@dovo/protocol'
+import {
+  DIAGNOSTIC_RETENTION_DAYS,
+  taskFamilyIds,
+  taskIsWorking,
+  type TaskSummary,
+} from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
 
@@ -37,7 +42,7 @@ export function inactiveTaskIds(
         (member) =>
           !ids.has(member.id) ||
           (!member.pinned &&
-            member.status !== 'running' &&
+            !taskIsWorking(member) &&
             !member.waitingForFeedback &&
             !busy(member) &&
             now - lastTaskActivity(member) > days * day),
@@ -62,8 +67,10 @@ type ArchiveServices = Pick<
 >
 /** Whether a task is doing or waiting for something, so automatic archiving must skip it. */
 export function taskIsBusy(s: ArchiveServices, id: string) {
-  const ids = taskFamilyIds(s.store.get().tasks, id)
+  const tasks = s.store.get().tasks
+  const ids = taskFamilyIds(tasks, id)
   if (
+    tasks.some((task) => ids.has(task.id) && taskIsWorking(task)) ||
     [...s.questions.list(), ...s.approvals.list()].some((item) => ids.has(item.taskId)) ||
     s.terminals.list().some((terminal) => ids.has(terminal.taskId) && !terminal.exited)
   )
@@ -275,7 +282,7 @@ export class Housekeeping {
             (member) =>
               !ids.has(member.id) ||
               (!member.pinned &&
-                member.status !== 'running' &&
+                !taskIsWorking(member) &&
                 !member.waitingForFeedback &&
                 !member.draft.trim() &&
                 !member.draftAttachments?.length &&

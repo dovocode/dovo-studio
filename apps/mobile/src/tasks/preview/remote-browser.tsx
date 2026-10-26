@@ -43,6 +43,7 @@ type RemoteBrowserProps = {
   onMode?: (mode: BrowserMode, address?: string) => void
   onExpand?: () => void
   onState?: (state: Extract<RemoteBrowserMessage, { type: 'state' }>) => void
+  onClosed?: () => void
   onControls?: (controls: RemoteBrowserControls | null) => void
 }
 export function RemoteBrowser(props: RemoteBrowserProps) {
@@ -68,6 +69,7 @@ function RemoteBrowserContent({
   onMode,
   onExpand,
   onState,
+  onClosed,
   onControls,
   attachment,
 }: RemoteBrowserProps & { attachment?: ReturnType<typeof useScreenshotAttachment> }) {
@@ -75,6 +77,8 @@ function RemoteBrowserContent({
   const appearance = useRef(mode)
   const screenshots = attachment
   const stateCallback = useRef(onState)
+  const closedCallback = useRef(onClosed)
+  closedCallback.current = onClosed
   const controlsCallback = useRef(onControls)
   stateCallback.current = onState
   controlsCallback.current = onControls
@@ -303,6 +307,10 @@ function RemoteBrowserContent({
               return
             }
             const state = decodeResult(remoteBrowserMessageSchema, message)
+            if (state.success && state.data.type === 'closed' && state.data.byPage) {
+              closedCallback.current?.()
+              return
+            }
             if (state.success && state.data.type === 'state') {
               setBrowserState(state.data)
               stateCallback.current?.(state.data)

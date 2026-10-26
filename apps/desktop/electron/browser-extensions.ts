@@ -7,6 +7,7 @@ import {
   mutableStruct,
   type BrowserExtension,
   type BrowserExtensionsResult,
+  isPrivateBrowserProfile,
 } from '@dovo/protocol'
 import { ElectronChromeExtensions } from 'electron-chrome-extensions'
 import crxPreload from 'electron-chrome-extensions/preload?raw'
@@ -29,10 +30,11 @@ import { extname, join, resolve, sep } from 'node:path'
 import { Schema } from 'effect'
 import { attachNativeMessaging } from './browser-native-messaging.js'
 import { browserPermissions } from './browser-permissions.js'
+import { dismissExtensionPopupOnBlur } from './browser-extension-popup.js'
 
 /** Shared-browser profiles never share storage with agent-enabled thread previews. */
 export const workspacePartition = (profileId: string) =>
-  `persist:dovo-browser-workspace:${profileId}`
+  `${isPrivateBrowserProfile(profileId) ? '' : 'persist:'}dovo-browser-workspace:${profileId}`
 
 const PROFILE = /^[a-zA-Z0-9_-]{1,100}$/
 const EXTENSION = /^[a-p]{32}$/
@@ -387,6 +389,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
           if (!Schema.is(popupInternals)(raw)) return
           const popup = raw.browserWindow
           const parent = raw.parent
+          dismissExtensionPopupOnBlur(popup, parent)
           const fit = () => {
             if (popup.isDestroyed() || parent.isDestroyed()) return
             const area = parent.getContentBounds()
@@ -431,7 +434,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
                 type: 'warning',
                 title: 'Connect desktop application',
                 message: `Allow “${extension.name}” to connect to a desktop app?`,
-                detail: `Desktop helper: ${host}\nExecutable: ${executable}\nBrowser profile: ${profileName(profileId)}\n\nThe extension can exchange data with this installed application. Your desktop app may also ask you to trust Dovo Studio.`,
+                detail: `Desktop helper: ${host}\nExecutable: ${executable}\nBrowser profile: ${profileName(profileId)}\n\nConnect remembers this approval for this browser profile. The extension can exchange data with this installed application. Your desktop app may also ask you to trust Dovo Studio.`,
                 buttons: ['Connect', 'Cancel'],
                 defaultId: 1,
                 cancelId: 1,
@@ -760,7 +763,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
   return {
     /** Load a profile's enabled extensions before its first shared-browser page. */
     prepare: async (profileId: string) => {
-      if (!enabled()) return
+      if (!enabled() || isPrivateBrowserProfile(profileId)) return
       await open(profileId)
     },
     /**

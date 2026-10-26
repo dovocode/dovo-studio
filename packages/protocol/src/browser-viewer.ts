@@ -511,7 +511,14 @@ function connect(url: string) {
           )
         else window.parent.postMessage({ channel: 'dovo-browser', ...message }, '*')
       } else if (message.type === 'error' || message.type === 'closed') {
-        if (message.type === 'closed') enabled(false)
+        if (message.type === 'closed') {
+          enabled(false)
+          if (window.ReactNativeWebView)
+            window.ReactNativeWebView.postMessage(
+              JSON.stringify({ channel: 'dovo-browser', ...message }),
+            )
+          else window.parent.postMessage({ channel: 'dovo-browser', ...message }, '*')
+        }
         notice(message.message, true)
       } else if (message.type === 'dialog') {
         dialogText.textContent = message.message

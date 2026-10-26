@@ -107,7 +107,7 @@ final class Harness {
   func run(phase: Int) async {
     print("DWB-START phase=\(phase) port=\(port) ios=\(UIDevice.current.systemVersion)")
     do {
-      if phase == 1 { try await phaseOne() } else if phase == 2 { try await phaseTwo() } else { await experiment(phase) }
+      if phase == 1 { try await phaseOne() } else if phase == 2 { try await phaseTwo() } else if phase == 6 { try await privateTabs() } else { await experiment(phase) }
     } catch {
       check("phase \(phase) threw", false, "\((error as? BrowserError)?.message ?? error.localizedDescription)")
     }
@@ -140,6 +140,28 @@ final class Harness {
     case 5: await timeLoad("nonpersistent", .nonPersistent()); await timeLoad("fresh-identifier", WKWebsiteDataStore(forIdentifier: UUID()))
     default: break
     }
+  }
+
+  func privateTabs() async throws {
+    await engine.setEnabled(true)
+    let id = "private-" + UUID().uuidString.lowercased()
+    let profile = try await engine.ensureProfile(id)
+    check("private data store is nonpersistent", !profile.dataStore.isPersistent)
+    check("private profile never enters catalogue", try engine.storage.loadProfiles()[id] == nil)
+    let first = try await engine.openTab(tabId: "private-first", profileId: id, url: url("page.html"))
+    host.tabId = first.id
+    check("private tab loads", await loaded(first))
+    _ = await page(first, "localStorage.setItem('privateSecret','test');document.cookie='privateSecret=test; path=/';return 'ok'")
+    try engine.closeTab(first.id)
+    check("closing last private tab releases profile", engine.profiles[id] == nil)
+    let second = try await engine.openTab(tabId: "private-second", profileId: id, url: url("page.html"))
+    host.tabId = second.id
+    check("replacement private tab loads", await loaded(second))
+    check("replacement private tab has no cookies", await page(second, "return document.cookie.includes('privateSecret')") == "false")
+    check("replacement private tab has no local storage", await page(second, "return localStorage.getItem('privateSecret')") == "null")
+    check("replacement gets a fresh temporary data store", engine.profiles[id] !== profile)
+    try engine.closeTab(second.id)
+    await engine.setEnabled(false)
   }
 
   func storageChecks() throws {

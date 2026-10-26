@@ -3,12 +3,26 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
+import { isPrivateBrowserProfile } from '@dovo/protocol'
 
 const schema = Schema.Struct({
   helpers: Schema.Array(Schema.String),
   notifications: Schema.Record(Schema.String, Schema.Boolean),
+  media: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        audio: Schema.Boolean,
+        video: Schema.Boolean,
+      }),
+    ),
+  ),
 })
 type Permissions = Schema.Schema.Type<typeof schema>
+const privatePermissions = new Map<string, Permissions>()
+export function forgetPrivateBrowserPermissions(profileId: string) {
+  privatePermissions.delete(profileId)
+}
 
 /** Only the main process reads or writes approvals; website data never supplies these keys. */
 export function browserPermissions(profileId: string) {
@@ -16,6 +30,8 @@ export function browserPermissions(profileId: string) {
   const directory = join(app.getPath('userData'), 'browser-permissions')
   const path = join(directory, `${profileId}.json`)
   const read = (): Permissions => {
+    if (isPrivateBrowserProfile(profileId))
+      return privatePermissions.get(profileId) ?? { helpers: [], notifications: {} }
     try {
       return Schema.decodeUnknownSync(schema)(JSON.parse(readFileSync(path, 'utf8')))
     } catch (error) {
@@ -25,6 +41,10 @@ export function browserPermissions(profileId: string) {
     }
   }
   const write = (next: Permissions) => {
+    if (isPrivateBrowserProfile(profileId)) {
+      privatePermissions.set(profileId, next)
+      return
+    }
     mkdirSync(directory, { recursive: true })
     const temporary = `${path}.${randomUUID()}.tmp`
     writeFileSync(temporary, JSON.stringify(next), { mode: 0o600 })
@@ -44,6 +64,21 @@ export function browserPermissions(profileId: string) {
       })
     },
     notification: (origin: string) => read().notifications[origin],
+    media: (origin: string) => read().media?.[origin],
+    allowMedia: (origin: string, types: { audio: boolean; video: boolean }) => {
+      const current = read()
+      const previous = current.media?.[origin]
+      write({
+        ...current,
+        media: {
+          ...current.media,
+          [origin]: {
+            audio: types.audio || !!previous?.audio,
+            video: types.video || !!previous?.video,
+          },
+        },
+      })
+    },
     setNotification: (origin: string, allow: boolean) => {
       const current = read()
       write({ ...current, notifications: { ...current.notifications, [origin]: allow } })

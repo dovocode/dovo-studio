@@ -1,4 +1,4 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, browserLanguageSchema, decodeResult } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useState } from 'react'
 import {
@@ -21,17 +21,19 @@ function ProfileName({
 }: {
   profile: BrowserProfile
   disabled: boolean
-  onSave: (name: string) => void
+  onSave: (name: string, language: string) => void
   onRemove: () => void
 }) {
   const [name, setName] = useState(profile.name)
+  const [language, setLanguage] = useState(profile.language ?? 'en-US')
+  const validLanguage = decodeResult(browserLanguageSchema, language).success
   return (
     <form
       aria-label={`Browser profile ${profile.name}`}
       className="flex flex-wrap items-center gap-2"
       onSubmit={(event) => {
         event.preventDefault()
-        onSave(name.trim())
+        if (validLanguage) onSave(name.trim(), Intl.getCanonicalLocales(language)[0]!)
       }}
     >
       <Input
@@ -42,11 +44,28 @@ function ProfileName({
         maxLength={100}
         disabled={disabled}
       />
+      <label className="flex min-w-0 flex-1 basis-36 flex-col gap-1 text-xs text-muted-foreground">
+        Website language
+        <Input
+          aria-label={`Language for ${profile.name}`}
+          value={language}
+          placeholder="en-US"
+          maxLength={100}
+          disabled={disabled}
+          aria-invalid={!validLanguage}
+          onChange={(event) => setLanguage(event.target.value)}
+        />
+      </label>
       <Button
         title={`Save name for ${profile.name}`}
         size="sm"
         type="submit"
-        disabled={disabled || !name.trim() || name.trim() === profile.name}
+        disabled={
+          disabled ||
+          !name.trim() ||
+          !validLanguage ||
+          (name.trim() === profile.name && language === (profile.language ?? 'en-US'))
+        }
       >
         Save
       </Button>
@@ -99,11 +118,13 @@ function Profiles({
       )}
       {profiles.map((profile) => (
         <ProfileName
-          key={`${profile.id}:${profile.name}`}
+          key={`${profile.id}:${profile.name}:${profile.language}`}
           profile={profile}
           disabled={disabled || busy}
-          onSave={(name) =>
-            void update(profiles.map((item) => (item.id === profile.id ? { ...item, name } : item)))
+          onSave={(name, language) =>
+            void update(
+              profiles.map((item) => (item.id === profile.id ? { ...item, name, language } : item)),
+            )
           }
           onRemove={() => {
             if (

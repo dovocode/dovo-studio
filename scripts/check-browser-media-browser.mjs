@@ -186,6 +186,23 @@ try {
   await dialog.getByRole('heading', { name: 'Allow microphone?' }).waitFor()
   assert.equal(await dialog.getByRole('radio').count(), 0)
   assert.equal(await dialog.getByRole('checkbox').count(), 0)
+  await dialog.getByRole('button', { name: 'Always allow', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.equal(
+    (await page.evaluate(() => window.commands.filter((c) => c.action === 'media').at(-1)))
+      .remember,
+    true,
+  )
+  await page.evaluate(() => window.requestCapture('user-media'))
+  await dialog.getByRole('button', { name: 'Allow this time', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.equal(
+    (await page.evaluate(() => window.commands.filter((c) => c.action === 'media').at(-1)))
+      .remember,
+    false,
+  )
+  await page.evaluate(() => window.requestCapture('user-media'))
+  await dialog.getByRole('heading', { name: 'Allow microphone?' }).waitFor()
   await page.keyboard.press('Escape')
   await dialog.waitFor({ state: 'hidden' })
   assert.equal(

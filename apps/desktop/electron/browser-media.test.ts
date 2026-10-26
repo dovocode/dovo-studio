@@ -18,6 +18,7 @@ vi.mock('electron', () => ({
   webContents: { fromFrame: (frame: unknown) => f.frames.get(frame) },
 }))
 vi.mock('./browser-remote-media.js', () => ({ openRemoteMedia: f.remote }))
+vi.mock('./browser-screen-permission.js', () => ({ prepareScreenRecording: async () => true }))
 import { createBrowserMedia, type MediaTab } from './browser-media'
 
 type Listener = (...args: unknown[]) => void
@@ -457,6 +458,37 @@ it('lets getDisplayMedia reach the display handler only for the tab’s own page
   expect(session.check?.(stranger, 'display-capture', 'https://meet.example/', {})).toBe(false)
 })
 
+it('remembers only explicitly approved devices for the exact website and profile across restart', async () => {
+  const { media, session, call } = setup()
+  const ask = (contents: Page, mediaTypes: string[]) => {
+    const callback = vi.fn<(allowed: boolean) => void>()
+    session.request?.(contents, 'media', callback, {
+      isMainFrame: true,
+      mediaTypes,
+      requestingUrl: contents.mainFrame.url,
+    })
+    return callback
+  }
+  const mic = ask(call, ['audio'])
+  const [request] = media.snapshot(1).mediaRequests!
+  await media.decide(1, { key: 'call', requestId: request!.id, decision: 'allow', remember: true })
+  expect(mic).toHaveBeenCalledWith(true)
+  media.reset()
+  expect(ask(call, ['audio'])).toHaveBeenCalledWith(true)
+  expect(session.check?.(call, 'media', call.mainFrame.url, { mediaType: 'audio' })).toBe(true)
+  expect(session.check?.(call, 'media', call.mainFrame.url, { mediaType: 'video' })).toBe(false)
+  const camera = ask(call, ['audio', 'video'])
+  expect(camera).not.toHaveBeenCalled()
+  const [cameraRequest] = media.snapshot(1).mediaRequests!
+  await media.decide(1, { key: 'call', requestId: cameraRequest!.id, decision: 'deny' })
+  expect(camera).toHaveBeenCalledWith(false)
+  expect(ask(call, ['video'])).not.toHaveBeenCalled()
+  media.reset()
+  call.mainFrame.url = 'https://other.example/'
+  expect(ask(call, ['audio'])).not.toHaveBeenCalled()
+  media.reset()
+})
+
 it('asks macOS for camera and microphone access before granting', async () => {
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
   Object.defineProperty(process, 'platform', { value: 'darwin' })
@@ -628,7 +660,7 @@ it('offers desktop windows and screens only after enumeration and stops their re
   ])
   const { media, session, call } = setup()
   const callback = share(session, call.mainFrame)
-  await Promise.resolve()
+  await vi.waitFor(() => expect(media.snapshot(1).mediaRequests![0]!.sources).toHaveLength(5))
   const [request] = media.snapshot(1).mediaRequests!
   expect(request!.sources).toEqual(
     expect.arrayContaining([

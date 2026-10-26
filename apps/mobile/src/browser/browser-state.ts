@@ -1,5 +1,11 @@
 import { Schema } from 'effect'
-import { decode, mutableStruct, mutableArray, previewUrl } from '@dovo/protocol'
+import {
+  decode,
+  mutableStruct,
+  mutableArray,
+  previewUrl,
+  isPrivateBrowserProfile,
+} from '@dovo/protocol'
 
 const short = Schema.String.pipe(Schema.check(Schema.isMaxLength(200)))
 const url = Schema.String.pipe(
@@ -11,6 +17,7 @@ const common = {
   url,
   title: Schema.String.pipe(Schema.check(Schema.isMaxLength(500))),
   visitedAt: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+  pinned: Schema.optional(Schema.Boolean),
 }
 const tabSchema = Schema.Union([
   mutableStruct({
@@ -61,10 +68,31 @@ export function initialBrowserState(id: string): BrowserState {
     closed: [],
   }
 }
+export function persistableBrowserState(state: BrowserState, replacementId: string): BrowserState {
+  const keep = (tab: BrowserTab) => !isPrivateBrowserProfile(tab.profileId)
+  const tabs = state.tabs.filter(keep)
+  const fallback = initialBrowserState(replacementId)
+  return {
+    ...state,
+    tabs: tabs.length ? tabs : fallback.tabs,
+    active: tabs.some((tab) => tab.id === state.active)
+      ? state.active
+      : (tabs[0]?.id ?? fallback.active),
+    bookmarks: state.bookmarks.filter(keep),
+    history: state.history.filter(keep),
+    closed: state.closed.filter(keep),
+  }
+}
 export const pageKey = (tab: BrowserTab) =>
   JSON.stringify([tab.url, tab.kind, tab.kind === 'remote' ? tab.runtimeId : '', tab.profileId])
 export const recentTabs = (tabs: BrowserTab[]) =>
-  [...tabs].sort((a, b) => b.visitedAt - a.visitedAt)
+  [...tabs].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.visitedAt - a.visitedAt)
+export function togglePinnedTab(state: BrowserState, id: string): BrowserState {
+  return {
+    ...state,
+    tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, pinned: !tab.pinned } : tab)),
+  }
+}
 export function recordPage(
   state: BrowserState,
   id: string,
@@ -86,10 +114,9 @@ export function recordPage(
   return {
     ...state,
     tabs: state.tabs.map((tab) => (tab.id === id ? next : tab)),
-    history: [next, ...state.history.filter((item) => pageKey(item) !== pageKey(next))].slice(
-      0,
-      200,
-    ),
+    history: isPrivateBrowserProfile(tab.profileId)
+      ? state.history
+      : [next, ...state.history.filter((item) => pageKey(item) !== pageKey(next))].slice(0, 200),
   }
 }
 export function visitTab(state: BrowserState, id: string): BrowserState {
@@ -106,17 +133,20 @@ export function addTab(state: BrowserState, tab: BrowserTab): BrowserState {
 }
 export function closeTab(state: BrowserState, id: string, replacementId: string): BrowserState {
   const closed = state.tabs.find((tab) => tab.id === id)
-  if (!closed) return state
+  if (!closed || closed.pinned) return state
   const tabs = state.tabs.filter((tab) => tab.id !== id)
   const fallback = initialBrowserState(replacementId).tabs[0]
   return {
     ...state,
     tabs: tabs.length ? tabs : [fallback],
     active: state.active === id ? (recentTabs(tabs)[0]?.id ?? fallback.id) : state.active,
-    closed: [closed, ...state.closed].slice(0, 20),
+    closed: isPrivateBrowserProfile(closed.profileId)
+      ? state.closed
+      : [closed, ...state.closed].slice(0, 20),
   }
 }
 export function toggleBookmark(state: BrowserState, tab: BrowserTab): BrowserState {
+  if (isPrivateBrowserProfile(tab.profileId)) return state
   const exists = state.bookmarks.some((item) => pageKey(item) === pageKey(tab))
   if (!exists && state.bookmarks.length >= 100)
     throw new Error('Remove a bookmark before saving more than 100 pages.')

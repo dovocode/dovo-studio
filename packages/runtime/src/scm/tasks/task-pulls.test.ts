@@ -447,8 +447,11 @@ it.each(['settle', 'archive'] as const)(
     expect(f.s.store.task(f.task.id).archived).not.toBe(true)
     f.s.store.updateTask(child.id, (task) => ({ ...task, draft: '' }))
     await f.watcher.refresh()
-    // Empty drafts are still unfinished children. Only completed children release the parent.
-    expect(f.s.store.task(f.task.id).waitingForFeedback).toBe(true)
+    // Empty drafts are still unfinished children. Keep the parent working and unsettled.
+    expect(f.s.store.task(f.task.id).subagents?.some((agent) => agent.status === 'working')).toBe(
+      true,
+    )
+    expect(f.s.store.task(f.task.id).waitingForFeedback).toBeUndefined()
     expect(f.s.store.task(f.task.id).archived).not.toBe(true)
     f.s.store.updateTask(child.id, (task) => ({ ...task, status: 'review' }))
     f.s.store.updateTask(nested.id, (task) => ({ ...task, status: 'review' }))

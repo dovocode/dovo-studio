@@ -1,10 +1,15 @@
-import { selectedBrowserText, STUDIO_BROWSER_SCOPE } from '@dovo/protocol'
+import {
+  selectedBrowserText,
+  STUDIO_BROWSER_SCOPE,
+  isPrivateBrowserProfile,
+  type BrowserProfile,
+} from '@dovo/protocol'
 import { redact } from '../storage/activity.js'
 import { browserScript } from './browser-script.js'
 import { browserInteraction } from './browser-interaction.js'
 import { decode, decodeResult } from '@dovo/protocol'
 import { join } from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { AgentBrowserCommand } from './agent-browser.js'
 import type { Browser, BrowserContext, Dialog, Page, CDPSession } from 'playwright'
 import {
@@ -56,6 +61,7 @@ type Session = {
   logs: { time: string; kind: string; message: string }[]
   release: () => Promise<void>
   page: Page
+  closing?: boolean
   cdp: CDPSession
   pendingInput?: QueuedInput
   statePending: boolean
@@ -98,7 +104,10 @@ export class RemoteBrowsers {
   private closingProfiles = new Map<string, Promise<void>>()
   private disposed = false
   private installation = new ChromiumInstallation()
-  constructor(private profileDirectory?: string) {}
+  constructor(
+    private profileDirectory?: string,
+    private browserProfiles: () => readonly BrowserProfile[] = () => [],
+  ) {}
   prepare() {
     void this.installation.ensure().catch((error) => {
       if (!this.disposed) console.error('Could not install Playwright Chromium', error)
@@ -390,6 +399,8 @@ export class RemoteBrowsers {
     if (!entry) {
       const create = async () => {
         const options = {
+          locale:
+            this.browserProfiles().find((profile) => profile.id === profileId)?.language ?? 'en-US',
           viewport: { width: 1280, height: 800 },
           deviceScaleFactor: 2,
           acceptDownloads: false,
@@ -397,7 +408,7 @@ export class RemoteBrowsers {
           hasTouch: true,
         }
         let context: BrowserContext
-        if (this.profileDirectory && !isolated) {
+        if (this.profileDirectory && !isolated && !isPrivateBrowserProfile(profileId)) {
           const { chromium, executablePath } = await this.executable()
           context = await chromium.launchPersistentContext(
             workspace
@@ -457,11 +468,12 @@ export class RemoteBrowsers {
     initialUrl?: string,
     isolated = false,
     workspace = false,
+    existingPage?: Page,
   ) {
     const { context, release } = await this.profile(profileId, isolated, workspace)
     let createdPage: Page | undefined
     try {
-      const page = await context.newPage()
+      const page = existingPage ?? (await context.newPage())
       createdPage = page
       page.setDefaultTimeout(10000)
       page.setDefaultNavigationTimeout(20000)
@@ -505,7 +517,7 @@ export class RemoteBrowsers {
           }, 16)
       })
       await page.addInitScript(browserInteraction)
-      await page.evaluate(browserInteraction)
+      if (!existingPage) await page.evaluate(browserInteraction)
       const log = (kind: string, message: string) => {
         session.logs.push({
           time: new Date().toISOString(),
@@ -537,23 +549,59 @@ export class RemoteBrowsers {
         if (!session.listeners.size)
           void dialog.dismiss().catch((error) => this.report(session, error))
       })
+      const children = new Map<string, Page>()
       page.on('popup', (popup) => {
-        const target = popup.url()
-        void popup
-          .close()
-          .then(async () => {
-            if (/^https?:\/\//i.test(target))
-              await this.input(taskId, {
-                type: 'navigate',
-                url: target,
-              })
-            else
-              this.emit(session, {
-                type: 'error',
-                message: 'This popup cannot be opened in the preview.',
-              })
+        if (!workspace) {
+          const target = popup.url()
+          void popup
+            .close()
+            .then(async () => {
+              if (/^https?:\/\//i.test(target))
+                await this.input(taskId, { type: 'navigate', url: target })
+              else
+                this.emit(session, {
+                  type: 'error',
+                  message: 'This popup cannot be opened in the preview.',
+                })
+            })
+            .catch((error) => this.report(session, error))
+          return
+        }
+        if (this.sessions.size >= 8) {
+          void popup.close().catch((error) => this.report(session, error))
+          this.emit(session, {
+            type: 'error',
+            message: 'Close an unused browser tab before opening another window.',
           })
-          .catch((error) => this.report(session, error))
+          return
+        }
+        const id = randomUUID()
+        const resource = JSON.stringify(
+          profileId === 'default'
+            ? [STUDIO_BROWSER_SCOPE, id]
+            : [STUDIO_BROWSER_SCOPE, id, profileId],
+        )
+        const pending = this.create(resource, profileId, undefined, isolated, workspace, popup)
+        this.sessions.set(resource, pending)
+        this.owners.set(resource, STUDIO_BROWSER_SCOPE)
+        children.set(id, popup)
+        const publish = () => {
+          session.state.createdTabs = [...children].map(([id, child]) => ({
+            id,
+            url: /^https?:\/\//i.test(child.url()) ? child.url() : '',
+          }))
+          this.scheduleState(session)
+        }
+        popup.once('close', () => {
+          children.delete(id)
+          publish()
+        })
+        void pending.then(publish).catch((error) => {
+          this.sessions.delete(resource)
+          this.owners.delete(resource)
+          children.delete(id)
+          this.report(session, error)
+        })
       })
       page.on('framenavigated', (frame) => {
         if (frame === page.mainFrame()) this.scheduleState(session)
@@ -583,6 +631,7 @@ export class RemoteBrowsers {
         this.owners.delete(taskId)
         this.emit(session, {
           type: 'closed',
+          byPage: !session.closing,
           message: 'Host browser session closed. Reconnect to start again.',
         })
         session.listeners.clear()
@@ -653,6 +702,7 @@ export class RemoteBrowsers {
       }))
       session.state = {
         type: 'state',
+        createdTabs: session.state.createdTabs,
         url: session.page.url().startsWith('chrome-error:')
           ? session.state.url
           : session.page.url(),
@@ -1200,6 +1250,7 @@ export class RemoteBrowsers {
     if (!pending) return
     const session = await pending
     clearTimeout(session.idle)
+    session.closing = true
     try {
       await session.page.close()
     } finally {

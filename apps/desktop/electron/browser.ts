@@ -1,11 +1,12 @@
-import { selectedBrowserText } from '@dovo/protocol'
+import { selectedBrowserText, isPrivateBrowserProfile } from '@dovo/protocol'
 import { createBrowserCdp } from './browser-cdp.js'
 import { decode } from '@dovo/protocol'
 import { BrowserWindow, WebContentsView, ipcMain, shell, Menu, clipboard } from 'electron'
 import { trustedRendererUrl } from './renderer-trust.js'
 import { createBrowserExtensions, workspacePartition } from './browser-extensions.js'
 import { createBrowserMedia, type MediaTab } from './browser-media.js'
-import { browserPermissions } from './browser-permissions.js'
+import { browserPermissions, forgetPrivateBrowserPermissions } from './browser-permissions.js'
+import { configureBrowserLanguage } from './browser-language.js'
 import { openThreadMedia } from './browser-thread-media.js'
 import { randomUUID } from 'node:crypto'
 import { browserCommandSchema, previewUrl } from '@dovo/protocol'
@@ -29,6 +30,8 @@ type Entry = {
   url: string
   /** Extension page an extension opened here; the renderer adopts the tab with this exact URL. */
   extensionUrl?: string
+  /** Created by Chromium itself, retaining target names, opener and deferred navigation. */
+  pageCreated?: boolean
   /** Navigation readiness, without waiting for page subresources. */
   loading?: Promise<void>
   /** Restore page focus after a passive tooltip, unless Studio receives deliberate input. */
@@ -166,7 +169,10 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
   /** Extension-opened and extension-closed tabs, drained by any `status` in that window. */
   const windowTabs = new Map<
     number,
-    { created: { key: string; url: string; profileId: string }[]; closed: string[] }
+    {
+      created: { key: string; url: string; profileId: string; active?: boolean }[]
+      closed: string[]
+    }
   >()
   const tabEvents = (windowId: number) => {
     let events = windowTabs.get(windowId)
@@ -259,6 +265,19 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
         : undefined
     },
   })
+  const clearPrivateProfile = (profileId: string, browserSession: Electron.Session) => {
+    if (
+      !isPrivateBrowserProfile(profileId) ||
+      [...views.values()].some((entry) => entry.profileId === profileId)
+    )
+      return
+    forgetPrivateBrowserPermissions(profileId)
+    void Promise.all([
+      browserSession.clearStorageData(),
+      browserSession.clearCache(),
+      browserSession.closeAllConnections(),
+    ]).catch((error: unknown) => console.error('Could not clear private browser data.', error))
+  }
   const releaseView = (key: string) => {
     const entry = views.get(key)
     if (!entry) return
@@ -271,12 +290,15 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
     }
     closePopups(entry)
     entry.window.contentView.removeChildView(entry.view)
+    const browserSession = entry.view.webContents.session
     if (!entry.view.webContents.isDestroyed()) entry.view.webContents.close()
+    clearPrivateProfile(entry.profileId, browserSession)
   }
   const prune = () => {
     const inactive = [...views].filter(
       ([key, entry]) =>
         entry.inactiveAt !== undefined &&
+        !isPrivateBrowserProfile(entry.profileId) &&
         !cdp?.connected(key) &&
         !(entry.workspace && media.keepAlive(entry.view.webContents)),
     )
@@ -309,7 +331,9 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
       }
       closePopups(current)
       if (detach) window.contentView.removeChildView(current.view)
+      const browserSession = current.view.webContents.session
       if (!current.view.webContents.isDestroyed()) current.view.webContents.close()
+      clearPrivateProfile(current.profileId, browserSession)
     }
   }
   /** One native page per renderer tab key; extension-opened tabs use the same construction. */
@@ -319,9 +343,12 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
     key: string,
     profileId: string,
     workspace: boolean,
+    options?: Electron.WebContentsViewConstructorOptions,
   ) => {
     const view = new WebContentsView({
+      ...options,
       webPreferences: {
+        ...options?.webPreferences,
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -347,7 +374,7 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
       .getUserAgent()
       .replace(/\s+(?:Electron|DovoStudio|Dovo-Studio)\/[^\s]+/g, '')
     view.webContents.setUserAgent(userAgent)
-    view.webContents.session.setUserAgent(userAgent)
+    configureBrowserLanguage(view.webContents.session, profileId, userAgent)
     view.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => {
       if (isMainFrame) created.favicon = undefined
     })
@@ -484,7 +511,54 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
           },
         }
       }
-      if (details.disposition !== 'other') queueLink(created, details.url)
+      if (
+        details.disposition !== 'other' &&
+        (openableUrl(details.url) || details.url === 'about:blank' || details.url === '')
+      ) {
+        const events = tabEvents(window.id)
+        if (
+          events.created.length >= MAX_EXTENSION_TAB_EVENTS ||
+          [...views.values()].filter((entry) => entry.windowId === window.id).length >= 100
+        )
+          return { action: 'deny' }
+        return {
+          action: 'allow',
+          createWindow: (options) => {
+            const childKey = `${created.key.slice(0, created.key.lastIndexOf(':') + 1)}${randomUUID()}`
+            const child = createEntry(
+              window,
+              JSON.stringify([window.id, childKey]),
+              childKey,
+              profileId,
+              true,
+              options,
+            )
+            child.pageCreated = true
+            child.inactiveAt = Date.now()
+            child.url = openableUrl(details.url) ?? 'about:blank'
+            const childContents = child.view.webContents
+            const childSession = childContents.session
+            childContents.once('destroyed', () => {
+              const key = JSON.stringify([window.id, childKey])
+              if (views.get(key) !== child) return
+              views.delete(key)
+              window.contentView.removeChildView(child.view)
+              extensions.removeTab(profileId, childContents)
+              media.releaseTab(childContents)
+              const events = tabEvents(window.id)
+              if (events.closed.length < MAX_EXTENSION_TAB_EVENTS) events.closed.push(childKey)
+              clearPrivateProfile(profileId, childSession)
+            })
+            events.created.push({
+              key: childKey,
+              url: child.url === 'about:blank' ? '' : child.url,
+              profileId,
+              active: details.disposition !== 'background-tab',
+            })
+            return child.view.webContents
+          },
+        }
+      }
       return { action: 'deny' }
     })
     view.webContents.on('did-create-window', (popup) => {
@@ -539,7 +613,13 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
       )
       view.webContents.session.setPermissionCheckHandler(() => false)
     }
-    httpOnly(view.webContents, workspace ? (url) => extensions.ownsUrl(profileId, url) : undefined)
+    httpOnly(
+      view.webContents,
+      workspace
+        ? (url) =>
+            (created.pageCreated && url === 'about:blank') || extensions.ownsUrl(profileId, url)
+        : undefined,
+    )
     window.contentView.addChildView(view)
     views.set(viewKey, created)
     if (workspace) extensions.addTab(profileId, view.webContents, window)
@@ -589,7 +669,16 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
    * Connection storage owns this channel's reply; this listener only re-reads the saved setting.
    */
   const syncExtensions = async () => {
-    if (await extensions.sync()) return
+    if (await extensions.sync()) {
+      for (const entry of views.values())
+        if (entry.workspace && !entry.view.webContents.isDestroyed())
+          configureBrowserLanguage(
+            entry.view.webContents.session,
+            entry.profileId,
+            entry.view.webContents.getUserAgent(),
+          )
+      return
+    }
     media.reset()
     // Content scripts outlive their extension in already-open pages, so close those pages too.
     for (const [key, entry] of views) {
@@ -648,7 +737,9 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
       const workspace = !!command.workspaceBrowser
       // Adopting an extension-opened tab keeps its extension page; every other URL must be web.
       const url =
-        entry?.extensionUrl === command.url && entry.workspace === workspace
+        (entry?.extensionUrl === command.url ||
+          (entry?.pageCreated && command.url === 'about:blank')) &&
+        entry?.workspace === workspace
           ? command.url
           : previewUrl(command.url)
       const showing = { key: viewKey }

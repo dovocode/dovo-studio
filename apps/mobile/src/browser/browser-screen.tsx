@@ -19,6 +19,7 @@ import {
   responses,
   selectedBrowserText,
   STUDIO_BROWSER_SCOPE,
+  isPrivateBrowserProfile,
 } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from '../shell/navigation'
@@ -45,6 +46,7 @@ import {
   BROWSER_STORAGE_KEY,
   initialBrowserState,
   parseBrowserState,
+  persistableBrowserState,
   browserAddress,
   recordPage,
   recentTabs,
@@ -53,6 +55,7 @@ import {
   adoptNativeTab,
   closeTab,
   toggleBookmark,
+  togglePinnedTab,
   pageKey,
   appendBrowserDraft,
   type BrowserSelection,
@@ -92,7 +95,7 @@ export function BrowserScreen() {
   const [navigation, setNavigation] = useState({ back: false, forward: false })
   const [source, setSource] = useState('device')
   const [profiles, setProfiles] = useState([{ id: 'default', name: 'Default' }])
-  const [library, setLibrary] = useState<'tabs' | 'library' | null>(null)
+  const [library, setLibrary] = useState<'tabs' | 'bookmarks' | 'history' | null>(null)
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [pageActionsOpen, setPageActionsOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -101,6 +104,7 @@ export function BrowserScreen() {
   const draftSheet = useRef<SheetHandle>(null)
   const pageActionsSheet = useRef<SheetHandle>(null)
   const librarySheet = useRef<SheetHandle>(null)
+  const optionsSheet = useRef<SheetHandle>(null)
   const web = useRef<WebView>(null)
   const pending = useRef<{
     id: string
@@ -154,7 +158,7 @@ export function BrowserScreen() {
   }, [])
   useEffect(() => {
     if (!loaded || !writable) return
-    const raw = JSON.stringify(state)
+    const raw = JSON.stringify(persistableBrowserState(state, randomUUID()))
     saves.current = saves.current
       .then(() => AsyncStorage.setItem(BROWSER_STORAGE_KEY, raw))
       .catch((cause) => setError(`Browser data could not be saved: ${String(cause)}`))
@@ -316,6 +320,8 @@ export function BrowserScreen() {
       throw new Error('Separate local profiles require the native WebKit browser.')
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(id))
       throw new Error('Profile ID must be 1–64 letters, digits, underscores or hyphens.')
+    if (isPrivateBrowserProfile(active.profileId) || isPrivateBrowserProfile(id))
+      throw new Error('Private tabs keep their temporary profile until closed.')
     if (id === active.profileId) return
     await module.ensureProfile(id)
     const closingInstance = nativeInstances.current.get(active.id)?.instanceId
@@ -353,7 +359,7 @@ export function BrowserScreen() {
     change((state) => visitTab(state, tab.id))
     librarySheet.current?.dismiss()
   }
-  const newTab = (saved?: BrowserTab) => {
+  const newTab = (saved?: BrowserTab, incognito = false) => {
     const tab: BrowserTab = saved
       ? { ...saved, id: randomUUID(), visitedAt: Date.now() }
       : source === 'device'
@@ -374,10 +380,12 @@ export function BrowserScreen() {
             title: '',
             visitedAt: Date.now(),
           }
+    if (incognito) tab.profileId = `private-${randomUUID()}`
     change((state) => addTab(state, tab))
     librarySheet.current?.dismiss()
   }
   const close = async (tab: BrowserTab) => {
+    if (tab.pinned) return
     if (tab.kind === 'local' && nativeAvailable && DovoWebKitBrowser)
       await closeNativeTab(DovoWebKitBrowser, tab.id)
     if (tab.kind === 'remote') {
@@ -499,11 +507,13 @@ export function BrowserScreen() {
     openSavedDraft()
   }
   const describe = (tab: BrowserTab) =>
-    tab.kind === 'local'
-      ? !nativeAvailable && tab.profileId === 'device'
-        ? 'This device · shared device session'
-        : `This device · ${tab.profileId} profile${!nativeAvailable ? ' (native required)' : ''}`
-      : `${runtime.profiles.find((profile) => profile.id === tab.runtimeId)?.name ?? 'Unavailable computer'} · ${tab.profileId}`
+    isPrivateBrowserProfile(tab.profileId)
+      ? 'Private · temporary profile'
+      : tab.kind === 'local'
+        ? !nativeAvailable && tab.profileId === 'device'
+          ? 'This device · shared device session'
+          : `This device · ${tab.profileId} profile${!nativeAvailable ? ' (native required)' : ''}`
+        : `${runtime.profiles.find((profile) => profile.id === tab.runtimeId)?.name ?? 'Unavailable computer'} · ${tab.profileId}`
   const matches = (tab: BrowserTab) =>
     `${tab.title} ${tab.url} ${describe(tab)}`.toLowerCase().includes(query.trim().toLowerCase())
   const list = (tabs: BrowserTab[], kind: 'tabs' | 'saved' | 'bookmarks') =>
@@ -536,8 +546,12 @@ export function BrowserScreen() {
         {kind === 'tabs' ? (
           <Action
             secondary
-            label={`Close ${tab.title || 'tab'}`}
-            onPress={() => void act(() => close(tab))}
+            label={`${tab.pinned ? 'Unpin' : 'Close'} ${tab.title || 'tab'}`}
+            onPress={() =>
+              tab.pinned
+                ? change((state) => togglePinnedTab(state, tab.id))
+                : void act(() => close(tab))
+            }
           />
         ) : kind === 'bookmarks' ? (
           <Action
@@ -599,7 +613,50 @@ export function BrowserScreen() {
                 tabId={active.id}
                 profileId={active.profileId}
                 initialUrl={active.url}
-                onState={(page) => pageState(active.id, page)}
+                onClosed={() => change((state) => closeTab(state, active.id, randomUUID()))}
+                onState={(page) => {
+                  pageState(active.id, page)
+                  const additions = (page.createdTabs ?? []).filter(
+                    (child) => !current.current.tabs.some((tab) => tab.id === child.id),
+                  )
+                  const capacity = Math.max(0, 100 - current.current.tabs.length)
+                  for (const child of additions.slice(capacity)) {
+                    if (owner?.connected)
+                      void runtime
+                        .readRuntime(
+                          owner.profile,
+                          '/api/previews/browser/close',
+                          {
+                            taskId: STUDIO_BROWSER_SCOPE,
+                            tabId: child.id,
+                            profileId: active.profileId,
+                          },
+                          responses.ok,
+                        )
+                        .catch((error) => setError(String(error)))
+                  }
+                  if (additions.length > capacity)
+                    setError('Close a tab before opening more browser tabs.')
+                  if (additions.length)
+                    change((state) => {
+                      const tabs = additions
+                        .slice(0, capacity)
+                        .filter((child) => !state.tabs.some((tab) => tab.id === child.id))
+                        .map((child) => ({
+                          ...active,
+                          id: child.id,
+                          url: child.url,
+                          title: '',
+                          pinned: false,
+                          visitedAt: Date.now(),
+                        }))
+                      return {
+                        ...state,
+                        tabs: [...state.tabs, ...tabs],
+                        active: tabs[tabs.length - 1]?.id ?? state.active,
+                      }
+                    })
+                }}
               />
             </RuntimeScope>
           ) : (
@@ -807,11 +864,11 @@ export function BrowserScreen() {
             onPress={() => setPageActionsOpen(true)}
           />
           <IconButton
-            label="Bookmarks and history"
+            label="Bookmarks"
             icon="history"
             onPress={() => {
               setQuery('')
-              setLibrary('library')
+              setLibrary('bookmarks')
             }}
           />
           <Pressable
@@ -881,7 +938,7 @@ export function BrowserScreen() {
                 ? 'Remove bookmark'
                 : 'Bookmark page'
             }
-            disabled={busy}
+            disabled={busy || isPrivateBrowserProfile(active.profileId)}
             onPress={() => change((state) => toggleBookmark(state, active))}
           />
           <Action
@@ -922,9 +979,28 @@ export function BrowserScreen() {
         </Sheet>
       )}
       {optionsOpen && (
-        <Sheet title="Browser options" onClose={() => setOptionsOpen(false)}>
+        <Sheet ref={optionsSheet} title="Browser options" onClose={() => setOptionsOpen(false)}>
+          <Action
+            secondary
+            label={active.pinned ? 'Unpin tab' : 'Pin tab'}
+            onPress={() => change((state) => togglePinnedTab(state, active.id))}
+          />
+          <Action
+            secondary
+            label="History"
+            onPress={() => {
+              optionsSheet.current?.dismiss(() => {
+                setQuery('')
+                setLibrary('history')
+              })
+            }}
+          />
           <Text style={styles.title}>Tab profile</Text>
-          {active.kind === 'local' ? (
+          {isPrivateBrowserProfile(active.profileId) ? (
+            <Text style={styles.muted}>
+              Private · temporary profile. Website data is discarded when this tab closes.
+            </Text>
+          ) : active.kind === 'local' ? (
             nativeAvailable ? (
               <>
                 <Choice
@@ -939,7 +1015,9 @@ export function BrowserScreen() {
                       active.profileId,
                       ...(native.status?.profiles.map((profile) => profile.profileId) ?? []),
                     ]),
-                  ].map((id) => ({ id, name: id }))}
+                  ]
+                    .filter((id) => !isPrivateBrowserProfile(id))
+                    .map((id) => ({ id, name: id }))}
                   disabled={busy || nativeOpening}
                   onChange={(id) => void act(() => localProfile(id))}
                 />
@@ -1024,7 +1102,9 @@ export function BrowserScreen() {
       {library && (
         <Sheet
           ref={librarySheet}
-          title={library === 'tabs' ? 'Browser tabs' : 'Bookmarks and history'}
+          title={
+            library === 'tabs' ? 'Browser tabs' : library === 'bookmarks' ? 'Bookmarks' : 'History'
+          }
           onClose={() => setLibrary(null)}
         >
           {error ? (
@@ -1049,6 +1129,12 @@ export function BrowserScreen() {
             label="New tab"
             disabled={busy || state.tabs.length >= 100}
             onPress={() => void act(async () => newTab())}
+          />
+          <Action
+            secondary
+            label="New private tab"
+            disabled={busy || state.tabs.length >= 100 || (source === 'device' && !nativeAvailable)}
+            onPress={() => void act(async () => newTab(undefined, true))}
           />
           <SearchField label="Search browser pages" value={query} onChangeText={setQuery} />
           {library === 'tabs' ? (
@@ -1075,12 +1161,20 @@ export function BrowserScreen() {
                         paddingLeft: 12,
                       }}
                     >
-                      <Icon name="web" size={18} color={colors.muted} />
+                      <Icon
+                        name={tab.pinned ? 'pin' : 'web'}
+                        size={18}
+                        color={tab.pinned ? colors.accent : colors.muted}
+                      />
                       <IconButton
-                        label={`Close ${tab.title || 'tab'}`}
-                        icon="close"
+                        label={`${tab.pinned ? 'Unpin' : 'Close'} ${tab.title || 'tab'}`}
+                        icon={tab.pinned ? 'unpin' : 'close'}
                         disabled={busy}
-                        onPress={() => void act(() => close(tab))}
+                        onPress={() =>
+                          tab.pinned
+                            ? change((state) => togglePinnedTab(state, tab.id))
+                            : void act(() => close(tab))
+                        }
                       />
                     </View>
                     <Pressable
@@ -1103,6 +1197,12 @@ export function BrowserScreen() {
                   </View>
                 ))}
             </View>
+          ) : library === 'bookmarks' ? (
+            <>
+              <Text style={styles.title}>Bookmarks</Text>
+              {list(state.bookmarks, 'bookmarks')}
+              {!state.bookmarks.length && <Text style={styles.muted}>No bookmarks yet.</Text>}
+            </>
           ) : (
             <>
               <Action
@@ -1119,8 +1219,6 @@ export function BrowserScreen() {
                   })
                 }
               />
-              <Text style={styles.title}>Bookmarks</Text>
-              {list(state.bookmarks, 'bookmarks')}
               <Text style={styles.title}>History</Text>
               <Action
                 secondary

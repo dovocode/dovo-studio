@@ -18,7 +18,7 @@ import {
   type BrowserTab,
 } from './shared-browser-tabs'
 import { SharedBrowserActions } from './shared-browser-actions'
-import { randomUUID, runtimeComputerName } from '@dovo/protocol'
+import { randomUUID, runtimeComputerName, isPrivateBrowserProfile } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef, useId, type ReactNode } from 'react'
@@ -39,6 +39,8 @@ import {
   Keyboard,
   X,
   Star,
+  Pin,
+  PinOff,
 } from 'lucide-react'
 import {
   useWorkspace,
@@ -84,7 +86,8 @@ type OpenLink = { id: string; url: string }
 const savedTabs = new Map<string, BrowserTabs>()
 // Extension-created pages already have a native view. Keep its identity for this renderer session.
 const nativeTabKeys = new Map<string, string>()
-const restorableTab = (tab: BrowserTab) => !tab.url || /^https?:\/\//i.test(tab.url)
+const restorableTab = (tab: BrowserTab) =>
+  !isPrivateBrowserProfile(tab.profileId) && (!tab.url || /^https?:\/\//i.test(tab.url))
 export function BrowserPane({
   taskId,
   onClose,
@@ -270,6 +273,7 @@ function BrowserContent({
     image: string
   } | null>(null)
   const remote = useRef<RemoteBrowserControls>(null)
+  const adoptedRemoteTabs = useRef(new Set<string>())
   const [remoteOnline, setRemoteOnline] = useApplicationState(false)
   const [streamDetails, setStreamDetails] = useApplicationState('')
   const [remoteLoading, setRemoteLoading] = useApplicationState(false)
@@ -297,6 +301,7 @@ function BrowserContent({
       setError('Close a tab before opening more than 100 tabs.')
       return
     }
+    if (isPrivateBrowserProfile(profileId)) profileId = `private-${randomUUID()}`
     const tab: BrowserTab = {
       id: randomUUID(),
       url: target,
@@ -550,7 +555,7 @@ function BrowserContent({
     }
   }
   useEffect(() => {
-    if (!browser || !url || mode !== 'web') return
+    if (!browser || (!url && !nativeTabKeys.has(`${scope}:${activeTab}`)) || mode !== 'web') return
     let alive = true
     const poll = Effect.tryPromise({
       try: () => browser({ action: 'status', key: browserKey }),
@@ -569,7 +574,9 @@ function BrowserContent({
             const remaining = currentTabs.current.filter((tab) => !closedIds.has(tab.id))
             const additions = (state.createdTabs ?? []).filter(
               (tab) =>
-                /^https?:\/\//i.test(tab.url) || /^chrome-extension:\/\/[a-p]{32}\//.test(tab.url),
+                !tab.url ||
+                /^https?:\/\//i.test(tab.url) ||
+                /^chrome-extension:\/\/[a-p]{32}\//.test(tab.url),
             )
             const capacity = Math.max(0, 100 - remaining.length)
             const adopted = additions.slice(0, capacity).map((tab) => {
@@ -608,12 +615,25 @@ function BrowserContent({
                 return next.length ? next : [fallback]
               })
               if (closedKeys.has(browserKey)) selectTab(currentTabs.current[0])
+              let foreground = -1
+              additions.slice(0, capacity).forEach((tab, index) => {
+                if (tab.active) foreground = index
+              })
+              if (foreground >= 0) selectTab(adopted[foreground])
               for (const [key, value] of nativeTabKeys)
                 if (closedKeys.has(value)) nativeTabKeys.delete(key)
             }
-            if (closedKeys.has(browserKey)) return
+            if (
+              closedKeys.has(browserKey) ||
+              additions.slice(0, capacity).some((tab) => tab.active)
+            )
+              return
           }
-          if (!/^https?:\/\//i.test(state.url) && !nativeTabKeys.has(`${scope}:${activeTab}`))
+          if (
+            !/^https?:\/\//i.test(state.url) &&
+            state.url !== 'about:blank' &&
+            !nativeTabKeys.has(`${scope}:${activeTab}`)
+          )
             return
           if (shared && state.openedLinks?.length) {
             // Page-created tabs open in the background and share one bounded update.
@@ -632,7 +652,7 @@ function BrowserContent({
             ])
           }
           setHistory({ ...state, title: state.title ?? '', cdp: state.cdp })
-          if (!editing.current) setInput(state.url)
+          if (!editing.current) setInput(state.url === 'about:blank' ? '' : state.url)
           addresses.set(scope, state.url)
           setTabs((previous) =>
             !previous.some(
@@ -650,7 +670,7 @@ function BrowserContent({
                     tab.favicon !== state.favicon)
                     ? {
                         ...tab,
-                        url: state.url,
+                        url: state.url === 'about:blank' ? '' : state.url,
                         title: state.title ?? '',
                         favicon: state.favicon,
                         ...(shared && tab.url !== state.url
@@ -682,7 +702,7 @@ function BrowserContent({
   }, [browser, url, mode, scope, browserKey, profileId, shared])
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
   useEffect(() => {
-    if (!browser || !url || mode !== 'web') return
+    if (!browser || (!url && !nativeTabKeys.has(`${scope}:${activeTab}`)) || mode !== 'web') return
     let alive = true
     let frame: number | undefined
     let previousCommand = ''
@@ -702,7 +722,7 @@ function BrowserContent({
               taskId: shared ? undefined : taskId,
               agentAccess: shared ? false : agentAccess,
               key: browserKey,
-              url,
+              url: url || 'about:blank',
               viewport:
                 preset === 'fill'
                   ? undefined
@@ -821,6 +841,7 @@ function BrowserContent({
       await loadDevices()
     })
   const closeTab = (tab: BrowserTab) => {
+    if (tab.pinned) return
     if (shared && restorableTab(tab)) setClosed((previous) => [tab, ...previous].slice(0, 20))
     const remaining = tabs.filter((item) => item.id !== tab.id)
     const next: BrowserTab[] = remaining.length
@@ -967,6 +988,14 @@ function BrowserContent({
               New tab
             </DropdownMenu.Item>
           )}
+          <DropdownMenu.Item
+            className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
+            onSelect={() =>
+              newTab('', selectedTab.kind, `private-${randomUUID()}`, selectedTab.runtimeId)
+            }
+          >
+            New private tab
+          </DropdownMenu.Item>
           <DropdownMenu.Separator className="my-1 h-px bg-border" />
           <DropdownMenu.Label className="px-2 py-1 text-[0.6875rem] text-muted-foreground">
             New remote tab
@@ -1084,7 +1113,9 @@ function BrowserContent({
                 className="min-w-0 flex-1 rounded border bg-background p-1"
                 value={profileId}
                 disabled={
-                  busy || (mode === 'remote' && (!remoteProfiles.profiles || !remoteConnected))
+                  busy ||
+                  isPrivateBrowserProfile(profileId) ||
+                  (mode === 'remote' && (!remoteProfiles.profiles || !remoteConnected))
                 }
                 onChange={(event) => {
                   const next = event.target.value
@@ -1108,9 +1139,11 @@ function BrowserContent({
               >
                 {!tabProfiles.some((profile) => profile.id === profileId) && (
                   <option value={profileId} disabled>
-                    {mode === 'remote' && !remoteProfiles.profiles
-                      ? 'Loading remote profiles…'
-                      : 'Unavailable profile'}
+                    {isPrivateBrowserProfile(profileId)
+                      ? 'Private · temporary'
+                      : mode === 'remote' && !remoteProfiles.profiles
+                        ? 'Loading remote profiles…'
+                        : 'Unavailable profile'}
                   </option>
                 )}
                 {tabProfiles.map((profile) => (
@@ -1264,8 +1297,24 @@ function BrowserContent({
             type="button"
             size="sm"
             variant="ghost"
+            className="justify-start gap-2 text-xs"
+            onClick={() =>
+              setTabs((previous) =>
+                previous.map((tab) =>
+                  tab.id === activeTab ? { ...tab, pinned: !tab.pinned } : tab,
+                ),
+              )
+            }
+          >
+            {selectedTab.pinned ? <PinOff size={14} /> : <Pin size={14} />}
+            {selectedTab.pinned ? 'Unpin tab' : 'Pin tab'}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
             className="justify-start text-xs"
-            disabled={busy}
+            disabled={busy || selectedTab.pinned}
             onClick={() => closeTab(selectedTab)}
           >
             Close current tab
@@ -1385,7 +1434,7 @@ function BrowserContent({
           <Star size={15} fill={bookmarked ? 'currentColor' : 'none'} />
         </IconButton>
       )}
-      {shared && mode === 'web' && (
+      {shared && mode === 'web' && !isPrivateBrowserProfile(profileId) && (
         <BrowserExtensions
           key={`${profileId}:${browserKey}`}
           profileId={profileId}
@@ -1543,13 +1592,28 @@ function BrowserContent({
                       </span>
                     </button>
                     <IconButton
-                      label={`Close tab ${tab.title || tab.url || 'New tab'}`}
-                      className="size-7 shrink-0"
-                      disabled={busy}
-                      onClick={() => closeTab(tab)}
+                      label={`${tab.pinned ? 'Unpin' : 'Pin'} tab ${tab.title || tab.url || 'New tab'}`}
+                      className={`size-7 shrink-0 ${tab.pinned ? 'text-primary' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}
+                      onClick={() =>
+                        setTabs((previous) =>
+                          previous.map((item) =>
+                            item.id === tab.id ? { ...item, pinned: !item.pinned } : item,
+                          ),
+                        )
+                      }
                     >
-                      <X size={12} />
+                      {tab.pinned ? <PinOff size={12} /> : <Pin size={12} />}
                     </IconButton>
+                    {!tab.pinned && (
+                      <IconButton
+                        label={`Close tab ${tab.title || tab.url || 'New tab'}`}
+                        className="size-7 shrink-0"
+                        disabled={busy}
+                        onClick={() => closeTab(tab)}
+                      >
+                        <X size={12} />
+                      </IconButton>
+                    )}
                   </div>
                 )
               })}
@@ -1626,6 +1690,9 @@ function BrowserContent({
                 title={`${tab.kind === 'remote' ? 'Remote · ' : ''}${tab.url || 'New tab'}`}
                 onClick={() => selectTab(tab)}
               >
+                {tab.pinned && (
+                  <Pin size={12} aria-label="Pinned tab" className="mr-1 inline-block" />
+                )}
                 {tab.kind === 'remote' && (
                   <MonitorUp
                     size={12}
@@ -1637,14 +1704,16 @@ function BrowserContent({
                   tab.url.replace(/^https?:\/\//, '') ||
                   (tab.kind === 'remote' ? 'Remote tab' : 'New tab')}
               </button>
-              <IconButton
-                label={`Close tab ${tab.title || tab.url || 'New tab'}`}
-                className="size-6"
-                disabled={busy}
-                onClick={() => closeTab(tab)}
-              >
-                <X size={12} />
-              </IconButton>
+              {!tab.pinned && (
+                <IconButton
+                  label={`Close tab ${tab.title || tab.url || 'New tab'}`}
+                  className="size-6"
+                  disabled={busy}
+                  onClick={() => closeTab(tab)}
+                >
+                  <X size={12} />
+                </IconButton>
+              )}
             </div>
           ))}
         </div>
@@ -1703,8 +1772,45 @@ function BrowserContent({
                 tabId={tab.id}
                 active={mode === 'remote' && activeTab === tab.id}
                 reloadToken={activeTab === tab.id ? turnReload : undefined}
+                onClosed={() => closeTab(tab)}
                 onState={(state) => {
-                  if (activeTab === tab.id) {
+                  const additions = (state.createdTabs ?? []).filter((child) => {
+                    const key = JSON.stringify([tab.runtimeId, child.id])
+                    if (adoptedRemoteTabs.current.has(key)) return false
+                    adoptedRemoteTabs.current.add(key)
+                    return !currentTabs.current.some((item) => item.id === child.id)
+                  })
+                  if (shared && additions.length) {
+                    const capacity = Math.max(0, 100 - currentTabs.current.length)
+                    const source = runtimes.find((runtime) => runtime.profile.id === tab.runtimeId)
+                    for (const child of additions.slice(capacity)) {
+                      if (source?.connected)
+                        void store
+                          .readRuntime(
+                            source.profile,
+                            '/api/previews/browser/close',
+                            { taskId, tabId: child.id, profileId: tab.profileId },
+                            responses.ok,
+                          )
+                          .catch((error) => setError(String(error)))
+                    }
+                    if (additions.length > capacity)
+                      setError('Close a tab before opening more browser tabs.')
+                    const adopted = additions.slice(0, capacity).map((child) => ({
+                      ...tab,
+                      id: child.id,
+                      url: child.url,
+                      title: '',
+                      pinned: false,
+                    }))
+                    currentTabs.current = [...currentTabs.current, ...adopted]
+                    setTabs((previous) => [
+                      ...previous,
+                      ...adopted.filter((child) => !previous.some((item) => item.id === child.id)),
+                    ])
+                    if (adopted.length) selectTab(adopted[adopted.length - 1])
+                  }
+                  if (activeTab === tab.id && !additions.length) {
                     setHistory({ ...state, cdp: undefined })
                     setRemoteLoading(state.loading)
                     setUrl(state.url === 'about:blank' ? '' : state.url)

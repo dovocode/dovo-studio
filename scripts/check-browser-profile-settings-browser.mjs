@@ -95,6 +95,19 @@ try {
   await local.getByRole('textbox', { name: 'New profile name' }).fill('Local Work')
   await local.getByRole('button', { name: 'Add profile', exact: true }).click()
   await local.getByRole('textbox', { name: 'Name for Local Work' }).waitFor()
+  const language = local.getByRole('textbox', { name: 'Language for Local Work' })
+  assert.equal(await language.inputValue(), 'en-US')
+  await language.fill('not_a_locale')
+  assert.equal(
+    await local.getByRole('button', { name: 'Save', exact: true }).last().isDisabled(),
+    true,
+  )
+  await language.fill('nl-NL')
+  await local.getByRole('button', { name: 'Save', exact: true }).last().click()
+  assert.equal(
+    await local.getByRole('textbox', { name: 'Language for Local Work' }).inputValue(),
+    'nl-NL',
+  )
   await remote.getByRole('textbox', { name: 'Name for Remote Default' }).waitFor()
   await remote.getByRole('textbox', { name: 'New profile name' }).fill('Remote Work')
   await remote.getByRole('button', { name: 'Add profile', exact: true }).click()

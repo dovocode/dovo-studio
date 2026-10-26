@@ -1,4 +1,4 @@
-import { STUDIO_BROWSER_SCOPE } from '@dovo/protocol'
+import { STUDIO_BROWSER_SCOPE, isPrivateBrowserProfile } from '@dovo/protocol'
 import { usageHubs } from './endpoints/usage-hubs.js'
 import { peerConfigSchema } from '@dovo/protocol'
 import { sharingWriterConfigSchema } from '@dovo/protocol'
@@ -913,7 +913,10 @@ export function route(
           url,
         } = decode(remoteBrowserOpenSchema, yield* serviceResult(body(request)))
         if (taskId !== STUDIO_BROWSER_SCOPE) s.store.taskSummary(taskId)
-        if (!s.preferences.get().browserProfiles.some((profile) => profile.id === profileId))
+        if (
+          !(taskId === STUDIO_BROWSER_SCOPE && isPrivateBrowserProfile(profileId)) &&
+          !s.preferences.get().browserProfiles.some((profile) => profile.id === profileId)
+        )
           throw new HttpError(404, 'Browser profile is unavailable. Choose another profile.')
         const resourceId = JSON.stringify(
           profileId === 'default' ? [taskId, tabId ?? null] : [taskId, tabId ?? null, profileId],

@@ -1,4 +1,4 @@
-import { decodeResult } from '@dovo/protocol'
+import { decodeResult, isPrivateBrowserProfile } from '@dovo/protocol'
 import { Schema } from 'effect'
 export type BrowserTab = {
   id: string
@@ -9,6 +9,7 @@ export type BrowserTab = {
   runtimeId?: string
   favicon?: string
   visitedAt?: number
+  pinned?: boolean
 }
 const tabSchema = Schema.Struct({
   id: Schema.String,
@@ -19,6 +20,7 @@ const tabSchema = Schema.Struct({
   runtimeId: Schema.optional(Schema.String),
   favicon: Schema.optional(Schema.String),
   visitedAt: Schema.optional(Schema.Number),
+  pinned: Schema.optional(Schema.Boolean),
 })
 const schema = Schema.Struct({
   active: Schema.String,
@@ -128,7 +130,9 @@ export function saveSharedBrowserTabs(state: BrowserTabs, windowId = 'main') {
   storage.setItem(storageKey, JSON.stringify(saved))
 }
 export function recentBrowserTabs(tabs: readonly BrowserTab[]) {
-  return [...tabs].sort((a, b) => (b.visitedAt ?? 0) - (a.visitedAt ?? 0))
+  return [...tabs].sort(
+    (a, b) => Number(!!b.pinned) - Number(!!a.pinned) || (b.visitedAt ?? 0) - (a.visitedAt ?? 0),
+  )
 }
 
 export function visitBrowserTab(tabs: BrowserTab[], id: string, now = Date.now()) {
@@ -205,7 +209,11 @@ export function rememberBrowserVisit(
   tab: BrowserTab,
 ): BrowserTab[] {
   const seen = new Set<string>()
-  return (tab.url.trim() ? [{ ...tab }, ...previous] : [...previous])
+  return (
+    tab.url.trim() && !isPrivateBrowserProfile(tab.profileId)
+      ? [{ ...tab }, ...previous]
+      : [...previous]
+  )
     .filter((entry) => {
       if (!entry.url.trim()) return false
       const key = browserPageKey(entry)
