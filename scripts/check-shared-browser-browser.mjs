@@ -8,7 +8,7 @@ const viewer = `<html><body><script>
 let tab='',url='',back=true;
 function state(){window.parent.postMessage({channel:'dovo-browser',type:'state',url,title:'Page '+tab,back,forward:false,loading:false,editable:false},'*')}
 window.addEventListener('message',event=>{const m=event.data;
-if(m.type==='connect'){tab=new URL(m.url).searchParams.get('ticket');url='http://localhost:3000/remote-page';window.parent.postMessage({channel:'dovo-browser',type:'connection',online:true},'*');state()}
+if(m.type==='connect'){const ticket=JSON.parse(new URL(m.url).searchParams.get('ticket'));tab=ticket.tabId;url=ticket.url;window.parent.postMessage({channel:'dovo-browser',type:'connection',online:true},'*');state()}
 if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:m.input},'*');if(m.input.type==='navigate')url=m.input.url;state()}
 if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},'*');
 });</script></body></html>`
@@ -64,7 +64,8 @@ export {useSettingsDraft,useConfirmSettingsNavigation,useOptionalSettingsTarget}
 export const providers=[];export const useResolvedTheme=()=> 'dark';export const reducedMotion=()=>false;
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
-window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return {ok:true,ticket:body.tabId,tabId:body.tabId,profileId:body.profileId}};
+const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
+window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return remoteTicket(body)};
 const nativePages=new Map();window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
@@ -75,7 +76,7 @@ const otherSnapshot={...snapshot,workspace:{...snapshot.workspace,tasks:[{...tas
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot},{profile:otherProfile,name:otherProfile.name,scope:'mac',connected:true,snapshot:otherSnapshot}];
 export const useRuntimeSources=()=>sources;
 const workspace={activeRuntimeId:profile.id,connection:profile.connection,request,connected:true,snapshot,workspace:snapshot.workspace,runtimes:sources,runtimeRegistry:{profiles:[profile,otherProfile]},
-readRuntime:async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path==='/api/workspace'){if(window.conflict)return {outcome:'reconciled',reason:'Draft changed elsewhere',recoveryId:'11223344-1122-4122-8122-112233445566'};otherSnapshot.workspace.tasks[0].draft=body.changes.draft.after;return {outcome:'applied'}};return {ok:true,ticket:body.tabId,tabId:body.tabId,profileId:body.profileId}},
+readRuntime:async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path==='/api/workspace'){if(window.conflict)return {outcome:'reconciled',reason:'Draft changed elsewhere',recoveryId:'11223344-1122-4122-8122-112233445566'};otherSnapshot.workspace.tasks[0].draft=body.changes.draft.after;return {outcome:'applied'}};return remoteTicket(body)},
 setWorkspace:update=>{workspace.workspace=typeof update==='function'?update(workspace.workspace):update;window.savedDraft=workspace.workspace.tasks[0].draft},flush:async()=>{},refreshRuntime:async()=>{},};
 window.fixtureStore=workspace;window.remoteDraft=()=>otherSnapshot.workspace.tasks[0].draft;
 const WorkspaceContext=createContext(null);
@@ -239,6 +240,14 @@ try {
     window.calls.find((call) => call.owner === 'mac' && call.path === '/api/previews/browser/open'),
   )
   if (opened.body.taskId !== 'studio:browser') throw new Error('Remote tab borrowed a thread')
+  // The viewer reports the opened address; navigate explicitly instead of inventing a page.
+  await url.fill('http://localhost:3000/remote-page')
+  await url.press('Enter')
+  await page.waitForFunction(() =>
+    window.browserInputs.some(
+      (input) => input.type === 'navigate' && input.url === 'http://localhost:3000/remote-page',
+    ),
+  )
   await page.getByRole('button', { name: 'Browser options', exact: true }).click()
   await page.getByRole('combobox', { name: 'Profile for this tab' }).selectOption('remote-work')
   await page.getByRole('button', { name: 'Browser options', exact: true }).click()
