@@ -320,7 +320,10 @@ export class ProjectTransfers {
         .find((peer) => peer.connection.runtimeId === input.targetId)
       if (!current || current.connection.token !== peer.connection.token)
         throw new HttpError(403, 'Pairing changed during the copy. Reconnect and try again.')
-    }).finally(() => this.outgoing.delete(job.id))
+    })
+      // Publish terminal state only after cleanup has released the copy lock.
+      .finally(() => this.outgoing.delete(job.id))
+      .then((terminal) => this.update(job.id, terminal))
     this.outgoing.set(job.id, { controller, pending })
     return this.jobs.get(job.id)!.job
   }
@@ -365,16 +368,15 @@ export class ProjectTransfers {
         },
       )
     }
-    const complete = (result: Result) =>
-      this.update(input.id, {
-        state: 'completed',
-        error: undefined,
-        path: result.path,
-        targetRepositoryId: result.repositoryId,
-        targetTaskId: result.taskId,
-        threadStartError: result.threadStartError,
-        bytes: this.jobs.get(input.id)?.job.totalBytes ?? 0,
-      })
+    const complete = (result: Result): Partial<ProjectTransfer> => ({
+      state: 'completed',
+      error: undefined,
+      path: result.path,
+      targetRepositoryId: result.repositoryId,
+      targetTaskId: result.taskId,
+      threadStartError: result.threadStartError,
+      bytes: this.jobs.get(input.id)?.job.totalBytes ?? 0,
+    })
     try {
       await this.ready
       signal.throwIfAborted()
@@ -395,8 +397,7 @@ export class ProjectTransfers {
           'Update the destination computer to copy worktrees and create threads',
         )
       if (status.result) {
-        complete(status.result)
-        return
+        return complete(status.result)
       }
       if (input.worktreePath && !status.linkedWorktreesSupported)
         throw new HttpError(409, 'Update the destination computer to copy linked worktrees')
@@ -486,7 +487,7 @@ export class ProjectTransfers {
       await flush()
       this.update(input.id, { state: 'registering' })
       const result = await call('commit', { id: input.id }, projectTransferResultSchema)
-      complete(result)
+      return complete(result)
     } catch (error) {
       // Commit may succeed even when the response is lost. Reconcile before reporting a
       // failure or cancellation, and retry the same ID rather than creating a duplicate.
@@ -501,8 +502,7 @@ export class ProjectTransfers {
             AbortSignal.timeout(5000),
           )
           if (status.result) {
-            complete(status.result)
-            return
+            return complete(status.result)
           }
           const discarded = await call(
             'discard',
@@ -511,8 +511,7 @@ export class ProjectTransfers {
             AbortSignal.timeout(5000),
           )
           if (discarded.result) {
-            complete(discarded.result)
-            return
+            return complete(discarded.result)
           }
         } catch (cleanup) {
           if (!signal.aborted)
@@ -522,10 +521,10 @@ export class ProjectTransfers {
             )
         }
       }
-      this.update(input.id, {
-        state: signal.aborted ? 'cancelled' : 'failed',
+      return {
+        state: signal.aborted ? ('cancelled' as const) : ('failed' as const),
         error: signal.aborted ? undefined : errorMessage(error),
-      })
+      }
     } finally {
       if (tunnel) await stopSsh(tunnel.child)
       await rm(folder, { recursive: true, force: true }).catch((error) =>

@@ -29,10 +29,15 @@ import { transferPath, projectTransferRemote } from './project-transfer-files.js
 import { runClientEffect } from '@dovo/client-runtime'
 import { listWorktreesEffect, worktreeChoicesEffect } from '../git/worktrees.js'
 import { TaskCheckout } from '../tasks/task-checkout.js'
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const files = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...files, rm: vi.fn<typeof files.rm>(files.rm) }
+})
 vi.setConfig(runtimeIntegration)
 const cleanup: Array<() => Promise<void> | void> = []
 afterEach(async () => {
   vi.restoreAllMocks()
+  vi.mocked(rm).mockReset()
   for (const close of cleanup.splice(0).reverse()) await close()
   vi.unstubAllEnvs()
 })
@@ -722,7 +727,28 @@ it.each([true, false])(
     const create = vi.spyOn(target.services.tasks, 'create').mockImplementationOnce(() => {
       throw new Error('Unable to save thread')
     })
-    await source.post('start', input)
+    let cleanupStarted = false
+    let releaseCleanup!: () => void
+    const cleanupBarrier = new Promise<void>((resolve) => {
+      releaseCleanup = resolve
+    })
+    const remove = vi.mocked(rm).getMockImplementation()
+    if (!remove) throw new Error('Missing file cleanup implementation')
+    vi.mocked(rm).mockImplementation(async (path, options) => {
+      if (typeof path === 'string' && path.endsWith(`/out-${input.id}`)) {
+        cleanupStarted = true
+        await cleanupBarrier
+      }
+      return remove(path, options)
+    })
+    try {
+      expect((await source.post('start', input)).status).toBe(200)
+      await waitForRuntime(() => expect(cleanupStarted).toBe(true))
+      expect(source.services.projectTransfers.list()[0]?.state).toBe('registering')
+    } finally {
+      releaseCleanup()
+      vi.mocked(rm).mockReset()
+    }
     await waitForRuntime(() =>
       expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
     )
@@ -737,7 +763,7 @@ it.each([true, false])(
     expect(await readdir(projects)).toEqual([])
     expect(target.services.store.get().tasks).toHaveLength(0)
     create.mockRestore()
-    await source.post('retry', { id: input.id })
+    expect((await source.post('retry', { id: input.id })).status).toBe(200)
     await result()
     expect(target.services.store.get().repositories).toHaveLength(1)
     expect(target.services.store.get().tasks).toHaveLength(1)
