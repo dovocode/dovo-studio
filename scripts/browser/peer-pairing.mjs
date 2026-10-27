@@ -68,7 +68,7 @@ export async function checkPeerPairing(browser, root) {
       },
       {
         path: 'react-native',
-        contents: `export const View=({children})=><div>{children}</div>;export const Pressable=({children,onPress,accessibilityLabel})=><button onClick={onPress} aria-label={accessibilityLabel}>{children}</button>;export const ActivityIndicator=()=>null;export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};export const Keyboard={dismiss(){},addListener:()=>({remove(){}})};`,
+        contents: `export const Platform={OS:'web'};export const View=({children})=><div>{children}</div>;export const Pressable=({children,onPress,accessibilityLabel})=><button onClick={onPress} aria-label={accessibilityLabel}>{children}</button>;export const ActivityIndicator=()=>null;export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};export const Keyboard={dismiss(){},addListener:()=>({remove(){}})};`,
       },
       {
         path: './pairing-scanner',
@@ -177,6 +177,12 @@ export async function checkPeerPairing(browser, root) {
     await page.getByRole('button', { name: 'Use a LAN / VPN address instead', exact: true }).click()
     await page.getByLabel('Computer address', { exact: true }).waitFor()
     await page.getByLabel('Pairing code', { exact: true }).waitFor()
+    const address = page.getByLabel('Computer address', { exact: true })
+    await address.fill('http://server.lan:8787')
+    assert.equal(await address.inputValue(), 'http://server.lan:8787')
+    const code = page.getByLabel('Pairing code', { exact: true })
+    await code.fill('12ab 3456-7890')
+    assert.equal(await code.inputValue(), '12345678')
     assert.deepEqual(errors, [])
     console.log(
       'Desktop QR and mobile pairing: no IP entry, per-device capability handoff, authenticated enablement and LAN/VPN alternative passed (UI/native boundaries adapted).',
