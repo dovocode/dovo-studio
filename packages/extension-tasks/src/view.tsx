@@ -7,7 +7,11 @@ import { FloatingPreview, type PreviewPlacement } from './detail/floating-previe
 import { ResizableSidebar } from './detail/resizable-sidebar'
 import { readTaskListViewState, saveTaskListViewState } from './list/task-list-view-state'
 import { useCachedTask } from '@dovo/studio-core'
-import { watchRuntimeTask } from '@dovo/protocol'
+import {
+  nativeAgentKey as nativeThreadKey,
+  nativeFailureKey,
+  watchRuntimeTask,
+} from '@dovo/protocol'
 import type { ArtifactReference, Subagent, Task } from '@dovo/protocol'
 import { PullDetail } from '@dovo/extension-scm/pull-detail'
 import { threadPullPreview } from './detail/thread-pull-preview'
@@ -81,7 +85,12 @@ import { StartupDraft } from './task-creation/startup-draft'
 import { ProjectSelectionDialog } from './task-creation/project-selection-dialog'
 import { SideQuestion } from './chat/thread/side-question'
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-export default function TasksView({ entityId, threadParent }: StudioViewProps) {
+export default function TasksView({
+  entityId,
+  threadParent,
+  nativeAgentKey,
+  navigationKey,
+}: StudioViewProps) {
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
   const { snapshot, connected, runtimes } = store
@@ -190,6 +199,32 @@ export default function TasksView({ entityId, threadParent }: StudioViewProps) {
     taskId: string
     agent: Subagent
   }>()
+  const openedNativeRoute = useRef('')
+  useEffect(() => {
+    const route = JSON.stringify([activeRuntimeId, entityId, nativeAgentKey, navigationKey])
+    if (!nativeAgentKey) {
+      openedNativeRoute.current = ''
+      return
+    }
+    if (!entityId || openedNativeRoute.current === route) return
+    const owner = workspace.tasks.find((item) => item.id === entityId)
+    const agent = owner?.subagents?.find(
+      (agent) =>
+        agent.source !== 'dovo' &&
+        (nativeThreadKey(owner.id, agent) === nativeAgentKey ||
+          nativeFailureKey(owner.id, agent) === nativeAgentKey),
+    )
+    if (!owner || !agent) return
+    openedNativeRoute.current = route
+    setNativeThread({
+      parentKey: taskCollectionKey(activeRuntimeId, owner.id),
+      taskId: owner.id,
+      agent,
+    })
+  }, [activeRuntimeId, entityId, nativeAgentKey, navigationKey, workspace.tasks])
+  useEffect(() => {
+    if (!nativeAgentKey) setNativeThread(undefined)
+  }, [entityId, navigationKey, nativeAgentKey])
   const surface = threadSurfaces[threadKey] ?? 'chat'
   const [browserPlacements, setBrowserPlacements] = useState<Record<string, PreviewPlacement>>({})
   const browserPlacement = browserPlacements[threadKey] ?? 'inline'
@@ -1329,7 +1364,6 @@ export default function TasksView({ entityId, threadParent }: StudioViewProps) {
           {sidebar && !compact && (
             <div className="h-full min-w-0">
               <TaskList
-                hidePillsForKey={preferences.projectPanelOpen ? selectedKey : undefined}
                 projectId={projectId}
                 onProjectChange={setProjectId}
                 selectedId={selectedKey}
@@ -1471,7 +1505,6 @@ export default function TasksView({ entityId, threadParent }: StudioViewProps) {
             projectId={projectId}
             onProjectChange={setProjectId}
             selectedId={selectedKey}
-            hidePillsForKey={preferences.projectPanelOpen ? selectedKey : undefined}
             sources={sources}
             temporaryEntry={temporaryEntry}
             activeRuntimeId={activeRuntimeId}

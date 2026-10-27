@@ -8,10 +8,8 @@ import {
   pullStackLabel,
   taskPullLinks,
   taskPullStatusFor,
-  subagentMetadata,
-  subagentListStatus,
+  threadChildRows,
   threadTreeSummary,
-  type SubagentListItem,
 } from '@dovo/protocol'
 import {
   Archive,
@@ -76,12 +74,10 @@ export type TaskListRowActions = {
   open: (key: string) => void
   details: (key: string) => void
   select: (key: string) => void
-  subagent: (key: string, id: string) => void
 }
 function TaskListRowView({
   row,
   needsInput = row.needsInput,
-  subagents,
   thread,
   searching,
   owner,
@@ -103,7 +99,6 @@ function TaskListRowView({
   needsInput?: boolean
   thread?: NestedThread
   searching?: boolean
-  subagents: readonly SubagentListItem[]
   owner: TaskListOwner
   now: number
   testID: string
@@ -120,10 +115,6 @@ function TaskListRowView({
   const onOpen = useCallback(() => commands.open(row.key), [commands, row.key])
   const onDetails = useCallback(() => commands.details(row.key), [commands, row.key])
   const onSelect = useCallback(() => commands.select(row.key), [commands, row.key])
-  const onOpenSubagent = useCallback(
-    (id: string) => commands.subagent(row.key, id),
-    [commands, row.key],
-  )
 
   const task = row.task,
     repository = owner.repository,
@@ -169,11 +160,12 @@ function TaskListRowView({
   const icon = projectIcon(displayProject)
   const StatusIcon = statusIcons[state]
   const settled = task.archived || !!task.archivedAt
+  const childRows = useMemo(() => (thread ? threadChildRows(thread) : []), [thread])
   const summary = useMemo(
-    () => threadTreeSummary(thread?.children ?? [], task.acknowledgedSubagentFailures),
-    [thread?.children, task.acknowledgedSubagentFailures],
+    () => threadTreeSummary(childRows, task.acknowledgedSubagentFailures),
+    [childRows, task.acknowledgedSubagentFailures],
   )
-  const childCount = (task.archivedAt ? 0 : summary.total) + (settled ? 0 : subagents.length)
+  const childCount = task.archivedAt ? 0 : summary.total
   const childrenDetail = [
     `${childCount} subthread${childCount === 1 ? '' : 's'}`,
     summary.attention ? `${summary.attention} needs input` : '',
@@ -510,21 +502,10 @@ function TaskListRowView({
       {open && thread && !task.archivedAt && (
         <NestedThreads
           hideSummary
-          thread={thread}
+          thread={{ ...thread, children: childRows, nativeAgents: undefined }}
           acknowledgedFailures={task.acknowledgedSubagentFailures}
           disabled={disabled || selectionActive}
           searching={searching}
-        />
-      )}
-      {open && !settled && (
-        <WorkingSubagents
-          subagents={subagents}
-          online={row.online}
-          disabled={disabled || selectionActive}
-          car={car}
-          largeTargets
-          onSelect={onSelect}
-          onOpenSubagent={onOpenSubagent}
         />
       )}
       {!!actions.error && (
@@ -566,85 +547,3 @@ function TaskListRowView({
 
 /** Streaming another task leaves this row and its owner subscriptions unchanged. */
 export const TaskListRow = memo(TaskListRowView)
-
-const WorkingSubagents = memo(function WorkingSubagents({
-  subagents,
-  online,
-  disabled,
-  car,
-  largeTargets = false,
-  onSelect,
-  onOpenSubagent,
-}: {
-  subagents: readonly SubagentListItem[]
-  online: boolean
-  disabled: boolean
-  car: boolean
-  largeTargets?: boolean
-  onSelect: () => void
-  onOpenSubagent: (id: string) => void
-}) {
-  const { colors } = useTheme()
-  if (!subagents.length) return null
-  return (
-    <View
-      accessibilityLabel="Working subagents"
-      style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 6,
-        paddingHorizontal: 12,
-        paddingBottom: 8,
-      }}
-    >
-      {subagents.map((agent, index) => {
-        const childId = agent.source === 'dovo' ? (agent.taskId ?? agent.id) : undefined
-        const label = `${agent.name} · ${agent.provider}${!online || agent.status === 'unknown' ? ` · ${subagentListStatus(agent, online)}` : ''}`
-        const detail = [
-          label,
-          subagentListStatus(agent, online),
-          subagentMetadata(agent),
-          agent.activity,
-        ]
-          .filter(Boolean)
-          .join(' · ')
-        const pillStyle = {
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: colors.border,
-          paddingHorizontal: 8,
-          paddingVertical: 4,
-          minHeight: largeTargets ? 44 : undefined,
-          justifyContent: 'center' as const,
-          maxWidth: '100%' as const,
-        }
-        return childId ? (
-          <Pressable
-            key={`${agent.provider}:${agent.id}:${index}`}
-            accessibilityRole="button"
-            accessibilityLabel={`Open subagent ${detail}`}
-            accessibilityState={{ disabled }}
-            disabled={disabled}
-            onPress={() => onOpenSubagent(childId)}
-            onLongPress={car ? undefined : onSelect}
-            style={pillStyle}
-          >
-            <Text numberOfLines={1} style={{ fontSize: 11, color: colors.accent }}>
-              {label}
-            </Text>
-          </Pressable>
-        ) : (
-          <View
-            key={`${agent.provider}:${agent.id}:${index}`}
-            accessibilityLabel={detail}
-            style={pillStyle}
-          >
-            <Text numberOfLines={1} style={{ fontSize: 11, color: colors.muted }}>
-              {label}
-            </Text>
-          </View>
-        )
-      })}
-    </View>
-  )
-})

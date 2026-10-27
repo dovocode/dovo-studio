@@ -3,6 +3,7 @@ import { View } from 'react-native'
 import { Pressable } from './thread-pressable'
 import {
   threadTreeSummary,
+  threadChildRows,
   visibleThreadChildren,
   nativeOverflowFailures,
   threadNeedsInput,
@@ -30,6 +31,11 @@ export const NestedThreads = memo(function NestedThreads({
   onAcknowledgeFailure?: (key: string) => void
   hideSummary?: boolean
 }) {
+  thread = {
+    ...thread,
+    children: threadChildRows({ ...thread, nativeAgents: undefined }),
+    nativeAgents: undefined,
+  }
   const { colors, styles } = useTheme()
   const { profiles, overviews } = useRuntime()
   const [expanded, setExpanded] = useState(true)
@@ -77,8 +83,15 @@ export const NestedThreads = memo(function NestedThreads({
           {[
             child.computerName,
             child.projectName,
-            threadPhaseLabels[child.phase],
-            !child.online ? 'Offline · saved state' : child.paused ? 'Monitor stopped' : '',
+            child.nativeAgentKey && child.activity
+              ? child.activity
+              : threadPhaseLabels[child.phase],
+            child.nativeAgentKey ? 'Read only' : '',
+            !child.online
+              ? 'Offline · saved state'
+              : child.paused && !child.nativeAgentKey
+                ? 'Monitor stopped'
+                : '',
           ]
             .filter(Boolean)
             .join(' · ')}
@@ -89,7 +102,7 @@ export const NestedThreads = memo(function NestedThreads({
         {child.partial && (
           <Text style={[styles.muted, { fontSize: 11 }]}>Some child details unavailable</Text>
         )}
-        {!!child.activity && (
+        {!!child.activity && !child.nativeAgentKey && (
           <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
             {child.activity}
           </Text>
@@ -109,54 +122,6 @@ export const NestedThreads = memo(function NestedThreads({
             <Text style={[styles.muted, { fontSize: 12 }]}>Acknowledge failure</Text>
           </Pressable>
         )}
-      {!!child.nativeAgents?.length && (
-        <View
-          accessibilityLabel={`Native agents in ${child.title}`}
-          style={{ paddingLeft: 12, gap: 4 }}
-        >
-          {child.nativeAgents.map((agent) => (
-            <View key={agent.key}>
-              <Text
-                style={[
-                  styles.muted,
-                  { fontSize: 12 },
-                  agent.status === 'failed' && !acknowledgedFailures.includes(agent.key)
-                    ? { color: colors.error }
-                    : {},
-                ]}
-              >
-                {agent.name} ·{' '}
-                {agent.status === 'unknown'
-                  ? 'Status unavailable'
-                  : agent.status === 'working'
-                    ? child.online && !child.paused && agent.working
-                      ? 'Running'
-                      : 'Last seen working'
-                    : agent.status === 'failed'
-                      ? 'Failed'
-                      : agent.status === 'completed'
-                        ? 'Done'
-                        : 'Stopped'}
-              </Text>
-              {agent.status === 'failed' &&
-                !acknowledgedFailures.includes(agent.key) &&
-                onAcknowledgeFailure && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Acknowledge failure in ${agent.name}`}
-                    disabled={disabled}
-                    style={{ minHeight: 44, paddingVertical: 12 }}
-                    onPress={() => onAcknowledgeFailure(agent.key)}
-                  >
-                    <Text style={[styles.muted, { fontSize: 12 }]}>
-                      Acknowledge failure in {agent.name}
-                    </Text>
-                  </Pressable>
-                )}
-            </View>
-          ))}
-        </View>
-      )}
       {!!child.nativeAgentOverflow?.total && (
         <View style={{ paddingLeft: 12, gap: 4 }}>
           <Pressable

@@ -817,3 +817,90 @@ it('keeps a finished parent with active native workers Working', () => {
   ])
   expect(buildThreadTree(entries).nodes.get(key('desktop', 'parent'))?.phase).toBe('running')
 })
+
+it('presents native providers and Studio children as the same rows without changing task ownership', async () => {
+  const {
+    threadChildRows,
+    threadTreeSummary,
+    visibleThreadChildren,
+    nativeAgentKey,
+    nativeFailureKey,
+  } = await import('@dovo/protocol')
+  const claude = {
+    id: 'worker',
+    provider: 'claude',
+    name: 'Claude review',
+    status: 'working' as const,
+    sessionLive: true,
+    sessionId: 'claude-session',
+    startedAt: '2026-10-27T12:00:00Z',
+    updatedAt: '',
+  }
+  const codex = {
+    ...claude,
+    provider: 'codex',
+    name: 'Codex review',
+    status: 'failed' as const,
+    finishedAt: '2026-10-27T12:01:00Z',
+  }
+  const tree = buildThreadTree(
+    collectTasks([
+      source('desktop', [
+        task('parent', { subagents: [claude] }),
+        task('child', {
+          delegation: { parentTaskId: 'parent', parentRunId: 'run', key: 'child' },
+          subagents: [codex],
+          status: 'done',
+        }),
+      ]),
+    ]),
+  )
+  const parent = tree.nodes.get(key('desktop', 'parent'))!
+  const rows = threadChildRows(parent)
+  const many = task('many', {
+    subagents: Array.from({ length: 45 }, (_, index) => ({ ...claude, id: String(index) })),
+  })
+  const manyTree = buildThreadTree(collectTasks([source('desktop', [many])]))
+  expect(threadChildRows(manyTree.nodes.get(key('desktop', 'many'))!)).toHaveLength(45)
+  const timestampTree = buildThreadTree(
+    collectTasks([
+      source('desktop', [
+        task('timestamp', { subagents: [{ ...claude, finishedAt: 'finished' }] }),
+      ]),
+    ]),
+  )
+  const timestampRows = threadChildRows(timestampTree.nodes.get(key('desktop', 'timestamp'))!)
+  expect(timestampRows[0]).toMatchObject({ phase: 'completed', activity: 'Finished' })
+  expect(visibleThreadChildren(timestampRows, true)).toEqual([])
+  expect(parent.children).toHaveLength(1)
+  expect(tree.nodes.size).toBe(2)
+  expect(rows.map((row) => row.title)).toEqual(['child', 'Claude review'])
+  expect(rows[1]).toMatchObject({
+    runtimeId: 'desktop',
+    threadId: 'parent',
+    nativeAgentKey: nativeAgentKey('parent', claude),
+    computerName: 'desktop',
+    phase: 'running',
+    online: true,
+  })
+  const nativeChild = rows[0]!.children[0]!
+  expect(nativeChild).toMatchObject({
+    threadId: 'child',
+    nativeAgentKey: nativeAgentKey('child', codex),
+    phase: 'failed',
+    failureKey: nativeFailureKey('child', codex),
+  })
+  expect(threadTreeSummary(rows)).toMatchObject({ total: 3, running: 1, failed: 1 })
+  expect(visibleThreadChildren(rows, true)).toHaveLength(2)
+  expect(
+    visibleThreadChildren(rows, true, [nativeChild.failureKey!]).map((row) => row.title),
+  ).toEqual(['Claude review'])
+  expect(nativeAgentKey('parent', claude)).toBe(
+    nativeAgentKey('parent', { ...claude, status: 'completed', finishedAt: 'later' }),
+  )
+  expect(nativeAgentKey('parent', claude)).not.toBe(nativeAgentKey('child', claude))
+  expect(nativeAgentKey('parent', claude)).not.toBe(
+    nativeAgentKey('parent', { ...claude, sessionId: 'other' }),
+  )
+  expect(threadChildRows({ ...parent, online: false })[1]).toMatchObject({ online: false })
+})

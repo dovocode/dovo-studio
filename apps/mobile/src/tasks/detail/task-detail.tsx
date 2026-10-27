@@ -6,6 +6,8 @@ import {
   createRuntimeClient,
   generatedTitleSchema,
   taskPullLinks,
+  nativeFailureKey,
+  nativeAgentKey as nativeThreadKey,
   workspacePatchResultSchema,
   checkpointFileCount,
   projectDisplayName,
@@ -103,12 +105,14 @@ export function TaskDetail({
   task,
   onBack,
   questionId,
+  nativeAgentKey,
   startup,
   parentNavigation,
 }: {
   task: Task
   onBack: () => void
   questionId?: string
+  nativeAgentKey?: string
   startup?: StartupControls
   parentNavigation?: ReactNode
 }) {
@@ -186,6 +190,7 @@ export function TaskDetail({
       task={!loaded && history ? cachedThread(task, history) : task}
       onBack={onBack}
       questionId={questionId}
+      nativeAgentKey={nativeAgentKey}
       startup={startup}
       parentNavigation={parentNavigation}
     />
@@ -200,12 +205,14 @@ function TaskDetailContent({
   task,
   onBack,
   questionId,
+  nativeAgentKey,
   startup,
   parentNavigation,
 }: {
   task: Task
   onBack: () => void
   questionId?: string
+  nativeAgentKey?: string
   startup?: StartupControls
   parentNavigation?: ReactNode
 }) {
@@ -525,6 +532,20 @@ function TaskDetailContent({
     taskId: string
     agent: Subagent
   }>()
+  const openedNativeRoute = useRef('')
+  useEffect(() => {
+    const route = JSON.stringify([activeId, task.id, nativeAgentKey])
+    if (!nativeAgentKey || openedNativeRoute.current === route) return
+    const agent = task.subagents?.find(
+      (agent) =>
+        agent.source !== 'dovo' &&
+        (nativeThreadKey(task.id, agent) === nativeAgentKey ||
+          nativeFailureKey(task.id, agent) === nativeAgentKey),
+    )
+    if (!agent) return
+    openedNativeRoute.current = route
+    setNativeThread({ parentKey: JSON.stringify([activeId, task.id]), taskId: task.id, agent })
+  }, [activeId, task.id, task.subagents, nativeAgentKey])
   const native =
     nativeThread?.parentKey === JSON.stringify([activeId, task.id]) ? nativeThread : undefined
   const nativeAgent =

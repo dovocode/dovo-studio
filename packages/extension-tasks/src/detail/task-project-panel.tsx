@@ -1,7 +1,8 @@
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { TaskAgentLineage } from './task-agent-lineage'
 import { taskPullStatusFor } from '@dovo/protocol'
-import { WorkingSubagents } from '../list/working-subagents'
+import { NestedThreads } from '../list/nested-threads'
+import { collectTasks, taskSources, taskCollectionKey } from '../list/task-collection'
 import { useCallback, useMemo, useRef } from 'react'
 import { Schema } from 'effect'
 import {
@@ -9,7 +10,8 @@ import {
   runtimeComputerName,
   mutableStruct,
   repositoryOpenTargets,
-  indexTaskSubagents,
+  buildThreadTree,
+  threadChildRows,
   type RepositoryOpenTarget,
 } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -210,10 +212,23 @@ export function TaskProjectPanel({
     profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
     snapshot: { runtimeHost: task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost },
   })
-  const subagents = useMemo(
-    () => indexTaskSubagents(workspace.tasks)(task, true),
-    [workspace.tasks, task],
+  const thread = useMemo(
+    () =>
+      buildThreadTree(
+        collectTasks(
+          taskSources({
+            workspace,
+            snapshot,
+            connected,
+            connection,
+            runtimes,
+            activeRuntimeId,
+          }),
+        ),
+      ).nodes.get(taskCollectionKey(activeRuntimeId, task.id)),
+    [workspace, snapshot, connected, connection, runtimes, activeRuntimeId, task.id],
   )
+  const childRows = useMemo(() => (thread ? threadChildRows(thread) : []), [thread])
   const stats = useMemo(
     () =>
       task.files.reduce(
@@ -597,16 +612,17 @@ export function TaskProjectPanel({
         />
       </div>
       <TaskAgentLineage task={task} />
-      <WorkingSubagents
-        subagents={subagents}
-        online={connected}
-        disabled={false}
-        onOpenSubagent={(id) => host.navigate({ viewId: 'tasks', entityId: id })}
-      />
-      {subagents.length > 0 && (
-        <Button size="sm" variant="ghost" onClick={() => onSurface('agents')}>
-          Manage agents
-        </Button>
+      {thread && childRows.length > 0 && (
+        <>
+          <NestedThreads
+            threads={childRows}
+            parent={thread}
+            acknowledgedFailures={task.acknowledgedSubagentFailures}
+          />
+          <Button size="sm" variant="ghost" onClick={() => onSurface('agents')}>
+            Manage agents
+          </Button>
+        </>
       )}
       {gitOpen && repo && (
         <Dialog open onOpenChange={setGitOpen}>

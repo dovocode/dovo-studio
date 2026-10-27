@@ -23,13 +23,16 @@ export function openNestedThread(
       runtimeId,
       child.threadId,
       undefined,
-      {
-        runtimeId: parentRuntimeId,
-        runtimeIdentity: parent.runtimeIdentity,
-        taskId: parent.threadId,
-        title: parent.title,
-      },
+      child.nativeAgentKey
+        ? undefined
+        : {
+            runtimeId: parentRuntimeId,
+            runtimeIdentity: parent.runtimeIdentity,
+            taskId: parent.threadId,
+            title: parent.title,
+          },
       child.runtimeIdentity,
+      child.nativeAgentKey,
     ),
   )
 }

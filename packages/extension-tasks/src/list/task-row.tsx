@@ -2,9 +2,14 @@ import { ThreadWatchSummary } from './thread-watch-summary'
 import { NestedThreads } from './nested-threads'
 import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
 import type { NestedThread } from './thread-tree'
-import { WorkingSubagents } from './working-subagents'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import { pullStackLabel, taskPullStatusFor, taskDisplayProject } from '@dovo/protocol'
+import {
+  threadChildRows,
+  threadNativeAgents,
+  pullStackLabel,
+  taskPullStatusFor,
+  taskDisplayProject,
+} from '@dovo/protocol'
 import { taskPullLinks } from '../detail/task-pull-links'
 import {
   pullRequestIconTone,
@@ -44,7 +49,7 @@ import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
 import type { TaskOwner } from './task-collection'
 import { useTaskNow } from './task-clock'
-import { threadTreeSummary, type SubagentListItem } from '@dovo/protocol'
+import { threadTreeSummary } from '@dovo/protocol'
 const statusIcons: Record<string, LucideIcon> = {
   Working: CircleDashed,
   Done: CircleCheck,
@@ -61,7 +66,6 @@ const statusIcons: Record<string, LucideIcon> = {
 }
 function TaskRowView({
   task,
-  subagents,
   selected,
   multiSelected = false,
   onSelect,
@@ -71,13 +75,11 @@ function TaskRowView({
   editable,
   disabled,
   selectedChildId,
-  onOpenSubagent,
   nestedThreads,
   selectedThreadKey,
   searching,
 }: {
   task: Task
-  subagents: readonly SubagentListItem[]
   selected: boolean
   multiSelected?: boolean
   onSelect: () => void
@@ -89,7 +91,6 @@ function TaskRowView({
   editable: boolean
   disabled: boolean
   selectedChildId?: string
-  onOpenSubagent: (id: string) => void
   nestedThreads?: readonly NestedThread[]
   selectedThreadKey?: string
   searching?: boolean
@@ -102,12 +103,40 @@ function TaskRowView({
   )
   const [hovered, setHovered] = useState(false)
   const open = !!searching || expanded || hovered
+  const repository = owner.repositories.find((r) => r.id === task.repositoryId)
+  const displayProject = taskDisplayProject(task, owner.repositories)
+  const general = repository?.kind === 'scratch'
+  const projectName =
+    displayProject?.kind === 'scratch' ? 'General' : (displayProject?.name ?? 'No project')
+  const childRows = useMemo(
+    () =>
+      threadChildRows({
+        runtimeId: owner.runtimeId,
+        threadId: task.id,
+        title: task.title,
+        computerName: owner.name,
+        projectName,
+        online: owner.online,
+        children: [...(nestedThreads ?? [])],
+        nativeAgents: threadNativeAgents(task, Infinity),
+      }),
+    [
+      owner.runtimeId,
+      owner.name,
+      owner.online,
+      projectName,
+      task.id,
+      task.title,
+      task.subagents,
+      nestedThreads,
+    ],
+  )
   const summary = useMemo(
-    () => threadTreeSummary(nestedThreads ?? [], task.acknowledgedSubagentFailures),
-    [nestedThreads, task.acknowledgedSubagentFailures],
+    () => threadTreeSummary(childRows, task.acknowledgedSubagentFailures),
+    [childRows, task.acknowledgedSubagentFailures],
   )
   const compact = task.archived || !!task.archivedAt
-  const childCount = summary.total + (compact ? 0 : subagents.length)
+  const childCount = summary.total
   const childrenDetail = [
     `${childCount} subthread${childCount === 1 ? '' : 's'}`,
     summary.attention ? `${summary.attention} needs input` : '',
@@ -125,11 +154,6 @@ function TaskRowView({
   )
   const agent = resolveTaskAgent(task, owner.agents)
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
-  const repository = owner.repositories.find((r) => r.id === task.repositoryId)
-  const displayProject = taskDisplayProject(task, owner.repositories)
-  const general = repository?.kind === 'scratch'
-  const projectName =
-    displayProject?.kind === 'scratch' ? 'General' : (displayProject?.name ?? 'No project')
   const projectIcon =
     displayProject?.kind === 'scratch' ? (
       <MessageCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -444,32 +468,15 @@ function TaskRowView({
       )}
       {open && !!childCount && (
         <div id={childrenId}>
-          {nestedThreads && (
-            <NestedThreads
-              hideSummary
-              className={grouped ? 'mb-0 border-t border-border/30 py-0.5' : undefined}
-              threads={nestedThreads}
-              acknowledgedFailures={task.acknowledgedSubagentFailures}
-              parent={threadParent}
-              selectedKey={selectedThreadKey}
-              searching={searching}
-            />
-          )}
-          {!compact && (
-            <WorkingSubagents
-              subagents={subagents}
-              online={owner.online}
-              disabled={disabled}
-              selectedChildId={selectedChildId}
-              onOpenSubagent={onOpenSubagent}
-            />
-          )}
-          {!compact &&
-            selectedChildId &&
-            !nestedThreads &&
-            !subagents.some((agent) => (agent.taskId ?? agent.id) === selectedChildId) && (
-              <p className="mb-2 px-2.5 text-[0.625rem] text-muted-foreground">Viewing subagent</p>
-            )}
+          <NestedThreads
+            hideSummary
+            className={grouped ? 'mb-0 border-t border-border/30 py-0.5' : undefined}
+            threads={childRows}
+            acknowledgedFailures={task.acknowledgedSubagentFailures}
+            parent={threadParent}
+            selectedKey={selectedThreadKey}
+            searching={searching}
+          />
         </div>
       )}
       {editable && (

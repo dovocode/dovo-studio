@@ -5,12 +5,14 @@ export function taskHref(
   questionId?: string,
   parent?: { runtimeId: string; runtimeIdentity?: string; taskId: string; title: string },
   runtimeIdentity?: string,
+  nativeAgentKey?: string,
 ) {
   return {
     pathname: '/(tasks)/thread/[runtimeId]/[taskId]' as const,
     params: {
       runtimeId,
       taskId,
+      ...(nativeAgentKey ? { nativeAgentKey } : {}),
       ...(runtimeIdentity ? { runtimeIdentity } : {}),
       ...(questionId ? { questionId } : {}),
       ...(parent

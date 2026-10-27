@@ -445,7 +445,12 @@ function WorkbenchContent({
         history.current.push(previous)
         if (history.current.length > 50) history.current.shift()
         navigate(
-          { viewId: 'tasks', entityId: destination.threadId, threadParent: destination.parent },
+          {
+            viewId: 'tasks',
+            entityId: destination.threadId,
+            threadParent: destination.parent,
+            nativeAgentKey: destination.nativeAgentKey,
+          },
           { replace: true },
         )
       })().catch((error: unknown) => {
@@ -909,6 +914,7 @@ function WorkbenchContent({
                       {ready && View ? (
                         <View
                           entityId={target.entityId}
+                          nativeAgentKey={target.nativeAgentKey}
                           threadParent={parentThread}
                           pullTarget={target.pullTarget}
                           threadConnection={target.threadConnection}

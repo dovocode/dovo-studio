@@ -6,12 +6,7 @@ import {
   type ThreadWatchEntry,
 } from './thread-watches.js'
 import type { TaskMetadata } from './task-summary.js'
-import {
-  taskFailureVersion,
-  threadFailureKey,
-  threadNativeAgents,
-  threadNativeAgentOverflow,
-} from './subagent-failures.js'
+import { taskFailureVersion, threadFailureKey, threadNativeAgents } from './subagent-failures.js'
 import type { RuntimeSnapshot } from '../runtime/connection/runtime.js'
 
 export type ThreadTreeEntry = {
@@ -39,6 +34,8 @@ export type NestedThread = {
   repositoryId?: string
   projectIdentity?: string
   projectKind?: 'scratch' | 'project'
+  /** Presentation-only native row: threadId continues to identify its owning Studio thread. */
+  nativeAgentKey?: string
   nativeAgents?: readonly ThreadNativeAgent[]
   nativeAgentOverflow?: ThreadWatchEntry['nativeAgentOverflow']
   needsInput?: boolean
@@ -87,8 +84,8 @@ function threadNode(entry: ThreadTreeEntry): NestedThread {
     computerName: source.name,
     projectName: entry.projectName,
     repositoryId: task.repositoryId,
-    nativeAgents: threadNativeAgents(task),
-    nativeAgentOverflow: threadNativeAgentOverflow(task),
+    // Local workspaces have complete records; remote watch snapshots remain bounded.
+    nativeAgents: threadNativeAgents(task, Infinity),
     phase: needsInput
       ? 'needs-input'
       : taskIsWorking(task)
@@ -454,6 +451,54 @@ export const threadPhaseLabels: Record<NestedThread['phase'], string> = {
   stopped: 'Stopped',
   stopping: 'Stopping…',
   review: 'Review',
+}
+
+/** Present provider-owned agents in the same tree without creating writable Studio tasks. */
+export function threadChildRows(
+  thread: Pick<NestedThread, 'children' | 'runtimeId' | 'threadId' | 'title'> &
+    Partial<NestedThread>,
+): NestedThread[] {
+  return [
+    ...thread.children.map((child) => {
+      const children = threadChildRows(child)
+      return {
+        ...child,
+        nativeAgents: undefined,
+        children,
+      }
+    }),
+    ...(thread.nativeAgents ?? []).map((agent): NestedThread => ({
+      key: JSON.stringify([thread.runtimeId, thread.threadId, agent.threadKey ?? agent.key]),
+      runtimeId: thread.runtimeId,
+      runtimeIdentity: thread.runtimeIdentity,
+      threadId: thread.threadId,
+      nativeAgentKey: agent.threadKey ?? agent.key,
+      title: agent.name,
+      computerName: thread.computerName ?? 'This computer',
+      projectName: thread.projectName,
+      phase:
+        agent.finished && (agent.status === 'working' || agent.status === 'unknown')
+          ? 'completed'
+          : agent.status === 'unknown'
+            ? 'connecting'
+            : agent.status === 'working'
+              ? 'running'
+              : agent.status,
+      activity:
+        agent.finished && agent.status === 'working'
+          ? 'Finished'
+          : agent.status === 'unknown'
+            ? 'Status unavailable'
+            : agent.status === 'working' && !agent.working
+              ? 'Last seen working'
+              : undefined,
+      failureKey: agent.status === 'failed' ? agent.key : undefined,
+      online: thread.online ?? true,
+      paused: !!thread.paused || (agent.status === 'working' && !agent.working),
+      lastSuccessAt: thread.lastSuccessAt,
+      children: [],
+    })),
+  ]
 }
 
 /** Finished branches can be hidden without losing a live or failed descendant. */

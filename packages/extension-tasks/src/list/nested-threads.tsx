@@ -6,6 +6,7 @@ import { readTaskListViewState, saveTaskListViewState } from './task-list-view-s
 import { threadDescendants, type NestedThread } from './thread-tree'
 import {
   threadTreeSummary,
+  threadChildRows,
   visibleThreadChildren,
   nativeOverflowFailures,
   threadNeedsInput,
@@ -34,6 +35,12 @@ function NestedThreadsView({
   className?: string
   hideSummary?: boolean
 }) {
+  threads = threadChildRows({
+    runtimeId: parent.runtimeId,
+    threadId: parent.threadId,
+    title: parent.title,
+    children: [...threads],
+  })
   const host = useStudioHost()
   const id = useId()
   const parentKey = JSON.stringify([parent.runtimeId, parent.threadId])
@@ -66,12 +73,17 @@ function NestedThreadsView({
       ...(child.runtimeIdentity ? { runtimeIdentity: child.runtimeIdentity } : {}),
       threadId: child.threadId,
       title: child.title,
-      parent: {
-        runtimeId: parent.runtimeId,
-        ...(parent.runtimeIdentity ? { runtimeIdentity: parent.runtimeIdentity } : {}),
-        threadId: parent.threadId,
-        title: parent.title,
-      },
+      ...(child.nativeAgentKey ? { nativeAgentKey: child.nativeAgentKey } : {}),
+      ...(child.nativeAgentKey
+        ? {}
+        : {
+            parent: {
+              runtimeId: parent.runtimeId,
+              ...(parent.runtimeIdentity ? { runtimeIdentity: parent.runtimeIdentity } : {}),
+              threadId: parent.threadId,
+              title: parent.title,
+            },
+          }),
     })
   const renderChild = (child: NestedThread) => (
     <li key={child.key} className="min-w-0 py-0.5">
@@ -106,11 +118,13 @@ function NestedThreadsView({
           <Monitor className="size-3 shrink-0" aria-hidden="true" />
           <span className="truncate">
             {child.computerName}
-            {child.projectName ? ` · ${child.projectName}` : ''} · {phases[child.phase]}
+            {child.projectName ? ` · ${child.projectName}` : ''} ·{' '}
+            {child.nativeAgentKey && child.activity ? child.activity : phases[child.phase]}
+            {child.nativeAgentKey ? ' · Read only' : ''}
           </span>
           {!child.online ? (
             <span className="shrink-0">· Offline</span>
-          ) : child.paused ? (
+          ) : child.paused && !child.nativeAgentKey ? (
             <span className="shrink-0">· Monitor stopped</span>
           ) : null}
         </span>
@@ -127,7 +141,7 @@ function NestedThreadsView({
             Some child details unavailable
           </span>
         )}
-        {child.activity && (
+        {child.activity && !child.nativeAgentKey && (
           <span className="mt-0.5 block truncate text-[0.625rem] text-muted-foreground">
             {child.activity}
           </span>
@@ -148,51 +162,6 @@ function NestedThreadsView({
             Acknowledge failure
           </button>
         )}
-      {!!child.nativeAgents?.length && (
-        <ul
-          className="ml-4 border-l border-border/50 pl-2"
-          aria-label={`Native agents in ${child.title}`}
-        >
-          {child.nativeAgents.map((agent) => (
-            <li key={agent.key} className="py-1 text-xs text-muted-foreground">
-              <span
-                className={
-                  agent.status === 'failed' && !acknowledgedFailures.includes(agent.key)
-                    ? 'text-destructive'
-                    : undefined
-                }
-              >
-                {agent.name} ·{' '}
-                {agent.status === 'unknown'
-                  ? 'Status unavailable'
-                  : agent.status === 'working'
-                    ? child.online && !child.paused && agent.working
-                      ? 'Running'
-                      : 'Last seen working'
-                    : agent.status === 'failed'
-                      ? 'Failed'
-                      : agent.status === 'completed'
-                        ? 'Done'
-                        : 'Stopped'}
-              </span>
-              {agent.status === 'failed' &&
-                !acknowledgedFailures.includes(agent.key) &&
-                onAcknowledgeFailure && (
-                  <button
-                    type="button"
-                    className="ml-2 rounded px-2 py-1 hover:bg-accent/50"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onAcknowledgeFailure(agent.key)
-                    }}
-                  >
-                    Acknowledge failure in {agent.name}
-                  </button>
-                )}
-            </li>
-          ))}
-        </ul>
-      )}
       {!!child.nativeAgentOverflow?.total && (
         <div className="ml-4 py-1 text-xs text-muted-foreground">
           <button

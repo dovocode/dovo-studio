@@ -36,7 +36,7 @@ export function Sheet({title,children,onClose,ref}){useImperativeHandle(ref,()=>
 const fixture = `
 const base={repositoryId:'repo',agentId:'',status:'running',createdAt:'2026-10-03T12:00:00Z',draft:'',files:[],messages:[],example:false};
 const record=(id,name,status='working',source='dovo')=>({id,taskId:source==='dovo'?id:undefined,source:source==='dovo'?'dovo':undefined,name,provider:'codex',status,activity:status==='working'?'Inspecting tests':'Saved result',startedAt:'2026-10-03T12:00:00Z',updatedAt:'2026-10-03T12:01:00Z'});
-const parent={...base,id:'parent',title:'Main thread',subagents:[record('child','Live child'),record('done','Ended child','completed'),record('native','Native worker','working','native')]};
+const parent={...base,id:'parent',title:'Main thread',subagents:[record('child','Live child'),record('done','Ended child','completed'),{...record('native','Native worker','working','native'),provider:'claude'}]};
 parent.threadWatches=[{runtimeId:'studio',threadId:'remote-child',computerName:'Mac Studio',relation:'spawned',delegated:true,status:'watching',offline:false,snapshot:{title:'Configure Play testing',phase:'running',revision:'one',attention:[],watches:{pipelines:1,pullRequests:1,failures:0}}}];parent.watchCounts={pipelines:1,pullRequests:1,failures:2};
 const child={...base,id:'child',title:'Independent child title',delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'},subagents:[record('nested','Nested child'),record('nested-native','Nested native','working','native')]};
 const nested={...base,activeRunId:'nested-run',id:'nested',title:'Independent nested title',delegation:{parentTaskId:'child',parentRunId:'child-run',key:'nested'}};
@@ -180,7 +180,7 @@ try {
     const subthreads = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
     assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
     assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
-    assert.equal(await page.getByText('Native worker · codex', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('Native worker', { exact: true }).count(), 0)
     if (mobile) {
       await subthreads.click()
       assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
@@ -205,7 +205,7 @@ try {
       const toggle = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
       assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
-      assert.equal(await page.getByText('Native worker · codex', { exact: true }).count(), 0)
+      assert.equal(await page.getByText('Native worker', { exact: true }).count(), 0)
       await toggle.click()
       await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
       assert.deepEqual(await page.evaluate(() => window.routes.at(-1)), {
@@ -352,8 +352,82 @@ try {
     await finishedThreads.waitFor()
     assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
     assert.equal(await page.getByText('Ended child · codex', { exact: true }).count(), 0)
-    await page.getByText('Native worker · codex', { exact: true }).waitFor()
-    await page.getByText('Nested native · codex', { exact: true }).waitFor()
+    await page.getByText('Native worker', { exact: true }).waitFor()
+    await page.getByText('Nested native', { exact: true }).waitFor()
+    for (const [name, owner] of [
+      ['Native worker', 'parent'],
+      ['Nested native', 'child'],
+    ]) {
+      const nativeRow = page.getByRole('button', { name: `Open child thread ${name}`, exact: true })
+      await nativeRow.click()
+      const target = await page.evaluate(() => window.routes.at(-1))
+      assert.equal(mobile ? target.params.taskId : target.threadId, owner)
+      assert.equal(mobile ? target.params.runtimeId : target.runtimeId, 'linux')
+      assert.equal(mobile ? target.params.parentTaskId : target.parent, undefined)
+      assert.equal(typeof (mobile ? target.params.nativeAgentKey : target.nativeAgentKey), 'string')
+      assert.ok((mobile ? target.params.nativeAgentKey : target.nativeAgentKey).length)
+    }
+    const nativeTarget = await page.evaluate(() => window.routes.at(-2))
+    const nativeKey = mobile ? nativeTarget.params.nativeAgentKey : nativeTarget.nativeAgentKey
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) =>
+          task.id === 'parent'
+            ? {
+                ...task,
+                subagents: task.subagents.map((agent) =>
+                  agent.id === 'native'
+                    ? {
+                        ...agent,
+                        status: 'completed',
+                        finishedAt: '2026-10-03T12:02:00Z',
+                      }
+                    : agent,
+                ),
+              }
+            : task,
+        ),
+      )
+      window.renderList(false)
+    })
+    const finishedNative = page.getByRole('button', {
+      name: 'Open child thread Native worker',
+      exact: true,
+    })
+    await finishedNative.waitFor({ state: 'detached' })
+    await finishedThreads.click()
+    await finishedNative.click()
+    const completedTarget = await page.evaluate(() => window.routes.at(-1))
+    assert.equal(
+      mobile ? completedTarget.params.nativeAgentKey : completedTarget.nativeAgentKey,
+      nativeKey,
+    )
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) =>
+          task.id === 'parent'
+            ? {
+                ...task,
+                subagents: task.subagents.map((agent) =>
+                  agent.id === 'native'
+                    ? {
+                        ...agent,
+                        status: 'working',
+                        finishedAt: undefined,
+                      }
+                    : agent,
+                ),
+              }
+            : task,
+        ),
+      )
+      window.renderList(false)
+    })
+    await finishedThreads.click()
+    await finishedNative.waitFor()
+    await page.evaluate(() => {
+      window.routes = []
+    })
     const nested = page.getByRole('button', {
       name: 'Open child thread Independent nested title',
     })
@@ -434,8 +508,12 @@ try {
     await page
       .getByRole('button', { name: /^Open subagent Live child/ })
       .waitFor({ state: 'detached' })
-    await page.getByText('Native worker · codex', { exact: true }).waitFor({ state: 'detached' })
-    await page.getByText('Nested native · codex', { exact: true }).waitFor({ state: 'detached' })
+    await page
+      .getByRole('button', { name: 'Open child thread Native worker', exact: true })
+      .waitFor()
+    await page
+      .getByRole('button', { name: 'Open child thread Nested native', exact: true })
+      .waitFor()
     await page
       .getByRole('button', {
         name: 'Open child thread Independent nested title',
@@ -486,7 +564,7 @@ try {
     assert.equal(await page.evaluate(() => window.routes.at(-1).entityId), 'done')
     await page.getByText('Native worker', { exact: true }).click()
     await page
-      .getByRole('button', { name: 'View native thread · codex', exact: true })
+      .getByRole('button', { name: 'View native thread · claude', exact: true })
       .first()
       .click()
     await page.getByText('Native final answer', { exact: true }).waitFor()
@@ -496,7 +574,7 @@ try {
     assert.equal(nativeRead.path, '/api/tasks/native-thread')
     assert.equal(nativeRead.input.taskId, 'parent')
     assert.equal(nativeRead.input.id, 'native')
-    assert.equal(nativeRead.input.provider, 'codex')
+    assert.equal(nativeRead.input.provider, 'claude')
     await page.getByRole('button', { name: 'Load older messages', exact: true }).click()
     await page.getByText('Earlier native prompt', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => window.requests.at(-1).input.before), 'prompt')
@@ -1068,10 +1146,10 @@ try {
       window.renderAgents()
     })
     await page.getByRole('button', { name: 'Open child thread Successful remote owner' }).waitFor()
-    await page.getByText('Remote native failure · Failed', { exact: true }).waitFor()
     await page
-      .getByRole('button', { name: 'Acknowledge failure in Remote native failure', exact: true })
-      .click()
+      .getByRole('button', { name: 'Open child thread Remote native failure', exact: true })
+      .waitFor()
+    await page.getByRole('button', { name: 'Acknowledge failure', exact: true }).click()
     // Acknowledging the detailed rows must leave overflow failures visible and navigable.
     await page
       .getByRole('button', {
@@ -1107,9 +1185,7 @@ try {
       )
       window.renderAgents()
     })
-    await page
-      .getByRole('button', { name: 'Acknowledge failure in Remote native failure', exact: true })
-      .waitFor()
+    await page.getByRole('button', { name: 'Acknowledge failure', exact: true }).waitFor()
     assert.equal(await page.locator('button button').count(), 0)
 
     // Scoped computer/project filters retain parent context even without peer task data.

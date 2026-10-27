@@ -18,11 +18,14 @@ export interface StudioThreadReference {
   runtimeIdentity?: string
   threadId: string
   title: string
+  /** Read-only provider agent inside this owning Studio thread. */
+  nativeAgentKey?: string
 }
 export interface StudioNavigation {
   viewId: string
   entityId?: string
   pullTarget?: StudioPullTarget
+  nativeAgentKey?: string
   threadParent?: StudioThreadReference
   threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }
 }
@@ -37,6 +40,7 @@ export interface StudioPullTarget {
   connectionId?: string
 }
 export interface StudioViewProps {
+  nativeAgentKey?: string
   threadParent?: StudioThreadReference
   threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }
   entityId?: string

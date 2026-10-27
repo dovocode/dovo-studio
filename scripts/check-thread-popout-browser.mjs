@@ -36,7 +36,7 @@ window.fetch=async(url,init={})=>{
  if(path==='/api/tasks/compact')return Response.json({ok:true,revision:1});
  throw new Error('Unexpected request '+url);
 };
-function Thread({entityId,threadParent}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><span>{threadParent&&<button aria-label={"Open parent thread "+threadParent.title} onClick={()=>host.openThread(threadParent)}>{threadParent.title}</button>}</span><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskContextMenu dropdown task={task} owner={{runtimeId:value.activeRuntimeId,name:'Owner',online:value.connected,agents:[],repositories:value.workspace.repositories,worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Task actions</button></TaskContextMenu>}{task&&value.activeRuntimeId===profiles[0].id&&<TaskContextMenu dropdown task={task} owner={{runtimeId:profiles[1].id,name:'Remote owner',online:true,agents:[],repositories:value.workspace.repositories,worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Remote task actions</button></TaskContextMenu>}</>}
+function Thread({entityId,threadParent,nativeAgentKey}){const value=useWorkspace(),host=useStudioHost();window.store=value;window.host=host;window.nativeAgentKey=nativeAgentKey;const task=value.workspace.tasks.find(t=>t.id===entityId);return <><output id="selection">{value.activeRuntimeId+'|'+(task?.id??'fresh')}</output><output id="title">{task?.title}</output><span>{threadParent&&<button aria-label={"Open parent thread "+threadParent.title} onClick={()=>host.openThread(threadParent)}>{threadParent.title}</button>}</span><output id="focused">{String(host.threadWindow)}</output>{task&&<TaskContextMenu dropdown task={task} owner={{runtimeId:value.activeRuntimeId,name:'Owner',online:value.connected,agents:[],repositories:value.workspace.repositories,worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Task actions</button></TaskContextMenu>}{task&&value.activeRuntimeId===profiles[0].id&&<TaskContextMenu dropdown task={task} owner={{runtimeId:profiles[1].id,name:'Remote owner',online:true,agents:[],repositories:value.workspace.repositories,worktreeDeletionOverrideSupported:false}} selected={false} busy={false} onOpen={()=>{}} onCreate={()=>{}} onFilter={()=>{}} onDeselect={()=>{}} onError={message=>{if(message)throw Error(message)}}><button>Remote task actions</button></TaskContextMenu>}</>}
 window.toggleBrowser=value=>updateAppPreferences({browserWorkspaceEnabled:value});
 window.taskViewLoads=0;
 window.featureLoads={};
@@ -323,17 +323,20 @@ try {
       runtimeIdentity: 'identity-host1.lan',
       threadId: 'thread',
       title: 'Remote child',
+      nativeAgentKey: 'native-transcript-identity',
       parent: { runtimeId: 'http://host0.lan:8787', threadId: 'thread', title: 'Release parent' },
     }),
   )
   await main.waitForFunction(
     () => document.getElementById('selection')?.textContent === 'http://host1.lan:8787|thread',
   )
+  assert.equal(await main.evaluate(() => window.nativeAgentKey), 'native-transcript-identity')
   await main.getByRole('button', { name: 'Open parent thread Release parent', exact: true }).click()
   await main.waitForFunction(
     () => document.getElementById('selection')?.textContent === 'http://host0.lan:8787|thread',
   )
   assert.equal(await main.getByRole('button', { name: /Open parent thread/ }).count(), 0)
+  assert.equal(await main.evaluate(() => window.nativeAgentKey), undefined)
   // Pairing is never bypassed for a removed computer.
   await main.evaluate(() =>
     window.host.openThread({ runtimeId: 'missing', threadId: 'thread', title: 'Missing' }),

@@ -24,6 +24,17 @@ export function taskFailureVersion(
 export function threadFailureKey(runtimeId: string | null, threadId: string, version: string) {
   return digest(['thread', runtimeId, threadId, version])
 }
+/** Stable transcript identity, independent of completion/failure updates. */
+export function nativeAgentKey(ownerId: string, agent: Subagent) {
+  return digest([
+    'native-thread',
+    ownerId,
+    agent.provider,
+    agent.sessionId,
+    agent.id,
+    agent.startedAt,
+  ])
+}
 export function nativeFailureKey(ownerId: string, agent: Subagent) {
   return digest([
     'native',
@@ -53,9 +64,11 @@ function allThreadNativeAgents(task: Pick<TaskMetadata, 'id' | 'subagents'>) {
     .filter((agent) => agent.source !== 'dovo')
     .map((agent) => ({
       key: nativeFailureKey(task.id, agent),
+      threadKey: nativeAgentKey(task.id, agent),
       name: agent.name.slice(0, 1000),
       status: agent.status,
       working: nativeAgentWorking(agent),
+      finished: !!agent.finishedAt,
     }))
     .sort(
       (a, b) =>
@@ -64,8 +77,8 @@ function allThreadNativeAgents(task: Pick<TaskMetadata, 'id' | 'subagents'>) {
     )
 }
 
-export function threadNativeAgents(task: Pick<TaskMetadata, 'id' | 'subagents'>) {
-  return allThreadNativeAgents(task).slice(0, 40)
+export function threadNativeAgents(task: Pick<TaskMetadata, 'id' | 'subagents'>, limit = 40) {
+  return allThreadNativeAgents(task).slice(0, limit)
 }
 
 /** An execution-scoped group acknowledgement keeps overflow bounded without losing failures. */

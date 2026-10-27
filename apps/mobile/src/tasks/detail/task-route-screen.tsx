@@ -33,6 +33,7 @@ export function TaskRouteScreen() {
     parentRuntimeId?: string
     parentTaskId?: string
     parentTitle?: string
+    nativeAgentKey?: string
     questionId?: string
     draft?: string
   }>()
@@ -119,8 +120,9 @@ export function TaskRouteScreen() {
   if (task)
     return (
       <TaskDetail
-        key={`${params.runtimeId}:${task.id}:${params.questionId ?? ''}`}
+        key={`${params.runtimeId}:${task.id}:${params.questionId ?? ''}:${params.nativeAgentKey ?? ''}`}
         task={task}
+        nativeAgentKey={params.nativeAgentKey}
         questionId={params.questionId}
         onBack={
           parent

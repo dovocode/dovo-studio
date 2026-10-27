@@ -589,14 +589,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     },
     details: (key) => setDetails(key),
     select: toggleSelected,
-    subagent: (key, id) => {
-      if (selecting) return toggleSelected(key)
-      const parent = rowData.get(key)?.row
-      const child =
-        parent &&
-        allTasks.find((entry) => entry.runtimeId === parent.runtimeId && entry.task.id === id)
-      if (child) openTask(child)
-    },
   }
   const latestCommands = useRef(commands)
   useLayoutEffect(() => {
@@ -607,7 +599,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       open: (key) => latestCommands.current.open(key),
       details: (key) => latestCommands.current.details(key),
       select: (key) => latestCommands.current.select(key),
-      subagent: (key, id) => latestCommands.current.subagent(key, id),
     }),
     [],
   )
@@ -911,7 +902,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 density={preferences.threadDensity ?? 'compact'}
                 row={rowData.get(item.entry.key)!.row}
                 needsInput={item.entry.needsInput}
-                subagents={rowData.get(item.entry.key)!.subagents}
                 thread={tree.nodes.get(item.entry.key)}
                 searching={!!query}
                 owner={rowData.get(item.entry.key)!.owner}

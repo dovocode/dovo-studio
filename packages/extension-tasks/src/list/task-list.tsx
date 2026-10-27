@@ -62,7 +62,6 @@ const selectionActions = [
   { id: 'delete', label: 'Delete' },
 ] as const
 export function TaskList({
-  hidePillsForKey,
   projectId,
   onProjectChange,
   selectedId,
@@ -79,7 +78,6 @@ export function TaskList({
   busy,
   error,
 }: {
-  hidePillsForKey?: string
   projectId: string
   onProjectChange: (id: string) => void
   selectedId: string
@@ -672,14 +670,6 @@ export function TaskList({
       setQuery('')
     }),
   )
-  const openSubagent = useCommittedCallback(
-    withEntry((entry, id: string) => {
-      const child = allEntries.find(
-        (item) => item.source.runtimeId === entry.source.runtimeId && item.task.id === id,
-      )
-      if (child) onSelect(child)
-    }),
-  )
   const deselectRow = useCommittedCallback(() => onDeselect())
   const rowClickCapture = useCommittedCallback((key: string, event: MouseEvent<HTMLDivElement>) => {
     if (bulkBusy || busy || key === temporaryEntry?.key) return
@@ -719,7 +709,6 @@ export function TaskList({
       template: templateRow,
       create: createRow,
       filter: filterRow,
-      subagent: openSubagent,
       deselect: deselectRow,
       error: setActionError,
       projectDeleted: () => onProjectChange('scratch'),
@@ -732,7 +721,6 @@ export function TaskList({
       templateRow,
       createRow,
       filterRow,
-      openSubagent,
       deselectRow,
       setActionError,
       onProjectChange,
@@ -933,11 +921,7 @@ export function TaskList({
                     owner={
                       owners.get(entry.source.runtimeId) ?? retainTaskOwner(undefined, entry.source)
                     }
-                    subagents={
-                      entry.key === hidePillsForKey
-                        ? noSubagents
-                        : (subagentsByKey.get(entry.key) ?? noSubagents)
-                    }
+                    subagents={subagentsByKey.get(entry.key) ?? noSubagents}
                     needsInput={!!facts?.input.has(entry.task.id)}
                     terminals={facts?.terminals.get(entry.task.id) ?? 0}
                     selected={entry.key === selectedId}

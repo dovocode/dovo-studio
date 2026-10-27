@@ -22,7 +22,6 @@ export type TaskListRowActions = {
   template: (key: string, templateId: string) => void
   create: (key: string) => void
   filter: (key: string) => void
-  subagent: (key: string, taskId: string) => void
   deselect: () => void
   error: (message: string) => void
   projectDeleted: () => void
@@ -170,7 +169,6 @@ function TaskListRowView({
   )
   const create = useCallback(() => actions.create(entryKey), [actions, entryKey])
   const filter = useCallback(() => actions.filter(entryKey), [actions, entryKey])
-  const subagent = useCallback((id: string) => actions.subagent(entryKey, id), [actions, entryKey])
   return (
     <div
       ref={element}
@@ -221,7 +219,6 @@ function TaskListRowView({
         >
           <TaskRow
             task={task}
-            subagents={subagents}
             needsInput={needsInput}
             terminals={terminals}
             selected={selected}
@@ -231,7 +228,6 @@ function TaskListRowView({
             editable={editable}
             disabled={disabled}
             onSelect={open}
-            onOpenSubagent={subagent}
             nestedThreads={nestedThreads}
             selectedThreadKey={selectedThreadKey}
             searching={searching}
