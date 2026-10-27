@@ -77,6 +77,29 @@ export function usePulls(state: string, repositoryId = '') {
       }),
     [readers, origins, destinations],
   )
+  // Keep request workers alive across presentation-only project updates, including Load more.
+  // The returned pages below still use the latest project names and metadata.
+  const targets = useRef(sources)
+  if (
+    targets.current.length !== sources.length ||
+    sources.some((source, index) => {
+      const previous = targets.current[index]
+      return (
+        source.key !== previous?.key ||
+        source.scope !== previous.scope ||
+        source.readCache !== previous.readCache ||
+        source.reader.key !== previous.reader.key ||
+        source.reader.scope !== previous.reader.scope ||
+        source.reader.connected !== previous.reader.connected ||
+        source.reader.readerIdentity !== previous.reader.readerIdentity ||
+        source.reader.readCache !== previous.reader.readCache ||
+        source.destination !== previous.destination
+      )
+    })
+  )
+    targets.current = sources
+  const readSources = targets.current
+  const unavailableKey = JSON.stringify([...unavailable].sort())
   const [stored, setStored, pagesRef] = useApplicationState<Record<string, Page>>({})
   const [busy, setBusy] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
@@ -86,6 +109,8 @@ export function usePulls(state: string, repositoryId = '') {
   const moreRef = useRef<(key: string) => Promise<void>>(async () => {})
   const remoteState = state === 'merged' ? 'closed' : state
   useEffect(() => {
+    const sources = readSources
+    const unavailable = new Set<string>(JSON.parse(unavailableKey))
     const current = ++generation.current
     const previousPages = pagesRef.current
     const sameState = lastState.current === remoteState
@@ -264,7 +289,7 @@ export function usePulls(state: string, repositoryId = '') {
       void polling.stop()
       void commands.stop()
     }
-  }, [sources, unavailable, remoteState, revision])
+  }, [readSources, unavailableKey, remoteState, revision])
   const refresh = () => {
     forceNext.current = true
     setRevision((value) => value + 1)

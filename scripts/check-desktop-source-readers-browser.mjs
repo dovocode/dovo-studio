@@ -214,9 +214,9 @@ try {
     window.destinations.a = 'replacement-destination'
     window.detailResult.refresh()
   })
-  await changed.waitForFunction(
-    () => !window.detailResult.readConnected && !!window.detailResult.error,
-  )
+  // Online owners may retry immediately after discovery failures. A changed account or
+  // destination still fails verification before dispatching any PR request.
+  await changed.waitForFunction(() => !window.detailResult.busy && !!window.detailResult.error)
   assert.equal(await changed.evaluate(() => window.detailResult.detail.destination), 'dest-a')
   assert.deepEqual(await changed.evaluate(() => window.reads), [])
   await changed.close()

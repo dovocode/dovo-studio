@@ -38,7 +38,12 @@ function usePullSection(
   revision?: string,
 ) {
   const { requestEffect: request, connected, workspace, readCache } = useWorkspace()
-  const readConnected = reader?.connected ?? (!origin && connected)
+  // A failed identity lookup must not disable Retry on an online owning computer. Every
+  // attempt still verifies the pinned account before requesting any PR data.
+  const readConnected =
+    reader && origin && reader.key === origin.key
+      ? origin.connected
+      : (reader?.connected ?? (!origin && connected))
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
   const cacheKey = JSON.stringify([
     'pulls',
