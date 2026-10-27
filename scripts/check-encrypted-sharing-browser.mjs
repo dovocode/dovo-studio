@@ -307,10 +307,12 @@ try {
     assert.ok(!request.data?.includes('Could we inspect the related callers?'))
     assert.ok(!request.data?.includes(recovery))
   }
+  const receiverLogin = accounts.createLogin()
+  accounts.approve(receiverLogin.login, { id: 'owner', name: 'Owner' })
   let restored = null
   const otherDevice = new AccountClient(
     {
-      read: async () => login.token,
+      read: async () => receiverLogin.token,
       write: async () => {},
       readSharingKey: async () => restored,
       writeSharingKey: async (key) => {
@@ -323,7 +325,19 @@ try {
   await otherDevice.load()
   await assert.rejects(() => otherDevice.sharing.restoreKey('0'.repeat(64), origin))
   assert.equal(restored, null)
-  await otherDevice.sharing.restoreKey(recovery, origin)
+  // An empty device requests access; an online owner answers without any human-entered key.
+  assert.equal(await otherDevice.sharing.syncKey(), false)
+  await assert.rejects(() => otherDevice.sharing.recoveryKey(true), /syncing/)
+  await client.sharing.syncKey()
+  assert.equal(await otherDevice.sharing.syncKey(), true)
+  assert.equal(await otherDevice.sharing.recoveryKey(), recovery)
+  const syncRows = JSON.stringify(accounts.db.prepare('SELECT * FROM sharing_key_sync').all())
+  assert.ok(!syncRows.includes(recovery), 'Connect must not store the raw sharing key')
+  assert.ok(
+    !JSON.stringify(accounts.db.prepare('SELECT * FROM sharing_key_identity').all()).includes(
+      recovery,
+    ),
+  )
   assert.equal(
     (await otherDevice.sharing.refresh(origin, shared.record.id)).content.title,
     'Encrypted thread title',

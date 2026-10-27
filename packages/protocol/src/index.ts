@@ -1,6 +1,7 @@
 export * from './workspace.js'
 export * from './conversation/encrypted-sharing.js'
 export * from './auth/sharing-client.js'
+export * from './auth/sharing-key-sync.js'
 export * from './auth/people.js'
 export * from './tasks/task-budget.js'
 export * from './tasks/task-summary.js'

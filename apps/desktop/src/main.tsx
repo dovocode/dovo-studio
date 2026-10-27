@@ -1,5 +1,6 @@
 import { decode, threadWindowTargetSchema } from '@dovo/protocol'
 import { StrictMode } from 'react'
+import { useAccount, useAppPreferences } from '@dovo/studio-core'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
 import { ApplicationStateProvider } from '@dovo/studio-core/state'
@@ -12,6 +13,10 @@ import { agentsExtension } from '@dovo/extension-agents'
 import { jobsExtension } from '@dovo/extension-jobs'
 import { runtimeExtension, WindowsRuntimeGate } from '@dovo/extension-runtime'
 const extensions = [tasksExtension, scmExtension, agentsExtension, jobsExtension, runtimeExtension]
+function SharingDeviceSync() {
+  useAccount(window.dovo.accountStorage, window.dovo.openExternalLink, useAppPreferences())
+  return null
+}
 const captureThread = window.location.hash.startsWith('#thread-share=')
 const threadHash = captureThread ? '#thread-share=' : '#thread='
 const threadWindow = window.location.hash.startsWith(threadHash)
@@ -33,6 +38,7 @@ createRoot(root).render(
       <TaskLauncherWindow bridge={window.dovo.taskLauncher} />
     ) : (
       <WindowsRuntimeGate>
+        {window.dovo?.accountStorage && <SharingDeviceSync />}
         <Workbench
           extensions={extensions}
           threadWindow={threadWindow}

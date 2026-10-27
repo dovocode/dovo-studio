@@ -9,8 +9,9 @@ and links. Local runtime access still supports HTTP LAN/VPN addresses, pairing c
 tokens without an account.
 
 **Advanced** holds optional content previews, link expiry, update controls, recovery and deletion.
-The usual sharing flow needs no repeated setup. Restoring existing encrypted content on a new device
-still requires its recovery key.
+The usual sharing flow needs no repeated setup. Sharing access syncs automatically from another
+online Studio device signed into the same Connect account. Keep Studio open on that device while the
+new device is syncing.
 
 Threads automatically publish new user and assistant message text while the source runtime is
 online. Tools, attachments and unsent drafts are excluded. Readers see updates without refreshing.
@@ -67,12 +68,24 @@ vaults; suggestions use the owner's public encryption key. The host cannot decry
 artifact files, feed values or prompt suggestions. It can see account and recipient IDs, publication
 kind, sizes, timestamps, access metadata and request traffic.
 
-Studio creates the recovery key once and stores it in its platform credential storage. Under
-**Advanced → Recovery and another device**, reveal or copy it to a password manager. On another
-device, sign in to the same Connect account and select **Restore sharing key**. Account sign-in
-alone cannot recover encrypted publications. There is no hosting-service recovery or automatic
-device-to-device key transfer. Anyone holding the recovery key and owner access can unlock all that
-account's publications for that Connect origin.
+Studio creates the sharing key once and stores it in platform credential storage. Signed-in Studio
+devices automatically exchange it while both devices are online, including when no sharing panel is
+open. Existing shares and invitation URLs are preserved. Sync waits for a device holding the key; it
+never silently replaces the key for existing publications. Concurrent first-time sharing devices
+coordinate a fingerprint before publishing so they use the same key.
+
+Connect authenticates both sessions and relays an authenticated encrypted key transfer, bound to the
+Connect origin, account and receiving device. Only devices hold the transfer secrets and raw sharing
+key. The broker keeps the account's key fingerprint and short-lived public-key mailboxes with
+encrypted replies. Mailboxes expire after five minutes without a heartbeat or when their sessions
+are revoked. Account deletion removes this metadata. Device authorization trusts Connect's account
+directory; this does not protect against a compromised account or a malicious authorization broker.
+
+Under **Advanced → Recovery and another device**, optionally save a backup in your password manager.
+On a device waiting for sync, **Restore from a backup** accepts that key. If all devices holding the
+key are lost, sign-in alone cannot recover encrypted publications; a backup is required. Anyone
+holding the recovery key and owner access can unlock all that account's publications for that
+Connect origin.
 
 End-to-end encryption relies on the reader application delivered by the host, as with other web
 cryptography. A compromised reader application or recipient device can expose decrypted content.

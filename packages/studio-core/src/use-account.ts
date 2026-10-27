@@ -33,6 +33,17 @@ export function useAccount(
   const state = useSyncExternalStore(client.subscribe, client.snapshot, client.snapshot)
   const session = client.sessionId()
   useEffect(() => {
+    if (services?.ready !== false && state.loaded && state.directory && !state.deletionPending)
+      return client.sharing.startSync()
+  }, [
+    client,
+    session,
+    state.loaded,
+    state.directory?.user.id,
+    state.deletionPending,
+    services?.ready,
+  ])
+  useEffect(() => {
     if (services?.ready === false) return
     entry.users++
     if (entry.users === 1) void client.load()

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
 import {
   sharedContentSchema,
@@ -33,6 +33,7 @@ export function useEncryptedSharing({
   runtime?: SharingRuntime
   active?: boolean
 }) {
+  useSyncExternalStore(client.sharing.subscribe, client.sharing.snapshot, client.sharing.snapshot)
   const [origin, setOrigin] = useState(''),
     [share, setShare] = useState<OpenShare | null>(null)
   const [busy, setBusy] = useState(false),
@@ -116,9 +117,11 @@ export function useEncryptedSharing({
       if (!stopped && !inFlight.current) void act(load)
     }
     refresh()
+    const unsubscribe = client.sharing.subscribe(refresh)
     const timer = setInterval(refresh, 30000)
     return () => {
       stopped = true
+      unsubscribe()
       clearInterval(timer)
     }
   }, [load, active])
@@ -181,6 +184,7 @@ export function useEncryptedSharing({
     loaded,
     hasKey,
     hasShares,
+    syncError: client.sharing.syncError,
     recovery,
     preview,
     sync,

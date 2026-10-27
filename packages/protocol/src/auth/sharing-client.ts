@@ -20,10 +20,18 @@ import {
   type SharedContent,
 } from '../conversation/encrypted-sharing.js'
 import type { AccountStorage } from './account.js'
+import { internetBytes, internetPublicKey, openInternet, sealInternet } from './account-internet.js'
+import { sharingKeyInboxSchema, sharingKeyTransferSchema } from './sharing-key-sync.js'
 
 export type OpenShare = { record: ShareRecord; vault: SharingVault; content: SharedContent }
 export type SharingSession = { userId: string; sessionId: string }
 export class SharingClient {
+  syncError = ''
+  private syncUsers = 0
+  private syncTimer?: ReturnType<typeof setInterval>
+  private exchange?: { sessionId: string; secret: Uint8Array; publicKey: string }
+  private syncing?: { sessionId: string; promise: Promise<boolean> }
+  private verifiedKey?: { sessionId: string; hash: string; valid: boolean }
   private revision = 0
   private listeners = new Set<() => void>()
   snapshot = () => this.revision
@@ -42,14 +50,170 @@ export class SharingClient {
     private connectOrigin: string,
     private session: () => SharingSession | null,
     private grant: (origin: string) => Promise<string>,
+    private sync?: {
+      request: (method: 'POST' | 'PUT', body: unknown) => Promise<unknown>
+      origin: () => Promise<string>
+    },
   ) {}
+  /** Shared by every account consumer; sync never generates a replacement sharing key. */
+  startSync = () => {
+    if (!this.sync || !this.storage.readSharingKey || !this.storage.writeSharingKey) return () => {}
+    const refresh = () => {
+      void this.syncKey().catch(() => {
+        // syncError is shown by sharing controls; ordinary account access stays available.
+      })
+    }
+    if (this.syncUsers++ === 0) {
+      refresh()
+      this.syncTimer = setInterval(refresh, 10000)
+    }
+    return () => {
+      if (--this.syncUsers === 0) {
+        clearInterval(this.syncTimer)
+        this.syncTimer = undefined
+      }
+    }
+  }
+  syncKey = async (): Promise<boolean> => {
+    const session = this.session()
+    if (!this.sync || !session || !this.storage.readSharingKey || !this.storage.writeSharingKey)
+      return false
+    if (this.syncing?.sessionId === session.sessionId) return this.syncing.promise
+    const pending = { sessionId: session.sessionId, promise: this.exchangeKey(session) }
+    this.syncing = pending
+    try {
+      const restored = await pending.promise
+      this.check(session)
+      if (this.syncError) {
+        this.syncError = ''
+        this.changed()
+      }
+      return restored
+    } catch (error) {
+      if (this.session()?.sessionId === session.sessionId) {
+        const message =
+          'Sharing access could not sync. Check your connection; Studio will retry automatically.'
+        if (this.syncError !== message) {
+          this.syncError = message
+          this.changed()
+        }
+      }
+      throw error
+    } finally {
+      if (this.syncing === pending) this.syncing = undefined
+    }
+  }
+  private async exchangeKey(session: SharingSession) {
+    const sync = this.sync
+    if (!sync) return false
+    const exchange = this.exchangeFor(session)
+    let key = await this.recoveryKey()
+    this.check(session)
+    if (key) {
+      const hash = sharingHash(key)
+      if (this.verifiedKey?.sessionId !== session.sessionId || this.verifiedKey.hash !== hash) {
+        const origin = await sync.origin()
+        this.check(session)
+        const records = await this.list(origin)
+        this.check(session)
+        let valid = true
+        try {
+          for (const record of records)
+            decode(sharingVaultSchema, decryptSharing(record.ownerBox, key))
+        } catch {
+          valid = false
+        }
+        this.verifiedKey = { sessionId: session.sessionId, hash, valid }
+      }
+      if (!this.verifiedKey.valid) key = null
+    }
+    const inbox = decode(
+      sharingKeyInboxSchema,
+      await sync.request('POST', {
+        publicKey: exchange.publicKey,
+        hasKey: !!key,
+        keyHash: key ? sharingHash(key) : null,
+      }),
+    )
+    this.check(session)
+    if (key && inbox.keyHash === sharingHash(key)) {
+      for (const recipient of inbox.requests) {
+        this.check(session)
+        await sync.request('PUT', {
+          sender: exchange.publicKey,
+          recipient,
+          box: sealInternet(
+            {
+              origin: this.connectOrigin,
+              userId: session.userId,
+              recipient,
+              key,
+            },
+            recipient,
+            exchange.secret,
+            internetBytes(newSharingKey()).slice(0, 24),
+          ),
+        })
+        this.check(session)
+      }
+      return false
+    }
+    if (!inbox.answer) return false
+    try {
+      if (inbox.answer.recipient !== exchange.publicKey)
+        throw new Error('Sharing recipient changed')
+      const transfer = decode(
+        sharingKeyTransferSchema,
+        openInternet(inbox.answer.box, inbox.answer.sender, exchange.secret),
+      )
+      if (
+        transfer.origin !== this.connectOrigin ||
+        transfer.userId !== session.userId ||
+        transfer.recipient !== exchange.publicKey
+      )
+        throw new Error('Sharing transfer belongs to another account or device')
+      if (sharingHash(transfer.key) !== inbox.keyHash)
+        throw new Error('Sharing key fingerprint changed')
+      const origin = await sync.origin()
+      this.check(session)
+      // Validate every existing owner vault before persisting a transferred key.
+      await this.restoreKey(transfer.key, origin)
+      this.check(session)
+      await sync.request('POST', {
+        publicKey: exchange.publicKey,
+        hasKey: true,
+        keyHash: sharingHash(transfer.key),
+      })
+      this.check(session)
+      return true
+    } catch (error) {
+      this.check(session)
+      // A bad packet must not occupy the mailbox forever. Only the receiver can reject it.
+      await sync.request('POST', {
+        publicKey: exchange.publicKey,
+        hasKey: false,
+        keyHash: null,
+        rejectAnswer: inbox.answer.box.nonce,
+      })
+      throw error
+    }
+  }
+  private exchangeFor(session: SharingSession) {
+    if (this.exchange?.sessionId !== session.sessionId) {
+      const secret = internetBytes(newSharingKey())
+      this.exchange = { sessionId: session.sessionId, secret, publicKey: internetPublicKey(secret) }
+    }
+    return this.exchange
+  }
   private current() {
     const session = this.session()
     if (!session) throw new Error('Sign in to manage sharing')
     return session
   }
   private check(session: SharingSession) {
-    if (this.session()?.sessionId !== session.sessionId) throw new Error('Sharing account changed')
+    const current = this.session()
+    if (current?.sessionId !== session.sessionId || current.userId !== session.userId)
+      throw new Error('Sharing account changed')
   }
   async request(origin: string, path: string, method = 'GET', body?: unknown) {
     const session = this.current(),
@@ -107,6 +271,27 @@ export class SharingClient {
     if (saved) return decode(sharingKeySchema, saved)
     if (!create) return null
     const key = newSharingKey()
+    if (this.sync) {
+      const origin = await this.sync.origin()
+      this.check(session)
+      if ((await this.list(origin)).length)
+        throw new Error('Sharing access is syncing from your other devices')
+      this.check(session)
+      const exchange = this.exchangeFor(session)
+      const inbox = decode(
+        sharingKeyInboxSchema,
+        await this.sync.request('POST', {
+          publicKey: exchange.publicKey,
+          hasKey: true,
+          keyHash: sharingHash(key),
+        }),
+      )
+      this.check(session)
+      if (inbox.keyHash !== sharingHash(key))
+        throw new Error(
+          'Sharing access is syncing. Keep another signed-in device online and try again shortly.',
+        )
+    }
     await this.storage.writeSharingKey(key, this.connectOrigin, session.userId)
     this.check(session)
     return key

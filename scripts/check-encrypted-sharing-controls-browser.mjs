@@ -349,6 +349,9 @@ try {
     await first.close()
   }
   const restored = await manager({ forgetKey: true })
+  await restored.getByRole('heading', { name: 'Syncing sharing access' }).waitFor()
+  assert.equal(await restored.getByLabel('Recovery key', { exact: true }).isVisible(), false)
+  await restored.getByText('Restore from a backup', { exact: true }).click()
   await restored.getByRole('heading', { name: 'Restore sharing on this device' }).waitFor()
   assert.equal(await restored.getByRole('button', { name: 'Add', exact: true }).isDisabled(), true)
   const recovery = restored.getByLabel('Recovery key', { exact: true })

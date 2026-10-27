@@ -19,6 +19,7 @@ import type { PeerRelayAdmission } from './relay-admission.js'
 import type { PeerRelayProvider } from '@dovo/protocol'
 import { organizationRelay, type Organization } from './organizations.js'
 import { artifactApi, artifactServiceToken, type ArtifactService } from './artifact-api.js'
+import { sharingKeySyncApi } from './sharing-key-sync.js'
 
 export function createConnectServer(
   options: {
@@ -44,6 +45,7 @@ export function createConnectServer(
   const authenticate = browserAuth({ ...options, origin })
   const artifacts = artifactApi(options.store, origin, options.artifacts)
   const sharing = artifactApi(options.store, origin, options.sharing ?? options.artifacts)
+  const sharingKeys = sharingKeySyncApi(options.store)
   const pushStore = new PushStore(options.store)
   const push = pushApi(options.store, pushStore, options.push)
   const internetStore = new InternetStore(options.store, origin)
@@ -104,6 +106,7 @@ export function createConnectServer(
                 : `ip:${address(req)}`,
       )
     if (await authenticate(req, res, url)) return
+    if (await sharingKeys(req, res, url)) return
     if (url.pathname.startsWith('/v1/sharing/')) {
       const mapped = new URL(url)
       mapped.pathname = mapped.pathname.replace('/v1/sharing/', '/v1/artifacts/')

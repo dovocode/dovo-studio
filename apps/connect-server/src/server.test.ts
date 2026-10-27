@@ -415,3 +415,72 @@ it('exposes friends and organisations only to full account sessions and validate
     ).status,
   ).toBe(401)
 })
+
+it('relays sharing keys only between active sessions of one account and removes expired mailboxes', async () => {
+  const f = await fixture()
+  const session = (user: string) => {
+    const login = f.store.createLogin()
+    f.store.approve(login.login, { id: user, name: user })
+    return login.token
+  }
+  const source = session('owner'),
+    receiver = session('owner'),
+    outsider = session('other')
+  const call = (token: string, method: string, body: unknown) =>
+    f.request('/v1/sharing-keys', {
+      method,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  const sourceKey = '1'.repeat(64),
+    recipient = '2'.repeat(64),
+    fingerprint = '3'.repeat(64)
+  const sourcePresence = { publicKey: sourceKey, hasKey: true, keyHash: fingerprint }
+  const pending = { publicKey: recipient, hasKey: false, keyHash: null }
+  expect((await call('', 'POST', pending)).status).toBe(401)
+  expect((await call(source, 'POST', { ...pending, hasKey: true })).status).toBe(400)
+  expect(await (await call(source, 'POST', sourcePresence)).json()).toMatchObject({
+    keyHash: fingerprint,
+    requests: [],
+  })
+  expect((await call(receiver, 'POST', pending)).status).toBe(200)
+  expect((await call(outsider, 'POST', pending)).status).toBe(409)
+  expect(await (await call(source, 'POST', sourcePresence)).json()).toMatchObject({
+    requests: [recipient],
+  })
+  const answer = {
+    sender: sourceKey,
+    recipient,
+    box: { nonce: '4'.repeat(48), ciphertext: '5'.repeat(128) },
+  }
+  expect((await call(outsider, 'PUT', answer)).status).toBe(403)
+  expect((await call(receiver, 'PUT', answer)).status).toBe(403)
+  expect((await call(source, 'PUT', answer)).status).toBe(200)
+  const nextAnswer = { ...answer, box: { ...answer.box, nonce: '6'.repeat(48) } }
+  await call(source, 'PUT', nextAnswer)
+  expect(await (await call(receiver, 'POST', pending)).json()).toMatchObject({ answer })
+  await call(receiver, 'POST', { ...pending, rejectAnswer: nextAnswer.box.nonce })
+  expect(await (await call(receiver, 'POST', pending)).json()).toMatchObject({ answer })
+  await call(receiver, 'POST', { ...pending, rejectAnswer: answer.box.nonce })
+  expect(await (await call(receiver, 'POST', pending)).json()).toMatchObject({ answer: null })
+  // First verified holder establishes the canonical fingerprint, even if two new devices race.
+  expect(
+    await (
+      await call(receiver, 'POST', { ...pending, hasKey: true, keyHash: '7'.repeat(64) })
+    ).json(),
+  ).toMatchObject({ keyHash: fingerprint, requests: [] })
+  const grant = f.store.artifactGrant(source, 'https://share.test')!
+  expect((await call(grant.token, 'POST', sourcePresence)).status).toBe(401)
+  f.store.db.prepare('DELETE FROM sessions WHERE token=?').run(hash(source))
+  expect((await call(source, 'PUT', answer)).status).toBe(401)
+  f.store.cleanupSharingKeys()
+  expect(f.store.db.prepare('SELECT public_key FROM sharing_key_sync').all()).toEqual([
+    { public_key: recipient },
+  ])
+  f.advance(300_001)
+  f.store.cleanupSharingKeys()
+  expect(f.store.db.prepare('SELECT * FROM sharing_key_sync').all()).toEqual([])
+  expect(f.store.db.prepare('SELECT * FROM sharing_key_identity').all()).toHaveLength(1)
+  f.store.deleteAccount('owner')
+  expect(f.store.db.prepare('SELECT * FROM sharing_key_identity').all()).toEqual([])
+})

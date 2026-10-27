@@ -48,6 +48,7 @@ export class AccountStore {
   cleanup() {
     this.db.prepare('DELETE FROM logins WHERE expires<=?').run(this.now())
     this.db.prepare('DELETE FROM sessions WHERE expires<=?').run(this.now())
+    this.cleanupSharingKeys()
     this.db
       .prepare('DELETE FROM organization_sessions WHERE token NOT IN (SELECT token FROM sessions)')
       .run()
@@ -62,6 +63,18 @@ export class AccountStore {
     this.db
       .prepare('DELETE FROM artifact_feed_grants WHERE token NOT IN (SELECT token FROM sessions)')
       .run()
+  }
+  cleanupSharingKeys() {
+    if (
+      !this.db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sharing_key_sync'")
+        .get()
+    )
+      return
+    this.db
+      .prepare(`DELETE FROM sharing_key_sync WHERE seen<=? OR session NOT IN
+      (SELECT token FROM sessions WHERE expires>?)`)
+      .run(this.now() - 300_000, this.now())
   }
   createLogin(artifactsOrigin?: string) {
     this.cleanup()
@@ -317,7 +330,13 @@ export class AccountStore {
       this.db.prepare('DELETE FROM sessions WHERE user=?').run(user)
       this.db.prepare('DELETE FROM servers WHERE user=?').run(user)
       // Internet tables are optional for stores opened by offline maintenance tools.
-      for (const table of ['internet_requests', 'internet_hosts', 'internet_blocks']) {
+      for (const table of [
+        'internet_requests',
+        'internet_hosts',
+        'internet_blocks',
+        'sharing_key_sync',
+        'sharing_key_identity',
+      ]) {
         if (
           this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)
         )

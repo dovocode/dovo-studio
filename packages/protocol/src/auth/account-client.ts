@@ -102,6 +102,10 @@ export class AccountClient {
           : null
       },
       this.sharingGrant,
+      {
+        request: (method, body) => this.request('/v1/sharing-keys', method, body),
+        origin: () => this.sharingService(),
+      },
     )
   }
   snapshot = () => this.state

@@ -110,34 +110,45 @@ export function SharingPanel({
         <>
           {!sharing.loaded && !sharing.error && <p role="status">Loading sharing settings…</p>}
           {needsRecovery && (
-            <form
-              className="space-y-3 rounded-xl border p-3"
-              aria-label="Restore sharing access"
-              onSubmit={(event) => {
-                event.preventDefault()
-                if (sharing.busy || !restore.trim()) return
-                void sharing.restore(restore).then((ok) => {
-                  if (ok) setRestore('')
-                })
-              }}
-            >
-              <h2 className="font-medium">Restore sharing on this device</h2>
+            <section className="space-y-3 rounded-xl border p-3" aria-label="Sharing device sync">
+              <h2 className="font-medium">Syncing sharing access</h2>
               <p className="text-muted-foreground">
-                Enter your recovery key to manage your existing shared content.
+                Keep Studio open on another device signed in to this account where sharing already
+                works. Access restores automatically while both devices are online.
               </p>
-              <label className="block space-y-1">
-                Recovery key
-                <Input
-                  type="password"
-                  autoComplete="off"
-                  value={restore}
-                  onChange={(event) => setRestore(event.target.value)}
-                />
-              </label>
-              <Button disabled={sharing.busy || !restore.trim()} type="submit">
-                Restore sharing key
-              </Button>
-            </form>
+              {sharing.syncError && <p role="status">{sharing.syncError}</p>}
+              <details>
+                <summary className={disclosure}>Restore from a backup</summary>
+                <form
+                  className="space-y-3 pt-3"
+                  aria-label="Restore sharing access"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    if (sharing.busy || !restore.trim()) return
+                    void sharing.restore(restore).then((ok) => {
+                      if (ok) setRestore('')
+                    })
+                  }}
+                >
+                  <h2 className="font-medium">Restore sharing on this device</h2>
+                  <p className="text-muted-foreground">
+                    Enter your recovery key to manage your existing shared content.
+                  </p>
+                  <label className="block space-y-1">
+                    Recovery key
+                    <Input
+                      type="password"
+                      autoComplete="off"
+                      value={restore}
+                      onChange={(event) => setRestore(event.target.value)}
+                    />
+                  </label>
+                  <Button disabled={sharing.busy || !restore.trim()} type="submit">
+                    Restore sharing key
+                  </Button>
+                </form>
+              </details>
+            </section>
           )}
           <section className="space-y-3" aria-label="People with access">
             {!!contacts.directory &&
@@ -513,8 +524,9 @@ export function SharingPanel({
                   <summary className={disclosure}>Recovery and another device</summary>
                   <div className="space-y-3 pt-3">
                     <p className="text-xs text-muted-foreground">
-                      Your key is saved securely on this device. Back it up to a password manager to
-                      restore sharing on another device. It unlocks all your shared content.
+                      Sharing access syncs automatically between your signed-in devices while Studio
+                      is open. Your key stays on your devices. An optional backup in a password
+                      manager lets you restore access if every device is lost.
                     </p>
                     {sharing.recovery ? (
                       <>

@@ -125,29 +125,40 @@ export function SharingPanel({
           {needsRecovery && (
             <View style={{ ...styles.card, gap: 12 }}>
               <Text accessibilityRole="header" style={heading}>
-                Restore sharing on this device
+                Syncing sharing access
               </Text>
               <Text style={styles.muted}>
-                Enter your recovery key to manage your existing shared content.
+                Keep Studio open on another device signed in to this account where sharing already
+                works. Access restores automatically while both devices are online.
               </Text>
-              <Field
-                label="Recovery key"
-                secureTextEntry
-                autoCorrect={false}
-                autoCapitalize="none"
-                value={restore}
-                onChangeText={setRestore}
-                editable={!sharing.busy}
-              />
+              {!!sharing.syncError && <Text style={styles.muted}>{sharing.syncError}</Text>}
               <Action
-                label="Restore sharing key"
-                disabled={sharing.busy || !restore.trim()}
-                onPress={() => {
-                  void sharing.restore(restore).then((ok) => {
-                    if (ok) setRestore('')
-                  })
-                }}
+                secondary
+                label="Restore from a backup"
+                onPress={() => setShowRecovery(!showRecovery)}
               />
+              {showRecovery && (
+                <>
+                  <Field
+                    label="Recovery key"
+                    secureTextEntry
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    value={restore}
+                    onChangeText={setRestore}
+                    editable={!sharing.busy}
+                  />
+                  <Action
+                    label="Restore sharing key"
+                    disabled={sharing.busy || !restore.trim()}
+                    onPress={() => {
+                      void sharing.restore(restore).then((ok) => {
+                        if (ok) setRestore('')
+                      })
+                    }}
+                  />
+                </>
+              )}
             </View>
           )}
           <View style={{ gap: 12 }} accessibilityLabel="People with access">
@@ -487,8 +498,9 @@ export function SharingPanel({
                 }}
               >
                 <Text style={styles.muted}>
-                  Your key is saved securely on this device. Back it up to a password manager to
-                  restore sharing on another device. It unlocks all your shared content.
+                  Your key syncs automatically while another signed-in Studio device is online. An
+                  optional backup in your password manager can restore access if every device is
+                  lost. It unlocks all your shared content.
                 </Text>
                 {sharing.recovery ? (
                   <>
