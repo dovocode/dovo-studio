@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { studioPeers, routedStudioTool } from './peers.js'
 import { ThreadWatch } from './thread-watch.js'
+import { threadSnapshot } from './thread-snapshot.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import {
@@ -442,7 +443,8 @@ async function pairComputers(
   const peer = {
     id: 'other-computer',
     name: 'Other computer',
-    connection: { address: target.origin, token },
+    // Studio learns the persistent runtime ID from its first authenticated snapshot.
+    connection: { address: target.origin, token, runtimeId: target.s.runtimeId },
   }
   expect((await register([peer])).status).toBe(200)
   return { register, peer, deviceId, token }
@@ -457,7 +459,7 @@ it('routes non-UI tools to a selected paired runtime over HTTP without exposing 
   const pairing = await pairComputers(source, target)
   const discovery = await source.post('discover', {})
   const listed = await discovery.text()
-  expect(listed).toContain('other-computer')
+  expect(listed).toContain(target.s.runtimeId)
   expect(listed).not.toContain(pairing.token)
   expect(listed).not.toContain(target.origin)
   const remote = await source.post('discover', {}, pairing.peer.id)
@@ -596,7 +598,7 @@ it('durably monitors remote children, preserves offline facts and delivers each 
   expect(response.status).toBe(200)
   const child = decode(mutableStruct({ id: Schema.String }), await response.json())
   expect(source.s.threadWatch.list(source.parent.id)).toMatchObject([
-    { runtimeId: pairing.peer.id, threadId: child.id, relation: 'spawned' },
+    { runtimeId: target.s.runtimeId, threadId: child.id, relation: 'spawned' },
   ])
   await source.s.threadWatch.tick()
   expect(source.s.threadWatch.list(source.parent.id)[0]?.snapshot?.phase).toBe('draft')
@@ -650,7 +652,7 @@ it('durably monitors remote children, preserves offline facts and delivers each 
   expect((await source.post('threads', { action: 'watches' })).status).toBe(200)
   expect(persisted.list(source.parent.id)[0]?.status).toBe('completed')
   // A completed spawn is retained without polling. Explicit watching resumes observation.
-  persisted.watch(source.parent.id, pairing.peer.id, child.id, 'Server')
+  persisted.watch(source.parent.id, target.s.runtimeId, child.id, 'Server')
   const last = persisted.list(source.parent.id)[0]?.lastSuccessAt
   expect((await pairing.register([])).status).toBe(200)
   await persisted.tick()
@@ -754,6 +756,175 @@ it('links existing remote threads without calling them spawned and respects read
       )
     ).status,
   ).toBe(403)
+})
+
+it('owns remote threads by runtime ID across saved profiles and keeps this computer local', async () => {
+  const source = await setup()
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
+  const lan = { ...pairing.peer, connection: { ...pairing.peer.connection } }
+  expect(
+    (await source.post('threads', { action: 'watch', id: target.parent.id }, lan.id)).status,
+  ).toBe(200)
+  // The same computer gains a verified runtime ID and a second VPN profile.
+  const verified = { ...lan.connection, runtimeId: target.s.runtimeId }
+  const self = {
+    id: 'this-computer-profile',
+    name: 'This computer over VPN',
+    connection: { ...verified, runtimeId: source.s.runtimeId },
+  }
+  expect(
+    (
+      await pairing.register([
+        { ...lan, connection: verified },
+        { ...lan, id: 'other-computer-vpn', connection: verified },
+        self,
+      ])
+    ).status,
+  ).toBe(200)
+  const discovered = decode(
+    Schema.Struct({ computers: Schema.Array(Schema.Struct({ id: Schema.String })) }),
+    await (await source.post('discover', {})).json(),
+  )
+  expect(discovered.computers.map((computer) => computer.id)).toEqual(['local', target.s.runtimeId])
+  expect(
+    (await source.post('threads', { action: 'watch', id: target.parent.id }, target.s.runtimeId))
+      .status,
+  ).toBe(200)
+  expect(source.s.threadWatch.list(source.parent.id)).toHaveLength(1)
+  expect(
+    (
+      await source.post(
+        'threads',
+        { action: 'unwatch', id: target.parent.id },
+        'other-computer-vpn',
+      )
+    ).status,
+  ).toBe(200)
+  expect(source.s.threadWatch.list(source.parent.id)).toMatchObject([{ status: 'stopped' }])
+  const local = await source.post('threads', { action: 'list' }, source.s.runtimeId)
+  expect(local.status).toBe(200)
+  expect(await local.text()).toContain(source.parent.id)
+  expect(
+    (await source.post('threads', { action: 'watch', id: source.parent.id }, self.id)).status,
+  ).toBe(404)
+  expect(
+    (
+      await pairing.register([
+        { ...lan, connection: verified },
+        { ...lan, id: target.s.runtimeId, connection: { ...verified, runtimeId: 'another' } },
+      ])
+    ).status,
+  ).toBe(200)
+  expect((await source.post('threads', { action: 'list' }, target.s.runtimeId)).status).toBe(409)
+})
+
+it('keeps watches saved under an older profile ID routed and monitored once', async () => {
+  const source = await setup()
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
+  // Before Studio learned runtime IDs, watches were saved under the profile ID.
+  const unverified = { address: target.origin, token: pairing.token }
+  expect((await pairing.register([{ ...pairing.peer, connection: unverified }])).status).toBe(200)
+  expect(
+    (await source.post('threads', { action: 'watch', id: target.parent.id }, pairing.peer.id))
+      .status,
+  ).toBe(200)
+  await source.s.threadWatch.tick()
+  expect(source.s.threadWatch.list(source.parent.id)).toMatchObject([
+    { runtimeId: pairing.peer.id, offline: false, snapshot: { runtimeId: target.s.runtimeId } },
+  ])
+  // Studio replaces the profile with a verified one; the saved watch keeps its original ID.
+  const verified = { ...pairing.peer.connection, runtimeId: target.s.runtimeId }
+  const replacement = { ...pairing.peer, id: 'replacement-profile', connection: verified }
+  expect((await pairing.register([replacement])).status).toBe(200)
+  await source.s.threadWatch.tick()
+  expect(source.s.threadWatch.list(source.parent.id)).toMatchObject([
+    { status: 'watching', offline: false },
+  ])
+  expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(200)
+  expect(
+    (await source.post('threads', { action: 'watch', id: target.parent.id }, target.s.runtimeId))
+      .status,
+  ).toBe(200)
+  expect(source.s.threadWatch.list(source.parent.id)).toMatchObject([
+    { runtimeId: pairing.peer.id, status: 'watching' },
+  ])
+  expect(source.s.threadWatch.list(source.parent.id)).toHaveLength(1)
+  expect(
+    (await source.post('threads', { action: 'unwatch', id: target.parent.id }, replacement.id))
+      .status,
+  ).toBe(200)
+  expect(source.s.threadWatch.list(source.parent.id)).toMatchObject([{ status: 'stopped' }])
+  // A reused profile ID that now names another runtime does not inherit the saved watch.
+  const reused = { ...pairing.peer, connection: { ...verified, runtimeId: 'another-runtime' } }
+  expect((await pairing.register([reused])).status).toBe(200)
+  expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(409)
+  // Competing Studio sessions are not merged by profile ID before ambiguity is checked.
+  const shared = { ...replacement, id: 'shared-profile' }
+  expect((await pairing.register([shared])).status).toBe(200)
+  expect((await source.post('threads', { action: 'list' }, shared.id)).status).toBe(200)
+  studioPeers(source.s).register(
+    'second-studio',
+    { sessionId: randomUUID(), peers: [{ ...shared, connection: reused.connection }] },
+    () => {},
+  )
+  expect((await source.post('threads', { action: 'list' }, shared.id)).status).toBe(409)
+})
+
+it('does not let a reused or unverified profile ID claim another computer’s saved watch', async () => {
+  const source = await setup()
+  const old = await setup()
+  const other = await setup()
+  const pairing = await pairComputers(source, old)
+  const unverified = { address: old.origin, token: pairing.token }
+  expect((await pairing.register([{ ...pairing.peer, connection: unverified }])).status).toBe(200)
+  expect(
+    (await source.post('threads', { action: 'watch', id: old.parent.id }, pairing.peer.id)).status,
+  ).toBe(200)
+  await source.s.threadWatch.tick()
+  const legacy = () =>
+    source.s.threadWatch.list(source.parent.id).find((watch) => watch.runtimeId === pairing.peer.id)
+  expect(legacy()?.snapshot?.runtimeId).toBe(old.s.runtimeId)
+  // The same profile ID now names another computer.
+  const token = randomUUID()
+  other.s.devices.add('Paired Studio', token)
+  const reused = { address: other.origin, token, runtimeId: other.s.runtimeId }
+  expect((await pairing.register([{ ...pairing.peer, connection: reused }])).status).toBe(200)
+  expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(409)
+  // Watching the same thread ID on the new computer neither rearms nor stops the old watch.
+  expect(
+    (await source.post('threads', { action: 'watch', id: old.parent.id }, other.s.runtimeId))
+      .status,
+  ).toBe(200)
+  expect(source.s.threadWatch.list(source.parent.id)).toHaveLength(2)
+  expect(
+    (await source.post('threads', { action: 'unwatch', id: old.parent.id }, other.s.runtimeId))
+      .status,
+  ).toBe(200)
+  expect(legacy()).toMatchObject({ status: 'watching', snapshot: { runtimeId: old.s.runtimeId } })
+  // An unverified profile with other credentials cannot carry a watch that reported its owner.
+  const { runtimeId: _, ...unpinned } = reused
+  expect((await pairing.register([{ ...pairing.peer, connection: unpinned }])).status).toBe(200)
+  expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(404)
+  await source.s.threadWatch.tick()
+  expect(legacy()).toMatchObject({ offline: true, snapshot: { runtimeId: old.s.runtimeId } })
+})
+
+it('rejects a saved computer ID whose watches reported different runtimes', async () => {
+  const source = await setup()
+  const first = await setup()
+  const second = await setup()
+  const recorder = new ThreadWatch(source.s.db, source.s, async (_parentId, _runtimeId, threadId) =>
+    threadSnapshot(threadId === first.parent.id ? first.s : second.s, threadId),
+  )
+  for (const target of [first, second])
+    source.s.threadWatch.watch(source.parent.id, 'legacy-profile', target.parent.id, 'Legacy')
+  await recorder.tick()
+  expect(
+    new Set(source.s.threadWatch.list(source.parent.id).map((w) => w.snapshot?.runtimeId)),
+  ).toEqual(new Set([first.s.runtimeId, second.s.runtimeId]))
+  expect((await source.post('threads', { action: 'list' }, 'legacy-profile')).status).toBe(409)
 })
 
 it('retains durable thread control after the desktop lease expires and removes it when pairing is forgotten', async () => {

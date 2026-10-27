@@ -134,7 +134,8 @@ async function pair(
   const peer = {
     id: 'paired-desktop',
     name: 'Preferred desktop',
-    connection: { address: target.origin, token },
+    // Studio learns the persistent runtime ID from its first authenticated snapshot.
+    connection: { address: target.origin, token, runtimeId: target.s.runtimeId },
   }
   const register = async (enabled: boolean) => {
     const response = await fetch(source.origin + '/api/studio/peers', {
@@ -247,6 +248,43 @@ it('delivers a remote final answer once and retains completed results when offli
   await pairing.register(false)
   const offline = await source.post('read', { id: child.id })
   expect(decode(childSchema, await offline.json())).toMatchObject({ offline: true, running: false })
+})
+
+it('keeps a child spawned under a replaced profile ID readable with its original ID and receipt', async () => {
+  const source = await setup(),
+    target = await setup()
+  const pairing = await pair(source, target)
+  const replace = (peers: unknown[]) =>
+    fetch(source.origin + '/api/studio/peers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: randomUUID(), peers }),
+    })
+  // Before Studio learned runtime IDs, children were saved under the profile ID.
+  const unverified = { address: target.origin, token: pairing.token }
+  expect((await replace([{ ...pairing.peer, connection: unverified }])).status).toBe(200)
+  const input = { ...request, runtimeId: pairing.peer.id }
+  const child = decode(childSchema, await (await source.post('spawn', input)).json())
+  expect(child.runtimeId).toBe(pairing.peer.id)
+  await waitForRuntime(() =>
+    expect(target.s.store.taskSummary(child.threadId).status).toBe('review'),
+  )
+  await source.s.threadWatch.tick()
+  expect(source.s.threadWatch.list(source.parent.id)[0].snapshot?.runtimeId).toBe(
+    target.s.runtimeId,
+  )
+  // Studio re-pairs the same computer under a new profile; the old profile ID disappears.
+  const replacement = { ...pairing.peer, id: 'replacement-desktop' }
+  expect((await replace([replacement])).status).toBe(200)
+  const read = decode(childSchema, await (await source.post('read', { id: child.id })).json())
+  expect(read).toMatchObject({ id: child.id, offline: false })
+  expect(read.result).toBe('Child completed its focused task')
+  source.s.mutations = new MutationReceipts(source.s.db)
+  expect(decode(childSchema, await (await source.post('spawn', input)).json()).id).toBe(child.id)
+  expect(target.s.store.get().tasks.filter((task) => task.title === request.name)).toHaveLength(1)
+  expect((await replace([])).status).toBe(200)
+  const offline = decode(childSchema, await (await source.post('read', { id: child.id })).json())
+  expect(offline).toMatchObject({ id: child.id, offline: true })
 })
 
 it('permits read-only General coordinators to launch and read strictly read-only target children', async () => {
@@ -390,6 +428,55 @@ it('creates a separate General child on a paired computer and preserves logical 
     (await source.post('spawn', { ...request, key: 'too-deep', runtimeId: pairing.peer.id }))
       .status,
   ).toBe(409)
+})
+
+it('owns targeted children by the paired runtime ID and treats this runtime ID as local', async () => {
+  const source = await setup(),
+    target = await setup()
+  const pairing = await pair(source, target)
+  const response = await fetch(source.origin + '/api/studio/peers', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: randomUUID(),
+      peers: [
+        {
+          ...pairing.peer,
+          connection: { ...pairing.peer.connection, runtimeId: target.s.runtimeId },
+        },
+      ],
+    }),
+  })
+  expect(response.status).toBe(200)
+  const created = await source.post('spawn', { ...request, runtimeId: pairing.peer.id })
+  expect(created.status).toBe(200)
+  const child = decode(childSchema, await created.json())
+  expect(child.runtimeId).toBe(target.s.runtimeId)
+  // Receipts keep the caller's raw ID: the same arguments replay, an alias is another request.
+  source.s.mutations = new MutationReceipts(source.s.db)
+  const retried = await source.post('spawn', { ...request, runtimeId: pairing.peer.id })
+  expect(decode(childSchema, await retried.json()).id).toBe(child.id)
+  expect((await source.post('spawn', { ...request, runtimeId: target.s.runtimeId })).status).toBe(
+    409,
+  )
+  expect(target.s.store.get().tasks.filter((task) => task.title === request.name)).toHaveLength(1)
+  const listed = decode(
+    Schema.Struct({ runtimeId: Schema.String }),
+    await (await source.post('list', { runtimeId: pairing.peer.id, repositoryId: 'repo' })).json(),
+  )
+  expect(listed.runtimeId).toBe(target.s.runtimeId)
+  const local = await source.post('spawn', {
+    key: 'same-checkout',
+    name: 'Same checkout',
+    prompt: 'Inspect this checkout',
+    runtimeId: source.s.runtimeId,
+    provider: 'codex',
+  })
+  expect(local.status).toBe(200)
+  expect(source.s.threadWatch.list(source.parent.id)).toHaveLength(1)
+  expect(
+    source.s.store.get().tasks.some((task) => task.delegation?.parentTaskId === source.parent.id),
+  ).toBe(true)
 })
 
 it('returns a durable draft reference when the target cannot start and refuses unsupported read-only providers', async () => {

@@ -27,6 +27,14 @@ it('expires disconnected pairings, drops revoked clients and rejects session hij
   allowed = false
   expect(peers.list()).toEqual([])
 })
+it('keeps the same profile ID from separate Studio sessions visible for ambiguity checks', () => {
+  const peers = new StudioPeers()
+  const first = { ...peer, connection: { ...peer.connection, runtimeId: 'first-runtime' } }
+  const second = { ...peer, connection: { ...peer.connection, runtimeId: 'second-runtime' } }
+  peers.register('desktop', { sessionId: 'desktop-session', peers: [first] }, () => {})
+  peers.register('browser', { sessionId: 'browser-session', peers: [second] }, () => {})
+  expect(peers.list()).toEqual([first, second])
+})
 it('rejects ambiguous computer IDs and updates pairings without retaining removed credentials', () => {
   const peers = new StudioPeers()
   expect(() =>

@@ -21,7 +21,7 @@ import {
 } from '@dovo/protocol'
 import type { Services } from '../services.js'
 import { HttpError } from '../errors.js'
-import { routedStudioTool, studioComputerName } from './peers.js'
+import { routedStudioTool, studioComputer, studioComputerName } from './peers.js'
 import { requireStudioPart, type StudioPolicy } from './tools.js'
 import { targetedChildId } from './subagent-target.js'
 
@@ -99,7 +99,10 @@ function admit(s: Services, taskId: string) {
 /** Existing in-checkout children remain ordinary Dovo children. Explicit targets own their scope. */
 export async function spawnChild(s: Services, input: SubagentSpawn, supplied?: StudioPolicy) {
   const scope = s.tasks.childLaunchScope(input.taskId, input.parentRunId)
-  const targeted = !!input.repositoryId || (!!input.runtimeId && input.runtimeId !== 'local')
+  // This computer's own runtime ID is local; a paired computer is owned by its runtime ID.
+  const runtimeId =
+    studioComputer(s, input.runtimeId, input.taskId)?.id ?? input.runtimeId ?? 'local'
+  const targeted = !!input.repositoryId || runtimeId !== 'local'
   if (!targeted) {
     if (input.execution)
       throw new HttpError(400, 'Set repositoryId to create a child in a separate checkout')
@@ -118,12 +121,12 @@ export async function spawnChild(s: Services, input: SubagentSpawn, supplied?: S
     throw new HttpError(400, 'Choose either an inherited checkoutId or a project/computer target')
   const policy = parentPolicy(s, input.taskId, supplied)
   requireStudioPart(s, 'threads', policy)
-  const runtimeId = input.runtimeId ?? 'local'
   const repositoryId = input.repositoryId ?? SCRATCH_PROJECT_ID
   const request = {
     name: input.name,
     prompt: input.prompt,
-    runtimeId,
+    // Receipts fingerprint the caller's arguments, so same-key retries keep matching after upgrades.
+    runtimeId: input.runtimeId ?? 'local',
     repositoryId,
     provider: input.provider,
     agentId: input.agentId,
@@ -281,7 +284,9 @@ export async function listChildren(
 ) {
   s.tasks.assertToolScope(input.taskId, input.parentRunId)
   const parent = s.store.taskSummary(input.taskId)
-  const targeted = !!input.repositoryId || (!!input.runtimeId && input.runtimeId !== 'local')
+  const runtimeId =
+    studioComputer(s, input.runtimeId, input.taskId)?.id ?? input.runtimeId ?? 'local'
+  const targeted = !!input.repositoryId || runtimeId !== 'local'
   const discovery = targeted
     ? decode(
         Schema.Record(Schema.String, Schema.Unknown),
@@ -290,7 +295,7 @@ export async function listChildren(
           input.taskId,
           'discover',
           { repositoryId: input.repositoryId },
-          input.runtimeId,
+          runtimeId,
           () => {},
           parentPolicy(s, input.taskId, policy),
         ),
@@ -321,7 +326,7 @@ export async function listChildren(
     projects:
       discovery?.projects ?? s.store.get().repositories.map(({ id, name }) => ({ id, name })),
     linkedCheckouts: parent.linkedCheckouts,
-    runtimeId: input.runtimeId ?? 'local',
+    runtimeId,
   }
 }
 
