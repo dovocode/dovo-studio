@@ -1,15 +1,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   mobileArtifactName,
   mobileBuildNumber,
   mobileReleaseTag,
   publishMobileRelease,
   requireMobileChecks,
+  requireCurrentMobileRun,
 } from './mobile-release.mjs'
 await test('mobile releases require both check workflows for the exact source commit', () => {
   const sha = 'a'.repeat(40)
@@ -54,6 +57,116 @@ await test('mobile build sequence stays above manual builds and increases across
     ['2100000000', '1', '1'],
   ])
     assert.throws(() => mobileBuildNumber(...values))
+})
+await test('a superseded mobile rerun cannot upload a lower store build number', () => {
+  const newerBuild = Number(mobileBuildNumber('2026101902', '2', '1'))
+  const olderRetryBuild = Number(mobileBuildNumber('2026101902', '1', '2'))
+  assert.ok(olderRetryBuild < newerBuild, 'An old retry would regress the store build number')
+  const calls = []
+  const gh = (...args) => {
+    calls.push(args)
+    return JSON.stringify([{ number: 2, databaseId: 200 }])
+  }
+  assert.throws(
+    () => requireCurrentMobileRun({ runId: '100', runNumber: '1' }, gh),
+    /superseded by run 2.*Dispatch a fresh Mobile beta release/,
+  )
+  assert.deepEqual(calls, [
+    [
+      'run',
+      'list',
+      '--workflow',
+      'release-mobile.yml',
+      '--limit',
+      '1',
+      '--json',
+      'number,databaseId',
+    ],
+  ])
+})
+await test('failed, cancelled or incomplete newer releases block older retries after possible partial uploads', () => {
+  for (const newer of [
+    { status: 'completed', conclusion: 'failure', uploadedPlatforms: ['ios'] },
+    { status: 'completed', conclusion: 'failure', uploadedPlatforms: ['android'] },
+    { status: 'completed', conclusion: 'cancelled', uploadedPlatforms: ['ios', 'android'] },
+    { status: 'in_progress', conclusion: null, uploadedPlatforms: ['ios'] },
+    { status: 'queued', conclusion: null, uploadedPlatforms: [] },
+  ]) {
+    const gh = (...args) => {
+      assert.equal(args.includes('--status'), false, 'Do not ignore failed/partial releases')
+      return JSON.stringify([{ number: 2, databaseId: 200, ...newer }])
+    }
+    assert.throws(() => requireCurrentMobileRun({ runId: '100', runNumber: '1' }, gh), /superseded/)
+  }
+})
+await test('the latest mobile run can retry and resume, while missing or mismatched run metadata fails closed', () => {
+  const current = { runId: '200', runNumber: '2' }
+  requireCurrentMobileRun(current, () => JSON.stringify([{ number: 2, databaseId: 200 }]))
+  for (const latest of [
+    undefined,
+    { number: 1, databaseId: 100 },
+    { number: 2, databaseId: 201 },
+    { number: '2', databaseId: 200 },
+    { number: 2 },
+  ])
+    assert.throws(
+      () => requireCurrentMobileRun(current, () => JSON.stringify(latest ? [latest] : [])),
+      /Cannot verify/,
+    )
+  assert.throws(
+    () =>
+      requireCurrentMobileRun(current, () => {
+        throw new Error('GitHub unavailable')
+      }),
+    /GitHub unavailable/,
+  )
+  for (const identity of [
+    { runId: '', runNumber: '2' },
+    { runId: '200', runNumber: 'NaN' },
+  ])
+    assert.throws(() => requireCurrentMobileRun(identity, () => '[]'), /Invalid mobile workflow/)
+})
+await test('allocation, failed-job build guards and publication reject old reruns before reading signed artifacts', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'dovo-mobile-run-guard-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  writeFileSync(
+    join(directory, 'gh'),
+    `#!${process.execPath}
+const fs=require('node:fs');
+fs.appendFileSync(process.env.MOBILE_GH_CALLS, JSON.stringify(process.argv.slice(2))+'\\n');
+console.log(JSON.stringify([{number:2,databaseId:200}]));
+`,
+    { mode: 0o700 },
+  )
+  const output = join(directory, 'output')
+  for (const command of [[], ['current'], ['publish']]) {
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL('./mobile-release.mjs', import.meta.url)), ...command],
+      {
+        cwd: directory,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: directory + delimiter + process.env.PATH,
+          MOBILE_GH_CALLS: join(directory, 'calls.jsonl'),
+          GITHUB_RUN_ID: '100',
+          GITHUB_RUN_NUMBER: '1',
+          GITHUB_RUN_ATTEMPT: '2',
+          GITHUB_OUTPUT: output,
+        },
+      },
+    )
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /superseded by run 2.*Dispatch a fresh Mobile beta release/)
+  }
+  assert.equal(existsSync(output), false, 'A superseded run must not allocate a store number')
+  const calls = readFileSync(join(directory, 'calls.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  assert.equal(calls.length, 3)
+  assert.ok(calls.every((args) => args[0] === 'run' && args[1] === 'list'))
 })
 await test('mobile tags use the mobile marketing version and cannot trigger desktop version tags', () => {
   assert.equal(mobileReleaseTag('1.2.3', '2026102003'), 'mobile-v1.2.3-beta.2026102003')

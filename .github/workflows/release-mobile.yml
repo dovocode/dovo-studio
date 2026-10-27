@@ -38,6 +38,8 @@ jobs:
         id: sequence
         env:
           MOBILE_BUILD_NUMBER_BASE: ${{ vars.MOBILE_BUILD_NUMBER_BASE || '2026101902' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: node scripts/ci/mobile-release.mjs
       - name: Select platforms
         id: platforms
@@ -61,6 +63,11 @@ jobs:
       DOVO_ANDROID_KEY_PASSWORD: ${{ secrets.MOBILE_ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
+      - name: Reject superseded release reruns before signing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/ci/mobile-release.mjs current
       - name: Verify required credentials before building
         env:
           PLATFORM: ${{ matrix.platform }}

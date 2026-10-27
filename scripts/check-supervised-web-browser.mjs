@@ -66,6 +66,11 @@ const built = await bundleBrowser(
   },
   [
     {
+      path: '../conversation/state/provider',
+      importer: `${native}tasks/detail/`,
+      contents: 'export const useConversationSelector=select=>select({visible:true});',
+    },
+    {
       path: '../../screens/remote-desktop',
       importer: native,
       contents: 'export const MobileRemoteDesktop=()=>null;',

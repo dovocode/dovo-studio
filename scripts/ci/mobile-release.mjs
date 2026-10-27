@@ -36,6 +36,38 @@ export function mobileBuildNumber(base, run, attempt) {
   if (number > 2_100_000_000) throw new Error('Mobile build number exceeds the store limit')
   return String(number)
 }
+
+export function requireCurrentMobileRun({ runId, runNumber }, gh = github) {
+  const id = Number(runId)
+  const number = Number(runNumber)
+  if (![id, number].every((value) => Number.isSafeInteger(value) && value > 0))
+    throw new Error('Invalid mobile workflow run identity')
+  // A failed or cancelled newer run can already have uploaded one platform. Its conclusion
+  // cannot establish that an older build number is still safe to upload to either store.
+  const [latest] = JSON.parse(
+    gh(
+      'run',
+      'list',
+      '--workflow',
+      'release-mobile.yml',
+      '--limit',
+      '1',
+      '--json',
+      'number,databaseId',
+    ),
+  )
+  if (
+    !latest ||
+    ![latest.number, latest.databaseId].every((value) => Number.isSafeInteger(value) && value > 0)
+  )
+    throw new Error('Cannot verify the latest mobile release run')
+  if (latest.number > number)
+    throw new Error(
+      `Mobile release run ${number} is superseded by run ${latest.number}. Dispatch a fresh Mobile beta release instead of rerunning this older build.`,
+    )
+  if (latest.number !== number || latest.databaseId !== id)
+    throw new Error('Cannot verify this mobile release is the latest run')
+}
 export function mobileReleaseTag(version, build) {
   if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(version)) throw new Error('Invalid mobile version')
   if (!/^[1-9][0-9]*$/.test(build) || Number(build) > 2_100_000_000)
@@ -97,13 +129,20 @@ export function publishMobileRelease({ version, build, sha, platform, directory 
 }
 if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === 'check') {
   requireMobileChecks(process.env.GITHUB_SHA)
+} else if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === 'current') {
+  requireCurrentMobileRun({
+    runId: process.env.GITHUB_RUN_ID,
+    runNumber: process.env.GITHUB_RUN_NUMBER,
+  })
 } else if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const {
     GITHUB_OUTPUT,
     MOBILE_BUILD_NUMBER_BASE = '2026101902',
     GITHUB_RUN_NUMBER,
     GITHUB_RUN_ATTEMPT,
+    GITHUB_RUN_ID,
   } = process.env
+  requireCurrentMobileRun({ runId: GITHUB_RUN_ID, runNumber: GITHUB_RUN_NUMBER })
   const version = JSON.parse(readFileSync('apps/mobile/app.json', 'utf8')).expo.version
   if (process.argv[2] === 'publish') {
     const tag = publishMobileRelease({
