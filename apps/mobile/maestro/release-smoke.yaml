@@ -24,6 +24,9 @@ appId: com.dovo.studio
     id: This phone’s name
 - eraseText
 - inputText: Dovo simulator test
+- assertVisible:
+    id: This phone’s name
+    text: Dovo simulator test
 - pressKey: Enter
 - scrollUntilVisible:
     element:

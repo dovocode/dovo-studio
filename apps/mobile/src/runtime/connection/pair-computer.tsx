@@ -1,3 +1,4 @@
+import { PairingField } from './pairing-field'
 import { PairingScanner } from './pairing-scanner'
 import { PeerRelayChoice } from './peer-relay-choice'
 import { preparePeerConnection, forgetPeerConnection } from './peer-transport'
@@ -22,7 +23,6 @@ import { ActivityIndicator, AppState, Keyboard, Pressable, View } from 'react-na
 import { Text } from '../../ui/content/text'
 import { useRuntime } from './provider'
 import { Action } from '../../ui/controls/action'
-import { Field } from '../../ui/controls/field'
 import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { useAction } from '../../ui/controls/use-action'
@@ -46,13 +46,12 @@ export function PairComputer({
 
   const { connect, cancelPairing } = useRuntime(),
     { busy, error, act } = useAction(),
-    // Native text and its React echo must commit together; external-store updates can
-    // run before TextInput has recorded its native event count and overwrite new typing.
     [address, setAddress] = useState(invitation?.address ?? initialAddress ?? ''),
     [peer, setPeer] = useApplicationState<PeerConfig | undefined>(invitation?.peer),
     [name, setName] = useState('My phone'),
     [computerName, setComputerName] = useState(''),
     [code, setCode] = useState(invitation?.code ?? ''),
+    [inputRevision, setInputRevision] = useState(0),
     [options, setOptions] = useApplicationState(false),
     [help, setHelp] = useApplicationState(false),
     [keyboard, setKeyboard] = useApplicationState(false),
@@ -237,6 +236,7 @@ export function PairComputer({
             setAddress(invitation.address)
             setPeer(invitation.peer)
             setCode(invitation.code)
+            setInputRevision((revision) => revision + 1)
             setPairError('')
             setScanning(false)
           }}
@@ -262,12 +262,14 @@ export function PairComputer({
               setPeer(undefined)
               setAddress('')
               setCode('')
+              setInputRevision((revision) => revision + 1)
             }}
           />
         </View>
       ) : (
         <View style={{ gap: 14 }}>
-          <Field
+          <PairingField
+            key={`address:${inputRevision}`}
             label="Computer address"
             placeholder="192.168.1.20:51464"
             hint="Wi-Fi, Tailscale and NetBird addresses all work. Include the port."
@@ -279,7 +281,8 @@ export function PairComputer({
             onChangeText={setAddress}
             editable={!pending && !busy}
           />
-          <Field
+          <PairingField
+            key={`code:${inputRevision}`}
             label="Pairing code"
             placeholder="8-digit code"
             hint={
@@ -290,7 +293,8 @@ export function PairComputer({
             keyboardType="number-pad"
             textContentType="oneTimeCode"
             value={code}
-            onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 8))}
+            normalize={(value) => value.replace(/\D/g, '').slice(0, 8)}
+            onChangeText={setCode}
             editable={!pending && !busy}
             // No letterSpacing: iOS recycles native inputs and leaks it into other placeholders.
             style={{ fontSize: 20, fontVariant: ['tabular-nums'] }}
@@ -356,7 +360,7 @@ export function PairComputer({
         />
         {options && (
           <View style={{ gap: 14, paddingBottom: 8 }}>
-            <Field
+            <PairingField
               label="Computer name"
               placeholder="Optional · Work Mac, Home server…"
               value={computerName}
@@ -364,7 +368,7 @@ export function PairComputer({
               editable={!pending && !busy}
               maxLength={80}
             />
-            <Field
+            <PairingField
               label="This phone’s name"
               hint="Shown on your computer’s list of paired devices."
               value={name}
