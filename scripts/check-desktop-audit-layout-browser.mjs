@@ -399,7 +399,12 @@ try {
     const read = contrasts.find((value) => value.mode === mode && !value.unread)
     const unread = contrasts.find((value) => value.mode === mode && value.unread)
     assert.ok(unread.title > read.title, 'Unread titles have stronger contrast than read titles')
-    assert.ok(unread.metadata > read.metadata)
+    assert.equal(
+      unread.metadata,
+      read.metadata,
+      'Metadata keeps the same secondary contrast for unread threads',
+    )
+    assert.ok(unread.title > unread.metadata, 'Unread titles lead the visual hierarchy')
   }
   console.log(
     'Task contrast measurements (with root-owned metadata CSS):',

@@ -260,10 +260,34 @@ try {
       .getByRole('dialog')
       .getByRole('button', { name: 'Close', exact: true })
       .boundingBox()
-    const hintBox = await page.getByText('Tab: messages', { exact: true }).boundingBox()
+    const scopes = page.getByRole('group', { name: 'Search scope', exact: true })
+    const taskScope = scopes.getByRole('button', { name: 'Tasks', exact: true })
+    const messageScope = scopes.getByRole('button', { name: 'Messages', exact: true })
     const inputBox = await threadSearch.boundingBox()
-    assert.ok(hintBox.x + hintBox.width <= closeBox.x, 'Search hint stays clear of close')
     assert.ok(inputBox.x + inputBox.width <= closeBox.x, 'Search input stays clear of close')
+    const dialogBox = await page.getByRole('dialog').boundingBox()
+    for (const scope of [taskScope, messageScope]) {
+      const box = await scope.boundingBox()
+      assert.ok(
+        box.x >= dialogBox.x && box.x + box.width <= dialogBox.x + dialogBox.width,
+        'Search scope controls stay inside the dialog',
+      )
+      assert.ok(box.y >= closeBox.y + closeBox.height, 'Search scope controls stay below close')
+      if (width === 390)
+        assert.ok(box.height >= 44, 'Mobile search scopes have touch-sized targets')
+    }
+    assert.equal(await taskScope.getAttribute('aria-pressed'), 'true')
+    assert.equal(await messageScope.getAttribute('aria-pressed'), 'false')
+    await threadSearch.press('Tab')
+    assert.equal(await taskScope.evaluate((node) => node === document.activeElement), true)
+    await page.keyboard.press('Tab')
+    assert.equal(await messageScope.evaluate((node) => node === document.activeElement), true)
+    assert.equal(
+      await taskScope.getAttribute('aria-pressed'),
+      'true',
+      'Tab moves focus without switching search mode',
+    )
+    await threadSearch.focus()
     for (const event of [
       { key: 'Enter', isComposing: true },
       { key: 'Enter', keyCode: 229 },
