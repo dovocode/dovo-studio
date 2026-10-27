@@ -58,13 +58,13 @@ appId: com.dovo.studio
     id: Message
 - inputText: Draft survives navigation
 - tapOn: Dismiss keyboard
-- tapOn: Back
+- runFlow: back-to-threads.yaml
 - tapOn:
     id: Task mobile-task
 - assertVisible:
     id: Message
     text: Draft survives navigation
-- tapOn: Back
+- runFlow: back-to-threads.yaml
 - tapOn: New thread
 - extendedWaitUntil:
     visible:
@@ -79,7 +79,7 @@ appId: com.dovo.studio
 - extendedWaitUntil:
     visible: .*Verified fixture response.*
     timeout: 30000
-- tapOn: Back
+- runFlow: back-to-threads.yaml
 - tapOn: More actions
 - tapOn: Settings
 - scrollUntilVisible:

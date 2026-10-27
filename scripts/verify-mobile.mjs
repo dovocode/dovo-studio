@@ -311,6 +311,19 @@ try {
       child.once('exit', resolve)
     })
     if (codeResult !== 0) {
+      const diagnostics = resolve('work/mobile-native-smoke')
+      await mkdir(diagnostics, { recursive: true })
+      try {
+        await writeFile(
+          join(diagnostics, 'hierarchy.json'),
+          execFileSync('maestro', ['--device', device, 'hierarchy', '--no-ansi'], {
+            encoding: 'utf8',
+            maxBuffer: 8 * 1024 * 1024,
+          }),
+        )
+      } catch (error) {
+        console.error('Could not capture failed native flow hierarchy:', error)
+      }
       console.error(
         'Fixture question history:',
         runtime.services.activity.list('', 'question', 0).events,
