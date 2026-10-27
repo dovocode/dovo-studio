@@ -526,7 +526,7 @@ export function Workbench() {
             }}
           >
             <View key={tab} />
-            {tab !== 'settings' && (
+            {tab !== 'settings' && tab !== 'browser' && (
               <FloatingPills>
                 <ConnectionPill />
               </FloatingPills>
