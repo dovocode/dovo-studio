@@ -327,3 +327,49 @@ or alternative draft store were introduced.
 Browser coverage exercises the production desktop shell, first-send and remote-draft lifecycle, and
 native-adapted mobile starter actions, input identity and narrow/short viewport geometry. The mobile
 adapter does not establish native iOS/Android rendering or software-keyboard behavior.
+
+## Additional feature review (five Terra 6.1 reviewers, 2026-10-27)
+
+The review covered desktop, the actual native mobile app, agent interactions, Git/review workflows
+and continuity. These are recommendations, not additional shipped features. The best next slice is
+mobile swipe Undo, followed by mobile terminal modifiers: both solve clear problems without
+introducing another workflow or state store.
+
+| Opportunity                                  | Dovo today and smallest useful next step                                                                                                                                                                                                                                                                                    | Scope                                                                              |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Undo mobile settle/snooze                    | [Swipe actions](../apps/mobile/src/tasks/list/task-list-row.tsx) move threads immediately. Offer a temporary, accessible Undo after success; retain the original computer/thread and prior state, and invalidate after conflicting changes. Exclude deletion.                                                               | Small; state races and native testing matter.                                      |
+| Mobile terminal Ctrl/Alt                     | [Terminal keys](../apps/mobile/terminal/client.ts) provide Ctrl-C and fixed keys. Add visible, one-shot Ctrl/Alt modifiers, consumed by the next supported input and cleared on disconnect. Preserve IME handling and never replay input after reconnect.                                                                   | Small; verify on native keyboards.                                                 |
+| Add another thread as context                | Existing copy/fork actions require a different workflow. Add an explicit same-computer thread picker that attaches a labeled transcript snapshot to the draft, with removal, complete-history loading, limits and errors. Preserve drafts on failure.                                                                       | Medium; history size and attachment lifetime.                                      |
+| Add terminal selection to a draft            | [Desktop terminal sessions](../packages/extension-tasks/src/terminal/terminal-session.tsx) expose input/socket handling, but no composer handoff. Add an explicit selection action that inserts editable text into the correct draft without sending.                                                                       | Small desktop slice; bound selection size.                                         |
+| Stash an unsent prompt                       | [Draft persistence](../packages/extension-tasks/src/chat/composer/use-composer-draft.ts) retains one draft per thread. Add stash/list/restore/delete only with explicit nonempty-draft handling and attachment retention; keep ownership scoped to the computer. Saved project prompts already serve reusable instructions. | Medium; avoid replacing drafts or losing attachments.                              |
+| Recover notification taps through cold start | [Notification handling](../apps/mobile/src/notifications/provider.tsx) stores a not-yet-ready destination in memory and clears the OS response immediately. Defer clearing until navigation handoff; test termination, delayed readiness, duplicate responses and answer actions.                                           | Small correctness improvement; source-level risk, not a reproduced device failure. |
+| Quiet notifications for the visible thread   | The same provider shows foreground input banners and sounds regardless of the visible conversation. Suppress only when both computer and thread match and the question is actually accessible; retain test and background notifications.                                                                                    | Small product decision; avoid hiding unseen questions.                             |
+| Mobile hardware-keyboard shortcuts           | Reuse [native navigation](../apps/mobile/src/ui/layout/navigation-stack.tsx) for discoverable Search, New thread and Back shortcuts. Respect text editing, modals and platform shortcuts before adding numbered thread jumps.                                                                                               | Medium; mainly benefits tablets/external keyboards.                                |
+
+T3 evidence at `5808469018fb95676af148e7a7662c23665c67a3`:
+
+- [Mobile Undo](https://github.com/pingdotgg/t3code/blob/5808469018fb95676af148e7a7662c23665c67a3/apps/mobile/src/features/home/useThreadListActions.ts)
+  and
+  [Undo notice](https://github.com/pingdotgg/t3code/blob/5808469018fb95676af148e7a7662c23665c67a3/apps/mobile/src/features/home/ThreadUndoNotice.tsx).
+- [Mobile terminal modifiers](https://github.com/pingdotgg/t3code/blob/5808469018fb95676af148e7a7662c23665c67a3/apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx).
+- [Composer stash and thread/terminal context](https://github.com/pingdotgg/t3code/blob/5808469018fb95676af148e7a7662c23665c67a3/apps/web/src/components/chat/ChatComposer.tsx).
+- [Notification response consumption](https://github.com/pingdotgg/t3code/blob/5808469018fb95676af148e7a7662c23665c67a3/apps/mobile/src/features/agent-awareness/notificationResponseConsumer.ts)
+  and
+  [foreground behavior](https://github.com/pingdotgg/t3code/blob/5808469018fb95676af148e7a7662c23665c67a3/apps/mobile/src/features/agent-awareness/foregroundNotificationBehavior.ts).
+- [Mobile hardware-keyboard commands](https://github.com/pingdotgg/t3code/blob/5808469018fb95676af148e7a7662c23665c67a3/apps/mobile/src/features/keyboard/HardwareKeyboardCommandProvider.tsx).
+
+Reading-position restoration is a probable further gap: T3 remembers a message/offset in
+[useTimelinePositionRestore](https://github.com/pingdotgg/t3code/blob/5808469018fb95676af148e7a7662c23665c67a3/apps/web/src/components/chat/useTimelinePositionRestore.ts),
+while Dovo retains history pages but normally follows the live end. Reproduce navigation and mount
+behavior before changing it; explicit search/reveal and live following must take precedence. A
+narrative PR tour is another presentation option, but Dovo already has AI review organization,
+revision-aware diffs and review comments; it is not a missing review capability.
+
+Dovo already covers indexed cross-computer search, paged history/search, bookmarks, queue/steer,
+forks, native tool discovery/delegation, cached offline conversations, reconnect backoff, worktree
+preparation/retry and PR linking/review/merge. No additional speed benefit was measured here.
+
+Raw GitHub retrieval was unavailable during the review. The cited cached T3 files were checked
+against Git blob hashes in the downloaded tree for the pinned SHA, including files read from the
+older local checkout. This confirms source identity, not runtime behavior. Native iOS/Android
+rendering, keyboard handling and notification delivery were not tested in this review.
