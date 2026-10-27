@@ -10,6 +10,7 @@ import { decodeResult } from '@dovo/protocol'
 import { checkAdapterUpdates } from '../../agents/execution/diagnostics.js'
 import { modelPreferencesSchema, agentPresetSchema, mutableArray } from '@dovo/protocol'
 import { canChangeTaskCheckout, taskFamilyIds, taskSchema } from '@dovo/protocol'
+import { taskMachineDraftState, taskMachineDraftStateSchema } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
 import { runtimeDefaultsSchema } from '@dovo/protocol'
 import { acpRoute } from './acp-routes.js'
@@ -338,7 +339,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             gitIdentity: Schema.String,
             projectKind: Schema.optional(Schema.Literals(['scratch', 'folder'])),
           }),
-          yield* serviceResult(body(request)),
+          s.store.restoreSecrets(yield* serviceResult(body(request))),
         )
         const repo = s.store.get().repositories.find((repo) => repo.id === input.task.repositoryId)
         if (
@@ -356,6 +357,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         if (
           !canChangeTaskCheckout(input.task) ||
           input.task.draftAttachments?.length ||
+          input.task.draftTurnSettings ||
           input.task.workItem ||
           input.task.archivedAt ||
           input.task.worktreeSetupComplete !== undefined ||
@@ -369,8 +371,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             throw new HttpError(409, 'This task already started on the destination machine')
           if (!existing.archivedAt) {
             if (
-              existing.draft !== input.task.draft ||
-              existing.repositoryId !== input.task.repositoryId
+              !isDeepStrictEqual(taskMachineDraftState(existing), taskMachineDraftState(input.task))
             )
               throw new HttpError(
                 409,
@@ -388,11 +389,12 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           mutableStruct({
             id: idSchema,
             draft: Schema.String,
+            expected: taskMachineDraftStateSchema,
             repositoryId: idSchema,
             gitIdentity: Schema.String,
             projectKind: Schema.optional(Schema.Literals(['scratch', 'folder'])),
           }),
-          yield* serviceResult(body(request)),
+          s.store.restoreSecrets(yield* serviceResult(body(request))),
         )
         const repo = s.store.get().repositories.find((repo) => repo.id === input.repositoryId)
         if (
@@ -413,6 +415,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         if (
           task.draft !== input.draft ||
           task.repositoryId !== input.repositoryId ||
+          !isDeepStrictEqual(taskMachineDraftState(task), input.expected) ||
           !!task.draftAttachments?.length ||
           !canChangeTaskCheckout(task)
         )
@@ -1061,6 +1064,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           mutableStruct({
             id: idSchema,
             checkoutId: Schema.optional(idSchema),
+            fresh: Schema.optional(Schema.Boolean),
             path: Schema.optional(maxValue(minValue(Schema.String, 1), 4000)),
             contents: Schema.optional(maxValue(Schema.String, 1024 * 1024)),
             expectedContents: Schema.optional(maxValue(Schema.String, 1024 * 1024)),
@@ -1084,7 +1088,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             ? repo.path
             : yield* serviceResult(s.checkouts.directory(input.id))
         if (path === '/api/tasks/files/list')
-          return { files: yield* serviceResult(s.projectFiles.all(cwd, !!repo.kind)) }
+          return { files: yield* serviceResult(s.projectFiles.all(cwd, !!repo.kind, input.fresh)) }
         if (!input.path) throw new HttpError(400, 'File path is required')
         const filename = yield* serviceResult(
           safeFile(yield* serviceResult(repositoryPath(cwd)), input.path),

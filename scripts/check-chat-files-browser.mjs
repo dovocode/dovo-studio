@@ -33,13 +33,12 @@ const mocks = {
   'expo-file-system': `export class File {constructor(){throw new Error('Unexpected native file access in chat-file preview')}};export const Paths={cache:''};`,
   'expo-sharing': `export const isAvailableAsync=async()=>{throw new Error('Unexpected native sharing in chat-file preview')};export const shareAsync=isAvailableAsync;`,
   'expo-crypto': "let id=0;export const randomUUID=()=> 'chat-file-'+(++id);",
-  'react-native-webview':
-    'export default ({source})=>source.html?<iframe title="Native visualization" sandbox="allow-scripts" srcDoc={source.html}/>:<div data-video-preview={source.uri}><video src={window.fakeVideo} controls style={{width:"100%",borderRadius:10}}/></div>;',
+  'react-native-webview': `import {useState,useEffect} from 'react';export default props=>{const {source}=props;const [id]=useState(()=>window.fileViewId=(window.fileViewId??0)+1);window.fileViews??=new Map();window.fileViews.set(id,props);useEffect(()=>()=>window.fileViews.delete(id),[]);return source.html?<iframe title="Native visualization" sandbox="allow-scripts" srcDoc={source.html}/>:<div data-file-webview={id} data-video-preview={source.uri}><video src={window.fakeVideo} controls style={{width:"100%",borderRadius:10}}/></div>};`,
 
   './mermaid-diagram': 'export const MermaidDiagram=()=>null;',
   './open-link':
     'export const openAppLink=async(url,external)=>{window.opened.push(url);window.external=external};export const useOpenAppLink=()=>openAppLink;',
-  'react-native': `export const useWindowDimensions=()=>({height:844,width:390});export const ActivityIndicator=()=>null;export const ScrollView=({children})=><div>{children}</div>;export const Platform={OS:'ios'};export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',minWidth:0,...style}}>{children}</div>;export const Pressable=({children,onPress,accessibilityLabel,style})=><button aria-label={accessibilityLabel} onClick={onPress} style={{display:'flex',font:'inherit',textAlign:'left',color:'inherit',background:'transparent',...style}}>{children}</button>;export const Alert={alert:(title,message)=>window.alerts.push(title+': '+message)};`,
+  'react-native': `export const AppState={currentState:'active'};window.fileAppState=AppState;export const useWindowDimensions=()=>({height:844,width:390});export const ActivityIndicator=()=>null;export const ScrollView=({children})=><div>{children}</div>;export const Platform={OS:'ios'};export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',minWidth:0,...style}}>{children}</div>;export const Pressable=({children,onPress,accessibilityLabel,style})=><button aria-label={accessibilityLabel} onClick={onPress} style={{display:'flex',font:'inherit',textAlign:'left',color:'inherit',background:'transparent',...style}}>{children}</button>;export const Alert={alert:(title,message)=>window.alerts.push(title+': '+message)};`,
   'react-native-enriched-markdown': `import {fromMarkdown} from 'mdast-util-from-markdown';const nativeStyle=style=>{const {underline,...rest}=style??{};return {...rest,textDecoration:underline?'underline':undefined,lineHeight:style?.lineHeight?style.lineHeight+'px':undefined}};export const EnrichedMarkdownText=({markdown,onLinkPress,markdownStyle})=>{const render=node=>node.type==='link'?<a style={nativeStyle({...markdownStyle.link,...Object.entries(markdownStyle.linkVariants??{}).find(([pattern])=>new RegExp(pattern).test(node.url))?.[1]})} href={node.url} onClick={event=>{event.preventDefault();onLinkPress({url:node.url})}}>{node.children.map(render)}</a>:node.type==='paragraph'?<p style={nativeStyle(markdownStyle.paragraph)}>{node.children.map(render)}</p>:node.type==='heading'?<h2 style={nativeStyle(markdownStyle['h'+node.depth])}>{node.children.map(render)}</h2>:node.children?<>{node.children.map((child,index)=><span key={index}>{render(child)}</span>)}</>:node.value??'';return <div>{render(fromMarkdown(markdown))}</div>};`,
 }
 const built = await build({
@@ -257,6 +256,49 @@ try {
   )
   await mobile.getByRole('button', { name: 'Preview Design report', exact: true }).click()
   await mobile.getByRole('dialog').locator('[data-video-preview]').waitFor()
+  const richPreview = mobile.getByRole('dialog').locator('[data-file-webview]')
+  const beforeRecovery = await richPreview.getAttribute('data-file-webview')
+  const beforeRecoveryReads = await page.evaluate(() => window.reads.length)
+  await page.evaluate((id) => {
+    window.oldFileView = window.fileViews.get(Number(id))
+    window.oldFileView.onContentProcessDidTerminate()
+  }, beforeRecovery)
+  await page.waitForFunction(
+    (id) =>
+      document.querySelector('[data-client="mobile"] [role="dialog"] [data-file-webview]')?.dataset
+        .fileWebview !== id,
+    beforeRecovery,
+  )
+  await richPreview.waitFor()
+  assert.ok(await page.evaluate((count) => window.reads.length > count, beforeRecoveryReads))
+  const recoveredPreview = await richPreview.getAttribute('data-file-webview')
+  const recoveredReads = await page.evaluate(() => window.reads.length)
+  await page.evaluate(() => {
+    window.oldFileView.onRenderProcessGone()
+    window.oldFileView.onError({ nativeEvent: { description: 'Stale preview error' } })
+  })
+  assert.equal(await richPreview.getAttribute('data-file-webview'), recoveredPreview)
+  assert.equal(await page.evaluate(() => window.reads.length), recoveredReads)
+  await page.evaluate(
+    (id) => window.fileViews.get(Number(id)).onRenderProcessGone(),
+    recoveredPreview,
+  )
+  await mobile.getByRole('button', { name: 'Retry preview', exact: true }).waitFor()
+  assert.equal(await richPreview.count(), 0, 'Repeated crashes stop automatic preview remounts')
+  assert.equal(await page.evaluate(() => window.reads.length), recoveredReads)
+  await mobile.getByRole('button', { name: 'Retry preview', exact: true }).click()
+  await richPreview.waitFor()
+  const retriedPreview = await richPreview.getAttribute('data-file-webview')
+  const beforeBackgroundCrash = await page.evaluate(() => window.reads.length)
+  await page.evaluate((id) => {
+    window.fileAppState.currentState = 'background'
+    window.fileViews.get(Number(id)).onContentProcessDidTerminate()
+  }, retriedPreview)
+  await mobile.getByRole('button', { name: 'Retry preview', exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.reads.length), beforeBackgroundCrash)
+  await page.evaluate(() => (window.fileAppState.currentState = 'active'))
+  await mobile.getByRole('button', { name: 'Retry preview', exact: true }).click()
+  await richPreview.waitFor()
   const mobileSharesBeforeRefresh = await page.evaluate(
     () => window.reads.filter((row) => row.path.endsWith('/share')).length,
   )

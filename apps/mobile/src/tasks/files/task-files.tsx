@@ -41,6 +41,7 @@ export function TaskFiles({
   const [query, setQuery] = useState('')
   const filter = useDeferredValue(query.trim().toLowerCase())
   const [revision, setRevision] = useState(0)
+  const refreshOwner = useRef<string | null>(null)
   const [listing, setListing] = useState<{ key: string; files: string[]; error?: string }>()
   const [result, setResult] = useState<{ key: string; file: FileResult }>()
   const [saving, setSaving] = useState(false)
@@ -74,11 +75,14 @@ export function TaskFiles({
     let active = true
     void call(
       '/api/tasks/files/list',
-      { id: task.id, checkoutId: checkoutId || undefined },
+      { id: task.id, checkoutId: checkoutId || undefined, fresh: refreshOwner.current === owner },
       responses.projectFileList,
     ).then(
       (result) => {
-        if (active) setListing({ key: listKey, files: result.files })
+        if (active) {
+          if (refreshOwner.current === owner) refreshOwner.current = null
+          setListing({ key: listKey, files: result.files })
+        }
       },
       (error) => {
         if (active)
@@ -92,7 +96,7 @@ export function TaskFiles({
     return () => {
       active = false
     }
-  }, [call, connected, task.id, checkoutId, listKey])
+  }, [call, connected, task.id, checkoutId, listKey, owner])
   useEffect(() => {
     if (!connected || !selected) return
     let active = true
@@ -212,7 +216,12 @@ export function TaskFiles({
             secondary
             label="Refresh files"
             disabled={!connected || saving}
-            onPress={() => discardThen(() => setRevision((value) => value + 1))}
+            onPress={() =>
+              discardThen(() => {
+                refreshOwner.current = owner
+                setRevision((value) => value + 1)
+              })
+            }
           />
         </View>
         {!connected && <Text style={styles.muted}>Reconnect to browse and save files.</Text>}

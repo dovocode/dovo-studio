@@ -168,7 +168,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     listLimit === undefined
       ? 0
       : overviews.reduce((sum, entry) => sum + (entry.snapshot?.olderSettled?.omitted ?? 0), 0)
-  const historySearch = useTaskSearch(entries, query)
+  const historySearch = useTaskSearch(entries, query, focused)
   const searchKeys = JSON.stringify([...historySearch.keys].sort())
   const projectGroups = useMemo(
     () =>

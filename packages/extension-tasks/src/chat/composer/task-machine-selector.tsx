@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { useWorkspace, useStudioHost } from '@dovo/studio-core'
-import { taskMachineDraft, taskSchema, type Task } from '@dovo/protocol'
+import { taskMachineDraft, taskMachineDraftState, taskSchema, type Task } from '@dovo/protocol'
 import { taskSources } from '../../list/task-collection'
 
 export async function moveTaskDraft(
@@ -15,6 +15,13 @@ export async function moveTaskDraft(
   const repository = store.workspace.repositories.find((item) => item.id === task.repositoryId)
   if (!profile || !repository) throw new Error('This machine or project is no longer available.')
   if (!source.online) throw new Error('This machine is offline.')
+  if (
+    store.snapshot?.checkedDraftMoveSupported !== true ||
+    source.snapshot?.checkedDraftMoveSupported !== true
+  )
+    throw new Error(
+      'Update Dovo on both computers before moving drafts. The source draft has been preserved.',
+    )
   await store.flush()
   await store.readRuntime(
     profile,
@@ -35,6 +42,7 @@ export async function moveTaskDraft(
       id: task.id,
       repositoryId: task.repositoryId,
       draft: task.draft,
+      expected: taskMachineDraftState(task),
       gitIdentity: repository.gitIdentity ?? '',
       projectKind: repository.kind,
     },

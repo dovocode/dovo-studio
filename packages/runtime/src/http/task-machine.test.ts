@@ -1,7 +1,13 @@
 import { afterEach, expect, it } from 'vite-plus/test'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
-import { decode, taskSchema } from '@dovo/protocol'
+import {
+  decode,
+  taskSchema,
+  taskMachineDraftState,
+  defaultTaskHarness,
+  type Task,
+} from '@dovo/protocol'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
@@ -49,6 +55,36 @@ it('receives drafts idempotently, verifies Git identity, and never starts a chec
     (await post('/api/tasks/draft-receive', { task, gitIdentity: 'github.com/test/project' }))
       .status,
   ).toBe(200)
+  const conflicts: Partial<Task>[] = [
+    { draftTurnSettings: { provider: 'codex', model: 'other', reasoning: 'high' } },
+    { agentOverrides: { model: 'other' } },
+    { harness: defaultTaskHarness('claude') },
+    { execution: 'main' },
+    { setupCommand: 'echo destination setup' },
+  ]
+  for (const changed of conflicts) {
+    s.store.updateTask(task.id, (current) => ({ ...current, ...changed }))
+    const retained = taskMachineDraftState(s.store.task(task.id))
+    const conflict = await post('/api/tasks/draft-receive', {
+      task,
+      gitIdentity: 'github.com/test/project',
+    })
+    expect(conflict.status).toBe(409)
+    expect(await conflict.text()).toContain('different draft')
+    expect(taskMachineDraftState(s.store.task(task.id))).toEqual(retained)
+    s.store.updateTaskHistory(task.id, () => task)
+  }
+  expect(
+    (
+      await post('/api/tasks/draft-moved', {
+        id: task.id,
+        repositoryId: task.repositoryId,
+        draft: task.draft,
+        gitIdentity: 'github.com/test/project',
+      })
+    ).status,
+  ).toBe(400)
+  expect(s.store.task(task.id).archivedAt).toBeUndefined()
   expect(s.store.task(task.id).messages).toHaveLength(0)
   await expect(s.tasks.start(task.id)).rejects.toThrow('first prompt')
   await expect(s.checkouts.directory(task.id)).rejects.toThrow('first prompt')
@@ -68,11 +104,13 @@ it('receives drafts idempotently, verifies Git identity, and never starts a chec
         id: task.id,
         repositoryId: 'repo',
         draft: 'stale text',
+        expected: taskMachineDraftState(task),
         gitIdentity: 'github.com/test/project',
       })
     ).status,
   ).toBe(409)
   expect(s.store.task(task.id).archivedAt).toBeUndefined()
+  const sourceDraft = s.store.task(task.id)
   expect(
     (
       await post('/api/tasks/draft-moved', {
@@ -80,6 +118,7 @@ it('receives drafts idempotently, verifies Git identity, and never starts a chec
         repositoryId: 'repo',
         gitIdentity: 'github.com/test/project',
         draft: task.draft,
+        expected: taskMachineDraftState(sourceDraft),
       })
     ).status,
   ).toBe(200)
@@ -100,6 +139,7 @@ it('receives drafts idempotently, verifies Git identity, and never starts a chec
         repositoryId: 'repo',
         gitIdentity: 'github.com/test/project',
         draft: task.draft,
+        expected: taskMachineDraftState(task),
       })
     ).status,
   ).toBe(409)
@@ -162,6 +202,7 @@ it.each(['scratch', 'folder'] as const)(
           id: task.id,
           repositoryId: 'scratch',
           draft: task.draft,
+          expected: taskMachineDraftState(task),
           gitIdentity: '',
           projectKind: kind,
         })

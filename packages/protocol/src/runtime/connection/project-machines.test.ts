@@ -126,6 +126,25 @@ it('keeps explicit draft permissions when destination defaults are broader', () 
   })
   expect(moved.agentOverrides).toBeUndefined()
 })
+it('preserves provider-bound next-message overrides by rejecting a computer move', () => {
+  const task = decode(taskSchema, {
+    id: 'draft',
+    title: 'Draft',
+    repositoryId: 'source',
+    agentId: '',
+    status: 'draft',
+    createdAt: '',
+    messages: [],
+    files: [],
+    draft: 'Keep my settings',
+    example: false,
+    draftTurnSettings: { provider: 'codex', model: 'specialized-model', reasoning: 'high' },
+  })
+  expect(() =>
+    taskMachineDraft(task, { id: 'target', name: 'Target', path: '/target', branch: '' }),
+  ).toThrow('Clear next-message overrides')
+  expect(task.draftTurnSettings?.model).toBe('specialized-model')
+})
 it('uses stable group labels independent of runtime order', () => {
   const entries = ['Project checkout', 'Project'].map((name, index) => ({
     runtimeId: `${index}`,

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../index'
-import { attachmentFileName } from './attachments'
+import { attachmentFileName, Attachments } from './attachments'
 import { WorkspaceStore } from './workspace'
 import { fixture } from '../testing/fixture'
 import { claudeInput } from '../agents/providers/claude/claude-input'
@@ -16,6 +16,97 @@ afterEach(async () => {
 const token = 'attachment-test-owner-token-with-32-characters'
 const png =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1kAAAAASUVORK5CYII='
+
+it.each(['before', 'during', 'after'] as const)(
+  'cancels an upload %s commit without removing other draft files or allowing a late retry',
+  async (stage) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const r = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    cleanups.push(r.close)
+    const s = r.services
+    s.store.update(() => f.workspace)
+    const task = s.tasks.create({
+      title: 'Files',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: '',
+    })
+    const retained = await s.attachments.upload({
+      taskId: task.id,
+      id: randomUUID(),
+      name: 'keep.txt',
+      data: Buffer.from('Keep this draft attachment').toString('base64'),
+    })
+    const input = { taskId: task.id, id: randomUUID(), name: 'context.png', data: png }
+    let pending: Promise<unknown>
+    if (stage === 'before') {
+      s.attachments.removeDraft(task.id, input.id)
+      pending = s.attachments.upload(input)
+    } else if (stage === 'during') {
+      // Upload awaits MIME detection before its transaction. Cancel in that window.
+      pending = s.attachments.upload(input)
+      s.attachments.removeDraft(task.id, input.id)
+    } else {
+      await s.attachments.upload(input)
+      s.attachments.removeDraft(task.id, input.id)
+      pending = Promise.resolve()
+    }
+    const [result] = await Promise.allSettled([pending])
+    const conflict = expect.objectContaining({ status: 409 })
+    expect(result).toEqual(
+      stage === 'after'
+        ? { status: 'fulfilled', value: undefined }
+        : { status: 'rejected', reason: conflict },
+    )
+    expect(s.store.task(task.id).draftAttachments).toEqual([retained.attachment])
+    const reopened = new Attachments(s.db, s.store, s.activity)
+    cleanups.push(() => reopened.dispose())
+    await expect(reopened.upload(input)).rejects.toMatchObject({ status: 409 })
+    expect(s.store.task(task.id).draftAttachments).toEqual([retained.attachment])
+  },
+)
+
+it('rejects cross-task cancellation and expires cancelled uploads with pending attachment lifetimes', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const r = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(r.close)
+  const s = r.services
+  s.store.update(() => f.workspace)
+  const create = (title: string) =>
+    s.tasks.create({ title, repositoryId: 'repo', agentId: 'agent', objective: '' })
+  const task = create('Original'),
+    other = create('Other')
+  const upload = await s.attachments.upload({
+    taskId: task.id,
+    id: randomUUID(),
+    name: 'keep.txt',
+    data: Buffer.from('Keep').toString('base64'),
+  })
+  const response = await fetch(`http://127.0.0.1:${r.port}/api/attachments/remove`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId: other.id, id: upload.attachment.id }),
+  })
+  expect(response.status).toBe(400)
+  expect(s.store.task(task.id).draftAttachments).toEqual([upload.attachment])
+  const cancelled = randomUUID(),
+    expired = randomUUID(),
+    deleted = randomUUID()
+  for (const id of [cancelled, expired, deleted]) s.attachments.removeDraft(task.id, id)
+  expect(() => s.attachments.removeDraft(other.id, cancelled)).toThrow('another task')
+  s.db
+    .prepare('UPDATE cancelled_attachment_uploads SET created_at=? WHERE id=?')
+    .run(Date.now() - 24 * 60 * 60 * 1000 - 1, expired)
+  s.db
+    .prepare('UPDATE cancelled_attachment_uploads SET task=? WHERE id=?')
+    .run('deleted-task', deleted)
+  await s.attachments.prune()
+  expect(s.db.prepare('SELECT id FROM cancelled_attachment_uploads').all()).toEqual([
+    { id: cancelled },
+  ])
+})
 it('accepts a 5 MB file over HTTP and rejects one byte over without storing it', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)

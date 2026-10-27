@@ -3,6 +3,7 @@ import { View } from 'react-native'
 import {
   canChangeTaskCheckout,
   taskMachineDraft,
+  taskMachineDraftState,
   taskSchema,
   type Task,
   type Repository,
@@ -76,6 +77,13 @@ export function TaskMachineSelector({
           const origin = runtime.profile
           if (!destination?.connected || !origin || !repository)
             throw new Error('This machine or project is unavailable.')
+          if (
+            runtime.snapshot?.checkedDraftMoveSupported !== true ||
+            destination.snapshot?.checkedDraftMoveSupported !== true
+          )
+            throw new Error(
+              'Update Dovo on both computers before moving drafts. The source draft has been preserved.',
+            )
           const next = taskMachineDraft(
             { ...task, draft: text, autoProject: preserveAuto ? task.autoProject : undefined },
             target,
@@ -96,6 +104,7 @@ export function TaskMachineSelector({
               id: task.id,
               repositoryId: task.repositoryId,
               draft: task.draft,
+              expected: taskMachineDraftState(task),
               gitIdentity: repository.gitIdentity ?? '',
               projectKind: repository.kind,
             },

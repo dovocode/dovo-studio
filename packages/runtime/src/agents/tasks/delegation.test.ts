@@ -1530,12 +1530,14 @@ it('follows up in the same child conversation without duplicate work or stale co
         provider: 'claude',
       })
       expect((await s.tasks.subagentWait(parentId, child.id)).result).toBe('Answer 1')
+      s.store.updateTask(child.id, (task) => ({ ...task, draft: 'Review the fix' }))
       await s.tasks.subagentSend(parentId, child.id, 'follow-up', 'Review the fix')
       await s.tasks.subagentSend(parentId, child.id, 'follow-up', 'Review the fix')
       await expect(
         s.tasks.subagentSend(parentId, child.id, 'follow-up', 'Changed prompt'),
       ).rejects.toThrow('different text')
       expect((await s.tasks.subagentWait(parentId, child.id)).result).toBe('Answer 2')
+      expect(s.store.task(child.id).draft).toBe('Review the fix')
       expect(
         s.store
           .task(child.id)

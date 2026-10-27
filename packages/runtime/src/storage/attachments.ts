@@ -25,6 +25,7 @@ const rowSchema = mutableStruct({
   metadata: Schema.String,
   data: Schema.instanceOf(Buffer),
 })
+const PENDING_UPLOAD_LIFETIME = 24 * 60 * 60 * 1000
 /** Reduces an uploaded name to the file name that is stored and later written to disk.
  * Validation runs on that normalized value, so `a/..` cannot pass as a raw name and then
  * materialize as a directory reference. */
@@ -46,6 +47,9 @@ export class Attachments {
     )
     db.exec(
       'CREATE TABLE IF NOT EXISTS queued_attachment_uploads (id TEXT PRIMARY KEY, task TEXT NOT NULL, created_at INTEGER NOT NULL)',
+    )
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS cancelled_attachment_uploads (id TEXT PRIMARY KEY, task TEXT NOT NULL, created_at INTEGER NOT NULL)',
     )
     this.root =
       db.name === ':memory:'
@@ -81,6 +85,10 @@ export class Attachments {
     if (replaceId === input.id) throw new HttpError(400, 'Edited images need a new attachment ID')
     return this.upload(input, replaceId)
   }
+  private assertUploadActive(id: string) {
+    if (this.db.prepare('SELECT 1 FROM cancelled_attachment_uploads WHERE id=?').get(id))
+      throw new HttpError(409, 'This attachment upload was cancelled. Choose the file again.')
+  }
   async upload(value: unknown, replaceId?: string) {
     const input = decode(attachmentUploadSchema, value)
     const task = this.store.taskSummary(input.taskId)
@@ -90,6 +98,7 @@ export class Attachments {
     )
       throw new HttpError(409, 'This message already started or was removed')
     if (task.archivedAt) throw new HttpError(409, 'Restore the task before attaching files')
+    this.assertUploadActive(input.id)
     const data = Buffer.from(input.data, 'base64')
     if (data.toString('base64') !== input.data) throw new HttpError(400, 'Invalid file data')
     const name = attachmentFileName(input.name)
@@ -123,6 +132,7 @@ export class Attachments {
       size: data.length,
     })
     this.store.transaction(() => {
+      this.assertUploadActive(input.id)
       const current = this.store.taskSummary(input.taskId)
       if (current.archivedAt) throw new HttpError(409, 'Restore the task before attaching files')
       if (this.db.prepare('SELECT id FROM attachments WHERE id=?').get(input.id)) {
@@ -177,12 +187,27 @@ export class Attachments {
     }
   }
   removeDraft(taskId: string, id: string) {
-    this.store.updateTask(taskId, (t) => ({
-      ...t,
-      draftAttachments: t.draftAttachments?.filter((f) => f.id !== id),
-    }))
-    this.activity.add('attachment', taskId, 'Removed draft attachment', {
-      id,
+    this.store.transaction(() => {
+      this.store.taskSummary(taskId)
+      const owner = this.db.prepare('SELECT task FROM attachments WHERE id=?').get(id)
+      const cancelled = this.db
+        .prepare('SELECT task FROM cancelled_attachment_uploads WHERE id=?')
+        .get(id)
+      for (const row of [owner, cancelled])
+        if (row && decode(mutableStruct({ task: Schema.String }), row).task !== taskId)
+          throw new HttpError(400, 'Attachment belongs to another task')
+      // IDs are immutable. Record removal before an in-flight upload can commit so a
+      // lost response or cancellation during MIME detection cannot reattach the file.
+      this.db
+        .prepare(
+          'INSERT INTO cancelled_attachment_uploads VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET created_at=excluded.created_at',
+        )
+        .run(id, taskId, Date.now())
+      this.store.updateTask(taskId, (t) => ({
+        ...t,
+        draftAttachments: t.draftAttachments?.filter((f) => f.id !== id),
+      }))
+      this.activity.add('attachment', taskId, 'Removed draft attachment', { id })
     })
   }
   async materialize(taskId: string, file: Attachment) {
@@ -225,9 +250,26 @@ export class Attachments {
         mutableStruct({ id: Schema.String, task: Schema.String, created_at: Schema.Number }),
         row,
       )
-      if (taskIds.has(upload.task) && upload.created_at > Date.now() - 24 * 60 * 60 * 1000)
+      if (taskIds.has(upload.task) && upload.created_at > Date.now() - PENDING_UPLOAD_LIFETIME)
         retained.add(upload.id)
       else removePending.run(upload.id)
+    }
+    const cancellations = this.db
+      .prepare('SELECT id, task, created_at FROM cancelled_attachment_uploads')
+      .all()
+    const removeCancellation = this.db.prepare(
+      'DELETE FROM cancelled_attachment_uploads WHERE id=?',
+    )
+    for (const row of cancellations) {
+      const cancelled = decode(
+        mutableStruct({ id: Schema.String, task: Schema.String, created_at: Schema.Number }),
+        row,
+      )
+      if (
+        !taskIds.has(cancelled.task) ||
+        cancelled.created_at <= Date.now() - PENDING_UPLOAD_LIFETIME
+      )
+        removeCancellation.run(cancelled.id)
     }
     const rows = this.db
       .prepare('SELECT id FROM attachments')

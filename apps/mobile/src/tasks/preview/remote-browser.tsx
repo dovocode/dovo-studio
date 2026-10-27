@@ -25,6 +25,7 @@ import { usePreviewActive } from './use-preview-active'
 import { BrowserToolbar, type BrowserMode } from './browser-toolbar'
 import { browserAddress } from '../../browser/browser-state'
 import { useOpenAppLink } from '../../ui/content/open-link'
+import { Action } from '../../ui/controls/action'
 const bridgeSchema = mutableStruct({
   channel: Schema.Literal('dovo-browser'),
   type: Schema.Literals(['ready', 'reconnect', 'close', 'screenshot']),
@@ -47,10 +48,20 @@ type RemoteBrowserProps = {
   onControls?: (controls: RemoteBrowserControls | null) => void
 }
 export function RemoteBrowser(props: RemoteBrowserProps) {
+  const { connection } = useRuntime()
+  const identity = JSON.stringify([
+    connection?.address,
+    connection?.token,
+    connection ? createRuntimeClient(connection).url('/') : undefined,
+    props.taskId,
+    props.tabId,
+    props.profileId,
+    props.deviceId,
+  ])
   return props.tabId ? (
-    <RemoteBrowserContent key={`${props.tabId}:${props.profileId ?? 'default'}`} {...props} />
+    <RemoteBrowserContent key={identity} {...props} />
   ) : (
-    <ThreadRemoteBrowser {...props} />
+    <ThreadRemoteBrowser key={identity} {...props} />
   )
 }
 function ThreadRemoteBrowser(props: RemoteBrowserProps) {
@@ -99,6 +110,11 @@ function RemoteBrowserContent({
   const visible = useRef(active)
   const web = useRef<WebView>(null)
   const [generation, setGeneration] = useApplicationState(0)
+  const [processFailed, setProcessFailed] = useApplicationState(false)
+  const webGeneration = useRef(0)
+  const recovered = useRef(false)
+  const failed = useRef(false)
+  const mounted = useRef(true)
   const current = useRef(0)
   const pending = useRef(false)
   const ready = useRef(false)
@@ -233,13 +249,37 @@ function RemoteBrowserContent({
     }
   }, [active])
   useLayoutEffect(() => {
+    mounted.current = true
     return () => {
+      mounted.current = false
       visible.current = false
       current.current++
       pending.current = false
       web.current?.injectJavaScript("window.dispatchEvent(new Event('pagehide'));true;")
     }
   }, [])
+  const remount = () => {
+    current.current++
+    pending.current = false
+    ready.current = false
+    setOnline(false)
+    webGeneration.current++
+    setGeneration(webGeneration.current)
+  }
+  const processLost = () => {
+    if (!mounted.current || generation !== webGeneration.current || failed.current) return
+    if (recovered.current) {
+      current.current++
+      pending.current = false
+      ready.current = false
+      failed.current = true
+      setOnline(false)
+      setProcessFailed(true)
+    } else {
+      recovered.current = true
+      remount()
+    }
+  }
   return (
     <View style={styles.screen}>
       {screenshots?.editor}
@@ -248,131 +288,138 @@ function RemoteBrowserContent({
           {screenshots.error}
         </Text>
       ) : null}
-      <WebView
-        key={generation}
-        ref={web}
-        source={{
-          html: remoteBrowserHtml,
-        }}
-        style={styles.screen}
-        originWhitelist={['*']}
-        allowFileAccess={false}
-        mixedContentMode="always"
-        keyboardDisplayRequiresUserAction={false}
-        hideKeyboardAccessoryView
-        allowsBackForwardNavigationGestures={false}
-        bounces={false}
-        scrollEnabled={false}
-        overScrollMode="never"
-        onShouldStartLoadWithRequest={(request) => request.url === 'about:blank'}
-        onContentProcessDidTerminate={() => {
-          current.current++
-          pending.current = false
-          ready.current = false
-          setOnline(false)
-          setGeneration((value) => value + 1)
-        }}
-        onRenderProcessGone={() => {
-          current.current++
-          pending.current = false
-          ready.current = false
-          setOnline(false)
-          setGeneration((value) => value + 1)
-        }}
-        onMessage={(event) => {
-          let message: unknown
-          try {
-            message = JSON.parse(event.nativeEvent.data)
-          } catch {
-            return
-          }
-          if (
-            !deviceId &&
-            message &&
-            typeof message === 'object' &&
-            'channel' in message &&
-            message.channel === 'dovo-browser'
-          ) {
-            if ('type' in message && message.type === 'focusAddress') {
-              addressField.current?.focus()
+      {processFailed ? (
+        <View style={styles.content}>
+          <Text accessibilityRole="alert" style={styles.error}>
+            The browser preview stopped. Retry to connect again.
+          </Text>
+          <Action
+            label="Retry browser"
+            disabled={!active}
+            onPress={() => {
+              recovered.current = false
+              failed.current = false
+              setProcessFailed(false)
+              remount()
+            }}
+          />
+        </View>
+      ) : (
+        <WebView
+          key={generation}
+          ref={web}
+          source={{
+            html: remoteBrowserHtml,
+          }}
+          style={styles.screen}
+          originWhitelist={['*']}
+          allowFileAccess={false}
+          mixedContentMode="always"
+          keyboardDisplayRequiresUserAction={false}
+          hideKeyboardAccessoryView
+          allowsBackForwardNavigationGestures={false}
+          bounces={false}
+          scrollEnabled={false}
+          overScrollMode="never"
+          onShouldStartLoadWithRequest={(request) => request.url === 'about:blank'}
+          onContentProcessDidTerminate={processLost}
+          onRenderProcessGone={processLost}
+          onMessage={(event) => {
+            if (!mounted.current || generation !== webGeneration.current || failed.current) return
+            let message: unknown
+            try {
+              message = JSON.parse(event.nativeEvent.data)
+            } catch {
               return
             }
             if (
-              'type' in message &&
-              message.type === 'performance' &&
-              'details' in message &&
-              typeof message.details === 'string'
+              !deviceId &&
+              message &&
+              typeof message === 'object' &&
+              'channel' in message &&
+              message.channel === 'dovo-browser'
             ) {
-              Alert.alert('Browser connection', message.details.slice(0, 2000))
+              if ('type' in message && message.type === 'focusAddress') {
+                addressField.current?.focus()
+                return
+              }
+              if (
+                'type' in message &&
+                message.type === 'performance' &&
+                'details' in message &&
+                typeof message.details === 'string'
+              ) {
+                Alert.alert('Browser connection', message.details.slice(0, 2000))
+                return
+              }
+              const state = decodeResult(remoteBrowserMessageSchema, message)
+              if (state.success && state.data.type === 'closed' && state.data.byPage) {
+                closedCallback.current?.()
+                return
+              }
+              if (state.success && state.data.type === 'state') {
+                setBrowserState(state.data)
+                stateCallback.current?.(state.data)
+                lastAddress.current = state.data.url === 'about:blank' ? '' : state.data.url
+                if (!editing.current) setAddress(lastAddress.current)
+                return
+              }
+              if (
+                'type' in message &&
+                message.type === 'connection' &&
+                'online' in message &&
+                typeof message.online === 'boolean'
+              ) {
+                setOnline(message.online)
+                return
+              }
+            }
+            const parsed = decodeResult(bridgeSchema, message)
+            if (!parsed.success) return
+            if (parsed.data.type === 'screenshot') {
+              if (!screenshots) return
+              if (
+                visible.current &&
+                AppState.currentState !== 'background' &&
+                parsed.data.image &&
+                !screenshots.busy
+              )
+                void screenshots.attach(parsed.data.image)
               return
             }
-            const state = decodeResult(remoteBrowserMessageSchema, message)
-            if (state.success && state.data.type === 'closed' && state.data.byPage) {
-              closedCallback.current?.()
-              return
-            }
-            if (state.success && state.data.type === 'state') {
-              setBrowserState(state.data)
-              stateCallback.current?.(state.data)
-              lastAddress.current = state.data.url === 'about:blank' ? '' : state.data.url
-              if (!editing.current) setAddress(lastAddress.current)
-              return
-            }
-            if (
-              'type' in message &&
-              message.type === 'connection' &&
-              'online' in message &&
-              typeof message.online === 'boolean'
-            ) {
-              setOnline(message.online)
-              return
-            }
-          }
-          const parsed = decodeResult(bridgeSchema, message)
-          if (!parsed.success) return
-          if (parsed.data.type === 'screenshot') {
-            if (!screenshots) return
-            if (
-              visible.current &&
-              AppState.currentState !== 'background' &&
-              parsed.data.image &&
-              !screenshots.busy
-            )
-              void screenshots.attach(parsed.data.image)
-            return
-          }
-          if (parsed.data.type === 'close') {
-            if (!visible.current || AppState.currentState === 'background') return
-            current.current++
-            pending.current = false
-            ready.current = false
-            void runClientEffect(
-              readEffect(
-                deviceId ? '/api/previews/simulator/close' : '/api/previews/browser/close',
-                {
-                  taskId,
-                  tabId,
-                  profileId: tabId ? profileId : undefined,
-                  id: deviceId,
-                },
-                responses.ok,
-              ).pipe(
-                Effect.catch((error) =>
-                  nativeEffect(() =>
-                    post({
-                      type: 'error',
-                      message: deviceHostMessage(String(error), profiles),
-                    }),
+            if (parsed.data.type === 'close') {
+              if (!visible.current || AppState.currentState === 'background') return
+              current.current++
+              pending.current = false
+              ready.current = false
+              void runClientEffect(
+                readEffect(
+                  deviceId ? '/api/previews/simulator/close' : '/api/previews/browser/close',
+                  {
+                    taskId,
+                    tabId,
+                    profileId: tabId ? profileId : undefined,
+                    id: deviceId,
+                  },
+                  responses.ok,
+                ).pipe(
+                  Effect.catch((error) =>
+                    nativeEffect(() =>
+                      post({
+                        type: 'error',
+                        message: deviceHostMessage(String(error), profiles),
+                      }),
+                    ),
                   ),
                 ),
-              ),
-            )
-          } else {
-            ready.current = true
-            void connect()
-          }
-        }}
-      />
+              )
+            } else {
+              ready.current = true
+              void connect()
+            }
+          }}
+        />
+      )}
       {!deviceId && !expanded && (
         <BrowserToolbar
           addressRef={addressField}

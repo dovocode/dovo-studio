@@ -76,7 +76,7 @@ const stubs = [
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {decode} from '@dovo/protocol';import {TaskFiles} from '${mobile}tasks/files/task-files';window.runtime={...window.runtime,call:async(path,input,schema)=>{const response=await fetch(window.runtime.connection.address+path,{method:'POST',headers:{Authorization:'Bearer '+window.runtime.connection.token,'Content-Type':'application/json'},body:JSON.stringify(input)});const result=await response.json();if(!response.ok)throw new Error(result.error??JSON.stringify(result));return decode(schema,result)}};function App(){const[draft,setDraft]=useState(null),[open,setOpen]=useState(true);window.toggleFiles=()=>setOpen(value=>!value);return open&&<TaskFiles task={window.task} draft={draft} onDraftChange={setDraft}/>};createRoot(document.getElementById('app')).render(<App/>);`,
+      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {decode} from '@dovo/protocol';import {TaskFiles} from '${mobile}tasks/files/task-files';window.runtime={...window.runtime,call:async(path,input,schema)=>{const response=await fetch(window.runtime.connection.address+path,{method:'POST',headers:{Authorization:'Bearer '+window.runtime.connection.token,'Content-Type':'application/json'},body:JSON.stringify(input)});const result=await response.json();if(!response.ok)throw new Error(result.error??JSON.stringify(result));return decode(schema,result)}};function App(){const[draft,setDraft]=useState(null),[open,setOpen]=useState(true),[,update]=useState(0);window.toggleFiles=()=>setOpen(value=>!value);window.setConnected=connected=>{window.runtime={...window.runtime,connected};update(value=>value+1)};return open&&<TaskFiles task={window.task} draft={draft} onDraftChange={setDraft}/>};createRoot(document.getElementById('app')).render(<App/>);`,
       loader: 'tsx',
       resolveDir: root + 'packages/studio-ui',
     },
@@ -140,6 +140,10 @@ try {
   assert.ok(address && typeof address !== 'string')
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   const errors = []
+  const listRequests = []
+  page.on('request', (request) => {
+    if (request.url().endsWith('/api/tasks/files/list')) listRequests.push(request.postDataJSON())
+  })
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`http://127.0.0.1:${address.port}`)
   await page.evaluate(
@@ -154,6 +158,73 @@ try {
     { task: s.store.task(task.id), port: runtime.port, token },
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  await page.getByRole('button', { name: 'empty.txt', exact: true }).waitFor()
+  await writeFile(join(directory, 'new-file.txt'), 'created after opening files\n')
+  await rm(join(directory, 'empty.txt'))
+  await page.getByRole('button', { name: 'Refresh files', exact: true }).click()
+  await page.getByRole('button', { name: 'new-file.txt', exact: true }).waitFor({ timeout: 5000 })
+  assert.equal(await page.getByRole('button', { name: 'empty.txt', exact: true }).count(), 0)
+  const delayedList = Promise.withResolvers()
+  const releaseList = Promise.withResolvers()
+  const listReleased = Promise.withResolvers()
+  await page.route(
+    '**/api/tasks/files/list',
+    async (route) => {
+      const response = await route.fetch()
+      delayedList.resolve()
+      await releaseList.promise
+      await route.fulfill({ response })
+      listReleased.resolve()
+    },
+    { times: 1 },
+  )
+  await writeFile(join(directory, 'stale-file.txt'), '')
+  await page.getByRole('button', { name: 'Refresh files', exact: true }).click()
+  await delayedList.promise
+  await rm(join(directory, 'stale-file.txt'))
+  await writeFile(join(directory, 'latest-file.txt'), '')
+  await page.getByRole('button', { name: 'Refresh files', exact: true }).click()
+  await page.getByRole('button', { name: 'latest-file.txt', exact: true }).waitFor()
+  releaseList.resolve()
+  await listReleased.promise
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(await page.getByRole('button', { name: 'latest-file.txt', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'stale-file.txt', exact: true }).count(), 0)
+  assert.equal(listRequests.at(-1).fresh, true)
+  await page.route(
+    '**/api/tasks/files/list',
+    (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Refresh failed' }),
+      }),
+    { times: 1 },
+  )
+  await page.getByRole('button', { name: 'Refresh files', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Refresh failed' }).waitFor()
+  await writeFile(join(directory, 'retried-file.txt'), '')
+  await page.evaluate(() => window.setConnected(false))
+  await page.getByText('Reconnect to browse and save files.', { exact: true }).waitFor()
+  await page.evaluate(() => window.setConnected(true))
+  await page.getByRole('button', { name: 'retried-file.txt', exact: true }).waitFor()
+  assert.equal(listRequests.at(-1).fresh, true, 'A failed explicit refresh remains fresh on retry')
+  await page.evaluate(() => window.setConnected(false))
+  await page.getByText('Reconnect to browse and save files.', { exact: true }).waitFor()
+  const beforeReconnect = listRequests.length
+  const reconnectResponse = page.waitForResponse((response) =>
+    response.url().endsWith('/api/tasks/files/list'),
+  )
+  await page.evaluate(() => window.setConnected(true))
+  await reconnectResponse
+  assert.equal(listRequests.length, beforeReconnect + 1)
+  assert.equal(
+    listRequests.at(-1).fresh,
+    false,
+    'Successful refresh does not disable the cache on reconnect',
+  )
   await page
     .getByRole('button', { name: 'src/hello.ts', exact: true })
     .click({ timeout: 5000 })
@@ -192,11 +263,12 @@ try {
   await page.getByRole('img', { name: 'pixel.png' }).waitFor()
   await page.getByRole('combobox', { name: 'Project folder' }).selectOption('link')
   await page.getByRole('button', { name: 'linked.txt', exact: true }).click()
+  assert.equal(listRequests.at(-1).fresh, false, 'Changing checkout retains ordinary cached reads')
   await page.getByText('linked contents', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Edit file' }).isDisabled(), true)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile thread files: folder tree/search, preview/image, saved edits, conflict protection, draft restoration and read-only linked projects passed.',
+    'Mobile thread files: fresh directory refresh with stale-reply protection, folder tree/search, preview/image, saved edits, conflict protection, draft restoration and read-only linked projects passed.',
   )
 } finally {
   await browser.close()

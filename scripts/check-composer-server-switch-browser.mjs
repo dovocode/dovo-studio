@@ -30,7 +30,7 @@ const built = await build({
       const task={id:'task',title:'Draft',repositoryId:'origin',agentId:'',status:'draft',createdAt:'2026-10-08T00:00:00Z',messages:[],files:[],draft:'Keep this draft',example:false};
       const root=createRoot(document.getElementById('app'));
       window.setup=options=>{
-        window.events=[];window.failure='';window.done=false;window.fleetRefreshes=0;
+        const movingTask={...task,draftTurnSettings:options.turnSettings?{provider:'codex',model:'scoped-model',reasoning:'high'}:undefined};window.events=[];window.failure='';window.done=false;window.fleetRefreshes=0;
         window.releaseReceive=window.releaseArchive=window.releaseDestination=window.releaseSource=null;
         const readRuntime=async(profile,path,input,schema)=>{
           window.events.push([profile.id,path]);
@@ -39,7 +39,7 @@ const built = await build({
             if(options.failReceive)throw Error('Receive failed');
             return decode(schema,input.task);
           }
-          if(options.holdArchive)await new Promise(resolve=>window.releaseArchive=resolve);
+          window.archiveInput=input;if(options.holdArchive)await new Promise(resolve=>window.releaseArchive=resolve);
           if(options.failArchive)throw Error('Archive failed');
           return decode(schema,{ok:true});
         };
@@ -51,13 +51,13 @@ const built = await build({
             if(options.failDestination)throw Error('Destination refresh failed');
           }
         };
-        const workspace={version:1,runtimeAddress:'',tasks:[task],repositories:[repository],agents:[],automations:[]};
-        const store={workspace,activeRuntimeId:'a',runtimeRegistry:{profiles:[origin,destination]},flush:async()=>window.events.push(['flush']),readRuntime,refreshRuntime,
+        const snapshot={checkedDraftMoveSupported:!options.oldSource},destinationSnapshot={checkedDraftMoveSupported:!options.oldDestination};const workspace={version:1,runtimeAddress:'',tasks:[movingTask],repositories:[repository],agents:[],automations:[]};
+        const store={workspace,snapshot,activeRuntimeId:'a',runtimeRegistry:{profiles:[origin,destination]},flush:async()=>window.events.push(['flush']),readRuntime,refreshRuntime,
           refreshRuntimes:async()=>{window.fleetRefreshes++;await new Promise(()=>{})},
           switchRuntime:async id=>window.events.push(['switch',id])};
-        window.runDesktop=()=>moveTaskDraft(store,{navigate:value=>window.events.push(['navigate',value])},task,{runtimeId:'b',online:!options.offline,snapshot:null,workspace},window.target).then(()=>window.done=true,error=>window.failure=error.message);
-        window.runtime={activeId:'a',profile:origin,snapshot:{workspace},overviews:[{profile:origin,connected:true,snapshot:{workspace}},{profile:destination,connected:!options.offline,snapshot:{workspace}}],readRuntime,refreshRuntime};
-        flushSync(()=>root.render(<TaskMachineSelector task={task} text={task.draft} disabled={false} onMoving={()=>{}} onProjectChange={async()=>{}}/>));
+        window.runDesktop=()=>moveTaskDraft(store,{navigate:value=>window.events.push(['navigate',value])},movingTask,{runtimeId:'b',online:!options.offline,snapshot:destinationSnapshot,workspace},window.target).then(()=>window.done=true,error=>window.failure=error.message);
+        window.runtime={activeId:'a',profile:origin,snapshot:{...snapshot,workspace},overviews:[{profile:origin,connected:true,snapshot:{...snapshot,workspace}},{profile:destination,connected:!options.offline,snapshot:{...destinationSnapshot,workspace}}],readRuntime,refreshRuntime};
+        flushSync(()=>root.render(<TaskMachineSelector task={movingTask} text={movingTask.draft} disabled={false} onMoving={()=>{}} onProjectChange={async()=>{}}/>));
       };
       window.setup({});
     `,
@@ -126,6 +126,8 @@ try {
     await page.waitForFunction(() => window.done && !!window.releaseSource)
     assert.equal(await page.evaluate(() => window.failure), '')
     assert.equal(await page.evaluate(() => window.fleetRefreshes), 0)
+    assert.equal(await page.evaluate(() => window.archiveInput.expected.repositoryId), 'origin')
+    assert.equal(await page.evaluate(() => window.archiveInput.expected.draftTurnSettings), null)
     const events = await page.evaluate(() => window.events)
     assert.deepEqual(
       events.filter((event) => event[0] === 'refresh'),
@@ -152,6 +154,21 @@ try {
     await page.evaluate(() => window.releaseSource())
     for (const [option, message, allowed] of [
       ['failReceive', 'Receive failed', '/api/tasks/draft-receive'],
+      [
+        'oldSource',
+        'Update Dovo on both computers before moving drafts. The source draft has been preserved.',
+        null,
+      ],
+      [
+        'oldDestination',
+        'Update Dovo on both computers before moving drafts. The source draft has been preserved.',
+        null,
+      ],
+      [
+        'turnSettings',
+        'Clear next-message overrides before changing computers. The source draft has been preserved.',
+        null,
+      ],
       ['failArchive', 'Archive failed', '/api/tasks/draft-moved'],
       ['failDestination', 'Destination refresh failed', '/api/tasks/draft-moved'],
       [
@@ -172,7 +189,7 @@ try {
           calls.some((event) => event[1] === '/api/tasks/draft-moved'),
           false,
         )
-      if (!allowed) assert.equal(calls.length, 0)
+      if (!allowed) assert.equal(calls.filter((event) => event[1]?.startsWith('/api/')).length, 0)
     }
   }
   assert.deepEqual(errors, [])

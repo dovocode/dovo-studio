@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { SCRATCH_PROJECT_ID, type Task } from '@dovo/protocol'
+import { SCRATCH_PROJECT_ID, taskMachineDraftState, type Task } from '@dovo/protocol'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 
@@ -73,7 +73,7 @@ it('preserves workspace data created while import is discovering the scratch pro
   expect(s.store.get().agents).toEqual(workspace.agents)
 })
 
-it.each(['draft', 'attachments', 'started', 'repository'] as const)(
+it.each(['draft', 'attachments', 'started', 'repository', 'model', 'turn-settings'] as const)(
   'preserves a source draft whose %s changed while verifying Git identity',
   async (change) => {
     const { s, task, post } = await setup()
@@ -89,6 +89,7 @@ it.each(['draft', 'attachments', 'started', 'repository'] as const)(
       id: task.id,
       repositoryId: task.repositoryId,
       draft: task.draft,
+      expected: taskMachineDraftState(task),
       gitIdentity: 'github.com/test/project',
     })
     await entered.promise
@@ -104,6 +105,16 @@ it.each(['draft', 'attachments', 'started', 'repository'] as const)(
       s.store.updateTaskHistory(task.id, (current) => ({
         ...current,
         ...(change === 'draft' ? { draft: 'New unsent work' } : {}),
+        ...(change === 'model' ? { agentOverrides: { model: 'changed-model' } } : {}),
+        ...(change === 'turn-settings'
+          ? {
+              draftTurnSettings: {
+                provider: 'codex' as const,
+                model: 'changed-model',
+                reasoning: 'high',
+              },
+            }
+          : {}),
         ...(change === 'attachments'
           ? {
               draftAttachments: [

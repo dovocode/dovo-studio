@@ -111,6 +111,13 @@ export class TaskQueue {
       throw new HttpError(409, 'Restore this task before sending a message')
     if ((task.queue?.length ?? 0) >= 50)
       throw new HttpError(409, 'Queue is full (50 messages). Remove a message or let it run.')
+    // Runtime-origin input can coincide with an unsent human draft. Only a user submission
+    // consumes composer state; form answers, review actions and child input leave it intact.
+    const consumesDraft =
+      (!options.source || options.source.kind === 'user') &&
+      !response &&
+      !review &&
+      !subagentResultId
     const createdAt = new Date().toISOString()
     this.store.updateTask(
       id,
@@ -129,14 +136,20 @@ export class TaskQueue {
         ...(!response && !review && !subagentResultId && text.trim() !== '/compact'
           ? { lastPromptAt: createdAt }
           : {}),
-        draft: t.draft.trim() === text.trim() ? '' : t.draft,
-        draftTurnSettings: sameTurnSettings(t.draftTurnSettings, options.turnSettings)
-          ? null
-          : t.draftTurnSettings,
+        ...(consumesDraft
+          ? {
+              draft: t.draft.trim() === text.trim() ? '' : t.draft,
+              draftTurnSettings:
+                (!t.draft.trim() || t.draft.trim() === text.trim()) &&
+                sameTurnSettings(t.draftTurnSettings, options.turnSettings)
+                  ? null
+                  : t.draftTurnSettings,
+              draftAttachments: t.draftAttachments?.filter(
+                (f) => !attachments.some((a) => a.id === f.id),
+              ),
+            }
+          : {}),
         ...(resumePaused ? { queuePaused: false, restartRecovery: undefined } : {}),
-        draftAttachments: t.draftAttachments?.filter(
-          (f) => !attachments.some((a) => a.id === f.id),
-        ),
         queue: [
           ...(t.queue ?? []),
           {

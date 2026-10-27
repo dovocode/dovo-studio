@@ -1,5 +1,5 @@
 import { useImageEditor } from './image-editor'
-import { randomUUID } from '@dovo/protocol'
+import { createRuntimeClient, randomUUID } from '@dovo/protocol'
 import { draftAttachments, type LocalAttachment } from './draft-attachments'
 import { optimizeAttachmentImage } from './attachment-images'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -23,7 +23,16 @@ export function useAttachments(
     remove: (id: string) => void
   },
 ) {
-  const { request, snapshot, connected } = useWorkspace()
+  const { request, snapshot, connected, connection } = useWorkspace()
+  const scope = JSON.stringify([
+    connection?.address,
+    connection?.token,
+    connection?.runtimeId,
+    task.id,
+    editing?.messageId,
+  ])
+  const currentScope = useRef(scope)
+  currentScope.current = scope
   const imageEditor = useImageEditor()
   const lock = useRef(false)
   const urls = useRef(new Set<string>())
@@ -151,6 +160,40 @@ export function useAttachments(
       ])
       await Promise.all(
         batch.map(async ({ file, attachment, url }) => {
+          let dispatched = false
+          let cancellation: Promise<void> | undefined
+          let interrupt: ((cause: Error) => void) | undefined
+          const cancel = () => {
+            if (!dispatched) return Promise.resolve()
+            return (cancellation ??= (async () => {
+              // Cleanup belongs to the computer/task that accepted this upload, even if
+              // the composer has switched computers or its dialog has already unmounted.
+              if (!connection) throw new Error('The original computer connection is unavailable.')
+              const result = await createRuntimeClient(connection).request(
+                '/api/attachments/remove',
+                { taskId: task.id, id: attachment.id },
+                attachmentMutationSchema,
+                { method: 'POST' },
+              )
+              if (currentScope.current === scope) setPending(result.revision)
+            })())
+          }
+          const cancellationError = (cause: unknown) =>
+            new Error(
+              `Could not cancel ${file.name} on its original computer. It may still be attached there. ${cause instanceof Error ? cause.message : String(cause)}`,
+              { cause },
+            )
+          const abort = () => {
+            void cancel().then(
+              () => interrupt?.(new Error('Attachment cancelled.')),
+              (cause) => {
+                const failure = cancellationError(cause)
+                setError(failure.message)
+                interrupt?.(failure)
+              },
+            )
+          }
+          signal?.addEventListener('abort', abort, { once: true })
           try {
             const data = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader()
@@ -162,7 +205,13 @@ export function useAttachments(
               reader.readAsDataURL(file)
             })
             if (signal?.aborted) throw new Error('Attachment cancelled.')
-            const result = await request(
+            const interrupted = signal
+              ? new Promise<never>((_resolve, reject) => {
+                  interrupt = reject
+                })
+              : undefined
+            dispatched = true
+            const uploading = request(
               replaceId ? '/api/attachments/replace' : '/api/attachments/upload',
               {
                 taskId: task.id,
@@ -174,6 +223,13 @@ export function useAttachments(
               },
               attachmentUploadResultSchema,
             )
+            // A cancelled dialog need not wait for a delayed/lost upload response once
+            // the runtime has durably rejected that upload ID. Observe both outcomes.
+            const result = await (interrupted ? Promise.race([uploading, interrupted]) : uploading)
+            if (signal?.aborted) {
+              await cancel()
+              throw new Error('Attachment cancelled.')
+            }
             editing?.uploaded(result.attachment, replaceId)
             setUploads((current) =>
               current.map((item) =>
@@ -183,20 +239,32 @@ export function useAttachments(
               ),
             )
           } catch (error) {
+            let failure = error
+            if (signal?.aborted)
+              try {
+                await cancel()
+              } catch (cause) {
+                const cleanupFailure = cancellationError(cause)
+                failure = cleanupFailure
+                setError(cleanupFailure.message)
+              }
             setUploads((current) => current.filter((item) => item.attachment.id !== attachment.id))
             if (url) {
               URL.revokeObjectURL(url)
               urls.current.delete(url)
             }
-            setError((current) =>
-              [current, `${file.name}: ${String(error)}`].filter(Boolean).join('\n'),
-            )
-            if (signal) throw error
+            if (!signal?.aborted)
+              setError((current) =>
+                [current, `${file.name}: ${String(failure)}`].filter(Boolean).join('\n'),
+              )
+            if (signal) throw failure
+          } finally {
+            signal?.removeEventListener('abort', abort)
           }
         }),
       )
     } catch (error) {
-      setError(String(error))
+      if (!signal?.aborted) setError(String(error))
       if (signal) throw error
     } finally {
       setWorking(false)

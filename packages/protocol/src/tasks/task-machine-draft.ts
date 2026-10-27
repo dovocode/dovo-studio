@@ -1,14 +1,51 @@
 import {
   canChangeTaskCheckout,
   resolveTaskAgent,
+  taskSchema,
   type Task,
   type Repository,
   type Agent,
 } from '../workspace.js'
+import { Struct } from 'effect'
+import { decode } from '../shared/schema.js'
+import type { TaskMetadata } from './task-summary.js'
 import { changeAgentProvider } from './agent-configuration.js'
 import { permissionPolicyWithinCeiling, permissionPolicyIssue } from '../auth/permission-policy.js'
 import { supportsAccess } from '../auth/access.js'
 import { resolveTaskDefaults, type RuntimeDefaults } from '../runtime/connection/runtime-setup.js'
+
+/** Compare each draft with its own runtime's captured configuration, never with the other
+ * computer's IDs/defaults. Runtime timestamps and conversation-derived metadata are excluded. */
+export const taskMachineDraftStateSchema = taskSchema.mapFields(
+  Struct.pick([
+    'title',
+    'repositoryId',
+    'draft',
+    'draftTurnSettings',
+    'harness',
+    'harnessCustomized',
+    'agentId',
+    'agentOverrides',
+    'modelSelection',
+    'modelSelectionDifficulty',
+    'execution',
+    'setupCommand',
+    'submodules',
+    'worktreeFromOrigin',
+    'autoProject',
+    'autoProjectExecution',
+    'pinned',
+  ]),
+)
+export function taskMachineDraftState(task: TaskMetadata) {
+  const state = decode(taskMachineDraftStateSchema, {
+    ...task,
+    draftTurnSettings: task.draftTurnSettings ?? null,
+  })
+  // Optional undefined fields are absent on the wire, including nested harness settings.
+  return decode(taskMachineDraftStateSchema, JSON.parse(JSON.stringify(state)))
+}
+
 export function taskMachineDraft(
   task: Task,
   repository: Repository,
@@ -20,6 +57,10 @@ export function taskMachineDraft(
   if (task.draftAttachments?.length)
     throw new Error(
       'Remove draft attachments before changing machines, then attach them on the destination.',
+    )
+  if (task.draftTurnSettings)
+    throw new Error(
+      'Clear next-message overrides before changing computers. The source draft has been preserved.',
     )
   if (task.pullRequest || task.workItem)
     throw new Error('Linked issue and PR drafts stay on their original machine.')

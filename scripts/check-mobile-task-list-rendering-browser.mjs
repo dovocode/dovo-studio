@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
+import { checkMobileTaskSearch } from './browser/mobile-task-search.mjs'
 
 // Real screen, rows, lifecycle actions, runtime provider/selectors and list view state.
 // Native controls/storage/network are browser adapters; row-menu leaves count renders.
@@ -216,7 +217,7 @@ window.rowRenders={};window.alerts=[];window.requests=[];window.navigations=[];w
 window.navigation={focused:true,navigate:(...args)=>window.navigations.push(args),setDetail:()=>{},openWork:()=>{}};
 window.fetch=async(url,options)=>{
   const target=new URL(url),path=target.pathname,body=options?.body?JSON.parse(options.body):null;window.requests.push({path,body,origin:target.origin,method:options?.method});
-  if(path==='/api/tasks/search'){if(window.searchFailure)return Response.json({error:'History unavailable'},{status:503});if(body.query==='old history')await new Promise(resolve=>window.finishOldSearch=resolve);return Response.json({taskIds:body.query==='history needle'?['task-98']:body.query==='old history'?['task-97']:[],hits:[]})};
+  if(path==='/api/tasks/search'){if(window.searchFailure)return Response.json({error:'History unavailable'},{status:503});if(body.query==='old history')await new Promise(resolve=>window.finishOldSearch=resolve);return Response.json({taskIds:body.query==='history needle'?(window.historyMatches??['task-98']):body.query==='old history'?['task-97']:[],hits:[]})};
   if(path==='/api/mutations/status')return Response.json({version:1});
   if(path==='/api/workspace'&&options?.method==='PATCH')return Response.json({revision:window.snapshot.revision+1,runtimeInstanceId:'fixture'});
   if(path==='/api/runtime')return Response.json(window.snapshot,{headers:{ETag:'fixture-'+window.snapshot.revision}});
@@ -251,6 +252,7 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Run
 )
 const browser = await chromium.launch({ headless: true })
 try {
+  if (!process.env.DOVO_MOBILE_DENSITY_LAYOUT) await checkMobileTaskSearch(browser)
   const page = await browser.newPage()
   page.setDefaultTimeout(10000)
   const errors = []
@@ -514,6 +516,23 @@ try {
     1,
     'A stale search must not replace current history results',
   )
+  await page.evaluate(() => {
+    window.historyMatches = ['task-98', 'task-99']
+    window.publish({ 'task-99': { lastPromptAt: '2026-10-27T23:20:00Z' } })
+  })
+  await page.getByTestId('Task task-99').waitFor()
+  assert.equal(await historyInput.inputValue(), 'history needle')
+  await page.evaluate(() => {
+    window.historyMatches = ['task-99']
+    window.publish({ 'task-98': { updatedAt: '2026-10-27T23:21:00Z' } })
+  })
+  await page.getByTestId('Task task-98').waitFor({ state: 'detached' })
+  await page.evaluate(() => {
+    window.historyMatches = []
+    window.publish({ 'task-99': { historyRevision: 1 } })
+  })
+  await page.getByTestId('Task task-99').waitFor({ state: 'detached' })
+  assert.equal(await historyInput.inputValue(), 'history needle')
   await page.evaluate(() => (window.searchFailure = true))
   await historyInput.fill('Task 99')
   await page.getByTestId('Task task-99').waitFor()
@@ -641,6 +660,13 @@ try {
   assert.equal(await subthreads.isDisabled(), true)
   await search.fill('')
   await page.getByRole('button', { name: 'Close details', exact: true }).click()
+  // Filtering uses a deferred query; wait for that render before checking the restored collapse.
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('button[aria-label="Subthreads for Parent task"]')
+        ?.getAttribute('aria-expanded') === 'false',
+  )
   assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
   assert.equal(
     await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).count(),

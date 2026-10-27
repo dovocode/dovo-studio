@@ -276,12 +276,21 @@ it('clears an accepted server draft atomically without erasing a newer draft', (
     const queue = new TaskQueue(store)
     queue.add('task', 'first', 'Send this')
     expect(new WorkspaceStore(db).task('task').draft).toBe('')
+    const settings = { provider: 'codex' as const, model: 'large', reasoning: 'high' }
     store.update((workspace) => ({
       ...workspace,
-      tasks: workspace.tasks.map((task) => ({ ...task, draft: 'A newer draft' })),
+      tasks: workspace.tasks.map((task) => ({
+        ...task,
+        harness: defaultTaskHarness('codex'),
+        draft: 'A newer draft',
+        draftTurnSettings: settings,
+      })),
     }))
-    queue.add('task', 'second', 'Another message')
+    queue.add('task', 'second', 'Another message', [], undefined, false, false, undefined, {
+      turnSettings: settings,
+    })
     expect(new WorkspaceStore(db).task('task').draft).toBe('A newer draft')
+    expect(new WorkspaceStore(db).task('task').draftTurnSettings).toEqual(settings)
     queue.add('task', 'first', 'Send this')
     expect(store.task('task').draft).toBe('A newer draft')
   } finally {

@@ -325,6 +325,55 @@ try {
   await page.evaluate(() => window.setScene({ focused: true }))
   await tickets(7)
 
+  // A repeatedly terminated viewer must stop remounting and acquiring tickets.
+  await page.evaluate(() => {
+    window.failedViewer = [...window.webViews.values()][0]
+    window.failedViewer.onContentProcessDidTerminate()
+  })
+  const retryBrowser = page.getByRole('button', { name: 'Retry browser', exact: true })
+  await retryBrowser.waitFor()
+  assert.equal(await page.locator('[data-webview]').count(), 0)
+  const failedMounts = await page.evaluate(() => window.mounts.length)
+  await page.evaluate(() => {
+    window.failedViewer.onRenderProcessGone()
+    window.failedViewer.onMessage({
+      nativeEvent: { data: JSON.stringify({ channel: 'dovo-browser', type: 'reconnect' }) },
+    })
+    window.setScene({ focused: false })
+  })
+  assert.equal(await retryBrowser.isDisabled(), true)
+  assert.equal(await page.evaluate(() => window.requests.length), 7)
+  assert.equal(await page.evaluate(() => window.mounts.length), failedMounts)
+  await page.evaluate(() => window.setScene({ focused: true }))
+  assert.equal(await page.evaluate(() => window.requests.length), 7)
+  await retryBrowser.click()
+  await tickets(8)
+  await page.evaluate(() => [...window.webViews.values()][0].onRenderProcessGone())
+  await tickets(9)
+
+  // Computer changes reset recovery and stale viewer callbacks cannot retarget the new owner.
+  await page.evaluate(() => {
+    window.oldComputerViewer = [...window.webViews.values()][0]
+    window.runtime.connection = {
+      address: 'http://second-runtime.lan:4310',
+      token: 'second-device-token',
+    }
+    window.setScene({})
+  })
+  await tickets(10)
+  await page.waitForFunction(() =>
+    window.commands.some(({ code }) => code.includes('ws://second-runtime.lan:4310/ws/simulator')),
+  )
+  await page.evaluate(() => {
+    window.oldComputerViewer.onContentProcessDidTerminate()
+    window.oldComputerViewer.onMessage({
+      nativeEvent: { data: JSON.stringify({ channel: 'dovo-browser', type: 'reconnect' }) },
+    })
+  })
+  assert.equal(await page.evaluate(() => window.requests.length), 10)
+  await page.evaluate(() => [...window.webViews.values()][0].onContentProcessDidTerminate())
+  await tickets(11)
+
   await page.evaluate(() => window.setScene({ surface: 'browser' }))
   // Verify the native inset boundary without pretending Chromium implements UIKit safe areas.
   assert.equal(await page.locator('[data-safe-bottom]').getAttribute('data-safe-bottom'), 'true')

@@ -986,15 +986,23 @@ export function Composer({
             void attachments.upload(Array.from(event.dataTransfer.files))
         }}
         onPaste={(event) => {
-          if (!event.clipboardData.files.length) return
-          event.preventDefault()
+          const files = Array.from(event.clipboardData.files)
+          if (!files.length) return
+          // Rich-text sources can expose a synthetic file alongside their useful plain text.
+          if (
+            event.clipboardData.getData('text/plain') &&
+            !files.some((file) => file.type.startsWith('image/'))
+          )
+            return
           if (
             connected &&
             !sending &&
             !task.archivedAt &&
             (!editing || snapshot?.fullTurnSettingsSupported)
-          )
-            void attachments.upload(Array.from(event.clipboardData.files))
+          ) {
+            event.preventDefault()
+            void attachments.upload(files)
+          }
         }}
         onSubmit={(e) => {
           e.preventDefault()

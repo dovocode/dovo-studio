@@ -27,12 +27,12 @@ export class ProjectFiles {
     }
     return files.sort()
   }
-  private list(cwd: string, plain = false) {
+  private list(cwd: string, plain = false, fresh = false) {
     const now = Date.now()
     for (const [key, entry] of this.cache) if (entry.expires <= now) this.cache.delete(key)
     const key = `${plain ? 'folder' : 'git'}:${cwd}`
     const cached = this.cache.get(key)
-    if (cached) return cached.files
+    if (cached && !fresh) return cached.files
     const files = plain
       ? this.folderFiles(cwd)
       : this.git
@@ -47,7 +47,7 @@ export class ProjectFiles {
   async search(cwd: string, query: string, limit = 8, plain = false) {
     return rankPaths(await this.list(cwd, plain), query, limit)
   }
-  async all(cwd: string, plain = false) {
-    return this.list(cwd, plain)
+  async all(cwd: string, plain = false, fresh = false) {
+    return this.list(cwd, plain, fresh)
   }
 }

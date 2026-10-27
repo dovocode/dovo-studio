@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Alert, Pressable, View } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { Alert, AppState, Pressable, View } from 'react-native'
 import WebView from 'react-native-webview'
 import {
   taskFileShareSchema,
@@ -70,14 +70,39 @@ export function RichFile({
   const [result, setResult] = useState<{ key: string; url?: string; error?: string }>()
   const local = localMarkdownPath(path) !== undefined
   const transportAddress = connection ? createRuntimeClient(connection).url('/') : undefined
-  const key = JSON.stringify([
+  const identity = JSON.stringify([
     taskId,
     path,
     connection?.address,
     connection?.token,
     transportAddress,
-    revision,
   ])
+  const key = JSON.stringify([identity, revision])
+  const currentKey = useRef(key)
+  currentKey.current = key
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const recovered = useRef<string | null>(null)
+  const retry = () => {
+    currentKey.current = ''
+    recovered.current = null
+    setRevision((value) => value + 1)
+  }
+  const processLost = () => {
+    if (!mounted.current || currentKey.current !== key) return
+    if (recovered.current !== identity && AppState.currentState !== 'background') {
+      recovered.current = identity
+      currentKey.current = ''
+      setRevision((value) => value + 1)
+    } else {
+      setResult({ key, error: 'The preview stopped. Retry to open it again.' })
+    }
+  }
   useEffect(() => {
     if (!local || (!video && !opened) || !taskId || !connected || !connection) return
     let active = true
@@ -111,6 +136,7 @@ export function RichFile({
   // Only the trusted capability page runs scripts; file HTML/SVG stays sandboxed.
   const preview = url ? (
     <WebView
+      key={key}
       source={{ uri: url }}
       style={{ height: video && !opened ? 260 : 480, backgroundColor: colors.surface }}
       javaScriptEnabled={local}
@@ -130,13 +156,18 @@ export function RichFile({
         )
       }}
       onFileDownload={() => launch(true)}
-      onError={({ nativeEvent }) => setResult({ key, error: nativeEvent.description })}
+      onContentProcessDidTerminate={processLost}
+      onRenderProcessGone={processLost}
+      onError={({ nativeEvent }) => {
+        if (mounted.current && currentKey.current === key)
+          setResult({ key, error: nativeEvent.description })
+      }}
     />
   ) : null
   const status = error ? (
     <View style={{ gap: 8 }}>
       <Text style={styles.muted}>{error}</Text>
-      <Action label="Retry preview" secondary onPress={() => setRevision((value) => value + 1)} />
+      <Action label="Retry preview" secondary onPress={retry} />
     </View>
   ) : !url ? (
     <Text style={styles.muted}>Loading preview…</Text>
@@ -183,7 +214,7 @@ export function RichFile({
                 label="Refresh preview"
                 secondary
                 disabled={!connected || !taskId || (!url && !error)}
-                onPress={() => setRevision((value) => value + 1)}
+                onPress={retry}
               />
             )}
             <Action
