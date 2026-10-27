@@ -5,7 +5,7 @@ import {
   decode,
   taskSchema,
   workspaceSchema,
-  type SubagentListItem,
+  type Subagent,
   type Task,
   type Workspace,
 } from '../../../packages/protocol/src'
@@ -171,16 +171,17 @@ const sampleTasks = [
   }),
 ]
 
-const subagents: readonly SubagentListItem[] = [
+const subagents: Subagent[] = [
   {
     id: 'catalog-agent-child',
-    taskId: 'catalog-agent-child',
-    source: 'dovo',
     name: 'Check responsive layout',
     provider: 'claude',
     model: 'claude-sonnet-4-5',
     status: 'working',
     activity: 'Checking narrow screens',
+    sessionLive: true,
+    startedAt: '2026-10-21T09:40:00.000Z',
+    updatedAt: '2026-10-21T09:45:00.000Z',
   },
 ]
 const nestedThreads: readonly NestedThread[] = [
@@ -211,7 +212,6 @@ const localTaskActions = (
   template: () => onMessage('Task templates are unavailable in the catalog preview.'),
   create: () => onMessage('Task creation is unavailable in the catalog preview.'),
   filter: () => onMessage('Project filtering is unavailable in the catalog preview.'),
-  subagent: (_key, taskId) => onMessage(`Selected local subthread ${taskId}.`),
   deselect: () => onMessage('Selection cleared.'),
   error: onMessage,
   projectDeleted: () => onMessage('Project deletion is unavailable in the catalog preview.'),
@@ -297,7 +297,7 @@ function ThreadRows({ args }: { args: ThreadStoryArgs }) {
               <TaskListRow
                 key={entry.id}
                 entryKey={entry.id}
-                task={entry}
+                task={entry.id === 'working' && args.showNested ? { ...entry, subagents } : entry}
                 owner={owner}
                 subagents={entry.id === 'working' && args.showNested ? subagents : []}
                 needsInput={needsInput}
