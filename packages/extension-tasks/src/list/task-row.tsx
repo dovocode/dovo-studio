@@ -53,7 +53,6 @@ import { threadTreeSummary } from '@dovo/protocol'
 const statusIcons: Record<string, LucideIcon> = {
   Working: CircleDashed,
   Done: CircleCheck,
-  Finished: CircleCheck,
   Failed: CircleX,
   Stopped: CircleStop,
   Snoozed: AlarmClock,
@@ -197,14 +196,12 @@ function TaskRowView({
   const compactStatus = offline ? 'Offline' : presentation.compactLabel
   const StatusIcon = offline
     ? CloudOff
-    : presentation.state === 'Review'
+    : ['Review', 'Finished'].includes(presentation.state)
       ? undefined
       : (statusIcons[presentation.state] ?? CircleDashed)
   const statusTone = cn(
     !offline && presentation.state === 'Working' && 'text-primary',
-    !offline &&
-      ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
-      'text-status-success',
+    !offline && ['Done', 'Settled'].includes(presentation.state) && 'text-status-success',
     !offline && presentation.state === 'Failed' && 'text-destructive',
     !offline && presentation.state === 'Needs input' && 'text-status-warning',
   )

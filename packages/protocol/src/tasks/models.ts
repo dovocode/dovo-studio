@@ -83,6 +83,12 @@ export const modelCatalogSchema = mutableStruct({
 export type AgentDiscovery = Schema.Schema.Type<typeof agentDiscoverySchema>
 export type ModelCatalog = Schema.Schema.Type<typeof modelCatalogSchema>
 
+/** Model pickers show concrete models, while saved provider defaults remain valid. */
+export function isNamedModelId(id: string) {
+  const value = id.trim().toLowerCase()
+  return value !== '' && value !== 'default'
+}
+
 export function modelCatalogChoices(models: ModelCatalog['models']) {
   const names = models.map((model) => modelDisplayName(model.id, model.name))
   const counts = new Map<string, number>()

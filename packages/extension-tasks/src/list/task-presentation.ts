@@ -1,5 +1,5 @@
 import { formatTurnDuration, taskIsWorking } from '@dovo/protocol'
-import { latestCompletedTaskTurn, type Task } from '@dovo/studio-core'
+import { hasUnviewedTaskCompletion, type Task } from '@dovo/studio-core'
 import { isSnoozed } from './task-priority'
 export function taskPresentation(task: Task, needsInput: boolean, now: number) {
   const latest = task.turns?.at(-1)
@@ -35,7 +35,7 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
               : 'Working'
             : task.waitingForFeedback
               ? 'Waiting'
-              : latestCompletedTaskTurn(task)
+              : hasUnviewedTaskCompletion(task)
                 ? 'Done'
                 : {
                     draft: 'Draft',

@@ -13,8 +13,7 @@ the original timeline and current test-process state have not been independently
   This could lose a late root reply even while the provider session remained open.
 - Automatically accepted child results retained the `queued` completion state. Their durable inbox
   entry was consumed, but the child metadata did not reflect acceptance.
-- Thread Done presentation depended on whether the response was unread. Viewing a successful thread
-  changed the label to Review, and compact desktop rows did not display a status icon.
+- Compact desktop rows did not display a status icon for unread completion or input requests.
 
 ## Changes
 
@@ -34,9 +33,9 @@ Child results change to read when their receiving prompt is accepted, in the sam
 acceptance record. Result-version checks prevent an old acknowledgement consuming a newer result.
 Existing inbox receipts continue to deduplicate repeated delivery and survive restarts.
 
-A completed successful thread keeps its Done indicator after viewing. Unread styling remains
-independent. Needs input uses yellow on desktop and mobile, and compact desktop rows show status
-icons.
+A successful thread shows Done only while its completed response is unread. Viewing it clears the
+Done indicator; a later completed turn makes it reappear. Needs input uses yellow on desktop and
+mobile, and compact desktop rows show status icons for unread completion and input requests.
 
 ## Verification and limits
 

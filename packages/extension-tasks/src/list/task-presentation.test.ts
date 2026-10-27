@@ -25,11 +25,11 @@ const task = (status: Task['status']): Task => ({
   ],
 })
 it('keeps review, failure and completion visible alongside the finish age', () => {
-  expect(taskPresentation(task('review'), false, now).label).toBe('Done · 5m ago')
+  expect(taskPresentation(task('review'), false, now).label).toBe('Review · 5m ago')
   expect(taskPresentation(task('failed'), false, now).label).toBe('Failed · 5m ago')
-  expect(taskPresentation(task('done'), false, now).label).toBe('Done · 5m ago')
+  expect(taskPresentation(task('done'), false, now).label).toBe('Finished · 5m ago')
 })
-it('keeps Done visible after the latest successful turn is viewed', () => {
+it('shows Done only until the latest successful turn is viewed', () => {
   for (const status of ['review', 'done'] as const) {
     const unread = {
       ...task(status),
@@ -50,8 +50,8 @@ it('keeps Done visible after the latest successful turn is viewed', () => {
         now,
       ),
     ).toMatchObject({
-      state: 'Done',
-      compactLabel: 'Done',
+      state: status === 'review' ? 'Review' : 'Finished',
+      compactLabel: '5m',
     })
     expect(
       taskPresentation(

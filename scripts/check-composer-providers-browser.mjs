@@ -46,7 +46,7 @@ const repository={id:'repo',name:'Repo',path:'/repo',branch:'main'};
 const snapshot={workspace:{agents,repositories:[repository],tasks:[]},defaults:{},acpInstallations:installations};
 window.deferModels=false;window.pendingModels=[];window.modelRequests=[];window.pending=[];window.changes=[];window.mode='desktop';
 function App(){const[host,setHost]=useState('one');const[mode,setMode]=useState('desktop');const[locked,setLocked]=useState(undefined);const[value,setValue]=useState(defaultTaskHarness('codex'));window.host=setHost;window.mode=setMode;window.lock=setLocked;window.value=value;
-const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'model',name:input.provider+' model'},...(window.terraAvailable?[{id:'gpt-6.1-terra',name:'GPT-6.1 Terra'}]:[])],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
+const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'',name:'Provider default'},{id:'default',name:'Default (recommended)',isDefault:true},{id:'model',name:input.provider+' model'},...(window.terraAvailable?[{id:'gpt-6.1-terra',name:'GPT-6.1 Terra'}]:[])],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
 const profile={id:host,connection:{address:'http://'+host,token:'token-'+host}};
 const change=async next=>{window.changes.push(next);setValue(next);return true};
 return mode==='desktop'?<Context.Provider value={{request,connected:true,connection:profile.connection,snapshot}}><ComposerModelPicker repositoryId="repo" value={value} agents={agents} disabled={false} lockedProvider={locked} onChange={change} onConfigure={()=>{}} onSelectAgent={async id=>{window.changes.push(id);return true}} onUseHarness={change}/></Context.Provider>:<MobileContext.Provider value={{profile,connected:true,snapshot,readRuntime:(_profile,path,input)=>request(path,input)}}><TaskLauncherControls snapshot={snapshot} repository={repository} selection={{key:'harness:codex',name:'Codex',provider:'codex',model:'',harness:value}} disabled={false} onChange={next=>window.changes.push(next)}/></MobileContext.Provider>};
@@ -90,7 +90,10 @@ try {
   )
   await page.goto('https://dovo.test/')
   await page.evaluate(() =>
-    localStorage.setItem('dovo:model-favorites', 'cursor:missing-model\ncodex:favorite-model'),
+    localStorage.setItem(
+      'dovo:model-favorites',
+      'cursor:missing-model\ncodex:favorite-model\ncodex:\ncodex:default',
+    ),
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const waitRequests = (count) =>
@@ -121,6 +124,8 @@ try {
   await page.getByRole('button', { name: 'Favorite models', exact: true }).click()
   await page.getByRole('option', { name: 'favorite-model' }).waitFor()
   await absent(page.getByRole('option', { name: 'missing-model' }))
+  await absent(page.getByRole('option', { name: 'Provider default' }))
+  await absent(page.getByRole('option', { name: 'default', exact: true }))
   await page.getByRole('button', { name: 'Custom configurations', exact: true }).click()
   await page.getByRole('option', { name: 'Custom Codex' }).waitFor()
   await absent(page.getByRole('option', { name: 'Missing Cursor' }))
@@ -157,6 +162,12 @@ try {
   await finish(5, ['harness:claude', 'harness:codex'])
   await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
   await page.locator('[role=option][data-value=model]').waitFor()
+  await absent(page.getByRole('option', { name: 'Provider default' }))
+  await absent(page.getByRole('option', { name: 'Default (recommended)' }))
+  if (await page.locator('[role=option][data-value=model] svg').count())
+    throw new Error('Model row still contains a repeated harness icon')
+  if ((await page.locator('[role=option][data-value=model]').innerText()).trim() !== 'codex model')
+    throw new Error('Model row still repeats the harness name')
   const modelRequests = await page.evaluate(() => window.modelRequests.length)
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
@@ -186,12 +197,16 @@ try {
   await harness('Vibe').click()
   if (await page.evaluate(() => window.changes.length))
     throw new Error('Browsing a harness changed selection')
-  await harness('Provider default').click()
+  await absent(harness('Provider default'))
+  await absent(harness('Default (recommended)'))
+  await harness('vibe model').click()
   if (await page.evaluate(() => window.changes.at(-1)?.provider !== 'vibe'))
     throw new Error('Available mobile Vibe provider was not selectable')
   await harness('Choose provider').click()
   await harness('Claude').click()
-  await harness('Provider default').click()
+  await absent(harness('Provider default'))
+  await absent(harness('Default (recommended)'))
+  await harness('claude model').click()
   if (await page.evaluate(() => window.changes.at(-1)?.provider !== 'claude'))
     throw new Error('Available mobile provider was not selectable')
   await page.evaluate(() => window.host('four'))

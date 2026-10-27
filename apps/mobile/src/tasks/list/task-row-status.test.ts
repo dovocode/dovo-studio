@@ -29,7 +29,7 @@ const task: Task = {
 const now = Date.parse('2026-09-20T10:08:00Z')
 describe('mobile thread status', () => {
   it('retains review, failure and stopped state after a turn finishes', () => {
-    expect(taskRowStatus(task, false, true, now)).toBe('Done · 4m')
+    expect(taskRowStatus(task, false, true, now)).toBe('Review · 4m')
     expect(
       taskRowStatus(
         {
@@ -92,15 +92,17 @@ describe('mobile thread status', () => {
       ),
     ).toBe('Snoozed · 4m')
   })
-  it('keeps Done visible after the latest successful turn is viewed', () => {
+  it('shows Done only until the latest successful turn is viewed', () => {
     const unread = {
       ...task,
       lastViewedTurnId: undefined,
     }
     expect(taskRowStatus(unread, false, true, now)).toBe('Done · 4m')
     expect(showTaskDone(unread, false, now)).toBe(true)
-    expect(taskRowStatus(task, false, true, now)).toBe('Done · 4m')
-    expect(showTaskDone(task, false, now)).toBe(true)
+    expect(taskRowStatus(task, false, true, now)).toBe('Review · 4m')
+    expect(showTaskDone(task, false, now)).toBe(false)
+    expect(taskRowStatus({ ...task, status: 'done' }, false, true, now)).toBe('Finished · 4m')
+    expect(showTaskDone({ ...task, status: 'done' }, false, now)).toBe(false)
     const next = {
       ...task,
       turns: [

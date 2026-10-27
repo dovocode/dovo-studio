@@ -2,6 +2,7 @@ import { decode } from '../shared/schema.js'
 import { expect, it } from 'vite-plus/test'
 import {
   daybreakChoices,
+  isNamedModelId,
   modelDisplayName,
   modelCatalogChoices,
   modelDiscoveryInput,
@@ -175,4 +176,19 @@ it('distinguishes inheriting custom-agent modes from explicitly clearing them ov
   )
   expect(resolved?.serviceTier).toBeUndefined()
   expect(resolved?.cyberAccessProgram).toBeUndefined()
+})
+
+it('excludes provider-default aliases from model choices without hiding named defaults', () => {
+  expect(['', 'default', ' DEFAULT '].filter(isNamedModelId)).toEqual([])
+  const models = [
+    { id: '', name: 'Provider default' },
+    { id: 'default', name: 'Default (recommended)', isDefault: true },
+    { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', isDefault: true },
+    { id: 'custom/default', name: 'Custom default' },
+  ]
+  expect(models.filter((model) => isNamedModelId(model.id)).map((model) => model.id)).toEqual([
+    'gpt-6.1-sol',
+    'custom/default',
+  ])
+  expect(selectedCatalogModel({ models, reasoning: [] }, 'default')?.id).toBe('default')
 })

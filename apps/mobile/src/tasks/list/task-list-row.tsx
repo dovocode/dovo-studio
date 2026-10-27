@@ -59,7 +59,6 @@ const statusIcons: Record<string, LucideIcon> = {
   Working: CircleDashed,
   'Was working': CloudOff,
   Done: CircleCheck,
-  Finished: CircleCheck,
   Failed: CircleX,
   Stopped: CircleStop,
   Snoozed: AlarmClock,
@@ -147,7 +146,7 @@ function TaskListRowView({
     ? colors.warning
     : failed
       ? colors.error
-      : done || state === 'Finished' || state === 'Settled'
+      : done || state === 'Settled'
         ? colors.success
         : working
           ? colors.accent

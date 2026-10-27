@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
 import {
   modelCatalogChoices,
+  isNamedModelId,
   modelDisplayName,
   modelPreferenceKey,
   runtimeDefaultsSchema,
@@ -105,6 +106,7 @@ function ComputerModelPicker({
   const models = modelCatalogChoices(catalog?.models ?? [])
     .filter(
       (model) =>
+        isNamedModelId(model.id) &&
         ((!model.hidden && !preferences[key(model.id)]?.disabled) ||
           model.id === candidate.model) &&
         (tab !== 'favorites' || favorite(model.id)) &&
@@ -123,14 +125,14 @@ function ComputerModelPicker({
     : []
   const customModel =
     tab === 'models' &&
-    !!candidate.model &&
+    isNamedModelId(candidate.model) &&
     !catalog?.models.some((model) => model.id === candidate.model) &&
     matches(candidate.model, modelDisplayName(candidate.model))
   const typed = query.trim()
   // An unknown ID can be used straight from search instead of reopening the custom field.
   const customSearch =
     tab === 'models' &&
-    !!typed &&
+    isNamedModelId(typed) &&
     !/\s/.test(typed) &&
     !models.length &&
     !(customModel && candidate.model === typed)
@@ -530,16 +532,6 @@ function ComputerModelPicker({
                 provider: choice.provider,
               }),
             )}
-            {tab === 'models' &&
-              !search &&
-              row({
-                id: 'default',
-                label: 'Provider default',
-                title: 'Provider default',
-                detail: `${harnessNames[candidate.provider]} chooses the model`,
-                selected: browsingCurrent && !agent.model,
-                onPress: () => choose(''),
-              })}
             {shownModels.map((model, index) => (
               <Fragment key={model.id}>
                 {tab === 'models' &&

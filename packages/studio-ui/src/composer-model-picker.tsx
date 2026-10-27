@@ -31,7 +31,7 @@ import { cn } from './lib/utils'
 import { HarnessIcon } from './harness-icon'
 import { useHarnessCatalog } from './harness-catalog'
 import { useHarnessAvailability } from './use-harness-availability'
-import { harnessChoiceId, acpHarnessChoiceId } from '@dovo/protocol'
+import { harnessChoiceId, acpHarnessChoiceId, isNamedModelId } from '@dovo/protocol'
 import { modelPreferenceKey, runtimeDefaultsSchema, type RuntimeDefaults } from '@dovo/protocol'
 const modelModeIcons = { inherit: Layers, auto: SlidersHorizontal, smart: WandSparkles }
 const favoritesKey = 'dovo:model-favorites'
@@ -241,13 +241,6 @@ export function ComposerModelPicker({
               : []
           })
         : [
-            {
-              id: '',
-              name: 'Provider default',
-              provider: activeProvider,
-              installationId: selectedHarness.acpInstallationId,
-              hidden: false,
-            },
             ...(catalog?.models ?? []).map((model) => ({
               ...model,
               provider: activeProvider,
@@ -267,6 +260,7 @@ export function ComposerModelPicker({
           ]
   const filtered = items.filter(
     (item) =>
+      (item.agent || isNamedModelId(item.id)) &&
       itemAvailable(item) &&
       ((mode === 'models' && manageModels) || !preferences[itemKey(item)]?.disabled) &&
       (!lockedProvider || item.provider === lockedProvider) &&
@@ -672,11 +666,11 @@ export function ComposerModelPicker({
                         <span className="truncate">{item.name}</span>
                         {selected && <Check className="size-3 shrink-0" />}
                       </span>
-                      <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                        <HarnessIcon provider={item.provider} className="size-3" />
-                        {providers[item.provider].short}
-                        {item.agent && ` · ${item.agent.model || 'Default model'}`}
-                      </span>
+                      {item.agent && (
+                        <span className="mt-1 block truncate text-xs text-muted-foreground">
+                          {providers[item.provider].short} · {item.agent.model || 'Default model'}
+                        </span>
+                      )}
                     </button>
                     {!item.agent && manageModels && (
                       <button
