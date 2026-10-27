@@ -76,6 +76,7 @@ export class TurnStoreFailure extends Error {
 
 export type CompletedCommand = { taskId: string; turnId: string; tool: HookTool }
 export class TaskTurnRunner {
+  serverEnvironment: (taskId: string) => Record<string, string> = () => ({})
   private commandListeners = new Set<(event: CompletedCommand) => void>()
   onCommandCompleted(listener: (event: CompletedCommand) => void) {
     this.commandListeners.add(listener)
@@ -857,7 +858,7 @@ ${
                 taskId: id,
                 agent: {
                   ...agent,
-                  env: { ...agent.env, ...githubEnvironment },
+                  env: { ...agent.env, ...githubEnvironment, ...this.serverEnvironment(id) },
                   instructions: [
                     agent.instructions,
                     browserCdpInstructions(id),

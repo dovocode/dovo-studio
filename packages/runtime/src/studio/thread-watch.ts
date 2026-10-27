@@ -553,6 +553,16 @@ export class ThreadWatch {
                 false,
                 false,
                 state.delegated ? targetedChildId(state) : undefined,
+                {
+                  source: {
+                    kind: 'thread',
+                    runtimeId: state.runtimeId,
+                    runtimeIdentity: snapshot.runtimeId,
+                    threadId: state.threadId,
+                    title: snapshot.title.slice(0, 400),
+                    computerName: state.computerName.slice(0, 200),
+                  },
+                },
               )
             this.save({
               ...state,

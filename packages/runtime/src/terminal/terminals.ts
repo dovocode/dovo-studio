@@ -79,6 +79,7 @@ export class Terminals {
   constructor(
     private settings: () => CommandSettings = () => decode(commandsSchema, {}),
     private activity?: Pick<Activity, 'add'>,
+    private serverEnvironment: (taskId: string) => Record<string, string> = () => ({}),
   ) {}
   private sessions = new Map<string, Session>()
   list() {
@@ -150,7 +151,7 @@ export class Terminals {
     // PORT selects Dovo's own listener. Project servers must use their own defaults;
     // an explicit command environment can still select a port.
     delete inherited.PORT
-    const env = { ...inherited, ...launch.env }
+    const env = { ...inherited, ...launch.env, ...this.serverEnvironment(taskId) }
     delete env.DOVO_OWNER_TOKEN
     delete env.ELECTRON_RUN_AS_NODE
     const id = randomUUID(),

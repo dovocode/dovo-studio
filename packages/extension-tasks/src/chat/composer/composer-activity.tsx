@@ -43,6 +43,9 @@ export function ComposerActivity({
       aria-label="Composer activity"
       className="relative mx-auto -mb-3 w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] rounded-t-xl border border-b-0 bg-muted/15 pb-3 text-xs"
     >
+      <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {`${task.queue?.length ?? 0} queued ${(task.queue?.length ?? 0) === 1 ? 'message' : 'messages'}${pausedCount ? `, ${pausedCount} paused` : ''}`}
+      </span>
       <div className="flex min-w-0 items-center px-2 py-1">
         <div
           role={both ? 'tablist' : undefined}

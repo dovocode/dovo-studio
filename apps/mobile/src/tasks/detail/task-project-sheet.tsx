@@ -24,6 +24,7 @@ import { TaskWaitingPanel } from './task-waiting-panel'
 import { TaskSource } from './task-source'
 import { PullStatus } from './pull-status'
 import { CommitSection } from './commit-section'
+import { ThreadServers } from './thread-servers'
 
 function ProjectRow({
   label,
@@ -75,6 +76,7 @@ export function TaskProjectSheet({
   onPulls,
   onAgents,
   onClose,
+  onBrowser,
 }: {
   task: Task
   inline?: boolean
@@ -85,6 +87,7 @@ export function TaskProjectSheet({
   onPulls: (url?: string) => void
   onAgents?: () => void
   onClose: () => void
+  onBrowser?: (url: string) => void
 }) {
   const { snapshot, profile, connected, callEffect } = useRuntime()
   const { colors, styles } = useTheme()
@@ -117,6 +120,9 @@ export function TaskProjectSheet({
           {repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'No project')}
         </Text>
         <PullStatus task={task} inline onOpen={(url) => dismissThen(() => onPulls(url))} />
+        {onBrowser && (
+          <ThreadServers taskId={task.id} onOpen={(url) => dismissThen(() => onBrowser(url))} />
+        )}
         {scripts.map((action) => (
           <ProjectRow
             key={action.label}

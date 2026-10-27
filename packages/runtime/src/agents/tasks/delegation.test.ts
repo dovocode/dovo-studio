@@ -1542,6 +1542,15 @@ it('follows up in the same child conversation without duplicate work or stale co
           .messages.filter((message) => message.role === 'user')
           .map((message) => message.text),
       ).toEqual(['First review', 'Review the fix'])
+      expect(
+        s.store
+          .task(child.id)
+          .messages.filter((message) => message.role === 'user')
+          .map((message) => message.source),
+      ).toEqual([
+        { kind: 'thread', runtimeId: 'local', threadId: parentId, title: 'Parent' },
+        { kind: 'thread', runtimeId: 'local', threadId: parentId, title: 'Parent' },
+      ])
       expect(s.store.task(parentId).queue ?? []).toEqual([])
       expect(s.store.task(parentId).subagentInbox ?? []).toEqual([])
       run.onText('Both reviews handled')

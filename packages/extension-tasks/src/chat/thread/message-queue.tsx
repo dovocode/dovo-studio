@@ -1,11 +1,14 @@
 import {
   watchMessage,
   watchMessagePreview,
+  messageSourceLabel,
+  messageSourceFor,
   randomUUID,
   turnSettingsLabel,
   type PendingMessage,
 } from '@dovo/protocol'
 import { WatchMessageCard } from './watch-message'
+import { MessageSource } from './message-source'
 import { useQueueEdit } from '../composer/queue-edit'
 import { useRef, type DragEvent } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -159,6 +162,7 @@ export function MessageQueue({
           }}
         >
           {queue.map((message, index) => {
+            const source = messageSourceFor(message)
             const paused = !!(message.paused || task.queuePaused)
             const blockedBy = firstPaused >= 0 && firstPaused < index ? firstPaused + 1 : undefined
             const state = [
@@ -170,6 +174,7 @@ export function MessageQueue({
             return (
               <QueueItem
                 key={message.id}
+                aria-label={`Queued message ${index + 1} of ${queue.length}, ${message.steering ? 'being delivered' : 'not sent'}`}
                 className={[
                   'relative ml-2 min-w-0 gap-1 rounded-none border-l border-border/60 sm:gap-2',
                   draggingHere && dragging.messageId === message.id ? 'opacity-40' : '',
@@ -267,18 +272,27 @@ export function MessageQueue({
                     <GripVertical size={12} />
                   </IconButton>
                 )}
-                <QueueItemContent
-                  title={
-                    watchMessagePreview(message) ||
-                    message.attachments?.map((file) => file.name).join(', ')
-                  }
-                >
-                  {watchMessagePreview(message) ||
-                    message.attachments?.map((f) => f.name).join(', ')}
-                  {message.text && message.attachments?.length
-                    ? ` · ${message.attachments.length} files`
-                    : ''}
-                </QueueItemContent>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-1">
+                  {source ? (
+                    <MessageSource source={source} />
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">
+                      {messageSourceLabel()}
+                    </span>
+                  )}
+                  <QueueItemContent
+                    title={
+                      watchMessagePreview(message) ||
+                      message.attachments?.map((file) => file.name).join(', ')
+                    }
+                  >
+                    {watchMessagePreview(message) ||
+                      message.attachments?.map((f) => f.name).join(', ')}
+                    {message.text && message.attachments?.length
+                      ? ` · ${message.attachments.length} files`
+                      : ''}
+                  </QueueItemContent>
+                </div>
                 {watchMessage(message) && (
                   <IconButton
                     label={`View queued update ${index + 1}`}

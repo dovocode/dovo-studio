@@ -246,6 +246,7 @@ export function runtimeSnapshot(
       permissionPolicySupported: true,
       workspaceReconciliationSupported: true,
       taskListUndoSupported: true,
+      threadServersSupported: process.platform === 'linux' || process.platform === 'darwin',
       settingsScopesSupported: true,
       taskBehaviorSupported: true,
       threadBehaviorSupported: true,

@@ -271,6 +271,8 @@ export default function TasksView({
     taskId: string
     id: string
     url: string
+    remote?: boolean
+    runtimeId?: string | null
   } | null>(null)
   const [reviewTarget, setReviewTarget] = useState<{
     threadKey: string
@@ -953,6 +955,16 @@ export default function TasksView({
                   task={task}
                   onPullLink={(url) => openPullPreview(task, url)}
                   onTerminal={showTerminal}
+                  onBrowser={(url) => {
+                    setBrowserLink({
+                      taskId: task.id,
+                      id: randomUUID(),
+                      url,
+                      remote: true,
+                      runtimeId: activeRuntimeId,
+                    })
+                    selectSurface('browser')
+                  }}
                   onSurface={(next) => {
                     selectSurface(next)
                   }}
@@ -1277,7 +1289,13 @@ export default function TasksView({
                   >
                     <BrowserPane
                       taskId={task.id}
-                      openLink={browserLink?.taskId === task.id ? browserLink : null}
+                      openLink={
+                        browserLink?.taskId === task.id &&
+                        (browserLink.runtimeId === undefined ||
+                          browserLink.runtimeId === activeRuntimeId)
+                          ? browserLink
+                          : null
+                      }
                       onLinkOpened={() => setBrowserLink(null)}
                     />
                   </FloatingPreview>

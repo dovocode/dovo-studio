@@ -1,5 +1,10 @@
 import { taskInputOwner } from '@dovo/protocol'
-import { type TurnSettings, noStudioTools, type StudioTools } from '@dovo/protocol'
+import {
+  type TurnSettings,
+  noStudioTools,
+  type StudioTools,
+  type MessageSource,
+} from '@dovo/protocol'
 import { runCredentials } from '../../auth/run-credentials.js'
 import type { MemoryScope } from '@dovo/protocol'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
@@ -206,6 +211,9 @@ export class Tasks {
   }
   onCommandCompleted(listener: (event: CompletedCommand) => void) {
     return this.runner.onCommandCompleted(listener)
+  }
+  setServerEnvironment(environment: (taskId: string) => Record<string, string>) {
+    this.runner.serverEnvironment = environment
   }
   private mcpApps?: McpApps
   private deletionReservations = new Map<string, symbol>()
@@ -856,6 +864,7 @@ export class Tasks {
     review = false,
     resumePaused = false,
     turnSettings?: TurnSettings,
+    source?: MessageSource,
   ) {
     return runtimeOperation(() => {
       if (this.deletionReservations.has(id))
@@ -878,6 +887,7 @@ export class Tasks {
             undefined,
             {
               turnSettings,
+              source,
               reopenSettled: resumePaused,
               unsnooze: true,
               clearCompletedTodos: resumePaused && !review,
@@ -902,8 +912,16 @@ export class Tasks {
       Effect.as({ ok: true }),
     )
   }
-  send(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
-    return runClientEffect(this.sendEffect(id, messageId, text, attachmentIds))
+  send(
+    id: string,
+    messageId: string,
+    text: string,
+    attachmentIds: string[] = [],
+    source?: MessageSource,
+  ) {
+    return runClientEffect(
+      this.sendEffect(id, messageId, text, attachmentIds, false, false, undefined, source),
+    )
   }
   steerEffect(
     id: string,
@@ -2187,7 +2205,14 @@ export class Tasks {
       )
     let added = false
     this.store.transaction(() => {
-      added = this.queue.add(id, messageId, prompt, [], undefined, false, true)
+      added = this.queue.add(id, messageId, prompt, [], undefined, false, true, undefined, {
+        source: {
+          kind: 'thread',
+          runtimeId: 'local',
+          threadId: taskId,
+          title: this.store.taskSummary(taskId).title.slice(0, 400),
+        },
+      })
       if (!added) return
       this.store.updateTask(id, (task) => ({
         ...task,
@@ -2349,6 +2374,7 @@ export class Tasks {
         harness: decode(taskHarnessSchema, { ...configured, permission: 'read-only' }),
         objective: prompt,
         origin: 'code-review',
+        messageSource: { kind: 'system', label: 'Code review' },
       })
       this.store.updateTask(reviewer.id, (task) => ({
         ...task,
@@ -2496,6 +2522,12 @@ export class Tasks {
         objective: input.prompt,
         harness,
         origin: 'dovo-subagent',
+        messageSource: {
+          kind: 'thread',
+          runtimeId: 'local',
+          threadId: parent.id,
+          title: parent.title.slice(0, 400),
+        },
       })
       this.store.updateTask(child.id, (task) => ({
         ...task,
@@ -2717,17 +2749,19 @@ export class Tasks {
       agentOverrides?: Task['agentOverrides']
       linkedCheckouts?: Task['linkedCheckouts']
       origin?: string
+      messageSource?: MessageSource
       worktreeIncludeChanges?: Task['worktreeIncludeChanges']
       existingWorktreePath?: Task['existingWorktreePath']
       checkoutBranch?: Task['checkoutBranch']
     },
   ) {
     if (input.linkedCheckouts) this.checkouts.linked.validate(input.linkedCheckouts)
+    const { messageSource, ...taskInput } = input
     const defaults = this.store.taskDefaults(input.repositoryId)
     const task: Task = {
       ...defaults,
       id: randomUUID(),
-      ...input,
+      ...taskInput,
       execution: input.execution ?? defaults.execution,
       harness: input.harness ?? (input.agentId ? undefined : defaults.harness),
       modelSelection:
@@ -2736,7 +2770,14 @@ export class Tasks {
       status: 'draft',
       createdAt: new Date().toISOString(),
       messages: input.objective.trim()
-        ? [{ id: randomUUID(), role: 'user', text: input.objective }]
+        ? [
+            {
+              id: randomUUID(),
+              role: 'user',
+              text: input.objective,
+              source: messageSource ?? { kind: 'user' },
+            },
+          ]
         : [],
       files: [],
       draft: '',

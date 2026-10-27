@@ -352,7 +352,24 @@ export async function studioTool(
     if (command.action === 'send') {
       if (!command.text.trim()) throw new HttpError(400, 'Add a message')
       return runClientEffect(
-        s.tasks.sendEffect(command.id, command.messageId, command.text, [], undefined, true),
+        s.tasks.sendEffect(
+          command.id,
+          command.messageId,
+          command.text,
+          [],
+          undefined,
+          true,
+          undefined,
+          workspace.tasks.some((task) => task.id === taskId)
+            ? {
+                kind: 'thread',
+                runtimeId: 'local',
+                runtimeIdentity: s.runtimeId,
+                threadId: taskId,
+                title: s.store.taskSummary(taskId).title.slice(0, 400),
+              }
+            : { kind: 'system', label: 'Agent on paired computer' },
+        ),
       )
     }
     if (command.action === 'stop') {

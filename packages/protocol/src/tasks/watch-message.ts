@@ -1,4 +1,5 @@
 import { pipelineSignal } from '../scm/work/work-presentation.js'
+import type { MessageSource } from './message-source.js'
 
 export type WatchMessage = {
   kind: 'pipeline' | 'pull-request'
@@ -24,7 +25,12 @@ function webUrl(value: string) {
 }
 
 /** Presentation only: retain the original queued text for agent input, editing and copying. */
-export function watchMessage(message: { id: string; text: string }): WatchMessage | null {
+export function watchMessage(message: {
+  id: string
+  text: string
+  source?: MessageSource
+}): WatchMessage | null {
+  if (message.source && !['pipeline', 'pull-request'].includes(message.source.kind)) return null
   const pipeline = message.id.startsWith('pipeline-watch:')
   if (!pipeline && !message.id.startsWith('pr-watch:')) return null
   const text = message.text.replace(/\r\n/g, '\n')

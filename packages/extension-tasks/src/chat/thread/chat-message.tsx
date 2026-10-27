@@ -17,6 +17,7 @@ import {
   type recentTools,
 } from '@dovo/protocol'
 import { WatchMessageCard } from './watch-message'
+import { MessageSource } from './message-source'
 import { Message, MessageContent, Button } from '@dovo/studio-ui'
 import { TaskMessageResponse } from './task-message-response'
 import { Star } from 'lucide-react'
@@ -116,6 +117,9 @@ export const ChatMessage = memo(function ChatMessage({
         </p>
       )}
       <div className="group/message flex min-w-0 flex-col gap-2">
+        {message.role === 'user' && message.source && message.source.kind !== 'user' && (
+          <MessageSource source={message.source} />
+        )}
         {watch ? (
           <WatchMessageCard update={watch} />
         ) : timeline ? (

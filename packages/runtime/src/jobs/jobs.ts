@@ -432,6 +432,12 @@ export class Jobs {
             ? node.data.objective
             : `${node.data.objective}\n\nExternal trigger data (event context):\n${triggerContext(run.triggerPayload)}`,
         origin: run.automationId,
+        messageSource: {
+          kind: 'automation',
+          automationId: run.automationId,
+          runId: run.id,
+          title: run.flow.name.slice(0, 400),
+        },
       })
       next = {
         ...updateStep(run, node.id, {

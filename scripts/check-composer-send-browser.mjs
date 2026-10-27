@@ -718,6 +718,13 @@ try {
   const queueTab = page.getByRole('tab', { name: 'Queue · 1', exact: true })
   const checklistTab = page.getByRole('tab', { name: /Checklist · 1\/2/ })
   await queueTab.waitFor()
+  const queueAnnouncement = page.locator('[aria-label="Composer activity"] [role="status"]')
+  assert.equal(await queueAnnouncement.textContent(), '1 queued message')
+  assert.equal(await queueAnnouncement.getAttribute('aria-live'), 'polite')
+  assert.equal(await queueAnnouncement.getAttribute('aria-atomic'), 'true')
+  await page
+    .getByRole('listitem', { name: 'Queued message 1 of 1, not sent', exact: true })
+    .waitFor()
   assert.equal(await queueTab.textContent(), 'Queue1')
   assert.equal(await checklistTab.textContent(), 'Checklist1/2')
   await page.evaluate(() =>
@@ -726,6 +733,7 @@ try {
   const pausedTab = page.getByRole('tab', { name: 'Queue · 1 · Paused', exact: true })
   const unfinishedTab = page.getByRole('tab', { name: 'Checklist · 1/2 · Unfinished', exact: true })
   await pausedTab.waitFor()
+  assert.equal(await queueAnnouncement.textContent(), '1 queued message, 1 paused')
   await unfinishedTab.waitFor()
   assert.equal(await pausedTab.locator('svg').count(), 1)
   assert.equal(await unfinishedTab.locator('svg').count(), 1)

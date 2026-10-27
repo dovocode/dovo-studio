@@ -1389,7 +1389,12 @@ export class WorkspaceStore {
         workspaceSchema.fields[patch.collection].schema.value,
         entity ? record : this.restoreSecrets(record),
       )
-      if (patch.collection === 'tasks') this.validateProjectTask(decode(taskSchema, parsed))
+      if (patch.collection === 'tasks') {
+        const task = decode(taskSchema, parsed)
+        if (!entity && task.messages.some((message) => message.source !== undefined))
+          throw new HttpError(400, 'Message sources are managed by the runtime')
+        this.validateProjectTask(task)
+      }
       if (patch.collection === 'repositories' && 'kind' in record && record.kind === 'scratch')
         throw new HttpError(400, 'The scratch workspace is managed by Dovo')
       if (entity) {
@@ -1581,6 +1586,8 @@ export class WorkspaceStore {
           next.slice(old.length).some((message) => message.role !== 'user')
         )
           throw new HttpError(400, 'Only new user messages may be appended')
+        if (next.slice(old.length).some((message) => message.source !== undefined))
+          throw new HttpError(400, 'Message sources are managed by the runtime')
       }
       merged.value = this.restoreSecrets(merged.value)
       applied[key] = { before: current[key] ?? null, after: merged.value ?? null }

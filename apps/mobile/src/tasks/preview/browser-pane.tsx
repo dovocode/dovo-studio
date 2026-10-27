@@ -44,7 +44,13 @@ function savedAddress(scope: string) {
   if (url !== undefined) rememberAddress(scope, url)
   return url
 }
-type PreviewProps = { taskId: string; expanded: boolean; onExpand: (value: boolean) => void }
+type PreviewProps = {
+  taskId: string
+  expanded: boolean
+  onExpand: (value: boolean) => void
+  openLink?: { id: string; url: string }
+  onLinkOpened?: () => void
+}
 export function BrowserPane(props: PreviewProps) {
   return <PreviewPane {...props} initialMode="remote" />
 }
@@ -56,6 +62,8 @@ function PreviewPane({
   expanded,
   onExpand,
   initialMode,
+  openLink,
+  onLinkOpened,
 }: PreviewProps & { initialMode: 'remote' | 'devices' }) {
   const { colors, styles } = useTheme()
   const [keyboard, setKeyboard] = useApplicationState(() => Keyboard.isVisible())
@@ -78,7 +86,23 @@ function PreviewPane({
   }, [])
 
   const { profile, snapshot } = useRuntime()
-  const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>(initialMode)
+  const linkScope = JSON.stringify([
+    profile?.id,
+    profile?.connection.address,
+    profile?.connection.runtimeId,
+    taskId,
+  ])
+  const [accepted, setAccepted] = useApplicationState({ scope: linkScope, link: openLink })
+  const acceptedLink = accepted.scope === linkScope ? accepted.link : undefined
+  const [mode, setMode] = useApplicationState<'remote' | 'web' | 'devices'>(
+    openLink ? 'remote' : initialMode,
+  )
+  useEffect(() => {
+    if (!openLink) return
+    setAccepted({ scope: linkScope, link: openLink })
+    setMode('remote')
+    onLinkOpened?.()
+  }, [openLink?.id, linkScope, onLinkOpened])
   const [reloadToken, setReloadToken] = useApplicationState(0)
   const latestTurn = snapshot?.workspace.tasks.find((task) => task.id === taskId)?.turns?.at(-1)
   const seenTurn = useRef(latestTurn?.status === 'completed' ? latestTurn.id : '')
@@ -136,11 +160,11 @@ function PreviewPane({
         {initialMode === 'devices' && browserControls}
         {mode === 'remote' ? (
           <RemoteBrowser
-            key={scope}
+            key={`${scope}:${acceptedLink?.id ?? ''}`}
             taskId={taskId}
             expanded={expanded}
             reloadToken={reloadToken}
-            initialUrl={savedAddress(scope)}
+            initialUrl={acceptedLink?.url ?? savedAddress(scope)}
             onMode={switchBrowser}
             onExpand={() => onExpand(true)}
           />

@@ -1,4 +1,5 @@
 import { taskIsWorking } from './tasks/task-working.js'
+import { messageSourceSchema } from './tasks/message-source.js'
 import { usageAccountSchema, planLimitSchema } from './conversation/workflow/plan-limits.js'
 export { usageAccountSchema } from './conversation/workflow/plan-limits.js'
 import {
@@ -393,6 +394,8 @@ export function turnSettingsLabel(settings: TurnSettings) {
   return `${settings.model || 'Provider default'} · ${settings.reasoning || 'Default reasoning'}`
 }
 export const messageSchema = mutableStruct({
+  /** Runtime-authored source; client sends cannot choose another sender. */
+  source: Schema.optional(messageSourceSchema),
   turnSettings: Schema.optional(turnSettingsSchema),
   id: Schema.String,
   role: Schema.Literals(['user', 'assistant']),

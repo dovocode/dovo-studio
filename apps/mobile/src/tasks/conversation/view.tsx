@@ -2,6 +2,7 @@ import { FailedTaskRetry } from './components/failed-task-retry'
 import { useForegroundInterval } from '../../runtime/state/app-active'
 import { TaskEmptyState } from '../creation/task-empty-state'
 import { WatchMessageCard } from './components/watch-message'
+import { MessageSource } from './components/message-source'
 import { watchMessage, checkpointFiles, formatTurnDuration, type FileKind } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
 import { ChangeTypeFilters } from '../../ui/content/change-types'
@@ -440,7 +441,8 @@ function Message() {
     state.message.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n\n'),
   )
   const taskId = useConversationSelector((value) => value.task.id)
-  const watch = user ? watchMessage({ id, text }) : null
+  const source = useConversationSelector(useCallback((value) => value.messageSources.get(id), [id]))
+  const watch = user ? watchMessage({ id, text, source }) : null
   const car = useCarMode()
   const [showActions, setShowActions] = useApplicationState(false)
   const time = createdAt && formatTime(createdAt, { hour: '2-digit', minute: '2-digit' })
@@ -454,6 +456,9 @@ function Message() {
         alignItems: user && !watch ? 'flex-end' : 'stretch',
       }}
     >
+      {user && source && source.kind !== 'user' && (
+        <MessageSource source={source} taskId={taskId} />
+      )}
       {watch ? (
         <WatchMessageCard update={watch} taskId={taskId} />
       ) : (

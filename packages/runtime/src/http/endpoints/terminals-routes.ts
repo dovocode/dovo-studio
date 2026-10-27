@@ -1,7 +1,7 @@
 import { isRunToken } from '../../auth/run-credentials.js'
 import { authenticateRuntimeOperation } from '../../auth/run-authorization.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
-import { mutableStruct } from '@dovo/protocol'
+import { mutableStruct, threadServerRequestSchema, stopThreadServerSchema } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
@@ -49,6 +49,25 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (
+        method === 'POST' &&
+        (path === '/api/terminals/servers' || path === '/api/terminals/servers/stop')
+      ) {
+        const input = yield* serviceResult(body(request))
+        const { taskId } = decode(threadServerRequestSchema, input)
+        const authorize = () => {
+          authenticateRuntimeOperation(s, token)
+          const task = s.store.taskSummary(taskId)
+          if (task.archived || task.archivedAt)
+            throw new HttpError(409, 'Restore the thread before managing its servers')
+        }
+        authorize()
+        if (path.endsWith('/stop')) {
+          const stop = decode(stopThreadServerSchema, input)
+          return yield* runtimeOperation(() => s.threadServers.stop(stop, authorize))
+        }
+        return yield* runtimeOperation(() => s.threadServers.list(taskId))
+      }
       if (method === 'POST' && (path === '/api/terminals' || path === '/api/terminals/ensure')) {
         const { taskId, checkoutId } = decode(
           mutableStruct({

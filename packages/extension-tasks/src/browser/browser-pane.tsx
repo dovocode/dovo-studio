@@ -104,7 +104,7 @@ import { deviceHostSettingsResultSchema } from '@dovo/protocol'
 // A popped-out thread has its own renderer and must never share main-window tabs.
 const threadBrowserWindowId = randomUUID()
 const addresses = new Map<string, string>()
-type OpenLink = { id: string; url: string }
+type OpenLink = { id: string; url: string; remote?: boolean }
 type BrowserPreviewBackground = { tabId: string; url: string; title: string; image?: string }
 const savedTabs = new Map<string, BrowserTabs>()
 // Extension-created pages already have a native view. Keep its identity for this renderer session.
@@ -516,8 +516,10 @@ function BrowserContent({
     if (
       !newTab(
         previewUrl(openLink.url),
-        browser ? 'web' : 'remote',
-        browser ? (browserLinkProfile(openLink.url, profiles) ?? 'default') : 'default',
+        browser && !openLink.remote ? 'web' : 'remote',
+        browser && !openLink.remote
+          ? (browserLinkProfile(openLink.url, profiles) ?? 'default')
+          : 'default',
       )
     )
       return

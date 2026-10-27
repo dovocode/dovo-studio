@@ -191,6 +191,14 @@ it('creates, sends, waits, reads, searches and archives threads through existing
   expect(s.store.task(id).messages.filter((message) => message.id === send.messageId)).toHaveLength(
     1,
   )
+  expect(
+    s.store.task(id).messages.find((message) => message.id === send.messageId)?.source,
+  ).toMatchObject({
+    kind: 'thread',
+    runtimeId: 'local',
+    runtimeIdentity: s.runtimeId,
+    title: 'Parent',
+  })
   expect((await post('threads', { action: 'archive', id })).status).toBe(200)
   expect(s.store.taskSummary(id).archivedAt).toBeTruthy()
   expect((await post('threads', { action: 'unarchive', id })).status).toBe(200)

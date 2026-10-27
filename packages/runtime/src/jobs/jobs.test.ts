@@ -67,6 +67,13 @@ it(
       })
     })
     expect(runtime.services.jobs.list()[0].taskIds).toHaveLength(1)
+    const automationTask = runtime.services.store.task(runtime.services.jobs.list()[0].taskIds[0])
+    expect(automationTask.messages[0].source).toEqual({
+      kind: 'automation',
+      automationId: flow.id,
+      runId: id,
+      title: flow.name,
+    })
     expect(
       runtime.services.activity
         .list('', 'job', 0)

@@ -21,6 +21,7 @@ import {
   conversationPresentation,
   type PendingMessage,
   type Task,
+  type MessageSource,
 } from '@dovo/protocol'
 import { useConversationActions } from './use-actions'
 import { useToolActivity } from './use-tool-activity'
@@ -39,6 +40,7 @@ type Conversation = {
   task: Task
   presentation: ReturnType<typeof conversationPresentation>
   childResultIds: ReadonlySet<string>
+  messageSources: ReadonlyMap<string, MessageSource>
   actions: ReturnType<typeof useConversationActions>
   send: (mode?: 'queue' | 'steer') => void
   stop: () => void
@@ -99,6 +101,15 @@ export function ConversationProvider({
     () =>
       new Set(
         task.messages.filter((message) => message.subagentResultId).map((message) => message.id),
+      ),
+    [task.messages],
+  )
+  const messageSources = useMemo(
+    () =>
+      new Map(
+        task.messages.flatMap((message) =>
+          message.source ? [[message.id, message.source] as const] : [],
+        ),
       ),
     [task.messages],
   )
@@ -283,6 +294,7 @@ export function ConversationProvider({
     task,
     presentation,
     childResultIds,
+    messageSources,
     history,
     visible,
     recentReady,

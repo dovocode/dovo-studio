@@ -10,6 +10,7 @@ import {
   turnSettingsMatchHarness,
   type TurnSettings,
   type Attachment,
+  type MessageSource,
 } from '@dovo/protocol'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { Activity } from '../../storage/activity.js'
@@ -100,6 +101,7 @@ export class TaskQueue {
       reopenSettled?: boolean
       unsnooze?: boolean
       clearCompletedTodos?: boolean
+      source?: MessageSource
     } = {},
   ) {
     if (this.accepted(id, messageId, text, attachments, options.turnSettings)) return false
@@ -140,6 +142,7 @@ export class TaskQueue {
           {
             id: messageId,
             role: 'user',
+            source: options.source ?? { kind: 'user' },
             ...(options.turnSettings ? { turnSettings: options.turnSettings } : {}),
             text,
             ...(attachments.length ? { attachments } : {}),
@@ -244,6 +247,7 @@ export class TaskQueue {
           {
             id: duplicateMessageId,
             role: 'user',
+            source: { kind: 'user' },
             text: message.text,
             attachments: message.attachments,
             turnSettings: message.turnSettings,
@@ -296,6 +300,7 @@ export class TaskQueue {
           ? {
               ...item,
               text,
+              source: { kind: 'user' },
               ...(turnSettings !== undefined ? { turnSettings: turnSettings ?? undefined } : {}),
               ...(attachments ? { attachments } : {}),
             }

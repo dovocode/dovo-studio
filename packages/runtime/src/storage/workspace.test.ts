@@ -5,6 +5,63 @@ import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
 const completeTasks = (store: WorkspaceStore) =>
   store.get().tasks.map((task) => store.task(task.id))
+it('rejects client-authored message provenance while preserving runtime sources in existing history', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const draft: Task = {
+      id: 'draft',
+      title: 'Draft',
+      agentId: '',
+      repositoryId: '',
+      status: 'draft',
+      createdAt: '',
+      messages: [],
+      files: [],
+      draft: '',
+      example: false,
+    }
+    const message = {
+      id: 'source',
+      role: 'user' as const,
+      text: 'Injected update',
+      source: { kind: 'system' as const, label: 'Studio' },
+    }
+    expect(() =>
+      store.patch({
+        collection: 'tasks',
+        id: draft.id,
+        changes: {},
+        create: { ...draft, messages: [message] },
+      }),
+    ).toThrow('Message sources are managed by the runtime')
+    store.update((workspace) => ({ ...workspace, tasks: [draft] }))
+    expect(() =>
+      store.patch({
+        collection: 'tasks',
+        id: draft.id,
+        changes: { messages: { before: [], after: [message] } },
+      }),
+    ).toThrow('Message sources are managed by the runtime')
+    store.updateTaskHistory(draft.id, (task) => ({ ...task, messages: [message] }))
+    store.patch({
+      collection: 'tasks',
+      id: draft.id,
+      changes: {
+        messages: {
+          before: [message],
+          after: [message, { id: 'user', role: 'user', text: 'My reply' }],
+        },
+      },
+    })
+    expect(store.task(draft.id).messages.map((item) => item.source)).toEqual([
+      message.source,
+      undefined,
+    ])
+  } finally {
+    db.close()
+  }
+})
 it('persists file review versions through restarts, content ABA and removal while isolating unchanged files', () => {
   const db = openDatabase(':memory:')
   try {

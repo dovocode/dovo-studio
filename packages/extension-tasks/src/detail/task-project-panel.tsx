@@ -52,6 +52,7 @@ import { taskPullLinks } from './task-pull-links'
 import { TaskPullLinkDialog } from '../dialogs/task-pull-link-dialog'
 import { TaskBranchMenu } from './task-branch-menu'
 import { TaskProjectActions } from './task-project-actions'
+import { ThreadServers } from './thread-servers'
 import { TaskWaitingPanel } from './task-waiting-panel'
 import { TaskPullStatus } from './task-pull-status'
 import { fileStats, DiffAmounts } from '../files/presentation'
@@ -61,11 +62,13 @@ export function TaskProjectPanel({
   onPullLink,
   onTerminal,
   onSurface,
+  onBrowser,
 }: {
   task: Task
   onPullLink?: (url: string) => boolean
   onTerminal?: (terminalId: string) => void
   onSurface: (surface: TaskSurface) => void
+  onBrowser?: (url: string) => void
 }) {
   const { workspace, snapshot, connected, connection, request, runtimes, activeRuntimeId } =
     useWorkspace()
@@ -520,6 +523,7 @@ export function TaskProjectPanel({
           )}
           {actions}
         </div>
+        {onBrowser && <ThreadServers taskId={task.id} onOpen={onBrowser} />}
         <section
           aria-label="Pull requests"
           className="studio-project-section border-t border-border/60"

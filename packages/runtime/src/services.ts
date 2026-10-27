@@ -64,6 +64,7 @@ import { Jobs } from './jobs/jobs.js'
 import { SocketTickets } from './http/support/socket-tickets.js'
 import { SimulatorPreviews } from './previews/simulators.js'
 import { RemoteBrowsers } from './previews/browser.js'
+import { ThreadServers } from './previews/thread-servers.js'
 import { ProjectFiles } from './scm/repositories/project-files.js'
 export function createServices(db: Database.Database, ownerToken: string): Services {
   db.prepare("INSERT OR IGNORE INTO documents (id, value) VALUES ('runtime-identity', ?)").run(
@@ -78,6 +79,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   if (typeof runtimeId !== 'string' || !runtimeId)
     throw new Error('Invalid persisted runtime identity')
   const activity = new Activity(db)
+  const threadServers = new ThreadServers(runtimeId)
   const commands = new Commands(db)
   const preferences = new RuntimePreferences(db, () => store.update((workspace) => workspace))
   const deviceHostUploads = new DeviceHostUploads()
@@ -158,7 +160,11 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       (common, directory) => store.rememberWorktree(common, directory),
     ),
     pulls: ForgePullRequests = new ForgePullRequests(git, forges, store),
-    terminals = new Terminals(() => commands.get(), activity),
+    terminals = new Terminals(
+      () => commands.get(),
+      activity,
+      (id) => threadServers.environment(id, 'terminal'),
+    ),
     agents = new AgentRegistry(
       () => commands.get(),
       (id) => acpInstallations.launch(id),
@@ -227,7 +233,10 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   const taskReviews = new TaskReviews(db, { store, tasks, git, checkouts, activity })
   const mcpApps = new McpApps(db, store, activity, approvals)
   tasks.setMcpApps(mcpApps)
-  mcpApps.setSendMessage((taskId, messageId, text) => tasks.send(taskId, messageId, text))
+  tasks.setServerEnvironment((id) => threadServers.environment(id, 'agent'))
+  mcpApps.setSendMessage((taskId, messageId, text) =>
+    tasks.send(taskId, messageId, text, [], { kind: 'system', label: 'MCP app' }),
+  )
   const liveActivities = new LiveActivities(
     db,
     store,
@@ -489,6 +498,7 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
     pairing,
     git,
     terminals,
+    threadServers,
     agents,
     approvals,
     questions,
@@ -558,6 +568,7 @@ export interface Services {
   pairing: Pairing
   git: GitService
   terminals: Terminals
+  threadServers: ThreadServers
   agents: AgentRegistry
   approvals: Approvals
   attachments: Attachments

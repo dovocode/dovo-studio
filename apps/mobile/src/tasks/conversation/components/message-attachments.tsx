@@ -1,3 +1,4 @@
+import { AttachmentArchive } from './attachment-archive'
 import { SafeModal } from '../../../ui/layout/safe-modal'
 import { EditChatImage } from '../../composer/chat-image-edit-context'
 import { nativeEffect, mobileWorkflow } from '../../../runtime/state/native-effect'
@@ -13,6 +14,7 @@ import {
   attachmentReadSchema,
   taskImageReadSchema,
   isImageAttachment,
+  isZipAttachment,
   fileSizeLabel,
   responses,
   type Attachment,
@@ -41,6 +43,7 @@ export function MessageAttachments({
   const { styles, colors } = useTheme()
 
   const { connected, callEffect } = useRuntime()
+  const [archive, setArchive] = useApplicationState<Attachment | null>(null)
   const [preview, setPreview] = useApplicationState<{
       attachment: Attachment
       data: string
@@ -116,22 +119,24 @@ export function MessageAttachments({
                 opacity: !connected || busy || disabled ? 0.4 : pressed ? 0.6 : 1,
               })}
               onPress={() =>
-                void act(() => {
-                  return runClientEffect(
-                    mobileWorkflow(function* () {
-                      return setPreview(
-                        yield* callEffect(
-                          '/api/attachments/read',
-                          {
-                            taskId,
-                            id: file.id,
-                          },
-                          attachmentReadSchema,
-                        ),
+                isZipAttachment(file)
+                  ? setArchive(file)
+                  : void act(() => {
+                      return runClientEffect(
+                        mobileWorkflow(function* () {
+                          return setPreview(
+                            yield* callEffect(
+                              '/api/attachments/read',
+                              {
+                                taskId,
+                                id: file.id,
+                              },
+                              attachmentReadSchema,
+                            ),
+                          )
+                        }),
                       )
-                    }),
-                  )
-                })
+                    })
               }
             >
               {isImageAttachment(file) ? (
@@ -202,6 +207,14 @@ export function MessageAttachments({
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
         </Text>
+      )}
+      {archive && (
+        <AttachmentArchive
+          key={archive.id}
+          taskId={taskId}
+          attachment={archive}
+          onClose={() => setArchive(null)}
+        />
       )}
       <SafeModal visible={!!preview} animationType="slide" onRequestClose={() => setPreview(null)}>
         <View style={styles.screen}>

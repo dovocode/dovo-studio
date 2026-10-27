@@ -2,12 +2,15 @@ import { Effect } from 'effect'
 import {
   watchMessage,
   watchMessagePreview,
+  messageSourceLabel,
+  messageSourceFor,
   randomUUID,
   turnSettingsLabel,
   responses,
   type Task,
 } from '@dovo/protocol'
 import { WatchMessageCard } from '../conversation/components/watch-message'
+import { MessageSource } from '../conversation/components/message-source'
 import { pendingQueue } from './pending-send'
 import { ScrollView, View } from 'react-native'
 import { Pressable } from 'react-native-gesture-handler'
@@ -93,6 +96,7 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
   const selectedIndex = queue.findIndex((message) => message.id === selectedId)
   const selected = queue[selectedIndex]
   const selectedWatch = selected ? watchMessage(selected) : null
+  const selectedSource = selected ? messageSourceFor(selected) : undefined
   if (!queue.length) return null
   return (
     <View
@@ -115,6 +119,12 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
             }
       }
     >
+      <Text
+        accessibilityLiveRegion="polite"
+        style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}
+      >
+        {`${queue.length} queued ${queue.length === 1 ? 'message' : 'messages'}${task.queuePaused ? ', paused' : ''}`}
+      </Text>
       <ScrollView
         ref={drag.scroll}
         removeClippedSubviews={false}
@@ -215,9 +225,7 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
               >
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityHint={
-                    canDrag && !pendingMessage ? 'Touch and hold to reorder' : undefined
-                  }
+                  accessibilityHint={`Queued message ${index + 1} of ${queue.length}, ${message.steering ? 'being delivered' : 'not sent'}.${canDrag && !pendingMessage ? ' Touch and hold to reorder.' : ''}`}
                   accessibilityActions={
                     canDrag && !pendingMessage
                       ? [
@@ -245,16 +253,21 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                     gap: 4,
                   }}
                 >
-                  <Text
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                    style={[styles.text, { fontSize: 14, flex: 1, minWidth: 0 }]}
-                  >
-                    {preview.replace(/\s+/g, ' ')}
-                    {!!message.text &&
-                      !!message.attachments?.length &&
-                      ` · ${message.attachments.length} files`}
-                  </Text>
+                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                    <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
+                      {messageSourceLabel(messageSourceFor(message))}
+                    </Text>
+                    <Text
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                      style={[styles.text, { fontSize: 14, flex: 1, minWidth: 0 }]}
+                    >
+                      {preview.replace(/\s+/g, ' ')}
+                      {!!message.text &&
+                        !!message.attachments?.length &&
+                        ` · ${message.attachments.length} files`}
+                    </Text>
+                  </View>
                   {message.turnSettings && <Icon name="tune" size={12} color={colors.muted} />}
                 </Pressable>
               </QueueDragTarget>
@@ -326,6 +339,7 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
       </ScrollView>
       {selected && (
         <Sheet title={`Queued message ${selectedIndex + 1}`} onClose={() => setSelectedId(null)}>
+          {selectedSource && <MessageSource source={selectedSource} taskId={task.id} />}
           {(task.queuePaused ||
             selected.paused ||
             (firstPaused >= 0 && firstPaused < selectedIndex)) && (

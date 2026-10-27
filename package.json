@@ -44,6 +44,8 @@
     "test:windows-runtime:browser": "node scripts/check-windows-runtime-browser.mjs",
     "test:turn-grouping:browser": "node scripts/check-turn-grouping-browser.mjs",
     "test:watch-messages:browser": "node scripts/check-watch-messages-browser.mjs",
+    "test:message-source:browser": "node scripts/check-message-source-browser.mjs",
+    "test:thread-servers:browser": "node scripts/check-thread-servers-browser.mjs",
     "test:thread-scroll:browser": "node scripts/check-thread-scroll-browser.mjs",
     "test:thread-streaming:browser": "node scripts/check-thread-streaming-browser.mjs",
     "test:task-callbacks:browser": "node scripts/check-task-callbacks-browser.mjs",

@@ -14,9 +14,9 @@ const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(
 const useLayout=(ref,callback)=>{const current=useRef(callback);current.current=callback;const report=()=>{if(!ref.current||!current.current)return;const r=ref.current.getBoundingClientRect(),p=ref.current.parentElement.getBoundingClientRect();current.current({nativeEvent:{layout:{x:ref.current.offsetLeft-ref.current.parentElement.offsetLeft,y:ref.current.offsetTop-ref.current.parentElement.offsetTop,width:r.width,height:r.height}}})};useLayoutEffect(report);useLayoutEffect(()=>{const observer=new ResizeObserver(report);observer.observe(ref.current);return()=>observer.disconnect()},[])};
 export const View=({children,style,testID,accessibilityRole,accessibilityLabel,onLayout,ref:forwardedRef})=>{const ref=useRef(null);useLayout(ref,onLayout);useImperativeHandle(forwardedRef,()=>({measureInWindow:callback=>{const r=ref.current.getBoundingClientRect();callback(r.x,r.y,r.width,r.height)}}));return <div ref={ref} role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',borderStyle:'solid',borderWidth:0,...flat(style)}}>{children}</div>};
 export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,overflowY:scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:'column',...flat(contentContainerStyle)}}>{children}</div></div>};
-export const Text=({children,style,numberOfLines,accessibilityRole,accessibilityLabel})=><span role={accessibilityRole} aria-label={accessibilityLabel} style={{...flat(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
+export const Text=({children,style,numberOfLines,accessibilityRole,accessibilityLabel,accessibilityLiveRegion})=><span role={accessibilityRole} aria-label={accessibilityLabel} aria-live={accessibilityLiveRegion} style={{...flat(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
-export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole,accessibilityActions,onAccessibilityAction})=><button data-actions={JSON.stringify(accessibilityActions)} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=><button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const Modal=({children,onRequestClose})=>createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body);
 export const useWindowDimensions=()=>{const[viewport,setViewport]=useState({width:innerWidth,height:innerHeight});useLayoutEffect(()=>{const resize=()=>setViewport({width:innerWidth,height:innerHeight});addEventListener('resize',resize);return()=>removeEventListener('resize',resize)},[]);return viewport};
@@ -34,6 +34,20 @@ export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>
 export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff'},styles:{content:{},muted:{color:'#999'}}});
 `
 const stubs = [
+  {
+    path: 'expo-router',
+    contents: 'export const router={push:target=>window.navigations.push(target)};',
+  },
+  {
+    path: '../../../runtime/connection/provider',
+    importer: mobile,
+    contents: 'export const useRuntime=()=>window.runtime;',
+  },
+  {
+    path: '../../../ui/layout/sheet',
+    importer: mobile,
+    contents: 'export const useSheetNavigation=()=>navigate=>navigate();',
+  },
   { path: 'expo-file-system', contents: 'export class File{};export const Paths={cache:"/tmp"};' },
   { path: '../../ui/layout/safe-modal', importer: mobile, contents: controls },
   {
@@ -190,6 +204,13 @@ try {
     '<style>body{margin:0;background:#101010;color:#eee;font-family:system-ui}button,textarea,select{font:inherit}#app{display:flex;flex-direction:column}</style><div id="app"></div>',
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const initialQueued = page.getByRole('button', { name: /^View queued message 1:/ })
+  assert.match(
+    await initialQueued.getAttribute('aria-description'),
+    /^Queued message 1 of 1, not sent/,
+  )
+  const queueAnnouncement = page.locator('[data-testid="Queued messages"] [aria-live="polite"]')
+  assert.equal(await queueAnnouncement.textContent(), '1 queued message')
   await page.getByRole('button', { name: 'Queue follow-up', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
   assert.equal(
@@ -758,6 +779,7 @@ try {
       .count(),
     0,
   )
+  assert.equal(await queueAnnouncement.textContent(), '20 queued messages')
   const queuedList = page.getByLabel('Queued message list', { exact: true })
   assert.ok(await queuedList.evaluate((element) => element.scrollHeight > element.clientHeight))
   assert.ok((await queuedList.boundingBox()).height <= 180)

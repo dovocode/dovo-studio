@@ -609,3 +609,63 @@ mobile rendering. Further source-review findings remain separate opportunities:
   explicit; this review does not weaken verification to claim a latency improvement.
 
 Adaptive polling and additional review workflows are not implied by these fixes.
+
+## Thread servers, message origins and another source review
+
+This round compares T3 at
+[`3b22620a5cbbf1b6f6336d70e68696a14c36f382`](https://github.com/pingdotgg/t3code/commit/3b22620a5cbbf1b6f6336d70e68696a14c36f382)
+with Dovo baseline `88267280`. Five additional Terra 6.1 reviewers inspected PR review, pipeline
+reads, mobile workflows, agent lifecycle and thread UX. Their source findings below are separate
+from the four implementations in this batch.
+
+### Implemented from the preceding review
+
+- **Thread servers:** the project information panel lists thread-owned agent/terminal TCP listeners.
+  Confirmed loopback HTTP endpoints open in a browser on the owning computer; other TCP services
+  have Stop without an HTTP Open action. Reads are on demand, coalesced, and paused with
+  hidden/background UI. Stop revalidates thread, PID/start identity and listener, checks current
+  authorization, sends SIGTERM to the listener process, and reports a server that remains running.
+  It never kills the agent's or terminal's shared process group. Discovery uses Linux `/proc` or
+  macOS `lsof`/`ps`; a snapshot capability hides it on older runtimes and unsupported systems,
+  including Windows. Only processes launched with Studio's new provenance markers are attributable;
+  existing unmarked processes are not adopted. HTTPS-only services retain their existing manual
+  browser navigation.
+- **Message origins:** runtime-authored metadata identifies automation, watched PR/pipeline,
+  monitored thread and Studio-agent messages in queues and sent history. Known source links retain
+  computer identity. User edits become user-authored; client workspace patches cannot inject
+  trusted-looking non-user origins. Child results remain in their dedicated inbox. Desktop queue
+  changes have a polite count/pause announcement and unsent row descriptions.
+- **Mobile ZIPs:** authenticated thread-scoped endpoints list and read bounded archive entries. The
+  mobile viewer supports folders, text/image previews, sharing and attaching an entry to the current
+  draft. It reuses the runtime's existing parser, with no new dependency. Archive and expanded
+  sizes, entry count, compression ratio, paths, entry types and checksums are checked; no entry path
+  is extracted to disk. Native mobile device verification remains separate.
+- **Shared Git configuration:** Studio-owned configuration writers serialize by canonical common Git
+  directory, including linked worktrees and multiple service instances. Real concurrent writes
+  failed 19 of 32 attempts before the fix; tracked worktree preparation failed 5 of 8 attempts.
+  Independent repositories and readers stay concurrent. Submodule initialization is coordinated;
+  cloning/updating is outside the configuration lock. External Git processes still use Git's own
+  locking. No external lock deletion or blanket retries were added.
+
+T3 references:
+[server panel](https://github.com/pingdotgg/t3code/blob/3b22620a5cbbf1b6f6336d70e68696a14c36f382/apps/web/src/components/chat/ThreadServersPanel.tsx),
+[queued origins](https://github.com/pingdotgg/t3code/blob/3b22620a5cbbf1b6f6336d70e68696a14c36f382/apps/web/src/components/chat/QueuedRunsControl.tsx),
+[mobile archives](https://github.com/pingdotgg/t3code/blob/3b22620a5cbbf1b6f6336d70e68696a14c36f382/apps/mobile/src/features/files/ZipArchiveView.tsx),
+[Git coordination](https://github.com/pingdotgg/t3code/blob/3b22620a5cbbf1b6f6336d70e68696a14c36f382/apps/server/src/vcs/GitVcsDriverCore.ts).
+
+### New findings, not implementations
+
+These are source-derived findings and have not been reproduced in a live app. They do not establish
+measured performance improvements. The next correctness investigation should cover the
+mixed-revision checks read and explicit file refresh before larger feature additions.
+
+| Priority                | Finding                                                           | Evidence and smallest useful follow-up                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Correctness             | GitHub checks can combine different PR heads during a push        | `packages/runtime/src/scm/pulls/pulls.ts` reads the initial head, a live PR rollup and head-pinned check runs without final head verification. Bind all sections to the same head or reject a changed head. T3 checks head consistency in `packages/source-control-github/src/server/GitHubPullRequestApi.ts`. Reproduce a push between reads and verify account/head isolation. |
+| Correctness             | Explicit mobile file refresh can reuse a 30-second cached listing | `apps/mobile/src/tasks/files/task-files.tsx` changes a client revision, but `packages/runtime/src/scm/repositories/project-files.ts` can return the same cached directory listing. Add an explicit fresh read with protection against older in-flight results. T3 refreshes reachable queries in `apps/mobile/src/features/files/useFileTreeEntries.ts`.                         |
+| Correctness             | Mixed clipboard contents can suppress useful text                 | `packages/extension-tasks/src/chat/composer/composer.tsx` claims pastes containing files, including text accompanied by a synthetic RTF file. Compare T3's `apps/web/src/components/chat/composerAttachmentFiles.ts`; reproduce rich-text and image pastes, including disconnected upload, before changing clipboard behavior.                                                   |
+| Review workflow         | Put conversations at their actual diff lines                      | Dovo's `packages/extension-scm/src/pulls/detail/changes.tsx` groups feedback after the file patch. T3's `apps/web/src/components/pullRequest/PullRequestCodeTab.tsx` anchors placeable conversations by side/line and keeps unplaced conversations separate. Preserve outdated status; do not present original lines as current lines.                                           |
+| Review workflow         | Edit posted comments where the provider permits it                | Dovo exposes replies/resolution but not editing in `packages/extension-scm/src/pulls/list/actions.tsx`. T3 checks permissions and PR membership before edits. Add provider-specific actions with preserved drafts and pinned computer/account/PR identity.                                                                                                                       |
+| Measured optimization   | Conditional GitHub checks revalidation                            | Dovo's checks refresh fetches rollup/check-run/annotation pages. T3's `packages/source-control-github/src/server/gitHubConditionalChecks.ts` supports credential-scoped conditional responses. Measure calls/latency and verify validators, pages, head/account switches and fallback before adopting.                                                                           |
+| Larger mobile slice     | Directory-scoped browsing and bounded server-side search          | Dovo's mobile browser downloads a whole-checkout file list capped at 200,000 paths. T3's `useFileTreeEntries.ts` loads expanded directories and separately searches with visible truncation. Benchmark representative checkouts and native devices before replacing the existing flow.                                                                                           |
+| Small terminal addition | Selection-aware terminal context menu                             | T3's `apps/web/src/components/ThreadTerminalDrawer.tsx` offers Copy, Paste, Select all and Jump to latest. Reuse Dovo's xterm instance and existing Add selection action; preserve clipboard errors, writable-connection checks and session-switch safety.                                                                                                                       |

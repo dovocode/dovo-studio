@@ -1,3 +1,5 @@
+import { attachmentArchiveRequestSchema, attachmentArchiveReadRequestSchema } from '@dovo/protocol'
+import { listAttachmentArchive, readAttachmentArchive } from '../storage/attachment-archive.js'
 import { STUDIO_BROWSER_SCOPE, isPrivateBrowserProfile } from '@dovo/protocol'
 import { usageHubs } from './endpoints/usage-hubs.js'
 import { peerConfigSchema } from '@dovo/protocol'
@@ -973,6 +975,20 @@ export function route(
           }),
         )
       }
+      if (method === 'POST' && path === '/api/attachments/archive/list')
+        return yield* serviceResult(
+          listAttachmentArchive(
+            s.attachments,
+            decode(attachmentArchiveRequestSchema, yield* serviceResult(body(request, 8192))),
+          ),
+        )
+      if (method === 'POST' && path === '/api/attachments/archive/read')
+        return yield* serviceResult(
+          readAttachmentArchive(
+            s.attachments,
+            decode(attachmentArchiveReadRequestSchema, yield* serviceResult(body(request, 8192))),
+          ),
+        )
       if (method === 'POST' && path === '/api/attachments/replace')
         return yield* serviceResult(s.attachments.replace(yield* serviceResult(body(request))))
       if (method === 'POST' && path === '/api/attachments/upload')

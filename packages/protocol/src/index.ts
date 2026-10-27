@@ -41,6 +41,7 @@ export * from './conversation/workflow/agent-interactions.js'
 export * from './scm/repositories/branches.js'
 
 export * from './shared/attachments.js'
+export * from './shared/attachment-archive.js'
 export * from './shared/attachment-images.js'
 export * from './scm/repositories/repositories.js'
 export * from './scm/repositories/file-tree.js'
@@ -318,6 +319,7 @@ export * from './conversation/artifact-library.js'
 export { connectionProgress } from './runtime/connection/connection-progress.js'
 
 export * from './tasks/watch-message.js'
+export * from './tasks/message-source.js'
 
 export * from './tasks/settled-page.js'
 
@@ -326,3 +328,4 @@ export * from './shared/client-diagnostics.js'
 export { THREAD_STARTERS } from './tasks/thread-starters.js'
 
 export * from './tasks/draft-stash.js'
+export * from './runtime/previews/thread-servers.js'

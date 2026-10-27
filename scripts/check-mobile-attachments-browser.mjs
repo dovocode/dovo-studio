@@ -15,7 +15,14 @@ import {MessageAttachments} from './src/tasks/conversation/components/message-at
 window.edited=[];window.calls=[];window.connected=true;window.disabled=false;window.thumbnailFail=false;window.fail=false;window.sharingAvailable=true;window.shared=[];window.writes=[];
 const image={id:'photo',name:'Schermafbeelding 2026-10-24 om 09.01 — a very long filename.jpg',mime:'image/jpeg',size:2048};
 const doc={id:'notes',name:'Notes for the release.txt',mime:'text/plain',size:32};
-window.files=[image,doc];window.request=async(path,input)=>{window.calls.push({path,input});if(window.fail)throw Error('Attachment unavailable');if(path==='/api/tasks/images/read'){if(window.thumbnailFail)throw Error('Thumbnail unavailable');return {uri:window.png}};return {attachment:window.files.find(file=>file.id===input.id),data:input.id==='photo'?window.png.split(',')[1]:btoa('Release notes')}};
+const zip={id:'archive',name:'Build artifacts and supporting reports.zip',mime:'application/zip',size:2048};
+window.archiveEntries=[{path:'reports/deep/results.txt',size:15,directory:false},{path:'reports/other.txt',size:12,directory:false},{path:'image.png',size:32,directory:false},{path:'empty/',size:0,directory:true}];window.uploads=[];
+
+window.files=[image,doc,zip];window.request=async(path,input)=>{window.calls.push({path,input});
+if(path==='/api/attachments/archive/list'){if(window.archiveFail)throw Error('Expanded ZIP exceeds preview limits');return {entries:window.archiveEntries}};
+if(path==='/api/attachments/archive/read'){if(window.holdEntry){window.holdEntry=false;await new Promise(resolve=>window.releaseEntry=resolve)}if(window.entryFail)throw Error('Entry unavailable');const image=input.path==='image.png';return {path:input.path,name:input.path.split('/').at(-1),mime:image?'image/png':'text/plain',size:15,data:image?window.png.split(',')[1]:btoa(input.path==='reports/other.txt'?'Other result':'Selected result')}};
+if(path==='/api/attachments/upload'){window.uploads.push(input);if(window.uploadFail){window.uploadFail=false;throw Error('Upload response lost')}return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:15}}};
+if(window.fail)throw Error('Attachment unavailable');if(path==='/api/tasks/images/read'){if(window.thumbnailFail)throw Error('Thumbnail unavailable');return {uri:window.png}};return {attachment:window.files.find(file=>file.id===input.id),data:input.id==='photo'?window.png.split(',')[1]:btoa('Release notes')}};
 function App(){const [files,setFiles]=useState([image]),[revision,setRevision]=useState(0);window.refresh=()=>setRevision(value=>value+1);window.setFiles=setFiles;return <main data-revision={revision} style={{padding:12}}><MessageAttachments taskId="task" files={files} removable edit={async id=>{window.edited.push(id)}} remove={id=>setFiles(files=>files.filter(file=>file.id!==id))} disabled={window.disabled}/><textarea aria-label="Message" defaultValue="Keep my draft"/></main>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -45,6 +52,11 @@ export const Image=({source,accessibilityLabel,style})=><img src={source?.uri} a
     {
       path: '../../../runtime/state/application-state',
       importer: component,
+      contents: `export {useState as useApplicationState} from 'react';`,
+    },
+    {
+      path: '../../runtime/state/application-state',
+      importer: mobile + '/src/ui/controls',
       contents: `export {useState as useApplicationState} from 'react';`,
     },
     {
@@ -79,7 +91,7 @@ export const Image=({source,accessibilityLabel,style})=><img src={source?.uri} a
     },
     {
       path: 'expo-file-system',
-      contents: `export const Paths={cache:'cache'};export class File{constructor(path,name){this.uri=path+'/'+name}write(data,options){window.writes.push({uri:this.uri,data,options})}}`,
+      contents: `export const Paths={cache:'cache'};export class File{constructor(path,name){this.uri=path+'/'+name}write(data,options){this.exists=true;window.writes.push({uri:this.uri,data,options})}delete(){this.exists=false;window.deleted=(window.deleted||[]).concat(this.uri)}}`,
     },
     {
       path: 'expo-sharing',
@@ -204,7 +216,7 @@ try {
     window.holdShare = false
   })
   await page.waitForFunction(() => !document.querySelector('[aria-label^="Preview "]').disabled)
-  await page.evaluate(() => window.setFiles(window.files))
+  await page.evaluate(() => window.setFiles(window.files.slice(0, 2)))
   await rows.getByRole('button', { name: 'Preview Notes for the release.txt' }).click()
   await dialog.getByText('Release notes').waitFor()
   assert.equal(await dialog.getByRole('img').count(), 0)
@@ -245,7 +257,7 @@ try {
     window.connected = true
     window.thumbnailFail = true
     window.setFiles([
-      ...window.files,
+      ...window.files.slice(0, 2),
       ...Array.from({ length: 5 }, (_, i) => ({ ...window.files[1], id: 'extra-' + i })),
     ])
   })
@@ -259,9 +271,113 @@ try {
   await edit.waitFor({ state: 'detached' })
   assert.equal(await edit.count(), 0)
   assert.equal(await rows.getByText('32 B').count(), 6)
+  // ZIP browsing loads only directory metadata until an entry is selected.
+  await page.evaluate(() => {
+    window.thumbnailFail = false
+    window.shareError = false
+    window.setFiles(window.files)
+  })
+  await rows
+    .getByRole('button', { name: 'Preview Build artifacts and supporting reports.zip' })
+    .click()
+  const archive = page.getByRole('dialog')
+  await archive.getByRole('button', { name: 'Open folder reports' }).waitFor()
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some(
+        (call) => call.path === '/api/attachments/read' && call.input.id === 'archive',
+      ),
+    ),
+    false,
+  )
+  await archive.getByRole('button', { name: 'Open folder reports' }).click()
+  await archive.getByRole('button', { name: 'Open folder deep' }).click()
+  await archive.getByRole('button', { name: 'Preview file results.txt' }).click()
+  await archive.getByText('Selected result', { exact: true }).waitFor()
+  for (const size of [
+    { width: 320, height: 400 },
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+  ]) {
+    await page.setViewportSize(size)
+    assert.equal(await archive.evaluate((node) => node.scrollWidth), size.width)
+    for (const label of [
+      'Back to archive folder',
+      'Share selected file',
+      'Close archive',
+      'Attach selected file to draft',
+    ]) {
+      const box = await archive.getByRole('button', { name: label, exact: true }).boundingBox()
+      assert.ok(box.height >= 44)
+      assert.ok(box.x >= 0 && box.x + box.width <= size.width)
+      assert.ok(box.y >= 0 && box.y + box.height <= size.height)
+    }
+  }
+  await page.evaluate(() => (window.uploadFail = true))
+  await archive.getByRole('button', { name: 'Attach selected file to draft' }).click()
+  await archive.getByRole('alert').getByText('Upload response lost').waitFor()
+  await archive.getByRole('button', { name: 'Attach selected file to draft' }).click()
+  await archive.getByRole('button', { name: 'Added to draft' }).waitFor()
+  const uploads = await page.evaluate(() => window.uploads)
+  assert.equal(uploads.length, 2)
+  assert.equal(uploads[0].id, uploads[1].id)
+  assert.equal(uploads[0].name, 'results.txt')
+  assert.equal(uploads[0].data, Buffer.from('Selected result').toString('base64'))
+  assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Keep my draft')
+  await archive.getByRole('button', { name: 'Share selected file' }).click()
+  await page.waitForFunction(() =>
+    window.shared.some((share) => share.uri.endsWith('-results.txt')),
+  )
+  await page.waitForFunction(() => window.deleted?.some((uri) => uri.endsWith('-results.txt')))
+  await archive.getByRole('button', { name: 'Back to archive folder' }).click()
+  await archive.getByRole('button', { name: 'Parent archive folder' }).click()
+  await archive.getByRole('button', { name: 'Preview file other.txt' }).waitFor()
+  await page.evaluate(() => (window.holdEntry = true))
+  await archive.getByRole('button', { name: 'Preview file other.txt' }).click()
+  await page.waitForFunction(() => !!window.releaseEntry)
+  await archive.getByRole('button', { name: 'Back to archive folder' }).click()
+  await archive.getByRole('button', { name: 'Open folder deep' }).click()
+  await archive.getByRole('button', { name: 'Preview file results.txt' }).click()
+  await archive.getByText('Selected result', { exact: true }).waitFor()
+  await page.evaluate(() => window.releaseEntry())
+  await archive.getByText('Selected result', { exact: true }).waitFor()
+  assert.equal(await archive.getByText('Other result', { exact: true }).count(), 0)
+  await archive.getByRole('button', { name: 'Back to archive folder' }).click()
+  await archive.getByRole('button', { name: 'Parent archive folder' }).click()
+  await archive.getByRole('button', { name: 'Parent archive folder' }).click()
+  await archive.getByRole('button', { name: 'Preview file image.png' }).click()
+  await archive.getByRole('img', { name: 'image.png' }).waitFor()
+  await page.evaluate(() => {
+    window.connected = false
+    window.refresh()
+  })
+  await archive.getByRole('alert').getByText('Reconnect to browse this ZIP.').waitFor()
+  assert.equal(await archive.getByRole('button', { name: 'Share ZIP' }).isDisabled(), true)
+  assert.equal(await archive.getByRole('button', { name: 'Close archive' }).isEnabled(), true)
+  await archive.getByRole('button', { name: 'Close archive' }).click()
+  await page.evaluate(() => {
+    window.connected = true
+    window.archiveFail = true
+    window.refresh()
+  })
+  await rows
+    .getByRole('button', { name: 'Preview Build artifacts and supporting reports.zip' })
+    .click()
+  await archive.getByRole('alert').getByText('Expanded ZIP exceeds preview limits').waitFor()
+  await archive.getByRole('button', { name: 'Share ZIP' }).click()
+  await page.waitForFunction(() =>
+    window.shared.some((share) =>
+      share.uri.endsWith('-Build artifacts and supporting reports.zip'),
+    ),
+  )
+  await page.evaluate(() => (window.archiveFail = false))
+  await archive.getByRole('button', { name: 'Retry archive' }).click()
+  await archive.getByRole('button', { name: 'Open folder empty' }).click()
+  await archive.getByText('This folder is empty.').waitFor()
+  await archive.getByRole('button', { name: 'Close archive' }).click()
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile attachment rows: responsive geometry, bounded list, icon actions, fixed glass preview toolbar, responsive zoom viewport, native sharing, failures, disabled/offline controls and draft preservation passed (browser adapters).',
+    'Mobile attachment rows: responsive geometry, bounded list, icon actions, fixed glass preview toolbar, responsive zoom viewport, native sharing, bounded ZIP browsing, folder navigation, file/image previews, draft attachment retry identity, stale-reply isolation, fallbacks, disabled/offline controls and draft preservation passed (browser adapters).',
   )
 } finally {
   await browser.close()

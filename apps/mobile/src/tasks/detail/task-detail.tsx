@@ -577,6 +577,12 @@ function TaskDetailContent({
     if (pane === 'diff' && !hasDiff) setPane('chat')
   }, [pane, hasDiff])
   const [expandedPreview, setExpandedPreview] = useApplicationState(false)
+  const [serverLink, setServerLink] = useState<{
+    runtimeId: string | null
+    taskId: string
+    id: string
+    url: string
+  } | null>(null)
   const backToChat = () => {
     Keyboard.dismiss()
     setExpandedPreview(false)
@@ -947,6 +953,11 @@ function TaskDetailContent({
           inline
           task={task}
           scripts={projectActions}
+          onBrowser={(url) => {
+            setServerLink({ runtimeId: activeId, taskId: task.id, id: randomUUID(), url })
+            setProjectInfo(false)
+            setPane('browser')
+          }}
           branchActions={[...branchActions, ...worktreeActions, ...moveActions, ...transferActions]}
           onClose={() => setProjectInfo(false)}
           onProjects={() => {
@@ -1220,6 +1231,12 @@ function TaskDetailContent({
           {pane === 'browser' && (
             <BrowserPane
               taskId={task.id}
+              openLink={
+                serverLink?.taskId === task.id && serverLink.runtimeId === activeId
+                  ? serverLink
+                  : undefined
+              }
+              onLinkOpened={() => setServerLink(null)}
               expanded={expandedPreview}
               onExpand={setExpandedPreview}
             />
