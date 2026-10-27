@@ -502,7 +502,12 @@ it('uses only PR metadata and check summaries for background monitoring, without
     host: repo.host,
     repository: repo.nameWithOwner,
   }).status('/repo', 7)
-  expect(run).toHaveBeenCalledTimes(2)
+  // Read metadata again after the checks to reject a rollup from a different PR revision.
+  expect(run.mock.calls.map(([args]) => args)).toEqual([
+    ['api', '--hostname', repo.host, `${repo.path}/pulls/7`],
+    ['pr', 'view', '7', '--repo', repo.repository, '--json', 'statusCheckRollup'],
+    ['api', '--hostname', repo.host, `${repo.path}/pulls/7`],
+  ])
   expect(detail.pull.state).toBe('closed')
   expect(detail.checks).toEqual([{ name: 'lint', status: 'FAILURE' }])
   expect(detail.comments).toEqual([])

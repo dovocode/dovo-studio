@@ -46,6 +46,7 @@ async function setup(
   failureStatus?: number,
   toolDelay = 0,
   discovery?: 'tools-only' | 'full',
+  appToolName = 'refresh',
 ) {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -103,7 +104,11 @@ async function setup(
         inputSchema: { type: 'object' },
         _meta: { ui: { resourceUri: 'ui://chart' } },
       },
-      { name: 'refresh', inputSchema: { type: 'object' }, _meta: { ui: { visibility: ['app'] } } },
+      {
+        name: appToolName,
+        inputSchema: { type: 'object' },
+        _meta: { ui: { visibility: ['app'] } },
+      },
       { name: 'legacy', inputSchema: { type: 'object' } },
     ],
   }))
@@ -555,6 +560,8 @@ it('stores bounded model context and delivers app messages through the normal qu
     s.task.id,
     expect.any(String),
     '[MCP App: chart]\nUse this chart',
+    [],
+    { kind: 'system', label: 'MCP app' },
   )
 })
 
@@ -712,3 +719,42 @@ it.each(['approvalPolicy', 'sandboxMode'] as const)(
     )
   },
 )
+
+it('keeps shell-named MCP App calls interactive even when a matching project command is saved', async () => {
+  const s = await setup(true, undefined, 0, undefined, 'shell')
+  const bridge = s.runtime.services.mcpApps
+  s.runtime.services.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((project) => ({
+      ...project,
+      approvedCommands: ['pnpm test'],
+    })),
+  }))
+  await bridge.proxy(s.token, 'tools/call', { name: 'chart' })
+  const ref = recentTools(
+    s.runtime.services.activity.list('', 'task-activity', 0, s.task.id).events,
+  ).flatMap((event) => mcpAppReferences(event.payload))[0]
+  for (const allow of [false, true]) {
+    const before = s.calls()
+    const action = bridge.action(s.task.id, ref.id, 'shell-' + allow, 'tools/call', {
+      name: 'shell',
+      arguments: { command: 'pnpm test', deleteAll: true },
+    })
+    const result = action.then(
+      () => 'executed',
+      (error) => (error instanceof Error ? error.message : String(error)),
+    )
+    await vi.waitFor(() => expect(s.runtime.services.approvals.list()).toHaveLength(1))
+    expect(s.calls()).toBe(before)
+    const pending = s.runtime.services.approvals.list()[0]
+    expect(pending.rememberRule).toBeNull()
+    s.runtime.services.approvals.respond(pending.id, allow)
+    if (allow) {
+      await expect(result).resolves.toBe('executed')
+      expect(s.calls()).toBe(before + 1)
+    } else {
+      await expect(result).resolves.toContain('declined')
+      expect(s.calls()).toBe(before)
+    }
+  }
+})

@@ -81,8 +81,10 @@ async function bundle(contents) {
     '../../agents/harness-icon': 'export const HarnessIcon=()=>null;',
     '../../agents/use-model-catalog':
       'export const useCachedModelCatalog=()=>({modelName:"",catalog:null});',
-    '../../runtime/state/app-active': 'export const useForegroundInterval=()=>{};',
-    '../runtime/state/app-active': 'export const useForegroundInterval=()=>{};',
+    '../../runtime/state/app-active':
+      'export const useForegroundInterval=()=>{};export const useAppActive=()=>true;',
+    '../runtime/state/app-active':
+      'export const useForegroundInterval=()=>{};export const useAppActive=()=>true;',
   }
   const output = await build({
     stdin: { contents, loader: 'tsx', resolveDir: root },
