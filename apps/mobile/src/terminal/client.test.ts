@@ -13,6 +13,30 @@ function fixture() {
   let input: (text: string) => void = () => {}
   let resets = 0
   let fits = 0
+  class Element {
+    textContent = ''
+    disabled = false
+    style = { background: '' }
+    attributes: Record<string, string> = {}
+    listeners: Record<string, () => void> = {}
+    setAttribute(name: string, value: string) {
+      this.attributes[name] = value
+    }
+    addEventListener(name: string, listener: () => void) {
+      this.listeners[name] = listener
+    }
+    click() {
+      if (!this.disabled) this.listeners.click?.()
+    }
+  }
+  const buttons: Element[] = []
+  const textarea = new Element()
+  const root = new Element()
+  const controls = {
+    appendChild(element: Element) {
+      buttons.push(element)
+    },
+  }
   const options = { fontFamily: systemMonoFont, fontSize: 12 }
   const loads: Array<{ font: string; resolve: () => void; reject: (error: Error) => void }> = []
   class Socket {
@@ -55,8 +79,11 @@ function fixture() {
     fontStack,
     nerdFontFamily,
     systemMonoFont,
+    setTimeout,
+    queueMicrotask,
     WebSocket: Socket,
     Terminal: class {
+      textarea = textarea
       options = options
       refresh() {}
       cols = 80
@@ -85,8 +112,8 @@ function fixture() {
           new Promise<void>((resolve, reject) => loads.push({ font, resolve, reject })),
       },
       body: {},
-      getElementById: () => ({ appendChild() {} }),
-      createElement: () => ({ setAttribute() {}, addEventListener() {} }),
+      getElementById: (id: string) => (id === 'terminal' ? root : controls),
+      createElement: () => new Element(),
     },
   })
   const opened = (socket: Socket) => {
@@ -103,8 +130,75 @@ function fixture() {
     opened,
     input: (text: string) => input(text),
     resets: () => resets,
+    button: (label: string) => {
+      const button = buttons.find((item) => item.textContent === label)
+      if (!button) throw new Error(`Missing button: ${label}`)
+      return button
+    },
+    textarea,
+    root,
   }
 }
+
+it('applies accessible, cancellable one-shot modifiers to supported inputs', () => {
+  const f = fixture()
+  f.window.connectTerminal('ws://fixture/keys', 1)
+  const socket = f.sockets[0]
+  f.opened(socket)
+  const ctrl = f.button('Ctrl')
+  const alt = f.button('Alt')
+  ctrl.click()
+  expect(ctrl.attributes['aria-pressed']).toBe('true')
+  f.input('c')
+  expect(ctrl.attributes['aria-pressed']).toBe('false')
+  f.input('c')
+  alt.click()
+  f.input('x')
+  alt.click()
+  f.button('→').click()
+  ctrl.click()
+  f.button('↓').click()
+  ctrl.click()
+  alt.click()
+  f.button('↑').click()
+  ctrl.click()
+  ctrl.click()
+  f.input('a')
+  expect(
+    socket.sent.map((text) => JSON.parse(text)).filter((item) => item.type === 'input'),
+  ).toEqual(
+    ['\x03', 'c', '\x1bx', '\x1b[1;3C', '\x1b[1;5B', '\x1b[1;7A', 'a'].map((data) => ({
+      type: 'input',
+      data,
+    })),
+  )
+})
+
+it('preserves paste and composition, and clears modifiers on disconnect', async () => {
+  const f = fixture()
+  f.window.connectTerminal('ws://fixture/first', 1)
+  f.opened(f.sockets[0])
+  f.button('Ctrl').click()
+  f.root.listeners.paste()
+  f.input('c')
+  await Promise.resolve()
+  f.textarea.listeners.compositionstart()
+  f.input('c')
+  f.textarea.listeners.compositionend()
+  f.input('c')
+  await vi.advanceTimersByTimeAsync(0)
+  f.input('c')
+  expect(
+    f.sockets[0].sent.map((text) => JSON.parse(text)).filter((item) => item.type === 'input'),
+  ).toEqual(['c', 'c', 'c', '\x03'].map((data) => ({ type: 'input', data })))
+  f.button('Alt').click()
+  f.sockets[0].onclose?.({ reason: '' })
+  expect(f.button('Alt').attributes['aria-pressed']).toBe('false')
+  f.window.connectTerminal('ws://fixture/second', 2)
+  f.opened(f.sockets[1])
+  f.input('x')
+  expect(JSON.parse(f.sockets[1].sent.at(-1) ?? '{}')).toEqual({ type: 'input', data: 'x' })
+})
 
 it('tags socket status with its attempt and ignores obsolete disconnect commands', () => {
   const f = fixture()

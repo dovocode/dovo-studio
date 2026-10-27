@@ -59,14 +59,81 @@ window.setTerminalFont = (family, size) => {
     })
 }
 new ResizeObserver(resize).observe(document.body)
+let ctrl = false
+let alt = false
+let composing = false
+let compositionRevision = 0
+let pasting = false
+const modifierButtons = new Map<string, HTMLButtonElement>()
+const updateModifiers = () => {
+  for (const [name, active] of [
+    ['Ctrl', ctrl],
+    ['Alt', alt],
+  ] as const) {
+    const button = modifierButtons.get(name)
+    if (!button) continue
+    button.setAttribute('aria-pressed', String(active))
+    button.style.background = active ? '#586bb5' : ''
+  }
+}
+const clearModifiers = () => {
+  ctrl = false
+  alt = false
+  updateModifiers()
+}
+const sendInput = (data: string, allowModifiers = true) => {
+  if (socket?.readyState !== WebSocket.OPEN) return
+  if (allowModifiers && (ctrl || alt)) {
+    let modified: string | undefined
+    const arrow = data.length === 3 && data.startsWith('\x1b[') && 'ABCD'.includes(data.slice(2))
+    if (/^[\x20-\x7e]$/.test(data)) {
+      if (ctrl) {
+        const code = data.toUpperCase().charCodeAt(0)
+        if (code >= 64 && code <= 95) modified = String.fromCharCode(code - 64)
+        else if (data === ' ') modified = '\0'
+        else if (data === '?') modified = '\x7f'
+      } else modified = data
+    } else if (!ctrl && data === '\t') {
+      modified = data
+    } else if (arrow) {
+      modified = `\x1b[1;${1 + (ctrl ? 4 : 0) + (alt ? 2 : 0)}${data.slice(-1)}`
+    }
+    if (modified !== undefined) {
+      data = alt && !arrow ? `\x1b${modified}` : modified
+      clearModifiers()
+    }
+  }
+  for (const frame of terminalInputFrames(data)) socket.send(JSON.stringify(frame))
+}
 terminal.onData((data) => {
-  if (socket?.readyState === WebSocket.OPEN)
-    for (const frame of terminalInputFrames(data)) socket.send(JSON.stringify(frame))
+  sendInput(data, !composing && !pasting)
 })
+terminal.textarea?.addEventListener('compositionstart', () => {
+  compositionRevision++
+  composing = true
+})
+terminal.textarea?.addEventListener('compositionend', () => {
+  const revision = compositionRevision
+  setTimeout(() => {
+    if (revision === compositionRevision) composing = false
+  }, 0)
+})
+root.addEventListener(
+  'paste',
+  () => {
+    pasting = true
+    queueMicrotask(() => {
+      pasting = false
+    })
+  },
+  true,
+)
 const keys: Array<[string, string | null]> = [
   ['Keyboard', null],
   ['Esc', '\u001b'],
   ['Tab', '\t'],
+  ['Ctrl', null],
+  ['Alt', null],
   ['Ctrl C', '\u0003'],
   ['↑', '\u001b[A'],
   ['↓', '\u001b[B'],
@@ -78,13 +145,21 @@ const buttons = keys.map(([label, data]) => {
   const button = document.createElement('button')
   button.textContent = label
   button.setAttribute('aria-label', label)
+  if (label === 'Ctrl' || label === 'Alt') {
+    button.setAttribute('aria-pressed', 'false')
+    modifierButtons.set(label, button)
+  }
   button.disabled = true
   button.addEventListener('mousedown', (event) => event.preventDefault())
   button.addEventListener('click', () => {
     if (label === 'Keyboard') terminal.focus()
     else if (label === 'Dismiss keyboard') terminal.blur()
-    else if (socket?.readyState === WebSocket.OPEN)
-      socket.send(JSON.stringify({ type: 'input', data }))
+    else if (socket?.readyState === WebSocket.OPEN) {
+      if (label === 'Ctrl') ctrl = !ctrl
+      else if (label === 'Alt') alt = !alt
+      else if (data !== null) sendInput(data)
+      updateModifiers()
+    }
   })
   controls.appendChild(button)
   return button
@@ -95,6 +170,7 @@ window.disconnectTerminal = (attempt) => {
   if (attempt !== currentAttempt || !socket) return
   heartbeat?.stop()
   heartbeat = undefined
+  clearModifiers()
   socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null
   socket.close()
   socket = undefined
@@ -127,6 +203,7 @@ window.connectTerminal = (url, attempt) => {
   }
   socket.onclose = (event) => {
     heartbeat?.stop()
+    clearModifiers()
     for (const button of buttons) button.disabled = true
     window.ReactNativeWebView.postMessage(
       JSON.stringify({ error: event.reason || 'Terminal disconnected.', attempt }),
@@ -134,6 +211,8 @@ window.connectTerminal = (url, attempt) => {
   }
   socket.onerror = () => {
     heartbeat?.stop()
+    clearModifiers()
+    for (const button of buttons) button.disabled = true
     window.ReactNativeWebView.postMessage(
       JSON.stringify({ error: 'Terminal connection failed.', attempt }),
     )
