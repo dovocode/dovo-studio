@@ -54,6 +54,21 @@ document.addEventListener(
   (event) => {
     if (simulator || dialog.open || event.isComposing || !(event.metaKey || event.ctrlKey)) return
     const key = event.key.toLowerCase()
+    if (
+      workspaceShortcuts &&
+      !event.altKey &&
+      ['t', 'w', 'd'].includes(key) &&
+      (!event.shiftKey || key === 't')
+    ) {
+      event.preventDefault()
+      event.stopPropagation()
+      if (!event.repeat)
+        window.parent.postMessage(
+          { channel: 'dovo-browser', type: 'shortcut', key, shift: event.shiftKey },
+          '*',
+        )
+      return
+    }
     if (key !== 'l' && (key !== 'r' || !online)) return
     event.preventDefault()
     event.stopPropagation()
@@ -123,6 +138,7 @@ const dialog = element('dialog', HTMLDialogElement)
 const dialogText = element('dialogText', HTMLParagraphElement)
 const dialogValue = element('dialogValue', HTMLInputElement)
 const cancelDialog = element('cancelDialog', HTMLButtonElement)
+let discardDialog: (() => void) | undefined
 let socket: WebSocket | undefined
 let width = 1280,
   height = 800,
@@ -183,6 +199,7 @@ const bridge = (
   else window.parent.postMessage(message, '*')
 }
 let externalNavigation = false
+let workspaceShortcuts = false
 let screenshotReady = false
 element('screenshot', HTMLButtonElement).onclick = () => {
   element('more', HTMLDetailsElement).open = false
@@ -233,6 +250,8 @@ function enabled(value: boolean) {
   element('close', HTMLButtonElement).disabled = !value
   reconnect.hidden = value
   if (!value) {
+    discardDialog?.()
+    discardDialog = undefined
     primaryModifier = undefined
     keyboardGestureUntil = 0
     canvas.style.cursor = ''
@@ -521,11 +540,29 @@ function connect(url: string) {
         }
         notice(message.message, true)
       } else if (message.type === 'dialog') {
+        discardDialog?.()
+        const respond = () => {
+          // A discarded dialog's queued close event can arrive after a new one opens.
+          if (dialog.open) return
+          dialog.removeEventListener('close', respond)
+          if (socket !== next || !online) return
+          send({
+            type: 'dialog',
+            accept: dialog.returnValue === 'accept',
+            text: dialogValue.hidden ? undefined : dialogValue.value,
+          })
+        }
+        discardDialog = () => {
+          dialog.removeEventListener('close', respond)
+          if (dialog.open) dialog.close()
+        }
         dialogText.textContent = message.message
         dialogValue.value = message.defaultValue
         dialogValue.hidden = message.kind !== 'prompt'
         cancelDialog.hidden = message.kind === 'alert'
-        if (!dialog.open) dialog.showModal()
+        dialog.returnValue = ''
+        dialog.addEventListener('close', respond)
+        dialog.showModal()
       }
     } catch {
       notice('The host sent an invalid browser response.', true)
@@ -551,6 +588,7 @@ window.addEventListener('message', (event) => {
   }
   if ('type' in message && message.type === 'presentation') {
     externalNavigation = 'externalNavigation' in message && message.externalNavigation === true
+    workspaceShortcuts = 'workspaceShortcuts' in message && message.workspaceShortcuts === true
     document.body.classList.toggle('expanded', 'expanded' in message && message.expanded === true)
     return
   }
@@ -706,14 +744,6 @@ reload.onclick = () => {
   notice('')
   send({ type: 'reload' })
 }
-dialog.addEventListener('close', () =>
-  send({
-    type: 'dialog',
-    accept: dialog.returnValue === 'accept',
-    text: dialogValue.hidden ? undefined : dialogValue.value,
-  }),
-)
-
 function position(event: { clientX: number; clientY: number }) {
   const rect = canvas.getBoundingClientRect()
   return {

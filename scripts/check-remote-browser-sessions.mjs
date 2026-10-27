@@ -79,6 +79,102 @@ try {
   await browsers.dispose()
   browsers = new RemoteBrowsers(profileDirectory)
   const origin = `http://127.0.0.1:${address.port}`
+  const unavailable = createServer()
+  unavailable.listen(0, '127.0.0.1')
+  await once(unavailable, 'listening')
+  const unavailablePort = unavailable.address().port
+  await new Promise((resolve) => unavailable.close(resolve))
+  const unavailableUrl = `http://127.0.0.1:${unavailablePort}/recover`
+  await browsers.open('unavailable', 'recovery', 'default', unavailableUrl)
+  await browsers.open('agent-unavailable', 'recovery', 'default', unavailableUrl)
+  const recoveryStates = []
+  dispose.push(
+    await browsers.attach('unavailable', (message) => {
+      if (message.type === 'state') recoveryStates.push(message)
+    }),
+  )
+  await wait(() => recoveryStates.at(-1)?.url === unavailableUrl)
+  const recovered = createServer((_request, response) => {
+    response.end('<title>Recovered server</title>Back online')
+  })
+  try {
+    recovered.listen(unavailablePort, '127.0.0.1')
+    await once(recovered, 'listening')
+    await browsers.input('unavailable', { type: 'reload' })
+    await wait(() => recoveryStates.at(-1)?.title === 'Recovered server')
+    await browsers.agentCommand('recovery', { action: 'reload' }, () => {}, 'agent-unavailable')
+    const agentSession = await browsers.sessions.get('agent-unavailable')
+    assert.equal(
+      await agentSession.page.title(),
+      'Recovered server',
+      'Agent reload also recovers a failed navigation',
+    )
+    await browsers.agentCommand(
+      'recovery',
+      { action: 'navigate', url: origin + '/profile-state' },
+      () => {},
+      'agent-unavailable',
+    )
+    assert.equal(
+      agentSession.state.url,
+      origin + '/profile-state',
+      'Successful agent navigation clears the failed address',
+    )
+    await browsers.close('agent-unavailable')
+    const session = await browsers.sessions.get('unavailable')
+    const closed = new Promise((resolve) => session.page.once('close', resolve))
+    await session.cdp.send('Page.crash').catch(() => {})
+    await closed
+    assert.equal(browsers.sessions.has('unavailable'), false, 'Crashed sessions are released')
+    await browsers.open('unavailable', 'recovery', 'default', unavailableUrl)
+    dispose.push(
+      await browsers.attach('unavailable', (message) => {
+        if (message.type === 'state') recoveryStates.push(message)
+      }),
+    )
+    await browsers.input('unavailable', { type: 'status' })
+    await browsers.close('unavailable')
+  } finally {
+    await browsers.close('unavailable')
+    await new Promise((resolve) => recovered.close(resolve))
+  }
+  await browsers.open('dialog-recovery', 'recovery', 'default', origin)
+  const dialogMessages = []
+  const firstDialogViewer = await browsers.attach('dialog-recovery', (message) =>
+    dialogMessages.push(message),
+  )
+  dispose.push(firstDialogViewer)
+  const dialogSession = await browsers.sessions.get('dialog-recovery')
+  const alertFinished = dialogSession.page.evaluate(() => alert('Reconnect question'))
+  // Cleanup closes the page if attachment fails; the original promise is asserted below.
+  void alertFinished.catch(() => {})
+  await wait(() => dialogMessages.some((message) => message.type === 'dialog'))
+  const replayed = []
+  let dialogTimeout
+  try {
+    const secondDialogViewer = await Promise.race([
+      browsers.attach('dialog-recovery', (message) => replayed.push(message)),
+      new Promise((_, reject) => {
+        dialogTimeout = setTimeout(
+          () => reject(new Error('Attaching during a dialog must not block')),
+          3000,
+        )
+      }),
+    ])
+    dispose.push(secondDialogViewer)
+    assert.equal(
+      replayed.some(
+        (message) => message.type === 'dialog' && message.message === 'Reconnect question',
+      ),
+      true,
+    )
+    secondDialogViewer()
+    await browsers.input('dialog-recovery', { type: 'dialog', accept: true })
+    await alertFinished
+  } finally {
+    clearTimeout(dialogTimeout)
+    await browsers.close('dialog-recovery')
+  }
   await browsers.open('work-login', 'profiles', 'work', origin + '/login')
   await browsers.open('work-check', 'profiles', 'work', origin + '/profile-state')
   dispose.push(await browsers.attach('work-check', listener('work-check')))
@@ -141,7 +237,7 @@ try {
   assert.equal(parent.isClosed(), false)
   await browsers.close(privateResource)
   console.log(
-    'Real Chromium: independent tabs, paused streams, scoped cleanup, shared logins within a profile, profile isolation, and saved cookies/local storage across runtime restart passed.',
+    'Real Chromium: unavailable-server recovery, crash cleanup, dialog reconnect, independent tabs, paused streams, scoped cleanup, profile isolation and restart persistence passed.',
   )
 } finally {
   for (const detach of dispose) detach()

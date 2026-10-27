@@ -9,9 +9,10 @@ const marker = 'export const remoteBrowserHtml = '
 const html = JSON.parse(source.slice(source.indexOf(marker) + marker.length))
 // Only the transport is simulated: exercise the actual viewer, controls and styles.
 const shim = `<script>
-window.outbox=[];window.bridges=[];
+window.outbox=[];window.bridges=[];window.shortcuts=[];
 window.WebSocket=class {static OPEN=1;readyState=1;constructor(){window.socket=this;queueMicrotask(()=>this.onopen?.())}send(data){window.outbox.push(JSON.parse(data))}close(){this.readyState=3}};
 window.addEventListener('message',event=>{if(event.data?.channel==='dovo-browser'&&['ready','reconnect','close','focusAddress','performance'].includes(event.data.type))window.bridges.push(event.data.type)});
+window.addEventListener('message',event=>{if(event.data?.channel==='dovo-browser'&&event.data.type==='shortcut')window.shortcuts.push(event.data)});
 </script>`
 const browser = await chromium.launch()
 await mkdir('/tmp/dovo-browser-redesign', { recursive: true })
@@ -198,6 +199,90 @@ try {
     await page.locator('#browserBar').waitFor({ state: 'hidden' })
     await post({ type: 'presentation', expanded: false })
     await page.locator('#browserBar').waitFor({ state: 'visible' })
+    if (width === 1100) {
+      await post({ type: 'presentation', externalNavigation: true, workspaceShortcuts: true })
+      await page.locator('#page').evaluate((node) => {
+        node.hidden = false
+        node.focus()
+      })
+      for (const modifier of ['Control', 'Meta']) {
+        for (const chord of ['t', 'w', 'd', 'Shift+t'])
+          await page.keyboard.press(`${modifier}+${chord}`)
+      }
+      await page.waitForFunction(() => window.shortcuts.length === 8)
+      assert.deepEqual(
+        await page.evaluate(() => window.shortcuts.map(({ key, shift }) => [key, shift])),
+        Array.from({ length: 2 }, () => [
+          ['t', false],
+          ['w', false],
+          ['d', false],
+          ['t', true],
+        ]).flat(),
+      )
+      await post({ type: 'presentation', externalNavigation: true, workspaceShortcuts: false })
+      await page.locator('#page').evaluate((node) => node.focus())
+      await page.keyboard.press('Control+d')
+      assert.equal(
+        await page.evaluate(() => window.shortcuts.length),
+        8,
+        'Thread previews retain page shortcuts',
+      )
+      await post({ type: 'presentation', expanded: false })
+      const websiteDialog = (kind = 'confirm') =>
+        page.evaluate((kind) => {
+          window.socket.onmessage({
+            data: JSON.stringify({
+              type: 'dialog',
+              kind,
+              message: 'Website question',
+              defaultValue: '',
+            }),
+          })
+        }, kind)
+      await websiteDialog()
+      await page.locator('#dialog button[value="accept"]').click()
+      await page.waitForFunction(() => window.outbox.at(-1)?.type === 'dialog')
+      assert.equal(await page.evaluate(() => window.outbox.at(-1).accept), true)
+      const answers = await page.evaluate(
+        () => window.outbox.filter((item) => item.type === 'dialog').length,
+      )
+      await websiteDialog()
+      await page.keyboard.press('Escape')
+      await page.waitForFunction(
+        (answers) => window.outbox.filter((item) => item.type === 'dialog').length > answers,
+        answers,
+      )
+      assert.equal(
+        await page.evaluate(() => window.outbox.at(-1).accept),
+        false,
+        'Escape rejects a new confirm after accepting the previous one',
+      )
+      await websiteDialog('prompt')
+      await page.locator('#dialog').waitFor({ state: 'visible' })
+      const beforeDisconnect = await page.evaluate(() => window.outbox.length)
+      await page.evaluate(() => {
+        window.socket.readyState = 3
+        window.socket.onclose({ code: 1000 })
+      })
+      await page.locator('#dialog').waitFor({ state: 'hidden' })
+      await post({ type: 'connect', url: 'ws://fixture/reconnected' })
+      await page.getByText('Connected', { exact: true }).waitFor()
+      assert.equal(
+        await page.evaluate(
+          (before) => window.outbox.slice(before).some((item) => item.type === 'dialog'),
+          beforeDisconnect,
+        ),
+        false,
+        'Discarded dialogs never send an answer to the reconnected session',
+      )
+      await websiteDialog('prompt')
+      await page
+        .getByRole('textbox', { name: 'Website prompt response', exact: true })
+        .fill('Fresh answer')
+      await page.locator('#dialog button[value="accept"]').click()
+      await page.waitForFunction(() => window.outbox.at(-1)?.text === 'Fresh answer')
+      assert.equal(await page.evaluate(() => window.outbox.at(-1).accept), true)
+    }
     // Device previews keep hardware actions, without irrelevant browser viewport settings.
     await post({ type: 'configure', device: { platform: 'ios', kind: 'physical' } })
     await page.getByRole('button', { name: 'Home', exact: true }).waitFor()

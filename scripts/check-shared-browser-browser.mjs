@@ -38,7 +38,7 @@ const built = await build({
         builder.onLoad({ filter: /.*/, namespace: 'fixture-conversation' }, () => ({
           loader: 'tsx',
           resolveDir: root + 'packages/extension-tasks',
-          contents: `import {useEffect} from 'react';import {useWorkspace} from '@dovo/studio-core';export function TaskConversation({task,composerInsert,onComposerInsertApplied}){const store=useWorkspace();useEffect(()=>{if(composerInsert){window.agentDraft=composerInsert.text;onComposerInsertApplied()}},[composerInsert]);return <div data-testid="tab-conversation" data-runtime={store.activeRuntimeId}>{task.title}</div>}`,
+          contents: `import {useEffect} from 'react';import {useWorkspace} from '@dovo/studio-core';import {useComposerDraft} from './src/chat/composer/use-composer-draft';export function TaskConversation({task,composerInsert,onComposerInsertApplied}){const store=useWorkspace();const draft=useComposerDraft(task);useEffect(()=>{if(composerInsert){window.agentDraft=composerInsert.text;onComposerInsertApplied()}},[composerInsert]);return <div data-testid="tab-conversation" data-runtime={store.activeRuntimeId}>{task.title}<textarea aria-label="Thread draft" defaultValue={task.draft} onChange={event=>draft.update(event.target.value)}/>{draft.error&&<p role="alert">{draft.error}</p>}</div>}`,
         }))
 
         builder.onResolve(
@@ -92,16 +92,17 @@ const otherProfile={id:'mac',name:'Mac Studio',connection:{address:'http://mac.l
 const otherSnapshot={...snapshot,workspace:{...snapshot.workspace,tasks:[{...task,id:'remote-target',title:'Mac thread',draft:'Remote draft'}]}};
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot},{profile:otherProfile,name:otherProfile.name,scope:'mac',connected:true,snapshot:otherSnapshot}];
 export const useRuntimeSources=()=>sources;
-const workspace={activeRuntimeId:profile.id,connection:profile.connection,request,connected:true,snapshot,workspace:snapshot.workspace,runtimes:sources,runtimeRegistry:{profiles:[profile,otherProfile]},
+const workspace={localRuntimeId:profile.id,activeRuntimeId:profile.id,connection:profile.connection,request,connected:true,snapshot,workspace:snapshot.workspace,runtimes:sources,runtimeRegistry:{profiles:[profile,otherProfile]},
+switchRuntime:async id=>{const owner=sources.find(entry=>entry.profile.id===id);workspace.activeRuntimeId=id;workspace.connection=owner.profile.connection;workspace.snapshot=owner.snapshot;workspace.workspace=owner.snapshot.workspace;window.renderBrowser()},
 readRuntime:async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs[owner.id]??[]};if(path.endsWith('/profiles/save')){profileCatalogs[owner.id]=body.profiles;return {profiles:body.profiles}};if(path.endsWith('/activity'))return {active:!!window.activeMedia?.includes(body.tabId)};if(path==='/api/workspace'){if(window.conflict)return {outcome:'reconciled',reason:'Draft changed elsewhere',recoveryId:'11223344-1122-4122-8122-112233445566'};otherSnapshot.workspace.tasks[0].draft=body.changes.draft.after;return {outcome:'applied'}};return remoteTicket(body)},
-setWorkspace:update=>{workspace.workspace=typeof update==='function'?update(workspace.workspace):update;window.savedDraft=workspace.workspace.tasks[0].draft},flush:async()=>{if(window.hangFlush)await new Promise(()=>{});},refreshRuntime:async()=>{},};
+setWorkspace:update=>{workspace.workspace=typeof update==='function'?update(workspace.workspace):update;workspace.snapshot.workspace=workspace.workspace;window.savedDraft=workspace.workspace.tasks[0].draft;window.renderBrowser()},flush:async()=>{if(window.hangFlush)await new Promise(()=>{});},refreshRuntime:async()=>{},};
 window.fixtureStore=workspace;window.remoteDraft=()=>otherSnapshot.workspace.tasks[0].draft;
 const WorkspaceContext=createContext(null);
 export const useWorkspace=()=>useContext(WorkspaceContext)||workspace;
 export const WorkspaceScope=({profile,children})=>{
   const source=sources.find(entry=>entry.profile.id===profile.id&&entry.profile.connection.address===profile.connection.address&&entry.profile.connection.token===profile.connection.token);
   if(!source)return null;
-  return createElement(WorkspaceContext.Provider,{value:{...workspace,activeRuntimeId:source.profile.id,connection:source.profile.connection,snapshot:source.snapshot,workspace:source.snapshot.workspace,connected:source.connected,request:(path,body)=>workspace.readRuntime(source.profile,path,body)}},children);
+  return createElement(WorkspaceContext.Provider,{value:{...workspace,activeRuntimeId:source.profile.id,connection:source.profile.connection,snapshot:source.snapshot,workspace:source.snapshot.workspace,connected:source.connected,request:(path,body)=>workspace.readRuntime(source.profile,path,body),setWorkspace:()=>{throw Error('Cannot edit a read-only runtime scope')}}},children);
 };
 export const useSettingsTarget=()=>{
   const [target,setTarget]=useState({environmentId:'',projectId:''});
@@ -1559,8 +1560,13 @@ try {
   await custom.getByTestId('tab-conversation').waitFor()
   assert.equal(await custom.getByTestId('tab-conversation').getAttribute('data-runtime'), 'runtime')
   await custom.getByRole('button', { name: 'Change thread', exact: true }).click()
-  await custom.getByRole('button', { name: /Mac thread/ }).click()
-  assert.equal(await custom.getByTestId('tab-conversation').getAttribute('data-runtime'), 'mac')
+  assert.equal(
+    await custom.getByRole('button', { name: /Mac thread/ }).count(),
+    0,
+    'Local tab only offers local threads',
+  )
+  await custom.getByRole('button', { name: /Destination thread/ }).click()
+  assert.equal(await custom.getByTestId('tab-conversation').getAttribute('data-runtime'), 'runtime')
   await custom.getByRole('button', { name: 'Close tab thread panel' }).click()
   await custom.getByRole('textbox', { name: 'Preview URL' }).fill('http://example.test/page')
   await custom.getByRole('textbox', { name: 'Preview URL' }).press('Enter')
@@ -1589,8 +1595,8 @@ try {
     JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')),
   )
   assert.deepEqual(savedThreadTabs.tabs.find((tab) => tab.id === savedThreadTabs.active).thread, {
-    id: 'remote-target',
-    runtimeId: 'mac',
+    id: 'target',
+    runtimeId: 'runtime',
   })
   await custom.evaluate(() => {
     const site = {
@@ -1599,7 +1605,7 @@ try {
       css: 'body { color: blue; }',
       script: '',
     }
-    window.fixtureStore.runtimes[1].snapshot.workspace.tasks[0].messages.push({
+    window.fixtureStore.runtimes[0].snapshot.workspace.tasks[0].messages.push({
       role: 'assistant',
       text: '```dovo-website-customization\n' + JSON.stringify(site) + '\n```',
     })
@@ -1618,6 +1624,132 @@ try {
   assert.ok(threadBounds.x >= 0 && threadBounds.width <= 390, 'Thread panel fits a narrow window')
   await custom.screenshot({ path: root + 'work/shared-browser-thread-panel.png' })
   await custom.close()
+
+  // A restored association cannot expose another computer's read-only editor.
+  const ownership = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  ownership.on('pageerror', (error) => errors.push(error.message))
+  await ownership.route('http://localhost/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app" style="height:900px"></div>' }),
+  )
+  await ownership.goto('http://localhost/thread-ownership')
+  await ownership.evaluate(() =>
+    localStorage.setItem(
+      'dovo.shared-browser-tabs.v1',
+      JSON.stringify({
+        active: 'owner-local',
+        tabs: [
+          {
+            id: 'owner-local',
+            kind: 'web',
+            runtimeId: 'mac',
+            profileId: 'default',
+            url: 'http://local.test/',
+            title: 'Owner local',
+            thread: { id: 'remote-target', runtimeId: 'mac' },
+          },
+          {
+            id: 'owner-remote',
+            kind: 'remote',
+            runtimeId: 'mac',
+            profileId: 'remote-work',
+            url: 'http://remote.test/',
+            title: 'Owner remote',
+            thread: { id: 'target', runtimeId: 'runtime' },
+          },
+        ],
+      }),
+    ),
+  )
+  await ownership.addScriptTag({ content: built.outputFiles[0].text })
+  await ownership
+    .getByText(
+      'Choose a thread on this tab’s computer. The saved thread belongs to another computer.',
+      { exact: true },
+    )
+    .waitFor()
+  assert.equal(await ownership.getByRole('button', { name: /Mac thread/ }).count(), 0)
+  await ownership.getByRole('button', { name: /Destination thread/ }).click()
+  await ownership.getByRole('textbox', { name: 'Thread draft' }).fill('Local browser draft')
+  await ownership.waitForFunction(
+    () => window.fixtureStore.workspace.tasks[0].draft === 'Local browser draft',
+  )
+  await ownership.getByRole('button', { name: 'Close tab thread panel' }).click()
+  await ownership.getByRole('button', { name: 'Thread for this tab', exact: true }).click()
+  assert.equal(
+    await ownership.getByRole('textbox', { name: 'Thread draft' }).inputValue(),
+    'Local browser draft',
+  )
+  await ownership
+    .getByRole('complementary', { name: 'Recent browser tabs' })
+    .getByRole('button', { name: /Owner remote/ })
+    .first()
+    .click()
+  await ownership.getByRole('button', { name: 'Use Mac Studio', exact: true }).click()
+  await ownership.getByRole('button', { name: /Mac thread/ }).waitFor()
+  assert.equal(await ownership.getByRole('button', { name: /Destination thread/ }).count(), 0)
+  await ownership.getByRole('button', { name: /Mac thread/ }).click()
+  assert.equal(await ownership.getByTestId('tab-conversation').getAttribute('data-runtime'), 'mac')
+  await ownership.getByRole('textbox', { name: 'Thread draft' }).fill('Remote browser draft')
+  await ownership.getByRole('button', { name: 'Close tab thread panel' }).click()
+  await ownership.getByRole('button', { name: 'Thread for this tab', exact: true }).click()
+  assert.equal(
+    await ownership.getByRole('textbox', { name: 'Thread draft' }).inputValue(),
+    'Remote browser draft',
+    'Composer cleanup persists to the activated owner',
+  )
+  const ownedTabs = await ownership.evaluate(() =>
+    JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')),
+  )
+  assert.equal(
+    ownedTabs.tabs.find((tab) => tab.id === 'owner-local').runtimeId,
+    'runtime',
+    'Native tab identity follows its local computer',
+  )
+  assert.deepEqual(ownedTabs.tabs.find((tab) => tab.id === 'owner-remote').thread, {
+    id: 'remote-target',
+    runtimeId: 'mac',
+  })
+  assert.equal(ownedTabs.tabs.find((tab) => tab.id === 'owner-remote').profileId, 'remote-work')
+  assert.equal(
+    await ownership.evaluate(
+      () => window.fixtureStore.runtimes[0].snapshot.workspace.tasks[0].draft,
+    ),
+    'Local browser draft',
+    'Remote editing preserves the local draft',
+  )
+  const ownerFrame = ownership.locator('iframe').first().contentFrame().locator('body')
+  const shortcut = (frame, key, shift = false) =>
+    frame.evaluate(
+      (_, { key, shift }) =>
+        window.parent.postMessage({ channel: 'dovo-browser', type: 'shortcut', key, shift }, '*'),
+      { key, shift },
+    )
+  await shortcut(ownerFrame, 't')
+  await ownership.waitForFunction(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 3,
+  )
+  const shortcutTab = await ownership.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+    return state.tabs.find((tab) => tab.id === state.active)
+  })
+  assert.equal(shortcutTab.runtimeId, 'mac', 'Viewer new-tab shortcut keeps its computer')
+  assert.equal(shortcutTab.profileId, 'remote-work', 'Viewer new-tab shortcut keeps its profile')
+  await shortcut(ownerFrame, 'w')
+  await ownership.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(
+    await ownership.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length,
+    ),
+    3,
+    'Inactive viewers cannot close the selected tab',
+  )
+  await shortcut(ownership.locator('iframe').last().contentFrame().locator('body'), 'w')
+  await ownership.waitForFunction(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 2,
+  )
+  await ownership.close()
 
   // Exercise the compact sidebar and site controls with the production components.
   const controlsPage = await browser.newPage({ viewport: { width: 1200, height: 800 } })

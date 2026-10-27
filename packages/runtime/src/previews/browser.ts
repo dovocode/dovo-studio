@@ -58,6 +58,13 @@ export type BrowserOutput =
     >
   | BrowserFrame
 type Listener = (message: BrowserOutput) => void
+const dialogMessage = (dialog: Dialog) =>
+  decode(remoteBrowserDialogSchema, {
+    type: 'dialog',
+    kind: dialog.type(),
+    message: dialog.message(),
+    defaultValue: dialog.defaultValue(),
+  })
 const unrestrictedInput = () => {}
 type QueuedInput = {
   input: RemoteBrowserInput
@@ -98,6 +105,7 @@ type Session = {
   frame?: BrowserFrame
   liveFrame?: Uint8Array
   dialog?: Dialog
+  failedNavigation?: string
 }
 // Dots cannot appear in a legacy profile ID, keeping daily-browsing cookies separate.
 const WORKSPACE_PROFILES = 'browser-workspace.profiles'
@@ -624,22 +632,19 @@ export class RemoteBrowsers {
         log('network', request.method() + ' ' + request.url() + ' ' + request.failure()?.errorText),
       )
       page.on('response', (response) => {
+        const request = response.request()
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame())
+          session.failedNavigation = undefined
         if (response.status() >= 400) log('http', response.status() + ' ' + response.url())
       })
 
       page.on('dialog', (dialog) => {
         session.dialog = dialog
-        this.emit(
-          session,
-          decode(remoteBrowserDialogSchema, {
-            type: 'dialog',
-            kind: dialog.type(),
-            message: dialog.message(),
-            defaultValue: dialog.defaultValue(),
-          }),
-        )
-        if (!session.listeners.size)
+        this.emit(session, dialogMessage(dialog))
+        if (!session.listeners.size) {
+          session.dialog = undefined
           void dialog.dismiss().catch((error) => this.report(session, error))
+        }
       })
       const children = new Map<string, Page>()
       page.on('popup', (popup) => {
@@ -710,8 +715,9 @@ export class RemoteBrowsers {
       page.on('crash', () => {
         this.emit(session, {
           type: 'error',
-          message: 'The host browser crashed. Close the session and reconnect.',
+          message: 'The host browser crashed. Reconnect to start again.',
         })
+        void this.close(taskId).catch((error) => this.report(session, error))
       })
       page.once('close', () => {
         void release().catch((error) => this.report(session, error))
@@ -729,8 +735,16 @@ export class RemoteBrowsers {
         session.listeners.clear()
       })
       if (initialUrl) {
-        await page.goto(initialUrl, { waitUntil: 'domcontentloaded' })
-        await customizationReady
+        session.state.url = initialUrl
+        try {
+          await page.goto(initialUrl, { waitUntil: 'domcontentloaded' })
+          await customizationReady
+        } catch (error) {
+          if (page.isClosed()) throw error
+          session.loading = false
+          session.failedNavigation = initialUrl
+          log('navigation:error', errorMessage(error))
+        }
       }
       this.scheduleClose(taskId, session)
       return session
@@ -770,6 +784,10 @@ export class RemoteBrowsers {
   }
   private async state(session: Session) {
     if (session.page.isClosed()) return
+    if (session.dialog) {
+      this.emit(session, session.state)
+      return
+    }
     if (session.statePending) {
       this.scheduleState(session)
       return
@@ -798,9 +816,9 @@ export class RemoteBrowsers {
       session.state = {
         type: 'state',
         createdTabs: session.state.createdTabs,
-        url: session.page.url().startsWith('chrome-error:')
-          ? session.state.url
-          : session.page.url(),
+        url:
+          session.failedNavigation ??
+          (session.page.url().startsWith('chrome-error:') ? session.state.url : session.page.url()),
         title: info.title,
         favicon: session.favicon,
         editable: info.editable,
@@ -918,10 +936,15 @@ export class RemoteBrowsers {
     try {
       // Activate the host tab when a human viewer opens it, including retained
       // Chromium pages whose compositor was inactive after switching away.
-      await session.page.bringToFront()
-      await this.syncStream(session)
-      this.scheduleSharpFrame(session)
-      await this.state(session)
+      if (session.dialog) {
+        listener(session.state)
+        listener(dialogMessage(session.dialog))
+      } else {
+        await session.page.bringToFront()
+        await this.syncStream(session)
+        this.scheduleSharpFrame(session)
+        await this.state(session)
+      }
     } catch (error) {
       session.listeners.delete(listener)
       session.visibleListeners.delete(listener)
@@ -955,8 +978,9 @@ export class RemoteBrowsers {
             })
           })
           .catch((error) => this.report(session, error))
-        if (session.dialog)
-          void session.dialog.dismiss().catch((error) => this.report(session, error))
+        const dialog = session.dialog
+        session.dialog = undefined
+        if (dialog) void dialog.dismiss().catch((error) => this.report(session, error))
         this.scheduleClose(taskId, session)
       }
     }
@@ -1081,6 +1105,9 @@ export class RemoteBrowsers {
       const dialog = session.dialog
       session.dialog = undefined
       if (dialog) await (input.accept ? dialog.accept(input.text) : dialog.dismiss())
+      await this.syncStream(session)
+      this.scheduleState(session)
+      this.scheduleSharpFrame(session)
       return
     }
     clearTimeout(session.sharpTimer)
@@ -1150,11 +1177,15 @@ export class RemoteBrowsers {
               waitUntil: 'commit',
             })
           if (input.type === 'reload')
-            await page.reload({
-              waitUntil: 'commit',
-            })
+            if (session.failedNavigation || page.url().startsWith('chrome-error:'))
+              await page.goto(session.failedNavigation ?? session.state.url, {
+                waitUntil: 'commit',
+              })
+            else await page.reload({ waitUntil: 'commit' })
+          session.failedNavigation = undefined
         } catch (error) {
           session.loading = false
+          session.failedNavigation = url ?? session.state.url
           throw error
         } finally {
           this.scheduleState(session)
@@ -1265,9 +1296,17 @@ export class RemoteBrowsers {
         case 'evaluate':
           scriptResult = await browserScript(session.cdp, command.script)
           break
-        case 'navigate':
-          await page.goto(previewUrl(command.url), { waitUntil: 'domcontentloaded' })
+        case 'navigate': {
+          const url = previewUrl(command.url)
+          try {
+            await page.goto(url, { waitUntil: 'domcontentloaded' })
+            session.failedNavigation = undefined
+          } catch (error) {
+            session.failedNavigation = url
+            throw error
+          }
           break
+        }
         case 'back':
           await page.goBack({ waitUntil: 'domcontentloaded' })
           break
@@ -1275,7 +1314,12 @@ export class RemoteBrowsers {
           await page.goForward({ waitUntil: 'domcontentloaded' })
           break
         case 'reload':
-          await page.reload({ waitUntil: 'domcontentloaded' })
+          if (session.failedNavigation || page.url().startsWith('chrome-error:'))
+            await page.goto(session.failedNavigation ?? session.state.url, {
+              waitUntil: 'domcontentloaded',
+            })
+          else await page.reload({ waitUntil: 'domcontentloaded' })
+          session.failedNavigation = undefined
           break
         case 'click':
           await page.locator(command.selector).click()
@@ -1293,7 +1337,7 @@ export class RemoteBrowsers {
         case 'snapshot':
           break
       }
-      this.scheduleClose(resource, session)
+      if (!session.listeners.size) this.scheduleClose(resource, session)
       return {
         ok: true as const,
         ...(command.action === 'evaluate' ? { result: scriptResult } : {}),

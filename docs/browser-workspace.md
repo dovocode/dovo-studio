@@ -6,6 +6,12 @@ puts the most recently visited tab first. Add a tab on this computer or a paired
 address or search terms, and choose a browser profile in **Browser options** for a separate session.
 Tabs retain their computer and profile when you switch the active runtime.
 
+**Thread for this tab** links only to threads on the tab's computer. On desktop, choose **Use
+{computer}** if that computer is not active before editing or creating its thread. The tab keeps its
+computer and profile. Restored links to another computer require choosing a matching thread.
+Device-local mobile tabs have no computer-owned thread panel; use a paired-computer tab for agent
+customization. Copying a page or selection to another computer's draft remains available.
+
 Shared Browser sessions are separate from the thread's right-side preview. Profile names can be
 reused across both surfaces, but their login cookies are isolated; signing in on one does not sign
 you in on the other.
@@ -46,6 +52,12 @@ reload, not app quit. Bookmarks and visit history use a shared localStorage libr
 Inactive restored remote tabs are not launched until selected. Remote sessions depend on the owning
 computer being available and paired. Each remote runtime currently allows eight concurrent browser
 sessions; saved inactive tabs do not reserve those sessions.
+
+Failed remote navigation retains the session and attempted address so Reload can retry when the
+server returns. Crashed remote sessions are released for reconnect. Reconnecting viewers receive any
+outstanding JavaScript dialog; disconnecting clears the viewer's old dialog. Agent inspection does
+not expire a session while a human viewer is attached. Private desktop preview profiles use
+memory-only storage, and self-closing pages release their native tab entries.
 
 ## Desktop extensions
 
@@ -136,7 +148,12 @@ and disabling unmounts it and hides its native session. Native window creation h
 Additional cases flood background opened links to the 100-tab cap and verify pop-out thread
 native/session-storage isolation from main-window tabs. Native `createdTabs`/`closedTabs` cases
 verify adoption without opening a duplicate view, retained profiles and session-only extension URLs.
-Screenshots are written to `work/shared-browser/desktop.png`, `work/shared-browser/narrow.png` and
+Thread cases cover stale cross-computer links, owner activation, profile retention and real composer
+draft persistence through panel close/reopen. `node scripts/check-remote-browser-sessions.mjs` uses
+real managed Chromium for unavailable-server recovery, crash cleanup and dialog reattachment.
+`node scripts/check-browser-viewer-ui-browser.mjs` checks dialog dismissal/reconnect and
+Control/Meta workspace shortcut forwarding from the viewer. Screenshots are written to
+`work/shared-browser/desktop.png`, `work/shared-browser/narrow.png` and
 `work/shared-browser/narrow-library.png`. Narrow checks use a 380-pixel viewport and reject
 horizontal document overflow. Styles are reapplied after fixture reloads.
 
@@ -187,10 +204,12 @@ text and never sends. Review in the composer. If saving fails, the quotation may
 there: inspect the composer before adding it again.
 
 The optional native iOS engine follows the experimental app setting. Switching between Browser and a
-thread detaches its view while retaining live tabs. Feature-off or app-shell teardown disables the
-engine. A bounded registry reconciles tabs created or closed while the Browser route was hidden;
-native instance identities prevent stale close events from removing a newer tab. Native status
-reports the live-tab limit, currently 100 across profiles.
+thread detaches its view while retaining live tabs. Fallback and remote WebViews remain mounted
+while Browser loses focus; remote transport reconnects on return. Pinned native tabs reopen if the
+page closes itself, and background page errors do not replace the active tab's feedback. Feature-off
+or app-shell teardown disables the engine. A bounded registry reconciles tabs created or closed
+while the Browser route was hidden; native instance identities prevent stale close events from
+removing a newer tab. Native status reports the live-tab limit, currently 100 across profiles.
 
 Run `pnpm exec playwright install chromium`, then
 `node scripts/check-mobile-shared-browser-browser.mjs`. This bundles the real `BrowserScreen`, route

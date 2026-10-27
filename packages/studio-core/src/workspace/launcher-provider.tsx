@@ -161,6 +161,7 @@ export function LauncherWorkspaceProvider({
       resolveSyncConflict: unavailableAsync,
       runtimeRegistry: registry,
       activeRuntimeId: profile?.id ?? null,
+      localRuntimeId: null,
       runtimes,
       request,
       requestEffect,

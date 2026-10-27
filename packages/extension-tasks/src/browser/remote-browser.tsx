@@ -47,6 +47,7 @@ export function RemoteBrowser({
   onConnection,
   onFocusAddress,
   onPerformance,
+  onShortcut,
 }: {
   taskId: string
   active?: boolean
@@ -62,9 +63,11 @@ export function RemoteBrowser({
   onConnection?: (online: boolean) => void
   onFocusAddress?: () => void
   onPerformance?: (details: string) => void
+  onShortcut?: (key: 't' | 'w' | 'd', shift: boolean) => void
 }) {
   const { connection, request } = useWorkspace()
   const theme = useResolvedTheme()
+  const hasWorkspaceShortcuts = !!onShortcut
   const appearance = useRef(theme)
   const screenshots = useScreenshotAttachment(taskId)
   const attachScreenshot = useEffectEvent((image: string) => screenshots.attach(image))
@@ -75,6 +78,9 @@ export function RemoteBrowser({
   const reportConnection = useEffectEvent((online: boolean) => onConnection?.(online))
   const reportPerformance = useEffectEvent((details: string) => onPerformance?.(details))
   const focusAddress = useEffectEvent(() => onFocusAddress?.())
+  const shortcut = useEffectEvent((key: 't' | 'w' | 'd', shift: boolean) =>
+    onShortcut?.(key, shift),
+  )
   const address = useRef(initialUrl === 'about:blank' ? '' : initialUrl)
   useEffect(() => {
     address.current = initialUrl === 'about:blank' ? '' : initialUrl
@@ -131,7 +137,13 @@ export function RemoteBrowser({
     const generation = version.current
     pending.current = true
     post({ type: 'appearance', theme: appearance.current })
-    if (externalNavigation) post({ type: 'presentation', expanded: true, externalNavigation: true })
+    if (externalNavigation)
+      post({
+        type: 'presentation',
+        expanded: true,
+        externalNavigation: true,
+        workspaceShortcuts: hasWorkspaceShortcuts,
+      })
     if (!deviceId) post({ type: 'configure', viewport: readAppPreferences().browserViewport })
     if (deviceId)
       post({
@@ -161,7 +173,17 @@ export function RemoteBrowser({
     } finally {
       if (generation === version.current) pending.current = false
     }
-  }, [connection, request, taskId, deviceId, tabId, profileId, post, externalNavigation])
+  }, [
+    connection,
+    request,
+    taskId,
+    deviceId,
+    tabId,
+    profileId,
+    post,
+    externalNavigation,
+    hasWorkspaceShortcuts,
+  ])
   useEffect(() => {
     const receive = (event: MessageEvent<unknown>) => {
       if (event.source !== frame.current?.contentWindow) return
@@ -212,6 +234,14 @@ export function RemoteBrowser({
       if (data.type === 'performance' && 'details' in data && typeof data.details === 'string')
         reportPerformance(data.details.slice(0, 2000))
       if (data.type === 'focusAddress') focusAddress()
+      if (
+        data.type === 'shortcut' &&
+        'key' in data &&
+        (data.key === 't' || data.key === 'w' || data.key === 'd') &&
+        'shift' in data &&
+        typeof data.shift === 'boolean'
+      )
+        shortcut(data.key, data.shift)
       if (data.type === 'reconnect') void connect()
       if (data.type === 'close')
         void request(

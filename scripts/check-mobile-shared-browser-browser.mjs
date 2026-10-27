@@ -30,7 +30,7 @@ const profiles=[{id:'lan',name:'LAN computer'},{id:'mac',name:'Mac computer'}];
 const scope=createContext('lan');export const RuntimeScope=({runtimeId,children})=><scope.Provider value={runtimeId}>{children}</scope.Provider>;
 const overviews=profiles.map(profile=>({profile,connected:true,snapshot:{workspace:{tasks:[{id:'target',title:'Destination',messages:[],draft:'Server fallback'}]}}}));
 const readRuntime=async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('profiles/read'))return {profiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]};if(path.endsWith('selection'))return {text:'  remote exact\\ntext ',url:'http://localhost:4000',title:'Remote page'};return {ok:true,ticket:'fixture-ticket',tabId:body.tabId,profileId:body.profileId}};
-export const useRuntime=()=>{const id=useContext(scope);return {activeId:id,snapshot:overviews.find(entry=>entry.profile.id===id)?.snapshot,connection:{address:'http://'+id+'.fixture',token:'paired'},profiles,overviews,readRuntime,readEffect:(path,body)=>Effect.tryPromise(()=>readRuntime(profiles.find(p=>p.id===id),path,body))}};export const useNavigation=()=>({navigate:(...args)=>window.navigation.push(args)});export const usePreviewActive=()=>true;
+export const useRuntime=()=>{const id=useContext(scope);return {activeId:id,snapshot:overviews.find(entry=>entry.profile.id===id)?.snapshot,connection:{address:'http://'+id+'.fixture',token:'paired'},profiles,overviews,readRuntime,readEffect:(path,body)=>Effect.tryPromise(()=>readRuntime(profiles.find(p=>p.id===id),path,body))}};export const useNavigation=()=>({navigate:(...args)=>window.navigation.push(args)});let previewActive=true;const focusListeners=new Set();window.setPreviewActive=value=>{previewActive=value;focusListeners.forEach(f=>f())};export const usePreviewActive=()=>useSyncExternalStore(f=>{focusListeners.add(f);return ()=>focusListeners.delete(f)},()=>previewActive);
 export const WebView=forwardRef(({source,onMessage,onError},ref)=>{const frame=useRef();const owner=useContext(scope);useImperativeHandle(ref,()=>({reload:()=>window.calls.push({reload:true}),goBack:()=>{},goForward:()=>{},injectJavaScript:code=>frame.current.contentWindow.eval(code)}));window.webError=()=>onError?.({nativeEvent:{description:'Fixture page failed'}});return <iframe title={source.html?'Remote page':'Device page'} ref={frame} data-url={source.uri} onLoad={()=>{const w=frame.current.contentWindow;w.ReactNativeWebView={postMessage:data=>onMessage({nativeEvent:{data}})};if(source.html){let url='about:blank';const emit=m=>w.ReactNativeWebView.postMessage(JSON.stringify({channel:'dovo-browser',...m}));const state=()=>emit({type:'state',url,title:'Remote page',back:false,forward:false,loading:false,editable:false});w.addEventListener('message',e=>{const m=e.data;if(m.type==='connect'){const call=window.calls.findLast(c=>c.owner===owner&&c.path?.endsWith('/open'));url=call?.body.url||'about:blank';emit({type:'connection',online:true});state()}if(m.type==='input'&&m.input.type==='navigate'){url=m.input.url;setTimeout(state,25)}});emit({type:'ready'})}}} srcDoc={source.html?'Remote viewer fixture':'<title>Local fixture</title><pre id="selection">  Keep  spaces\\nSecond line </pre>'}/>});
 export const Glass=View;export const Icon=()=>null;export const IconButton=Action;export const TextInput=({accessibilityLabel,value,onChangeText,onSubmitEditing,onFocus,onBlur,style})=><input aria-label={accessibilityLabel} value={value} onChange={e=>onChangeText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSubmitEditing?.()}} onFocus={onFocus} onBlur={onBlur} style={css(style)}/>;export const Keyboard={dismiss:()=>{}};export const KeyboardAvoidingView=View;export const Platform={OS:'ios'};export const Share={share:async value=>window.calls.push({share:value})};export const StyleSheet={hairlineWidth:1};export const AppState={currentState:'active'};export const Alert={alert:(...args)=>window.calls.push({alert:args})};export const useOpenAppLink=()=>()=>{throw Error('Unexpected external navigation')};export const remoteBrowserHtml='fixture';export const deviceHostMessage=message=>message;export const useScreenshotAttachment=()=>{throw Error('Shared browser must not create screenshot attachment')};
 window.nativeCalls=[];const nativeListeners=new Map(),nativeTabs=new Map(),nativeProfiles=new Set(['device']);let nativeEnabled=false;let nativeInstance=0;
@@ -136,6 +136,20 @@ try {
   await button('Go').click()
   await page.locator('iframe').waitFor()
   assert.equal(await page.locator('iframe').getAttribute('data-url'), 'http://192.168.1.7:3000/dev')
+  await page
+    .locator('iframe')
+    .evaluate((frame) => (frame.contentWindow.retainedDraft = 'Unsubmitted form'))
+  await page.evaluate(() => window.setPreviewActive(false))
+  assert.equal(
+    await page.locator('iframe').evaluate((frame) => frame.contentWindow.retainedDraft),
+    'Unsubmitted form',
+  )
+  await page.evaluate(() => window.setPreviewActive(true))
+  assert.equal(
+    await page.locator('iframe').evaluate((frame) => frame.contentWindow.retainedDraft),
+    'Unsubmitted form',
+    'Backgrounding retains the live fallback page',
+  )
   await button('Page actions').click()
   await button('Bookmark page').click()
   await page.waitForFunction(
@@ -198,6 +212,26 @@ try {
     const tab = s.tabs.find((t) => t.id === s.active)
     return tab.url === 'http://localhost:4000/' && tab.title === 'Remote page'
   })
+  await page
+    .locator('iframe')
+    .evaluate((frame) => (frame.contentWindow.retainedViewer = 'Same viewer'))
+  await page.evaluate(() => window.setPreviewActive(false))
+  await page.evaluate(() => window.setPreviewActive(true))
+  assert.equal(
+    await page.locator('iframe').evaluate((frame) => frame.contentWindow.retainedViewer),
+    'Same viewer',
+    'Route focus changes retain the remote viewer while refreshing its ticket',
+  )
+  await button('Page actions').click()
+  await button('Thread for this tab').click()
+  assert.equal(
+    await button('Destination · Mac computer').count(),
+    0,
+    'Remote tabs only link threads on their owner',
+  )
+  await button('Destination · LAN computer').click()
+  await page.getByTestId('tab-thread').waitFor()
+  await page.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   await button('Tabs (2)').click()
   await page.getByLabel('Computer for new tab').selectOption('mac')
   await button('New tab').click()
@@ -329,6 +363,18 @@ try {
     .getByLabel('Search or enter address', { exact: true })
     .fill('http://localhost:3000/native')
   await nativeButton('Go').click()
+  const opensBeforeFocus = await nativePage.evaluate(
+    () => window.nativeCalls.filter((c) => c.open).length,
+  )
+  await nativePage.evaluate(() => window.setPreviewActive(false))
+  await nativePage.locator('[data-native-tab]').waitFor({ state: 'hidden' })
+  await nativePage.evaluate(() => window.setPreviewActive(true))
+  await nativePage.locator('[data-native-tab]').waitFor()
+  assert.equal(
+    await nativePage.evaluate(() => window.nativeCalls.filter((c) => c.open).length),
+    opensBeforeFocus,
+    'Native focus resumes the live page without reopening',
+  )
   const openedBeforeThread = await nativePage.evaluate(
     () => window.nativeCalls.filter((c) => c.open).length,
   )
@@ -361,6 +407,24 @@ try {
   await nativePage.evaluate(() => window.showBrowser(true))
   await nativePage.locator('[data-native-tab]').waitFor()
   await nativeButton('Tabs (2)').waitFor()
+  await nativePage.evaluate(() =>
+    window.nativeEmit('onTabUpdated', {
+      tabId: 'worker-tab',
+      instanceId: 'worker-instance',
+      profileId: 'device',
+      url: 'http://localhost:3000/worker',
+      title: 'Failed background page',
+      canGoBack: false,
+      canGoForward: false,
+      error: 'Background page failed',
+    }),
+  )
+  await nativePage.waitForFunction(() =>
+    JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')).tabs.some(
+      (tab) => tab.title === 'Failed background page',
+    ),
+  )
+  assert.equal(await nativePage.getByText('Background page failed', { exact: true }).count(), 0)
   assert.equal(
     await nativePage.locator('[data-native-tab]').getAttribute('data-native-tab'),
     originalTab,
@@ -662,6 +726,28 @@ try {
   await cleanupPage.addScriptTag({ content: built.outputFiles[0].text })
   await cleanupPage.evaluate(() => window.setExperimental(true))
   await cleanupPage.locator('[data-native-tab="current"]').waitFor()
+  await cleanupPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await cleanupPage.getByRole('button', { name: 'Pin tab', exact: true }).click()
+  await cleanupPage.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
+  const opensBeforePageClose = await cleanupPage.evaluate(
+    () => window.nativeCalls.filter((c) => c.open).length,
+  )
+  await cleanupPage.evaluate(() =>
+    window.nativeEmit('onTabClosed', {
+      tabId: 'current',
+      profileId: 'device',
+      instanceId: 'instance-1',
+      reason: 'page',
+    }),
+  )
+  await cleanupPage.waitForFunction(
+    (count) => window.nativeCalls.filter((c) => c.open).length === count + 1,
+    opensBeforePageClose,
+  )
+  await cleanupPage.locator('[data-native-tab="current"]').waitFor()
+  await cleanupPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await cleanupPage.getByRole('button', { name: 'Unpin tab', exact: true }).click()
+  await cleanupPage.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   await cleanupPage.clock.fastForward(120000)
   assert.equal(
     await cleanupPage.evaluate(() =>
@@ -694,6 +780,11 @@ try {
   assert.equal(cleaned.closed[0].id, 'unused')
   await cleanupPage.getByRole('button', { name: 'Page actions', exact: true }).click()
   await cleanupPage.getByRole('button', { name: 'Customize website', exact: true }).click()
+  assert.equal(
+    await cleanupPage.getByRole('button', { name: 'Customize with agent…', exact: true }).count(),
+    0,
+    'Device-local tabs cannot link to a computer-owned agent',
+  )
   await cleanupPage.getByLabel('Website CSS', { exact: true }).fill('body { color: red; }')
   await cleanupPage.getByRole('button', { name: 'Save and reload', exact: true }).click()
   await cleanupPage.waitForFunction(() =>
@@ -705,15 +796,13 @@ try {
   )
   await cleanupPage.getByRole('button', { name: 'Page actions', exact: true }).click()
   await cleanupPage.getByRole('button', { name: 'Thread for this tab', exact: true }).click()
-  await cleanupPage.getByRole('button', { name: 'Destination · Mac computer', exact: true }).click()
-  await cleanupPage.getByTestId('tab-thread').waitFor()
-  const withThread = await cleanupPage.evaluate(() =>
-    JSON.parse(localStorage.getItem('dovo.mobile-browser.v1')),
+  await cleanupPage.getByText('Thread panels require a browser tab on a paired computer.').waitFor()
+  assert.equal(
+    await cleanupPage
+      .getByRole('button', { name: 'Destination · Mac computer', exact: true })
+      .count(),
+    0,
   )
-  assert.deepEqual(withThread.tabs.find((tab) => tab.id === withThread.active).thread, {
-    id: 'target',
-    runtimeId: 'mac',
-  })
   await cleanupPage.close()
   console.log(
     'Mobile shared Browser UI checks passed; screenshots: work/mobile-shared-browser/{narrow,narrow-library}.png. Native engines not exercised.',

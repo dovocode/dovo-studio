@@ -10,7 +10,6 @@ import {
   useCachedTask,
   useStudioHost,
   useWorkspace,
-  WorkspaceScope,
 } from '@dovo/studio-core'
 import { Button, IconButton, Input } from '@dovo/studio-ui'
 import { ArrowUpRight, X } from 'lucide-react'
@@ -23,15 +22,52 @@ const Conversation = lazy(() =>
 
 type Insert = { id: string; text: string }
 export function BrowserThreadPanel({
-  thread,
-  onThread,
-  onClose,
-  onBrowser,
-  insert,
-  onInserted,
-  websiteOrigin,
-  onProposal,
-}: {
+  runtimeId,
+  ...props
+}: BrowserThreadPanelProps & { runtimeId?: string | null }) {
+  const store = useWorkspace()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const owner = store.runtimeRegistry.profiles.find((profile) => profile.id === runtimeId)
+  if (owner && store.activeRuntimeId === owner.id)
+    return <OwnedBrowserThreadPanel key={owner.id} {...props} runtimeId={owner.id} />
+  return (
+    <aside
+      aria-label="Browser tab thread"
+      className="flex h-full flex-col gap-3 border-l p-3 text-sm"
+    >
+      <div className="flex items-center justify-between">
+        <span>Thread for this tab</span>
+        <IconButton label="Close tab thread panel" onClick={props.onClose}>
+          <X size={15} />
+        </IconButton>
+      </div>
+      <p>
+        {owner
+          ? `Use ${owner.name} to edit a thread on this tab’s computer.`
+          : 'Connect this tab’s computer to link a thread.'}
+      </p>
+      {owner && (
+        <Button
+          disabled={busy}
+          onClick={() => {
+            setBusy(true)
+            setError('')
+            void store
+              .switchRuntime(owner.id)
+              .catch((cause) => setError(String(cause)))
+              .finally(() => setBusy(false))
+          }}
+        >
+          Use {owner.name}
+        </Button>
+      )}
+      {error && <p role="alert">{error}</p>}
+    </aside>
+  )
+}
+
+type BrowserThreadPanelProps = {
   thread?: BrowserTab['thread']
   onThread: (thread: NonNullable<BrowserTab['thread']>) => void
   onClose: () => void
@@ -40,15 +76,28 @@ export function BrowserThreadPanel({
   onInserted: () => void
   websiteOrigin?: string
   onProposal: (website: BrowserWebsiteCustomization) => void
-}) {
+}
+
+function OwnedBrowserThreadPanel({
+  runtimeId,
+  thread,
+  onThread,
+  onClose,
+  onBrowser,
+  insert,
+  onInserted,
+  websiteOrigin,
+  onProposal,
+}: BrowserThreadPanelProps & { runtimeId: string }) {
   const store = useWorkspace()
-  const [choosing, setChoosing] = useState(!thread)
+  const matchingThread = thread?.runtimeId === runtimeId ? thread : undefined
+  const [choosing, setChoosing] = useState(!matchingThread)
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [projectId, setProjectId] = useState('')
   const [busy, setBusy] = useState(false)
   const entries = useMemo(
-    () => collectTasks(taskSources(store)),
+    () => collectTasks(taskSources(store)).filter((entry) => entry.source.runtimeId === runtimeId),
     [
       store.workspace,
       store.snapshot,
@@ -56,18 +105,12 @@ export function BrowserThreadPanel({
       store.activeRuntimeId,
       store.connected,
       store.connection,
+      runtimeId,
     ],
   )
-  const owner =
-    thread && store.runtimeRegistry.profiles.find((profile) => profile.id === thread.runtimeId)
-  const available = !thread || thread.runtimeId === store.activeRuntimeId || owner
   useEffect(() => {
-    if (!choosing) return
-    const stops = store.runtimeRegistry.profiles.map((profile) =>
-      watchRuntimeSettled(profile.connection),
-    )
-    return () => stops.forEach((stop) => stop())
-  }, [choosing, store.runtimeRegistry.profiles])
+    if (choosing && store.connection) return watchRuntimeSettled(store.connection)
+  }, [choosing, store.connection])
   const create = async () => {
     const repository = store.workspace.repositories.find((repo) => repo.id === projectId)
     if (!repository || busy) return
@@ -92,10 +135,10 @@ export function BrowserThreadPanel({
       setBusy(false)
     }
   }
-  const content = thread && available && (
+  const content = matchingThread && (
     <ThreadConversation
-      key={JSON.stringify(thread)}
-      id={thread.id}
+      key={JSON.stringify(matchingThread)}
+      id={matchingThread.id}
       onBrowser={onBrowser}
       insert={insert}
       onInserted={onInserted}
@@ -110,7 +153,7 @@ export function BrowserThreadPanel({
     >
       <header className="flex h-11 shrink-0 items-center gap-2 border-b px-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium">Thread for this tab</span>
-        {thread && (
+        {matchingThread && (
           <Button size="sm" variant="ghost" onClick={() => setChoosing(!choosing)}>
             {choosing ? 'Back' : 'Change thread'}
           </Button>
@@ -122,6 +165,11 @@ export function BrowserThreadPanel({
       {error && (
         <p role="alert" className="p-2 text-xs text-destructive">
           {error}
+        </p>
+      )}
+      {thread && !matchingThread && (
+        <p role="status" className="p-3 text-sm">
+          Choose a thread on this tab’s computer. The saved thread belongs to another computer.
         </p>
       )}
       {choosing ? (
@@ -187,12 +235,6 @@ export function BrowserThreadPanel({
               </button>
             ))}
         </div>
-      ) : !available ? (
-        <p role="status" className="p-3 text-sm">
-          This thread’s computer is no longer paired. Choose another thread.
-        </p>
-      ) : owner && thread?.runtimeId !== store.activeRuntimeId ? (
-        <WorkspaceScope profile={owner}>{content}</WorkspaceScope>
       ) : (
         content
       )}

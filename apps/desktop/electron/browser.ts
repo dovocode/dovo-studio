@@ -36,6 +36,8 @@ type Entry = {
   taskId?: string
   cdp?: string
   view: WebContentsView
+  contents: Electron.WebContents
+  browserSession: Electron.Session
   url: string
   /** Extension page an extension opened here; the renderer adopts the tab with this exact URL. */
   extensionUrl?: string
@@ -172,8 +174,8 @@ export function registerBrowser(
   const views = new Map<string, Entry>()
   const focusStudio = (entry: Entry) => {
     if (
-      !entry.view.webContents.isDestroyed() &&
-      entry.view.webContents.isFocused() &&
+      !entry.contents.isDestroyed() &&
+      entry.contents.isFocused() &&
       !entry.window.webContents.isDestroyed()
     )
       entry.window.webContents.focus()
@@ -314,16 +316,16 @@ export function registerBrowser(
     if (!entry) return
     focusStudio(entry)
     views.delete(key)
+    if (activeViews.get(entry.windowId)?.key === key) activeViews.delete(entry.windowId)
     cdp?.remove(key)
     if (entry.workspace) {
-      extensions.removeTab(entry.profileId, entry.view.webContents)
-      media.releaseTab(entry.view.webContents)
+      extensions.removeTab(entry.profileId, entry.contents)
+      media.releaseTab(entry.contents)
     }
     closePopups(entry)
     entry.window.contentView.removeChildView(entry.view)
-    const browserSession = entry.view.webContents.session
-    if (!entry.view.webContents.isDestroyed()) entry.view.webContents.close()
-    clearPrivateProfile(entry.profileId, browserSession)
+    if (!entry.contents.isDestroyed()) entry.contents.close()
+    clearPrivateProfile(entry.profileId, entry.browserSession)
   }
   const prune = () => {
     const inactive = [...views].filter(
@@ -359,14 +361,13 @@ export function registerBrowser(
       views.delete(key)
       cdp?.remove(key)
       if (current.workspace) {
-        extensions.removeTab(current.profileId, current.view.webContents)
-        media.releaseTab(current.view.webContents)
+        extensions.removeTab(current.profileId, current.contents)
+        media.releaseTab(current.contents)
       }
       closePopups(current)
       if (detach) window.contentView.removeChildView(current.view)
-      const browserSession = current.view.webContents.session
-      if (!current.view.webContents.isDestroyed()) current.view.webContents.close()
-      clearPrivateProfile(current.profileId, browserSession)
+      if (!current.contents.isDestroyed()) current.contents.close()
+      clearPrivateProfile(current.profileId, current.browserSession)
     }
   }
   const registerWindow = (window: BrowserWindow) => {
@@ -406,7 +407,9 @@ export function registerBrowser(
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
-        partition: workspace ? workspacePartition(profileId) : `persist:dovo-preview:${profileId}`,
+        partition: workspace
+          ? workspacePartition(profileId)
+          : `${isPrivateBrowserProfile(profileId) ? '' : 'persist:'}dovo-preview:${profileId}`,
       },
     })
     view.setVisible(false)
@@ -420,8 +423,28 @@ export function registerBrowser(
       openedLinks: [],
       popups: new Set(),
       view,
+      contents: view.webContents,
+      browserSession: view.webContents.session,
       url: '',
     }
+    view.webContents.once('destroyed', () => {
+      const currentKey = JSON.stringify([created.windowId, created.key])
+      if (views.get(currentKey) !== created) return
+      if (
+        activeViews.get(created.windowId)?.key === currentKey &&
+        !created.window.webContents.isDestroyed()
+      )
+        created.window.webContents.focus()
+      releaseView(currentKey)
+      if (created.workspace) {
+        const events = tabEvents(created.windowId)
+        if (events.closed.length < MAX_EXTENSION_TAB_EVENTS) events.closed.push(created.key)
+      }
+    })
+    view.webContents.on('render-process-gone', (_event, details) => {
+      if (details.reason !== 'clean-exit')
+        created.navigationError = 'This page stopped unexpectedly. Reload to try again.'
+    })
     // Websites such as Teams reject Electron-branded user agents despite a supported engine.
     // Only website views use Chromium's UA; Studio and runtime request identities are unchanged.
     const userAgent = view.webContents
@@ -599,19 +622,6 @@ export function registerBrowser(
             child.pageCreated = true
             child.inactiveAt = Date.now()
             child.url = openableUrl(details.url) ?? 'about:blank'
-            const childContents = child.view.webContents
-            const childSession = childContents.session
-            childContents.once('destroyed', () => {
-              const key = JSON.stringify([child.windowId, childKey])
-              if (views.get(key) !== child) return
-              views.delete(key)
-              child.window.contentView.removeChildView(child.view)
-              extensions.removeTab(profileId, childContents)
-              media.releaseTab(childContents)
-              const events = tabEvents(child.windowId)
-              if (events.closed.length < MAX_EXTENSION_TAB_EVENTS) events.closed.push(childKey)
-              clearPrivateProfile(profileId, childSession)
-            })
             events.created.push({
               key: childKey,
               url: child.url === 'about:blank' ? '' : child.url,
@@ -1152,7 +1162,7 @@ export function registerBrowser(
       for (const [key, entry] of views) {
         cdp?.remove(key)
         closePopups(entry)
-        if (!entry.view.webContents.isDestroyed()) entry.view.webContents.close()
+        if (!entry.contents.isDestroyed()) entry.contents.close()
       }
       views.clear()
       activeViews.clear()

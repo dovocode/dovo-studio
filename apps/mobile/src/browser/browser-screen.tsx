@@ -317,7 +317,7 @@ export function BrowserScreen() {
           back: page.canGoBack,
           forward: page.canGoForward,
         })
-      if (page.error) setError(page.error)
+      if (page.error && page.tabId === current.current.active) setError(page.error)
     }
     const created = (page: BrowserTabState) => {
       if (!alive) return
@@ -352,8 +352,11 @@ export function BrowserScreen() {
         if (instance && instance.instanceId !== page.instanceId) return
         nativeInstances.current.delete(page.tabId)
         const tab = current.current.tabs.find((tab) => tab.id === page.tabId)
-        if (tab?.kind === 'local' && tab.profileId === page.profileId)
+        if (tab?.kind === 'local' && tab.profileId === page.profileId) {
           change((state) => closeTab(state, page.tabId, randomUUID()))
+          if (tab.pinned && current.current.active === tab.id)
+            setNativeAttempt((value) => value + 1)
+        }
       }),
       module.addListener('onExternalUrlBlocked', (page) => {
         if (alive) setError(`This page requested an unsupported external address: ${page.url}`)
@@ -882,7 +885,8 @@ export function BrowserScreen() {
         )}
       </View>
       <View style={{ flex: 1 }}>
-        {!focused ? null : active.kind === 'remote' ? (
+        {!focused && nativeAvailable && active.kind === 'local' ? null : active.kind ===
+          'remote' ? (
           owner?.connected ? (
             <RuntimeScope runtimeId={active.runtimeId}>
               <RemoteBrowser
@@ -1194,18 +1198,23 @@ export function BrowserScreen() {
           profileName={websiteProfile?.name ?? active.profileId}
           onClose={() => setCustomization(null)}
           onSave={saveWebsite}
-          onAgent={(website) => {
-            setCustomization(null)
-            setCustomizationRequest({
-              tabId: active.id,
-              text: websiteCustomizationPrompt(active.profileId, website, active.url),
-            })
-            setThreadOpen(true)
-          }}
+          onAgent={
+            active.kind === 'remote'
+              ? (website) => {
+                  setCustomization(null)
+                  setCustomizationRequest({
+                    tabId: active.id,
+                    text: websiteCustomizationPrompt(active.profileId, website, active.url),
+                  })
+                  setThreadOpen(true)
+                }
+              : undefined
+          }
         />
       )}
       {threadOpen && (
         <BrowserThreadPanel
+          runtimeId={active.kind === 'remote' ? active.runtimeId : undefined}
           thread={customizationRequest?.tabId === active.id ? undefined : active.thread}
           origin={
             !isPrivateBrowserProfile(active.profileId) && customizationSupported
@@ -1214,6 +1223,8 @@ export function BrowserScreen() {
           }
           onClose={() => setThreadOpen(false)}
           onThread={async (thread) => {
+            if (active.kind !== 'remote' || thread.runtimeId !== active.runtimeId)
+              throw new Error('Choose a thread on this tab’s computer.')
             if (customizationRequest?.tabId === active.id) {
               const entry = runtime.overviews.find((item) => item.profile.id === thread.runtimeId)
               const task = entry?.snapshot?.workspace.tasks.find((item) => item.id === thread.id)

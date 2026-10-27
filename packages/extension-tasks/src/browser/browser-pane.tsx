@@ -233,7 +233,7 @@ function BrowserContent({
           url: addresses.get(scope) ?? '',
           title: '',
           kind: browser ? 'web' : 'remote',
-          runtimeId: activeRuntimeId ?? undefined,
+          runtimeId: (browser ? store.localRuntimeId : activeRuntimeId) ?? undefined,
           profileId:
             browser &&
             profiles.some((profile) => profile.id === preferences.browserProfileByThread[scope])
@@ -253,6 +253,17 @@ function BrowserContent({
   const currentTabs = useRef(tabs)
   currentTabs.current = tabs
   const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0]
+  const tabRuntimeId = selectedTab.kind === 'web' ? store.localRuntimeId : selectedTab.runtimeId
+  useEffect(() => {
+    if (!shared || !browser || !store.localRuntimeId) return
+    setTabs((previous) =>
+      previous.map((tab) =>
+        tab.kind === 'web' && tab.runtimeId !== store.localRuntimeId
+          ? { ...tab, runtimeId: store.localRuntimeId ?? undefined }
+          : tab,
+      ),
+    )
+  }, [shared, browser, store.localRuntimeId])
   const regularTabs = tabs.filter((tab) => !tab.previewOf)
   const [threadPanels, setThreadPanels] = useApplicationState(
     () => new Set(tabs.filter((tab) => tab.thread).map((tab) => tab.id)),
@@ -395,7 +406,7 @@ function BrowserContent({
     target = '',
     kind: BrowserTab['kind'] = browser ? 'web' : 'remote',
     profileId = 'default',
-    runtimeId = activeRuntimeId ?? undefined,
+    runtimeId = (kind === 'web' ? store.localRuntimeId : activeRuntimeId) ?? undefined,
     title = '',
     favicon?: string,
   ) => {
@@ -411,7 +422,7 @@ function BrowserContent({
       favicon,
       kind,
       profileId,
-      runtimeId,
+      runtimeId: kind === 'web' ? (store.localRuntimeId ?? undefined) : runtimeId,
       visitedAt: target ? Date.now() : 0,
       lastActiveAt: Date.now(),
     }
@@ -781,6 +792,7 @@ function BrowserContent({
                 url: tab.url,
                 title: '',
                 kind: 'web' as const,
+                runtimeId: store.localRuntimeId ?? undefined,
                 profileId: tab.profileId,
                 visitedAt: 0,
                 previewOf: tab.openerKey
@@ -1278,6 +1290,17 @@ function BrowserContent({
         : [...previous, { ...selectedTab }],
     )
   }
+  const tabShortcut = (key: 't' | 'w' | 'd', shift: boolean) => {
+    if (key === 't') {
+      if (shift) reopenTab()
+      else {
+        newTab('', selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
+        requestAnimationFrame(() => addressField.current?.focus())
+      }
+    }
+    if (key === 'w') closeTab(selectedTab)
+    if (key === 'd') toggleBookmark()
+  }
   useEffect(() => {
     if (!shared) return
     const shortcuts = (event: KeyboardEvent) => {
@@ -1295,15 +1318,7 @@ function BrowserContent({
         addressField.current?.focus()
         addressField.current?.select()
       }
-      if (key === 't') {
-        if (event.shiftKey) reopenTab()
-        else {
-          newTab('', selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
-          requestAnimationFrame(() => addressField.current?.focus())
-        }
-      }
-      if (key === 'w') closeTab(selectedTab)
-      if (key === 'd') toggleBookmark()
+      if (key === 't' || key === 'w' || key === 'd') tabShortcut(key, event.shiftKey)
       if (key === 'n' && openBrowserWindow) void act(openBrowserWindow)
       if (key === 'r') {
         if (mode === 'remote') remote.current?.input({ type: 'reload' })
@@ -2027,12 +2042,17 @@ function BrowserContent({
         shared && mode !== 'devices' && threadPanels.has(activeTab) ? (
           <BrowserThreadPanel
             key={selectedTab.id}
+            runtimeId={tabRuntimeId}
             thread={selectedTab.thread}
-            onThread={(thread) =>
+            onThread={(thread) => {
+              if (!tabRuntimeId || thread.runtimeId !== tabRuntimeId) {
+                setError('Choose a thread on this tab’s computer.')
+                return
+              }
               setTabs((previous) =>
                 previous.map((tab) => (tab.id === activeTab ? { ...tab, thread } : tab)),
               )
-            }
+            }}
             onClose={() =>
               setThreadPanels((previous) => {
                 const next = new Set(previous)
@@ -2270,6 +2290,13 @@ function BrowserContent({
                 taskId={taskId}
                 ref={activeTab === tab.id ? remote : undefined}
                 externalNavigation
+                onShortcut={
+                  shared
+                    ? (key, shift) => {
+                        if (activeTab === tab.id) tabShortcut(key, shift)
+                      }
+                    : undefined
+                }
                 onFocusAddress={() => {
                   addressField.current?.focus()
                   addressField.current?.select()

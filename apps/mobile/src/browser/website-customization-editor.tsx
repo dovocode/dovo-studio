@@ -23,7 +23,7 @@ export function WebsiteCustomizationEditor({
   profileName: string
   onClose: () => void
   onSave: (website: BrowserWebsiteCustomization | null) => Promise<void>
-  onAgent: (website: BrowserWebsiteCustomization) => void
+  onAgent?: (website: BrowserWebsiteCustomization) => void
 }) {
   const { styles } = useTheme()
   const sheet = useRef<SheetHandle>(null)
@@ -98,12 +98,14 @@ export function WebsiteCustomizationEditor({
           {error}
         </Text>
       ) : null}
-      <Action
-        label="Customize with agent…"
-        secondary
-        disabled={busy}
-        onPress={() => sheet.current?.dismiss(() => onAgent(draft))}
-      />
+      {onAgent && (
+        <Action
+          label="Customize with agent…"
+          secondary
+          disabled={busy}
+          onPress={() => sheet.current?.dismiss(() => onAgent(draft))}
+        />
+      )}
       <Action label="Remove" secondary disabled={busy} onPress={() => void save(true)} />
       <Action
         label={busy ? 'Saving…' : 'Save and reload'}

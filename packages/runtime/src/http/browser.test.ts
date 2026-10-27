@@ -732,6 +732,35 @@ function selectionSession() {
   }
 }
 
+it.each([true, false])(
+  'only expires agent-inspected tabs without a viewer (viewer: %s)',
+  async (viewing) => {
+    vi.useFakeTimers()
+    try {
+      const { browsers, sessions } = browserFixture()
+      const session = {
+        ...selectionSession(),
+        queue: Promise.resolve(),
+        queued: 0,
+        listeners: new Set(viewing ? [() => {}] : []),
+        page: {
+          ...selectionSession().page,
+          locator: () => ({ ariaSnapshot: async () => 'Page' }),
+          screenshot: async () => Buffer.from('image'),
+        },
+      }
+      sessions.set('thread', Promise.resolve(session))
+      const close = vi.spyOn(browsers, 'close').mockResolvedValue()
+      Object.defineProperty(browsers, 'scheduleSharpFrame', { value: () => {} })
+      await browsers.agentCommand('task', { action: 'snapshot' }, () => {}, 'thread')
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
+      expect(close).toHaveBeenCalledTimes(viewing ? 0 : 1)
+    } finally {
+      vi.useRealTimers()
+    }
+  },
+)
+
 it('hides shared workspace browser sessions and rejects Studio access before any close mutation', async () => {
   const { STUDIO_BROWSER_SCOPE } = await import('@dovo/protocol')
   const { browsers, sessions, owners } = browserFixture()

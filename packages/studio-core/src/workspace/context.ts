@@ -56,6 +56,7 @@ export type WorkspaceContextValue = {
   flush: () => Promise<void>
   runtimeRegistry: RuntimeRegistry
   activeRuntimeId: string | null
+  localRuntimeId: string | null
   runtimes: RuntimeOverview[]
   switchRuntime: (id: string) => Promise<void>
   forgetRuntime: (id: string) => Promise<void>

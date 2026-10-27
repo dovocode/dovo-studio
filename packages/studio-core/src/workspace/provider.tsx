@@ -2030,6 +2030,9 @@ export function WorkspaceProvider({
     },
     [connection, mutations],
   )
+  const localRuntimeId =
+    runtimeRegistry.profiles.find((profile) => profile.connection.token === localOwnerToken.current)
+      ?.id ?? null
   const contextValue = useMemo(
     () => ({
       previewTask,
@@ -2053,6 +2056,7 @@ export function WorkspaceProvider({
       flush,
       runtimeRegistry,
       activeRuntimeId: runtimeRegistry.activeId,
+      localRuntimeId,
       runtimes: visibleRuntimes,
       switchRuntime,
       forgetRuntime,
@@ -2073,6 +2077,7 @@ export function WorkspaceProvider({
       runtimeReadCache,
     }),
     [
+      localRuntimeId,
       mutationVersion,
       syncVersion,
       mutations,
