@@ -142,9 +142,16 @@ it('offers Auto with supervised fallback where native review is unavailable', ()
   expect(supportsAccess('codex', 'auto')).toBe(true)
   expect(supportsAccess('claude', 'auto')).toBe(true)
 })
-it.each(['WebFetch', 'WebSearch', 'Bash', 'Write', 'mcp__web__delete'])(
-  'classifies only native browsing and search tools as web approvals (%s)',
-  async (name) => {
+it.each([
+  ['WebFetch', 'web'],
+  ['WebSearch', 'web'],
+  ['Bash', 'command'],
+  ['Write', undefined],
+  ['mcp__web__delete', undefined],
+  ['mcp__shell__run', undefined],
+] as const)(
+  'classifies native web and command approvals without trusting MCP names (%s)',
+  async (name, kind) => {
     const input = run('ask')
     await claudeAdapter.run(input)
     const options = captured.options[0]
@@ -157,11 +164,7 @@ it.each(['WebFetch', 'WebSearch', 'Bash', 'Write', 'mcp__web__delete'])(
         requestId: 'request',
       },
     )
-    expect(input.approve).toHaveBeenCalledWith(
-      name,
-      '{}',
-      ['WebFetch', 'WebSearch'].includes(name) ? 'web' : undefined,
-    )
+    expect(input.approve).toHaveBeenCalledWith(name, '{}', kind)
   },
 )
 it('disables Claude built-ins and inherited MCP servers for text-only utility turns', async () => {
