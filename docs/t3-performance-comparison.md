@@ -536,3 +536,76 @@ This is ownership and recovery consolidation, not a new account requirement or a
 Repository grouping does not authorize cross-computer writes. The GitHub workflow additions above
 remain separate recommendations; this work does not imply that auto-merge, batched reviews or
 viewed-file sync have been implemented.
+
+### PR and pipeline viewing: deeper implementation review
+
+The next review focuses on viewing rather than recreating T3's environment model. The pinned
+`5e9d56416f6b395095c772c597e79cd5f94e3052` source separates query identity, previous data, pending
+state and failures:
+
+- [Shared PR query families](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/packages/client-runtime/src/state/pullRequests.ts)
+  key reads by environment and explicit PR reference, retaining prior data during refresh.
+- [PR detail composition](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/apps/web/src/components/pullRequest/usePullRequestDetail.ts)
+  loads detail, activity and checks independently. Checks merge according to snapshot timestamps;
+  their refresh runs separately from the detail request.
+- [Checks refresh](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/apps/web/src/hooks/usePullRequestChecksRefresh.ts)
+  uses an interval derived from check state and avoids starting another refresh while pending.
+
+This source contains PR checks and workflow approvals; it does not establish a standalone pipeline
+dashboard equivalent to Dovo's run, jobs and workflow graph views. The useful comparison is request
+continuity, scoped identity and recovery behavior, not a claim that both products expose identical
+pipeline interfaces.
+
+Six reproduced failures are fixed in Dovo:
+
+1. **Pending PR reads restarted on unrelated project updates.** Full source objects were rebuilt
+   when any project's branch or metadata changed. The detail hook treated their new object identity
+   as a new request target, abandoning an in-flight reply. Detail targets now remain stable when
+   their computer, pairing, project binding, account, destination, availability and cache are
+   unchanged. A real-hook browser regression delays the overview response and changes another
+   project's branch four times: the old code issues five reads; the fix keeps the original read.
+   Account and destination guard regressions also pass.
+2. **Offline-storage failures blocked live pipeline sections.** Desktop and mobile jobs/graph hooks
+   caught cache hydration or invalidation errors as if the live request had failed, preventing the
+   initial network read. They now report cache failures independently and continue loading live
+   data. Failed offline writes also leave successfully loaded jobs fresh. Browser regressions run
+   both actual hooks with failing cache reads, removals and writes; existing attempt isolation,
+   pagination and background-polling checks remain in place.
+3. **Automatic refresh discarded older PR pipeline runs.** After loading another page, the next
+   ten-second poll replaced the collection with page one. Refresh now reloads the opened page depth
+   and publishes the combined result, retaining the previous collection if a request fails. The
+   opened depth is stored with the offline collection. A managed-Chromium regression advances the
+   clock, refreshes explicitly and remounts the viewer while checking that the older run remains.
+4. **Hidden Checks kept polling an opened pipeline.** Its live repository reader overrode the
+   visibility passed through the connection flag. The pipeline viewer now has an explicit active
+   flag that pauses its overview, options, jobs, graph and identity-discovery requests without
+   replacing its retained source assignment. The browser fixture now uses the actual repository
+   source hook: previously it returned no sources, concealing this failure. The reproduced case made
+   nine additional requests during 31 seconds hidden; the fix makes none and preserves the expanded
+   job when returning.
+5. **PR Load more was cancelled by unrelated project edits.** Collection workers now retain their
+   targets across presentation-only updates while the rendered pages use current project metadata.
+   Computer, pairing, repository binding, reader account, availability, destination and cache
+   changes still replace the workers. A delayed second-page regression fails on the original hook
+   and passes after the fix.
+6. **A temporary identity lookup failure disabled PR Retry.** An online owning computer can now
+   retry immediately instead of waiting for the separate 30-second discovery poll. Every attempt
+   still verifies its pinned account before reading PR data; this does not authorize handoff to
+   another account. The regression injects one verification outage and retries with the clock
+   frozen, proving recovery without waiting for discovery's next tick.
+
+These checks verify request counts and functional recovery, not live GitHub/GitLab latency or native
+mobile rendering. Further source-review findings remain separate opportunities:
+
+- Filter PR pipeline runs by commit on providers that support it, rather than scanning repository
+  pages. Retaining a page depth does not retain a run that new repository traffic pushes beyond
+  those pages. T3's GitHub PR workflow reads use `head_sha`.
+- Coordinate the 30-second runtime fresh-cache window with the client polling schedule. A poll just
+  outside the window receives a stale snapshot while its background refresh runs. Do not fix that by
+  relabeling stale data as fresh or relaxing action safeguards across unverified providers.
+- Evaluate credential-resolution overhead separately. The implicit GitHub CLI source currently
+  refreshes its token on identity reads. Reusing its token cache could reduce process launches, but
+  changes how quickly Studio detects an external CLI account switch. Account correctness must remain
+  explicit; this review does not weaken verification to claim a latency improvement.
+
+Adaptive polling and additional review workflows are not implied by these fixes.
