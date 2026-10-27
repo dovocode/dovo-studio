@@ -20,11 +20,21 @@ const snapshotFreshnessSchema = mutableStruct({
   cacheId: Schema.String,
   lastSeen: Schema.NullOr(isoDateTime(Schema.String)),
 })
+/** Durable storage-specific fence; contains only digests, never a connection token. */
+export type ReadCacheGeneration = {
+  key: string
+  generation: string | null
+  credential: string
+  valid: boolean
+}
 export interface CacheStorage {
-  getItem(key: string): Promise<string | null>
-  setItem(key: string, value: string): Promise<unknown>
-  removeItem(key: string): Promise<unknown>
-  removePrefix(prefix: string): Promise<void>
+  captureGeneration?(connection: RuntimeConnection): ReadCacheGeneration
+  generationCurrent?(generation: ReadCacheGeneration): boolean
+
+  getItem(key: string, generation?: ReadCacheGeneration): Promise<string | null>
+  setItem(key: string, value: string, generation?: ReadCacheGeneration): Promise<unknown>
+  removeItem(key: string, generation?: ReadCacheGeneration): Promise<unknown>
+  removePrefix(prefix: string, generation?: ReadCacheGeneration): Promise<void>
   /** Cross-context storage can commit an entry, eviction and index in one transaction. */
   writeIndexedItem?(
     prefix: string,
@@ -32,6 +42,7 @@ export interface CacheStorage {
     value: string,
     limit: number,
     maxBytes: number,
+    generation?: ReadCacheGeneration,
   ): Promise<void>
 }
 export const READ_CACHE_MAX_BYTES = 32 * 1024 * 1024
@@ -115,7 +126,13 @@ export interface RuntimeReadCache {
 }
 const instances = new WeakMap<
   CacheStorage,
-  Map<string, Set<{ closeEffect: () => Effect.Effect<void, ReadCacheError> }>>
+  Map<
+    string,
+    Set<{
+      generation?: ReadCacheGeneration
+      closeEffect: () => Effect.Effect<void, ReadCacheError>
+    }>
+  >
 >()
 const writers = new WeakMap<CacheStorage, Semaphore.Semaphore>()
 const storageEffect = <A>(run: () => Promise<A>) =>
@@ -138,6 +155,9 @@ export function createRuntimeReadCache(
   digest: (value: string) => Promise<string>,
 ): RuntimeReadCache {
   const origin = new URL(connection.address).origin
+  // Capture the nonsecret invalidation marker now, before a late network response.
+  // Authoritative storage verifies the generation and credential inside each transaction.
+  const captured = storage.captureGeneration?.(connection)
   let hosts = instances.get(storage)
   if (!hosts) {
     hosts = new Map()
@@ -150,24 +170,32 @@ export function createRuntimeReadCache(
   }
   // Memoize only successful initialization. A cancelled reader must not poison
   // every subsequent read/write with a cached interrupted Exit.
-  let namespace: { host: string; prefix: string } | undefined
+  let namespace: { host: string; prefix: string; generation?: ReadCacheGeneration } | undefined
   const scope = Effect.suspend(() =>
     namespace
       ? Effect.succeed(namespace)
       : Effect.all(
-          [storageEffect(() => digest(origin)), storageEffect(() => digest(connection.token))],
+          [
+            storageEffect(() => digest(origin)),
+            storageEffect(() => digest(connection.token)),
+            Effect.succeed(captured),
+          ],
           { concurrency: 2 },
         ).pipe(
-          Effect.map(([host, credential]) => {
+          Effect.map(([host, credential, generation]) => {
             namespace = {
               host: `dovo.read-cache.v1.${host}.`,
               prefix: `dovo.read-cache.v1.${host}.${credential}.`,
+              generation,
             }
             return namespace
           }),
         ),
   )
   let closed = false
+  const isClosed = () =>
+    closed ||
+    (captured !== undefined && (!captured.valid || storage.generationCurrent?.(captured) === false))
   let writer = writers.get(storage)
   if (!writer) {
     writer = Effect.runSync(Semaphore.make(1))
@@ -175,6 +203,7 @@ export function createRuntimeReadCache(
   }
   const sharedWriter = writer
   const lifecycle = {
+    generation: captured,
     closeEffect: (): Effect.Effect<void, ReadCacheError> =>
       Effect.suspend(() => {
         closed = true
@@ -188,13 +217,13 @@ export function createRuntimeReadCache(
   clients.add(lifecycle)
   const readEffect: RuntimeReadCache['readEffect'] = (key, schema) =>
     Effect.gen(function* () {
-      if (closed) return null
-      const { prefix } = yield* scope
-      const raw = yield* storageEffect(() => storage.getItem(prefix + key))
-      if (!raw || closed) return null
+      if (isClosed()) return null
+      const { prefix, generation } = yield* scope
+      const raw = yield* storageEffect(() => storage.getItem(prefix + key, generation))
+      if (!raw || isClosed()) return null
       const freshness =
         key === 'snapshot'
-          ? yield* storageEffect(() => storage.getItem(prefix + 'snapshot-freshness'))
+          ? yield* storageEffect(() => storage.getItem(prefix + 'snapshot-freshness', generation))
           : null
       const stamp = freshness
         ? yield* Effect.result(
@@ -223,13 +252,14 @@ export function createRuntimeReadCache(
           return { value: decode(schema, value), cachedAt }
         }),
       )
-      if (Result.isSuccess(parsed)) return parsed.success
+      if (Result.isSuccess(parsed)) return isClosed() ? null : parsed.success
       yield* sharedWriter
         .withPermits(1)(
           Effect.gen(function* () {
             // A newer write may have replaced the corrupt value while this read was decoding.
-            const current = yield* storageEffect(() => storage.getItem(prefix + key))
-            if (current === raw) yield* storageEffect(() => storage.removeItem(prefix + key))
+            const current = yield* storageEffect(() => storage.getItem(prefix + key, generation))
+            if (current === raw)
+              yield* storageEffect(() => storage.removeItem(prefix + key, generation))
           }),
         )
         .pipe(Effect.uninterruptible)
@@ -239,8 +269,8 @@ export function createRuntimeReadCache(
     sharedWriter
       .withPermits(1)(
         Effect.gen(function* () {
-          if (closed) return
-          const { prefix } = yield* scope
+          if (isClosed()) return
+          const { prefix, generation } = yield* scope
           const encoded = yield* Effect.try({
             try: () => JSON.stringify({ version: 1, cachedAt: new Date().toISOString(), value }),
             catch: (cause) => new ReadCacheError({ cause }),
@@ -248,24 +278,24 @@ export function createRuntimeReadCache(
           if (key === 'snapshot') {
             // Snapshots are pinned for offline startup, but must still have a byte ceiling.
             if (readCacheBytes(encoded) > READ_CACHE_MAX_BYTES) {
-              yield* storageEffect(() => storage.removeItem(prefix + key))
+              yield* storageEffect(() => storage.removeItem(prefix + key, generation))
               return
             }
-            yield* storageEffect(() => storage.setItem(prefix + key, encoded))
+            yield* storageEffect(() => storage.setItem(prefix + key, encoded, generation))
             return
           }
           const writeIndexedItem = storage.writeIndexedItem?.bind(storage)
           if (writeIndexedItem) {
             yield* storageEffect(() =>
-              writeIndexedItem(prefix, key, encoded, 100, READ_CACHE_MAX_BYTES),
+              writeIndexedItem(prefix, key, encoded, 100, READ_CACHE_MAX_BYTES, generation),
             )
             return
           }
-          yield* storageEffect(() => storage.setItem(prefix + key, encoded))
-          const raw = yield* storageEffect(() => storage.getItem(prefix + '_index'))
+          yield* storageEffect(() => storage.setItem(prefix + key, encoded, generation))
+          const raw = yield* storageEffect(() => storage.getItem(prefix + '_index', generation))
           const previous = yield* Effect.forEach(readCacheIndex(raw), (item) =>
             typeof item === 'string'
-              ? storageEffect(() => storage.getItem(prefix + item)).pipe(
+              ? storageEffect(() => storage.getItem(prefix + item, generation)).pipe(
                   Effect.map((value) => ({
                     key: item,
                     bytes: value === null ? 0 : readCacheBytes(value),
@@ -280,10 +310,12 @@ export function createRuntimeReadCache(
           const kept = boundReadCacheIndex(entries, 100, READ_CACHE_MAX_BYTES)
           yield* Effect.forEach(
             entries.slice(0, entries.length - kept.length),
-            (old) => storageEffect(() => storage.removeItem(prefix + old.key)),
+            (old) => storageEffect(() => storage.removeItem(prefix + old.key, generation)),
             { discard: true },
           )
-          yield* storageEffect(() => storage.setItem(prefix + '_index', JSON.stringify(kept)))
+          yield* storageEffect(() =>
+            storage.setItem(prefix + '_index', JSON.stringify(kept), generation),
+          )
         }),
       )
       .pipe(Effect.uninterruptible)
@@ -291,23 +323,39 @@ export function createRuntimeReadCache(
     sharedWriter
       .withPermits(1)(
         Effect.gen(function* () {
-          const { prefix } = yield* scope
-          yield* storageEffect(() => storage.removeItem(prefix + key))
+          const { prefix, generation } = yield* scope
+          yield* storageEffect(() => storage.removeItem(prefix + key, generation))
         }),
       )
       .pipe(Effect.uninterruptible)
   const clearEffect = () =>
     Effect.gen(function* () {
-      yield* Effect.forEach([...clients], (client) => client.closeEffect(), {
-        concurrency: 'unbounded',
-        discard: true,
-      })
-      const { host } = yield* scope
-      yield* storageEffect(() => storage.removePrefix(host))
+      const { host, prefix, generation } = yield* scope
+      // Verify permission before propagating close locally: a newly constructed stale
+      // credential can capture the current generation, but is absent from its allowlist.
+      if (generation) {
+        yield* storageEffect(() => storage.getItem(prefix + '_index', generation))
+        if (!generation.valid) {
+          yield* lifecycle.closeEffect()
+          return
+        }
+      }
+      // A delayed clear from an old registry must not close handles made by a later pairing.
+      yield* Effect.forEach(
+        [...clients].filter(
+          (client) => !generation || client.generation?.generation === generation.generation,
+        ),
+        (client) => client.closeEffect(),
+        {
+          concurrency: 'unbounded',
+          discard: true,
+        },
+      )
+      yield* storageEffect(() => storage.removePrefix(host, generation))
     }).pipe(Effect.uninterruptible)
   return {
     get closed() {
-      return closed
+      return isClosed()
     },
     readEffect,
     writeEffect,

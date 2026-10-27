@@ -37,7 +37,11 @@ export function LauncherWorkspaceProvider({
   const caches = useRef(new Map<string, { profile: RuntimeProfile; cache: RuntimeReadCache }>())
   const cacheFor = useCallback((profile: RuntimeProfile) => {
     let entry = caches.current.get(profile.id)
-    if (!entry || !sameRuntimeConnection(entry.profile.connection, profile.connection)) {
+    if (
+      !entry ||
+      entry.cache.closed ||
+      !sameRuntimeConnection(entry.profile.connection, profile.connection)
+    ) {
       if (entry) void entry.cache.close()
       entry = { profile, cache: browserReadCache(profile.connection) }
       caches.current.set(profile.id, entry)

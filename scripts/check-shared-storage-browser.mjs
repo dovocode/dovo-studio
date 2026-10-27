@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
+import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 
@@ -10,14 +12,15 @@ const built = await build({
     contents: `
       import { Effect, Schema } from 'effect';
       import { RuntimeMutations } from './packages/protocol/src/runtime/connection/mutations.ts';
-      import { browserMutationStorage, browserReadCache, readWorkspaceOutbox, writeWorkspaceOutbox } from './packages/studio-core/src/workspace/read-cache.ts';
-      import { readRuntimeRegistry, writeRuntimeRegistry } from './packages/studio-core/src/workspace/runtime-registry.ts';
-      import { runtimeProfile, upsertRuntime } from '@dovo/protocol';
+      import { browserMutationStorage, browserReadCache, readWorkspaceOutbox, writeWorkspaceOutbox, readWorkspaceDocument, updateWorkspaceDocument } from './packages/studio-core/src/workspace/read-cache.ts';
+      import { readRuntimeRegistry, writeRuntimeRegistry, mergeRuntimeRegistry } from './packages/studio-core/src/workspace/runtime-registry.ts';
+      import { runtimeProfile, upsertRuntime, removeRuntime, writeRuntimeSnapshotCache, cachedRuntimeThread, decode, snapshotSchema } from '@dovo/protocol';
       window.readRegistry = async () => { window.registry = await readRuntimeRegistry(); return window.registry; };
       window.addComputer = async address => { window.registry = await writeRuntimeRegistry(upsertRuntime(window.registry, runtimeProfile({address,token:'registry-test-token-at-least-32-characters'}))); };
       window.clearSelection = async () => { window.registry = await writeRuntimeRegistry({...window.registry,activeId:null}); };
       import { WorkspaceSynchronization } from './packages/studio-core/src/runtime/synchronization.ts';
       import { createTask } from './packages/studio-core/src/workspace/actions.ts';
+      window.Schema=Schema;
       window.connection = {address:'http://runtime.lan:4310',token:'test-device'};
       const queue = new RuntimeMutations(browserMutationStorage);
       window.enqueue = messageId => Effect.runPromise(queue.requestEffect(window.connection, '/api/tasks/message', {messageId}, Schema.Struct({ok:Schema.Boolean})));
@@ -25,6 +28,56 @@ const built = await build({
       window.pending = () => browserMutationStorage.read(window.connection);
       window.cache = browserReadCache(window.connection);
       window.cachedString = key => window.cache.read(key, Schema.String);
+      window.forgottenConnection = {address:'http://forget-runtime.lan:4310',token:'forget-device-token-at-least-32-characters'};
+      window.repairConnection = {...window.forgottenConnection,token:'replacement-device-token-at-least-32-characters'};
+      window.openForgotten = connection => {window.forgotten = browserReadCache(connection??window.forgottenConnection)};
+      window.pairForgotten = async connection => {
+        const registry=await readRuntimeRegistry();
+        await writeRuntimeRegistry(upsertRuntime(registry,runtimeProfile(connection??window.forgottenConnection)));
+      };
+      window.forgetComputer = async () => {
+        const registry=await readRuntimeRegistry();
+        await writeRuntimeRegistry(removeRuntime(registry,window.forgottenConnection.address));
+        await window.forgotten.clear();
+      };
+      window.warmForgottenReplica = () => Effect.runPromise(writeRuntimeSnapshotCache(window.forgotten,{snapshot:decode(snapshotSchema,{
+        revision:1,workspace:{version:1,runtimeAddress:'',tasks:[{id:'private-task',title:'Private',repositoryId:'',agentId:'',status:'draft',createdAt:'2026-10-27',draft:'',example:false,messages:[{id:'message',role:'user',text:'Private history'}],files:[]}],repositories:[],automations:[],agents:[]},approvals:[],terminals:[],runs:[],devices:[],pendingDevices:[],owner:false
+      }),lastSeen:null,pulls:null}));
+      window.hasForgottenReplica = () => !!cachedRuntimeThread(window.forgotten,'private-task');
+      window.enableRegistryBridge = async () => {
+        const initial=await readRuntimeRegistry();
+        await updateWorkspaceDocument('fixture.encrypted-registry', current=>current??JSON.stringify(initial));
+        window.dovo={
+          readRuntimeRegistry:()=>readWorkspaceDocument('fixture.encrypted-registry'),
+          writeRuntimeRegistry:async(value,before)=>{
+            const saved=await updateWorkspaceDocument('fixture.encrypted-registry',raw=>JSON.stringify(mergeRuntimeRegistry(JSON.parse(raw),JSON.parse(before),JSON.parse(value))));
+            if(window.registryAckGate){window.registryWriteCommitted=true;await window.registryAckGate}
+            return saved;
+          },
+          subscribeRuntimeRegistry:()=>()=>{},
+        };
+        await readRuntimeRegistry();
+      };
+      window.holdRegistryCacheCommit = () => {
+        window.registryCacheCommitReady=false;
+        window.registryCacheCommitGate=new Promise(resolve=>window.releaseRegistryCacheCommit=resolve);
+      };
+      window.beforeRegistryCacheCommit = async () => {
+        if(window.registryCacheCommitGate){window.registryCacheCommitReady=true;await window.registryCacheCommitGate}
+      };
+      window.holdRegistryAck = () => {
+        window.registryWriteCommitted=false;
+        window.registryAckGate=new Promise(resolve=>window.releaseRegistryAck=resolve);
+      };
+      window.holdCacheWrite = () => {
+        window.blockedCacheWrite=false;
+        window.cacheWriteGate=new Promise(resolve=>window.releaseCacheWrite=resolve);
+      };
+      window.beforeCacheWrite = async key => {
+        if(!window.cacheWriteGate)return;
+        window.blockedCacheWrite=true;
+        await window.cacheWriteGate;
+      };
       window.createTask = () => createTask({title:'HTTP task',agentId:'',repositoryId:'',objective:'Work over LAN'});
       const base = {version:1,runtimeAddress:'',tasks:[],repositories:[],automations:[],agents:[{id:'agent',name:'Before',instructions:'Before',provider:'codex',model:'',permission:'ask',endpoint:''}]};
       window.workspaceDelivered = [];
@@ -99,6 +152,34 @@ const built = await build({
     `,
     resolveDir: root,
   },
+  // Pause before the real IndexedDB write transaction, never inside it (which would
+  // correctly serialize clear after the write). Both pages still use production storage.
+  plugins: [
+    {
+      name: 'cache-write-gate',
+      setup(build) {
+        build.onLoad(
+          { filter: /packages\/studio-core\/src\/workspace\/read-cache\.ts$/ },
+          async (args) => {
+            const source = await readFile(args.path, 'utf8')
+            const marker = 'export async function readWorkspaceDocument'
+            const patched = source
+              .replace(
+                'const registry = await readRegistry()',
+                'const registry = await readRegistry(); await window.beforeRegistryCacheCommit?.()',
+              )
+              .replace('const storage: CacheStorage = {', 'const originalStorage: CacheStorage = {')
+              .replace(
+                marker,
+                `const storage: CacheStorage = new Proxy(originalStorage, {get(target,key){const method=Reflect.get(target,key);if(key!=='setItem'&&key!=='writeIndexedItem')return method;return async (...args)=>{await window.beforeCacheWrite?.(args[0]);return Reflect.apply(method,target,args)}}});\n${marker}`,
+              )
+            assert.notEqual(patched, source)
+            return { contents: patched, loader: 'ts' }
+          },
+        )
+      },
+    },
+  ],
   alias: { '@dovo/protocol': `${root}packages/protocol/src/index.ts` },
   bundle: true,
   write: false,
@@ -218,6 +299,283 @@ try {
     await second.evaluate(async () => (await window.cachedString('large:one')) === null),
     true,
   )
+  // Independent JS contexts: forgetting must fence both delayed writes and new handles
+  // created from a stale registry, while other computers and explicit re-pairing work.
+  await first.evaluate(() => window.pairForgotten())
+  await Promise.all([first, second].map((page) => page.evaluate(() => window.openForgotten())))
+  await first.evaluate(() => window.forgotten.write('snapshot', 'old snapshot'))
+  await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String))
+  for (const key of ['snapshot', 'conversation:late']) {
+    if (key !== 'snapshot') {
+      await first.evaluate(() => window.pairForgotten())
+      await Promise.all([first, second].map((page) => page.evaluate(() => window.openForgotten())))
+      await first.evaluate(() => window.forgotten.write('snapshot', 'old snapshot'))
+    }
+    await second.evaluate(() => window.warmForgottenReplica())
+    assert.equal(await second.evaluate(() => window.hasForgottenReplica()), true)
+    await second.evaluate((key) => {
+      window.holdCacheWrite()
+      window.delayedWrite = window.forgotten.write(key, 'must not return')
+    }, key)
+    await second.waitForFunction(() => window.blockedCacheWrite)
+    await first.evaluate(() => window.forgetComputer())
+    assert.equal(
+      await second.evaluate(() => window.hasForgottenReplica()),
+      false,
+      'Forget invalidates decoded in-memory history in another page',
+    )
+    await second.evaluate(async () => {
+      window.releaseCacheWrite()
+      await window.delayedWrite
+      window.cacheWriteGate = null
+    })
+    assert.equal(
+      await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String)),
+      null,
+    )
+    await second.evaluate(() => window.openForgotten())
+    await second.evaluate(() => window.forgotten.write('stale-new-handle', 'must not return'))
+    assert.equal(
+      await second.evaluate(() => window.forgotten.read('stale-new-handle', window.Schema.String)),
+      null,
+    )
+    const rows = await second.evaluate(async () => {
+      const request = indexedDB.open('dovo-read-cache', 1)
+      const db = await new Promise((resolve) => (request.onsuccess = () => resolve(request.result)))
+      return new Promise((resolve) => {
+        const tx = db.transaction('entries')
+        const all = tx.objectStore('entries').getAll()
+        const keys = tx.objectStore('entries').getAllKeys()
+        tx.oncomplete = () => {
+          db.close()
+          resolve(keys.result.map((key, index) => [key, all.result[index]]))
+        }
+      })
+    })
+    assert.equal(
+      rows.some(([, raw]) => typeof raw === 'string' && raw.includes('must not return')),
+      false,
+      'Forgotten snapshots/index entries must not be resurrected by a second page',
+    )
+    const forgottenPrefix = `dovo.read-cache.v1.${createHash('sha256').update('http://forget-runtime.lan:4310').digest('hex')}.`
+    assert.equal(
+      rows.some(([key]) => String(key).startsWith(forgottenPrefix)),
+      false,
+      'No snapshot, freshness, conversation or index row may remain',
+    )
+    assert.ok(
+      await first.evaluate(() => window.cachedString('large:three')),
+      'Other computer stays cached',
+    )
+  }
+  await second.evaluate(() => {
+    window.oldForgotten = window.forgotten
+  })
+  await first.evaluate(() => window.pairForgotten(window.repairConnection))
+  await first.evaluate(() => window.openForgotten(window.repairConnection))
+  await first.evaluate(() => window.forgotten.write('snapshot', 'newly paired snapshot'))
+  await second.evaluate(() => window.openForgotten(window.repairConnection))
+  await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String))
+  await second.evaluate(() => window.oldForgotten.clear())
+  assert.equal(
+    await second.evaluate(() => window.forgotten.closed),
+    false,
+    'An old handle cannot close a later pairing handle',
+  )
+  assert.equal(
+    (await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String))).value,
+    'newly paired snapshot',
+  )
+  assert.equal(
+    (await first.evaluate(() => window.forgotten.read('snapshot', window.Schema.String))).value,
+    'newly paired snapshot',
+  )
+  await second.evaluate(() => window.openForgotten())
+  await second.evaluate(() => window.forgotten.write('snapshot', 'old credential after repair'))
+  await second.evaluate(() => {
+    window.openForgotten()
+    window.invalidCredentialHandle = window.forgotten
+    window.openForgotten(window.repairConnection)
+  })
+  await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String))
+  await second.evaluate(() => window.invalidCredentialHandle.clear())
+  assert.equal(
+    await second.evaluate(() => window.forgotten.closed),
+    false,
+    'A newly constructed unapproved credential must not close an authorized handle',
+  )
+  assert.equal(
+    (await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String))).value,
+    'newly paired snapshot',
+  )
+  await second.evaluate(() => window.openForgotten())
+  assert.equal(
+    await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String)),
+    null,
+  )
+  // Simulate Electron's encrypted main-process bridge using an independent durable
+  // registry document. Pause its acknowledgement after commit, then forget in A.
+  await first.evaluate(() => window.enableRegistryBridge())
+  await second.evaluate(() => window.enableRegistryBridge())
+  for (const token of [
+    'third-device-token-at-least-32-characters',
+    'third-device-token-at-least-32-characters',
+  ]) {
+    await first.evaluate(() => window.forgetComputer())
+    await second.evaluate((token) => {
+      window.holdRegistryAck()
+      window.delayedPair = window.pairForgotten({ ...window.forgottenConnection, token })
+    }, token)
+    await second.waitForFunction(() => window.registryWriteCommitted)
+    await first.evaluate(() => window.forgetComputer())
+    await second.evaluate(async () => {
+      window.releaseRegistryAck()
+      await window.delayedPair
+      window.registryAckGate = null
+    })
+    await second.evaluate(
+      (token) => window.openForgotten({ ...window.forgottenConnection, token }),
+      token,
+    )
+    await second.evaluate(() =>
+      window.forgotten.write('snapshot', 'delayed authorization must stay forgotten'),
+    )
+    assert.equal(
+      await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String)),
+      null,
+      'Delayed encrypted-registry acknowledgement cannot reactivate forgotten credentials',
+    )
+    await first.evaluate(() => window.readRegistry())
+    await first.evaluate(() => window.clearSelection())
+    await second.evaluate(() => window.forgotten.write('snapshot', 'selection must not reactivate'))
+    assert.equal(
+      await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String)),
+      null,
+    )
+    await first.evaluate(
+      (token) => window.pairForgotten({ ...window.forgottenConnection, token }),
+      token,
+    )
+    await first.evaluate(
+      (token) => window.openForgotten({ ...window.forgottenConnection, token }),
+      token,
+    )
+    await first.evaluate(() => window.forgotten.write('snapshot', 'explicit new pairing'))
+    assert.equal(
+      (await first.evaluate(() => window.forgotten.read('snapshot', window.Schema.String))).value,
+      'explicit new pairing',
+    )
+  }
+  // Both registry reads precede the cache commits: B adds, then A removes; B wins
+  // the first generation CAS. A must reconcile the latest registry after losing it.
+  await first.evaluate(() => window.forgetComputer())
+  await second.evaluate(() => {
+    window.holdRegistryCacheCommit()
+    window.operation = window.pairForgotten({
+      ...window.forgottenConnection,
+      token: 'interleaved-device-token-at-least-32-characters',
+    })
+  })
+  await second.waitForFunction(() => window.registryCacheCommitReady)
+  await first.evaluate(() => {
+    window.holdRegistryCacheCommit()
+    window.operation = window.forgetComputer()
+  })
+  await first.waitForFunction(() => window.registryCacheCommitReady)
+  await second.evaluate(async () => {
+    window.releaseRegistryCacheCommit()
+    await window.operation
+    window.registryCacheCommitGate = null
+  })
+  await first.evaluate(async () => {
+    window.releaseRegistryCacheCommit()
+    await window.operation
+    window.registryCacheCommitGate = null
+  })
+  await second.evaluate(() =>
+    window.openForgotten({
+      ...window.forgottenConnection,
+      token: 'interleaved-device-token-at-least-32-characters',
+    }),
+  )
+  await second.evaluate(() =>
+    window.forgotten.write('snapshot', 'losing removal must still revoke'),
+  )
+  assert.equal(
+    await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String)),
+    null,
+  )
+  // The inverse order: A's removal acknowledgement is late after B has repaired.
+  // Reconcile current registry on conflict instead of unconditionally revoking B.
+  await second.evaluate(() => window.pairForgotten(window.repairConnection))
+  await first.evaluate(() => {
+    window.holdRegistryCacheCommit()
+    window.operation = window.forgetComputer()
+  })
+  await first.waitForFunction(() => window.registryCacheCommitReady)
+  await second.evaluate(() => window.pairForgotten(window.repairConnection))
+  await second.evaluate(() => window.openForgotten(window.repairConnection))
+  await second.evaluate(() =>
+    window.forgotten.write('snapshot', 'later legitimate pairing survives'),
+  )
+  await first.evaluate(async () => {
+    window.releaseRegistryCacheCommit()
+    await window.operation
+    window.registryCacheCommitGate = null
+  })
+  assert.equal(
+    await second.evaluate(() => window.forgotten.closed),
+    false,
+    'A losing reconciliation must preserve the already-authorized handle',
+  )
+  assert.equal(
+    (await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String))).value,
+    'later legitimate pairing survives',
+  )
+  // A previously unseen host still needs an initial fence so its first re-pairing
+  // can win against an older removal. Existing offline data migrates without deletion.
+  await Promise.all(
+    [first, second].map((page) =>
+      page.evaluate(() => {
+        window.forgottenConnection = {
+          address: 'http://initial-runtime.lan:4310',
+          token: 'initial-device-token-at-least-32-characters',
+        }
+        window.repairConnection = { ...window.forgottenConnection }
+        window.openForgotten()
+      }),
+    ),
+  )
+  await first.evaluate(() => window.forgotten.write('snapshot', 'pre-registration offline replica'))
+  await first.evaluate(() => window.pairForgotten())
+  await first.evaluate(() => window.openForgotten())
+  assert.equal(
+    (await first.evaluate(() => window.forgotten.read('snapshot', window.Schema.String))).value,
+    'pre-registration offline replica',
+    'Initial registration retains migrated offline data',
+  )
+  await first.evaluate(() => {
+    window.holdRegistryCacheCommit()
+    window.operation = window.forgetComputer()
+  })
+  await first.waitForFunction(() => window.registryCacheCommitReady)
+  await second.evaluate(() => window.pairForgotten())
+  await second.evaluate(() => window.openForgotten())
+  await second.evaluate(() => window.forgotten.write('snapshot', 'fresh host pairing survives'))
+  await first.evaluate(async () => {
+    window.releaseRegistryCacheCommit()
+    await window.operation
+    window.registryCacheCommitGate = null
+  })
+  assert.equal(
+    await second.evaluate(() => window.forgotten.closed),
+    false,
+    'The first removal cannot revoke an intervening initial-host re-pairing',
+  )
+  assert.equal(
+    (await second.evaluate(() => window.forgotten.read('snapshot', window.Schema.String))).value,
+    'fresh host pairing survives',
+  )
   await first.close()
   await second.close()
   const restarted = await open()
@@ -296,7 +654,7 @@ try {
   await restarted.evaluate(() => window.restoreWorkspace())
   assert.equal(await restarted.evaluate(() => window.workspacePending()), null)
   console.log(
-    'Shared HTTP-origin storage checks passed: task UUIDs, cross-tab workspace/action durability, isolated acknowledgement and transfer, legacy recovery, individual conflict resolution and transactional cache eviction.',
+    'Shared HTTP-origin storage checks passed: task UUIDs, cross-tab workspace/action durability, isolated acknowledgement and transfer, legacy recovery, individual conflict resolution and transactional cache eviction, cross-page forget fences, decoded-history invalidation and delayed encrypted-registry pairing receipts.',
   )
 } finally {
   await browser.close()

@@ -295,3 +295,48 @@ it('applies only matching snapshot freshness and ignores malformed or stale stam
   expect((await client.read('snapshot', schema))?.value).toEqual(newer)
   await client.close()
 })
+
+it('retains the captured invalidation fence while retrying a transient first storage read', async () => {
+  const values = new Map<string, string>()
+  let current = 'original',
+    fail = true
+  const generation = {
+    key: 'host-generation',
+    generation: current,
+    credential: 'digest',
+    valid: true,
+  }
+  const storage: CacheStorage = {
+    captureGeneration: () => generation,
+    generationCurrent: (guard) => guard.generation === current,
+    async getItem(key, guard) {
+      if (fail) {
+        fail = false
+        throw new Error('Database was closed')
+      }
+      return guard?.generation === current ? (values.get(key) ?? null) : null
+    },
+    async setItem(key, value, guard) {
+      if (guard?.generation === current) values.set(key, value)
+    },
+    async removeItem(key, guard) {
+      if (guard?.generation === current) values.delete(key)
+    },
+    async removePrefix() {
+      values.clear()
+    },
+  }
+  const cache = createRuntimeReadCache(
+    { address: 'http://host.lan', token: 'device' },
+    storage,
+    async (value) => value,
+  )
+  await expect(cache.read('snapshot', Schema.String)).rejects.toThrow('Database was closed')
+  await cache.write('snapshot', 'after reopen')
+  expect((await cache.read('snapshot', Schema.String))?.value).toBe('after reopen')
+  current = 'forgotten'
+  expect(cache.closed).toBe(true)
+  expect(await cache.read('snapshot', Schema.String)).toBeNull()
+  await cache.write('late', 'ignored')
+  expect([...values.values()].join()).not.toContain('ignored')
+})

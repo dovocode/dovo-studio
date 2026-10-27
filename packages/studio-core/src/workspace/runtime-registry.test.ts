@@ -2,6 +2,8 @@ import { expect, it, vi } from 'vite-plus/test'
 import { decodeRuntimeRegistry, mergeRuntimeRegistry } from './runtime-registry'
 vi.mock('./read-cache', () => ({
   readWorkspaceDocument: async (key: string) => localStorage.getItem(key),
+  captureRegistryCacheChange: async () => [],
+  commitRegistryCacheChange: async () => {},
 }))
 const connection = { address: 'http://remote:8787/', token: 'a-valid-runtime-token-123456' }
 it("preserves another tab's pairing when a stale tab changes selection", () => {

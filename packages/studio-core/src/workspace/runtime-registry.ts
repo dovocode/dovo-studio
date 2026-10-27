@@ -1,7 +1,12 @@
 import { mutableStruct } from '@dovo/protocol'
 import { decode, decodeResult } from '@dovo/protocol'
 import { Schema } from 'effect'
-import { readWorkspaceDocument, updateWorkspaceDocument } from './read-cache'
+import {
+  readWorkspaceDocument,
+  updateWorkspaceDocument,
+  captureRegistryCacheChange,
+  commitRegistryCacheChange,
+} from './read-cache'
 import {
   connectionSchema,
   runtimeProfile,
@@ -142,8 +147,14 @@ async function persistEncryptedRegistry(
   value: RuntimeRegistry,
   before: RuntimeRegistry,
 ): Promise<RuntimeRegistry> {
+  const cacheChange = await captureRegistryCacheChange(before, value)
   const saved = await bridge.writeRuntimeRegistry(JSON.stringify(value), JSON.stringify(before))
   const committed = decode(runtimeRegistrySchema, JSON.parse(saved))
+  if (cacheChange.length) {
+    await commitRegistryCacheChange(cacheChange, async () =>
+      decodeRuntimeRegistry(await bridge.readRuntimeRegistry(), null),
+    )
+  }
   localStorage.removeItem(registryKey)
   localStorage.removeItem(legacyConnectionKey)
   return committed

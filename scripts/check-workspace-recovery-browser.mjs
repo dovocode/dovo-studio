@@ -10,7 +10,7 @@ const built = await bundleBrowser(
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {Schema} from 'effect';
-import {decode,runtimeProfile,snapshotSchema} from '@dovo/protocol';
+import {decode,runtimeProfile,snapshotSchema,removeRuntime,upsertRuntime} from '@dovo/protocol';
 import {TooltipProvider} from '@dovo/studio-ui';
 import DeviceHostsView from './packages/extension-runtime/src/device-hosts-view.tsx';
 import {PairingClient} from './packages/extension-runtime/src/pairing-client.tsx';
@@ -20,6 +20,8 @@ import {sha256} from '@noble/hashes/sha2.js';
 import {bytesToHex,utf8ToBytes} from '@noble/hashes/utils.js';
 import {browserMutationStorage,writeWorkspaceDocument} from './packages/studio-core/src/workspace/read-cache.ts';
 import {updateAppPreferences} from './packages/studio-core/src/preferences.ts';
+import {LauncherWorkspaceProvider} from './packages/studio-core/src/workspace/launcher-provider.tsx';
+import {readRuntimeRegistry,writeRuntimeRegistry} from './packages/studio-core/src/workspace/runtime-registry.ts';
 window.calls=[];
 window.profiles=Array.from({length:6},(_,i)=>runtimeProfile({address:'http://host'+i+'.lan:8787',token:'test-token-for-host-'+i},'Computer '+i));
 localStorage.setItem('dovo.runtimes.v1',JSON.stringify({version:1,activeId:window.profiles[0].id,profiles:window.profiles}));
@@ -51,6 +53,25 @@ window.fetch=async(url,init={})=>{
   if(path==='/api/workspace/recovered-edits')return Response.json({edits:[{id:'saved',createdAt:'2026-10-13T00:00:00Z',patch:{collection:'agents',id:'agent',changes:{name:{before:'Before',after:'Recovered local name'}}},host:{name:'Runtime name'}}],nextCursor:'100'});
   if(path==='/api/device-hosts')return Response.json({enabled:true,hosts:[]});
   throw new Error('Unexpected request '+url);
+};
+function LauncherProbe(){window.launcherContext=useWorkspace();return null}
+window.mountLauncher=()=>{
+  const element=document.body.appendChild(document.createElement('div'));
+  window.launcherRoot=createRoot(element);
+  window.launcherRoot.render(<LauncherWorkspaceProvider registry={window.workspaceContext.runtimeRegistry}><LauncherProbe/></LauncherWorkspaceProvider>);
+};
+window.checkCacheFactories=async()=>{
+  const profile=window.profiles[0];
+  const workspaceCache=window.workspaceContext.runtimeReadCache(profile), launcherCache=window.launcherContext.runtimeReadCache(profile);
+  // Neither handle has to read before rotation; their creation-time fence is enough.
+  const registry=await readRuntimeRegistry();
+  await writeRuntimeRegistry(removeRuntime(registry,profile.id));
+  await writeRuntimeRegistry(upsertRuntime(await readRuntimeRegistry(),profile));
+  const closed=[workspaceCache.closed,launcherCache.closed];
+  const workspaceNext=window.workspaceContext.runtimeReadCache(profile), launcherNext=window.launcherContext.runtimeReadCache(profile);
+  await workspaceNext.write('factory-probe','workspace recovered');
+  await launcherNext.write('factory-probe','launcher recovered');
+  return {closed,recreated:[workspaceNext!==workspaceCache,launcherNext!==launcherCache],value:(await workspaceNext.read('factory-probe',Schema.String))?.value};
 };
 function Probe(){const value=useWorkspace();window.workspaceContext=value;return <div>{value.ready?'Ready':'Loading'}</div>}
 createRoot(document.getElementById('app')).render(<ApplicationStateProvider><WorkspaceProvider><Probe/><TooltipProvider><DeviceHostsView/><PairingClient onManage={()=>{}}/></TooltipProvider></WorkspaceProvider></ApplicationStateProvider>);
@@ -251,6 +272,13 @@ try {
   const pending = await page.evaluate(() => window.pendingCommands())
   assert.equal(pending.length, 1, 'Workspace reload must retain saved commands')
   assert.equal(pending[0].input.text, 'Do not lose this command')
+  await page.evaluate(() => window.mountLauncher())
+  await page.waitForFunction(() => !!window.launcherContext)
+  assert.deepEqual(await page.evaluate(() => window.checkCacheFactories()), {
+    closed: [true, true],
+    recreated: [true, true],
+    value: 'launcher recovered',
+  })
   assert.deepEqual(errors, [])
   console.log(
     'Workspace recovery: six HTTP hosts, scoped polling, Device Hub reads, settings retry, automatic conflict reconciliation and saved-command preservation passed.',

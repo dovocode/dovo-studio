@@ -7,6 +7,9 @@ import {
   readCacheBytes,
   boundReadCacheIndex,
   type CacheStorage,
+  type ReadCacheGeneration,
+  type RuntimeRegistry,
+  runtimeRegistrySchema,
   type RuntimeConnection,
 } from '@dovo/protocol'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -53,36 +56,235 @@ async function transaction<T>(
     tx.onabort = () => reject(tx.error ?? new Error('Cache write was interrupted'))
   })
 }
+const generationSchema = Schema.Struct({
+  generation: Schema.String,
+  credentials: Schema.Array(Schema.String),
+})
+const digest = (value: string) => bytesToHex(sha256(utf8ToBytes(value)))
+const hostKey = (origin: string) => `dovo.read-cache-generation.v1.${digest(origin)}`
+function generationRecord(raw: unknown) {
+  if (raw === undefined) return null
+  if (typeof raw !== 'string') throw new Error('Invalid offline cache generation')
+  return decode(generationSchema, JSON.parse(raw))
+}
+function validGeneration(
+  entries: IDBObjectStore,
+  generation: ReadCacheGeneration | undefined,
+  action: () => void,
+) {
+  if (!generation) return action()
+  if (!generation.valid) return
+  const request = entries.get(generation.key)
+  request.onsuccess = () => {
+    const current = generationRecord(request.result)
+    if (
+      (current?.generation ?? null) !== generation.generation ||
+      (current && !current.credentials.includes(generation.credential))
+    ) {
+      generation.valid = false
+      return
+    }
+    action()
+  }
+}
+function notifyGenerations(changes: Map<string, string>) {
+  for (const [key, generation] of changes) localStorage.setItem(key, generation)
+}
+async function cacheTransaction(
+  mode: IDBTransactionMode,
+  generation: ReadCacheGeneration | undefined,
+  action: (entries: IDBObjectStore, changed: Map<string, string>) => void,
+) {
+  const db = await open()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('entries', mode)
+    const entries = tx.objectStore('entries')
+    const changed = new Map<string, string>()
+    validGeneration(entries, generation, () => action(entries, changed))
+    tx.oncomplete = () => {
+      try {
+        notifyGenerations(changed)
+        resolve()
+      } catch (error) {
+        reject(error)
+      }
+    }
+    tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('Cache write was interrupted'))
+  })
+}
+function deleteCacheHost(entries: IDBObjectStore, host: string) {
+  const prefix = `dovo.read-cache.v1.${host}.`
+  const keys = entries.getAllKeys(IDBKeyRange.bound(prefix, prefix + '\uffff'))
+  keys.onsuccess = () => {
+    for (const key of keys.result) entries.delete(key)
+  }
+}
+function rotateGeneration(
+  entries: IDBObjectStore,
+  key: string,
+  credentials: readonly string[],
+  changed: Map<string, string>,
+  discard = true,
+) {
+  const generation = bytesToHex(crypto.getRandomValues(new Uint8Array(16)))
+  entries.put(JSON.stringify({ generation, credentials }), key)
+  changed.set(key, generation)
+  if (discard) deleteCacheHost(entries, key.slice('dovo.read-cache-generation.v1.'.length))
+}
+type RegistryCacheChange = {
+  key: string
+  credentials: string[]
+  revoke: boolean
+  reconciled?: boolean
+  generation?: string | null
+}
+function registryCacheChanges(
+  before: RuntimeRegistry,
+  next: RuntimeRegistry,
+): RegistryCacheChange[] {
+  const hosts = (registry: RuntimeRegistry) => {
+    const result = new Map<string, string[]>()
+    for (const profile of registry.profiles) {
+      const key = hostKey(new URL(profile.connection.address).origin)
+      result.set(key, [...(result.get(key) ?? []), digest(profile.connection.token)])
+    }
+    return result
+  }
+  const old = hosts(before),
+    incoming = hosts(next)
+  return [...new Set([...old.keys(), ...incoming.keys()])].flatMap((key) => {
+    const previous = [...(old.get(key) ?? [])].sort(),
+      credentials = [...(incoming.get(key) ?? [])].sort()
+    return JSON.stringify(previous) === JSON.stringify(credentials)
+      ? []
+      : [{ key, credentials, revoke: previous.length > 0 }]
+  })
+}
+function changeRegistryCache(
+  entries: IDBObjectStore,
+  changes: RegistryCacheChange[],
+  changed: Map<string, string>,
+  conflicts?: RegistryCacheChange[],
+) {
+  for (const change of changes) {
+    const request = entries.get(change.key)
+    request.onsuccess = () => {
+      const current = generationRecord(request.result)
+      if (change.generation !== undefined && (current?.generation ?? null) !== change.generation) {
+        conflicts?.push(change)
+        return
+      }
+      // A winning pairing already installed this current registry. Reconciliation
+      // must preserve its live handles and newly cached data, not rotate it again.
+      if (
+        change.reconciled &&
+        current &&
+        JSON.stringify([...current.credentials].sort()) === JSON.stringify(change.credentials)
+      )
+        return
+      // Initial registration must preserve existing offline replicas during migration.
+      // Once forgotten, only a changed, committed registry may reactivate its tombstone.
+      rotateGeneration(
+        entries,
+        change.key,
+        change.credentials,
+        changed,
+        current !== null || change.revoke,
+      )
+    }
+  }
+}
+/** Capture before an encrypted main-process registry write. A newer forget fences its
+ * delayed acknowledgement, including remove/re-add with the same credential. */
+async function captureRegistryCacheGenerations(changes: RegistryCacheChange[]) {
+  await cacheTransaction('readonly', undefined, (entries) => {
+    for (const change of changes) {
+      const request = entries.get(change.key)
+      request.onsuccess = () => {
+        change.generation = generationRecord(request.result)?.generation ?? null
+      }
+    }
+  })
+  return changes
+}
+export async function captureRegistryCacheChange(before: RuntimeRegistry, next: RuntimeRegistry) {
+  return captureRegistryCacheGenerations(registryCacheChanges(before, next))
+}
+/** The encrypted registry is owned by Electron's main process. If another window
+ * wins the cache CAS, read that authoritative registry again behind the new fence.
+ * Retrying only the old desired value would revive a removed credential or let a
+ * delayed removal erase a subsequent pairing. */
+export async function commitRegistryCacheChange(
+  changes: RegistryCacheChange[],
+  readRegistry: () => Promise<RuntimeRegistry>,
+) {
+  let pending = changes
+  while (pending.length) {
+    const registry = await readRegistry()
+    const allowed = new Map(
+      registryCacheChanges({ version: 1, profiles: [], activeId: null }, registry).map((change) => [
+        change.key,
+        change.credentials,
+      ]),
+    )
+    const conflicts: RegistryCacheChange[] = []
+    await cacheTransaction('readwrite', undefined, (entries, changed) =>
+      changeRegistryCache(
+        entries,
+        pending.map((change) => ({ ...change, credentials: allowed.get(change.key) ?? [] })),
+        changed,
+        conflicts,
+      ),
+    )
+    pending = conflicts.length
+      ? await captureRegistryCacheGenerations(
+          conflicts.map((change) => ({ ...change, reconciled: true })),
+        )
+      : []
+  }
+}
 const storage: CacheStorage = {
-  async getItem(key) {
-    const value: unknown = await transaction('readonly', (store) => store.get(key))
+  captureGeneration(connection) {
+    const key = hostKey(new URL(connection.address).origin)
+    return {
+      key,
+      credential: digest(connection.token),
+      generation: localStorage.getItem(key),
+      valid: true,
+    }
+  },
+  generationCurrent(generation) {
+    return generation.valid && localStorage.getItem(generation.key) === generation.generation
+  },
+  async getItem(key, generation) {
+    let value: unknown
+    await cacheTransaction('readonly', generation, (entries) => {
+      const request = entries.get(key)
+      request.onsuccess = () => {
+        value = request.result
+      }
+    })
     return typeof value === 'string' ? value : null
   },
-  async setItem(key, value) {
-    await transaction('readwrite', (store) => store.put(value, key))
-  },
-  async removeItem(key) {
-    await transaction('readwrite', (store) => store.delete(key))
-  },
-  async removePrefix(prefix) {
-    const db = await open()
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('entries', 'readwrite')
-      const entries = tx.objectStore('entries')
-      const keys = entries.getAllKeys(IDBKeyRange.bound(prefix, prefix + '\uffff'))
-      keys.onsuccess = () => {
-        for (const key of keys.result)
-          if (typeof key === 'string' && key.startsWith(prefix)) entries.delete(key)
-      }
-      tx.oncomplete = () => resolve()
-      tx.onerror = tx.onabort = () => reject(tx.error)
+  async setItem(key, value, generation) {
+    await cacheTransaction('readwrite', generation, (entries) => {
+      entries.put(value, key)
     })
   },
-  async writeIndexedItem(prefix, key, value, limit, maxBytes) {
-    const db = await open()
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('entries', 'readwrite')
-      const entries = tx.objectStore('entries')
+  async removeItem(key, generation) {
+    await cacheTransaction('readwrite', generation, (entries) => {
+      entries.delete(key)
+    })
+  },
+  async removePrefix(prefix, generation) {
+    const match = /^dovo\.read-cache\.v1\.([a-f0-9]{64})\.$/.exec(prefix)
+    if (!match) throw new Error('Invalid offline cache namespace')
+    await cacheTransaction('readwrite', generation, (entries, changed) =>
+      rotateGeneration(entries, `dovo.read-cache-generation.v1.${match[1]}`, [], changed),
+    )
+  },
+  async writeIndexedItem(prefix, key, value, limit, maxBytes, generation) {
+    await cacheTransaction('readwrite', generation, (entries) => {
       const request = entries.get(prefix + '_index')
       request.onsuccess = () => {
         const raw: unknown = request.result
@@ -118,8 +320,6 @@ const storage: CacheStorage = {
           }
         })
       }
-      tx.oncomplete = () => resolve()
-      tx.onerror = tx.onabort = () => reject(tx.error)
     })
   },
 }
@@ -147,20 +347,34 @@ export async function updateWorkspaceDocument(
     const request = entries.get(key)
     let encoded = ''
     let failure: unknown
+    const changed = new Map<string, string>()
     request.onsuccess = () => {
       try {
         const raw: unknown = request.result
         if (raw !== undefined && typeof raw !== 'string') throw new Error('Invalid saved document')
-        encoded = change(raw === undefined ? localStorage.getItem(key) : raw)
+        const previous = raw === undefined ? localStorage.getItem(key) : raw
+        encoded = change(previous)
         entries.put(encoded, key)
+        if (key === 'dovo.runtimes.v1') {
+          const before = previous
+            ? decode(runtimeRegistrySchema, JSON.parse(previous))
+            : { version: 1 as const, profiles: [], activeId: null }
+          const next = decode(runtimeRegistrySchema, JSON.parse(encoded))
+          changeRegistryCache(entries, registryCacheChanges(before, next), changed)
+        }
       } catch (error) {
         failure = error
         tx.abort()
       }
     }
     tx.oncomplete = () => {
-      localStorage.removeItem(key)
-      resolve(encoded)
+      try {
+        notifyGenerations(changed)
+        localStorage.removeItem(key)
+        resolve(encoded)
+      } catch (error) {
+        reject(error)
+      }
     }
     tx.onerror = tx.onabort = () =>
       reject(failure ?? tx.error ?? new Error('Document write interrupted'))
