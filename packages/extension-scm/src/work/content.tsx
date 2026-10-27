@@ -64,6 +64,7 @@ export function WorkContent({
   mode,
   request,
   connected,
+  active = true,
   onBack,
   preview = false,
   onChanged,
@@ -79,6 +80,7 @@ export function WorkContent({
   mode: Mode
   request: ReturnType<typeof useWorkspace>['request']
   connected: boolean
+  active?: boolean
   onBack?: () => void
   preview?: boolean
   onChanged?: () => void
@@ -136,8 +138,10 @@ export function WorkContent({
     sources,
     JSON.stringify([mode, selected]),
     workRemoteKey,
+    true,
+    active,
   )
-  const readConnected = reader?.connected ?? (!origin && connected)
+  const readConnected = active && (reader?.connected ?? (!origin && connected))
   const keys = workDetailCacheKeys(
     {
       repository: workspace.repositories.find((repo) => repo.id === repositoryId),

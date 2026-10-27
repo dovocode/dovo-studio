@@ -214,7 +214,8 @@ export function PullPipelineRuns({
           preview
           initialSelected={selected.id}
           initialSourceURL={selected.url}
-          connected={connected && active}
+          connected={connected}
+          active={active}
           request={request}
           onBack={() => setSelected(null)}
         />

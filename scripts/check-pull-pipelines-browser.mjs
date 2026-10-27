@@ -14,6 +14,7 @@ const built = await bundleBrowser(
       contents: `import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {useCallback,useEffect,useState} from 'react';
+import {Effect} from 'effect';
 import {decode,forgePipelineDetailSchema} from '@dovo/protocol';
 import {usePipelineSections} from '${mobile}/scm/work/use-pipeline-sections.ts';
 import {usePipelineSections as useDesktopPipelineSections} from '${root}/packages/extension-scm/src/work/use-pipeline-sections.ts';
@@ -35,6 +36,11 @@ if(path.endsWith('/pipelines/detail'))return {run:{...run},jobs:input.section===
 throw new Error('Unexpected request '+path);
 }};
 const saved=window.saved=new Map();window.store.readCache={read:async(key,schema)=>{if(window.cacheFailure==='read')throw new Error('Offline storage unavailable');const row=saved.get(key);return row?{...row,value:decode(schema,row.value)}:null},write:async(key,value)=>{if(window.cacheFailure==='write')throw new Error('Offline storage full');saved.set(key,{value:structuredClone(value),cachedAt:'2026-10-14'})},remove:async key=>{if(window.cacheFailure==='remove')throw new Error('Offline storage locked');saved.delete(key)}};
+const cache=window.store.readCache;for(const method of ['read','write','remove'])cache[method+'Effect']=(...args)=>Effect.tryPromise({try:()=>cache[method](...args),catch:error=>error});
+const profile={id:'owner',name:'Owner',connection:window.store.connection};window.store.runtimes=[{profile,connected:true}];
+window.store.readRuntime=async(_profile,path,input,schema)=>decode(schema,await window.store.request(path,input));
+window.store.readRuntimeEffect=(...args)=>Effect.tryPromise({try:()=>window.store.readRuntime(...args),catch:error=>error});
+window.store.runtimeReadCache=()=>cache;
 function Mobile(){const[overview,setOverview]=useState(window.mobileOverview),[revision,setRevision]=useState(0);const load=useCallback(async(section,cursor,refresh,revision)=>decode(forgePipelineDetailSchema,await window.store.request('/api/scm/work/pipelines/detail',{section,cursor,refresh,revision})),[]);const useSections=window.desktopHook?useDesktopPipelineSections:usePipelineSections;const sections=useSections({overview,enabled:window.active&&window.store.connected,readCache:window.store.readCache,cacheKey:'mobile-run',refreshToken:revision,load,refreshOverview:()=>setOverview({run:{...run},jobs:[]})});window.invalidateSections=()=>setRevision(value=>value+1);window.mobileSections=sections;return <div aria-label="Mobile pipeline" style={{display:'flex',flexDirection:'column',gap:20,padding:16,maxWidth:600,margin:'auto'}}><PipelineRunInfo run={overview.run}/><PipelineSectionStatus label="Jobs" state={sections.jobs} connected={window.store.connected}/><PipelineSectionStatus label="Workflow" state={sections.graph} connected={window.store.connected}/><PipelineJobs jobs={sections.detail.jobs} graph={sections.detail.graph} hasMore={!!sections.detail.next} ready={sections.jobs.ready} onOpen={()=>{}}/>{sections.detail.next&&<button onClick={sections.jobs.more}>More jobs</button>}</div>}
 const app=createRoot(document.getElementById('app'));window.active=true;window.mount=()=>flushSync(()=>app.render(window.empty?<p>Unmounted</p>:window.mobile?<Mobile key={window.mobileKey??0}/>:<div hidden={!window.active}><PullPipelineRuns repositoryId="repo" sha="commit" active={window.active}/></div>));window.mount();`,
     },
@@ -54,7 +60,12 @@ const app=createRoot(document.getElementById('app'));window.active=true;window.m
   [
     {
       path: '@dovo/studio-core',
-      contents: `export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export {appendUniqueRows,RequestScope} from '${root}/packages/client-runtime/src/effects/request-scope.ts';const sources=[];export const useRepositorySources=()=>sources;export const useWorkspace=()=>window.store;export const formatDateTime=(x,options)=>new Intl.DateTimeFormat('en',{...options}).format(new Date(x));`,
+      contents: `export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export {appendUniqueRows,RequestScope} from '${root}/packages/client-runtime/src/effects/request-scope.ts';export {useRepositorySources} from '${root}/packages/studio-core/src/workspace/repository-sources.ts';export const useWorkspace=()=>window.store;export const formatDateTime=(x,options)=>new Intl.DateTimeFormat('en',{...options}).format(new Date(x));`,
+    },
+    {
+      path: './provider',
+      importer: root + '/packages/studio-core/src/workspace/repository-sources.ts',
+      contents: `export {useWorkspace} from '@dovo/studio-core';`,
     },
     {
       path: 'react-native',

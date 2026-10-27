@@ -194,12 +194,13 @@ export function useSourceReaders<T extends Source>(
   enabled = true,
   origin?: T,
   allowHandoff = true,
+  active = true,
 ) {
   const { activeRuntimeId } = useWorkspace()
   const identityRevision = useSyncExternalStore(subscribe, () => revision)
   const sourcesKey = JSON.stringify(allSources.map((source) => [source.scope, source.connected]))
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || !active) return
     let stopped = false
     const load = Effect.gen(function* () {
       yield* Effect.forEach(
@@ -229,7 +230,7 @@ export function useSourceReaders<T extends Source>(
       stopped = true
       void polling.stop()
     }
-  }, [sourcesKey, enabled])
+  }, [sourcesKey, enabled, active])
   return useMemo(() => {
     if (!enabled)
       return {
@@ -325,6 +326,7 @@ export function useDetailReader<T extends Source>(
   remote: (source: T) => string = (source) =>
     source.repository ? pullRepositoryKey(source.repository, source.key) : source.key,
   allowHandoff = true,
+  active = true,
 ) {
   const group = useMemo(
     () =>
@@ -336,7 +338,15 @@ export function useDetailReader<T extends Source>(
     [origin, allSources, allowHandoff],
   )
   const namespace = `detail:${origin?.scope ?? entity}:${entity}`
-  const selected = useSourceReaders(group, namespace, remote, !!origin, origin, allowHandoff)
+  const selected = useSourceReaders(
+    group,
+    namespace,
+    remote,
+    !!origin,
+    origin,
+    allowHandoff,
+    active,
+  )
   const reader = origin ? selected.sources[0] : undefined
   const destination = origin
     ? assignments.get(namespace)?.destinations.get(remote(origin))
