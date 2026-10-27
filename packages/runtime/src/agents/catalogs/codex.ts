@@ -3,6 +3,7 @@ import { decode } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import { withCatalogRpc } from './rpc.js'
+import { codexProviderModels } from './codex-provider-models.js'
 import { daybreakProgram, supportsCodexDaybreak } from '../configuration/codex-modes.js'
 import { ResponseError } from 'vscode-jsonrpc/node'
 const pageSchema = mutableStruct({
@@ -175,7 +176,7 @@ export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> 
             })
           : []
       return {
-        models,
+        models: await codexProviderModels(rpc, agent, models),
         reasoning,
         codex: {
           daybreakPrograms: [...new Set(daybreakPrograms)],

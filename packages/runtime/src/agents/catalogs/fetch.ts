@@ -1,9 +1,14 @@
-export async function catalogBytes(url: string, maxBytes = 4_000_000): Promise<Buffer> {
+export async function catalogBytes(
+  url: string,
+  maxBytes = 4_000_000,
+  init: RequestInit = {},
+): Promise<Buffer> {
+  const headers = new Headers(init.headers)
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json')
   const response = await fetch(url, {
-    signal: AbortSignal.timeout(20000),
-    headers: {
-      Accept: 'application/json',
-    },
+    ...init,
+    signal: init.signal ?? AbortSignal.timeout(20000),
+    headers,
   })
   if (!response.ok)
     throw new Error(
@@ -31,6 +36,10 @@ export async function catalogBytes(url: string, maxBytes = 4_000_000): Promise<B
   }
   return Buffer.concat(chunks)
 }
-export async function catalogJson(url: string, maxBytes = 4_000_000): Promise<unknown> {
-  return JSON.parse((await catalogBytes(url, maxBytes)).toString('utf8'))
+export async function catalogJson(
+  url: string,
+  maxBytes = 4_000_000,
+  init: RequestInit = {},
+): Promise<unknown> {
+  return JSON.parse((await catalogBytes(url, maxBytes, init)).toString('utf8'))
 }
