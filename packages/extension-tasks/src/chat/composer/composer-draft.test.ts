@@ -38,6 +38,32 @@ test('a late snapshot cannot overwrite unsaved typing', () => {
   expect(write).toHaveBeenLastCalledWith('new typing')
 })
 
+test('acknowledging a consumed clear permits a later identical external draft', () => {
+  const draft = createComposerDraft('Browser selection', vi.fn())
+  draft.accept('Browser selection')
+  expect(draft.receive('Browser selection')).toBe('')
+  expect(draft.receive('')).toBe('')
+  expect(draft.receive('Browser selection')).toBe('Browser selection')
+})
+
+test('acceptance preserves a newer edit even when its text matches the submitted text', () => {
+  vi.useFakeTimers()
+  const write = vi.fn<(text: string) => void>()
+  const draft = createComposerDraft('Side question', write)
+  const revision = draft.revision
+  draft.update('A new question')
+  draft.update('Side question')
+  expect(draft.accept('Side question', revision)).toBe('Side question')
+  expect(write).toHaveBeenLastCalledWith('Side question')
+})
+
+test('an independent replacement also ends stale-text suppression when the clear is coalesced', () => {
+  const draft = createComposerDraft('Sent text', vi.fn())
+  draft.accept('Sent text')
+  expect(draft.receive('Independent insertion')).toBe('Independent insertion')
+  expect(draft.receive('Sent text')).toBe('Sent text')
+})
+
 test('accepting a send preserves text inserted while the request was pending', () => {
   vi.useFakeTimers()
   const write = vi.fn<(text: string) => void>()

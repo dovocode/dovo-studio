@@ -10,6 +10,7 @@ export function createComposerDraft(
   const publish = () => listeners.forEach((listener) => listener())
   let text = initial
   let observed = initial
+  let revision = 0
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | undefined
   const consumed = new Set<string>()
@@ -36,8 +37,12 @@ export function createComposerDraft(
     get text() {
       return text
     },
+    get revision() {
+      return revision
+    },
     update(value: string) {
       text = value
+      revision++
       dirty = true
       publish()
       cancel()
@@ -51,17 +56,27 @@ export function createComposerDraft(
       return text
     },
     receive(value: string) {
-      // A late snapshot cannot restore a consumed message or replace unsaved typing.
-      if (!dirty && !consumed.has(value.trim()))
+      // Suppress consumed text until a replacement is observed. A later independent
+      // write may legitimately contain the same text again. The workspace layer
+      // orders remote snapshots and retains unacknowledged local patches.
+      if (!dirty && (value === text || (value !== observed && !consumed.has(value.trim()))))
+        consumed.clear()
+      if (!dirty && !consumed.has(value.trim())) {
+        const previous = text
         text = reconcileComposerDraft(text, text, value, null, observed)
+        if (text !== previous) revision++
+      }
       observed = value
       publish()
       return text
     },
-    accept(submitted: string) {
-      consumed.add(submitted.trim())
+    accept(submitted: string, expectedRevision = revision) {
       cancel()
-      if (text.trim() === submitted.trim()) text = ''
+      consumed.add(submitted.trim())
+      if (text.trim() === submitted.trim() && revision === expectedRevision) {
+        text = ''
+        revision++
+      }
       publish()
       dirty = true
       flush()

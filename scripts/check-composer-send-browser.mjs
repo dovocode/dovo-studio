@@ -121,6 +121,13 @@ try {
   })
   await page.waitForFunction(() => !document.querySelector('textarea').readOnly)
   await page.waitForFunction(() => typeof window.finishTitle === 'function')
+  // A later browser handoff may intentionally insert the same text as a previous send.
+  await page.evaluate(() =>
+    window.setTask((task) => ({ ...task, draft: 'Update dashboard using API' })),
+  )
+  await page.waitForFunction(
+    () => document.querySelector('textarea')?.value === 'Update dashboard using API',
+  )
   await input.fill('Typing while title is pending')
   assert.equal(await input.inputValue(), 'Typing while title is pending')
   await page.evaluate(() => window.finishTitle())
@@ -519,6 +526,17 @@ try {
   )
 
   await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
+  await input.fill('Keep the chosen model')
+  await page.evaluate(() =>
+    window.setTask((task) => ({
+      ...task,
+      draftTurnSettings: { provider: 'codex', model: 'fast-model', reasoning: 'low' },
+    })),
+  )
+  await page.getByRole('button', { name: 'More message actions', exact: true }).click()
+  assert.equal(await page.getByRole('menuitem', { name: 'Fork', exact: true }).isDisabled(), true)
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => window.setTask((task) => ({ ...task, draftTurnSettings: null })))
   await submit('Fork continuation', 'Fork')
   const forkId = await page.evaluate(() => window.requests.at(-1).input.forkId)
   await respond(true)
@@ -675,6 +693,25 @@ try {
   )
   if ((await input.inputValue()) !== 'A newer draft')
     throw Error('Side answer cleared newer typing')
+  // Saving a side question must not clear an edit made away from and back to the same text.
+  await input.fill('Keep this new edit')
+  await aside.click()
+  await page.waitForFunction(() => typeof window.sideSaved === 'function')
+  await input.fill('An intervening edit')
+  await input.fill('Keep this new edit')
+  await page.evaluate(() => {
+    window.sideSaved()
+    window.sideSaved = null
+  })
+  await page.waitForFunction(() => window.sideResponse !== null)
+  assert.equal(await input.inputValue(), 'Keep this new edit')
+  await page.evaluate(() => {
+    window.sideResponse()
+    window.sideResponse = null
+  })
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Ask a side question (⌘/Ctrl+;)"]').disabled,
+  )
   // Keyboard dispatch targets the same action, using live text rather than a stale task snapshot.
   await input.fill('Keyboard side question')
   await page.evaluate(() =>

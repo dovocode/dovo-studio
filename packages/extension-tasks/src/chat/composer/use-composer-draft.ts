@@ -75,9 +75,9 @@ export function useComposerDraft(
     [controller, immediate],
   )
   const accept = useCallback(
-    (submitted: string) => {
+    (submitted: string, revision?: number) => {
       try {
-        savedController.accept(submitted)
+        savedController.accept(submitted, revision)
         setError('')
       } catch (cause) {
         report(cause)

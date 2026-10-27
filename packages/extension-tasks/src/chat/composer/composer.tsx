@@ -176,6 +176,7 @@ export function Composer({
     )
       return
     const text = composerDraft.controller.text
+    const draftRevision = composerDraft.controller.revision
     if (!text.trim()) {
       onAside()
       return
@@ -195,7 +196,7 @@ export function Composer({
         { id: task.id, draft: text },
         mutableStruct({ id: Schema.String }),
       )
-      composerDraft.accept(text)
+      composerDraft.accept(text, draftRevision)
       asideRequest.current = 'asking'
       setAsideCreating(false)
       onAside(chat.id)
@@ -328,6 +329,7 @@ export function Composer({
     turnSettings?: TurnSettings
     title?: string
     accepted?: boolean
+    draftRevision: number
     runId?: string
   } | null>(null)
   const pendingSubmission = useRef<string | null>(null)
@@ -339,7 +341,7 @@ export function Composer({
     const submitted = attempt.current
     if (submitted?.id === id && !submitted.accepted) {
       submitted.accepted = true
-      acceptDraft(submitted.text)
+      acceptDraft(submitted.text, submitted.draftRevision)
       setTurnSettings((current) =>
         sameTurnSettings(current, submitted.turnSettings) ? null : current,
       )
@@ -530,9 +532,11 @@ export function Composer({
         text,
         attachmentIds,
         mode,
+        draftRevision: composerDraft.controller.revision,
         turnSettings: turnSettings ?? undefined,
         runId: mode === 'steer' ? task.activeRunId : undefined,
       }
+    attempt.current.draftRevision = composerDraft.controller.revision
     const pending: PendingMessage = {
       taskId: task.id,
       state: 'sending',
@@ -613,7 +617,7 @@ export function Composer({
             ...(t.archived ? { archived: false, autoSettled: undefined } : {}),
           })),
         )
-      if (!attempt.current.accepted) composerDraft.accept(text)
+      if (!attempt.current.accepted) composerDraft.accept(text, attempt.current.draftRevision)
       attempt.current = null
       setTurnSettings(null)
     } catch (e) {
@@ -629,11 +633,18 @@ export function Composer({
     }
   }
   const startFork = async () => {
+    if (turnSettings) {
+      setError(
+        'Clear the next-message settings before forking. Fork uses this thread’s configuration.',
+      )
+      return
+    }
     if (policyIssue) {
       setError(policyIssue)
       return
     }
     const text = composerDraft.controller.text.trim()
+    const draftRevision = composerDraft.controller.revision
     const attachmentIds = attachments.files.map((file) => file.id)
     if (
       !connected ||
@@ -670,7 +681,7 @@ export function Composer({
           ),
         })),
       )
-      composerDraft.accept(text)
+      composerDraft.accept(text, draftRevision)
       forkAttempt.current = null
       host.navigate({ viewId: 'tasks', entityId: fork.id })
     } catch (cause) {
@@ -920,7 +931,12 @@ export function Composer({
                             ?.kind && (
                             <DropdownMenu.Item
                               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
-                              disabled={!!task.archived}
+                              disabled={!!task.archived || !!turnSettings}
+                              title={
+                                turnSettings
+                                  ? 'Clear next-message settings to fork with this thread’s configuration'
+                                  : undefined
+                              }
                               onSelect={() => void startFork()}
                             >
                               <GitBranchPlus className="size-3.5" /> Fork
