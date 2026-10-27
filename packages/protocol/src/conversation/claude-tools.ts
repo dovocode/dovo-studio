@@ -36,6 +36,12 @@ export function toolContentText(value: unknown): string {
   if (!value || typeof value !== 'object') return ''
   if ('type' in value && value.type === 'tool_reference' && 'tool_name' in value)
     return typeof value.tool_name === 'string' ? value.tool_name : ''
+  if (
+    'type' in value &&
+    value.type === 'tool_search_tool_search_result' &&
+    'tool_references' in value
+  )
+    return toolContentText(value.tool_references)
   if ('type' in value && value.type === 'tool_search_tool_result_error' && 'error_code' in value)
     return typeof value.error_code === 'string' ? `Tool search failed: ${value.error_code}` : ''
   if ('text' in value && typeof value.text === 'string') return value.text

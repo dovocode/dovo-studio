@@ -101,11 +101,10 @@ it('retains discovered tool names and typed search results in native Claude tran
             { type: 'server_tool_use', name: 'ToolSearch', input: { query: 'browser' } },
             {
               type: 'tool_search_tool_result',
-              content: [
-                { type: 'text', text: 'Found:' },
-                { type: 'tool_reference', tool_name: 'mcp__dovo_task__browser' },
-                { type: 'image', data: 'private-image' },
-              ],
+              content: {
+                type: 'tool_search_tool_search_result',
+                tool_references: [{ type: 'tool_reference', tool_name: 'mcp__dovo_task__browser' }],
+              },
             },
             { type: 'tool_result', content: [] },
           ],
@@ -114,6 +113,6 @@ it('retains discovered tool names and typed search results in native Claude tran
     ]),
   ).toEqual([
     { id: 'search:0', role: 'tool', label: 'ToolSearch', text: '{"query":"browser"}' },
-    { id: 'search:1', role: 'tool', label: 'Tool result', text: 'Found:\nmcp__dovo_task__browser' },
+    { id: 'search:1', role: 'tool', label: 'Tool result', text: 'mcp__dovo_task__browser' },
   ])
 })

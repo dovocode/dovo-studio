@@ -469,12 +469,21 @@ it.each(['tool_use', 'server_tool_use'])(
             {
               type: type === 'tool_use' ? 'tool_result' : 'tool_search_tool_result',
               tool_use_id: 'search-tools',
-              content: [
-                { type: 'text', text: 'Available tools:' },
-                { type: 'tool_reference', tool_name: 'mcp__dovo_task__studio_browsers' },
-                { type: 'tool_reference', tool_name: 'mcp__dovo_task__browser' },
-                { type: 'image', data: 'never-display-image-data' },
-              ],
+              content:
+                type === 'server_tool_use'
+                  ? {
+                      type: 'tool_search_tool_search_result',
+                      tool_references: [
+                        { type: 'tool_reference', tool_name: 'mcp__dovo_task__studio_browsers' },
+                        { type: 'tool_reference', tool_name: 'mcp__dovo_task__browser' },
+                      ],
+                    }
+                  : [
+                      { type: 'text', text: 'Available tools:' },
+                      { type: 'tool_reference', tool_name: 'mcp__dovo_task__studio_browsers' },
+                      { type: 'tool_reference', tool_name: 'mcp__dovo_task__browser' },
+                      { type: 'image', data: 'never-display-image-data' },
+                    ],
             },
           ],
         },
@@ -497,7 +506,7 @@ it.each(['tool_use', 'server_tool_use'])(
       title: 'Find tools browser profiles',
       kind: 'search',
       input: 'browser profiles',
-      output: 'Available tools:\nmcp__dovo_task__studio_browsers\nmcp__dovo_task__browser',
+      output: `${type === 'tool_use' ? 'Available tools:\n' : ''}mcp__dovo_task__studio_browsers\nmcp__dovo_task__browser`,
     })
   },
 )

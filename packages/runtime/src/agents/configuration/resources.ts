@@ -94,17 +94,23 @@ export async function testMcpServer(input: unknown) {
       signal,
       timeout: 15000,
     })
-    const tools = client.getServerCapabilities()?.tools
-      ? (
-          await client.listTools(
-            {},
-            {
-              signal,
-              timeout: 15000,
-            },
-          )
-        ).tools.map((tool) => tool.name)
-      : []
+    const tools: string[] = []
+    if (client.getServerCapabilities()?.tools) {
+      const cursors = new Set<string>()
+      let cursor: string | undefined
+      do {
+        const page = await client.listTools(cursor === undefined ? {} : { cursor }, {
+          signal,
+          timeout: 15000,
+        })
+        tools.push(...page.tools.map((tool) => tool.name))
+        cursor = page.nextCursor
+        if (cursor !== undefined) {
+          if (cursors.has(cursor)) throw new Error('MCP tools/list repeated a pagination cursor')
+          cursors.add(cursor)
+        }
+      } while (cursor !== undefined)
+    }
     return decode(mcpTestResultSchema, {
       server: client.getServerVersion()?.name ?? server.name,
       tools,

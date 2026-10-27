@@ -18,10 +18,21 @@ export function mcpServerEnvironment(server: McpServer) {
   return { ...server.envValues, ...mcpEnvironment(server.env) }
 }
 export function mcpHeaders(server: McpServer) {
-  const headers = { ...server.headerValues, ...mcpEnvironment(server.headerEnv) }
+  // HTTP header names are case-insensitive. Resolve precedence before a transport
+  // can combine differently cased credentials into one invalid value.
+  const headers = new Map<string, [string, string]>()
+  for (const [name, value] of [
+    ...Object.entries(server.headerValues ?? {}),
+    ...Object.entries(mcpEnvironment(server.headerEnv)),
+  ]) {
+    headers.set(name.toLowerCase(), [name, value])
+  }
   if (server.bearerTokenEnv)
-    headers.Authorization = `Bearer ${mcpEnvironment({ token: server.bearerTokenEnv }).token}`
-  return headers
+    headers.set('authorization', [
+      'Authorization',
+      `Bearer ${mcpEnvironment({ token: server.bearerTokenEnv }).token}`,
+    ])
+  return Object.fromEntries(headers.values())
 }
 export function codexMcpServers(servers: McpServer[]) {
   return Object.fromEntries(

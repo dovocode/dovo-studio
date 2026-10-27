@@ -280,8 +280,28 @@ Tool discovery stays provider-native. The installed Claude SDK supports it alrea
 `ENABLE_TOOL_SEARCH` values and user/project/local settings remain intact. Providers without native
 discovery keep their existing MCP catalogs. No dynamic tools/list gateway, eager-loading metadata,
 Pi integration or forced search override was added. T3's schema-size/cache measurements do not
-establish savings for Dovo. MCP connection-test pagination and mixed-case header normalization are
-separate follow-ups identified during the review.
+establish savings for Dovo.
+
+A second round with five Terra 6.1 reviewers addressed surrounding correctness gaps:
+
+- MCP connection tests follow every tools/list cursor within the original timeout and reject
+  repeated cursors. HTTP headers resolve inline, environment and bearer precedence
+  case-insensitively before a transport can combine differently cased credentials.
+- Claude's server-side `tool_search_tool_search_result` object exposes its tool references in the
+  shared details and saved native transcripts. The pre-execution hook enforces read-only decisions
+  even when inherited settings preallow a tool and skip `canUseTool`.
+- Global results from different computers are merged by thread activity before truncation, with an
+  explicit 50-match limit. In-thread search offers older 50-match pages without loading entire
+  histories, and external message reveals take precedence over an existing in-thread match.
+- Native Codex delegation is explicitly enabled on verified 0.164.0+ coding sessions and disabled in
+  text-only utilities. Copilot child invocations now normalize into the shared subagent rows.
+- Same-window form POSTs retain their body/profile. Only page-initiated GET requests route to
+  another profile, retaining the original opener without an error document. External-link routing
+  failures fall back to the chooser and do not block later links.
+
+The read-only hook is exercised through SDK option fixtures, not a live authenticated Claude run.
+Copilot lifecycle tests use the installed SDK with a local JSON-RPC provider fixture; they do not
+claim live provider delegation. Native Electron checks exercise real form POST and GET navigation.
 
 Verification covers the shared presentation, read-only permission decisions, server-side lifecycle
 and transcript extraction, plus actual desktop controls and native-adapted mobile rows. The browser

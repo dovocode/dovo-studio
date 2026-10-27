@@ -1,10 +1,44 @@
-import { expect, it, vi } from 'vite-plus/test'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { decode, mcpServerSchema } from '@dovo/protocol'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { spawn } from 'node:child_process'
 import { readFileSync, statSync, existsSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { claudeMcpConfigFile } from './mcp-settings.js'
+import {
+  acpMcpServers,
+  claudeMcpConfigFile,
+  claudeMcpServers,
+  codexMcpServers,
+  mcpHeaders,
+} from './mcp-settings.js'
+
+afterEach(() => vi.unstubAllEnvs())
+
+it('resolves mixed-case HTTP headers once with environment and bearer precedence for all providers', () => {
+  vi.stubEnv('DOVO_HEADER_TEST', 'mapped')
+  vi.stubEnv('DOVO_BEARER_TEST', 'bearer')
+  const server = decode(mcpServerSchema, {
+    name: 'http',
+    enabled: true,
+    transport: 'http',
+    url: 'http://localhost/mcp',
+    headerValues: { authorization: 'inline', AUTHORIZATION: 'last inline', 'X-Key': 'inline-key' },
+    headerEnv: { Authorization: 'DOVO_HEADER_TEST', 'x-key': 'DOVO_HEADER_TEST' },
+  })
+  expect(mcpHeaders(server)).toEqual({ Authorization: 'mapped', 'x-key': 'mapped' })
+  const bearer = { ...server, bearerTokenEnv: 'DOVO_BEARER_TEST' }
+  const headers = { Authorization: 'Bearer bearer', 'x-key': 'mapped' }
+  expect(mcpHeaders(bearer)).toEqual(headers)
+  expect(new Headers(mcpHeaders(bearer)).get('authorization')).toBe('Bearer bearer')
+  expect(codexMcpServers([bearer]).http).toMatchObject({ http_headers: headers })
+  expect(claudeMcpServers([bearer]).http).toMatchObject({ headers })
+  expect(acpMcpServers([bearer])[0]).toMatchObject({
+    headers: [
+      { name: 'Authorization', value: 'Bearer bearer' },
+      { name: 'x-key', value: 'mapped' },
+    ],
+  })
+})
 
 it('keeps every resolved MCP environment and header secret out of actual SDK launch arguments', async () => {
   vi.stubEnv('DOVO_TEST_MCP_KEY', 'synthetic-mapped-secret')

@@ -216,6 +216,45 @@ it('tests a real stdio handshake and lists tools without invoking them', async (
   })
 })
 
+it.each(['complete', 'repeated'] as const)(
+  'follows MCP tool pages and rejects %s cursor responses appropriately',
+  async (mode) => {
+    const path = join(await directory(), 'paged-server.cjs')
+    await writeFile(
+      path,
+      `require('node:readline').createInterface({ input: process.stdin }).on('line', line => {
+        const m = JSON.parse(line);
+        if (m.id === undefined) return;
+        let result;
+        if (m.method === 'initialize') {
+          result = { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'paged', version: '1' } };
+        } else if (m.method === 'tools/list') {
+          const cursor = m.params?.cursor;
+          if (cursor !== undefined && cursor !== 'page-2') process.exit(2);
+          result = { tools: [{ name: cursor === undefined ? 'first' : 'second', inputSchema: { type: 'object' } }],
+            ...(cursor === undefined || ${JSON.stringify(mode)} === 'repeated' ? { nextCursor: 'page-2' } : {}) };
+        } else process.exit(2);
+        process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\\n');
+      });`,
+    )
+    const result = testMcpServer({
+      name: 'paged',
+      enabled: true,
+      transport: 'stdio',
+      command: process.execPath,
+      args: [path],
+    })
+    const outcome = await result.catch((error: unknown) =>
+      error instanceof Error ? error.message : String(error),
+    )
+    expect(outcome).toEqual(
+      mode === 'repeated'
+        ? 'MCP tools/list repeated a pagination cursor'
+        : { server: 'paged', tools: ['first', 'second'] },
+    )
+  },
+)
+
 it.each([307, 308])(
   'does not forward MCP credentials through an HTTP %s redirect',
   async (status) => {

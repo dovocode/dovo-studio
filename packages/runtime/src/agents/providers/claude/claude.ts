@@ -22,6 +22,26 @@ import { updateSubagents } from '../../execution/subagents.js'
 import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { readClaudeThread } from './claude-thread.js'
 import { ClaudeBackgroundTasks } from './claude-background-tasks.js'
+
+function claudeToolDisposition(run: AgentRun, name: string) {
+  if (
+    name === 'AskUserQuestion' ||
+    (['mcp__dovo_task__ask_question', 'mcp__dovo_task__todos'].includes(name) &&
+      run.taskId &&
+      run.agent.resources?.mcpServers.some(
+        (server) =>
+          server.enabled &&
+          server.name === 'dovo_task' &&
+          server.envValues?.DOVO_TASK_ID === run.taskId,
+      ))
+  )
+    return run.tools === 'none' ? 'deny' : 'allow'
+  return toolPolicyDisposition(
+    run,
+    ['Read', 'Glob', 'Grep', 'ToolSearch'].includes(name) ? 'read' : 'other',
+  )
+}
+
 function claudeStream(
   run: AgentRun,
   controller: AbortController,
@@ -110,6 +130,27 @@ function claudeStream(
         ? {}
         : {
             hooks: {
+              // Settings allow rules can skip canUseTool. A pre-use deny still
+              // enforces Studio's read-only policy before the tool executes.
+              PreToolUse: [
+                {
+                  hooks: [
+                    async (input, _toolUseId, options) => {
+                      if (input.hook_event_name !== 'PreToolUse') return {}
+                      const current = activeRun(input.agent_id, options.signal)
+                      if (current && claudeToolDisposition(current, input.tool_name) !== 'deny')
+                        return {}
+                      return {
+                        hookSpecificOutput: {
+                          hookEventName: 'PreToolUse',
+                          permissionDecision: 'deny',
+                          permissionDecisionReason: 'Permission denied in Dovo Studio',
+                        },
+                      }
+                    },
+                  ],
+                },
+              ],
               PostToolUse: [
                 {
                   matcher: 'TodoWrite|TaskCreate|TaskUpdate|TaskList|TaskGet',
@@ -163,23 +204,7 @@ function claudeStream(
         if (!current)
           return { behavior: 'deny', message: 'This Claude request has no active owner' }
         if (name === 'AskUserQuestion') return claudeQuestions(input, current, options.signal)
-        if (
-          ['mcp__dovo_task__ask_question', 'mcp__dovo_task__todos'].includes(name) &&
-          current.taskId &&
-          current.agent.resources?.mcpServers.some(
-            (server) =>
-              server.enabled &&
-              server.name === 'dovo_task' &&
-              server.envValues?.DOVO_TASK_ID === current.taskId,
-          )
-        )
-          // These tools only affect this thread's conversation and progress. The
-          // runtime still authenticates the exact run and validates every input.
-          return { behavior: 'allow', updatedInput: input }
-        const disposition = toolPolicyDisposition(
-          current,
-          ['Read', 'Glob', 'Grep', 'ToolSearch'].includes(name) ? 'read' : 'other',
-        )
+        const disposition = claudeToolDisposition(current, name)
         const allowed =
           disposition === 'allow' ||
           (disposition === 'ask' &&

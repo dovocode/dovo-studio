@@ -15,12 +15,14 @@ vi.mock('../../../process', async (importOriginal) => ({
 }))
 const captured = vi.hoisted(() => ({
   options: [] as Options[],
+  inspect: undefined as ((options: Options) => Promise<void>) | undefined,
 }))
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: ({ options }: { options: Options }) => {
     captured.options.push(options)
     return {
       async *[Symbol.asyncIterator]() {
+        await captured.inspect?.(options)
         yield {
           type: 'result',
           subtype: 'success',
@@ -34,6 +36,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   captured.options.length = 0
+  captured.inspect = undefined
   vi.mocked(executableAvailable).mockResolvedValue(true)
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
@@ -93,6 +96,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
           ephemeral: true,
           config: {
             'features.shell_tool': false,
+            'features.multi_agent': false,
             web_search: 'disabled',
           },
         }
@@ -295,6 +299,54 @@ it('allows native Claude discovery in read-only runs without authorizing discove
     expect(await check(name)).toMatchObject({ behavior: 'deny' })
   expect(input.approve).not.toHaveBeenCalled()
   expect(options.env?.ENABLE_TOOL_SEARCH).toBe(process.env.ENABLE_TOOL_SEARCH)
+})
+
+it('denies pre-allowed mutating Claude tools before execution and preserves owned conversation tools', async () => {
+  const input = run('read-only')
+  input.taskId = 'owner'
+  const { taskToolsServer } = await import('../../../agent-tools/config.js')
+  input.agent.resources = {
+    skills: [],
+    mcpServers: [taskToolsServer('owner', 1234, 'test-token', '127.0.0.1', true, false, 'attempt')],
+  }
+  captured.inspect = async (options) => {
+    const hook = options.hooks?.PreToolUse?.[0].hooks[0]
+    if (!hook) throw new Error('Missing pre-execution policy')
+    const check = (name: string) =>
+      hook(
+        {
+          hook_event_name: 'PreToolUse',
+          session_id: 'session',
+          transcript_path: '/tmp/test-transcript',
+          cwd: input.cwd,
+          tool_name: name,
+          tool_input: {},
+          tool_use_id: 'preallowed',
+        },
+        'preallowed',
+        { signal: input.signal },
+      )
+    for (const name of ['mcp__files__write', 'mcp__files__ToolSearch', 'Bash', 'Write']) {
+      // No canUseTool call: Claude settings may have pre-allowed these tools.
+      expect(await check(name)).toMatchObject({
+        hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny' },
+      })
+    }
+    for (const name of [
+      'Read',
+      'ToolSearch',
+      'AskUserQuestion',
+      'mcp__dovo_task__ask_question',
+      'mcp__dovo_task__todos',
+    ]) {
+      expect(await check(name)).toEqual({})
+    }
+    expect(await check('mcp__unowned__todos')).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'deny' },
+    })
+    expect(input.approve).not.toHaveBeenCalled()
+  }
+  await claudeAdapter.run(input)
 })
 
 it.each(['false', 'auto:15'])(
