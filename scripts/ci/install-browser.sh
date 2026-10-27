@@ -3,10 +3,13 @@ set -euo pipefail
 
 # Bound the whole apt operation as well as individual downloads. apt can otherwise
 # keep making tiny amounts of progress for many minutes without hitting its timeout.
-# Run the dependency timeout as root too: an unprivileged timeout cannot stop
-# Playwright's sudo-owned apt descendants, which otherwise retain dpkg's lock.
+# A process-group timeout can leave detached apt/dpkg descendants holding locks.
+# Hosted Ubuntu's systemd waits for the entire control group to stop before recovery.
 install_dependencies() {
-  sudo timeout --kill-after=10s 240 env "PATH=$PATH" pnpm --filter @dovo/runtime exec playwright install-deps chromium
+  sudo systemd-run --quiet --wait --collect --pipe --working-directory="$PWD" \
+    --property=RuntimeMaxSec=240s --property=TimeoutStopSec=10s \
+    --property=KillMode=control-group \
+    /usr/bin/env "PATH=$PATH" pnpm --filter @dovo/runtime exec playwright install-deps chromium
 }
 if ! install_dependencies; then
   echo '::warning::Chromium dependency setup failed or stalled; retrying with the primary Ubuntu mirror.'

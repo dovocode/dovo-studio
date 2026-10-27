@@ -64,6 +64,15 @@ await test('browser setup recovers interrupted dpkg and propagates recovery and 
       mode: 0o755,
     })
     await writeFile(
+      join(bin, 'systemd-run'),
+      `#!/bin/sh
+printf "%s\\n" "$*" >> "$DOVO_SERVICE_LOG"
+while [ "$1" != /usr/bin/env ]; do shift; done
+exec "$@"
+`,
+      { mode: 0o755 },
+    )
+    await writeFile(
       join(bin, 'dpkg'),
       '#!/bin/sh\nprintf "dpkg %s\\n" "$*" >> "$DOVO_FALLBACK_LOG"\nexit "$DOVO_DPKG_STATUS"\n',
       { mode: 0o755 },
@@ -95,6 +104,7 @@ esac
       const install = join(directory, `install-${first}-${dpkg}-${second}`)
       const fallback = join(directory, `fallback-${first}-${dpkg}-${second}`)
       const timeout = join(directory, `timeout-${first}-${dpkg}-${second}`)
+      const service = join(directory, `service-${first}-${dpkg}-${second}`)
       const result = spawnSync('bash', ['scripts/ci/install-browser.sh'], {
         encoding: 'utf8',
         env: {
@@ -103,6 +113,7 @@ esac
           DOVO_INSTALL_LOG: install,
           DOVO_FALLBACK_LOG: fallback,
           DOVO_TIMEOUT_LOG: timeout,
+          DOVO_SERVICE_LOG: service,
           DOVO_DPKG_STATUS: String(dpkg),
           DOVO_FIRST_STATUS: String(first),
           DOVO_SECOND_STATUS: String(second),
@@ -120,15 +131,24 @@ esac
           : []),
       ])
       assert.deepEqual(
-        (await readFile(timeout, 'utf8')).trim().split('\n'),
+        (
+          await readFile(timeout, 'utf8').catch((error) => {
+            if (error.code === 'ENOENT') return ''
+            throw error
+          })
+        )
+          .trim()
+          .split('\n')
+          .filter(Boolean),
         first === 0
-          ? ['--kill-after=10s 240', '--kill-after=10s 240']
-          : [
-              '--kill-after=10s 240',
-              '--kill-after=10s 120',
-              ...(retried ? ['--kill-after=10s 240'] : []),
-              ...(expected === 0 ? ['--kill-after=10s 240'] : []),
-            ],
+          ? ['--kill-after=10s 240']
+          : ['--kill-after=10s 120', ...(expected === 0 ? ['--kill-after=10s 240'] : [])],
+      )
+      assert.deepEqual(
+        (await readFile(service, 'utf8')).trim().split('\n'),
+        Array(attempts).fill(
+          `--quiet --wait --collect --pipe --working-directory=${process.cwd()} --property=RuntimeMaxSec=240s --property=TimeoutStopSec=10s --property=KillMode=control-group /usr/bin/env PATH=${bin}:${process.env.PATH} pnpm --filter @dovo/runtime exec playwright install-deps chromium`,
+        ),
       )
       if (first)
         assert.deepEqual((await readFile(fallback, 'utf8')).trim().split('\n'), [
