@@ -15,7 +15,7 @@ const moduleMocks = new Map([
   [`${mobile}agents/harness-icon.tsx`, `export const HarnessIcon=()=>null;`],
   [
     `${mobile}agents/use-model-catalog.ts`,
-    `export const useModelCatalog=()=>({catalog:{models:[],reasoning:[]},loading:false,refresh:()=>{}});export const useCachedModelCatalog=agent=>({catalog:null,modelName:agent?.model??''});`,
+    `export const useModelCatalog=()=>({catalog:{models:[{id:'fixture-model',name:'Fixture model',isDefault:true}],reasoning:[]},loading:false,refresh:()=>{}});export const useCachedModelCatalog=agent=>({catalog:null,modelName:agent?.model??''});`,
   ],
   [
     `${ui}src/harness-catalog.ts`,
@@ -546,7 +546,11 @@ try {
       await page.getByRole('button', { name: 'Back to models', exact: true }).click()
       await page.getByRole('button', { name: 'Choose provider', exact: true }).click()
       await page.getByRole('button', { name: 'Claude', exact: true }).click()
-      await page.getByRole('button', { name: 'Provider default', exact: true }).click()
+      assert.equal(
+        await page.getByRole('button', { name: 'Provider default', exact: true }).count(),
+        0,
+      )
+      await page.getByRole('button', { name: 'Fixture model', exact: true }).click()
     }
     if (kind === 'native-agent') {
       await page.getByRole('button', { name: 'Save agent', exact: true }).click()
@@ -564,11 +568,12 @@ try {
       assert.deepEqual(
         await page.evaluate(() => [
           window.value.provider,
+          window.value.model,
           window.value.permission,
           window.value.approvalPolicy ?? null,
           window.value.sandboxMode ?? null,
         ]),
-        ['claude', 'read-only', null, null],
+        ['claude', 'fixture-model', 'read-only', null, null],
       )
     }
     await page.close()
