@@ -534,9 +534,13 @@ app.whenReady().then(async () => {
     assert.equal(await routedContents.executeJavaScript('window.opener===null'),true,'Different profiles must not share a script opener.')
     const externalUrls=[url('/plain?external=1'),url('/plain?external=2')]
     assert.deepEqual(await Promise.all(externalUrls.map(url=>bridge.openRoutedLink(studio,url))),[true,true])
-    const externalTabs=(await call({action:'status',key:'routing-source',tabCount:4})).createdTabs
-    assert.deepEqual(externalTabs.map(tab=>tab.url).sort(),externalUrls.sort(),'External-link bursts retain both tabs.')
-    assert.ok(externalTabs.every(tab=>tab.profileId==='personal' && !tab.openerKey))
+    assert.equal((await call({action:'status',key:'thread-preview'}))?.movedTabs,undefined,'Thread previews must not consume external-link handoffs.')
+    const externalTabs=(await call({action:'status',key:'routing-source',tabCount:4})).movedTabs
+    assert.equal(externalTabs?.length,2,'External-link bursts retain both tabs until workspace adoption.')
+    assert.deepEqual(externalTabs.map(({tab})=>tab.url).sort(),externalUrls.sort())
+    assert.ok(externalTabs.every(({key,tab})=>key.startsWith('external:') && tab.kind==='web' && tab.profileId==='personal'))
+    assert.equal(new Set(externalTabs.map(({key})=>key)).size,2,'Each external link has its own tab identity.')
+    assert.equal((await call({action:'status',key:'routing-source',tabCount:6})).movedTabs,undefined,'Workspace adoption consumes each handoff once.')
     for (const tab of externalTabs) await call({action:'close',key:tab.key})
     await call({action:'close',key:routed.key})
     await call({action:'close',key:'routing-source'})
