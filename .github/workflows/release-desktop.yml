@@ -123,6 +123,7 @@ jobs:
           for name in MAC_CERTIFICATE MAC_CERTIFICATE_PASSWORD MAC_SIGNING_IDENTITY APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
             test -n "${!name}" || { echo "::error::Missing $name secret"; exit 1; }
           done
+      - uses: ./.github/actions/cache-dictation
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/save-dependencies
         with:
@@ -214,10 +215,11 @@ jobs:
           set -euo pipefail
           apt='sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Dpkg::Lock::Timeout=120'
           install() { $apt update && $apt install -y --no-install-recommends rpm ruby-dev build-essential libarchive-tools; }
-          if ! timeout 240 bash -c "$(declare -f install); apt='$apt'; install"; then
+          if ! timeout --kill-after=10s 240 bash -c "$(declare -f install); apt='$apt'; install"; then
             echo '::warning::apt mirror stalled; retrying against archive.ubuntu.com'
-            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list 2>/dev/null || true
-            timeout 300 bash -c "$(declare -f install); apt='$apt'; install"
+            timeout --kill-after=10s 120 sudo dpkg --configure -a
+            sudo node scripts/ci/linux-apt.mjs fallback
+            timeout --kill-after=10s 300 bash -c "$(declare -f install); apt='$apt'; install"
           fi
           for attempt in 1 2 3; do
             timeout 180 sudo gem install --no-document fpm && break
@@ -225,6 +227,8 @@ jobs:
             echo "::warning::gem install failed (attempt $attempt); retrying"
             sleep 10
           done
+      # After the Linux toolchain install, so the fingerprint sees the compiler CMake will use.
+      - uses: ./.github/actions/cache-dictation
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/save-dependencies
         with:

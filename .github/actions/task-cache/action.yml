@@ -4,6 +4,9 @@ inputs:
   node:
     description: Exact Node version from setup-build.
     required: true
+  scope:
+    description: Unique writer scope (include the shard for matrix jobs).
+    default: ${{ github.job }}
 runs:
   using: composite
   steps:
@@ -11,6 +14,7 @@ runs:
       with:
         path: node_modules/.vite/task-cache
         # Vite Task validates source, dependencies and outputs; the Actions key only scopes tools.
-        key: vite-task-v1-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-node-${{ inputs.node }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        key: vite-task-v2-${{ runner.os }}-${{ runner.arch }}-node-${{ inputs.node }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ inputs.scope }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
-          vite-task-v1-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-node-${{ inputs.node }}-${{ hashFiles('pnpm-lock.yaml') }}-
+          vite-task-v2-${{ runner.os }}-${{ runner.arch }}-node-${{ inputs.node }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ inputs.scope }}-
+          vite-task-v2-${{ runner.os }}-${{ runner.arch }}-node-${{ inputs.node }}-${{ hashFiles('pnpm-lock.yaml') }}-

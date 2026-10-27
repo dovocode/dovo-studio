@@ -28,6 +28,7 @@ runs:
       shell: bash
       run: |
         sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/microsoft-prod.sources
+        sudo node scripts/ci/linux-apt.mjs configure
     - uses: pnpm/action-setup@v6
     - uses: actions/setup-node@v7
       with:

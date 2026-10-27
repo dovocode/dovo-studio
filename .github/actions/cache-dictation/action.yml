@@ -1,0 +1,29 @@
+name: Cache native dictation engine
+description: Build the dictation bundle from pinned source, reusing it when no build input changed.
+runs:
+  using: composite
+  steps:
+    # The key fingerprints the pinned upstream source, Dovo's helper and build recipe, the
+    # platform/architecture and the compiler/SDK versions. Packaging re-verifies the manifest,
+    # binary hash and license notices, and rebuilds from source on any mismatch.
+    - name: Fingerprint dictation build inputs
+      id: fingerprint
+      shell: bash
+      run: node scripts/packaging/dictation-engine.mjs --cache-key
+    - name: Restore native dictation engine
+      id: restore
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.fingerprint.outputs.path }}
+        key: ${{ steps.fingerprint.outputs.key }}
+    # Uses only Node built-ins, so it can run before dependency installation.
+    - name: Prepare native dictation engine
+      shell: bash
+      run: node scripts/packaging/dictation-engine.mjs
+    # Save as soon as the build succeeds, so a later signing or upload failure keeps it.
+    - name: Save native dictation engine
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.fingerprint.outputs.path }}
+        key: ${{ steps.fingerprint.outputs.key }}

@@ -1,0 +1,11 @@
+name: Set up managed Chromium
+description: Install Playwright Chromium with bounded Linux dependency downloads and mirror fallback.
+runs:
+  using: composite
+  steps:
+    - name: Install managed Chromium and Linux dependencies
+      shell: bash
+      run: bash scripts/ci/install-browser.sh
+    - name: Enable Chromium sandbox user namespaces
+      shell: bash
+      run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0

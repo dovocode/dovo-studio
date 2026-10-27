@@ -9,6 +9,7 @@ import { verifyDesktopBuild } from './desktop-build-stamp.mjs'
 import { copyPreparedRuntime } from './prepared-runtime.mjs'
 import { windowsReleaseConfig } from './windows-signing.mjs'
 import { releaseVariant } from './release-variant.mjs'
+import { createTiming, timeMacSigning } from './release-timing.mjs'
 import { mkdtemp, cp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join, dirname } from 'node:path'
@@ -54,6 +55,8 @@ const stage = await mkdtemp(join(tmpdir(), 'dovo-package-'))
 const require = createRequire(join(root, 'apps/desktop/package.json'))
 const electron = JSON.parse(await readFile(require.resolve('electron/package.json'), 'utf8'))
 const variant = await releaseVariant(root)
+const timing = createTiming()
+const endStaging = timing.start('Stage runtime and desktop dependencies')
 
 try {
   const runtime = join(stage, 'runtime'),
@@ -130,7 +133,12 @@ try {
     throw new Error(
       'Publishing desktop updates requires a Developer ID signing identity (CSC_NAME).',
     )
-  const dictationBundle = await prepareDictationEngine(root)
+  endStaging()
+  const dictationBundle = await timing.measure('Native dictation engine', () =>
+    prepareDictationEngine(root),
+  )
+  let endElectronPack, endArtifacts
+  const endBuilder = timing.start('electron-builder total')
   await build({
     publish: process.argv.includes('--publish') ? 'always' : 'never',
     targets: platform.createTarget(
@@ -155,7 +163,13 @@ try {
           ? [{ from: join(root, 'apps/desktop/build/icon.png'), to: 'icon.png' }]
           : []),
       ],
+      beforePack: () => {
+        endElectronPack = timing.start('Electron app and resources copy')
+      },
       afterPack: async (context) => {
+        endElectronPack?.()
+        timeMacSigning(timing, context.packager)
+        const endRuntime = timing.start('Bundle and smoke-test runtime')
         const destination = join(
           context.appOutDir,
           process.platform === 'darwin'
@@ -172,10 +186,14 @@ try {
           ['--input-type=module', '--eval', runtimeSmoke],
           { cwd: destination, stdio: 'inherit', timeout: 60000 },
         )
+        endRuntime()
+        // Unsigned builds have no afterSign event; start the installer phase after packing.
+        if (!macSigningIdentity) endArtifacts = timing.start('Installers and update archives')
       },
       // Without a Developer ID, Electron's linker signature no longer matches the renamed bundle.
       // Ad-hoc sign that fallback so Apple Silicon can launch it.
       afterSign: async (context) => {
+        if (macSigningIdentity) endArtifacts = timing.start('Installers and update archives')
         if (process.platform !== 'darwin' || macSigningIdentity) return
         const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
         execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' })
@@ -235,8 +253,12 @@ try {
       artifactName: `${variant.artifactPrefix}-\${version}-\${arch}.\${ext}`,
     },
   })
-  if (process.platform === 'darwin') await desktopMiseArchive(root)
+  endArtifacts?.()
+  endBuilder()
+  if (process.platform === 'darwin')
+    await timing.measure('Mise archive', () => desktopMiseArchive(root))
 } finally {
+  timing.report()
   // Windows may briefly retain file handles after the PTY child exits.
   await rm(stage, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }

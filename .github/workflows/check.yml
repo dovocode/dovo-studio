@@ -24,18 +24,16 @@ jobs:
       - uses: ./.github/actions/task-cache
         with:
           node: ${{ steps.setup.outputs.node }}
-      - run: pnpm build
+      - run: node scripts/ci/workspace-task.mjs build
       - run: pnpm check
-      - run: pnpm typecheck
+      - run: node scripts/ci/workspace-task.mjs typecheck
       - run: node scripts/check-runtime-sync.mjs
       # Native config errors (plugins, bundle identifiers, entitlements) fail here, not at build.
       - run: pnpm --filter @dovo/mobile exec expo config --type public > /dev/null
       # Execute bundled dependencies: a successful export alone misses startup require failures.
       - run: node scripts/check-mobile-metro-modules.mjs
       # All packages were compiled above; the local test command intentionally builds first.
-      - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
-      # The agent browser integration test uses sandboxed managed Chromium.
-      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - uses: ./.github/actions/setup-browser
       - run: pnpm exec vp test --maxWorkers=4
       - name: Verify native browser extensions
         run: pnpm test:browser-extensions:native
@@ -88,16 +86,30 @@ jobs:
         with:
           store: ${{ steps.setup.outputs.store }}
           key: ${{ steps.setup.outputs.store-key }}
-      - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
-      # Ubuntu's AppArmor restriction blocks Playwright's downloaded Chromium sandbox.
-      # Enable its user namespaces on this disposable runner; keep Chromium sandboxed.
-      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - uses: ./.github/actions/task-cache
+        with:
+          node: ${{ steps.setup.outputs.node }}
+          scope: browser-${{ matrix.shard }}
+      - uses: ./.github/actions/setup-browser
       # All registered suites run; four jobs keep each shard bounded.
       - name: Run browser shard
         timeout-minutes: 20
+        env:
+          DOVO_BROWSER_TIMINGS: ${{ runner.temp }}/browser-timings-${{ matrix.shard }}.json
         run: node scripts/run-browser-suites.mjs ${{ matrix.shard }} 4
-  # The 1,000+ story/theme/viewport cases must not consume another shard's time budget.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: browser-timings-${{ matrix.shard }}
+          path: ${{ runner.temp }}/browser-timings-${{ matrix.shard }}.json
+          if-no-files-found: ignore
+  # Partition every story and hosted-service theme/viewport/accessibility case.
+  # The browser registry runs the interactions-only pass exactly once.
   design-system:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -109,9 +121,13 @@ jobs:
         with:
           store: ${{ steps.setup.outputs.store }}
           key: ${{ steps.setup.outputs.store-key }}
-      - run: pnpm --filter @dovo/runtime exec playwright install --with-deps chromium
-      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: pnpm test:design-system:browser
+      - uses: ./.github/actions/task-cache
+        with:
+          node: ${{ steps.setup.outputs.node }}
+          scope: design-system-${{ matrix.shard }}
+      - uses: ./.github/actions/setup-browser
+      - run: node scripts/ci/workspace-task.mjs build
+      - run: node scripts/check-design-system-browser.mjs ${{ matrix.shard }} 4
   # The full suite above covers Linux. Keep real macOS native/process behavior exercised too.
   runtime-mac:
     runs-on: macos-15

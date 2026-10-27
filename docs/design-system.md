@@ -89,6 +89,33 @@ destructive confirmation and coarse-pointer targets. To apply the same checks to
 DOVO_DESIGN_ORIGIN=https://ui.dovo.studio node scripts/check-design-system-browser.mjs
 ```
 
+### Sharding the catalog check
+
+The sequential run covers every story in both palettes at both widths plus the hosted inner-frame
+matrix, then one pass of catalog interactions. CI splits the two matrices across jobs; each shard
+owns a disjoint, round-robin slice and the slices together cover every case exactly once
+(`scripts/ci/design-system-shards.mjs`, verified by `scripts/ci/design-system-shards.test.mjs`).
+Interactions are not a matrix and run once per CI run: the browser job runs them with
+`DOVO_DESIGN_INTERACTIONS_ONLY=1`, or one nominated shard runs them with
+`DOVO_DESIGN_INTERACTIONS=1`.
+
+```sh
+# One of four shards: story and hosted matrix slices only (interactions skipped)
+DOVO_DESIGN_SHARD=2 DOVO_DESIGN_SHARD_COUNT=4 pnpm test:design-system:browser
+# Same selection on the command line; positional arguments win over the environment
+pnpm test:design-system:browser 2 4
+# Nominate a shard to also run the single interactions pass
+DOVO_DESIGN_INTERACTIONS=1 pnpm test:design-system:browser 0 4
+# Interactions only (what the browser job runs); cannot be combined with a shard selection
+DOVO_DESIGN_INTERACTIONS_ONLY=1 node scripts/check-design-system-browser.mjs
+# Local full run: everything, unsharded (optionally DOVO_DESIGN_INTERACTIONS=0 for the matrix only)
+pnpm test:design-system:browser
+```
+
+Invalid selections (missing count, index outside `0..count-1`, non-integers, interactions-only with
+a shard) fail before a browser launches. Sharded runs write their axe report to
+`dovo-design-system-accessibility-<shard>-of-<count>.json` in the temp directory.
+
 ## Task interaction ownership
 
 Find the full interactive example under **Dovo / Composers / Production task composer**. It covers
