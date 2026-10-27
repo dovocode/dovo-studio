@@ -655,9 +655,10 @@ T3 references:
 
 ### New findings, not implementations
 
-These are source-derived findings and have not been reproduced in a live app. They do not establish
-measured performance improvements. The next correctness investigation should cover the
-mixed-revision checks read and explicit file refresh before larger feature additions.
+These were source-derived findings at this review's completion, without live reproduction or
+measured performance improvements. The subsequent all-aspects section records the verified
+mixed-revision, explicit file-refresh, clipboard and terminal changes; the remaining proposals stay
+separate from those fixes.
 
 | Priority                | Finding                                                           | Evidence and smallest useful follow-up                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -669,3 +670,96 @@ mixed-revision checks read and explicit file refresh before larger feature addit
 | Measured optimization   | Conditional GitHub checks revalidation                            | Dovo's checks refresh fetches rollup/check-run/annotation pages. T3's `packages/source-control-github/src/server/gitHubConditionalChecks.ts` supports credential-scoped conditional responses. Measure calls/latency and verify validators, pages, head/account switches and fallback before adopting.                                                                           |
 | Larger mobile slice     | Directory-scoped browsing and bounded server-side search          | Dovo's mobile browser downloads a whole-checkout file list capped at 200,000 paths. T3's `useFileTreeEntries.ts` loads expanded directories and separately searches with visible truncation. Benchmark representative checkouts and native devices before replacing the existing flow.                                                                                           |
 | Small terminal addition | Selection-aware terminal context menu                             | T3's `apps/web/src/components/ThreadTerminalDrawer.tsx` offers Copy, Paste, Select all and Jump to latest. Reuse Dovo's xterm instance and existing Add selection action; preserve clipboard errors, writable-connection checks and session-switch safety.                                                                                                                       |
+
+## All-aspects follow-through and final audit
+
+Two further rounds of five Terra 6.1 reviewers compared desktop/mobile product flows, native browser
+integration, agents/tools, Git/PR/pipeline workflows, and delivery/runtime reliability. The
+reference remains the source archive pinned above at `3b22620a`; this is not a claim about
+subsequent upstream changes, an exhaustive security audit, or measured end-to-end performance.
+
+### Correctness and workflow changes
+
+- **PR revision consistency:** checks, complete detail, feedback and monitor reads verify the head
+  again after live GitHub rollup/pinned checks reads. File results also verify the base. Changed or
+  unverifiable revisions cannot publish a successful mixed-head result. Deterministic
+  push-during-read tests cover all four paths. This adds a verification read; it is a correctness
+  trade-off, not a claimed latency improvement.
+- **Fresh mobile file refresh:** explicit Refresh bypasses the runtime's 30-second listing cache.
+  Successful refreshes restore normal caching; failed attempts retain fresh-read intent. Newer reads
+  cannot be replaced or invalidated by older replies. Runtime and browser regressions cover
+  additions, deletions, reconnects and checkout changes.
+- **Clipboard intent:** plain text accompanied by a synthetic RTF/non-image file remains a text
+  paste. Image and file-only pastes still attach when permitted. A disconnected composer does not
+  cancel the browser's text fallback. Browser regression coverage fails with the previous
+  implementation.
+- **Terminal actions:** the desktop/web xterm context menu offers Copy, Paste, Select all and Jump
+  to latest, retaining Add selection. Clipboard failures are visible; Paste requires a writable
+  session, and delayed reads cannot reach another session/computer. Native mobile's separate
+  terminal is not changed by this menu.
+- **Draft ownership:** runtime-origin queue submissions preserve recipient draft text, model
+  settings and attachments even when their contents match. A user submission cannot consume settings
+  from a different nonempty draft. Child follow-ups and stable retries have regression coverage.
+- **Server endpoint ownership:** discovery retains socket bindings/family and probes only an owned
+  loopback endpoint. LAN-only sockets remain visible/stoppable without an invented URL. Competing
+  same-port bindings, including wildcard/reuse-port listeners, suppress ambiguous Open actions.
+  Linux tests use real processes on different addresses and wildcard/specific bindings; macOS tests
+  simulate lsof/ps output, including binding changes at a stable PID/port.
+- **Bounded mobile preview recovery:** rich-file and remote browser WebViews recover once after
+  renderer loss, then offer explicit Retry. Stale callbacks cannot revive another computer/file/tab;
+  hidden/background viewers do not spin up ticket or grant loops. Browser adapters exercise native
+  callback behavior; actual OS process termination remains a separate device check.
+- **CI fixture repair:** supervised-web approval checks provide the conversation state that the
+  mobile approval component now requires, avoiding an unintended import of native-only conversation
+  code into its browser bundle. Real permission UI and approval handlers remain under test.
+- **Concurrent file saves:** Studio-owned save operations serialize by canonical file path across
+  service instances and symlink aliases. The pre-fix fixture accepted 22 of 24 competing saves
+  against the same original contents. The updated comparison occurs inside the critical section;
+  only one succeeds and later saves receive a conflict. External editors do not participate in this
+  lock.
+
+- **Attachment cancellation:** the existing Remove operation records task-scoped cancellation of an
+  immutable upload ID before removing its draft reference. Upload checks that receipt before and at
+  commit, so a late or lost response cannot resurrect a cancelled context attachment. Cleanup uses
+  the original computer and reports failures; cancellation records expire with the existing pending
+  attachment lifetime. Runtime and real-hook browser tests cover each side of the commit boundary.
+- **Mobile history search:** an open query refreshes on committed input/history/turn changes, while
+  retaining previous matches. Stream chunks alone do not restart search. Hidden/background screens
+  pause reads, and late replies from another computer/credential scope are discarded. Arbitrary
+  edits to an older message during a running turn have no distinct wire commit signal; that case is
+  not claimed as an immediate-refresh guarantee.
+- **Mobile release reruns:** allocation, pre-signing build admission and publication reject an older
+  workflow run once a newer dispatch exists, including failed/cancelled runs that may have partially
+  uploaded. The latest run can still resume. This prevents decreasing store build numbers without
+  coupling mobile to desktop releases or introducing an allocation service. No store upload ran.
+- **Bitbucket partial reviews:** if a confirmed comment succeeds but its separate review decision is
+  unconfirmed, the structured result identifies the pending decision. Both clients retain the
+  form/decision and clear only the posted body, so retry does not duplicate it. Comment failures and
+  bodyless decision errors retain ordinary failure handling. Provider requests and client
+  interactions are mocked; no live review was posted.
+- **Bitbucket merge semantics:** the documented Cloud merge API has no expected-head precondition.
+  Both confirmations now describe merging the current source branch and retain the preflight check;
+  they do not promise atomic binding to the viewed SHA. Evidence:
+  [Atlassian merge API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/#api-repositories-workspace-repo-slug-pullrequests-pull-request-id-merge-post).
+- **Checked draft moves:** destination admission compares transferable configuration as well as
+  text, and source archival compares the captured source configuration again. Conflicts preserve
+  both drafts. Persisted transfers require the checked-move capability on both runtimes; temporary
+  thread computer selection keeps its existing path. Provider-bound next-message overrides must be
+  cleared before moving, rather than silently dropped or translated to unrelated provider IDs.
+
+### Review evidence and remaining scope
+
+T3 cancellation handling in `packages/client-runtime/src/state/attachments.ts`, mobile WebView
+recovery in `apps/mobile/src/features/threads/HtmlRenderWebView.tsx` and
+`apps/mobile/src/features/browser/PreviewStreamWebView.tsx`, and explicit composer consumption in
+`apps/web/src/components/chat/useComposerSend.ts` provided useful comparisons. The server binding
+and concurrent file-save findings also came from tracing Dovo's own implementation; they are not
+claims that T3 has equivalent functionality or eliminates every related race.
+
+The native mobile gate currently builds/launches iOS only. An unsigned Android native build gate is
+still a coverage improvement, separate from desktop Check and manual mobile publication. Device Hub
+lists remote Android emulators, but this round has not built or installed the changed app there.
+Line-anchored PR conversations, provider-permitted comment editing, conditional GitHub revalidation
+and a directory-scoped mobile file browser remain feature/measurement work, not fixes shipped by
+this batch. Broad source review is not evidence of live Bitbucket/store behavior or native device
+recovery.
