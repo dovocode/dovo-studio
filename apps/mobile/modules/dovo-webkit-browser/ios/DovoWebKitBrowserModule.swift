@@ -100,17 +100,17 @@ public class DovoWebKitBrowserModule: Module {
 
     AsyncFunction("goBack") { @MainActor (tabId: String) async throws in
       guard #available(iOS 17.0, *) else { throw unsupported() }
-      try await run { _ = try BrowserEngine.shared.tab(tabId).webView.goBack() }
+      try await run { try BrowserEngine.shared.tab(tabId).goBack() }
     }
 
     AsyncFunction("goForward") { @MainActor (tabId: String) async throws in
       guard #available(iOS 17.0, *) else { throw unsupported() }
-      try await run { _ = try BrowserEngine.shared.tab(tabId).webView.goForward() }
+      try await run { try BrowserEngine.shared.tab(tabId).goForward() }
     }
 
     AsyncFunction("reload") { @MainActor (tabId: String) async throws in
       guard #available(iOS 17.0, *) else { throw unsupported() }
-      try await run { _ = try BrowserEngine.shared.tab(tabId).webView.reload() }
+      try await run { try BrowserEngine.shared.tab(tabId).reload() }
     }
 
     AsyncFunction("stopLoading") { @MainActor (tabId: String) async throws in

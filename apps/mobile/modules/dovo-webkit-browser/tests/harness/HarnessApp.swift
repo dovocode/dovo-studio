@@ -107,7 +107,7 @@ final class Harness {
   func run(phase: Int) async {
     print("DWB-START phase=\(phase) port=\(port) ios=\(UIDevice.current.systemVersion)")
     do {
-      if phase == 1 { try await phaseOne() } else if phase == 2 { try await phaseTwo() } else if phase == 6 { try await privateTabs() } else { await experiment(phase) }
+      if phase == 1 { try await phaseOne() } else if phase == 2 { try await phaseTwo() } else if phase == 6 { try await privateTabs() } else if phase == 7 { try await processRecovery() } else { await experiment(phase) }
     } catch {
       check("phase \(phase) threw", false, "\((error as? BrowserError)?.message ?? error.localizedDescription)")
     }
@@ -161,6 +161,115 @@ final class Harness {
     check("replacement private tab has no local storage", await page(second, "return localStorage.getItem('privateSecret')") == "null")
     check("replacement gets a fresh temporary data store", engine.profiles[id] !== profile)
     try engine.closeTab(second.id)
+    await engine.setEnabled(false)
+  }
+
+  /// Invoke the real WKNavigationDelegate on real tabs, keeping reloads and lifecycle
+  /// notifications deterministic without killing a shared WebKit process or other apps.
+  func processRecovery() async throws {
+    check("harness scene is foreground", await wait {
+      UIApplication.shared.applicationState == .active && self.host.window?.windowScene?.activationState == .foregroundActive
+    })
+    await engine.setEnabled(true)
+    let profileId = "private-" + UUID().uuidString.lowercased()
+    let profile = try await engine.ensureProfile(profileId)
+    profile.websiteScripts = ["sessionStorage.setItem('recoveryLoads', String(Number(sessionStorage.getItem('recoveryLoads') || 0) + 1))"]
+    func loads(_ tab: BrowserTab) async -> String {
+      await page(tab, "return sessionStorage.getItem('recoveryLoads')")
+    }
+    func loadedTimes(_ tab: BrowserTab, _ count: Int) async -> Bool {
+      await wait {
+        guard tab.loadState == "loaded", !tab.webView.isLoading else { return false }
+        return await loads(tab) == String(count)
+      }
+    }
+
+    let visible = try await engine.openTab(tabId: "recovery-visible", profileId: profileId, url: url("page.html"))
+    host.tabId = visible.id
+    check("visible recovery fixture loaded once", await loadedTimes(visible, 1))
+    visible.webViewWebContentProcessDidTerminate(visible.webView)
+    check("first visible loss reloads once", await loadedTimes(visible, 2))
+    visible.webViewWebContentProcessDidTerminate(visible.webView)
+    check("second visible loss fails without automatic reload", visible.loadState == "failed" && !visible.reloadWhenShown && visible.lastError?.contains("Reload") == true)
+    // Even late completion/KVO and repeated host attachment cannot hide the failed state.
+    visible.webView(visible.webView, didFinish: nil)
+    visible.didMoveToHost()
+    try? await Task.sleep(nanoseconds: 300_000_000)
+    check("failed page stays failed and does not reload again", await loads(visible) == "2" && visible.loadState == "failed")
+    visible.reload()
+    check("manual reload retries the failed page", await loadedTimes(visible, 3))
+    visible.webViewWebContentProcessDidTerminate(visible.webView)
+    check("manual reload grants one new automatic recovery", await loadedTimes(visible, 4))
+    visible.webViewWebContentProcessDidTerminate(visible.webView)
+    check("retry budget is bounded again", visible.loadState == "failed")
+    visible.load(try BrowserInput.pageURL(url("other.html")))
+    check("explicit navigation retries and resets recovery", await loadedTimes(visible, 5))
+    visible.webViewWebContentProcessDidTerminate(visible.webView)
+    check("navigated page can recover once", await loadedTimes(visible, 6))
+    visible.goBack()
+    check("back navigation resets recovery", await wait { visible.loadState == "loaded" && !visible.webView.isLoading && visible.webView.url?.path == "/page.html" })
+    let afterBack = Int(await loads(visible)) ?? 0
+    visible.webViewWebContentProcessDidTerminate(visible.webView)
+    check("back navigation has one recovery", await loadedTimes(visible, afterBack + 1))
+    visible.goForward()
+    check("forward navigation resets recovery", await wait { visible.loadState == "loaded" && !visible.webView.isLoading && visible.webView.url?.path == "/other.html" })
+    let afterForward = Int(await loads(visible)) ?? 0
+    visible.webViewWebContentProcessDidTerminate(visible.webView)
+    check("forward navigation has one recovery", await loadedTimes(visible, afterForward + 1))
+
+    let hidden = try await engine.openTab(tabId: "recovery-hidden", profileId: profileId, url: url("page.html"))
+    check("detached fixture loads once", await loadedTimes(hidden, 1))
+    hidden.webViewWebContentProcessDidTerminate(hidden.webView)
+    hidden.didMoveToHost()
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: UIApplication.shared)
+    check("detached process loss waits without reloading", await loads(hidden) == "1" && hidden.reloadWhenShown && hidden.loadState == "idle")
+    host.tabId = hidden.id
+    check("showing a detached tab consumes one recovery", await loadedTimes(hidden, 2))
+    host.isHidden = true
+    hidden.webViewWebContentProcessDidTerminate(hidden.webView)
+    host.isHidden = false
+    check("hiding and showing cannot replenish recovery budget", await loads(hidden) == "2" && hidden.loadState == "failed" && !hidden.reloadWhenShown)
+    hidden.reload()
+    check("hidden-view case retries explicitly", await loadedTimes(hidden, 3))
+    host.isHidden = true
+    hidden.webViewWebContentProcessDidTerminate(hidden.webView)
+    check("attached hidden host defers its first loss", await loads(hidden) == "3" && hidden.webView.window != nil && hidden.reloadWhenShown)
+    host.isHidden = false
+    check("unhiding the host resumes recovery", await loadedTimes(hidden, 4))
+
+    let background = try await engine.openTab(tabId: "recovery-background", profileId: profileId, url: url("page.html"))
+    host.tabId = background.id
+    check("background fixture loads once", await loadedTimes(background, 1))
+    NotificationCenter.default.post(name: UIApplication.willResignActiveNotification, object: UIApplication.shared)
+    background.webViewWebContentProcessDidTerminate(background.webView)
+    background.didMoveToHost()
+    check("attached window is insufficient while application inactive", await loads(background) == "1" && background.webView.window != nil && background.reloadWhenShown)
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: UIApplication.shared)
+    check("foreground notification resumes exactly one recovery", await loadedTimes(background, 2))
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: UIApplication.shared)
+    background.webViewWebContentProcessDidTerminate(background.webView)
+    check("repeat foreground transitions do not reset budget", background.loadState == "failed" && !background.reloadWhenShown)
+
+    let closing = try await engine.openTab(tabId: "recovery-reused", profileId: profileId, url: url("page.html"))
+    check("close fixture loads once", await loadedTimes(closing, 1))
+    closing.webViewWebContentProcessDidTerminate(closing.webView)
+    check("close fixture has deferred recovery", closing.reloadWhenShown)
+    try engine.closeTab(closing.id)
+    let reopened = try await engine.openTab(tabId: closing.id, profileId: profileId, url: url("page.html"))
+    host.tabId = reopened.id
+    check("reused tab identity starts with fresh page", await loadedTimes(reopened, 1))
+    events.removeAll()
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: UIApplication.shared)
+    closing.webViewWebContentProcessDidTerminate(closing.webView)
+    closing.webView(closing.webView, didFinish: nil)
+    closing.didMoveToHost()
+    closing.reload()
+    closing.load(try BrowserInput.pageURL(url("other.html")))
+    reopened.webViewWebContentProcessDidTerminate(closing.webView)
+    try? await Task.sleep(nanoseconds: 300_000_000)
+    check("closed tab cannot revive deferred or explicit loads", await loads(closing) == "1" && !closing.reloadWhenShown && closing.webView.superview == nil)
+    check("stale delegates do not alter reopened tab", await loads(reopened) == "1" && reopened.instanceId != closing.instanceId && reopened.loadState == "loaded")
+    check("closed delegates emit no stale events", !events.contains { $0.1["instanceId"] as? String == closing.instanceId })
     await engine.setEnabled(false)
   }
 

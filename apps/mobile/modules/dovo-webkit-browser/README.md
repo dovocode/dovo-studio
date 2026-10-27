@@ -19,9 +19,12 @@ keep `window.opener` and can close themselves through `window.close`.
 Opening the same tab ID in the same profile returns the existing tab without navigation or another
 creation event. Reuse in another profile rejects until closed. Reopening creates a new `instanceId`;
 callers must match it when processing events. Native callbacks from closed instances are ignored.
-Closing an unknown tab is a no-op. Up to 100 live tabs and 16 saved profiles are supported.
-Background tabs whose content process iOS reclaims reload when shown, avoiding mass background
-reloads.
+Closing an unknown tab is a no-op. Up to 100 live tabs and 16 saved profiles are supported. When iOS
+reclaims a tab's content process, it automatically reloads at most once. Detached, hidden or
+backgrounded tabs defer that recovery until visible in the foreground. A second loss leaves a failed
+page with a reload instruction, rather than repeatedly consuming memory. Explicit reload, address
+navigation, back/forward or a new page link resets the budget; successful automatic reloads and
+foreground transitions do not. Closed tab instances cannot recover.
 
 Profile catalogues reject corruption, invalid IDs and duplicate identities; only missing files mean
 empty state. Removal closes the profile's tabs and removes its named store, or clears its data if
@@ -58,8 +61,12 @@ HTTP. It does not install Dovo Studio.
   background prompt suppression, native prompt cancellation and capture capability.
 - Phase 2 starts a new process to verify per-profile cookies/localStorage persistence and profile
   removal.
+- Phase 7 invokes content-process delegate callbacks on real WKWebViews, checking one recovery,
+  repeated failure, detached/hidden hosts, background/foreground notifications, explicit retries,
+  navigation budgets and stale callbacks after close/reopen. Application notifications simulate
+  lifecycle transitions without killing other apps or a shared WebKit process.
 
-Use `PHASES="1 2"` to select phases; phases 3–5 are plain-WKWebView latency diagnostics. Historical
-extension-heavy harness results do not validate this browser-only source. Run the revised harness,
-Swift typecheck and full app build when verifying this version; the harness alone does not compile
-the Expo wrapper or prove the app's JavaScript/native integration.
+Use `PHASES="1 2 7"` to select phases; phases 3–5 are plain-WKWebView latency diagnostics.
+Historical extension-heavy harness results do not validate this browser-only source. Run the revised
+harness, Swift typecheck and full app build when verifying this version; the harness alone does not
+compile the Expo wrapper or prove the app's JavaScript/native integration.

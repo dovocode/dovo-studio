@@ -16,6 +16,12 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
   private(set) var lastError: String?
   private var observations: [NSKeyValueObservation] = []
   private var updateScheduled = false
+  private var closed = false
+  private var appActive = UIApplication.shared.applicationState == .active
+  private var processLost = false
+  private var automaticRecoveryUsed = false
+  /// A reclaimed page waits for its visible, foreground host before one automatic reload.
+  private(set) var reloadWhenShown = false
   weak var engine: BrowserEngine?
 
   init(id: String, profileId: String, openerTabId: String?, configuration: WKWebViewConfiguration, engine: BrowserEngine) {
@@ -36,6 +42,9 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
     observe(\.canGoBack, "history")
     observe(\.canGoForward, "history")
     observe(\.hasOnlySecureContent, "secure")
+    NotificationCenter.default.addObserver(self, selector: #selector(applicationBecameActive), name: UIApplication.didBecomeActiveNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(applicationResignedActive), name: UIApplication.willResignActiveNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(applicationBecameActive), name: UIScene.didActivateNotification, object: nil)
   }
 
   private func observe<Value>(_ path: KeyPath<WKWebView, Value>, _ change: String) {
@@ -45,14 +54,15 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
   }
 
   private func scheduleUpdate(_ change: String) {
-    if change == "loading" {
+    guard !closed else { return }
+    if change == "loading" && !processLost {
       if webView.isLoading { loadState = "loading"; lastError = nil } else if loadState == "loading" { loadState = "loaded" }
     }
     guard !updateScheduled else { return }
     updateScheduled = true
     DispatchQueue.main.async { [weak self] in
       MainActor.assumeIsolated {
-        guard let self else { return }
+        guard let self, !self.closed else { return }
         self.updateScheduled = false
         self.engine?.tabDidUpdate(self)
       }
@@ -76,12 +86,42 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
     ]
   }
 
-  func load(_ url: URL) {
+  private func resetRecovery() {
+    automaticRecoveryUsed = false
+    reloadWhenShown = false
+    processLost = false
     lastError = nil
+  }
+
+  func load(_ url: URL) {
+    guard !closed else { return }
+    resetRecovery()
     webView.load(URLRequest(url: url))
   }
 
+  func reload() {
+    guard !closed else { return }
+    resetRecovery()
+    webView.reload()
+  }
+
+  func goBack() {
+    guard !closed, webView.canGoBack else { return }
+    resetRecovery()
+    webView.goBack()
+  }
+
+  func goForward() {
+    guard !closed, webView.canGoForward else { return }
+    resetRecovery()
+    webView.goForward()
+  }
+
   func close() {
+    guard !closed else { return }
+    closed = true
+    reloadWhenShown = false
+    NotificationCenter.default.removeObserver(self)
     observations.forEach { $0.invalidate() }
     observations = []
     webView.stopLoading()
@@ -133,10 +173,17 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
     _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
     decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
   ) {
-    guard let url = navigationAction.request.url, let scheme = url.scheme?.lowercased() else { return decisionHandler(.cancel) }
+    guard !closed, webView === self.webView, !processLost,
+      let url = navigationAction.request.url, let scheme = url.scheme?.lowercased()
+    else { return decisionHandler(.cancel) }
     let mainFrame = navigationAction.targetFrame?.isMainFrame ?? true
     switch scheme {
     case "http", "https", "about", "blob":
+      // A new user navigation gets its own recovery budget. Redirects and the automatic
+      // reload (.reload) must not replenish it, otherwise a crashing page loops forever.
+      if mainFrame && [.linkActivated, .formSubmitted, .formResubmitted, .backForward].contains(navigationAction.navigationType) {
+        resetRecovery()
+      }
       decisionHandler(.allow)
     case "data":
       // Top-level data: navigations are a phishing vector; subframes keep working.
@@ -156,34 +203,65 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
   }
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    guard !closed, !processLost, webView === self.webView else { return }
     loadState = "loaded"
     scheduleUpdate("loading")
   }
 
-  /// Set when iOS reclaimed the content process of a tab that was not on screen.
-  private(set) var reloadWhenShown = false
-
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-    guard webView.window != nil else {
-      // Reloading every background tab would bring the memory pressure straight back.
+    guard !closed, webView === self.webView else { return }
+    processLost = true
+    if automaticRecoveryUsed {
+      reloadWhenShown = false
+      loadState = "failed"
+      lastError = "The page stopped responding again. Reload the page to try again."
+    } else {
       reloadWhenShown = true
       loadState = "idle"
       lastError = "The page was unloaded to save memory and reloads when shown."
-      scheduleUpdate("loading")
-      return
+      recoverWhenVisible()
     }
-    lastError = "The page stopped responding and was reloaded."
-    webView.reload()
+    scheduleUpdate("loading")
   }
 
-  func didMoveToHost() {
-    guard reloadWhenShown else { return }
+  /// A window can stay attached while the app is backgrounded or its containing view hidden.
+  private var visibleInForeground: Bool {
+    guard appActive, UIApplication.shared.applicationState == .active,
+      let window = webView.window, window.windowScene?.activationState == .foregroundActive
+    else { return false }
+    var view: UIView? = webView
+    while let current = view {
+      if current.isHidden || current.alpha == 0 { return false }
+      view = current.superview
+    }
+    return true
+  }
+
+  private func recoverWhenVisible() {
+    guard !closed, reloadWhenShown, visibleInForeground else { return }
     reloadWhenShown = false
+    automaticRecoveryUsed = true
+    processLost = false
+    loadState = "loading"
     lastError = nil
     webView.reload()
   }
 
+  @objc private func applicationResignedActive() {
+    appActive = false
+  }
+
+  @objc private func applicationBecameActive() {
+    appActive = true
+    recoverWhenVisible()
+  }
+
+  func didMoveToHost() {
+    recoverWhenVisible()
+  }
+
   private func fail(_ error: Error) {
+    guard !closed, !processLost else { return }
     let nsError = error as NSError
     if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled { return }
     // Frame load interrupted by policy change (WebKit error 102) follows a cancelled navigation.

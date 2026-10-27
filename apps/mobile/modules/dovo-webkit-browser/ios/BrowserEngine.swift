@@ -338,8 +338,18 @@ final class BrowserHostView: UIView {
     tab.didMoveToHost()
   }
 
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    refresh()
+  }
+
+  override var isHidden: Bool {
+    didSet { if !isHidden { refresh() } }
+  }
+
   override func layoutSubviews() {
     super.layoutSubviews()
     for subview in subviews where subview is WKWebView { subview.frame = bounds }
+    if #available(iOS 17.0, *) { BrowserEngine.shared.hostedTab(tabId)?.didMoveToHost() }
   }
 }
