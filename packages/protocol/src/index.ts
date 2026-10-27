@@ -111,6 +111,7 @@ export * from './scm/repositories/repository-tools.js'
 export * from './scm/work/worktree-base.js'
 
 export * from './runtime/connection/project-machines.js'
+export * from './runtime/connection/runtime-target.js'
 
 export * from './tasks/task-machine-draft.js'
 

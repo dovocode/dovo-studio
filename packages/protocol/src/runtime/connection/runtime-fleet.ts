@@ -5,6 +5,7 @@ import { Effect, Result, Schema } from 'effect'
 import { RuntimeRequestError } from '../../shared/client.js'
 import { connectionSchema, snapshotSchema } from './runtime.js'
 import { runtimeSnapshotPath } from './live-sync.js'
+import { runtimeResourceKey } from './runtime-target.js'
 import type { RuntimeConnection, RuntimeSnapshot } from './runtime.js'
 import { pullPageSchema } from '../../scm/pulls/pulls.js'
 import type { PullSummary } from '../../scm/pulls/pulls.js'
@@ -236,7 +237,7 @@ export function loadFleetPullOverviewsEffect(
       (entry.snapshot?.workspace.repositories ?? [])
         .filter((repository) => !repository.kind)
         .map((repository) => ({
-          key: JSON.stringify([entry.profile.id, repository.id]),
+          key: runtimeResourceKey(entry.profile.id, repository.id),
           connected: entry.connected,
           repository,
           runtimeId: entry.profile.id,
@@ -375,7 +376,7 @@ export function aggregateRuntimeTasks(
           (includeInactive || (!task.archived && !task.archivedAt && !isSnoozed(task, now))),
       )
       .map((task) => ({
-        key: JSON.stringify([profile.id, task.id]),
+        key: runtimeResourceKey(profile.id, task.id),
         runtimeId: profile.id,
         runtimeName,
         task,

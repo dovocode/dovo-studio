@@ -39,6 +39,34 @@ retry rules still apply; uncertain mutations are not replayed on another transpo
 Use `/api/snapshot?scope=overview` for connection checks and task status. Full snapshots include
 conversation histories and file contents, which readiness and pairing-recovery checks do not need.
 
+## Computer and resource scope
+
+Keep these identities separate:
+
+- A saved profile ID identifies this client's computer entry and remains stable when its address is
+  updated. A profile's initial ID may be an HTTP origin; it is not the server identity.
+- `connection.runtimeId` / `snapshot.runtimeId` identifies the server persistently across restarts.
+- `snapshot.runtimeInstanceId` identifies one process lifetime. Compare snapshot revisions only
+  within that lifetime.
+- Forge reader and destination identities identify the account and repository behind an integration.
+  Matching a computer or a public repository URL does not replace these checks.
+
+Capture a `RuntimeTarget` when starting an operation. `resolveRuntimeTarget(profiles, target)`
+resolves it only while that saved profile still has the captured address and device token. Check
+before dispatch and before publishing a result. Return the latest saved profile so learned route
+hints stay current. This check does not select another computer or authorize an account change;
+retain existing account-session, forge and mutation-journal checks.
+
+Use `runtimeResourceKey(runtimeId, resourceId)` for a resource collection's scoped identity. Its
+credential-free tuple encoding preserves existing keys and handles origins containing colons. A
+resource key is a lookup identity, never an authorization check.
+
+When replacing a saved connection, call `verifyRuntimeReplacement(previous, candidate, snapshot)` on
+its authenticated snapshot **before** confirming pairing or transferring saved edits. A known server
+identity must match; an unknown identity cannot verify an existing known computer. Legacy profiles
+without a recorded server identity remain supported and learn it on their next connection. An
+intentionally different server must be added separately.
+
 Native tunnel setup releases the peer if creating the readiness channel or signaling socket fails.
 If accepting a local socket races native peer teardown, the socket and tunnel close so subsequent
 requests can establish a fresh connection. Route diagnostics discard statistics collected before an

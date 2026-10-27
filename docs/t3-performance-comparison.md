@@ -486,3 +486,34 @@ Dovo already supports same-computer linked checkouts, adding projects to another
 Studio tools, queue controls and attachment sharing. Recreating those systems would add complexity
 without filling these UX gaps. This round is source research; its recommendations have not been
 runtime- or device-verified, and it establishes no performance improvement.
+
+### Direct reviewer-thread follow-ups
+
+Dominic continued the Git/review and mobile conversations after their initial reports. The parent
+read those additional messages rather than relying only on the original completion notifications.
+The additional source-based candidates are:
+
+- **Batched GitHub reviews:** retain Dovo's immediate commenting, but optionally collect comments
+  into one review submission. Preserve revision-bound positions, drafts on failure and edits made
+  during submission. T3's `PullRequestCodeTab.tsx` and `GitHubPullRequestApi.ts` show this flow;
+  Dovo's current posting boundary is `packages/extension-scm/src/pulls/detail/changes.tsx`.
+- **GitHub viewed-file synchronization:** Dovo already records viewed progress locally with file
+  fingerprints. Provider-backed state could carry that progress between GitHub and Studio, but needs
+  an explicit source-of-truth decision, connection/account isolation and visible sync errors. Do not
+  silently merge local marks into GitHub. Compare T3's `pullRequestReads.graphql` and
+  `pullRequestMutations.graphql` with Dovo's `packages/runtime/src/scm/reviews/progress.ts`.
+- **Accessible mobile setup recovery:** inspect whether the accessible progress-card container hides
+  its nested failure text and Retry button from VoiceOver/TalkBack. Separate summary and action
+  accessibility if reproduced. DOM checks cannot establish native accessibility behavior.
+- **Useful setup failure output:** worktree setup currently constructs command failures from stderr.
+  A bounded stdout tail could explain scripts that report failures only on stdout. Verify
+  cancellation, truncation, sensitive-output boundaries and successful retry before changing it.
+
+The deeper environment discussion calls for consistent scoped ownership across apps, runtime and
+tools, rather than copying another environment system. Distinguish a client's saved profile ID, its
+current paired connection, the server's persisted `runtimeId`, and the process-only
+`runtimeInstanceId`. `packages/runtime/src/services.ts` already persists the server identity in the
+database; an earlier reviewer reply incorrectly suggested the server ID itself was process-only. No
+identity migration follows from that claim. Shared repository URLs are presentation identities, not
+authorization to move a mutation to another computer or account. Reads and actions must retain their
+computer, resource, verified forge account/destination and freshness constraints.
