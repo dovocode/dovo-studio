@@ -8,8 +8,7 @@ const text = (value: unknown) => (typeof value === 'string' && value ? value : u
 const number = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
 const status = (value: unknown): Subagent['status'] => {
-  if (['running', 'pending', 'pendingInit', 'started', 'interacted'].includes(String(value)))
-    return 'working'
+  if (['running', 'pending', 'pendingInit', 'started'].includes(String(value))) return 'working'
   if (value === 'completed') return 'completed'
   if (['failed', 'errored'].includes(String(value))) return 'failed'
   if (['stopped', 'shutdown', 'interrupted', 'killed'].includes(String(value))) return 'stopped'
@@ -112,6 +111,7 @@ export function updateSubagents(
   if (
     provider === 'codex' &&
     childId &&
+    childId !== rootThreadId &&
     (current.some(
       (agent) => agent.provider === provider && agent.id === childId && agent.source !== 'dovo',
     ) ||
@@ -124,7 +124,9 @@ export function updateSubagents(
           tokens,
         })
     }
-    if (method === 'item/started') {
+    if (method === 'turn/started') put(childId, { status: 'working', activity: undefined })
+    // Collaboration activity describes its recipient, not execution by its sender.
+    if (method === 'item/started' && item.type !== 'subAgentActivity') {
       const activity = text(item.type)
       if (activity)
         put(childId, {
@@ -170,7 +172,14 @@ export function updateSubagents(
       put(id, fields)
     }
   }
-  if (provider === 'codex' && item.type === 'subAgentActivity' && text(item.agentThreadId)) {
+  if (
+    provider === 'codex' &&
+    item.type === 'subAgentActivity' &&
+    // A message can be queued for an idle child without starting another turn.
+    item.kind !== 'interacted' &&
+    text(item.agentThreadId) &&
+    item.agentThreadId !== rootThreadId
+  ) {
     put(String(item.agentThreadId), {
       name: text(item.agentPath) ?? String(item.agentThreadId),
       status: status(item.kind),

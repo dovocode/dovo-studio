@@ -229,6 +229,26 @@ it('tracks native children against their root session, without re-emitting progr
   ])
 })
 
+it('does not emit a Codex child start hook for a message after completion', () => {
+  const events = new HookEvents('codex', 'root')
+  const turn = { threadId: 'child', turn: { id: 'turn', status: 'completed' } }
+  expect(events.accept('turn/started', turn)).toMatchObject([
+    { event: 'subagent-start', data: { subagent: { id: 'child' } } },
+  ])
+  expect(events.accept('turn/completed', turn)).toMatchObject([
+    { event: 'subagent-stop', data: { subagent: { id: 'child', status: 'completed' } } },
+  ])
+  const interaction = {
+    threadId: 'sender',
+    item: { type: 'subAgentActivity', agentThreadId: 'child', kind: 'interacted' },
+  }
+  expect(events.accept('item/started', interaction)).toEqual([])
+  expect(events.accept('item/completed', interaction)).toEqual([])
+  expect(events.accept('turn/started', { ...turn, turn: { id: 'next-turn' } })).toMatchObject([
+    { event: 'subagent-start', data: { subagent: { id: 'child' } } },
+  ])
+})
+
 it('pairs server-side discovery hook results with their original query', () => {
   const events = new HookEvents('claude')
   events.accept('assistant', {

@@ -1,4 +1,5 @@
 import { expect, it } from 'vite-plus/test'
+import type { Subagent } from '@dovo/protocol'
 import { updateSubagents } from './subagents'
 const now = '2026-09-23T00:00:00Z'
 it('merges Codex spawn, activity and completion by agent ID without inventing usage', () => {
@@ -209,6 +210,126 @@ it('discovers Codex children before a collaboration event and ignores root event
     'root',
   )
   expect(completed[0]?.status).toBe('completed')
+})
+
+it.each(['completed', 'failed', 'stopped'] as const)(
+  'preserves a Codex child’s %s outcome when another child sends it a message',
+  (outcome) => {
+    const finished = updateSubagents(
+      [],
+      'codex',
+      { threadId: 'reviewer', turn: { status: outcome } },
+      now,
+      'turn/completed',
+      'root',
+    ).map((agent) => ({
+      ...agent,
+      result: 'Saved review',
+      completion: 'read' as const,
+      completionId: 'review-receipt',
+    }))
+    let agents: Subagent[] = finished
+    for (const method of ['item/started', 'item/completed']) {
+      agents = updateSubagents(
+        agents,
+        'codex',
+        {
+          threadId: 'sender',
+          item: {
+            type: 'subAgentActivity',
+            agentThreadId: 'reviewer',
+            agentPath: '/root/reviewer',
+            kind: 'interacted',
+          },
+        },
+        '2026-09-23T00:01:00Z',
+        method,
+        'root',
+      )
+    }
+    expect(agents).toBe(finished)
+  },
+)
+
+it('does not infer execution from a message to an unknown Codex child', () => {
+  const agents = updateSubagents(
+    [],
+    'codex',
+    {
+      threadId: 'root',
+      item: { type: 'subAgentActivity', agentThreadId: 'child', kind: 'interacted' },
+    },
+    now,
+    'item/started',
+    'root',
+  )
+  expect(agents).toEqual([])
+})
+
+it('reopens a finished Codex child only when its next turn actually starts', () => {
+  const finished = updateSubagents(
+    [],
+    'codex',
+    { threadId: 'child', turn: { status: 'completed' } },
+    now,
+    'turn/completed',
+    'root',
+  ).map((agent) => ({
+    ...agent,
+    result: 'Earlier review',
+    completion: 'read' as const,
+    completionId: 'old',
+  }))
+  const resumed = updateSubagents(
+    finished,
+    'codex',
+    { threadId: 'child', turn: { id: 'next-turn', status: 'inProgress' } },
+    '2026-09-23T00:01:00Z',
+    'turn/started',
+    'root',
+  )
+  expect(resumed[0]).toMatchObject({ status: 'working', startedAt: '2026-09-23T00:01:00Z' })
+  expect(resumed[0]?.finishedAt).toBeUndefined()
+  expect(resumed[0]?.result).toBeUndefined()
+  expect(resumed[0]?.completion).toBeUndefined()
+  expect(resumed[0]?.completionId).toBeUndefined()
+})
+
+it('does not track the root Codex thread as its own child', () => {
+  const root: Subagent[] = [
+    {
+      id: 'root',
+      provider: 'codex',
+      name: '/root',
+      status: 'completed',
+      startedAt: now,
+      updatedAt: now,
+      finishedAt: now,
+    },
+  ]
+  expect(
+    updateSubagents(
+      root,
+      'codex',
+      { threadId: 'root', item: { type: 'commandExecution' } },
+      '2026-09-23T00:01:00Z',
+      'item/started',
+      'root',
+    ),
+  ).toBe(root)
+  expect(
+    updateSubagents(
+      [],
+      'codex',
+      {
+        threadId: 'child',
+        item: { type: 'subAgentActivity', agentThreadId: 'root', kind: 'started' },
+      },
+      now,
+      'item/started',
+      'root',
+    ),
+  ).toEqual([])
 })
 
 it('recovers missed Claude agents and background jobs from its roster without ambient work', () => {

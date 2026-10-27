@@ -8,6 +8,8 @@ import {
   taskFamilyRunToken,
   taskFamilyWorking,
   taskIsWorking,
+  subagentVisible,
+  nativeAgentWorking,
 } from '@dovo/protocol'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
@@ -83,6 +85,42 @@ async function setup(provider: 'claude' | 'codex' = 'claude') {
   if (!owner?.nativeAgentInteractions) throw new Error('Expected native-agent interactions')
   return { s, task, owner, stop, runs, interactions: owner.nativeAgentInteractions }
 }
+
+it('keeps a finished Codex child idle and hidden after a sibling sends it a message', async () => {
+  const { s, task, owner } = await setup('codex')
+  s.store.updateTask(task.id, (current) => ({ ...current, queuePaused: true }))
+  owner.onSubagentEvent?.(
+    'item/completed',
+    { threadId: 'child', item: { type: 'agentMessage', text: 'Review complete' } },
+    'native-session',
+  )
+  owner.onSubagentEvent?.(
+    'turn/completed',
+    { threadId: 'child', turn: { id: 'review-turn', status: 'completed' } },
+    'native-session',
+  )
+  const finished = s.store.taskSummary(task.id).subagents
+  expect(finished).toMatchObject([{ status: 'completed', result: 'Review complete' }])
+  for (const method of ['item/started', 'item/completed'])
+    owner.onSubagentEvent?.(
+      method,
+      {
+        threadId: 'sibling',
+        item: {
+          type: 'subAgentActivity',
+          agentThreadId: 'child',
+          agentPath: '/root/reviewer',
+          kind: 'interacted',
+        },
+      },
+      'native-session',
+    )
+  const saved = s.store.taskSummary(task.id)
+  expect(saved.subagents).toEqual(finished)
+  expect(saved.subagents?.filter((agent) => subagentVisible(agent, true))).toEqual([])
+  expect(saved.subagents?.some(nativeAgentWorking)).toBe(false)
+  s.tasks.requireIdle(task.id)
+})
 
 it('keeps native approvals and questions usable after a reply while retiring parent callbacks', async () => {
   const { s, task, owner, interactions } = await setup()
