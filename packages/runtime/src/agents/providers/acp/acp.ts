@@ -131,7 +131,7 @@ export function createAcpAdapter(): AgentAdapter {
         approve: (
           title: string,
           detail: string,
-          kind?: 'web',
+          kind?: 'web' | 'command',
           options?: { session?: boolean; always?: boolean },
         ) =>
           prompting

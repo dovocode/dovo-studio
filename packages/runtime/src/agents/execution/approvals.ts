@@ -1,5 +1,6 @@
 import type { Activity } from '../../storage/activity.js'
 import { randomUUID } from 'node:crypto'
+import { isAbsolute, relative, sep } from 'node:path'
 import {
   resolveTaskAgent,
   samePermissionPolicy,
@@ -10,19 +11,39 @@ import {
 import { HttpError } from '../../errors.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { RuntimePreferences } from '../../storage/runtime-preferences.js'
-function commandForApproval(title: string, detail: string) {
-  if (!/command|bash|shell/i.test(title)) return undefined
+// These are command execution inputs and display/context fields, never permission grants.
+const commandFields = new Set([
+  'command',
+  'description',
+  'timeout',
+  'run_in_background',
+  'cwd',
+  'threadId',
+  'turnId',
+  'itemId',
+  'approvalId',
+  'reason',
+  'availableDecisions',
+  'commandActions',
+  'proposedExecpolicyAmendment',
+])
+function commandForApproval(detail: string, projectPath: string | undefined) {
   try {
     const value: unknown = JSON.parse(detail)
-    if (!value || typeof value !== 'object') return undefined
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
     const fields = value as Record<string, unknown>
-    const command = fields.command ?? fields.cmd ?? fields.commandLine
-    if (typeof command === 'string') return command.trim() || undefined
-    if (Array.isArray(command) && command.every((part) => typeof part === 'string'))
-      return command.join(' ').trim() || undefined
-    return undefined
+    // Unknown fields may carry additional grants. A saved command cannot authorize them.
+    if (Object.keys(fields).some((key) => !commandFields.has(key))) return undefined
+    if (typeof fields.command !== 'string') return undefined
+    if (fields.cwd !== undefined) {
+      if (typeof fields.cwd !== 'string' || !isAbsolute(fields.cwd) || !projectPath)
+        return undefined
+      const path = relative(projectPath, fields.cwd)
+      if (path === '..' || path.startsWith('..' + sep) || isAbsolute(path)) return undefined
+    }
+    return fields.command.trim() || undefined
   } catch {
-    return detail.trim() || undefined
+    return undefined
   }
 }
 export class Approvals {
@@ -36,6 +57,7 @@ export class Approvals {
     {
       info: Approval
       web: boolean
+      command?: string
       policy?: PermissionPolicy
       resolve: (decision: ApprovalDecision) => void
     }
@@ -48,16 +70,16 @@ export class Approvals {
     title: string,
     detail: string,
     signal: AbortSignal,
-    kind?: 'web',
+    kind?: 'web' | 'command',
     scopes?: { session?: boolean; always?: boolean },
   ): Promise<ApprovalDecision> {
     if (signal.aborted) return Promise.resolve('deny' as const)
-    const command = commandForApproval(title, detail)
-    // Only the provider adapter can classify a web request; display text is not authoritative.
+    // Provider adapters classify rule eligibility; tool names and display text are not authority.
     const web = kind === 'web'
     const globalWeb = web && this.preferences?.get().allowWebRequests
     const task = this.store?.get().tasks.find((item) => item.id === taskId)
     const project = this.store?.get().repositories.find((item) => item.id === task?.repositoryId)
+    const command = kind === 'command' ? commandForApproval(detail, project?.path) : undefined
     if (
       (command && project?.approvedCommands?.includes(command)) ||
       (web && project?.approvedWebRequests) ||
@@ -94,6 +116,7 @@ export class Approvals {
       const timer = setTimeout(abort, 10 * 60 * 1000)
       this.requests.set(id, {
         web,
+        command,
         policy: task && this.store ? resolveTaskAgent(task, this.store.get().agents) : undefined,
         info: {
           id,
@@ -123,7 +146,7 @@ export class Approvals {
       throw new HttpError(409, 'Access changed. This approval has expired.')
     }
     if (decision === 'always') {
-      const command = commandForApproval(request.info.title, request.info.detail)
+      const command = request.command
       const web = request.info.rememberRule === 'web'
       const native = !!request.info.scopes?.always
       const task = this.store?.get().tasks.find((item) => item.id === request.info.taskId)

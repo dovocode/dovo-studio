@@ -211,7 +211,11 @@ function claudeStream(
             (await current.approve(
               name,
               JSON.stringify(input, null, 2),
-              ['WebFetch', 'WebSearch'].includes(name) ? 'web' : undefined,
+              ['WebFetch', 'WebSearch'].includes(name)
+                ? 'web'
+                : name === 'Bash'
+                  ? 'command'
+                  : undefined,
             )) !== 'deny')
         return allowed
           ? {
@@ -425,7 +429,7 @@ export function createClaudeAdapter(): AgentAdapter {
           approve: (
             title: string,
             detail: string,
-            kind?: 'web',
+            kind?: 'web' | 'command',
             options?: { session?: boolean; always?: boolean },
           ) =>
             interactions.approve(

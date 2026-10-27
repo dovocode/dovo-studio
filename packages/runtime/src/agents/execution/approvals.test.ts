@@ -237,3 +237,99 @@ it('expires a pending approval after the saved policy changes before a remembere
   expect(store.get().repositories[0].approvedCommands).toBeUndefined()
   expect(approvals.list()).toEqual([])
 })
+
+it('never treats untrusted shell display text as a saved command approval', async () => {
+  const { store, approvals, request } = fixture()
+  store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((project) => ({
+      ...project,
+      approvedCommands: ['pnpm test'],
+    })),
+  }))
+  const pending = request(
+    'MCP App · shell',
+    JSON.stringify({ command: 'pnpm test', deleteAll: true }),
+  )
+  expect(approvals.list()).toHaveLength(1)
+  expect(approvals.list()[0].rememberRule).toBeNull()
+  approvals.respond(approvals.list()[0].id, false)
+  await expect(pending).resolves.toBe('deny')
+})
+
+it('remembers only explicitly classified exact commands and keeps broader requests interactive', async () => {
+  const { db, store, approvals } = fixture()
+  const command = (detail: unknown, taskId = 'one') =>
+    approvals.request(
+      taskId,
+      'Native provider command',
+      JSON.stringify(detail),
+      new AbortController().signal,
+      'command',
+    )
+  const first = command({ command: 'pnpm test', cwd: '/tmp/one' })
+  expect(approvals.list()[0].rememberRule).toBe('command')
+  approvals.decide(approvals.list()[0].id, 'always')
+  await expect(first).resolves.toBe('always')
+  expect(store.get().repositories[0].approvedCommands).toEqual(['pnpm test'])
+  const reopened = new Approvals(undefined, new WorkspaceStore(db))
+  cleanups.push(() => reopened.dispose())
+  await expect(
+    reopened.request(
+      'one',
+      'Bash',
+      '{"command":"pnpm test"}',
+      new AbortController().signal,
+      'command',
+    ),
+  ).resolves.toBe('approve')
+  await expect(
+    command({ command: 'pnpm test', description: 'Run tests', timeout: 60000 }),
+  ).resolves.toBe('approve')
+  for (const detail of [
+    { command: 'pnpm test && deploy' },
+    { command: 'pnpm test', additionalPermissions: { fileSystem: { write: ['/outside'] } } },
+    { command: 'pnpm test', grantRoot: '/outside' },
+    {
+      command: 'pnpm test',
+      networkApprovalContext: { host: 'outside.example', protocol: 'https' },
+    },
+    { command: 'pnpm test', dangerouslyDisableSandbox: true },
+    { command: 'pnpm test', requestSandboxBypass: true },
+    { command: 'pnpm test', cwd: '/outside' },
+    { command: 'pnpm test', executeAlso: 'deploy' },
+    { command: 'pnpm test', cmd: 'deploy' },
+    { command: ['pnpm', 'test'] },
+  ]) {
+    const pending = command(detail)
+    expect(approvals.list()).toHaveLength(1)
+    approvals.decide(approvals.list()[0].id, 'deny')
+    await expect(pending).resolves.toBe('deny')
+  }
+  const other = command({ command: 'pnpm test' }, 'two')
+  expect(approvals.list()).toHaveLength(1)
+  approvals.decide(approvals.list()[0].id, 'deny')
+  await expect(other).resolves.toBe('deny')
+})
+it('does not offer project command rules for malformed or extended permission payloads', async () => {
+  const { approvals, store } = fixture()
+  for (const detail of [
+    'pnpm test',
+    '[]',
+    '{"command":"pnpm test","grantRoot":"/outside"}',
+    '{"command":["pnpm","test"]}',
+  ]) {
+    const pending = approvals.request(
+      'one',
+      'Run command',
+      detail,
+      new AbortController().signal,
+      'command',
+    )
+    expect(approvals.list()[0].rememberRule).toBeNull()
+    expect(() => approvals.decide(approvals.list()[0].id, 'always')).toThrow('cannot be saved')
+    approvals.decide(approvals.list()[0].id, 'deny')
+    await expect(pending).resolves.toBe('deny')
+  }
+  expect(store.get().repositories[0].approvedCommands).toBeUndefined()
+})

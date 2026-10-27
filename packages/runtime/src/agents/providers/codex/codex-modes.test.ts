@@ -139,7 +139,7 @@ it.each(['ask', 'read-only'] as const)(
           : [],
       )
       expect(vi.mocked(run.approve).mock.calls.map(([, , kind]) => kind)).toEqual(
-        permission === 'ask' ? ['web', undefined, undefined, undefined, undefined] : [],
+        permission === 'ask' ? ['web', 'command', undefined, 'command', 'command'] : [],
       )
       const replies = (await requests()).filter((message) => message.result !== undefined)
       expect(replies).toHaveLength(5)

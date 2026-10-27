@@ -182,6 +182,7 @@ it('remembers exact command approvals per project and allows them after restart'
       'Run command',
       JSON.stringify({ command: 'pnpm test' }),
       new AbortController().signal,
+      'command',
     )
     approvals.respond(approvals.list()[0].id, true, true)
     await expect(first).resolves.toBe('always')
@@ -193,6 +194,7 @@ it('remembers exact command approvals per project and allows them after restart'
         'Run command',
         JSON.stringify({ command: 'pnpm test' }),
         new AbortController().signal,
+        'command',
       ),
     ).resolves.toBe('approve')
     expect(reopened.list()).toHaveLength(0)
@@ -201,6 +203,7 @@ it('remembers exact command approvals per project and allows them after restart'
       'Run command',
       JSON.stringify({ command: 'pnpm build' }),
       new AbortController().signal,
+      'command',
     )
     expect(reopened.list()).toHaveLength(1)
     reopened.respond(reopened.list()[0].id, false)

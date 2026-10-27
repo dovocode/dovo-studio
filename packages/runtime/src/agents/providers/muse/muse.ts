@@ -728,7 +728,7 @@ export function createMuseAdapter(): AgentAdapter {
               ((
                 title: string,
                 detail: string,
-                kind?: 'web',
+                kind?: 'web' | 'command',
                 options?: { session?: boolean; always?: boolean },
               ) => interactions.approve(title, detail, lifetime.signal, kind, options))
             : active

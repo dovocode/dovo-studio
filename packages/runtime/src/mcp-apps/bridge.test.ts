@@ -749,12 +749,7 @@ it('keeps shell-named MCP App calls interactive even when a matching project com
     const pending = s.runtime.services.approvals.list()[0]
     expect(pending.rememberRule).toBeNull()
     s.runtime.services.approvals.respond(pending.id, allow)
-    if (allow) {
-      await expect(result).resolves.toBe('executed')
-      expect(s.calls()).toBe(before + 1)
-    } else {
-      await expect(result).resolves.toContain('declined')
-      expect(s.calls()).toBe(before)
-    }
+    await expect(result).resolves.toMatch(allow ? /^executed$/ : /declined/)
+    expect(s.calls()).toBe(before + Number(allow))
   }
 })

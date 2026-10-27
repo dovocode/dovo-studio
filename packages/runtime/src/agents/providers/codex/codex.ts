@@ -326,7 +326,11 @@ export function createCodexAdapter(): AgentAdapter {
                   ? 'Run command'
                   : 'Apply file changes',
               JSON.stringify(params, null, 2),
-              web ? 'web' : undefined,
+              web
+                ? 'web'
+                : method === 'item/commandExecution/requestApproval'
+                  ? 'command'
+                  : undefined,
             )) !== 'deny'
           return {
             decision: allowed ? 'accept' : 'decline',

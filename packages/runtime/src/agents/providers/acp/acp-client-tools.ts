@@ -5,6 +5,7 @@ import { constants } from 'node:fs'
 import { lstat, open, realpath } from 'node:fs/promises'
 import { isAbsolute, relative, dirname, basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { quote } from 'shell-quote'
 import type { ClientCapabilities, TerminalExitStatus } from '@agentclientprotocol/sdk/unstable'
 import type { AgentRun } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
@@ -164,7 +165,11 @@ export async function acpClientTools(
             toolPolicyDisposition(run, 'execute') === 'ask' &&
             (await run.approve(
               'ACP run command',
-              [params.command, ...(params.args ?? [])].join(' '),
+              JSON.stringify({
+                command: quote([params.command, ...(params.args ?? [])]),
+                cwd: params.cwd ?? root,
+              }),
+              params.env?.length ? undefined : 'command',
             )) === 'deny'
           )
             throw new Error('ACP terminal declined')

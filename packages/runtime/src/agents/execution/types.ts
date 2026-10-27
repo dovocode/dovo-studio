@@ -61,7 +61,7 @@ export interface AgentRun {
       title: string,
       detail: string,
       signal: AbortSignal,
-      kind?: 'web',
+      kind?: 'web' | 'command',
       options?: {
         session?: boolean
         always?: boolean
@@ -72,7 +72,7 @@ export interface AgentRun {
   approve: (
     title: string,
     detail: string,
-    kind?: 'web',
+    kind?: 'web' | 'command',
     options?: {
       session?: boolean
       always?: boolean

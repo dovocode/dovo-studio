@@ -424,3 +424,34 @@ it('canonicalizes symlink/.. before read, write and terminal authorization', asy
     await unrestricted.close()
   }
 })
+
+it('classifies actual ACP command arguments explicitly and never reuses rules for extra environment grants', async () => {
+  const { tools, run, cwd } = await setup('ask')
+  const approve = vi.fn<AgentRun['approve']>(async () => 'deny')
+  run.approve = approve
+  try {
+    await expect(
+      tools.client.createTerminal?.({ sessionId: 'session', command: 'pnpm', args: ['test'], cwd }),
+    ).rejects.toThrow('declined')
+    expect(approve).toHaveBeenLastCalledWith(
+      'ACP run command',
+      JSON.stringify({ command: 'pnpm test', cwd }),
+      'command',
+    )
+    await expect(
+      tools.client.createTerminal?.({ sessionId: 'session', command: 'pnpm test', cwd }),
+    ).rejects.toThrow('declined')
+    expect(approve.mock.calls.at(-1)?.[1]).toBe(JSON.stringify({ command: "'pnpm test'", cwd }))
+    await expect(
+      tools.client.createTerminal?.({
+        sessionId: 'session',
+        command: 'pnpm',
+        args: ['test'],
+        env: [{ name: 'NODE_OPTIONS', value: '--require=/outside/hook.js' }],
+      }),
+    ).rejects.toThrow('declined')
+    expect(approve.mock.calls.at(-1)?.[2]).toBeUndefined()
+  } finally {
+    await tools.close()
+  }
+})
