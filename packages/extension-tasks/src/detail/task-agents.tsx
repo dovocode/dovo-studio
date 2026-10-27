@@ -325,16 +325,19 @@ export function TaskAgents({
                     View native thread · {agent.provider}
                   </Button>
                 )}
-                {active && agent.source !== 'dovo' && owner && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={stopping}
-                    onClick={() => stopAgents(owner, false, agent.id)}
-                  >
-                    Stop child
-                  </Button>
-                )}
+                {active &&
+                  agent.source !== 'dovo' &&
+                  agent.canStopIndividual !== false &&
+                  owner && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={stopping}
+                      onClick={() => stopAgents(owner, false, agent.id)}
+                    >
+                      Stop child
+                    </Button>
+                  )}
                 {active && child?.activeRunId && (
                   <Button
                     size="sm"

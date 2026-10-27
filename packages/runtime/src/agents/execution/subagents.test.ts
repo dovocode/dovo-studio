@@ -334,3 +334,102 @@ it('tracks an explicitly backgrounded Claude monitor through completion and sess
     updateSubagents(started, 'claude', {}, now, 'dovo/session/closed', 'session')[0],
   ).toMatchObject({ status: 'stopped', sessionLive: false })
 })
+
+it('tracks distinct Copilot invocations, cancellation, failure and closed sessions', () => {
+  let agents = updateSubagents(
+    [],
+    'copilot',
+    {
+      toolCallId: 'a',
+      agentName: 'reviewer',
+      agentDisplayName: 'Review code',
+      agentDescription: 'Inspect changes',
+      model: 'm',
+      executionMode: 'background',
+    },
+    now,
+    'subagent.started',
+    'root',
+  )
+  agents = updateSubagents(
+    agents,
+    'copilot',
+    {
+      toolCallId: 'b',
+      agentName: 'reviewer',
+      agentDisplayName: 'Review tests',
+      agentDescription: 'Inspect tests',
+    },
+    now,
+    'subagent.started',
+    'root',
+  )
+  agents = updateSubagents(
+    agents,
+    'copilot',
+    { toolCallId: 'c', agentName: 'reviewer', agentDescription: 'More work' },
+    now,
+    'subagent.started',
+    'root',
+  )
+  expect(agents).toHaveLength(3)
+  expect(agents[0]).toMatchObject({
+    id: 'a',
+    name: 'Review code',
+    prompt: 'Inspect changes',
+    model: 'm',
+    background: true,
+    status: 'working',
+    sessionId: 'root',
+    sessionLive: true,
+  })
+  agents = updateSubagents(
+    agents,
+    'copilot',
+    { toolCallId: 'a', totalTokens: 42, durationMs: 123 },
+    now,
+    'subagent.completed',
+    'root',
+  )
+  agents = updateSubagents(
+    agents,
+    'copilot',
+    { toolCallId: 'b', error: 'Failed tool' },
+    now,
+    'subagent.failed',
+    'root',
+  )
+  agents = updateSubagents(
+    agents,
+    'copilot',
+    { toolCallId: 'c', cancelled: true },
+    now,
+    'subagent.completed',
+    'root',
+  )
+  expect(agents.find((a) => a.id === 'a')).toMatchObject({
+    status: 'completed',
+    tokens: 42,
+    durationMs: 123,
+  })
+  expect(agents.find((a) => a.id === 'b')).toMatchObject({
+    status: 'failed',
+    result: 'Failed tool',
+  })
+  expect(agents.find((a) => a.id === 'c')).toMatchObject({ status: 'stopped' })
+  expect(
+    updateSubagents(
+      agents,
+      'copilot',
+      { toolCallId: 'missing' },
+      now,
+      'subagent.completed',
+      'root',
+    ),
+  ).toBe(agents)
+  expect(updateSubagents(agents, 'copilot', {}, now, 'dovo/session/closed', 'other')).toEqual(
+    agents,
+  )
+  const closed = updateSubagents(agents, 'copilot', {}, now, 'dovo/session/closed', 'root')
+  expect(closed.every((a) => a.sessionLive === false)).toBe(true)
+})

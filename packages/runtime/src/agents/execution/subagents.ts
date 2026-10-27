@@ -74,6 +74,40 @@ export function updateSubagents(
           }
         : agent,
     )
+  if (provider === 'copilot' && text(event.toolCallId) && method?.startsWith('subagent.')) {
+    const id = String(event.toolCallId)
+    const previous = next.find(
+      (agent) =>
+        agent.id === id &&
+        agent.provider === provider &&
+        agent.source !== 'dovo' &&
+        (!rootThreadId || agent.sessionId === rootThreadId),
+    )
+    if (method === 'subagent.started')
+      put(id, {
+        name: text(event.agentDisplayName) ?? text(event.agentName) ?? id,
+        prompt: text(event.agentDescription),
+        parentId: text(event.parentId),
+        model: text(event.model),
+        status: 'working',
+        background: event.executionMode === 'background',
+        canStopIndividual: false,
+      })
+    else if (previous && (method === 'subagent.completed' || method === 'subagent.failed'))
+      put(id, {
+        status:
+          method === 'subagent.failed'
+            ? 'failed'
+            : event.cancelled === true
+              ? 'stopped'
+              : 'completed',
+        model: text(event.model) ?? previous.model,
+        tokens: number(event.totalTokens) ?? previous.tokens,
+        durationMs: number(event.durationMs) ?? previous.durationMs,
+        activity: text(event.error),
+        result: text(event.error)?.slice(-64000),
+      })
+  }
   const childId = text(event.threadId)
   if (
     provider === 'codex' &&

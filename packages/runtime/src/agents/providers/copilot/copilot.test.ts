@@ -27,12 +27,21 @@ function handle(v){messages.push(v);writeFileSync(process.env.TEST_RECORD,JSON.s
   if(p.prompt==='disconnect')return setTimeout(()=>process.exit(0),10);
   if(p.prompt==='approval'){event('permission.requested',{requestId:'approval',permissionRequest:{kind:'shell',commands:['pwd'],canOfferSessionApproval:false}});return}
   if(p.prompt==='question'){send({id:'question',method:'userInput.request',params:{sessionId:sid,question:'Continue?',choices:['yes','no'],allowFreeform:true}});return}
+  if(p.prompt==='agents-hold'){event('subagent.started',{toolCallId:'a',agentName:'reviewer',agentDisplayName:'Review one',agentDescription:'Inspect files'});return;}
+  if(p.prompt==='agents'){
+    event('subagent.started',{toolCallId:'a',agentName:'reviewer',agentDisplayName:'Review one',agentDescription:'Review files',model:'model',executionMode:'background'});
+    event('subagent.started',{toolCallId:'b',agentName:'reviewer',agentDisplayName:'Review two',agentDescription:'Review tests'});
+    event('subagent.completed',{toolCallId:'a',agentName:'reviewer',agentDisplayName:'Review one',totalTokens:50,durationMs:200});
+    event('subagent.failed',{toolCallId:'b',agentName:'reviewer',agentDisplayName:'Review two',error:'Provider error'});
+    event('session.idle');return;
+  }
   if(p.prompt==='fail'){event('session.error',{message:'Failed request'});return}
   event('assistant.message_delta',{messageId:'child',deltaContent:'HIDDEN'}, {agentId:'subagent'});
   event('assistant.message_delta',{messageId:'progress',deltaContent:'Working.'});event('assistant.message',{messageId:'progress',content:'Working.'});
   event('tool.execution_start',{toolCallId:'t',toolName:'read_file',arguments:{path:'file'}});event('tool.execution_complete',{toolCallId:'t',success:true});
   event('assistant.message_delta',{messageId:'final',deltaContent:'Done.'});event('assistant.message',{messageId:'final',content:'Done.'});event('session.idle');return;
  }
+ if(v.method==='session.abort'){reply(v.id,{});event('subagent.completed',{toolCallId:'a',agentName:'reviewer',agentDisplayName:'Review one',cancelled:true});event('session.idle');return}
  if(v.method==='session.permissions.handlePendingPermissionRequest'||v.method==='session.ui.handlePendingUserInput'){reply(v.id,{});event('session.idle');return}
  if(v.method==='session.history.compact')return reply(v.id,{success:true});
  if(v.method==='session.delete')return reply(v.id,{success:true});
@@ -186,3 +195,54 @@ it.each(['on-request', 'never'] as const)(
     ).toMatchObject({ result: { kind: approvalPolicy === 'never' ? 'approve-once' : 'reject' } })
   },
 )
+
+it('forwards native parallel subagent lifecycle and closes the exact owning session', async () => {
+  const f = await fixture(),
+    events = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  await f.adapter.run({ ...f.run, prompt: 'agents', onSubagentEvent: events })
+  expect(events.mock.calls.map(([method]) => method)).toEqual([
+    'subagent.started',
+    'subagent.started',
+    'subagent.completed',
+    'subagent.failed',
+    'dovo/session/closed',
+  ])
+  expect(events.mock.calls.every(([, , id]) => id === f.sessions[0])).toBe(true)
+  expect(events.mock.calls[0]?.[1]).toMatchObject({
+    toolCallId: 'a',
+    model: 'model',
+    executionMode: 'background',
+  })
+  events.mockClear()
+  await expect(
+    f.adapter.run({ ...f.run, prompt: 'fail', onSubagentEvent: events }),
+  ).rejects.toThrow('Failed request')
+  expect(events).toHaveBeenLastCalledWith('dovo/session/closed', {}, f.sessions.at(-1))
+})
+
+it('stops a native Copilot session and waits for idle without advertising individual cancellation', async () => {
+  const f = await fixture(),
+    events = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  let control: import('../../execution/types.js').NativeAgentSession | undefined
+  let stopping: Promise<void> | undefined
+  await f.adapter.run({
+    ...f.run,
+    prompt: 'agents-hold',
+    onNativeSession: (value) => {
+      control = value
+    },
+    onSubagentEvent: events,
+    onPromptAccepted: () => {
+      stopping = control?.stop()
+    },
+  })
+  await stopping
+  expect(events.mock.calls.map(([method]) => method)).toEqual([
+    'subagent.started',
+    'subagent.completed',
+    'dovo/session/closed',
+  ])
+  expect(events.mock.calls[1]?.[1]).toMatchObject({ cancelled: true })
+  expect(control).toBeDefined()
+  await expect(control!.stop('a')).rejects.toThrow('whole session only')
+})

@@ -86,11 +86,11 @@ completions are recovered into the inbox exactly once and held for manual contin
 restart. Completed results stay available. Independent tasks still cannot run simultaneously in the
 same checkout.
 
-Desktop and mobile thread lists show active subagents as pills under their main thread, including
-nested children. Child threads remain navigable through those pills and the Agents panel rather than
-appearing as separate list rows. Exited agents disappear from the pills; their saved results remain
-in Agents, with links to the child conversation and back to the parent. Native child work also keeps
-its checkout owned after a parent reply and blocks independent work, settings changes and archive.
+Desktop and mobile use the same nested thread-row layout for Dovo and provider-native children. Dovo
+rows open their child conversation; native rows open a read-only saved transcript or available
+prompt/result summary. Finished-agent visibility follows the list and Agents panel filters. Native
+child work also keeps its checkout owned after a parent reply and blocks independent work, settings
+changes and archive.
 
 Claude, Codex, Muse and ACP retain their native event and request handlers between parent turns.
 Live native sessions are excluded from memory-pressure eviction. Child approvals and questions use
@@ -107,10 +107,22 @@ cleanup.
 
 OpenCode v1/v2 child sessions execute in the server. Dovo drains their native work before releasing
 its event subscription and managed MCP connections; the parent text remains visible while it waits.
-Copilot's `session.idle` already guarantees no background agents or attached shells remain. Cursor
-waits for both the run outcome and stream completion and only sends cancellation on failure or Stop.
-Hermes' gateway exposes root turn completion, without a separate background-child lifecycle
-contract; use Dovo delegation for durable asynchronous children there.
+Copilot's `session.idle` guarantees no background agents or attached shells remain. Its explicit
+started/completed/failed events create distinct rows per invocation, including cancellation, model
+and reported usage. Closing or losing the session clears live state. The SDK does not expose
+individual child cancellation or a full child transcript reader; Studio does not advertise those
+controls. **Stop agents** cancels the containing Copilot session and waits for its idle
+confirmation; the normal parent Stop action remains available. Cursor waits for both the run outcome
+and stream completion and only sends cancellation on failure or Stop. Hermes' gateway exposes root
+turn completion, without a separate background-child lifecycle contract; use Dovo delegation for
+durable asynchronous children there.
+
+Codex coding sessions explicitly enable the stable native `multi_agent` feature on verified 0.164.0+
+harnesses. Older versions retain their default; text-only utilities disable delegation. Claude,
+Cursor, OpenCode, Muse, ACP and Copilot keep their provider-native delegation where supported.
+Studio does not invent enablement flags or bypass provider permission/sandbox restrictions. Claude
+and Cursor read-only sessions continue to restrict delegation until safe child inheritance is
+verified for those adapters.
 
 The Agents panel hides finished agents by default on desktop and mobile. Turn off **Hide finished**
 to view completed, failed and stopped agents and open their saved results. Each device remembers

@@ -8,6 +8,7 @@ import { isImageAttachment, serviceTierValue } from '@dovo/protocol'
 import {
   supportsCodexDaybreak,
   supportsCodexInstantInterrupt,
+  supportsCodexNativeAgents,
 } from '../../configuration/codex-modes.js'
 import { codexAuthenticated, codexModels } from '../../catalogs/codex.js'
 import { codexQuestions, codexAsyncQuestions } from './codex-questions.js'
@@ -511,6 +512,9 @@ export function createCodexAdapter(): AgentAdapter {
           ...(supportsCodexInstantInterrupt(initialized)
             ? { 'features.instant_interrupt': true }
             : {}),
+          ...(supportsCodexNativeAgents(initialized) && run.tools !== 'none'
+            ? { 'features.multi_agent': true }
+            : {}),
           ...(run.agent.sandboxMode === 'workspace-write' ||
           run.linkedDirectories?.some((item) => item.access === 'edit')
             ? {
@@ -530,6 +534,7 @@ export function createCodexAdapter(): AgentAdapter {
           ...(run.tools === 'none'
             ? {
                 'features.shell_tool': false,
+                'features.multi_agent': false,
                 web_search: 'disabled',
               }
             : mcpServers

@@ -352,29 +352,32 @@ export function TaskAgents({
                       onPress={() => onOpenThread({ taskId: owner.id, agent })}
                     />
                   )}
-                  {active && agent.source !== 'dovo' && owner && (
-                    <Action
-                      secondary
-                      label="Stop child"
-                      disabled={cancellation.busy}
-                      onPress={() =>
-                        cancellation.act(() =>
-                          callEffect(
-                            '/api/tasks/stop-agents',
-                            {
-                              id: owner.id,
-                              childId: agent.id,
-                              runToken: taskFamilyRunToken(
-                                snapshot?.workspace.tasks ?? [],
-                                owner.id,
-                              ),
-                            },
-                            responses.ok,
-                          ),
-                        )
-                      }
-                    />
-                  )}
+                  {active &&
+                    agent.source !== 'dovo' &&
+                    agent.canStopIndividual !== false &&
+                    owner && (
+                      <Action
+                        secondary
+                        label="Stop child"
+                        disabled={cancellation.busy}
+                        onPress={() =>
+                          cancellation.act(() =>
+                            callEffect(
+                              '/api/tasks/stop-agents',
+                              {
+                                id: owner.id,
+                                childId: agent.id,
+                                runToken: taskFamilyRunToken(
+                                  snapshot?.workspace.tasks ?? [],
+                                  owner.id,
+                                ),
+                              },
+                              responses.ok,
+                            ),
+                          )
+                        }
+                      />
+                    )}
                   {active && child?.activeRunId && (
                     <Action
                       secondary

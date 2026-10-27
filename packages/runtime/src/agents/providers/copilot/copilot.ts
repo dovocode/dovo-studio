@@ -282,6 +282,12 @@ export function createCopilotAdapter(): AgentAdapter {
           try {
             // The SDK catches listener exceptions, so persistence failures must reject our turn.
             run.onEvent?.(event.type, event.data)
+            if (
+              event.type === 'subagent.started' ||
+              event.type === 'subagent.completed' ||
+              event.type === 'subagent.failed'
+            )
+              run.onSubagentEvent?.(event.type, event.data, owned.sessionId)
             if (event.agentId || ('parentToolCallId' in event.data && event.data.parentToolCallId))
               return
             if (event.type === 'assistant.message_delta') {
@@ -323,6 +329,19 @@ export function createCopilotAdapter(): AgentAdapter {
             })
         }, 5000)
         active = true
+        run.onNativeSession?.(
+          {
+            stop: async (id) => {
+              if (id) throw new Error('Copilot supports stopping the whole session only.')
+              if (!active) return
+              const stopSignal = new AbortController().signal
+              await nativeWait(owned.abort(), stopSignal, 30000)
+              // Acknowledgement alone does not prove cancellation; wait for the SDK's idle contract.
+              await nativeWait(completed, stopSignal, 30000)
+            },
+          },
+          owned.sessionId,
+        )
         if (run.compact) {
           const result = await nativeWait(
             Promise.race([owned.rpc.history.compact(), failed]),
@@ -366,7 +385,11 @@ export function createCopilotAdapter(): AgentAdapter {
               30000,
             )
         } finally {
-          await close(client)
+          try {
+            if (session) run.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
+          } finally {
+            await close(client)
+          }
         }
       }
     },

@@ -23,6 +23,12 @@ export function supportsCodexInstantInterrupt(initialize: unknown) {
   const { major, minor } = version
   return major > 0 || minor >= 161
 }
+// Verified stable in the installed 0.164.0 feature catalog. Older harnesses keep
+// their native default instead of receiving an unverified enablement override.
+export function supportsCodexNativeAgents(initialize: unknown) {
+  const version = codexVersion(initialize)
+  return !!version && (version.major > 0 || version.minor >= 164)
+}
 export function daybreakProgram(model: string) {
   if (model === 'gpt-daybreak-blue-latest') return 'daybreakBlue' as const
   if (model === 'gpt-daybreak-red-latest') return 'daybreakRed' as const

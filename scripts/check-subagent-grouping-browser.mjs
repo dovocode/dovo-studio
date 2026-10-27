@@ -1373,6 +1373,40 @@ try {
         false,
       )
     }
+    await page.evaluate(() => {
+      window.connected = true
+      const parent = window.workspace.tasks[0]
+      window.publishTasks([
+        {
+          ...parent,
+          status: 'running',
+          threadWatches: [],
+          subagents: [
+            {
+              id: 'copilot-native',
+              provider: 'copilot',
+              name: 'Copilot native',
+              status: 'working',
+              sessionLive: true,
+              canStopIndividual: false,
+              startedAt: '2026-10-03T12:00:00Z',
+              updatedAt: '2026-10-03T12:00:00Z',
+            },
+          ],
+        },
+      ])
+      window.renderAgents()
+    })
+    await page.getByText('Copilot native', { exact: true }).click()
+    assert.equal(
+      await page.getByRole('button', { name: 'Stop child', exact: true }).count(),
+      0,
+      'Copilot must not advertise unsupported individual cancellation',
+    )
+    await page.getByRole('button', { name: 'View native thread · copilot', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Stop agents', exact: true }).click()
+    await page.waitForFunction(() => window.requests.at(-1)?.path === '/api/tasks/stop-agents')
+    assert.equal(await page.evaluate(() => window.requests.at(-1).input.childId), undefined)
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'}: grouping, stop controls, native thread viewing and paging, finished-agent filtering, offline visibility and navigation passed.`,

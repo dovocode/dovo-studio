@@ -8,6 +8,8 @@ export const subagentSchema = mutableStruct({
   /** Native metadata belongs to a live provider session, including between parent turns. */
   sessionLive: Schema.optional(Schema.Boolean),
   background: Schema.optional(Schema.Boolean),
+  /** False when the provider can cancel only the whole containing session. */
+  canStopIndividual: Schema.optional(Schema.Boolean),
   sessionId: Schema.optional(Schema.String),
   /** Provider transcript identity, when different from its background-task identity. */
   threadId: Schema.optional(Schema.String),

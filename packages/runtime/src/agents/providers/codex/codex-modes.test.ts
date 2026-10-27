@@ -311,6 +311,42 @@ it('passes a utility response schema to its Codex turn without changing later tu
   }
 })
 
+it.each(['0.164.0', '0.163.0'])(
+  'configures native delegation for coding sessions and excludes it from utility turns on Codex %s',
+  async (version) => {
+    const { run, requests } = await fixture(version)
+    const adapter = createCodexAdapter()
+    try {
+      await adapter.run(run)
+      run.sessionId = 'thread'
+      await adapter.run(run)
+      const coding = (await requests()).filter((row) =>
+        ['thread/start', 'thread/resume'].includes(row.method ?? ''),
+      )
+      expect(coding).toHaveLength(2)
+      expect(
+        coding.map((row) => {
+          const config = row.params?.config
+          return config && typeof config === 'object' && 'features.multi_agent' in config
+            ? config['features.multi_agent']
+            : undefined
+        }),
+      ).toEqual(version === '0.164.0' ? [true, true] : [undefined, undefined])
+      run.tools = 'none'
+      await adapter.run(run)
+      expect(
+        (await requests()).filter((row) => row.method === 'thread/resume').at(-1)?.params?.config,
+      ).toMatchObject({
+        'features.multi_agent': false,
+        'features.shell_tool': false,
+        web_search: 'disabled',
+      })
+    } finally {
+      await adapter.dispose?.()
+    }
+  },
+)
+
 it('compacts an existing thread without starting a model turn', async () => {
   const { run, requests } = await fixture()
   run.sessionId = 'thread'
