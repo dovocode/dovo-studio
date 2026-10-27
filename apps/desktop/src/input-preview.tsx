@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, MessageCircleQuestion, ShieldCheck, X, Wifi, WifiOff } from 'lucide-react'
 import { useAppearance } from '@dovo/studio-shell'
 import { Button, QuestionForm } from '@dovo/studio-ui'
+import { ApprovalDetails } from '@dovo/extension-tasks/approval-details'
 import type { InputPreview, InputPreviewBridge, InputPreviewAnswer } from '@dovo/protocol'
 export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
   useAppearance()
@@ -93,9 +94,7 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
             ) : (
               <section key={state.key} className="space-y-4 rounded-xl border bg-card p-4">
                 <h2 className="text-sm font-medium">{state.request.value.title}</h2>
-                <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-3 font-mono text-xs leading-relaxed text-muted-foreground">
-                  {state.request.value.detail}
-                </pre>
+                <ApprovalDetails detail={state.request.value.detail} />
                 <div className="flex gap-2">
                   <Button
                     className="flex-1"

@@ -62,6 +62,7 @@
     "test:mobile-thread-folder:browser": "node scripts/check-mobile-thread-folder-browser.mjs",
     "test:task-project-panel:browser": "node scripts/check-task-project-panel-browser.mjs",
     "test:agent-interactions:browser": "node scripts/check-agent-interactions-browser.mjs",
+    "test:input-preview:browser": "node scripts/check-input-preview-browser.mjs",
     "test:native-tool-images:browser": "node scripts/check-native-tool-images-browser.mjs",
     "test:task-waiting:browser": "node scripts/check-task-waiting-browser.mjs && node scripts/check-task-waiting-sync-browser.mjs",
     "test:desktop-runtime-connections": "node scripts/check-desktop-runtime-connections.mjs",

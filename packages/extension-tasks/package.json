@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./thread-share": "./src/thread-share.tsx",
+    "./approval-details": "./src/chat/actions/approval-details.tsx",
     "./terminal-session": "./src/terminal/terminal-session.tsx",
     "./styles.css": "./src/styles.css"
   },
