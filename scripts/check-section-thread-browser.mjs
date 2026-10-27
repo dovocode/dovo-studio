@@ -41,6 +41,8 @@ const mocks = {
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/sidebar-header.tsx';export * from '${root}packages/studio-ui/src/components/ui/dialog.tsx';export const Button=({children,onClick,disabled,...props})=><button onClick={onClick} disabled={disabled} aria-label={props['aria-label']}>{children}</button>;export const ErrorBoundary=({children})=>children;export const TooltipProvider=({children})=>children;export const useCompactLayout=()=>false;`,
   // Pair registration has its own browser suite; this fixture tests thread navigation.
   './studio-paired-computers-bridge': 'export const StudioPairedComputersBridge=()=>null;',
+  // External-link destinations are covered by check-browser-profile-settings-browser.mjs.
+  './external-browser-link-chooser': 'export const ExternalBrowserLinkChooser=()=>null;',
   // Capture permissions are covered by check-browser-media-browser.mjs.
   './browser-media-controls': 'export const BrowserMediaControls=()=>null;',
   './app-extension': 'export const appSettingsExtension={views:[]};',
