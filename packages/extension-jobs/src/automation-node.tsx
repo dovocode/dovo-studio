@@ -24,12 +24,14 @@ export function AutomationNodeView({ data, selected }: NodeProps<FlowNode>) {
       <div className="break-all text-sm font-medium">{data.label}</div>
       <p className="mt-2 truncate text-xs text-muted-foreground">
         {data.kind === 'trigger'
-          ? data.trigger === 'schedule'
-            ? data.schedule
-            : data.trigger === 'github'
-              ? (githubEventChoices.find((item) => item.id === data.github?.event)?.name ??
-                'GitHub event')
-              : data.trigger
+          ? data.trigger === 'once'
+            ? `One time · ${data.runAt?.replace('T', ' ') ?? 'Choose a time'} · ${data.timezone}`
+            : data.trigger === 'schedule'
+              ? data.schedule
+              : data.trigger === 'github'
+                ? (githubEventChoices.find((item) => item.id === data.github?.event)?.name ??
+                  'GitHub event')
+                : data.trigger
           : data.kind === 'task'
             ? data.objective || 'Configure task instructions'
             : 'Pause for your review'}

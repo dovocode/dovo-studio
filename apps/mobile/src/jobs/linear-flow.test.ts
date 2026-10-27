@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
 import type { Automation } from '@dovo/protocol'
-import { linearNodes, newAutomationNode, withLinearNodes } from './linear-flow'
+import { triggerSummary, linearNodes, newAutomationNode, withLinearNodes } from './linear-flow'
 
 const defaults = { repositoryId: 'project', agentId: 'agent', timezone: 'Europe/Amsterdam' }
 function fixture(): Automation {
@@ -55,4 +55,19 @@ describe('mobile automation editing', () => {
       ['review', 'task'],
     ])
   })
+})
+
+it('preserves a one-time date and time zone through mobile edits and summaries', () => {
+  const flow = fixture()
+  const trigger = flow.nodes[0].data
+  trigger.trigger = 'once'
+  trigger.runAt = '2026-10-28T09:30'
+  trigger.timezone = 'Europe/Amsterdam'
+  const edited = withLinearNodes(flow, linearNodes(flow)!)
+  expect(edited.nodes[0].data).toMatchObject({
+    trigger: 'once',
+    runAt: trigger.runAt,
+    timezone: trigger.timezone,
+  })
+  expect(triggerSummary(edited)).toBe('One time · 2026-10-28 09:30 · Europe/Amsterdam')
 })

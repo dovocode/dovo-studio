@@ -2,7 +2,7 @@ import { GithubTriggers } from './github-triggers.js'
 import { GithubEvents } from './github-events.js'
 import type { GitService } from '../scm/git/git.js'
 import { mutableStruct } from '@dovo/protocol'
-import { decode, taskFamilyRunToken } from '@dovo/protocol'
+import { automationOnceTime, decode, taskFamilyRunToken } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
@@ -610,7 +610,10 @@ export class Jobs {
     )
     this.db.transaction(() => {
       for (const run of stale) this.db.prepare('DELETE FROM job_runs WHERE id=?').run(run.id)
-      this.db.prepare('DELETE FROM deliveries WHERE created_at<?').run(before)
+      // One-time receipts must outlive run history, including after re-enabling an old reminder.
+      this.db
+        .prepare("DELETE FROM deliveries WHERE created_at<? AND key NOT LIKE '%:once:%'")
+        .run(before)
     })()
     for (const run of stale) this.runs.delete(run.id)
     if (stale.length) this.revision++
@@ -629,6 +632,34 @@ export class Jobs {
           continue
         }
         const trigger = flow.nodes.find((n) => n.data.kind === 'trigger')
+        if (trigger?.data.trigger === 'once') {
+          this.next.delete(flow.id)
+          validateAutomation(flow, this.store.get())
+          const due = automationOnceTime(trigger.data.runAt, trigger.data.timezone)
+          this.scheduleErrors.delete(flow.id)
+          if (due > now) continue
+          const key = `once:${JSON.stringify([trigger.data.runAt, trigger.data.timezone])}`
+          const accepted = this.db
+            .prepare('SELECT 1 FROM deliveries WHERE key=?')
+            .get(`${flow.id}:${key}`)
+          if (!accepted) {
+            try {
+              this.start(flow.id, key)
+            } catch (error) {
+              // Keep the reminder pending while another run owns the automation.
+              if (error instanceof HttpError && error.status === 409) continue
+              throw error
+            }
+          }
+          // The durable receipt recovers a crash between acceptance and disabling the trigger.
+          this.store.update((workspace) => ({
+            ...workspace,
+            automations: workspace.automations.map((item) =>
+              item.id === flow.id ? { ...item, enabled: false } : item,
+            ),
+          }))
+          continue
+        }
         if (trigger?.data.trigger !== 'schedule') {
           this.next.delete(flow.id)
           this.scheduleErrors.delete(flow.id)

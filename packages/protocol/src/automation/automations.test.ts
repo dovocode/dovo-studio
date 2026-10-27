@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vite-plus/test'
 import { defaultTaskHarness, automationSchema } from '../workspace.js'
 import { defaultGithubTrigger } from './triggers.js'
 import { decode } from '../shared/schema.js'
-import { automationIssues } from './automations.js'
+import { automationIssues, automationOnceTime } from './automations.js'
 import type { Automation, AutomationData, Workspace } from '../workspace.js'
 
 const workspace: Pick<Workspace, 'agents' | 'repositories'> = {
@@ -121,5 +121,35 @@ it('validates GitHub configuration and preserves it through workspace decoding',
   trigger.github.requireWriteAccess = true
   expect(automationIssues(automation, workspace)).toContain(
     'PR synchronization polling cannot filter by pusher or write access.',
+  )
+})
+
+it('validates one-time dates in their saved zone, rejecting calendar errors and DST gaps', () => {
+  const automation = flow()
+  const trigger = automation.nodes[0].data
+  trigger.trigger = 'once'
+  trigger.runAt = '2026-10-28T09:30'
+  expect(automationIssues(automation, workspace)).toEqual([])
+  expect(automationOnceTime(trigger.runAt, trigger.timezone)).toBe(
+    Date.parse('2026-10-28T08:30:00Z'),
+  )
+  expect(decode(automationSchema, automation).nodes[0].data.runAt).toBe(trigger.runAt)
+  for (const runAt of [
+    undefined,
+    '',
+    '2026-02-30T09:00',
+    '2026-03-29T02:30',
+    '2026-10-28T25:00',
+    '2026-10-28T09:00Z',
+  ]) {
+    trigger.runAt = runAt
+    expect(automationIssues(automation, workspace)).toContain(
+      'Enter a valid date, time and time zone.',
+    )
+  }
+  trigger.runAt = '2026-10-28T09:30'
+  trigger.timezone = 'Mars/Base'
+  expect(automationIssues(automation, workspace)).toContain(
+    'Enter a valid date, time and time zone.',
   )
 })

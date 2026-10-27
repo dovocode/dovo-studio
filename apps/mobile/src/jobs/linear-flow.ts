@@ -75,6 +75,8 @@ export const scheduleChoices = automationScheduleChoices
 
 export function triggerSummary(flow: Automation) {
   const trigger = flow.nodes.find((node) => node.data.kind === 'trigger')?.data
+  if (trigger?.trigger === 'once')
+    return `One time · ${trigger.runAt?.replace('T', ' ') ?? 'Choose a time'} · ${trigger.timezone}`
   if (trigger?.trigger === 'schedule')
     return `${scheduleChoices.find((choice) => choice.id === trigger.schedule)?.name ?? trigger.schedule} · ${trigger.timezone}`
   if (trigger?.trigger === 'github')

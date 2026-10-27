@@ -999,3 +999,85 @@ it.each(['complete', 'cancel', 'stop-failed'] as const)(
     }
   },
 )
+
+it('runs one-time reminders after downtime and never repeats accepted deliveries after restart or pruning', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const options = {
+    databasePath: await databaseFile('once.sqlite'),
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  }
+  let runtime = await startRuntime(options)
+  cleanups.push(() => runtime.close())
+  runtime.services.jobs.dispose()
+  const flow = createFlow()
+  flow.enabled = true
+  Object.assign(flow.nodes[0].data, {
+    trigger: 'once',
+    runAt: '2026-10-28T09:30',
+    timezone: 'Europe/Amsterdam',
+  })
+  // A review gate first avoids starting a subprocess in this scheduling test.
+  flow.edges = [
+    { id: 'one', source: 'trigger', target: 'review' },
+    { id: 'two', source: 'review', target: 'task' },
+  ]
+  runtime.services.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  const due = Date.parse('2026-10-28T08:30:00Z')
+  runtime.services.jobs.tick(due - 1)
+  expect(runtime.services.jobs.list()).toHaveLength(0)
+  // Simulate downtime spanning the deadline.
+  await runtime.close()
+  runtime = await startRuntime(options)
+  runtime.services.jobs.dispose()
+  runtime.services.jobs.tick(due + 60_000)
+  await waitForJob(() => expect(runtime.services.jobs.list()[0]?.status).toBe('waiting'))
+  expect(runtime.services.store.get().automations[0].enabled).toBe(false)
+  const id = runtime.services.jobs.list()[0].id
+  await runtime.services.jobs.cancel(id)
+  expect(runtime.services.jobs.prune(Date.now() + 100 * 86_400_000)).toBe(1)
+  // Simulate a crash before disabling, or manually re-enable the original time.
+  runtime.services.store.update((w) => ({ ...w, automations: [{ ...flow, enabled: true }] }))
+  await runtime.close()
+  runtime = await startRuntime(options)
+  runtime.services.jobs.dispose()
+  runtime.services.jobs.tick(due + 120_000)
+  expect(runtime.services.jobs.list()).toHaveLength(0)
+  expect(runtime.services.store.get().automations[0].enabled).toBe(false)
+  // Changing the time explicitly creates a new one-time occurrence.
+  flow.nodes[0].data.runAt = '2026-10-28T09:31'
+  runtime.services.store.update((w) => ({ ...w, automations: [{ ...flow, enabled: true }] }))
+  runtime.services.jobs.tick(due + 120_000)
+  await waitForJob(() => expect(runtime.services.jobs.list()[0]?.status).toBe('waiting'))
+  expect(runtime.services.jobs.list()).toHaveLength(1)
+})
+
+it('keeps a due one-time trigger pending while another run is active', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'test-owner-token-with-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  runtime.services.jobs.dispose()
+  const flow = createFlow()
+  flow.enabled = true
+  Object.assign(flow.nodes[0].data, { trigger: 'once', runAt: '2026-10-28T09:30', timezone: 'UTC' })
+  flow.edges = [
+    { id: 'one', source: 'trigger', target: 'review' },
+    { id: 'two', source: 'review', target: 'task' },
+  ]
+  runtime.services.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  const id = runtime.services.jobs.startManual(flow.id)
+  await waitForJob(() => expect(runtime.services.jobs.list()[0].status).toBe('waiting'))
+  runtime.services.jobs.tick(Date.parse('2026-10-29T00:00:00Z'))
+  expect(runtime.services.store.get().automations[0].enabled).toBe(true)
+  expect(runtime.services.jobs.list()).toHaveLength(1)
+  await runtime.services.jobs.cancel(id)
+  runtime.services.jobs.tick(Date.parse('2026-10-29T00:00:00Z'))
+  expect(runtime.services.jobs.list()).toHaveLength(2)
+  expect(runtime.services.store.get().automations[0].enabled).toBe(false)
+})

@@ -922,7 +922,9 @@ export const taskSchema = mutableStruct({
 export const nodeDataSchema = mutableStruct({
   kind: Schema.Literals(['trigger', 'task', 'review']),
   label: Schema.String,
-  trigger: Schema.Literals(['manual', 'schedule', 'webhook', 'github']),
+  trigger: Schema.Literals(['manual', 'schedule', 'once', 'webhook', 'github']),
+  /** Local date/time (YYYY-MM-DDTHH:mm), interpreted in timezone. */
+  runAt: Schema.optional(Schema.String),
   github: Schema.optional(githubTriggerSchema),
   schedule: Schema.String,
   timezone: Schema.String,

@@ -15,6 +15,13 @@ name, choose a trigger and configure its ordered steps:
   and changes, then approve or reject the run.
 - Reorder or remove steps in the editor. At least one task and one trigger are required.
 
+For a one-time reminder or task, choose **One time**, enter the date, time and time zone, and enable
+the trigger after saving. Put the reminder or work to perform in a Task step. It runs once at that
+time, or when the runtime next starts if the computer was offline. It waits if another run is
+active. Once accepted, its trigger turns off; follow completion in Runs. Restarting or enabling the
+same date again does not repeat it, even after run history expires. Choose a new date for another
+reminder. Manual runs and retries remain available.
+
 Schedules support common presets or a custom cron expression and time zone. The saved time zone
 controls the schedule even when the phone travels. Webhook credentials are configured on the host
 desktop; paired phones do not gain access to owner-only credentials.
@@ -97,8 +104,9 @@ Webhooks require a credential and unique `X-Idempotency-Key`. Duplicate deliveri
 Delivery acceptance and run creation commit together. Retry an existing run with
 `POST /api/jobs/retry` and `{ "id": "run-id" }`.
 
-Schedules do not replay downtime. Missed ticks while the runtime is running are coalesced, and
-overlapping runs are skipped. Invalid schedules are isolated so they do not stop other automations.
+Recurring schedules do not replay downtime. Missed ticks while the runtime is running are coalesced,
+and overlapping runs are skipped. Invalid schedules are isolated so they do not stop other
+automations.
 
 ## Multiple projects in a task step
 

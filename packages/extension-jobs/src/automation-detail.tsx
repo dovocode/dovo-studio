@@ -285,9 +285,9 @@ export function AutomationDetail({
                   <h2 className="text-sm font-medium">When this automation runs</h2>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     {flow.enabled
-                      ? 'Scheduled and webhook triggers are enabled.'
-                      : 'Scheduled and webhook triggers are paused. You can still run manually.'}{' '}
-                    This computer must stay online.
+                      ? 'Automatic triggers are enabled.'
+                      : 'Automatic triggers are paused. You can still run manually.'}{' '}
+                    This computer runs the automation.
                   </p>
                   <div className="mt-5 divide-y rounded-lg border">
                     {triggers.map((trigger) => (
@@ -302,13 +302,15 @@ export function AutomationDetail({
                             {trigger.data.label}
                           </span>
                           <span className="mt-1 block text-xs text-muted-foreground">
-                            {trigger.data.trigger === 'schedule'
-                              ? `${trigger.data.schedule} · ${trigger.data.timezone}`
-                              : trigger.data.trigger === 'github'
-                                ? `GitHub · ${githubEventChoices.find((item) => item.id === trigger.data.github?.event)?.name ?? 'Event'} · ${trigger.data.github?.repository ?? ''}`
-                                : trigger.data.trigger === 'webhook'
-                                  ? 'Authenticated webhook'
-                                  : 'Manual start'}
+                            {trigger.data.trigger === 'once'
+                              ? `One time · ${trigger.data.runAt?.replace('T', ' ') ?? 'Choose a time'} · ${trigger.data.timezone}`
+                              : trigger.data.trigger === 'schedule'
+                                ? `${trigger.data.schedule} · ${trigger.data.timezone}`
+                                : trigger.data.trigger === 'github'
+                                  ? `GitHub · ${githubEventChoices.find((item) => item.id === trigger.data.github?.event)?.name ?? 'Event'} · ${trigger.data.github?.repository ?? ''}`
+                                  : trigger.data.trigger === 'webhook'
+                                    ? 'Authenticated webhook'
+                                    : 'Manual start'}
                           </span>
                         </span>
                         <span className="text-xs text-muted-foreground">Configure</span>

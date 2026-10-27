@@ -142,6 +142,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                 id: 'schedule',
                 name: 'Schedule',
               },
+              { id: 'once', name: 'One time' },
               {
                 id: 'webhook',
                 name: 'Webhook',
@@ -153,6 +154,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
               if (
                 value === 'manual' ||
                 value === 'schedule' ||
+                value === 'once' ||
                 value === 'webhook' ||
                 value === 'github'
               )
@@ -164,6 +166,29 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                 })
             }}
           />
+          {trigger.data.trigger === 'once' && (
+            <>
+              <Field
+                label="Run at"
+                value={trigger.data.runAt ?? ''}
+                editable={!busy}
+                onChangeText={(runAt) => updateNode(trigger.id, { runAt: runAt.replace(' ', 'T') })}
+                placeholder="2026-10-28T09:00"
+              />
+              <Field
+                label="Time zone"
+                value={trigger.data.timezone}
+                editable={!busy}
+                onChangeText={(timezone) => updateNode(trigger.id, { timezone })}
+                placeholder="Europe/Amsterdam"
+              />
+              <Text style={styles.muted}>
+                Enter YYYY-MM-DD HH:mm in this time zone. Runs once, including when this computer
+                comes back online after the time has passed. The trigger turns off after the run
+                starts.
+              </Text>
+            </>
+          )}
           {trigger.data.trigger === 'schedule' && (
             <>
               <Choice

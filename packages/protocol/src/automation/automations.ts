@@ -1,7 +1,19 @@
-import { CronExpressionParser } from 'cron-parser'
+import { CronDate, CronExpressionParser } from 'cron-parser'
 import { resolveTaskAgent } from '../workspace.js'
 import { supportsAccess } from '../auth/access.js'
 import type { Automation, Workspace } from '../workspace.js'
+
+/** Reject invalid calendar dates and DST gaps instead of silently changing the reminder time. */
+export function automationOnceTime(runAt: string | undefined, timezone: string): number {
+  if (!runAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(runAt) || !timezone.trim())
+    throw new Error('Enter a valid date, time and time zone.')
+  new Intl.DateTimeFormat('en', { timeZone: timezone })
+  const date = new CronDate(runAt, timezone)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const local = `${String(date.getFullYear()).padStart(4, '0')}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  if (local !== runAt) throw new Error('Enter a valid date, time and time zone.')
+  return date.getTime()
+}
 
 export function automationIssues(
   flow: Automation,
@@ -43,6 +55,13 @@ export function automationIssues(
   for (const node of flow.nodes) {
     const data = node.data
     if (!data.label.trim()) errors.push('Give every node a name.')
+    if (data.kind === 'trigger' && data.trigger === 'once') {
+      try {
+        automationOnceTime(data.runAt, data.timezone)
+      } catch {
+        errors.push('Enter a valid date, time and time zone.')
+      }
+    }
     if (data.kind === 'trigger' && data.trigger === 'schedule') {
       try {
         if (!data.schedule.trim() || !data.timezone.trim()) throw new Error('Missing schedule')

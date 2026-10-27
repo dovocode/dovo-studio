@@ -50,6 +50,7 @@ export function NodeInspector({
                 if (
                   value === 'manual' ||
                   value === 'schedule' ||
+                  value === 'once' ||
                   value === 'webhook' ||
                   value === 'github'
                 )
@@ -63,10 +64,33 @@ export function NodeInspector({
             >
               <option value="manual">Manual</option>
               <option value="schedule">Schedule</option>
+              <option value="once">One time</option>
               <option value="webhook">External webhook</option>
               <option value="github">GitHub event</option>
             </ChoicePicker>
           </FormField>
+          {data.trigger === 'once' && (
+            <>
+              <FormField label="Run at">
+                <Input
+                  aria-label="Run at"
+                  type="datetime-local"
+                  value={data.runAt ?? ''}
+                  onChange={(event) => field({ runAt: event.target.value })}
+                />
+              </FormField>
+              <FormField label="Time zone">
+                <Input
+                  value={data.timezone}
+                  onChange={(event) => field({ timezone: event.target.value })}
+                />
+              </FormField>
+              <p className="text-muted-foreground">
+                Runs once at this time, or when this computer next comes online. The trigger turns
+                off after the run starts.
+              </p>
+            </>
+          )}
           {data.trigger === 'schedule' && (
             <>
               <FormField label="Schedule preset">
@@ -193,7 +217,7 @@ export function NodeInspector({
             })()}
           <p className="text-muted-foreground">
             Enable triggers to schedule this flow, watch GitHub events or accept authenticated
-            webhook deliveries. The runtime must remain running.
+            webhook deliveries. Triggers run on the selected computer.
           </p>
         </>
       )}
