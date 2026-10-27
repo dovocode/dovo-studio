@@ -74,9 +74,15 @@ export function useAttachments(
       current.filter((item) => !removed.some((old) => old.attachment.id === item.attachment.id)),
     )
   }, [snapshot, uploads, savedFiles])
-  const upload = async (selected: File[], replaceId?: string, editChatImage = false) => {
+  const upload = async (
+    selected: File[],
+    replaceId?: string,
+    editChatImage = false,
+    signal?: AbortSignal,
+  ) => {
     if (lock.current) {
       setError('Wait for the current attachment operation to finish.')
+      if (signal) throw new Error('Wait for the current attachment operation to finish.')
       return
     }
     lock.current = true
@@ -121,6 +127,8 @@ export function useAttachments(
         else accepted.push(file)
       }
       setError(rejected.join('\n'))
+      if (signal?.aborted) throw new Error('Attachment cancelled.')
+      if (signal && rejected.length) throw new Error(rejected.join('\n'))
       const batch = accepted.map((file) => {
         const attachment = {
           id: randomUUID(),
@@ -153,6 +161,7 @@ export function useAttachments(
               reader.onerror = () => reject(reader.error ?? new Error('Could not read file'))
               reader.readAsDataURL(file)
             })
+            if (signal?.aborted) throw new Error('Attachment cancelled.')
             const result = await request(
               replaceId ? '/api/attachments/replace' : '/api/attachments/upload',
               {
@@ -182,11 +191,13 @@ export function useAttachments(
             setError((current) =>
               [current, `${file.name}: ${String(error)}`].filter(Boolean).join('\n'),
             )
+            if (signal) throw error
           }
         }),
       )
     } catch (error) {
       setError(String(error))
+      if (signal) throw error
     } finally {
       setWorking(false)
       lock.current = false
@@ -222,6 +233,7 @@ export function useAttachments(
     edit: (id: string) => upload([], id),
     editor: imageEditor.editor,
     upload,
+    uploadContext: (files: File[], signal: AbortSignal) => upload(files, undefined, false, signal),
     remove,
     error,
     files,

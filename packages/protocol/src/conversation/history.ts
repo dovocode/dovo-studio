@@ -2,6 +2,8 @@ import { taskBudgetUsage } from '../tasks/task-budget.js'
 import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../shared/schema.js'
 import { messageSchema, turnSchema, type Task } from '../workspace.js'
+import { MAX_ATTACHMENT_BYTES } from '../shared/attachments.js'
+import { taskTranscript } from '../tasks/task-transcript.js'
 export const conversationPageSchema = mutableStruct({
   messages: mutableArray(messageSchema),
   turns: mutableArray(turnSchema),
@@ -9,6 +11,46 @@ export const conversationPageSchema = mutableStruct({
   historyRevision: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 })
 export type ConversationPage = Schema.Schema.Type<typeof conversationPageSchema>
+export async function threadContextSnapshot(
+  task: Pick<Task, 'title'>,
+  read: (before: string | undefined, signal: AbortSignal) => Promise<ConversationPage>,
+  signal: AbortSignal,
+) {
+  if (signal.aborted) throw new Error('Conversation loading was cancelled.')
+  const latest = await read(undefined, signal)
+  if (signal.aborted) throw new Error('Conversation loading was cancelled.')
+  let characters = latest.messages.reduce((total, message) => total + message.text.length, 0)
+  const checkSize = () => {
+    if (characters > MAX_ATTACHMENT_BYTES)
+      throw new Error('The conversation is too large to attach (maximum 5 MB).')
+  }
+  checkSize()
+  const history = await readConversationHistory(
+    { ...task, ...latest, historyBefore: latest.before },
+    async (before, pageSignal) => {
+      const page = await read(before, pageSignal)
+      characters += page.messages.reduce((total, message) => total + message.text.length, 0)
+      checkSize()
+      return page
+    },
+    signal,
+  )
+  const text = taskTranscript(history)
+  let bytes = 0
+  for (const character of text) {
+    const point = character.codePointAt(0) ?? 0
+    bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4
+    if (bytes > MAX_ATTACHMENT_BYTES)
+      throw new Error('The conversation is too large to attach (maximum 5 MB).')
+  }
+  const safeTitle = Array.from(task.title, (character) =>
+    (character.codePointAt(0) ?? 0) < 32 || /[\\/:*?"<>|]/.test(character) ? '-' : character,
+  )
+    .join('')
+    .slice(0, 100)
+  const name = `Thread - ${safeTitle || 'Untitled'}.md`
+  return { name, text }
+}
 /** Complete a captured transcript without mixing destructive history revisions or chasing bad cursors. */
 export async function readConversationHistory<
   T extends Pick<Task, 'messages' | 'turns' | 'historyBefore' | 'historyRevision'>,

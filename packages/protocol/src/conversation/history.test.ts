@@ -7,6 +7,7 @@ import {
   conversationWindowPage,
   mergeConversationHistory,
   readConversationHistory,
+  threadContextSnapshot,
 } from './history'
 import type { ConversationPage } from './history'
 type ReadHistory = (before: string, signal: AbortSignal) => Promise<ConversationPage>
@@ -73,6 +74,58 @@ const history = (requests: number) => ({
     text: `Message ${index}`,
   })),
   turns: [],
+})
+it('attaches complete history from the runtime rather than a possibly partial list projection', async () => {
+  const all = { ...history(80), historyRevision: 3 }
+  const read = vi.fn<(before: string | undefined) => Promise<ConversationPage>>(async (before) =>
+    conversationPage(all, before),
+  )
+  const result = await threadContextSnapshot(
+    { title: 'A / project' },
+    read,
+    new AbortController().signal,
+  )
+  expect(read.mock.calls[0]?.[0]).toBeUndefined()
+  expect(read.mock.calls.length).toBeGreaterThan(1)
+  expect(result.name).toBe('Thread - A - project.md')
+  expect(result.text).toContain('Message 0')
+  expect(result.text).toContain('Message 159')
+})
+it('rejects changed history, oversized UTF-8 transcripts, and cancellation', async () => {
+  const signal = new AbortController()
+  await expect(
+    threadContextSnapshot(
+      { title: 'Thread' },
+      async (before) =>
+        before
+          ? { messages: [], turns: [], historyRevision: 2 }
+          : {
+              messages: [{ id: 'm', role: 'user', text: 'latest' }],
+              turns: [],
+              before: 'm',
+              historyRevision: 1,
+            },
+      signal.signal,
+    ),
+  ).rejects.toThrow('changed')
+  await expect(
+    threadContextSnapshot(
+      { title: 'Thread' },
+      async () => ({
+        messages: [{ id: 'm', role: 'user', text: '😀'.repeat(1_400_000) }],
+        turns: [],
+      }),
+      signal.signal,
+    ),
+  ).rejects.toThrow('too large')
+  signal.abort()
+  await expect(
+    threadContextSnapshot(
+      { title: 'Thread' },
+      async () => ({ messages: [], turns: [] }),
+      signal.signal,
+    ),
+  ).rejects.toThrow('cancelled')
 })
 it('copies a captured transcript in chronological order without refetching its loaded recent window', async () => {
   const all = { ...history(31), historyRevision: 2 }

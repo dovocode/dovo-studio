@@ -94,6 +94,32 @@ function overview(): RuntimeOverview {
   }
 }
 const now = Date.parse('2026-10-13T12:00:01Z')
+it('projects Undo capability per computer and updates it when a runtime changes', () => {
+  const legacy = overview()
+  const modern = {
+    ...legacy,
+    profile: runtimeProfile(
+      { address: 'http://modern.lan:8787', token: 'modern-private-token-at-least-32-characters' },
+      'Modern',
+    ),
+    snapshot: { ...legacy.snapshot!, taskListUndoSupported: true as const },
+  }
+  const key = (source: RuntimeOverview) => JSON.stringify([source.profile.id, 'untouched'])
+  const first = taskListProjection([legacy, modern], now)
+  expect(first.get(key(legacy))?.owner.taskListUndoSupported).toBe(false)
+  expect(first.get(key(modern))?.owner.taskListUndoSupported).toBe(true)
+  const changed = taskListProjection(
+    [
+      { ...legacy, snapshot: { ...legacy.snapshot!, taskListUndoSupported: true } },
+      { ...modern, snapshot: legacy.snapshot },
+    ],
+    now,
+    first,
+  )
+  expect(changed.get(key(legacy))?.owner.taskListUndoSupported).toBe(true)
+  expect(changed.get(key(modern))?.owner.taskListUndoSupported).toBe(false)
+  expect(changed.get(key(legacy))?.owner).not.toBe(first.get(key(legacy))?.owner)
+})
 it('retains unrelated rows and owner facts across streamed snapshots', () => {
   const source = overview()
   const initial = taskListProjection([source], now)

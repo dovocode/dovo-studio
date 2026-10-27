@@ -86,6 +86,36 @@ it('retires a safely rejected checklist clear so newer progress can be reviewed 
   ).toBe('Success')
   expect(f.stored()).toEqual([])
 })
+it('retires a rejected task-list undo but retains an uncertain 404 for review', async () => {
+  const f = fixture()
+  let status = 409
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async (url) => {
+      if (urlPath(url).endsWith('/status'))
+        return Response.json({ version: 1, acknowledgements: true })
+      if (urlPath(url).endsWith('/acknowledge')) return Response.json({ ok: true })
+      return Response.json(
+        { error: 'Undo unavailable', ...(status === 409 ? { mutationRejected: true } : {}) },
+        { status },
+      )
+    }),
+  )
+  const submit = () =>
+    run(
+      f.queue.requestEffect(
+        connection,
+        '/api/tasks/list-action',
+        { action: 'undo', token: 'token' },
+        ok,
+      ),
+    )
+  expect((await submit())._tag).toBe('Failure')
+  expect(f.stored()).toEqual([])
+  status = 404
+  expect((await submit())._tag).toBe('Failure')
+  expect(f.stored()).toEqual([expect.objectContaining({ blocked: true })])
+})
 it('recovers body interruption and retires receipts only after durable journal removal', async () => {
   const f = fixture()
   let interrupted = true

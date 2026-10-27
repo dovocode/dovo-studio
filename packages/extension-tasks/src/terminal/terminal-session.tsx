@@ -12,11 +12,22 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { responses, useWorkspace, useStudioTheme, useResolvedTheme } from '@dovo/studio-core'
-export function TerminalSession({ id, active }: { id: string; active: boolean }) {
+import { terminalSelection } from './terminal-selection'
+export function TerminalSession({
+  id,
+  active,
+  onAddSelection,
+}: {
+  id: string
+  active: boolean
+  onAddSelection?: (text: string) => void
+}) {
   const { connection, request } = useWorkspace(),
     container = useRef<HTMLDivElement>(null),
     [error, setError] = useApplicationState(''),
     [fontError, setFontError] = useApplicationState('')
+  const [selectionError, setSelectionError] = useApplicationState('')
+  const [hasSelection, setHasSelection] = useApplicationState(false)
   const { terminalFontFamily, terminalFontSize } = useAppPreferences()
   const colors = useStudioTheme()
   const mode = useResolvedTheme()
@@ -63,6 +74,10 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
     terminal.loadAddon(fit)
     terminalRef.current = terminal
     terminal.open(container.current)
+    const selection = terminal.onSelectionChange(() => {
+      setHasSelection(terminal.hasSelection())
+      setSelectionError('')
+    })
     const resize = () => {
       if (container.current?.clientWidth && container.current.clientHeight) {
         fit.fit()
@@ -149,6 +164,7 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
       void reconnect.stop()
       input.dispose()
       observer.disconnect()
+      selection.dispose()
       terminal.dispose()
       terminalRef.current = null
       resizeRef.current = null
@@ -185,6 +201,27 @@ export function TerminalSession({ id, active }: { id: string; active: boolean })
   return (
     <div className={active ? 'relative min-h-0 min-w-0 flex-1 overflow-hidden' : 'hidden'}>
       <div ref={container} className="h-full p-2" />
+      {onAddSelection && hasSelection && (
+        <button
+          type="button"
+          className="absolute right-2 top-2 rounded border bg-card px-2 py-1 text-xs"
+          onClick={() => {
+            try {
+              const text = terminalSelection(terminalRef.current?.getSelection() ?? '')
+              if (text) onAddSelection(text)
+            } catch (cause) {
+              setSelectionError(cause instanceof Error ? cause.message : String(cause))
+            }
+          }}
+        >
+          Add selection to message
+        </button>
+      )}
+      {selectionError && (
+        <p role="alert" className="absolute bottom-0 bg-card p-2 text-xs text-destructive">
+          {selectionError}
+        </p>
+      )}
       {(error || fontError) && (
         <p role="alert" className="absolute bottom-0 bg-card p-2 text-xs text-destructive">
           {error || fontError}

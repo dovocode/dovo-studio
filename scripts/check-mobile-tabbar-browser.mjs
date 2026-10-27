@@ -31,7 +31,7 @@ const stubs = [
   {
     path: 'react-native',
     contents: `
-export const Platform={get OS(){return window.fixture.platform}};
+export const Platform={get OS(){return window.fixture?.platform??'ios'}};
 export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={style}>{children}</div>;export const Modal=({children})=><div role="dialog">{children}</div>;export const Pressable=({children,onPress,accessibilityLabel,accessibilityState})=><button aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>;
 export const KeyboardAvoidingView=View;export const ActivityIndicator=()=>null;
 export const Keyboard={dismiss(){},addListener:(name,callback)=>{window.keyboardListeners[name]=callback;return {remove(){}}}};`,
@@ -39,9 +39,13 @@ export const Keyboard={dismiss(){},addListener:(name,callback)=>{window.keyboard
   {
     path: 'expo-router',
     contents: `
-export const router=Object.fromEntries(['push','replace','navigate','dismissTo'].map(method=>[method,(...args)=>window.routes.push({method,args})]));
+export const router={...Object.fromEntries(['push','replace','navigate','dismissTo','back'].map(method=>[method,(...args)=>window.routes.push({method,args})])),canGoBack:()=>!!window.fixture.canGoBack};
 function Stack(){const Scene=window.WorkbenchScene;const Tabs=window.WorkbenchTabs;return window.fixture.sidebar?<Scene tab="tasks" sidebar/>:window.fixture.path.startsWith('/settings')?<Scene tab="settings"/>:<Tabs/>}Stack.Screen=()=>null;export {Stack};
 export const usePathname=()=>window.fixture.path;export const useGlobalSearchParams=()=>({});export const useIsFocused=()=>true;`,
+  },
+  {
+    path: 'expo',
+    contents: `export const requireOptionalNativeModule=()=>({});export const requireNativeView=()=>({children,...props})=>{window.hardwareCommands=props;return <div>{children}</div>};`,
   },
   {
     path: 'expo-router/unstable-native-tabs',
@@ -179,6 +183,14 @@ try {
   ])
   assert.deepEqual(await page.evaluate(() => window.nativeSelections), [])
   assert.equal(await page.evaluate(() => window.fixture.path), '/pulls')
+  assert.ok(
+    (await page.evaluate(() => window.hardwareCommands.enabledCommands)).includes('newThread'),
+  )
+  await page.evaluate(() =>
+    window.hardwareCommands.onCommand({ nativeEvent: { command: 'newThread' } }),
+  )
+  assert.equal(await page.evaluate(() => window.routes.length), 2)
+  await page.evaluate(() => window.routes.pop())
   await page.evaluate(() => window.updateFixture({ path: '/settings' }))
   await page.locator('nav').waitFor({ state: 'detached' })
   assert.equal(await page.locator('nav').count(), 0, 'Settings opens outside the tab bar')
@@ -198,6 +210,9 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="New thread"]').disabled)
   await page.evaluate(() => window.compose.listeners.tabPress({ data: { isPrevented: true } }))
   assert.equal(await page.evaluate(() => window.routes.length), 2)
+  assert.ok(
+    !(await page.evaluate(() => window.hardwareCommands.enabledCommands)).includes('newThread'),
+  )
   await page.evaluate(() => window.keyboardListeners.keyboardDidShow())
   await plus.waitFor({ state: 'hidden' })
   await page.evaluate(() => window.keyboardListeners.keyboardDidHide())

@@ -56,6 +56,8 @@ it.each(['full', 'overview', 'paged'] as const)(
     const phone = await read(false)
     expect(first.permissionPolicySupported).toBe(true)
     expect(first.persistentTurnModelsSupported).toBe(true)
+    expect(first.taskListUndoSupported).toBe(true)
+    expect(phone.taskListUndoSupported).toBe(true)
     expect(phone.permissionPolicySupported).toBe(true)
     expect(next.workspace).toBe(first.workspace)
     expect(phone.workspace).toBe(first.workspace)

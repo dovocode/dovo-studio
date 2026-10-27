@@ -479,7 +479,7 @@ async function checkProductionPaging(browser) {
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {TaskConversation} from './packages/extension-tasks/src/detail/task-conversation.tsx';
 window.productionRevision=7;window.savedPending=[];
-window.connection={connected:true,pendingMessages:()=>window.savedPending,connection:{address:'http://host-a',token:'paired-a'},request:async()=>({
+window.connection={connected:true,workspace:{repositories:[]},pendingMessages:()=>window.savedPending,connection:{address:'http://host-a',token:'paired-a'},request:async()=>({
  historyRevision:window.productionRevision,turns:[],messages:[{id:'m0',role:'assistant',text:'Older'},
  ...(window.productionRevision===7?[{id:'m1',role:'user',text:'Removed feedback'}]:[])]})};
 function App(){const [task,setTask]=useState({id:'production',title:'Production',agentId:'',repositoryId:'',

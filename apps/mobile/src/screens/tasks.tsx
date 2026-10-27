@@ -35,16 +35,19 @@ import {
   type RuntimeTask,
 } from '@dovo/protocol'
 import { useNavigation } from '../shell/navigation'
+import { useKeyboardSearch } from '../shell/keyboard-search'
 import { useMoreActions } from '../shell/more-actions'
 import {
+  useCallback,
   useDeferredValue,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
+  type ComponentRef,
 } from 'react'
-import { Alert, FlatList, Pressable, ScrollView, View } from 'react-native'
+import { Alert, FlatList, Pressable, ScrollView, TextInput, View } from 'react-native'
 import { Schema } from 'effect'
 import { mutableStruct, responses } from '@dovo/protocol'
 import { Text } from '../ui/content/text'
@@ -87,6 +90,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     { busy, error, act } = useAction()
   const { view, setView, scrollOffset } = useTaskListView()
   const car = useCarMode() && !archived
+  const searchInput = useRef<ComponentRef<typeof TextInput>>(null)
+  const focusSearch = useCallback(() => searchInput.current?.focus(), [])
+  useKeyboardSearch(focusSearch, focused && !archived && !car && ready && profiles.length > 0)
   const moreActions = useMoreActions(navigate)
   // List ordering and grouping follow Settings → General.
   const preferences = useMobilePreferences()
@@ -670,6 +676,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       {!car && (
         <View style={{ ...contentColumn.collection, paddingHorizontal: 16, paddingBottom: 8 }}>
           <SearchField
+            inputRef={searchInput}
             label={archived ? 'Search archived tasks' : 'Search tasks'}
             placeholder="Search threads"
             clearButtonMode="while-editing"

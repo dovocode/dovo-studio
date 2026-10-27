@@ -177,7 +177,10 @@
     "test:pierre-code:browser": "node scripts/check-pierre-code-browser.mjs",
     "test:client-openers:browser": "node scripts/check-client-openers-browser.mjs",
     "test:failed-retry:browser": "node scripts/check-failed-retry-browser.mjs",
-    "test:browser-favicons:browser": "node scripts/check-browser-favicons-browser.mjs"
+    "test:browser-favicons:browser": "node scripts/check-browser-favicons-browser.mjs",
+    "test:draft-stash:browser": "node scripts/check-draft-stash-browser.mjs",
+    "test:thread-context:browser": "node scripts/check-thread-context-browser.mjs",
+    "test:mobile-task-list-undo:browser": "node scripts/check-mobile-task-list-undo-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

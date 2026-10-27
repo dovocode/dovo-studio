@@ -54,6 +54,8 @@ import { memo, useCallback, useMemo, useState } from 'react'
 import type { TaskListOwner } from './task-list-projection'
 import type { MobilePreferences } from '../../runtime/preferences/app-preferences'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
+import { useTaskListUndo } from './task-list-undo'
+import { taskListActionHandlers } from './task-list-action'
 
 const statusIcons: Record<string, LucideIcon> = {
   Working: CircleDashed,
@@ -128,7 +130,19 @@ function TaskListRowView({
       catalog?.harness?.name ??
       harnessNames[agent.provider])
     : ''
-  const actions = useTaskLifecycle(task, row.runtimeId)
+  const lifecycle = useTaskLifecycle(task, row.runtimeId)
+  const undo = useTaskListUndo()
+  const actions = {
+    ...lifecycle,
+    busy: lifecycle.busy || undo.busy,
+    ...taskListActionHandlers(
+      task,
+      owner.profile,
+      owner.taskListUndoSupported,
+      lifecycle,
+      undo.run,
+    ),
+  }
   const car = useCarMode()
   const dense = !car && density === 'compact'
   const status = taskRowStatus(task, needsInput, row.online, now)

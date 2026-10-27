@@ -16,16 +16,19 @@ import { QuestionField } from './question-field'
 import { Action } from '../../ui/controls/action'
 import { useTheme } from '../../ui/theme'
 import { notificationAnswerDraft, clearNotificationAnswerDraft } from '../../notifications/answers'
+import { NotificationInputView } from '../../notifications/viewport-view'
 export function QuestionForm({
   request,
   connected,
   onAnswer,
   runtimeId,
+  notificationAccessible,
 }: {
   request: PendingQuestion
   connected: boolean
   onAnswer: (answers: QuestionAnswers | null) => Promise<void>
   runtimeId?: string
+  notificationAccessible: boolean
 }) {
   const { styles } = useTheme()
 
@@ -94,7 +97,13 @@ export function QuestionForm({
     )
   }
   return (
-    <View
+    <NotificationInputView
+      input={
+        runtimeId
+          ? { runtimeId, taskId: request.taskId, inputId: request.id, inputType: 'question' }
+          : undefined
+      }
+      enabled={notificationAccessible && connected && !busy}
       style={[
         styles.card,
         {
@@ -162,6 +171,6 @@ export function QuestionForm({
           {error}
         </Text>
       )}
-    </View>
+    </NotificationInputView>
   )
 }

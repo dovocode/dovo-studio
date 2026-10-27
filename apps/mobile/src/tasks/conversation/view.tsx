@@ -15,7 +15,7 @@ import { MessageActions } from './components/message-actions'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
-import { useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useMemo, type ReactNode, type ComponentRef } from 'react'
 import {
   ActivityIndicator,
   FlatList,
@@ -53,6 +53,8 @@ import { Pill } from '../../ui/controls/pill'
 import { ConnectionPill } from '../../runtime/connection/connection-status'
 import { useRuntime } from '../../runtime/connection/provider'
 import { createConversationScroll } from './state/scroll'
+import { createNotificationViewport } from '../../notifications/viewport'
+import { NotificationViewportContext } from '../../notifications/viewport-view'
 import {
   foldedTurnPartRanges,
   toolPartArtifacts,
@@ -558,6 +560,16 @@ export function Conversation({
     !activityError
   const newestFirst = useMemo(() => [...messageIds].reverse(), [messageIds])
   const list = useRef<FlatList<string>>(null)
+  const viewportView = useRef<ComponentRef<typeof View>>(null)
+  const viewport = useMemo(
+    () =>
+      createNotificationViewport((callback) => {
+        viewportView.current?.measureInWindow?.((x, y, width, height) =>
+          callback({ x, y, width, height }),
+        )
+      }),
+    [],
+  )
   const [scroll] = useApplicationState(() => createConversationScroll({ inverted: true }))
   const [following, setFollowing] = useApplicationState(true)
   const frame = useRef<number | null>(null)
@@ -593,6 +605,7 @@ export function Conversation({
       latest()
   }, [task.id, task.archived, visible, latest])
   const recordScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+    viewport.refresh()
     scroll.scroll(nativeEvent.contentOffset.y)
     setFollowing(scroll.following)
   }
@@ -643,117 +656,134 @@ export function Conversation({
           ))}
         </ScrollView>
       )}
-      <FlatList
-        key={task.id}
-        data={newestFirst}
-        inverted
-        renderItem={renderConversationMessage}
-        keyExtractor={messageKey}
-        maintainVisibleContentPosition={following ? undefined : { minIndexForVisible: 0 }}
-        initialNumToRender={8}
-        maxToRenderPerBatch={6}
-        windowSize={7}
-        onEndReached={() => {
-          if (recentReady && history.hasMore && !history.busy && !history.error && connected)
-            void history.load()
-        }}
-        onEndReachedThreshold={2}
-        ref={list}
-        onScrollToIndexFailed={({ index, averageItemLength }) => {
-          if (scroll.following) {
-            latest()
-            return
-          }
-          list.current?.scrollToOffset({ offset: index * averageItemLength, animated: false })
-          setTimeout(
-            () =>
-              list.current?.scrollToIndex({ index, animated: !reduceMotion, viewPosition: 0.3 }),
-            100,
-          )
-        }}
-        testID="Conversation messages"
-        // Offset zero is the latest reply, independent of older Markdown measurements.
-        onContentSizeChange={(_width, height) => move(scroll.content(height))}
-        onLayout={({ nativeEvent }) => {
-          move(scroll.viewport(nativeEvent.layout.height))
-          if (!messageCount) onRecentLayout()
-        }}
-        onScrollBeginDrag={() => {
-          cancelMove()
-          scroll.beginInteraction()
-        }}
-        onMomentumScrollBegin={() => scroll.beginMomentum()}
-        onScroll={recordScroll}
-        onScrollEndDrag={({ nativeEvent }) => {
-          scroll.endDrag(
-            nativeEvent.contentOffset.y,
-            nativeEvent.velocity?.y,
-            nativeEvent.targetContentOffset?.y,
-          )
-          setFollowing(scroll.following)
-        }}
-        onMomentumScrollEnd={endInteraction}
-        scrollEventThrottle={16}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          emptyDraft && { flexGrow: 1 },
-          {
-            // Status pills float over the list. Toggling them must not resize its content.
-            paddingTop: 44,
-            paddingHorizontal: 20,
-            paddingBottom: 12,
-          },
-        ]}
-        ListEmptyComponent={
-          emptyDraft ? (
-            // FlatList applies its inversion and measurement props to this native view.
-            <View style={{ flex: 1 }}>
-              <TaskEmptyState
-                onBrowse={onBrowse}
-                starters={starters}
-                projectName={project?.kind !== 'scratch' ? project?.name : undefined}
-              />
-            </View>
-          ) : undefined
-        }
-        ListFooterComponent={
-          <View style={{ padding: 12, minHeight: 44, alignItems: 'center' }}>
-            {task.autoProjectFallback && (
-              <Text style={[styles.muted, { fontSize: 12 }]}>
-                Scope found no matching project; continued in General.
-              </Text>
-            )}
-            {history.busy && <ActivityIndicator size="small" color={colors.muted} />}
-            {history.hasMore && !!history.error && (
-              <IconButton
-                icon="history"
-                label="Retry loading earlier messages"
-                variant="plain"
-                color={colors.accent}
-                disabled={history.busy || !connected}
-                onPress={() => void history.load()}
-              />
-            )}
-            {!!history.error && <Text style={styles.error}>{history.error}</Text>}
-          </View>
-        }
-        ListHeaderComponent={
-          <View
-            style={{
-              gap: 10,
+      <NotificationViewportContext.Provider value={viewport}>
+        <View
+          ref={viewportView}
+          collapsable={false}
+          style={{ flex: 1 }}
+          onLayout={viewport.refresh}
+        >
+          <FlatList
+            key={task.id}
+            data={newestFirst}
+            inverted
+            renderItem={renderConversationMessage}
+            keyExtractor={messageKey}
+            maintainVisibleContentPosition={following ? undefined : { minIndexForVisible: 0 }}
+            initialNumToRender={8}
+            maxToRenderPerBatch={6}
+            windowSize={7}
+            onEndReached={() => {
+              if (recentReady && history.hasMore && !history.busy && !history.error && connected)
+                void history.load()
             }}
-          >
-            {!car && <TaskActivity task={task} events={legacyEvents} error={activityError} />}
-            <TaskApprovals taskId={task.id} />
-            {(task.error || task.status === 'failed') && <FailedTaskRetry task={task} />}
-            {/* The inverted list's header follows the latest message. Expanded task panels
+            onEndReachedThreshold={2}
+            ref={list}
+            onScrollToIndexFailed={({ index, averageItemLength }) => {
+              if (scroll.following) {
+                latest()
+                return
+              }
+              list.current?.scrollToOffset({ offset: index * averageItemLength, animated: false })
+              setTimeout(
+                () =>
+                  list.current?.scrollToIndex({
+                    index,
+                    animated: !reduceMotion,
+                    viewPosition: 0.3,
+                  }),
+                100,
+              )
+            }}
+            testID="Conversation messages"
+            // Offset zero is the latest reply, independent of older Markdown measurements.
+            onContentSizeChange={(_width, height) => {
+              viewport.refresh()
+              move(scroll.content(height))
+            }}
+            onLayout={({ nativeEvent }) => {
+              viewport.refresh()
+              move(scroll.viewport(nativeEvent.layout.height))
+              if (!messageCount) onRecentLayout()
+            }}
+            onScrollBeginDrag={() => {
+              cancelMove()
+              scroll.beginInteraction()
+            }}
+            onMomentumScrollBegin={() => scroll.beginMomentum()}
+            onScroll={recordScroll}
+            onScrollEndDrag={({ nativeEvent }) => {
+              scroll.endDrag(
+                nativeEvent.contentOffset.y,
+                nativeEvent.velocity?.y,
+                nativeEvent.targetContentOffset?.y,
+              )
+              setFollowing(scroll.following)
+            }}
+            onMomentumScrollEnd={endInteraction}
+            scrollEventThrottle={16}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[
+              styles.content,
+              emptyDraft && { flexGrow: 1 },
+              {
+                // Status pills float over the list. Toggling them must not resize its content.
+                paddingTop: 44,
+                paddingHorizontal: 20,
+                paddingBottom: 12,
+              },
+            ]}
+            ListEmptyComponent={
+              emptyDraft ? (
+                // FlatList applies its inversion and measurement props to this native view.
+                <View style={{ flex: 1 }}>
+                  <TaskEmptyState
+                    onBrowse={onBrowse}
+                    starters={starters}
+                    projectName={project?.kind !== 'scratch' ? project?.name : undefined}
+                  />
+                </View>
+              ) : undefined
+            }
+            ListFooterComponent={
+              <View style={{ padding: 12, minHeight: 44, alignItems: 'center' }}>
+                {task.autoProjectFallback && (
+                  <Text style={[styles.muted, { fontSize: 12 }]}>
+                    Scope found no matching project; continued in General.
+                  </Text>
+                )}
+                {history.busy && <ActivityIndicator size="small" color={colors.muted} />}
+                {history.hasMore && !!history.error && (
+                  <IconButton
+                    icon="history"
+                    label="Retry loading earlier messages"
+                    variant="plain"
+                    color={colors.accent}
+                    disabled={history.busy || !connected}
+                    onPress={() => void history.load()}
+                  />
+                )}
+                {!!history.error && <Text style={styles.error}>{history.error}</Text>}
+              </View>
+            }
+            ListHeaderComponent={
+              <View
+                style={{
+                  gap: 10,
+                }}
+              >
+                {!car && <TaskActivity task={task} events={legacyEvents} error={activityError} />}
+                <TaskApprovals taskId={task.id} />
+                {(task.error || task.status === 'failed') && <FailedTaskRetry task={task} />}
+                {/* The inverted list's header follows the latest message. Expanded task panels
                 share its scroll space, leaving the composer outside the scroll view. */}
-            {children && <View style={{ marginHorizontal: -20, gap: 6 }}>{children}</View>}
-          </View>
-        }
-      />
+                {children && <View style={{ marginHorizontal: -20, gap: 6 }}>{children}</View>}
+              </View>
+            }
+          />
+        </View>
+      </NotificationViewportContext.Provider>
       {/* Floating status stack just above the composer. */}
       <View
         pointerEvents="box-none"

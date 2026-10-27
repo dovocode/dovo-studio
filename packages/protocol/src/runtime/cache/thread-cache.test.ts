@@ -12,7 +12,7 @@ import {
   type CacheStorage,
 } from './read-cache.js'
 import { Effect } from 'effect'
-import { decode } from '../../shared/schema.js'
+import { decode, decodeResult } from '../../shared/schema.js'
 import { snapshotSchema } from '../connection/runtime.js'
 import type { Task } from '../../workspace.js'
 import { taskBudgetUsage } from '../../tasks/task-budget.js'
@@ -48,6 +48,18 @@ const snapshot = (tasks: Task[], detailTaskIds?: string[]) =>
     devices: [],
     pendingDevices: [],
   })
+it('accepts legacy snapshots and preserves the Undo capability through snapshot caching', () => {
+  const legacy = snapshot([task('a')])
+  expect(legacy.taskListUndoSupported).toBeUndefined()
+  const supported = decode(snapshotSchema, { ...legacy, taskListUndoSupported: true })
+  expect(boundedSnapshotCache(supported).taskListUndoSupported).toBe(true)
+  expect(decodeResult(snapshotSchema, { ...legacy, taskListUndoSupported: false }).success).toBe(
+    false,
+  )
+  expect(decodeResult(snapshotSchema, { ...legacy, taskListUndoSupported: 'true' }).success).toBe(
+    false,
+  )
+})
 it('shares the bounded decoded writer replica without restoring removed history or another cache binding', async () => {
   const entries = new Map<string, string>()
   const storage: CacheStorage = {
@@ -75,10 +87,14 @@ it('shares the bounded decoded writer replica without restoring removed history 
     async (value) => value,
   )
   try {
-    const saved = snapshot([task('a')], ['a'])
+    const saved = { ...snapshot([task('a')], ['a']), taskListUndoSupported: true as const }
     await Effect.runPromise(
       writeRuntimeSnapshotCache(cache, { snapshot: saved, lastSeen: null, pulls: null }),
     )
+    expect(
+      (await cache.read('snapshot', runtimeSnapshotCacheSchema))?.value.snapshot
+        .taskListUndoSupported,
+    ).toBe(true)
     expect(cachedRuntimeThread(cache, 'a')).toBe(saved.workspace.tasks[0])
     expect(cachedRuntimeThread(other, 'a')).toBeUndefined()
     await cache.close()
@@ -98,6 +114,10 @@ it('shares the bounded decoded writer replica without restoring removed history 
         pulls: null,
       }),
     )
+    expect(
+      (await reopened.read('snapshot', runtimeSnapshotCacheSchema))?.value.snapshot
+        .taskListUndoSupported,
+    ).toBeUndefined()
     expect(cachedRuntimeThread(reopened, 'a')).toBeUndefined()
     await reopened.close()
   } finally {

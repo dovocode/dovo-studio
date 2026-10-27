@@ -31,7 +31,7 @@ export const SearchField=({label,value,onChangeText})=><input aria-label={label}
 export const SettingsAction=Action;export const SettingsSearchField=SearchField;export const SettingsChoice=({label,value,items,onChange})=><label>{label}<select aria-label={label} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
 export const ScreenHeader=({title,leading,buttons=[]})=><header>{leading}<h1>{title}</h1>{buttons.map(button=><button key={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;
 export const Icon=()=>null;export const RuntimeIcon=()=>null;export const IconButton=({label,onPress})=><button onClick={onPress}>{label}</button>;
-export function Sheet({title,children,onClose,ref}){useImperativeHandle(ref,()=>({dismiss:after=>{onClose?.();after?.()}}));return <div role="dialog" aria-label={title}>{children}</div>};export const colors={};export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const Alert={alert:()=>{}};
+export function Sheet({title,children,onClose,ref}){useImperativeHandle(ref,()=>({dismiss:after=>{onClose?.();after?.()}}));return <div role="dialog" aria-label={title}>{children}</div>};export const colors={};export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const Alert={alert:()=>{}};export const AccessibilityInfo={announceForAccessibility:()=>{}};
 `
 const fixture = `
 const base={repositoryId:'repo',agentId:'',status:'running',createdAt:'2026-10-03T12:00:00Z',draft:'',files:[],messages:[],example:false};
@@ -169,7 +169,7 @@ try {
     page.setDefaultTimeout(8000)
     await page.setContent('<div id="app"></div>')
     const app = mobile
-      ? `import TasksScreen from '${root}/apps/mobile/src/screens/tasks.tsx';import {TaskAgents} from '${root}/apps/mobile/src/tasks/detail/task-agents.tsx';import {NativeAgentThread} from '${root}/apps/mobile/src/tasks/detail/native-agent-thread.tsx';window.renderList=archived=>render(<TasksScreen key={window.listEpoch??0} archived={archived}/>);`
+      ? `import TasksScreen from '${root}/apps/mobile/src/screens/tasks.tsx';import {TaskListUndoProvider} from '${root}/apps/mobile/src/tasks/list/task-list-undo.tsx';import {TaskAgents} from '${root}/apps/mobile/src/tasks/detail/task-agents.tsx';import {NativeAgentThread} from '${root}/apps/mobile/src/tasks/detail/native-agent-thread.tsx';window.renderList=archived=>render(<TaskListUndoProvider><TasksScreen key={window.listEpoch??0} archived={archived}/></TaskListUndoProvider>);`
       : `import {TaskList} from '${root}/packages/extension-tasks/src/list/task-list.tsx';import {TaskAgents} from '${root}/packages/extension-tasks/src/detail/task-agents.tsx';import {NativeAgentThread} from '${root}/packages/extension-tasks/src/detail/native-agent-thread.tsx';import Archived from '${root}/packages/extension-tasks/src/list/archived-view.tsx';window.renderList=archived=>render(archived?<Archived/>:<TaskList projectId={window.projectId??""} onProjectChange={()=>{}} selectedId={JSON.stringify(['linux','nested'])} onSelect={entry=>window.opened.push({id:entry.task.id,runtimeId:entry.source.runtimeId})} onCreate={()=>{}} onCreateNoProject={()=>{}} onDeselect={()=>{}} onOrderChange={entries=>window.orders.push(entries.map(e=>e.task.id))} sources={[window.source,...(window.extraSources??[])]} activeRuntimeId="mac" busy={false} error=""/>);`
     await page.addScriptTag({
       content: await bundle(

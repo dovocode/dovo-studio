@@ -1,3 +1,7 @@
+import { blockAccessibleNotificationInputs } from '../../notifications/visibility'
+import { ThreadContextPicker } from './thread-context-picker'
+import { DraftStash } from './draft-stash'
+import { draftStashScope } from '@dovo/protocol'
 import { contentColumn } from '../../ui/layout/content-column'
 import { ThreadStarters } from '../creation/thread-starters'
 import { TurnModelControls } from './turn-model-controls'
@@ -17,7 +21,7 @@ import { Glass } from '../../ui/layout/glass'
 import { MessageAttachments } from '../conversation/components/message-attachments'
 import { ActivityIndicator, Alert, Keyboard, Linking, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
   REVIEW_PROMPT,
   contextMeter,
@@ -110,6 +114,7 @@ export function Composer({
     modelCatalog?.harness?.name,
   )
   const { navigate } = useNavigation()
+  const { activeId: stashRuntimeId } = useRuntime()
   const forkAction = useAction()
   const checkoutAction = useAction()
   const forkAttempt = useRef<{
@@ -266,6 +271,16 @@ export function Composer({
     !!task.queue?.length
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const hasGit = !!repository && !repository.kind
+  const notificationBlocked = !!(
+    turnModelOpen ||
+    checkout ||
+    settings ||
+    linkingProjects ||
+    attachmentPicker.editor
+  )
+  useLayoutEffect(() => {
+    if (notificationBlocked) return blockAccessibleNotificationInputs()
+  }, [notificationBlocked])
   const checkoutLabel = task.existingWorktreePath
     ? `Existing worktree · ${task.existingWorktreePath.split(/[\\/]/).at(-1)}`
     : task.execution === 'worktree'
@@ -1006,6 +1021,45 @@ export function Composer({
               onPress={!editing && task.status === 'running' ? stop : () => send()}
             />
           </View>
+          {showOptions && !dictation.active && (
+            <View
+              accessibilityLabel="Draft tools"
+              style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}
+            >
+              <Text style={[styles.muted, { flex: 1, minWidth: 0 }]}>Draft tools</Text>
+              <DraftStash
+                key={JSON.stringify([stashRuntimeId, task.id])}
+                scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
+                getText={() => latestDraft.current.text}
+                onChange={(value) => draft.update(value)}
+                focus={() => setStarterFocus(randomUUID())}
+                hasAttachments={!!actions.draftAttachments?.length || attaching}
+                disabled={
+                  !!editing ||
+                  busy ||
+                  !draft.ready ||
+                  dictation.active ||
+                  !!task.archivedAt ||
+                  !!task.archived ||
+                  !!task.example
+                }
+              />
+              <ThreadContextPicker
+                key={JSON.stringify([stashRuntimeId, task.id])}
+                taskId={task.id}
+                attachmentBusy={attaching}
+                disabled={
+                  !!editing ||
+                  busy ||
+                  !draft.ready ||
+                  !!task.archivedAt ||
+                  !!task.archived ||
+                  !!task.example
+                }
+                upload={attachmentPicker.uploadContext}
+              />
+            </View>
+          )}
         </View>
         {!!dictationStatus && (
           <View

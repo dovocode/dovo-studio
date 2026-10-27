@@ -996,7 +996,21 @@ function TaskDetailContent({
           key={task.id}
           task={task}
           temporary={startup?.temporary}
-          visible={focused && !native && pane === 'chat' && !linkingProjects && !renaming}
+          visible={
+            focused &&
+            !native &&
+            pane === 'chat' &&
+            !linkingProjects &&
+            !renaming &&
+            !asking &&
+            !transferring &&
+            !sharingTaskId &&
+            !artifactsOpen &&
+            !linkedPulls &&
+            !threadBehavior &&
+            !editingInstructions &&
+            !editingApprovalRules
+          }
           openTerminal={(id) => {
             setTerminalId(id)
             setPane('terminal')

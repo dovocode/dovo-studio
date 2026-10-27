@@ -757,6 +757,7 @@ export class WorkspaceStore {
       response?: { id: string; fingerprint: string }
     },
     action?: ProviderAction,
+    options?: { preserveSettledAt?: boolean },
   ): WorkspaceSummary {
     const draft = fn(this.workspace)
     for (const [repositoryId] of this.deletingRepositories) {
@@ -828,9 +829,12 @@ export class WorkspaceStore {
           } else if (task.failureVersion !== undefined)
             task = { ...task, failureVersion: undefined }
           if (task.archived) {
-            const settledAt = previous?.archived
-              ? (previous.settledAt ?? new Date().toISOString())
-              : new Date().toISOString()
+            const settledAt =
+              options?.preserveSettledAt && task.settledAt
+                ? task.settledAt
+                : previous?.archived
+                  ? (previous.settledAt ?? new Date().toISOString())
+                  : new Date().toISOString()
             if (task.settledAt !== settledAt) task = { ...task, settledAt }
           } else if (task.settledAt !== undefined) task = { ...task, settledAt: undefined }
           task = versionReviewedFiles(task, previous)

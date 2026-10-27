@@ -5,13 +5,13 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 const require = createRequire(new URL('../packages/studio-ui/package.json', import.meta.url))
 const mocks = {
-  'react-native': `export const Platform={OS:'ios'};export const AppState={currentState:'active',addEventListener:(_,fn)=>{window.foreground=()=>fn('active');return{remove(){}}}};`,
+  'react-native': `export const Alert={alert:()=>{}};export const Platform={OS:'ios'};export const AppState={currentState:'active',addEventListener:(_,fn)=>{window.foreground=()=>fn('active');return{remove(){}}}};`,
   expo: `export const requireOptionalNativeModule=name=>name==='DovoQuestionNotifications'?{configure:async json=>{window.answerConfigs??=[];window.answerConfigs.push(JSON.parse(json));if(window.answerConfigFails)throw Error('Storage failed')},getDraft:async()=>null,clearDraft:async()=>{}}:{};`,
   'expo-constants': `export default {expoConfig:{extra:{pushEnvironment:'sandbox'}}};`,
-  'expo-router': `export const router={push:target=>window.routes.push(target)};`,
+  'expo-router': `export const router={push:target=>window.routes.push(target)};export const useRootNavigationState=()=>({key:'root'});`,
   '@react-native-async-storage/async-storage': `const saved=new Map([['dovo.push-notifications.enabled','true']]);export default {getItem:async key=>saved.get(key)??null,setItem:async(key,value)=>{saved.set(key,value)}};`,
   '../runtime/connection/account-provider': `import {createContext,useContext} from 'react';export const AccountContext=createContext(null);export const useMobileAccount=()=>useContext(AccountContext);`,
-  'expo-notifications': `export const setNotificationCategoryAsync=async()=>{};export const setNotificationHandler=()=>{};export const getLastNotificationResponseAsync=async()=>null;export const clearLastNotificationResponseAsync=async()=>{};export const addNotificationResponseReceivedListener=fn=>{window.notification=fn;return{remove(){}}};export const getPermissionsAsync=async()=>({granted:window.permitted});export const requestPermissionsAsync=getPermissionsAsync;export const getDevicePushTokenAsync=async()=>({data:'native-token'});export const addPushTokenListener=fn=>{window.rotate=token=>fn({data:token});return{remove(){}}};`,
+  'expo-notifications': `export const setNotificationCategoryAsync=async()=>{};export const setNotificationHandler=()=>{};export const getLastNotificationResponse=()=>null;export const clearLastNotificationResponse=()=>{};export const addNotificationResponseReceivedListener=fn=>{window.notification=fn;return{remove(){}}};export const getPermissionsAsync=async()=>({granted:window.permitted});export const requestPermissionsAsync=getPermissionsAsync;export const getDevicePushTokenAsync=async()=>({data:'native-token'});export const addPushTokenListener=fn=>{window.rotate=token=>fn({data:token});return{remove(){}}};`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const Context=createContext(null);export const useRuntime=()=>useContext(Context);`,
   '../runtime/state/application-state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const[value,set]=useState(initial);const ref=useRef(value);return[value,next=>{ref.current=next;set(next)},ref]};`,
 }

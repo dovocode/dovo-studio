@@ -10,7 +10,7 @@ const built = await bundleBrowser(
       contents: `import React from 'react';import {createRoot} from 'react-dom/client';
 import {TerminalPane} from './packages/extension-tasks/src/terminal/terminal-pane';
 import {Group,Panel} from 'react-resizable-panels';
-createRoot(document.getElementById('app')).render(<Group orientation="vertical" style={{height:'100vh'}}><Panel defaultSize="60%"><div>Conversation</div></Panel><Panel id="terminal" defaultSize="40%"><TerminalPane taskId="task" focusId="session" onClose={()=>{}}/></Panel></Group>);`,
+createRoot(document.getElementById('app')).render(<Group orientation="vertical" style={{height:'100vh'}}><Panel defaultSize="60%"><div>Conversation</div></Panel><Panel id="terminal" defaultSize="40%"><TerminalPane taskId="task" focusId="session" onClose={()=>{}} onAddSelection={(taskId,text)=>window.insertions.push({taskId,text})}/></Panel></Group>);`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -68,6 +68,7 @@ try {
     await page.addStyleTag({ content: await readFile(assets + '/' + file, 'utf8') })
   await page.evaluate(() => {
     window.sockets = []
+    window.insertions = []
     window.runtime = {
       connected: true,
       connection: { address: 'http://runtime.local', token: 'test' },
@@ -125,6 +126,15 @@ try {
     return result
   })
   assert.deepEqual(scrolls, [], 'Terminal output does not scroll its containing panel or page')
+  const selectionScreen = await terminal.locator('.xterm-screen').boundingBox()
+  await page.mouse.move(selectionScreen.x + 3, selectionScreen.y + 7)
+  await page.mouse.down()
+  await page.mouse.move(selectionScreen.x + 45, selectionScreen.y + 7, { steps: 8 })
+  await page.mouse.up()
+  await terminal.getByRole('button', { name: 'Add selection to message' }).click()
+  const [selection] = await page.evaluate(() => window.insertions)
+  assert.equal(selection.taskId, 'task')
+  assert.match(selection.text, /output/)
   await terminal.locator('textarea').focus()
   await page.keyboard.type('pwd')
   assert.ok(

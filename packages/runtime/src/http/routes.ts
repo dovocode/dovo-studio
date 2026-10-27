@@ -18,6 +18,7 @@ import {
   authenticateRuntimeOperation,
 } from '../auth/run-authorization.js'
 import { patchWorkspace } from './endpoints/workspace-patch.js'
+import { taskListAction } from './endpoints/task-list-action.js'
 import { agentBrowserRequestSchema } from '../previews/agent-browser.js'
 import { taskWaitingRequestSchema } from '@dovo/protocol'
 import { McpError } from '@modelcontextprotocol/sdk/types.js'
@@ -671,6 +672,12 @@ export function route(
       }
       if (method === 'GET' && path === '/api/mutations/status')
         return { version: 1, acknowledgements: true, workspaceMutations: 1 }
+      if (
+        (receipted || request.headers['x-dovo-mutation-id'] === undefined) &&
+        method === 'POST' &&
+        path === '/api/tasks/list-action'
+      )
+        return taskListAction(s, device.id, yield* serviceResult(body(request)))
       if (method === 'POST' && path === '/api/mutations/acknowledge') {
         const { ids } = decode(
           mutableStruct({ ids: maxValue(mutableArray(idSchema), 100) }),

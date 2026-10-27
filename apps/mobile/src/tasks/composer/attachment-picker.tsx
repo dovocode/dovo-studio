@@ -48,7 +48,12 @@ export function useAttachmentPicker(
       for (const uri of temporary) if (uri !== prepared?.uri) new File(uri).delete()
     }
   }
-  const uploadAssets = (assets: AttachmentAsset[], replaceId?: string, editChatImage = false) =>
+  const uploadAssets = (
+    assets: AttachmentAsset[],
+    replaceId?: string,
+    editChatImage = false,
+    signal?: AbortSignal,
+  ) =>
     mobileWorkflow(function* () {
       const count =
         (editing
@@ -75,6 +80,7 @@ export function useAttachmentPicker(
               if (prepared.uri !== asset.uri) file.delete()
             }
           })
+          if (signal?.aborted) throw new Error('Attachment cancelled.')
           const result = yield* callEffect(
             replaceId ? '/api/attachments/replace' : '/api/attachments/upload',
             {
@@ -107,6 +113,27 @@ export function useAttachmentPicker(
     return run(() => uploadAssets(assets, undefined, editChatImage)).finally(() => {
       uploading.current = false
     })
+  }
+  const uploadContext = async (assets: AttachmentAsset[], signal: AbortSignal) => {
+    if (!connected) throw new Error('Reconnect to attach files.')
+    if (busy || uploading.current)
+      throw new Error('Wait for the current attachment operation to finish.')
+    uploading.current = true
+    let failure: Error | undefined
+    try {
+      await run(() =>
+        uploadAssets(assets, undefined, false, signal).pipe(
+          Effect.tapError((cause) =>
+            Effect.sync(() => {
+              failure = cause
+            }),
+          ),
+        ),
+      )
+      if (failure) throw failure
+    } finally {
+      uploading.current = false
+    }
   }
   const edit = (id: string) => {
     if (!connected || busy || uploading.current) return Promise.resolve()
@@ -203,5 +230,6 @@ export function useAttachmentPicker(
     error,
     pick,
     upload,
+    uploadContext,
   }
 }

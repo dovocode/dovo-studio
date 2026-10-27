@@ -12,8 +12,9 @@ export function SearchField({
   onChangeText,
   editable,
   clearButtonMode,
+  inputRef,
   ...props
-}: TextInputProps & { label: string }) {
+}: TextInputProps & { label: string; inputRef?: Ref<ComponentRef<typeof TextInput>> }) {
   const { colors } = useTheme()
   const input = useRef<ComponentRef<typeof TextInput>>(null)
   const clearable = !!value && !!onChangeText && editable !== false && clearButtonMode !== 'never'
@@ -35,7 +36,11 @@ export function SearchField({
     >
       <Icon name="search" size={17} color={colors.muted} />
       <TextInput
-        ref={input}
+        ref={(node) => {
+          input.current = node
+          if (typeof inputRef === 'function') inputRef(node)
+          else if (inputRef) inputRef.current = node
+        }}
         value={value}
         onChangeText={onChangeText}
         editable={editable}

@@ -10,10 +10,12 @@ import { useRuntime } from '../../runtime/connection/provider'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { QuestionForm } from '../composer/question-form'
+import { useConversationSelector } from '../conversation/state/provider'
 export function TaskQuestions({ taskId, questionId }: { taskId: string; questionId?: string }) {
   const { styles } = useTheme()
 
   const { snapshot, profile, connected, callEffect } = useRuntime()
+  const visible = useConversationSelector((conversation) => conversation.visible)
   const questions =
     snapshot?.questions.filter((q) => taskInputVisible(snapshot.workspace.tasks, taskId, q)) ?? []
   const pending = questionId
@@ -62,6 +64,7 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
         key={pending.id}
         request={pending}
         runtimeId={profile?.id}
+        notificationAccessible={visible && pending.taskId === taskId}
         connected={connected}
         onAnswer={(answers) => {
           return runClientEffect(

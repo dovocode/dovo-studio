@@ -1,3 +1,6 @@
+import { ThreadContextPicker } from './thread-context-picker'
+import { DraftStash } from './draft-stash'
+import { draftStashScope } from '@dovo/protocol'
 import { QueueEditContext } from './queue-edit'
 import { ThreadStarters } from '../../task-creation/thread-starters'
 import { useChatImageUploader } from './chat-image-edit-context'
@@ -80,8 +83,17 @@ export function Composer({
   composerInsert?: { id: string; text: string } | null
   onComposerInsertApplied?: () => void
 }) {
-  const { workspace, setWorkspace, request, connected, connection, flush, snapshot } =
-    useWorkspace()
+  const {
+    workspace,
+    setWorkspace,
+    request,
+    connected,
+    connection,
+    flush,
+    snapshot,
+    activeRuntimeId,
+  } = useWorkspace()
+  const stashRuntimeId = activeRuntimeId ?? connection?.address
   const [draftTurnSettings, setDraftTurnSettings] = useApplicationState<TurnSettings | null>(
     task.draftTurnSettings ?? null,
   )
@@ -744,6 +756,33 @@ export function Composer({
         actions={
           <>
             <ContextMeter task={task} />
+            {!pendingQuestion && (
+              <DraftStash
+                key={JSON.stringify([activeRuntimeId ?? connection?.address, task.id])}
+                scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
+                getText={() => composerDraft.controller.text}
+                onChange={(value) => {
+                  setDraft(value)
+                  composerDraft.flush()
+                }}
+                focus={() => input.current?.focus()}
+                hasAttachments={!!attachments.files.length || attachments.busy}
+                disabled={
+                  !!editing || sending || !!task.archivedAt || !!task.archived || !!task.example
+                }
+              />
+            )}
+            {!pendingQuestion && (
+              <ThreadContextPicker
+                key={JSON.stringify([stashRuntimeId, task.id])}
+                taskId={task.id}
+                attachmentBusy={attachments.busy}
+                disabled={
+                  !!editing || sending || !!task.archivedAt || !!task.archived || !!task.example
+                }
+                upload={attachments.uploadContext}
+              />
+            )}
             {!pendingQuestion && (
               <ComposerDictation
                 controller={composerDraft.controller}

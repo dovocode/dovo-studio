@@ -19,6 +19,7 @@ import {
 export type TaskListOwner = {
   profile: RuntimeProfile
   runtimeIcon: RuntimeSnapshot['runtimeIcon']
+  taskListUndoSupported: boolean
   repository: Repository | undefined
   displayProject?: Repository
   agents: readonly Agent[]
@@ -86,6 +87,7 @@ export function taskListProjection(
     const nextOwner: TaskListOwner = {
       profile: source.profile,
       runtimeIcon: source.snapshot?.runtimeIcon,
+      taskListUndoSupported: source.snapshot?.taskListUndoSupported === true,
       repository,
       displayProject,
       agents: source.snapshot?.workspace.agents ?? noAgents,
@@ -95,6 +97,7 @@ export function taskListProjection(
       prior &&
       prior.owner.profile === nextOwner.profile &&
       prior.owner.runtimeIcon === nextOwner.runtimeIcon &&
+      prior.owner.taskListUndoSupported === nextOwner.taskListUndoSupported &&
       prior.owner.repository === nextOwner.repository &&
       prior.owner.displayProject === nextOwner.displayProject &&
       prior.owner.agents === nextOwner.agents &&

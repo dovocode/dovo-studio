@@ -10,12 +10,14 @@ export function TerminalPane({
   onClose,
   focusId = '',
   visible = true,
+  onAddSelection,
 }: {
   taskId: string
   onClose: () => void
   /** Select this session, for example after a chat command ran in it. */
   focusId?: string
   visible?: boolean
+  onAddSelection?: (taskId: string, text: string) => void
 }) {
   const { snapshot, workspace, connected, request } = useWorkspace(),
     [selected, setSelected] = useApplicationState(focusId),
@@ -212,6 +214,7 @@ export function TerminalPane({
               <TerminalSession
                 id={session.id}
                 active={visible && !!group?.sessions.includes(session.id)}
+                onAddSelection={onAddSelection ? (text) => onAddSelection(taskId, text) : undefined}
               />
             </div>
           ))}

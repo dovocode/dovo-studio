@@ -10,6 +10,8 @@ import { taskHref } from './task-route'
 import { issueHref, jiraIssueHref, pipelineHref } from './source-route'
 import { collectionPaths as routes, workbenchRoute, type WorkbenchTab as Tab } from './route-paths'
 import { useShortcuts } from './shortcuts'
+import { KeyboardCommands, type KeyboardCommand } from './keyboard-commands'
+import { dispatchKeyboardSearch, useKeyboardSearchAvailable } from './keyboard-search'
 import {
   preferencesReady,
   readMobilePreferences,
@@ -316,6 +318,22 @@ export function Workbench() {
   const newThread = useCallback(() => {
     if (hasOnlineComputer) router.push('/new', { withAnchor: true })
   }, [hasOnlineComputer])
+  const searchAvailable = useKeyboardSearchAvailable()
+  const keyboardCommands = useMemo<KeyboardCommand[]>(() => {
+    const commands: KeyboardCommand[] = []
+    if (pathname === '/' && !car && searchAvailable) commands.push('search')
+    if (hasOnlineComputer && pathname !== '/new') commands.push('newThread')
+    if (router.canGoBack()) commands.push('back')
+    return commands
+  }, [pathname, car, searchAvailable, hasOnlineComputer])
+  const onKeyboardCommand = useCallback(
+    (command: KeyboardCommand) => {
+      if (command === 'search' && pathname === '/' && !car) dispatchKeyboardSearch()
+      if (command === 'newThread' && pathname !== '/new') newThread()
+      if (command === 'back' && router.canGoBack()) router.back()
+    },
+    [pathname, car, newThread],
+  )
   useEffect(() => {
     if (!hasOnlineComputer || !shortcuts.input || routedShortcut.current === shortcuts.input.id)
       return
@@ -620,21 +638,23 @@ export function Workbench() {
     ],
   )
   return (
-    <SafeAreaView style={styles.screen} edges={Platform.OS === 'ios' ? [] : ['top']}>
-      <KeyboardAvoidingView
-        style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <TaskListViewProvider>
-          <SceneContext.Provider value={sceneContext}>
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="(more)" />
-              <Stack.Screen name="jobs" />
-            </Stack>
-          </SceneContext.Provider>
-        </TaskListViewProvider>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    <KeyboardCommands enabledCommands={keyboardCommands} onCommand={onKeyboardCommand}>
+      <SafeAreaView style={styles.screen} edges={Platform.OS === 'ios' ? [] : ['top']}>
+        <KeyboardAvoidingView
+          style={styles.screen}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TaskListViewProvider>
+            <SceneContext.Provider value={sceneContext}>
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="(more)" />
+                <Stack.Screen name="jobs" />
+              </Stack>
+            </SceneContext.Provider>
+          </TaskListViewProvider>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </KeyboardCommands>
   )
 }

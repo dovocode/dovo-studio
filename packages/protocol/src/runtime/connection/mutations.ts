@@ -33,6 +33,7 @@ const mutations = new Set([
   '/api/tasks/steer',
   '/api/tasks/cancel',
   '/api/tasks/lifecycle',
+  '/api/tasks/list-action',
   '/api/tasks/viewed',
   '/api/tasks/checklist/clear',
   '/api/runtime/preferences/save',
@@ -117,7 +118,8 @@ const settledFailure = (item: { path: string; method: string }, error: unknown) 
   rejectedPatch(item, error) ||
   (error instanceof RuntimeRequestError &&
     (error.mutationRetired === true ||
-      (item.path === '/api/tasks/checklist/clear' && error.mutationRejected === true)))
+      (['/api/tasks/checklist/clear', '/api/tasks/list-action'].includes(item.path) &&
+        error.mutationRejected === true)))
 const operation = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({
     try: run,

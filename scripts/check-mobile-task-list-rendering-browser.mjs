@@ -23,6 +23,7 @@ export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor
 });
 export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};
 export const Platform={OS:'ios'};
+export const AccessibilityInfo={announceForAccessibility:message=>window.announcements?.push(message)};
 export const Alert={alert:(title,message,buttons)=>{window.alerts.push({title,message});buttons?.find(button=>button.style!=='cancel')?.onPress?.()}};
 export const Icon=()=>null;
 export const IconButton=({label,onPress,disabled})=><button aria-label={label} onClick={onPress} disabled={disabled}>{label}</button>;

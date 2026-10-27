@@ -245,6 +245,7 @@ export function runtimeSnapshot(
       scopedAgentsSupported: true,
       permissionPolicySupported: true,
       workspaceReconciliationSupported: true,
+      taskListUndoSupported: true,
       settingsScopesSupported: true,
       taskBehaviorSupported: true,
       threadBehaviorSupported: true,

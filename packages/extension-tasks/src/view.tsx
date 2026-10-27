@@ -74,6 +74,7 @@ import { TaskFiles } from './detail/task-files'
 import { useLiveRefresh } from './detail/live-refresh'
 import { useCommittedCallback } from './detail/use-committed-callback'
 import { TerminalPane } from './terminal/terminal-pane'
+import { terminalSelectionIsCurrent } from './terminal/terminal-selection'
 import {
   collectTasks,
   taskSources,
@@ -183,7 +184,7 @@ export default function TasksView({
   const [selectedSideChats, setSelectedSideChats] = useState<Record<string, string>>({})
   const [sideChatDrafts, setSideChatDrafts] = useState<Record<string, Record<string, string>>>({})
   const [composerInsert, setComposerInsert] = useState<{
-    taskId: string
+    threadKey: string
     id: string
     text: string
   } | null>(null)
@@ -404,9 +405,19 @@ export default function TasksView({
     if (task.files.length >= 3 || lines >= 50) selectSurface('changes')
   }, [preferences.proactivePanels, task, historyLoaded, threadKey, threadSurfaces])
   const addCodeReference = useCommittedCallback((taskId: string, text: string) => {
-    setComposerInsert({ taskId, id: randomUUID(), text })
+    setComposerInsert({
+      threadKey: taskCollectionKey(activeRuntimeId, taskId),
+      id: randomUUID(),
+      text,
+    })
     selectSurface('chat', true)
   })
+  const addTerminalSelection = useCommittedCallback(
+    (owner: string, taskId: string, text: string) => {
+      if (!terminalSelectionIsCurrent(owner, taskId, threadKey, task?.id)) return
+      addCodeReference(taskId, text)
+    },
+  )
   useLayoutEffect(() => {
     const next = focusNext.current
     if (!next) return
@@ -1005,8 +1016,12 @@ export default function TasksView({
                       selectSurface('browser')
                     }}
                     onAside={(chatId) => openSideChat(threadKey, chatId)}
-                    composerInsert={composerInsert?.taskId === task.id ? composerInsert : null}
-                    onComposerInsertApplied={() => setComposerInsert(null)}
+                    composerInsert={composerInsert?.threadKey === threadKey ? composerInsert : null}
+                    onComposerInsertApplied={() =>
+                      setComposerInsert((current) =>
+                        current?.id === composerInsert?.id ? null : current,
+                      )
+                    }
                   />
                 </div>
               </ResizablePanel>
@@ -1025,6 +1040,9 @@ export default function TasksView({
                         key={`bottom:${task.id}`}
                         taskId={task.id}
                         focusId={terminalFocus}
+                        onAddSelection={(taskId, text) =>
+                          addTerminalSelection(threadKey, taskId, text)
+                        }
                         onClose={() => setBottomTerminalTaskId('')}
                       />
                     </div>
@@ -1182,10 +1200,7 @@ export default function TasksView({
                       return next === previous ? current : { ...current, [threadKey]: next }
                     })
                   }
-                  onAddToComposer={(text) => {
-                    setComposerInsert({ taskId: task.id, id: randomUUID(), text })
-                    selectSurface('chat', true)
-                  }}
+                  onAddToComposer={(text) => addCodeReference(task.id, text)}
                 />
               </div>
             )}
@@ -1328,6 +1343,7 @@ export default function TasksView({
                   taskId={task.id}
                   focusId={terminalFocus}
                   visible={surface === 'terminal'}
+                  onAddSelection={(taskId, text) => addTerminalSelection(threadKey, taskId, text)}
                   onClose={() => selectSurface('chat', true)}
                 />
               )}

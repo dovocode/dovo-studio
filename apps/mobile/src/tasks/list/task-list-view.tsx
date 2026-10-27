@@ -1,5 +1,6 @@
 import { useApplicationState } from '../../runtime/state/application-state'
 import { preferencesReady, readMobilePreferences } from '../../runtime/preferences/app-preferences'
+import { TaskListUndoProvider } from './task-list-undo'
 import {
   createContext,
   useEffect,
@@ -53,7 +54,11 @@ export function TaskListViewProvider({ children }: { children: ReactNode }) {
     }),
     [view],
   )
-  return <Context.Provider value={value}>{children}</Context.Provider>
+  return (
+    <Context.Provider value={value}>
+      <TaskListUndoProvider>{children}</TaskListUndoProvider>
+    </Context.Provider>
+  )
 }
 export function useTaskListView() {
   const state = useContext(Context)

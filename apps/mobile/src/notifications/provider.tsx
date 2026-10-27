@@ -1,18 +1,20 @@
-import { ACCOUNT_DIRECTORY_URL, diagnosticMessage, notificationTestTaskId } from '@dovo/protocol'
+import { ACCOUNT_DIRECTORY_URL, diagnosticMessage } from '@dovo/protocol'
 import { useMobileAccount } from '../runtime/connection/account-provider'
 import { runtimeComputerName } from '@dovo/protocol'
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
-import { AppState, Platform } from 'react-native'
+import { Alert, AppState, Platform } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
 import Constants from 'expo-constants'
 import type { NotificationResponse } from 'expo-notifications'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { router } from 'expo-router'
+import { router, useRootNavigationState } from 'expo-router'
 import { pushStatusSchema, responses } from '@dovo/protocol'
-import { notificationTarget, notificationHref, type NotificationTarget } from './target'
+import { notificationHref } from './target'
 import { useRuntime } from '../runtime/connection/provider'
 import { useApplicationState } from '../runtime/state/application-state'
-import { configureNotificationAnswers, isNativeAnswerAction } from './answers'
+import { configureNotificationAnswers } from './answers'
+import { createNotificationResponseConsumer } from './response-consumer'
+import { shouldAlertForNotification } from './visibility'
 
 const preferenceKey = 'dovo.push-notifications.enabled'
 const serverPreferenceKey = 'dovo.push-notifications.disabled-servers'
@@ -40,18 +42,21 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
     [],
   )
   const setServer = useRef<(id: string, value: boolean) => Promise<void>>(async () => {})
-  const deferredTarget = useRef<NotificationTarget | null>(null)
+  const navigation = useRootNavigationState()
+  const navigationReady = useRef(false)
+  navigationReady.current = !!navigation?.key
+  const responseConsumer = useRef<ReturnType<typeof createNotificationResponseConsumer> | null>(
+    null,
+  )
   useEffect(() => {
-    const target = deferredTarget.current
-    if (!target || !runtime.ready) return
-    deferredTarget.current = null
-    router.push(notificationHref(target))
-  }, [runtime.ready])
+    responseConsumer.current?.flush()
+  }, [runtime.ready, navigation?.key])
   const latest = useRef(runtime)
   latest.current = runtime
   const [enabled, updateEnabled, enabledRef] = useApplicationState(false)
   const [busy, setBusy] = useApplicationState(false),
     [error, setError] = useApplicationState('')
+  const [responseError, setResponseError] = useApplicationState('')
   const [supported] = useApplicationState(
     () =>
       (Platform.OS === 'ios' || Platform.OS === 'android') &&
@@ -93,41 +98,52 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       if (disposed) return
       Notifications.setNotificationHandler({
         handleNotification: async (notification) => ({
-          shouldPlaySound:
-            notification.request.content.data?.kind === 'input' ||
-            notification.request.content.data?.taskId === notificationTestTaskId,
+          shouldPlaySound: shouldAlertForNotification(
+            notification.request.content.data,
+            AppState.currentState === 'active',
+          ),
           shouldSetBadge: false,
-          shouldShowBanner:
-            notification.request.content.data?.kind === 'input' ||
-            notification.request.content.data?.taskId === notificationTestTaskId,
+          shouldShowBanner: shouldAlertForNotification(
+            notification.request.content.data,
+            AppState.currentState === 'active',
+          ),
           shouldShowList: true,
         }),
       })
       subscriptions.push({ remove: () => Notifications.setNotificationHandler(null) })
-      const open = (data: unknown) => {
-        const target = notificationTarget(data)
-        if (!target) return
-        if (!latest.current.ready) {
-          deferredTarget.current = target
-          return
-        }
-        router.push(notificationHref(target))
-      }
-      let lastOpened: string | undefined
+      const consumer = createNotificationResponseConsumer({
+        ready: () => latest.current.ready && navigationReady.current,
+        open: (target) => {
+          router.push(notificationHref(target))
+          setResponseError('')
+        },
+        last: () => Notifications.getLastNotificationResponse(),
+        clear: () => Notifications.clearLastNotificationResponse(),
+        onError: (operation) => {
+          const message =
+            operation === 'open'
+              ? 'Could not open the notification. Tap it again to retry.'
+              : 'Could not clear the opened notification'
+          setResponseError(message)
+          if (operation === 'open') Alert.alert('Notification', message)
+        },
+      })
+      responseConsumer.current = consumer
+      subscriptions.push({
+        remove: () => {
+          consumer.dispose()
+          responseConsumer.current = null
+        },
+      })
+      let received = false
       const handleResponse = (response: NotificationResponse) => {
-        // Native handlers submit these while React may be suspended or absent.
-        if (isNativeAnswerAction(response.actionIdentifier ?? '')) return
-        if (disposed || lastOpened === response.notification.request.identifier) return
-        lastOpened = response.notification.request.identifier
-        open(response.notification.request.content.data)
-        void Notifications.clearLastNotificationResponseAsync().catch(() => {
-          if (!disposed) setError('Could not clear the opened notification')
-        })
+        received = true
+        consumer.handle(response)
       }
       subscriptions.push(Notifications.addNotificationResponseReceivedListener(handleResponse))
-      const response = await Notifications.getLastNotificationResponseAsync()
+      const response = Notifications.getLastNotificationResponse()
       if (disposed) return
-      if (response) handleResponse(response)
+      if (response && !received) consumer.handle(response)
       const sync = () => {
         if (syncPending) {
           syncAgain = true
@@ -397,7 +413,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
         enabled,
         supported,
         busy,
-        error,
+        error: [responseError, error].filter(Boolean).join('\n'),
         permission,
         registrations,
         serverEnabled: (id) => !disabledServers.includes(id),
