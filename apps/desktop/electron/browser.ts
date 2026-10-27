@@ -1,3 +1,4 @@
+import { createBrowserFaviconLoader } from '@dovo/runtime/browser-favicon'
 import {
   selectedBrowserText,
   isPrivateBrowserProfile,
@@ -24,7 +25,7 @@ type Entry = {
   /** Shared Browser activity view; thread-side previews keep denying popups and shortcuts. */
   workspace: boolean
   openedLinks: string[]
-  favicon?: string
+  favicon?: string | null
   /** Reported once by the next `status`; native POST loads have no other channel to the UI. */
   navigationError?: string
   popups: Set<BrowserWindow>
@@ -190,11 +191,13 @@ export function registerBrowser(
       }[]
       closed: string[]
       moved: { key: string; tab: BrowserWorkspaceTab }[]
+      favicons: { key: string; url: string; favicon: string | null }[]
     }
   >()
   const tabEvents = (windowId: number) => {
     let events = windowTabs.get(windowId)
-    if (!events) windowTabs.set(windowId, (events = { created: [], closed: [], moved: [] }))
+    if (!events)
+      windowTabs.set(windowId, (events = { created: [], closed: [], moved: [], favicons: [] }))
     return events
   }
   const drainTabEvents = (windowId: number, consumeMoves: boolean) => {
@@ -203,11 +206,13 @@ export function registerBrowser(
     const closedTabs = events?.closed.splice(0) ?? []
     // A thread preview can poll in the same Studio window while Browser is opening.
     const movedTabs = consumeMoves ? (events?.moved.splice(0) ?? []) : []
+    const faviconUpdates = consumeMoves ? (events?.favicons.splice(0) ?? []) : []
     if (movedTabs.length) tabCounts.set(windowId, (tabCounts.get(windowId) ?? 1) + movedTabs.length)
     return {
       ...(createdTabs.length ? { createdTabs } : {}),
       ...(closedTabs.length ? { closedTabs } : {}),
       ...(movedTabs.length ? { movedTabs } : {}),
+      ...(faviconUpdates.length ? { faviconUpdates } : {}),
     }
   }
   /** The Studio window that last showed each shared-browser profile hosts its extension tabs. */
@@ -429,39 +434,31 @@ export function registerBrowser(
         ])
         .catch((error: unknown) => console.error('Could not apply website customization', error))
     })
-    view.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => {
-      if (isMainFrame) created.favicon = undefined
+    let faviconCandidates: string[] = []
+    const faviconLoader = createBrowserFaviconLoader(
+      (url, signal) => view.webContents.session.fetch(url, { signal, credentials: 'include' }),
+      (favicon) => {
+        if (view.webContents.isDestroyed()) return
+        created.favicon = favicon
+        if (!created.workspace) return
+        const events = tabEvents(created.windowId)
+        events.favicons = events.favicons.filter((item) => item.key !== created.key)
+        events.favicons.push({ key: created.key, url: view.webContents.getURL(), favicon })
+      },
+    )
+    view.webContents.once('destroyed', () => faviconLoader.reset())
+    view.webContents.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
+      if (!isMainFrame || inPlace) return
+      faviconLoader.reset()
+      faviconCandidates = []
+      created.favicon = undefined
     })
     view.webContents.on('page-favicon-updated', (_event, icons) => {
-      const page = view.webContents.getURL()
-      const icon = icons.find((icon) => openableUrl(icon))
-      if (!icon) return
-      void (async () => {
-        const response = await view.webContents.session.fetch(icon, {
-          signal: AbortSignal.timeout(5000),
-        })
-        const mime = response.headers.get('content-type')?.split(';')[0]?.trim() ?? ''
-        if (
-          !response.ok ||
-          !/^image\/(?:png|jpeg|gif|webp|x-icon|vnd.microsoft.icon|svg\+xml)$/.test(mime) ||
-          Number(response.headers.get('content-length')) > 64 * 1024
-        ) {
-          await response.body?.cancel()
-          return
-        }
-        const chunks: Buffer[] = []
-        let size = 0
-        if (!response.body) return
-        for await (const chunk of response.body) {
-          size += chunk.length
-          if (size > 64 * 1024) return
-          chunks.push(Buffer.from(chunk))
-        }
-        if (!view.webContents.isDestroyed() && view.webContents.getURL() === page)
-          created.favicon = `data:${mime};base64,${Buffer.concat(chunks).toString('base64')}`
-      })().catch(() => {
-        /* Missing icons use the globe fallback. */
-      })
+      faviconCandidates = icons
+      void faviconLoader.load(view.webContents.getURL(), icons)
+    })
+    view.webContents.on('did-finish-load', () => {
+      void faviconLoader.load(view.webContents.getURL(), faviconCandidates)
     })
     view.webContents.on('context-menu', (_event, params) => {
       if (
@@ -834,7 +831,7 @@ export function registerBrowser(
                   ? ''
                   : entry.view.webContents.getURL(),
               title: entry.view.webContents.getTitle().slice(0, 4096),
-              favicon: entry.favicon,
+              favicon: entry.favicon ?? undefined,
             }
           : command.tab,
       })

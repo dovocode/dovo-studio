@@ -18,6 +18,12 @@
       "development": "./src/desktop-openers.ts",
       "import": "./dist/desktop-openers.js",
       "default": "./dist/desktop-openers.js"
+    },
+    "./browser-favicon": {
+      "types": "./src/previews/browser-favicon.ts",
+      "development": "./src/previews/browser-favicon.ts",
+      "import": "./dist/previews/browser-favicon.js",
+      "default": "./dist/previews/browser-favicon.js"
     }
   },
   "scripts": {

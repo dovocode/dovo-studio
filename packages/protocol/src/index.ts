@@ -178,6 +178,7 @@ export * from './conversation/presentation/turn-duration.js'
 export * from './runtime/previews/browser-profiles.js'
 export * from './runtime/previews/browser-website-customization.js'
 export * from './runtime/previews/browser-tab-lifecycle.js'
+export * from './runtime/previews/browser-favicon.js'
 
 export * from './runtime/connection/mutations.js'
 

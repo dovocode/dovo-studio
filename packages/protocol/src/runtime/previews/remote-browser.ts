@@ -192,6 +192,7 @@ export const remoteBrowserMessageSchema = Schema.Union([
     ),
     url: Schema.String,
     title: Schema.String,
+    favicon: Schema.optional(Schema.NullOr(maxValue(Schema.String, 100000))),
     back: Schema.Boolean,
     forward: Schema.Boolean,
     loading: Schema.Boolean,

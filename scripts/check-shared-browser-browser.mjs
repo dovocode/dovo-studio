@@ -5,10 +5,11 @@ import { readFileSync, readdirSync, mkdirSync } from 'node:fs'
 import assert from 'node:assert/strict'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const viewer = `<html><body><script>
-let tab='',url='',back=true;
-function state(){window.parent.postMessage({channel:'dovo-browser',type:'state',url,title:'Page '+tab,back,forward:false,loading:false,editable:false},'*')}
+let tab='',url='',back=true,favicon;
+function state(){window.parent.postMessage({channel:'dovo-browser',type:'state',url,title:'Page '+tab,favicon,back,forward:false,loading:false,editable:false},'*')}
 window.addEventListener('message',event=>{const m=event.data;
 if(m.type==='connect'){const ticket=JSON.parse(new URL(m.url).searchParams.get('ticket'));tab=ticket.tabId;url=ticket.url;window.parent.postMessage({channel:'dovo-browser',type:'connection',online:true},'*');state()}
+if(m.type==='fixture-favicon'){favicon=m.favicon;state()}
 if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:m.input},'*');if(m.input.type==='navigate')url=m.input.url;state()}
 if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},'*');
 });</script></body></html>`
@@ -80,7 +81,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0)};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -1548,6 +1549,8 @@ try {
       kind: 'web',
       profileId: 'default',
       pinned: index < 4,
+      favicon:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
     }))
     localStorage.setItem(
       'dovo.shared-browser-tabs.v1',
@@ -1564,6 +1567,42 @@ try {
   const compactSidebar = controlsPage.getByRole('complementary', { name: 'Recent browser tabs' })
   const pins = compactSidebar.getByLabel('Pinned browser tabs').getByRole('button')
   await pins.nth(3).waitFor()
+  await controlsPage.evaluate(async () => {
+    window.setNativePage('studio:browser:main:compact-4', {
+      profileId: 'default',
+      url: 'https://example.test/4',
+      title: 'Website 4',
+      back: false,
+      forward: false,
+    })
+    await window.pollBrowser()
+  })
+  assert.equal(
+    await pins.first().locator('img').count(),
+    1,
+    'Restored pins retain cached favicons while native icons are loading',
+  )
+  assert.equal(
+    await compactSidebar
+      .getByRole('button', { name: /^Website 4 Local/ })
+      .locator('img')
+      .count(),
+    1,
+  )
+  await controlsPage.evaluate(async () => {
+    window.faviconUpdates.push({
+      key: 'studio:browser:main:compact-2',
+      url: 'https://example.test/2',
+      favicon: null,
+    })
+    await window.pollBrowser()
+  })
+  await controlsPage.waitForFunction(
+    () =>
+      !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+        (tab) => tab.id === 'compact-2',
+      ).favicon,
+  )
   const pinBounds = await Promise.all([0, 1, 2, 3].map((index) => pins.nth(index).boundingBox()))
   assert.equal(pinBounds[0].y, pinBounds[1].y)
   assert.equal(pinBounds[1].y, pinBounds[2].y)
@@ -1694,6 +1733,42 @@ try {
     await compactSidebar.getByRole('button', { name: /^Website 4 Local/ }).count(),
     0,
     'Moves must not drop simultaneous extension creation or closure events',
+  )
+  await compactSidebar.getByRole('button', { name: 'New browser tab', exact: true }).click()
+  await controlsPage.getByRole('menuitem', { name: 'Mac Studio', exact: true }).click()
+  await controlsPage
+    .getByRole('textbox', { name: 'Preview URL' })
+    .fill('http://localhost:3000/remote-icon')
+  await controlsPage.getByRole('textbox', { name: 'Preview URL' }).press('Enter')
+  await controlsPage.getByRole('button', { name: /^Page .*Remote · Mac Studio/ }).waitFor()
+  const icon = await compactSidebar
+    .getByLabel('Pinned browser tabs')
+    .locator('img')
+    .first()
+    .getAttribute('src')
+  await controlsPage.evaluate((favicon) => {
+    document
+      .querySelector('iframe')
+      .contentWindow.postMessage({ type: 'fixture-favicon', favicon }, '*')
+  }, icon)
+  const remoteIconRow = compactSidebar.getByRole('button', { name: /^Page .*Remote · Mac Studio/ })
+  await remoteIconRow.locator('img').waitFor()
+  assert.equal(await remoteIconRow.locator('img').getAttribute('src'), icon)
+  await controlsPage.evaluate(() =>
+    document
+      .querySelector('iframe')
+      .contentWindow.postMessage({ type: 'fixture-favicon', favicon: null }, '*'),
+  )
+  await controlsPage.waitForFunction(
+    () =>
+      !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+        (tab) => tab.kind === 'remote',
+      ).favicon,
+  )
+  assert.equal(
+    await remoteIconRow.locator('img').count(),
+    0,
+    'A definitive missing icon clears the remote favicon',
   )
   await controlsPage.close()
 

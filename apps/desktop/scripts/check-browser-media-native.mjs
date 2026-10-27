@@ -15,7 +15,7 @@
  * discover shareable windows. Xvfb alone has no managed window sources. The sandbox must be available.
  */
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,6 +25,8 @@ const desktop = fileURLToPath(new URL('../', import.meta.url))
 const require = createRequire(join(desktop, 'package.json'))
 const keep = process.argv.includes('--keep')
 const work = mkdtempSync(join(tmpdir(), 'dovo-browser-media-native-'))
+// Keep native image dependencies in their installed packages rather than bundling their loaders.
+symlinkSync(join(desktop, 'node_modules'), join(work, 'node_modules'), 'junction')
 const write = (path, contents) => {
   mkdirSync(join(path, '..'), { recursive: true })
   writeFileSync(path, contents)
@@ -488,7 +490,7 @@ await build({
     minify: false,
     target: 'node22',
     rollupOptions: {
-      external: ['electron'],
+      external: ['electron', '@dovo/runtime/browser-favicon'],
       output: { format: 'cjs', entryFileNames: 'main.cjs' },
     },
   },

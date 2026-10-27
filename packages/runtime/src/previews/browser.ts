@@ -1,3 +1,9 @@
+import { Schema } from 'effect'
+import {
+  createBrowserFaviconLoader,
+  fetchRemoteFavicon,
+  observeBrowserFavicons,
+} from './browser-favicon.js'
 import {
   selectedBrowserText,
   STUDIO_BROWSER_SCOPE,
@@ -66,6 +72,7 @@ type Session = {
   cdp: CDPSession
   pendingInput?: QueuedInput
   statePending: boolean
+  favicon?: string | null
   state: Extract<
     RemoteBrowserMessage,
     {
@@ -527,6 +534,42 @@ export class RemoteBrowsers {
         streaming: false,
         stream: Promise.resolve(),
       }
+      const faviconLoader = createBrowserFaviconLoader(
+        (url, signal) => fetchRemoteFavicon(session.cdp, url, signal),
+        (favicon) => {
+          session.favicon = favicon
+          this.scheduleState(session)
+        },
+      )
+      let faviconDocument = ''
+      await session.cdp.send('Page.enable')
+      session.cdp.on('Page.frameNavigated', ({ frame }) => {
+        if (frame.parentId) return
+        faviconLoader.reset()
+        faviconDocument = ''
+        session.favicon = undefined
+      })
+      const faviconUpdateSchema = Schema.Struct({
+        documentId: Schema.String.pipe(Schema.check(Schema.isMaxLength(100))),
+        url: Schema.String.pipe(Schema.check(Schema.isMaxLength(8192))),
+        icons: Schema.Array(Schema.String.pipe(Schema.check(Schema.isMaxLength(1500000)))).pipe(
+          Schema.check(Schema.isMaxLength(8)),
+        ),
+      })
+      await page.exposeBinding('__dovoBrowserFavicon', (source, value: unknown) => {
+        if (source.frame !== page.mainFrame()) return
+        const parsed = decodeResult(faviconUpdateSchema, value)
+        if (!parsed.success || parsed.data.url !== page.url()) return
+        if (faviconDocument !== parsed.data.documentId) {
+          faviconDocument = parsed.data.documentId
+          faviconLoader.reset()
+          session.favicon = undefined
+        }
+        void faviconLoader.load(parsed.data.url, parsed.data.icons)
+      })
+      page.once('close', () => faviconLoader.reset())
+      await page.addInitScript(observeBrowserFavicons)
+      if (existingPage) await page.evaluate(observeBrowserFavicons)
       await page.exposeBinding('__dovoBrowserInteraction', (_source, value: unknown) => {
         const result = decodeResult(remoteBrowserInteractionSchema, value)
         if (!result.success) return
@@ -759,6 +802,7 @@ export class RemoteBrowsers {
           ? session.state.url
           : session.page.url(),
         title: info.title,
+        favicon: session.favicon,
         editable: info.editable,
         back: history.currentIndex > 0,
         forward: history.currentIndex < history.entries.length - 1,

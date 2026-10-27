@@ -1580,12 +1580,18 @@ it('captures a bounded website favicon and exposes it in native status', async (
   const call = handler()
   await call(event, workspaceShow)
   mocks.contents.session.fetch.mockResolvedValueOnce(
-    new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }),
+    new Response(
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+      { headers: { 'content-type': 'image/png' } },
+    ),
   )
   listener('page-favicon-updated')?.({}, ['https://example.com/favicon.png'])
   await vi.waitFor(async () =>
     expect(await call(event, { action: 'status', key: 'shared' })).toMatchObject({
-      favicon: 'data:image/png;base64,AQID',
+      favicon: expect.stringMatching(/^data:image\/png;base64,/),
     }),
   )
   listener('did-start-navigation')?.({}, 'https://example.com/next', false, true)
@@ -1597,7 +1603,7 @@ it('captures a bounded website favicon and exposes it in native status', async (
     new Response('not an image', { headers: { 'content-type': 'text/html' } }),
   )
   listener('page-favicon-updated')?.({}, ['https://example.com/not-icon'])
-  await vi.waitFor(() => expect(mocks.contents.session.fetch).toHaveBeenCalledTimes(2))
+  await vi.waitFor(() => expect(mocks.contents.session.fetch).toHaveBeenCalledTimes(3))
   expect(await call(event, { action: 'status', key: 'shared' })).not.toHaveProperty(
     'favicon',
     expect.any(String),

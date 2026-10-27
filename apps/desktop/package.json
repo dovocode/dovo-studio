@@ -19,6 +19,7 @@
     "@dovo/extension-scm": "workspace:*",
     "@dovo/extension-tasks": "workspace:*",
     "@dovo/protocol": "workspace:*",
+    "@dovo/runtime": "workspace:*",
     "@dovo/studio-core": "workspace:*",
     "@dovo/studio-shell": "workspace:*",
     "@dovo/studio-ui": "workspace:*",

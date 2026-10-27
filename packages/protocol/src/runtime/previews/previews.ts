@@ -417,7 +417,8 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       cdp?: string
       image?: string
       selection?: string
-      favicon?: string
+      favicon?: string | null
+      faviconUpdates?: { key: string; url: string; favicon: string | null }[]
       sitePermissions?: BrowserSitePermissions
       windows?: { id: number; title: string }[]
       movedTabs?: { key: string; tab: BrowserWorkspaceTab }[]

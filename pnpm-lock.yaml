@@ -394,6 +394,9 @@ importers:
       '@dovo/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@dovo/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@dovo/studio-core':
         specifier: workspace:*
         version: link:../../packages/studio-core

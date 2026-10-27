@@ -1,3 +1,4 @@
+import { browserPageFavicon } from '@dovo/protocol'
 import { flushSync } from 'react-dom'
 import { nativeBrowserBounds, nativeBrowserOcclusion } from './native-browser-layout'
 import { BrowserTabRow } from './browser-tab-row'
@@ -347,6 +348,7 @@ function BrowserContent({
     profileId = 'default',
     runtimeId = activeRuntimeId ?? undefined,
     title = '',
+    favicon?: string,
   ) => {
     if (shared && tabs.length >= 100) {
       setError('Close a tab before opening more than 100 tabs.')
@@ -357,6 +359,7 @@ function BrowserContent({
       id: randomUUID(),
       url: target,
       title,
+      favicon,
       kind,
       profileId,
       runtimeId,
@@ -685,6 +688,18 @@ function BrowserContent({
         Effect.sync(() => {
           if (!alive || !state) return
           if (shared) {
+            if (state.faviconUpdates?.length) {
+              setTabs((previous) =>
+                previous.map((tab) => {
+                  const update = state.faviconUpdates?.find(
+                    (item) => item.key === nativeKey(tab.id) && item.url === tab.url,
+                  )
+                  return update && tab.favicon !== (update.favicon ?? undefined)
+                    ? { ...tab, favicon: update.favicon ?? undefined }
+                    : tab
+                }),
+              )
+            }
             const previousSelected = currentTabs.current.find((tab) => tab.id === activeTab)
             const closedKeys = new Set(state.closedTabs ?? [])
             const closedIds = new Set(
@@ -811,19 +826,19 @@ function BrowserContent({
                 tab.id === activeTab &&
                 (tab.url !== state.url ||
                   tab.title !== (state.title ?? '') ||
-                  tab.favicon !== state.favicon),
+                  tab.favicon !== browserPageFavicon(tab, state.url, state.favicon)),
             )
               ? previous
               : previous.map((tab) =>
                   tab.id === activeTab &&
                   (tab.url !== state.url ||
                     tab.title !== state.title ||
-                    tab.favicon !== state.favicon)
+                    tab.favicon !== browserPageFavicon(tab, state.url, state.favicon))
                     ? {
                         ...tab,
                         url: state.url === 'about:blank' ? '' : state.url,
                         title: state.title ?? '',
-                        favicon: state.favicon,
+                        favicon: browserPageFavicon(tab, state.url, state.favicon),
                         ...(shared && tab.url !== state.url
                           ? {
                               visitedAt: Math.max(
@@ -1195,12 +1210,12 @@ function BrowserContent({
   const openSavedPage = (tab: BrowserTab) => {
     const existing = tabs.find((item) => browserPageKey(item) === browserPageKey(tab))
     if (existing) selectTab(existing)
-    else newTab(tab.url, tab.kind, tab.profileId, tab.runtimeId, tab.title)
+    else newTab(tab.url, tab.kind, tab.profileId, tab.runtimeId, tab.title, tab.favicon)
   }
   const reopenTab = () => {
     const tab = closed[0]
     if (!tab) return
-    if (newTab(tab.url, tab.kind, tab.profileId, tab.runtimeId, tab.title))
+    if (newTab(tab.url, tab.kind, tab.profileId, tab.runtimeId, tab.title, tab.favicon))
       setClosed((previous) => previous.slice(1))
   }
   const bookmarked = bookmarks.some((tab) => browserPageKey(tab) === browserPageKey(selectedTab))
@@ -2252,6 +2267,7 @@ function BrowserContent({
                       id: child.id,
                       url: child.url,
                       title: '',
+                      favicon: undefined,
                       pinned: false,
                       previewOf: tab.id,
                     }))
@@ -2276,7 +2292,10 @@ function BrowserContent({
                     if (
                       !previous.some(
                         (item) =>
-                          item.id === tab.id && (item.url !== url || item.title !== state.title),
+                          item.id === tab.id &&
+                          (item.url !== url ||
+                            item.title !== state.title ||
+                            item.favicon !== browserPageFavicon(item, url, state.favicon)),
                       )
                     )
                       return previous
@@ -2286,6 +2305,7 @@ function BrowserContent({
                             ...item,
                             url,
                             title: state.title,
+                            favicon: browserPageFavicon(item, url, state.favicon),
                             ...(shared && item.url !== url
                               ? {
                                   visitedAt: Math.max(

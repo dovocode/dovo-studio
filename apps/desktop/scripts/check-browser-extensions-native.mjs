@@ -15,7 +15,15 @@
  * Linux without a display needs `xvfb-run`. The Chromium sandbox must be available.
  */
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  symlinkSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -27,6 +35,8 @@ const keep = process.argv.includes('--keep')
 const websites = process.argv.includes('--websites')
 const store = process.argv.includes('--store')
 const work = mkdtempSync(join(tmpdir(), 'dovo-browser-extensions-native-'))
+// Keep native image dependencies in their installed packages rather than bundling their loaders.
+symlinkSync(join(desktop, 'node_modules'), join(work, 'node_modules'), 'junction')
 
 const write = (path, contents) => {
   mkdirSync(join(path, '..'), { recursive: true })
@@ -148,9 +158,15 @@ process.on('uncaughtException',(error)=>{report.error=error.stack??error.message
 const watchdog = setTimeout(()=>{report.error='Native browser smoke timed out at '+report.stage;writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report));app.exit(1)},90_000)
 watchdog.unref()
 const server = createServer((request, response) => {
+  if(request.url==='/profile-icon.svg') {
+    response.setHeader('content-type','image/svg+xml')
+    const color=request.headers.cookie?.includes('icon=work')?'red':'blue'
+    response.end('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="'+color+'"/></svg>')
+    return
+  }
   if(request.url==='/language') { response.end(request.headers['accept-language']||''); return }
   response.setHeader('content-type', 'text/html')
-  response.end('<title>page</title>hello')
+  response.end('<title>page</title><link rel="icon" href="/profile-icon.svg">hello')
 }).listen(0, '127.0.0.1')
 
 app.whenReady().then(async () => {
@@ -202,9 +218,34 @@ app.whenReady().then(async () => {
 
     if (run === '1') {
       stage('show work')
+      await work_.cookies.set({url:page,name:'icon',value:'work'})
       await show(tab, 'work')
       const contents = () => studio.contentView.children.map((view: any) => view.webContents).find((contents: any) => contents?.getURL() === page)
       const main = contents()!
+      stage('profile-scoped favicons')
+      const readFavicon=async(key:string)=>{
+        for(let attempt=0;attempt<60;attempt++) {
+          const state=await call('browser',{action:'status',key,tabCount:2})
+          if(typeof state?.favicon==='string')return state.favicon
+          await wait(50)
+        }
+        throw new Error('The native favicon was not decoded.')
+      }
+      const workIcon=await readFavicon(tab)
+      assert.ok(workIcon.startsWith('data:image/png;base64,'))
+      await show('favicon-personal','personal')
+      const personalIcon=await readFavicon('favicon-personal')
+      assert.notEqual(workIcon,personalIcon,'Icons must use their own profile cookies.')
+      await call('browser',{action:'close',key:'favicon-personal'})
+      await show(tab,'work')
+      await main.executeJavaScript(\`document.querySelector('link[rel="icon"]').href='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle r="16" cx="16" cy="16" fill="green"/></svg>')\`)
+      let dynamicIcon=workIcon
+      for(let attempt=0;attempt<60&&dynamicIcon===workIcon;attempt++) {
+        dynamicIcon=await readFavicon(tab)
+        if(dynamicIcon===workIcon)await wait(50)
+      }
+      assert.notEqual(dynamicIcon,workIcon,'Dynamic inline favicons must replace the previous icon.')
+      report.favicons=true
       stage('language')
       assert.deepEqual(await main.executeJavaScript('({language:navigator.language,languages:navigator.languages})'), {language:'nl-NL',languages:['nl-NL','nl']})
       stage('language header')
@@ -561,7 +602,7 @@ await build({
     minify: false,
     target: 'node22',
     rollupOptions: {
-      external: ['electron'],
+      external: ['electron', '@dovo/runtime/browser-favicon'],
       output: { format: 'cjs', entryFileNames: 'main.cjs' },
     },
   },
@@ -603,6 +644,7 @@ for (const run of ['1', '2']) {
   console.log(`run ${run}: ${result.ok ? 'passed' : 'FAILED'}`)
   if (!result.ok) {
     console.error(result.error)
+    if (child.stderr) console.error(child.stderr.slice(-6000))
     if (result.output) console.error(result.output)
     failed = true
     break
