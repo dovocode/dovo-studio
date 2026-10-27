@@ -1,6 +1,7 @@
 import { useVerifiedRead } from '../../connections/verified-read'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useCallback, useEffect, useRef } from 'react'
+import { Schema } from 'effect'
 import { ChevronRight, ExternalLink, RefreshCw } from 'lucide-react'
 import {
   forgePipelinePageSchema,
@@ -9,11 +10,21 @@ import {
   type ForgePipeline,
   formatDateTime,
 } from '@dovo/studio-core'
+import { mutableStruct } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 import { PipelineState } from '../../work/pipeline-state'
 import { WorkContent } from '../../work/content'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const selectedRunCache = createPullStateCache<Pick<ForgePipeline, 'id' | 'url'> | null>(30)
+const savedRunsSchema = mutableStruct({
+  ...forgePipelinePageSchema.fields,
+  loadedPages: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 1, maximum: 500 })),
+    ),
+  ),
+})
 export function PullPipelineRuns({
   repositoryId,
   sha,
@@ -45,6 +56,7 @@ export function PullPipelineRuns({
   const generation = useRef(0)
   const pending = useRef(false)
   const stored = useRef<ForgePipeline[]>([])
+  const depth = useRef(1)
   const load = useCallback(
     async (cursor?: string, refresh = false) => {
       if (
@@ -80,7 +92,7 @@ export function PullPipelineRuns({
           )
           return
         }
-        const page = await readRequest(
+        let page = await readRequest(
           '/api/scm/work/pipelines/list',
           {
             repositoryId,
@@ -91,12 +103,33 @@ export function PullPipelineRuns({
         )
         if (current !== generation.current) return
         const matches = page.items.filter((run) => run.sha.toLowerCase() === sha.toLowerCase())
+        let pages = 1
+        // Poll all pages the viewer has opened. Replacing the list with page one on every
+        // tick makes older runs disappear while someone is choosing one to inspect.
+        while (!cursor && page.next && pages < depth.current) {
+          const nextPage = await readRequest(
+            '/api/scm/work/pipelines/list',
+            { repositoryId, cursor: page.next, refresh },
+            forgePipelinePageSchema,
+          )
+          if (current !== generation.current) return
+          matches.push(
+            ...nextPage.items.filter((run) => run.sha.toLowerCase() === sha.toLowerCase()),
+          )
+          page = {
+            ...nextPage,
+            stale: page.stale || nextPage.stale,
+            refreshError: page.refreshError ?? nextPage.refreshError,
+          }
+          pages++
+        }
         const items = [
           ...new Map(
             [...(cursor ? stored.current : []), ...matches].map((run) => [run.id, run]),
           ).values(),
         ]
         stored.current = items
+        depth.current = cursor ? Math.min(500, depth.current + 1) : pages
         setRuns(items)
         setNext(page.next)
         setStale(!!page.stale)
@@ -105,6 +138,7 @@ export function PullPipelineRuns({
           await readCache?.write(cacheKey, {
             ...page,
             items,
+            loadedPages: depth.current,
           })
         } catch {
           if (current === generation.current)
@@ -131,16 +165,18 @@ export function PullPipelineRuns({
     pending.current = false
     setBusy(false)
     stored.current = []
+    depth.current = 1
     setRuns([])
     setNext(undefined)
     setError('')
     setNotice('')
     void (async () => {
       try {
-        const cached = await readCache?.read(cacheKey, forgePipelinePageSchema)
+        const cached = await readCache?.read(cacheKey, savedRunsSchema)
         if (current !== generation.current) return
         if (cached) {
           stored.current = cached.value.items
+          depth.current = cached.value.loadedPages ?? 1
           setRuns(cached.value.items)
           setNext(cached.value.next)
           setStale(true)

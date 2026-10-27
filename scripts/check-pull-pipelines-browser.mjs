@@ -30,7 +30,7 @@ const section=input.section??(path.endsWith('/options')?'options':'other');
 if(window.blocked.includes(section))await new Promise(resolve=>(window.releases[section]??=[]).push(resolve));
 if(window.failed.includes(section))throw new Error(section+' temporarily unavailable');
 if(path.endsWith('/options'))return {provider:'github',pipelines:true,issues:false,pipelineActions:[],pipelineDefinitions:[]};
-if(path.endsWith('/pipelines/list'))return {items:[run]};
+if(path.endsWith('/pipelines/list'))return window.listPages?(input.cursor?{items:[{...run,id:'older-run',number:'0',title:'Older PR build'}]}:{items:[run],next:'older'}):{items:[run]};
 if(path.endsWith('/pipelines/detail'))return {run:{...run},jobs:input.section==='jobs'?(input.cursor?[{...job,id:'job-2',name:'Publish job',status:'failure',steps:[{id:'step-2',number:1,name:'Upload artifact',status:'failure'}]}]:[job]):[],next:input.section==='jobs'&&!input.cursor?'2':undefined,graph:input.section==='graph'?[{id:'build',name:'Build job',needs:[],jobIds:[]},{id:'publish',name:'Publish job',needs:['build'],jobIds:[]}]:undefined};
 throw new Error('Unexpected request '+path);
 }};
@@ -367,6 +367,49 @@ try {
         !window.mobileSections.jobs.error,
     )
   }
+  const paged = await browser.newPage()
+  paged.setDefaultTimeout(10000)
+  paged.on('pageerror', (error) => errors.push(error.message))
+  await paged.clock.install()
+  await paged.setContent('<div id="app"></div>')
+  await paged.addScriptTag({ content: 'window.listPages=true' })
+  await paged.addScriptTag({ content: built.outputFiles[0].text })
+  await paged.getByRole('button', { name: 'Check older runs', exact: true }).click()
+  await paged.getByText('Older PR build', { exact: true }).waitFor()
+  const pagesBefore = await paged.evaluate(
+    () => window.reads.filter((read) => read.path.endsWith('/pipelines/list')).length,
+  )
+  await paged.clock.runFor(10010)
+  await paged.waitForFunction(
+    (before) =>
+      window.reads.filter((read) => read.path.endsWith('/pipelines/list')).length > before,
+    pagesBefore,
+  )
+  const refreshFinished = () =>
+    !Array.from(document.querySelectorAll('button')).find((button) =>
+      button.textContent.includes('Refresh runs'),
+    )?.disabled
+  await paged.waitForFunction(refreshFinished)
+  await paged.getByText('Older PR build', { exact: true }).waitFor()
+  assert.equal(
+    await paged.getByRole('button', { name: 'Check older runs', exact: true }).count(),
+    0,
+  )
+  await paged.getByRole('button', { name: 'Refresh runs', exact: true }).click()
+  await paged.waitForFunction(refreshFinished)
+  await paged.getByText('Older PR build', { exact: true }).waitFor()
+  await paged.evaluate(() => {
+    window.empty = true
+    window.mount()
+  })
+  await paged.getByText('Unmounted', { exact: true }).waitFor()
+  await paged.evaluate(() => {
+    window.empty = false
+    window.mount()
+  })
+  await paged.waitForFunction(refreshFinished)
+  await paged.getByText('Older PR build', { exact: true }).waitFor()
+  await paged.close()
   assert.deepEqual(errors, [])
   console.log(
     'Pipelines: independent overview/jobs/graph/options, retry, rerun isolation, pagination/offline cache, active-only desktop/native polling, retained context, graph selection and narrow layouts passed. Screenshots: /tmp/dovo-pipelines (native primitives mocked).',
