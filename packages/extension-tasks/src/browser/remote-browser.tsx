@@ -27,6 +27,7 @@ export type RemoteBrowserControls = {
   input: (input: RemoteBrowserInput) => void
   keyboard: () => void
   screenshot: () => void
+  capture: () => Promise<string | undefined>
   viewport: (preset: string, landscape: boolean) => void
   reconnect: () => void
   performance: () => void
@@ -81,6 +82,8 @@ export function RemoteBrowser({
   const visibility = useRef(active)
   const online = useRef(false)
   const frame = useRef<HTMLIFrameElement>(null)
+  const captures = useRef(new Map<number, (image?: string) => void>())
+  const captureId = useRef(0)
   const version = useRef(0)
   const pending = useRef(false)
   const post = useCallback((message: object) => {
@@ -92,6 +95,18 @@ export function RemoteBrowser({
       input: (input) => post({ type: 'input', input }),
       keyboard: () => post({ type: 'keyboard' }),
       screenshot: () => post({ type: 'screenshot' }),
+      capture: () =>
+        new Promise((resolve) => {
+          const id = ++captureId.current
+          const finish = (image?: string) => {
+            clearTimeout(timer)
+            captures.current.delete(id)
+            resolve(image)
+          }
+          const timer = setTimeout(() => finish(), 500)
+          captures.current.set(id, finish)
+          post({ type: 'snapshot', id })
+        }),
       reconnect: () => post({ type: 'reconnect' }),
       performance: () => post({ type: 'performance' }),
       viewport: (preset, landscape) => post({ type: 'viewport', preset, landscape }),
@@ -169,6 +184,16 @@ export function RemoteBrowser({
         void attachScreenshot(data.image).catch((error) =>
           post({ type: 'error', message: String(error) }),
         )
+      if (data.type === 'snapshot' && 'id' in data && typeof data.id === 'number') {
+        const image =
+          'image' in data &&
+          typeof data.image === 'string' &&
+          data.image.startsWith('data:image/png;base64,') &&
+          data.image.length <= 20_000_000
+            ? data.image
+            : undefined
+        captures.current.get(data.id)?.(image)
+      }
       if (data.type === 'closed') {
         const result = decodeResult(remoteBrowserMessageSchema, data)
         if (result.success && result.data.type === 'closed' && result.data.byPage) reportClosed()
@@ -203,6 +228,7 @@ export function RemoteBrowser({
   useEffect(
     () => () => {
       version.current++
+      for (const finish of captures.current.values()) finish()
     },
     [],
   )

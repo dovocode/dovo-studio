@@ -104,6 +104,7 @@ import { deviceHostSettingsResultSchema } from '@dovo/protocol'
 const threadBrowserWindowId = randomUUID()
 const addresses = new Map<string, string>()
 type OpenLink = { id: string; url: string }
+type BrowserPreviewBackground = { url: string; title: string; image?: string }
 const savedTabs = new Map<string, BrowserTabs>()
 // Extension-created pages already have a native view. Keep its identity for this renderer session.
 const nativeTabKeys = new Map<string, string>()
@@ -265,6 +266,16 @@ function BrowserContent({
     text: string
   } | null>(null)
   const [previewPlacement, setPreviewPlacement] = useApplicationState<PreviewPlacement>('floating')
+  const [previewBackground, setPreviewBackground] =
+    useApplicationState<BrowserPreviewBackground | null>(null)
+  const previewRequest = useRef(0)
+  const [pendingPreview, setPendingPreview] = useApplicationState<string | undefined>(undefined)
+  useEffect(() => {
+    if (!selectedTab.previewOf) setPreviewBackground(null)
+    return () => {
+      previewRequest.current++
+    }
+  }, [selectedTab.previewOf])
   const selectedRuntime = selectedTab.runtimeId
     ? runtimes.find((entry) => entry.profile.id === selectedTab.runtimeId)
     : undefined
@@ -323,6 +334,8 @@ function BrowserContent({
     savedTabs.set(scope, { tabs, active: activeTab, closed })
   }, [scope, tabs, activeTab, closed])
   const selectTab = (tab: BrowserTab) => {
+    previewRequest.current++
+    setPendingPreview(undefined)
     if (tab.id === activeTab) return
     const now = Date.now()
     setTabs((previous) =>
@@ -341,6 +354,42 @@ function BrowserContent({
     setUrl(tab.url)
     setInput(tab.url)
     setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
+  }
+  const showLinkPreview = async (tab: BrowserTab, source = selectedTab) => {
+    const attempt = ++previewRequest.current
+    setPendingPreview(tab.id)
+    // Nested previews retain the original page, rather than replacing it with the last overlay.
+    if (!source.previewOf || !previewBackground) {
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      let image: string | undefined
+      try {
+        image = await Promise.race([
+          source.kind === 'web' && browser
+            ? browser({ action: 'screenshot', key: nativeKey(source.id) }).then(
+                (result) => result?.image,
+              )
+            : (remote.current?.capture() ?? Promise.resolve(undefined)),
+          new Promise<undefined>((resolve) => {
+            timeout = setTimeout(() => resolve(undefined), 500)
+          }),
+        ])
+        if (image) {
+          const decoded = new Image()
+          decoded.src = image
+          await decoded.decode()
+        }
+      } catch {
+        // A loading or unavailable page must not block opening its link.
+        image = undefined
+      } finally {
+        clearTimeout(timeout)
+      }
+      if (attempt !== previewRequest.current) return
+      setPreviewBackground({ url: source.url, title: source.title, image })
+    }
+    if (attempt !== previewRequest.current) return
+    setPreviewPlacement('floating')
+    selectTab(tab)
   }
   const newTab = (
     target = '',
@@ -774,8 +823,7 @@ function BrowserContent({
                 if (tab.active || tab.openerKey) foreground = index
               })
               if (foreground >= 0) {
-                setPreviewPlacement('floating')
-                selectTab(adopted[foreground])
+                void showLinkPreview(adopted[foreground], previousSelected)
               }
               for (const [key, value] of nativeTabKeys)
                 if (closedKeys.has(value)) nativeTabKeys.delete(key)
@@ -810,8 +858,7 @@ function BrowserContent({
               }))
             if (additions.length) {
               setTabs((previous) => [...previous, ...additions])
-              setPreviewPlacement('floating')
-              selectTab(additions[additions.length - 1])
+              void showLinkPreview(additions[additions.length - 1])
               return
             }
           }
@@ -1076,7 +1123,7 @@ function BrowserContent({
   // Only the active preview's return chain stays alive. Switching tabs or promoting it
   // disposes hidden previews, without reloading the retained page.
   useEffect(() => {
-    const retained = new Set<string>()
+    const retained = new Set<string>(pendingPreview ? [pendingPreview] : [])
     let tab = tabs.find((item) => item.id === activeTab)
     while (tab && !retained.has(tab.id)) {
       retained.add(tab.id)
@@ -1089,7 +1136,7 @@ function BrowserContent({
     setTabs((previous) => previous.filter((tab) => !ids.has(tab.id)))
     for (const tab of discarded)
       void disposeTab(tab).catch((cause) => setError(`Could not close preview: ${String(cause)}`))
-  }, [tabs, activeTab])
+  }, [tabs, activeTab, pendingPreview])
   useEffect(() => {
     if (!shared) return
     let stopped = false,
@@ -2021,6 +2068,7 @@ function BrowserContent({
         selectedTab.previewOf
           ? {
               placement: previewPlacement,
+              background: previewBackground,
               onPlacementChange: (placement) =>
                 placement === 'inline' ? closeTab(selectedTab) : setPreviewPlacement(placement),
               onClose: () => closeTab(selectedTab),
@@ -2277,8 +2325,7 @@ function BrowserContent({
                       ...adopted.filter((child) => !previous.some((item) => item.id === child.id)),
                     ])
                     if (adopted.length) {
-                      setPreviewPlacement('floating')
-                      selectTab(adopted[adopted.length - 1])
+                      void showLinkPreview(adopted[adopted.length - 1], tab)
                     }
                   }
                   if (activeTab === tab.id && !additions.length) {
@@ -2546,6 +2593,7 @@ function BrowserLayout({
   children: React.ReactNode
   preview?: {
     placement: PreviewPlacement
+    background: BrowserPreviewBackground | null
     onPlacementChange: (placement: PreviewPlacement) => void
     onClose: () => void
     onPromote: () => void
@@ -2558,6 +2606,26 @@ function BrowserLayout({
       aria-label={devices ? 'Device previews' : 'Browser previews'}
     >
       {!sidebarState?.collapsed && sidebar}
+      {preview && (
+        <div
+          data-browser-preview-background
+          aria-hidden
+          inert
+          className="pointer-events-none flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
+        >
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4 text-xs text-muted-foreground">
+            <Globe2 size={14} />
+            <span className="truncate">{preview.background?.url || preview.background?.title}</span>
+          </div>
+          {preview.background?.image && (
+            <img
+              alt=""
+              src={preview.background.image}
+              className="min-h-0 w-full flex-1 object-fill"
+            />
+          )}
+        </div>
+      )}
       <FloatingPreview
         title={preview ? 'Link' : 'Browser'}
         placement={preview?.placement ?? 'inline'}
@@ -2566,6 +2634,7 @@ function BrowserLayout({
         returnLabel="Back to tab"
         inlineClassName="min-w-0 flex-1"
         hideInlineHeader
+        startCentered={!!preview}
         actions={
           preview && (
             <Button size="sm" variant="ghost" onClick={preview.onPromote}>

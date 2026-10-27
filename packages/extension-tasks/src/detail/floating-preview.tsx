@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Grip, Maximize2, Minimize2, PanelRight, PictureInPicture2, X } from 'lucide-react'
 import { cn, IconButton } from '@dovo/studio-ui'
 
@@ -19,6 +19,16 @@ const bounds = (frame: Frame): Frame => {
     y: Math.max(top, Math.min(window.innerHeight - height - 8, frame.y)),
   }
 }
+const initialFrame = (centered: boolean): Frame => {
+  if (typeof window === 'undefined') return { x: 8, y: 8, width: 460, height: 380 }
+  const width = Math.min(1120, window.innerWidth * 0.85)
+  const height = Math.min(800, window.innerHeight * 0.85)
+  return bounds(
+    centered
+      ? { x: (window.innerWidth - width) / 2, y: (window.innerHeight - height) / 2, width, height }
+      : { x: window.innerWidth - 480, y: window.innerHeight - 420, width: 460, height: 380 },
+  )
+}
 
 /** Keep the same preview mounted when moving it between the thread and floating view. */
 export function FloatingPreview({
@@ -31,6 +41,7 @@ export function FloatingPreview({
   inlineClassName = 'h-96',
   returnLabel = 'Return to thread',
   hideInlineHeader = false,
+  startCentered = false,
 }: {
   title: string
   placement: PreviewPlacement
@@ -41,17 +52,10 @@ export function FloatingPreview({
   inlineClassName?: string
   returnLabel?: string
   hideInlineHeader?: boolean
+  startCentered?: boolean
 }) {
-  const [frame, setFrame] = useState<Frame>(() =>
-    typeof window === 'undefined'
-      ? { x: 8, y: 8, width: 460, height: 380 }
-      : bounds({
-          x: window.innerWidth - 480,
-          y: window.innerHeight - 420,
-          width: 460,
-          height: 380,
-        }),
-  )
+  const [frame, setFrame] = useState<Frame>(() => initialFrame(startCentered))
+  useLayoutEffect(() => setFrame(initialFrame(startCentered)), [startCentered])
   const [dragging, setDragging] = useState(false)
   const gesture = useRef<{ x: number; y: number; frame: Frame } | null>(null)
   useEffect(() => {

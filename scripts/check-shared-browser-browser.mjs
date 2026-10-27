@@ -10,6 +10,7 @@ function state(){window.parent.postMessage({channel:'dovo-browser',type:'state',
 window.addEventListener('message',event=>{const m=event.data;
 if(m.type==='connect'){const ticket=JSON.parse(new URL(m.url).searchParams.get('ticket'));tab=ticket.tabId;url=ticket.url;window.parent.postMessage({channel:'dovo-browser',type:'connection',online:true},'*');state()}
 if(m.type==='fixture-favicon'){favicon=m.favicon;state()}
+if(m.type==='snapshot')window.parent.postMessage({channel:'dovo-browser',type:'snapshot',id:m.id,image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='},'*');
 if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:m.input},'*');if(m.input.type==='navigate')url=m.input.url;state()}
 if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},'*');
 });</script></body></html>`
@@ -421,6 +422,7 @@ try {
       ),
     )
   await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  await page.locator('[data-browser-preview-background] img').waitFor()
   const remotePreviewFrame = preview
     .locator('iframe[title="Host browser"]')
     .filter({ visible: true })
@@ -698,6 +700,40 @@ try {
     await window.pollBrowser()
   })
   await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  const background = page.locator('[data-browser-preview-background]')
+  await background.locator('img').waitFor()
+  assert(
+    (await background.textContent()).includes(sourceBeforeOpen.url),
+    'The opener remains visible beneath the link',
+  )
+  const centered = await preview.boundingBox()
+  assert(
+    centered.width >= 900 && centered.height >= 600,
+    'Link preview must open at a useful reading size',
+  )
+  assert(
+    Math.abs(centered.x + centered.width / 2 - 600) <= 1,
+    'Link preview is horizontally centered',
+  )
+  assert(
+    Math.abs(centered.y + centered.height / 2 - 400) <= 1,
+    'Link preview is vertically centered',
+  )
+  await page.setViewportSize({ width: 380, height: 700 })
+  await page.waitForFunction(() => {
+    const box = document.querySelector('[aria-label="Link preview"]').getBoundingClientRect()
+    return box.x >= 8 && box.right <= 372 && box.y >= 8 && box.bottom <= 692
+  })
+  const narrowPreview = await preview.boundingBox()
+  assert(
+    narrowPreview.x >= 8 && narrowPreview.x + narrowPreview.width <= 372,
+    'Preview fits narrow screens',
+  )
+  assert(
+    narrowPreview.y >= 8 && narrowPreview.y + narrowPreview.height <= 692,
+    'Preview height fits narrow screens',
+  )
+  await page.setViewportSize({ width: 1200, height: 800 })
   assert.equal(
     (await persisted()).tabs.some((tab) => tab.url.endsWith('/new-window')),
     false,
@@ -741,6 +777,7 @@ try {
     false,
     'Promotion keeps the existing native page',
   )
+  await background.waitFor({ state: 'detached' })
   await recent.getByRole('button', { name: /^localhost:3000\/new-window Local/ }).click()
   // Command-click disposition still previews the original Chromium child; nested close returns
   // to its opener and promotion retains the exact key and profile.
@@ -759,6 +796,7 @@ try {
   await page.waitForFunction(() =>
     window.calls.some((call) => call.action === 'show' && call.key === 'native-link-preview'),
   )
+  const originalBackground = await page.locator('[data-browser-preview-background]').textContent()
   await page.screenshot({ path: root + 'work/shared-browser/link-preview.png' })
   assert.equal(
     (await persisted()).tabs.some((tab) => tab.url.endsWith('/cmd-link')),
@@ -776,6 +814,11 @@ try {
   })
   await page.waitForFunction(() =>
     window.calls.some((call) => call.action === 'show' && call.key === 'native-nested-preview'),
+  )
+  assert.equal(
+    await page.locator('[data-browser-preview-background]').textContent(),
+    originalBackground,
+    'Nested previews retain the original source',
   )
   await preview.getByRole('button', { name: 'Close preview', exact: true }).click()
   await page.waitForFunction(() =>

@@ -583,6 +583,24 @@ window.addEventListener('message', (event) => {
   }
   if (
     'type' in message &&
+    message.type === 'snapshot' &&
+    'id' in message &&
+    Number.isSafeInteger(message.id)
+  ) {
+    let image: string | undefined
+    try {
+      if (!canvas.hidden && screenshotReady) image = canvas.toDataURL('image/png')
+    } catch {
+      // Opening a link must still work when no rendered frame can be retained.
+    }
+    window.parent.postMessage(
+      { channel: 'dovo-browser', type: 'snapshot', id: message.id, image },
+      '*',
+    )
+    return
+  }
+  if (
+    'type' in message &&
     message.type === 'viewport' &&
     'preset' in message &&
     previewPresets.some((item) => item.id === message.preset)

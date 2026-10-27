@@ -26,7 +26,13 @@ try {
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.evaluate((native) => {
       window.captures = []
+      window.snapshots = []
       window.addEventListener('message', (event) => {
+        if (
+          event.source === document.querySelector('iframe').contentWindow &&
+          event.data.type === 'snapshot'
+        )
+          window.snapshots.push(event.data)
         if (
           event.source === document.querySelector('iframe').contentWindow &&
           event.data.type === 'screenshot'
@@ -82,6 +88,19 @@ try {
       })
     })
     await frame.locator('#page[data-viewport-width="600"]').waitFor()
+    await page.evaluate(() =>
+      document
+        .querySelector('iframe')
+        .contentWindow.postMessage({ channel: 'dovo-browser', type: 'snapshot', id: 42 }, '*'),
+    )
+    await page.waitForFunction(() => window.snapshots.length === 1)
+    assert.equal(await page.evaluate(() => window.snapshots[0].id), 42)
+    assert.match(await page.evaluate(() => window.snapshots[0].image), /^data:image\/png;base64,/)
+    assert.equal(
+      await page.evaluate(() => window.captures.length),
+      0,
+      'Retaining the background must not open the image editor',
+    )
     await frame.getByLabel('Browser options', { exact: true }).click()
     await frame.getByRole('button', { name: 'Take screenshot', exact: true }).click()
     await page.waitForFunction(() => window.captures.length === 1)
