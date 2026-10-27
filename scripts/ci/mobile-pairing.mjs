@@ -6,7 +6,21 @@ export function preparePairingFlow(flow) {
   return flow
     .replaceAll(
       '- inputText: ${RUNTIME_ADDRESS}',
-      '- inputText: ${RUNTIME_ADDRESS}\n- assertVisible:\n    id: Computer address\n    text: ${RUNTIME_ADDRESS}',
+      // Maestro 2.11's iOS TextInputHelper sends multi-character input at 30 Hz.
+      // URL-keyboard startup can drop the middle of that synthesized burst. Each
+      // single-character command uses the driver's slower path; never retry or
+      // silently repair an incorrect field value after the assertion.
+      [
+        '- evalScript: ${output.addressCharacter = 0}',
+        '- repeat:',
+        '    times: ${RUNTIME_ADDRESS.length}',
+        '    commands:',
+        '      - inputText: ${RUNTIME_ADDRESS.charAt(output.addressCharacter)}',
+        '      - evalScript: ${output.addressCharacter++}',
+        '- assertVisible:',
+        '    id: Computer address',
+        '    text: ${RUNTIME_ADDRESS}',
+      ].join('\n'),
     )
     .replaceAll(
       '- inputText: ${PAIRING_CODE}',

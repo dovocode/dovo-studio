@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import { createRequire } from 'node:module'
+import { runInNewContext } from 'node:vm'
 import { openDatabase } from '../../packages/runtime/dist/storage/database.js'
 import { Devices } from '../../packages/runtime/dist/auth/devices.js'
 import { Pairing } from '../../packages/runtime/dist/auth/pairing.js'
@@ -56,7 +57,10 @@ void test('the native release flow mints its code at input, after driver startup
   const documents = parseAllDocuments(prepared)
   assert.ok(documents.every((document) => document.errors.length === 0))
   const commands = documents[1].toJS()
-  const addressInput = commands.findIndex((command) => command.inputText === '${RUNTIME_ADDRESS}')
+  const addressInput = commands.findIndex(
+    (command) => command.repeat?.times === '${RUNTIME_ADDRESS.length}',
+  )
+  assert.ok(addressInput > 0)
   assert.deepEqual(commands[addressInput + 1], {
     assertVisible: { id: 'Computer address', text: '${RUNTIME_ADDRESS}' },
   })
@@ -68,4 +72,29 @@ void test('the native release flow mints its code at input, after driver startup
   assert.ok(mint > prepared.indexOf('id: Pairing code'))
   assert.ok(mint < prepared.indexOf('- inputText: ${output.pairing.code}'))
   assert.ok(mint < prepared.indexOf('- tapOn: Dismiss keyboard'))
+})
+
+void test('native address entry preserves complete LAN and VPN URLs without fast synthesized bursts', () => {
+  const prepared = preparePairingFlow('- inputText: ${RUNTIME_ADDRESS}')
+  const commands = parseAllDocuments(prepared)[0].toJS()
+  for (const address of ['http://192.168.64.12:63424', 'http://100.98.12.3:51464']) {
+    const context = { RUNTIME_ADDRESS: address, output: {} }
+    const entered = []
+    const evaluate = (expression) => runInNewContext(expression.slice(2, -1), context)
+    const execute = (commands) => {
+      for (const command of commands) {
+        if (command.evalScript) evaluate(command.evalScript)
+        if (command.inputText) entered.push(evaluate(command.inputText))
+        if (command.repeat)
+          for (let index = 0; index < evaluate(command.repeat.times); index++)
+            execute(command.repeat.commands)
+      }
+    }
+    execute(commands)
+    assert.deepEqual(entered, address.split(''))
+    assert.equal(entered.join(''), address)
+    assert.deepEqual(commands.at(-1), {
+      assertVisible: { id: 'Computer address', text: '${RUNTIME_ADDRESS}' },
+    })
+  }
 })
