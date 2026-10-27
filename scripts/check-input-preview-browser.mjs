@@ -68,6 +68,14 @@ try {
     true,
   )
   assert.equal(await page.getByRole('button', { name: 'Deny', exact: true }).isDisabled(), true)
+  await page.evaluate(() => document.activeElement?.blur())
+  await page.keyboard.press('y')
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await page.evaluate(() => window.answers.length),
+    0,
+    'Offline shortcuts cannot answer',
+  )
   await page.evaluate(() => {
     window.failAnswer = true
     window.updatePreview(window.initialPreview)
@@ -83,6 +91,14 @@ try {
   assert.equal(
     await page.getByRole('button', { name: 'Allow once', exact: true }).isDisabled(),
     true,
+  )
+  await page.evaluate(() => document.activeElement?.blur())
+  await page.keyboard.press('n')
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await page.evaluate(() => window.answers.length),
+    2,
+    'Busy shortcuts cannot double-answer',
   )
   await page.evaluate(() => window.finishAnswer())
   await page.waitForFunction(() => !document.querySelector('button[disabled]'))
@@ -141,9 +157,123 @@ try {
   await page.getByRole('button', { name: 'Open thread', exact: true }).click()
   await page.getByRole('button', { name: 'Dismiss for now', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => [window.opens, window.dismissals]), [1, 1])
+  await page.evaluate(() => {
+    window.holdAnswer = false
+    window.answers = []
+  })
+  for (const [key, allow] of [
+    ['y', true],
+    ['Shift+Y', true],
+    ['n', false],
+    ['Shift+N', false],
+    ['Enter', true],
+  ]) {
+    await page.evaluate(() => document.activeElement?.blur())
+    const count = await page.evaluate(() => window.answers.length)
+    await page.keyboard.press(key)
+    await page.waitForFunction((count) => window.answers.length === count + 1, count)
+    assert.equal(await page.evaluate(() => window.answers.at(-1).answer), allow)
+    await page.waitForFunction(() => !document.querySelector('button[disabled]'))
+  }
+  await page.getByRole('button', { name: 'Deny', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => window.answers.length === 6)
+  assert.equal(
+    await page.evaluate(() => window.answers.at(-1).answer),
+    false,
+    'Enter preserves the focused Deny action',
+  )
+  await page.evaluate(() => {
+    document.activeElement?.blur()
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<input aria-label="Typing test"><div role="dialog">Another dialog</div>',
+    )
+  })
+  await page.keyboard.press('y')
+  assert.equal(
+    await page.evaluate(() => window.answers.length),
+    6,
+    'An unrelated dialog owns the keyboard',
+  )
+  await page.evaluate(() => document.querySelector('[role="dialog"]').remove())
+  await page.getByLabel('Typing test').focus()
+  await page.keyboard.press('y')
+  await page.keyboard.press('n')
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await page.evaluate(() => window.answers.length),
+    6,
+    'Typing never answers an approval',
+  )
+  await page.evaluate(() => {
+    document.querySelector('input').remove()
+    document.activeElement?.blur()
+    for (const options of [
+      { repeat: true },
+      { isComposing: true },
+      { ctrlKey: true },
+      { altKey: true },
+    ]) {
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'y', bubbles: true, ...options }),
+      )
+    }
+  })
+  assert.equal(
+    await page.evaluate(() => window.answers.length),
+    6,
+    'Composition, held keys and modifiers are ignored',
+  )
+  await page.evaluate(() =>
+    window.updatePreview({
+      ...window.initialPreview,
+      key: 'question-1',
+      request: {
+        kind: 'question',
+        value: {
+          id: 'question-1',
+          taskId: 'task',
+          prompt: {
+            title: 'Choose the next step',
+            blocking: true,
+            questions: [
+              {
+                id: 'next',
+                header: 'Next step',
+                question: 'Continue?',
+                required: true,
+                multiple: false,
+                custom: false,
+                options: [{ value: 'continue', label: 'Continue' }],
+              },
+            ],
+          },
+        },
+      },
+    }),
+  )
+  await page.getByRole('form', { name: 'Agent questions' }).waitFor()
+  await page.locator('main').evaluate((element) => element.setAttribute('role', 'dialog'))
+  await page.evaluate(() => document.activeElement?.blur())
+  await page.keyboard.press('Enter')
+  await page.getByRole('alert').waitFor()
+  assert.equal(
+    await page.evaluate(() => window.answers.length),
+    6,
+    'Enter in a question dialog still validates required answers',
+  )
+  await page.keyboard.press('1')
+  await page.getByRole('button', { name: /Continue/, pressed: true }).waitFor()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => window.answers.length === 7)
+  assert.deepEqual(await page.evaluate(() => window.answers.at(-1)), {
+    key: 'question-1',
+    answer: { next: ['continue'] },
+  })
   assert.deepEqual(errors, [])
   console.log(
-    'Permission popup: formatted fields, Full JSON, plain text, escaping, narrow layout, offline/busy gating and answer routing passed.',
+    'Permission popup: formatted fields, Full JSON, plain text, escaping, narrow layout, offline/busy gating, keyboard approvals, question submission and answer routing passed.',
   )
 } finally {
   await browser.close()

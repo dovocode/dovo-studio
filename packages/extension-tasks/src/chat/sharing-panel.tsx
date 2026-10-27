@@ -110,9 +110,16 @@ export function SharingPanel({
         <>
           {!sharing.loaded && !sharing.error && <p role="status">Loading sharing settings…</p>}
           {needsRecovery && (
-            <section
+            <form
               className="space-y-3 rounded-xl border p-3"
               aria-label="Restore sharing access"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (sharing.busy || !restore.trim()) return
+                void sharing.restore(restore).then((ok) => {
+                  if (ok) setRestore('')
+                })
+              }}
             >
               <h2 className="font-medium">Restore sharing on this device</h2>
               <p className="text-muted-foreground">
@@ -127,17 +134,10 @@ export function SharingPanel({
                   onChange={(event) => setRestore(event.target.value)}
                 />
               </label>
-              <Button
-                disabled={sharing.busy || !restore.trim()}
-                onClick={() => {
-                  void sharing.restore(restore).then((ok) => {
-                    if (ok) setRestore('')
-                  })
-                }}
-              >
+              <Button disabled={sharing.busy || !restore.trim()} type="submit">
                 Restore sharing key
               </Button>
-            </section>
+            </form>
           )}
           <section className="space-y-3" aria-label="People with access">
             {!!contacts.directory &&

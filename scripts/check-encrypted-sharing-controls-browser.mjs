@@ -17,7 +17,7 @@ const built = await bundleBrowser(
   const request=fixture.client.sharing.request.bind(fixture.client.sharing);
   fixture.client.sharing.request=(...args)=>{window.sharingRequests.push(args[1]);return request(...args)};
   function Inline(){const [source,setSource]=useState(fixture.sourceId),[active,setActive]=useState(true),[draft,setDraft]=useState('Existing draft');window.setSource=setSource;window.setActive=setActive;return <><ThreadSuggestions client={fixture.client} sourceId={source} active={active} onUseSuggestion={text=>setDraft(previous=>previous+'\\n\\n'+text)}/><textarea aria-label="Draft" value={draft} readOnly/></>}
-  function Manager(){const [shown,setShown]=useState(true);window.showManager=setShown;return shown?<SharingPanel client={fixture.client} sourceId={fixture.sourceId} kind={kind} content={kind==='artifact'?fixture.content:undefined} runtime={window.offline?undefined:fixture.runtime}/>:null}fixture.ready(window.published!==false).then(()=>{if(window.forgetKey)fixture.forgetKey();window.sharingRequests=[];return createRoot(document.getElementById('app')).render(window.inline ? <Inline/> : <Manager/>)});
+  function Manager(){const [shown,setShown]=useState(true);window.showManager=setShown;return shown?<SharingPanel client={fixture.client} sourceId={fixture.sourceId} kind={kind} content={kind==='artifact'?fixture.content:undefined} runtime={window.offline?undefined:fixture.runtime}/>:null}fixture.ready(window.published!==false).then(async()=>{if(window.forgetKey){window.recoveryKey=await fixture.client.sharing.key();fixture.forgetKey();}window.sharingRequests=[];return createRoot(document.getElementById('app')).render(window.inline ? <Inline/> : <Manager/>)});
 `,
       loader: 'tsx',
       resolveDir: root + '/apps/web',
@@ -351,6 +351,24 @@ try {
   const restored = await manager({ forgetKey: true })
   await restored.getByRole('heading', { name: 'Restore sharing on this device' }).waitFor()
   assert.equal(await restored.getByRole('button', { name: 'Add', exact: true }).isDisabled(), true)
+  const recovery = restored.getByLabel('Recovery key', { exact: true })
+  await recovery.fill('invalid-recovery-key')
+  await recovery.press('Enter')
+  await restored.getByRole('alert').waitFor()
+  assert.equal(
+    await recovery.inputValue(),
+    'invalid-recovery-key',
+    'A failed restore keeps the entered value',
+  )
+  await recovery.fill(await restored.evaluate(() => window.recoveryKey))
+  await recovery.press('Enter')
+  await restored
+    .getByRole('heading', { name: 'Restore sharing on this device' })
+    .waitFor({ state: 'hidden' })
+  assert.equal(
+    await restored.getByRole('button', { name: 'Copy link', exact: true }).isEnabled(),
+    true,
+  )
   await restored.close()
   const offline = await manager({ offline: true })
   await offline

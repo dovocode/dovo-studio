@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./human-input-shortcuts": "./src/human-input-shortcuts.ts",
     "./clipboard": "./src/clipboard.ts",
     "./sharing-people": "./src/sharing-people.tsx",
     "./code-themes": "./src/code-themes.ts",

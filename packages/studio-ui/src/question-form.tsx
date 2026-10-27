@@ -9,6 +9,7 @@ import {
   type QuestionDraft,
   type PendingQuestion,
 } from '@dovo/protocol'
+import { humanInputShortcutTarget } from './human-input-shortcuts'
 import { QuestionField } from './question-field'
 import { Button } from './components/ui/button'
 export function QuestionForm({
@@ -37,23 +38,18 @@ export function QuestionForm({
   const form = useRef<HTMLFormElement>(null)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        !connected ||
-        busy ||
-        event.defaultPrevented ||
-        event.repeat ||
-        event.isComposing ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        !(event.target instanceof Element) ||
-        event.target.closest(
-          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]',
-        ) ||
-        document.querySelector('form[aria-label="Agent questions"]') !== form.current
-      )
+      if (!connected || busy || event.shiftKey || humanInputShortcutTarget(event) !== form.current)
         return
+      if (event.key === 'Enter') {
+        if (
+          event.target instanceof Element &&
+          event.target.closest('button, a, summary, [role="button"]')
+        )
+          return
+        event.preventDefault()
+        form.current?.requestSubmit()
+        return
+      }
       const index = Number(event.key) - 1
       if (!Number.isInteger(index) || index < 0 || index > 8) return
       const question = request.prompt.questions[0]

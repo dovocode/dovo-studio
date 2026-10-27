@@ -35,9 +35,10 @@ const built = await bundleBrowser(
       function App(){
         const [childRequests,setChildRequests]=useState(false);window.childRequests=setChildRequests;const [mode,setMode]=useState('projects'),[globalWeb,setGlobalWeb]=useState(false),[supported,setSupported]=useState(true);window.webRulesSupported=setSupported;
         window.showSystem=setMode;
+        const [extra,setExtra]=useState(false),[approvalDialog,setApprovalDialog]=useState(false);window.extraApprovals=setExtra;window.approvalDialog=setApprovalDialog;
         const [approval,setApproval]=useState(initial),[online,setOnline]=useState(true),[project,setProject]=useState({id:'repo',name:'Project',approvedWebRequests:true});
         window.approval=value=>setApproval({...initial,...value});window.online=setOnline;
-        const snapshot={allowWebRequests:supported?globalWeb:undefined,workspace:{repositories:[project],tasks:childRequests?[task,{...task,id:'child',title:'Focused worker',delegation:{parentTaskId:task.id,parentRunId:'run',key:'child'}}]:[task],agents:[]},approvals:[childRequests?{...approval,taskId:'child'}:approval],runs:[]};
+        const snapshot={allowWebRequests:supported?globalWeb:undefined,workspace:{repositories:[project],tasks:childRequests?[task,{...task,id:'child',title:'Focused worker',delegation:{parentTaskId:task.id,parentRunId:'run',key:'child'}}]:[task],agents:[]},approvals:[childRequests?{...approval,taskId:'child'}:approval,...(extra?[{...approval,id:'approval-extra',title:'Second permission'}]:[])],runs:[]};
         const request=async(path,input,schema,method)=>{
           if(path==='/api/runtime/preferences/read')return window.computerPreferences;
           if(path==='/api/memory/projects/read')return {projects:[]};
@@ -51,7 +52,7 @@ const built = await bundleBrowser(
         window.project=project;
         if(mode==='mobile-system')return <RuntimePreferences/>;
         if(mode==='desktop-system')return <RunningTaskPreferences/>;
-        return <><section id="mobile"><TaskApprovals taskId="task"/><ProjectApprovalRules repositoryId="repo" onClose={()=>window.ruleCloses++}/></section><section id="desktop"><RunControls task={task}/><TaskProjectActions task={task} onTerminal={()=>{}}/></section></>;
+        return <><section id="mobile"><TaskApprovals taskId="task"/><ProjectApprovalRules repositoryId="repo" onClose={()=>window.ruleCloses++}/></section><section id="desktop"><div role={approvalDialog?'dialog':undefined}><RunControls task={task}/></div><TaskProjectActions task={task} onTerminal={()=>{}}/></section></>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -213,6 +214,65 @@ try {
       })
     }
   }
+  const desktop = page.locator('#desktop')
+  for (const [key, allow] of [
+    ['y', true],
+    ['Enter', true],
+    ['n', false],
+  ]) {
+    await page.evaluate(() => document.activeElement?.blur())
+    const count = await page.evaluate(() => window.writes.length)
+    await page.keyboard.press(key)
+    await page.waitForFunction((count) => window.writes.length === count + 1, count)
+    assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
+      id: 'approval',
+      allow,
+      decision: allow ? 'approve' : 'deny',
+    })
+  }
+  await page.evaluate(() => {
+    window.extraApprovals(true)
+    document.activeElement?.blur()
+  })
+  await desktop.getByText('Second permission', { exact: true }).waitFor()
+  const ambiguous = await page.evaluate(() => window.writes.length)
+  await page.keyboard.press('y')
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await page.evaluate(() => window.writes.length),
+    ambiguous,
+    'Multiple permissions require a focused request',
+  )
+  await desktop.locator('[data-approval-id="approval-extra"]').focus()
+  await page.keyboard.press('y')
+  await page.waitForFunction((count) => window.writes.length === count + 1, ambiguous)
+  assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
+    id: 'approval-extra',
+    allow: true,
+    decision: 'approve',
+  })
+  await page.evaluate(() => {
+    window.extraApprovals(false)
+    window.approvalDialog(true)
+  })
+  await desktop.locator('[role="dialog"] [data-approval-id]').focus()
+  const inDialog = await page.evaluate(() => window.writes.length)
+  await page.keyboard.press('Enter')
+  await page.waitForFunction((count) => window.writes.length === count + 1, inDialog)
+  assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
+    id: 'approval',
+    allow: true,
+    decision: 'approve',
+  })
+  await desktop.getByRole('button', { name: 'Deny', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction((count) => window.writes.length === count + 2, inDialog)
+  assert.equal(
+    await page.evaluate(() => window.writes.at(-1).input.allow),
+    false,
+    'Focused Deny keeps its Enter action',
+  )
+  await page.evaluate(() => window.approvalDialog(false))
   const writesBeforeDetails = await page.evaluate(() => window.writes.length)
   const requestDetail = {
     threadId: 'provider-thread-id',

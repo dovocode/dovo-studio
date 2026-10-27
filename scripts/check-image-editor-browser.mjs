@@ -148,6 +148,42 @@ try {
   await frame.getByRole('button', { name: 'Use original', exact: true }).click()
   await page.waitForFunction(() => window.results.length === 1)
   assert.equal((await output()).type, 'original')
+  for (const edited of [false, true]) {
+    await page.evaluate(() => window.openEditor())
+    await ready()
+    if (edited) await drag(0.1, 0.5, 0.9, 0.5)
+    await frame.getByRole('button', { name: 'Pen', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    assert.equal(
+      await page.evaluate(() => window.results.length),
+      0,
+      'Enter on a tool keeps its normal action',
+    )
+    await frame.getByLabel('Stroke size').focus()
+    await page.keyboard.press('Enter')
+    assert.equal(
+      await page.evaluate(() => window.results.length),
+      0,
+      'Brush controls do not attach',
+    )
+    await frame.locator('canvas').focus()
+    await frame.locator('canvas').evaluate((canvas) => {
+      for (const options of [{ repeat: true }, { isComposing: true }])
+        canvas.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, ...options }),
+        )
+    })
+    assert.equal(await page.evaluate(() => window.results.length), 0)
+    await page.keyboard.press('Enter')
+    await page.waitForFunction(() => window.results.length === 1)
+    assert.equal((await output()).type, edited ? 'edited' : 'original')
+  }
+  await page.evaluate(() => window.openEditor())
+  await ready()
+  await frame.getByRole('button', { name: 'Cancel', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => window.results.length === 1)
+  assert.equal((await output()).type, 'cancel', 'Enter preserves the focused Cancel action')
   // The same document uses the native message bridge when embedded on mobile.
   await page.evaluate(() => {
     window.results = []

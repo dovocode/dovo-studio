@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, MessageCircleQuestion, ShieldCheck, X, Wifi, WifiOff } from 'lucide-react'
 import { useAppearance } from '@dovo/studio-shell'
+import { useApprovalShortcuts } from '@dovo/studio-ui/human-input-shortcuts'
 import { Button, QuestionForm } from '@dovo/studio-ui'
 import { ApprovalDetails } from '@dovo/extension-tasks/approval-details'
 import type { InputPreview, InputPreviewBridge, InputPreviewAnswer } from '@dovo/protocol'
@@ -38,6 +39,12 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
       if (currentKey.current === key) setBusy(false)
     }
   }
+  const approval = useRef<HTMLElement>(null)
+  useApprovalShortcuts({
+    root: approval,
+    disabled: !state?.connected || busy || state.request.kind !== 'approval',
+    onAnswer: (_id, allow) => answer(allow).catch(() => {}),
+  })
   return (
     <main className="flex h-screen flex-col overflow-hidden rounded-xl border bg-background text-foreground">
       <header className="input-preview-drag flex shrink-0 items-center gap-3 border-b bg-card px-5 py-4">
@@ -92,7 +99,14 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
                 onAnswer={answer}
               />
             ) : (
-              <section key={state.key} className="space-y-4 rounded-xl border bg-card p-4">
+              <section
+                ref={approval}
+                key={state.key}
+                data-approval-id={state.request.value.id}
+                tabIndex={0}
+                aria-keyshortcuts="Y N Enter"
+                className="space-y-4 rounded-xl border bg-card p-4"
+              >
                 <h2 className="text-sm font-medium">{state.request.value.title}</h2>
                 <ApprovalDetails detail={state.request.value.detail} />
                 <div className="flex gap-2">
@@ -102,6 +116,9 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
                     onClick={() => void answer(true).catch(() => {})}
                   >
                     Allow once
+                    <kbd aria-hidden="true" className="ml-1 text-[0.625rem] opacity-70">
+                      Y / Enter
+                    </kbd>
                   </Button>
                   <Button
                     className="flex-1"
@@ -110,6 +127,9 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
                     onClick={() => void answer(false).catch(() => {})}
                   >
                     Deny
+                    <kbd aria-hidden="true" className="ml-1 text-[0.625rem] opacity-70">
+                      N
+                    </kbd>
                   </Button>
                 </div>
               </section>

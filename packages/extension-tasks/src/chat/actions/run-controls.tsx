@@ -6,7 +6,8 @@ import {
 } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect } from 'react'
+import { useRef } from 'react'
+import { useApprovalShortcuts } from '@dovo/studio-ui/human-input-shortcuts'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { ApprovalDetails } from './approval-details'
@@ -20,7 +21,7 @@ export function RunControls({ task }: { task: Task }) {
     if (!connected || busy) return
     setError('')
     setBusy(true)
-    void request(path, input, responses.ok)
+    return request(path, input, responses.ok)
       .catch((error) => setError(String(error)))
       .finally(() => setBusy(false))
   }
@@ -49,35 +50,15 @@ export function RunControls({ task }: { task: Task }) {
     snapshot?.approvals.filter((approval) =>
       taskInputVisible(snapshot.workspace.tasks, task.id, approval),
     ) ?? []
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        !connected ||
-        busy ||
-        !approvals.length ||
-        event.defaultPrevented ||
-        event.repeat ||
-        event.isComposing ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        !(event.target instanceof Element) ||
-        event.target.closest(
-          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]',
-        )
-      )
-        return
-      const card = event.target.closest('[data-approval-id]')
-      const approval = approvals.find((item) => item.id === card?.getAttribute('data-approval-id'))
-      if (!approval) return
-      if (event.key.toLowerCase() !== 'y' && event.key.toLowerCase() !== 'n') return
-      event.preventDefault()
-      act('/api/approvals', { id: approval.id, allow: event.key.toLowerCase() === 'y' })
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [approvals, connected, busy])
+  const controls = useRef<HTMLDivElement>(null)
+  useApprovalShortcuts({
+    root: controls,
+    disabled: !connected || busy || !approvals.length,
+    onAnswer: (id, allow) => {
+      if (approvals.some((approval) => approval.id === id))
+        return act('/api/approvals', { id, allow, decision: allow ? 'approve' : 'deny' })
+    },
+  })
   const executionHost = runtimeComputerName({
     profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
     snapshot: { runtimeHost: task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost },
@@ -94,7 +75,7 @@ export function RunControls({ task }: { task: Task }) {
   )
     return null
   return (
-    <div className="shrink-0 space-y-2 px-5 pb-2">
+    <div ref={controls} className="shrink-0 space-y-2 px-5 pb-2">
       {!connected && (
         <p role="status" className="mx-auto max-w-[var(--chat-max)] text-xs text-muted-foreground">
           {executionHost} is offline. Your draft is saved here.
@@ -158,7 +139,7 @@ export function RunControls({ task }: { task: Task }) {
           key={approval.id}
           data-approval-id={approval.id}
           tabIndex={0}
-          aria-keyshortcuts="Y N"
+          aria-keyshortcuts="Y N Enter"
           data-studio-human-only
           className="mx-auto max-w-[var(--chat-max)] rounded-lg border bg-card p-3"
         >
@@ -193,7 +174,7 @@ export function RunControls({ task }: { task: Task }) {
                 {action.label}
                 {action.decision === 'approve' || action.decision === 'deny' ? (
                   <kbd aria-hidden="true" className="ml-1 text-[0.625rem] opacity-70">
-                    {action.decision === 'approve' ? 'Y' : 'N'}
+                    {action.decision === 'approve' ? 'Y / Enter' : 'N'}
                   </kbd>
                 ) : null}
               </Button>

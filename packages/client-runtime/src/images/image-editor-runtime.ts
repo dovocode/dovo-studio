@@ -218,6 +218,9 @@ export function imageEditorRuntime(source: string) {
       if (key === 'z') button = event.shiftKey ? redo : undo
       else if (key === 'y' && event.ctrlKey && !event.shiftKey) button = redo
       else if (key === 'enter' && !event.shiftKey) button = element('attach')
+    } else if (key === 'enter' && !event.shiftKey) {
+      if (target instanceof Element && target.closest('button, a, summary, [role="button"]')) return
+      button = element('attach')
     } else if (key === 'escape') button = element('cancel')
     else if (!event.shiftKey) {
       const tools: Record<string, Tool> = {
