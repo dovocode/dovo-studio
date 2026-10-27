@@ -369,6 +369,12 @@ export function createBrowserMedia(host: MediaHost) {
         if (permission === 'display-capture') return callback(true)
         const types = permission === 'media' ? mediaTypes(details) : undefined
         if (!types) return callback(false)
+        const settings = browserPermissions(profileId).site(origin).permissions
+        if (
+          (types.audio && settings.microphone === 'block') ||
+          (types.video && settings.camera === 'block')
+        )
+          return callback(false)
         const granted = grantFor(contents, profileId, origin)
         const saved = browserPermissions(profileId).media(origin)
         if (saved && (!types.audio || saved.audio) && (!types.video || saved.video))
@@ -406,6 +412,13 @@ export function createBrowserMedia(host: MediaHost) {
           )
         if (permission !== 'media') return false
         if (webOrigin(contents.mainFrame.url) !== page) return false
+        const settings = browserPermissions(profileId).site(page).permissions
+        const requestedType: unknown = Reflect.get(details, 'mediaType')
+        if (
+          (requestedType === 'audio' && settings.microphone === 'block') ||
+          (requestedType === 'video' && settings.camera === 'block')
+        )
+          return false
         const granted = grantFor(contents, profileId, page)
         const saved = browserPermissions(profileId).media(page)
         const type: unknown = Reflect.get(details, 'mediaType')
@@ -456,6 +469,12 @@ export function createBrowserMedia(host: MediaHost) {
       contents.once('destroyed', () => forgetContents(contents))
     },
     /** Call before a tab's page is closed. */
+    revokeSite: (profileId: string, origin: string) => {
+      for (const [id, grant] of grants)
+        if (grant.profileId === profileId && grant.origin === origin) grants.delete(id)
+      for (const request of pending.values())
+        if (request.profileId === profileId && request.origin === origin) settle(request, false)
+    },
     releaseTab: (contents: Electron.WebContents) => forgetContents(contents),
     /** Answer a pending request from the Studio window that lists it. */
     decide: async (

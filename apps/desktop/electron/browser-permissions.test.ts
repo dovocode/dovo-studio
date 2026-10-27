@@ -59,3 +59,34 @@ it('keeps private approvals in memory and discards them on close', async () => {
   forgetPrivateBrowserPermissions(id)
   expect(browserPermissions(id).media('https://meet.example')).toBeUndefined()
 })
+
+it('resets legacy grants to ask and blocks each device without affecting another origin or profile', () => {
+  const origin = 'https://meet.example'
+  const permissions = browserPermissions('work')
+  permissions.allowMedia(origin, { audio: true, video: true })
+  permissions.setNotification(origin, true)
+  permissions.setSite(origin, 'camera', 'block')
+  expect(browserPermissions('work').site(origin).permissions).toEqual({
+    notifications: 'allow',
+    microphone: 'allow',
+    camera: 'block',
+  })
+  expect(permissions.media(origin)).toEqual({ audio: true, video: false })
+  permissions.setSite(origin, 'microphone', 'ask')
+  permissions.setSite(origin, 'notifications', 'ask')
+  expect(permissions.notification(origin)).toBeUndefined()
+  expect(permissions.media(origin)).toEqual({ audio: false, video: false })
+  expect(browserPermissions('personal').site(origin).permissions).toEqual({
+    notifications: 'ask',
+    microphone: 'ask',
+    camera: 'ask',
+  })
+  expect(permissions.site('http://lan.example:3000').permissions).toEqual({
+    notifications: 'ask',
+    microphone: 'ask',
+    camera: 'ask',
+  })
+  permissions.allowMedia(origin, { audio: false, video: true })
+  expect(permissions.site(origin).permissions.camera).toBe('allow')
+  expect(permissions.site(origin).permissions.microphone).toBe('ask')
+})

@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { Puzzle, Plus, Settings2, ExternalLink } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Puzzle, Plus, Settings2, ExternalLink, Pin, PinOff } from 'lucide-react'
 import type { BrowserExtensionCommand, BrowserExtensionsResult } from '@dovo/protocol'
 import { useStudioHost } from '@dovo/studio-core'
 import {
@@ -45,7 +45,7 @@ export function BrowserExtensions({
     pending.current = true
     setBusy(true)
     setError('')
-    const attempt = generation.current
+    const attempt = ++generation.current
     try {
       const next = await browserExtensions(command)
       if (attempt !== generation.current) return
@@ -60,8 +60,27 @@ export function BrowserExtensions({
       if (attempt === generation.current) setBusy(false)
     }
   }
-  const launch = (id: string) => {
-    const bounds = trigger.current?.getBoundingClientRect()
+  useEffect(() => {
+    if (!browserExtensions) return
+    let alive = true
+    const attempt = ++generation.current
+    setBusy(true)
+    void browserExtensions({ action: 'list', profileId })
+      .then((next) => {
+        if (alive && attempt === generation.current && next) setResult(next)
+      })
+      .catch((cause) => {
+        if (alive && attempt === generation.current) setError(String(cause))
+      })
+      .finally(() => {
+        if (alive && attempt === generation.current) setBusy(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [profileId, browserExtensions])
+  const launch = (id: string, anchor = trigger.current) => {
+    const bounds = anchor?.getBoundingClientRect()
     if (!bounds) return
     // Let the DOM menu close and its focus restoration finish before opening a native popup.
     requestAnimationFrame(() => {
@@ -84,6 +103,25 @@ export function BrowserExtensions({
   if (!browserExtensions) return null
   return (
     <>
+      {result?.extensions
+        .filter((extension) => extension.pinned && extension.loaded)
+        .map((extension) => (
+          <IconButton
+            key={extension.id}
+            type="button"
+            label={extension.name}
+            title={extension.title || extension.name}
+            disabled={busy || !hasPage}
+            className="size-8 shrink-0"
+            onClick={(event) => launch(extension.id, event.currentTarget)}
+          >
+            {extension.icon ? (
+              <img src={extension.icon} alt="" className="size-4 object-contain" />
+            ) : (
+              <Puzzle size={15} />
+            )}
+          </IconButton>
+        ))}
       {storePage && (
         <Button
           type="button"
@@ -138,23 +176,40 @@ export function BrowserExtensions({
               </p>
             )}
             {result?.extensions.map((extension) => (
-              <DropdownMenu.Item
-                key={extension.id}
-                disabled={busy || !extension.loaded || !hasPage}
-                className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm outline-none focus:bg-accent data-[disabled]:opacity-50"
-                onSelect={() => {
-                  setMenuOpen(false)
-                  launch(extension.id)
-                }}
-              >
-                {extension.icon ? (
-                  <img src={extension.icon} alt="" className="size-5 shrink-0 object-contain" />
-                ) : (
-                  <Puzzle size={18} className="shrink-0 text-muted-foreground" />
-                )}
-                <span className="min-w-0 flex-1 truncate">{extension.name}</span>
-                {!extension.enabled && <span className="text-xs text-muted-foreground">Off</span>}
-              </DropdownMenu.Item>
+              <div key={extension.id} className="flex items-center gap-1">
+                <DropdownMenu.Item
+                  disabled={busy || !extension.loaded || !hasPage}
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm outline-none focus:bg-accent data-[disabled]:opacity-50"
+                  onSelect={() => {
+                    setMenuOpen(false)
+                    launch(extension.id)
+                  }}
+                >
+                  {extension.icon ? (
+                    <img src={extension.icon} alt="" className="size-5 shrink-0 object-contain" />
+                  ) : (
+                    <Puzzle size={18} className="shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="min-w-0 flex-1 truncate">{extension.name}</span>
+                  {!extension.enabled && <span className="text-xs text-muted-foreground">Off</span>}
+                </DropdownMenu.Item>
+                <IconButton
+                  type="button"
+                  label={`${extension.pinned ? 'Unpin' : 'Pin'} extension ${extension.name}`}
+                  aria-pressed={!!extension.pinned}
+                  className="size-7 shrink-0"
+                  disabled={busy}
+                  onClick={() =>
+                    void call({
+                      action: extension.pinned ? 'unpin' : 'pin',
+                      profileId,
+                      id: extension.id,
+                    })
+                  }
+                >
+                  {extension.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                </IconButton>
+              </div>
             ))}
             <DropdownMenu.Separator className="my-1 h-px bg-border" />
             {onBrowseStore && (
@@ -300,6 +355,20 @@ export function BrowserExtensions({
                     }
                   >
                     {extension.enabled ? 'Disable' : 'Enable'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() =>
+                      void call({
+                        action: extension.pinned ? 'unpin' : 'pin',
+                        profileId,
+                        id: extension.id,
+                      })
+                    }
+                  >
+                    {extension.pinned ? 'Unpin from toolbar' : 'Pin to toolbar'}
                   </Button>
                   <Button
                     size="sm"

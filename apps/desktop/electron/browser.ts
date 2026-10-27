@@ -1,4 +1,8 @@
-import { selectedBrowserText, isPrivateBrowserProfile } from '@dovo/protocol'
+import {
+  selectedBrowserText,
+  isPrivateBrowserProfile,
+  type BrowserWorkspaceTab,
+} from '@dovo/protocol'
 import { createBrowserCdp } from './browser-cdp.js'
 import { decode } from '@dovo/protocol'
 import { BrowserWindow, WebContentsView, ipcMain, shell, Menu, clipboard } from 'electron'
@@ -147,12 +151,19 @@ function postNavigation(details: Electron.HandlerDetails): Electron.LoadURLOptio
     ...(openableUrl(details.referrer.url) ? { httpReferrer: details.referrer } : {}),
   }
 }
-export function registerBrowser(indexPath: string, directory?: string, preload?: string) {
+export function registerBrowser(
+  indexPath: string,
+  directory?: string,
+  preload?: string,
+  browserWindows?: { create: () => Promise<BrowserWindow>; list: () => BrowserWindow[] },
+) {
   let cdp: Awaited<ReturnType<typeof createBrowserCdp>> | undefined
   let cdpPending: Promise<Awaited<ReturnType<typeof createBrowserCdp>>> | undefined
   // Identity distinguishes overlapping shows of the same tab after resize or a menu closes.
   const activeViews = new Map<number, { key: string }>()
   const registered = new WeakSet<BrowserWindow>()
+  const workspaces = new Set<BrowserWindow>()
+  const tabCounts = new Map<number, number>()
   const views = new Map<string, Entry>()
   const focusStudio = (entry: Entry) => {
     if (
@@ -178,20 +189,25 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
         openerKey?: string
       }[]
       closed: string[]
+      moved: { key: string; tab: BrowserWorkspaceTab }[]
     }
   >()
   const tabEvents = (windowId: number) => {
     let events = windowTabs.get(windowId)
-    if (!events) windowTabs.set(windowId, (events = { created: [], closed: [] }))
+    if (!events) windowTabs.set(windowId, (events = { created: [], closed: [], moved: [] }))
     return events
   }
-  const drainTabEvents = (windowId: number) => {
+  const drainTabEvents = (windowId: number, consumeMoves: boolean) => {
     const events = windowTabs.get(windowId)
     const createdTabs = events?.created.splice(0) ?? []
     const closedTabs = events?.closed.splice(0) ?? []
+    // A thread preview can poll in the same Studio window while Browser is opening.
+    const movedTabs = consumeMoves ? (events?.moved.splice(0) ?? []) : []
+    if (movedTabs.length) tabCounts.set(windowId, (tabCounts.get(windowId) ?? 1) + movedTabs.length)
     return {
       ...(createdTabs.length ? { createdTabs } : {}),
       ...(closedTabs.length ? { closedTabs } : {}),
+      ...(movedTabs.length ? { movedTabs } : {}),
     }
   }
   /** The Studio window that last showed each shared-browser profile hosts its extension tabs. */
@@ -322,6 +338,8 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
   const reap = setInterval(prune, 30_000)
   reap.unref()
   const releaseWindow = (window: BrowserWindow, detach: boolean) => {
+    workspaces.delete(window)
+    tabCounts.delete(window.id)
     activeViews.delete(window.id)
     windowTabs.delete(window.id)
     media.releaseWindow(window.id)
@@ -340,6 +358,27 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
       const browserSession = current.view.webContents.session
       if (!current.view.webContents.isDestroyed()) current.view.webContents.close()
       clearPrivateProfile(current.profileId, browserSession)
+    }
+  }
+  const registerWindow = (window: BrowserWindow) => {
+    if (!registered.has(window)) {
+      registered.add(window)
+      window.once('closed', () => releaseWindow(window, false))
+      // A renderer reload loses its tab IDs. Release their main-process owners too.
+      window.webContents.on('did-start-navigation', (event) => {
+        if (event.isMainFrame && !event.isSameDocument) releaseWindow(window, true)
+      })
+      window.webContents.on('render-process-gone', () => releaseWindow(window, true))
+      const cancelFocusRestore = () => {
+        for (const entry of views.values())
+          if (entry.windowId === window.id) entry.restoreFocus = false
+      }
+      window.webContents.on('before-mouse-event', (_event, input) => {
+        if (input.type === 'mouseDown') cancelFocusRestore()
+      })
+      window.webContents.on('before-input-event', (_event, input) => {
+        if (input.type === 'keyDown' && input.key !== 'Escape') cancelFocusRestore()
+      })
     }
   }
   /** One native page per renderer tab key; extension-opened tabs use the same construction. */
@@ -425,7 +464,11 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
       })
     })
     view.webContents.on('context-menu', (_event, params) => {
-      if (!created.workspace || views.get(viewKey) !== created) return
+      if (
+        !created.workspace ||
+        views.get(JSON.stringify([created.windowId, created.key])) !== created
+      )
+        return
       const navigation = view.webContents.navigationHistory
       const items: Electron.MenuItemConstructorOptions[] = [
         { label: 'Back', enabled: navigation.canGoBack(), click: () => navigation.goBack() },
@@ -451,7 +494,7 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
           {
             label: 'Add selection to thread…',
             click: () =>
-              window.webContents.send('browser:context-action', {
+              created.window.webContents.send('browser:context-action', {
                 key,
                 action: 'selection',
                 text,
@@ -468,7 +511,7 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
         {
           label: 'Add page to thread…',
           click: () =>
-            window.webContents.send('browser:context-action', {
+            created.window.webContents.send('browser:context-action', {
               key,
               action: 'page',
               text: '',
@@ -491,11 +534,15 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
           },
         )
       }
-      Menu.buildFromTemplate(items).popup({ window })
+      Menu.buildFromTemplate(items).popup({ window: created.window })
     })
     view.webContents.setIgnoreMenuShortcuts(workspace)
     view.webContents.setWindowOpenHandler((details) => {
-      if (!created.workspace || views.get(viewKey) !== created) return { action: 'deny' }
+      if (
+        !created.workspace ||
+        views.get(JSON.stringify([created.windowId, created.key])) !== created
+      )
+        return { action: 'deny' }
       if (details.postBody) {
         // Never replay a form POST as a GET tab; load it here, or refuse it visibly.
         const url = openableUrl(details.url)
@@ -514,7 +561,7 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
         return {
           action: 'allow',
           overrideBrowserWindowOptions: {
-            parent: window,
+            parent: created.window,
             autoHideMenuBar: true,
             webPreferences: {
               sandbox: true,
@@ -530,10 +577,10 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
         details.disposition !== 'other' &&
         (openableUrl(details.url) || details.url === 'about:blank' || details.url === '')
       ) {
-        const events = tabEvents(window.id)
+        const events = tabEvents(created.windowId)
         if (
           events.created.length >= MAX_EXTENSION_TAB_EVENTS ||
-          [...views.values()].filter((entry) => entry.windowId === window.id).length >= 100
+          [...views.values()].filter((entry) => entry.windowId === created.windowId).length >= 100
         )
           return { action: 'deny' }
         return {
@@ -541,8 +588,8 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
           createWindow: (options) => {
             const childKey = `${created.key.slice(0, created.key.lastIndexOf(':') + 1)}${randomUUID()}`
             const child = createEntry(
-              window,
-              JSON.stringify([window.id, childKey]),
+              created.window,
+              JSON.stringify([created.windowId, childKey]),
               childKey,
               profileId,
               true,
@@ -554,13 +601,13 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
             const childContents = child.view.webContents
             const childSession = childContents.session
             childContents.once('destroyed', () => {
-              const key = JSON.stringify([window.id, childKey])
+              const key = JSON.stringify([child.windowId, childKey])
               if (views.get(key) !== child) return
               views.delete(key)
-              window.contentView.removeChildView(child.view)
+              child.window.contentView.removeChildView(child.view)
               extensions.removeTab(profileId, childContents)
               media.releaseTab(childContents)
-              const events = tabEvents(window.id)
+              const events = tabEvents(child.windowId)
               if (events.closed.length < MAX_EXTENSION_TAB_EVENTS) events.closed.push(childKey)
               clearPrivateProfile(profileId, childSession)
             })
@@ -578,7 +625,10 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
       return { action: 'deny' }
     })
     view.webContents.on('did-create-window', (popup) => {
-      if (views.get(viewKey) !== created || !created.workspace) {
+      if (
+        views.get(JSON.stringify([created.windowId, created.key])) !== created ||
+        !created.workspace
+      ) {
         popup.close()
         return
       }
@@ -598,7 +648,10 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
     view.webContents.on('before-mouse-event', (_event, input) => {
       // A site-isolated redirect or extension popup may leave keyboard focus in another
       // renderer. Give the page focus on deliberate clicks, never on polling or resizing.
-      if (input.type === 'mouseDown' && activeViews.get(window.id)?.key === viewKey)
+      if (
+        input.type === 'mouseDown' &&
+        activeViews.get(created.windowId)?.key === JSON.stringify([created.windowId, created.key])
+      )
         view.webContents.focus()
     })
     view.webContents.on('before-input-event', (event, input) => {
@@ -608,7 +661,7 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
       if (!key) return
       // Native views take keyboard focus from the Studio DOM; replay tab shortcuts there.
       event.preventDefault()
-      const main = window.webContents
+      const main = created.window.webContents
       if (input.isAutoRepeat || main.isDestroyed()) return
       const modifiers: Array<'meta' | 'control' | 'shift'> = [
         process.platform === 'darwin' ? 'meta' : 'control',
@@ -639,25 +692,7 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
     window.contentView.addChildView(view)
     views.set(viewKey, created)
     if (workspace) extensions.addTab(profileId, view.webContents, window)
-    if (!registered.has(window)) {
-      registered.add(window)
-      window.once('closed', () => releaseWindow(window, false))
-      // A renderer reload loses its tab IDs. Release their main-process owners too.
-      window.webContents.on('did-start-navigation', (event) => {
-        if (event.isMainFrame && !event.isSameDocument) releaseWindow(window, true)
-      })
-      window.webContents.on('render-process-gone', () => releaseWindow(window, true))
-      const cancelFocusRestore = () => {
-        for (const entry of views.values())
-          if (entry.windowId === window.id) entry.restoreFocus = false
-      }
-      window.webContents.on('before-mouse-event', (_event, input) => {
-        if (input.type === 'mouseDown') cancelFocusRestore()
-      })
-      window.webContents.on('before-input-event', (_event, input) => {
-        if (input.type === 'keyDown' && input.key !== 'Escape') cancelFocusRestore()
-      })
-    }
+    registerWindow(window)
     return created
   }
   const trustedWindow = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => {
@@ -675,6 +710,10 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
       )
     )
       throw new Error('Untrusted browser request')
+    if (!workspaces.has(window) && !new URL(event.senderFrame.url).hash.startsWith('#thread=')) {
+      workspaces.add(window)
+    }
+    registerWindow(window)
     return window
   }
   ipcMain.handle('browser:extensions', async (event, raw: unknown) =>
@@ -725,6 +764,86 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
     }
     const viewKey = JSON.stringify([window.id, command.key])
     let entry = views.get(viewKey)
+    if (command.action === 'status' && command.tabCount !== undefined)
+      tabCounts.set(window.id, command.tabCount)
+    if (command.action === 'browser-windows') {
+      const windows = [...new Set([...workspaces, ...(browserWindows?.list() ?? [])])]
+        .filter((other) => other !== window && !other.isDestroyed())
+        .map((other) => {
+          const page = views.get(activeViews.get(other.id)?.key ?? '')
+          const title = page?.view.webContents.getTitle() || other.getTitle() || 'Dovo Browser'
+          return { id: other.id, title: `${title} · Window ${other.id}` }
+        })
+      return { url: '', back: false, forward: false, windows }
+    }
+    if (command.action === 'move-tab') {
+      const validateSource = () => {
+        if (
+          window.isDestroyed() ||
+          views.get(viewKey) !== entry ||
+          (entry &&
+            (!entry.workspace ||
+              entry.profileId !== command.tab.profileId ||
+              command.tab.kind !== 'web' ||
+              entry.view.webContents.isDestroyed()))
+        )
+          throw new Error('The browser tab changed before it could be moved.')
+        if (entry && media.keepAlive(entry.view.webContents))
+          throw new Error(
+            'Stop this tab’s active media or sharing before moving it to another window.',
+          )
+      }
+      // Reject a busy or stale source before creating an otherwise empty destination.
+      validateSource()
+      const target =
+        command.targetWindowId === undefined
+          ? await browserWindows?.create()
+          : [...workspaces, ...(browserWindows?.list() ?? [])].find(
+              (other) => other.id === command.targetWindowId,
+            )
+      if (!target || target === window || target.isDestroyed())
+        throw new Error('The destination browser window is unavailable.')
+      // Loading a new window yields; the source may have closed or started sharing meanwhile.
+      validateSource()
+      if ((tabCounts.get(target.id) ?? 1) + tabEvents(target.id).moved.length >= 100)
+        throw new Error('The destination browser window has reached its 100-tab limit.')
+      registerWindow(target)
+      if (entry) {
+        closePopups(entry)
+        if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
+        entry.view.setVisible(false)
+        window.contentView.removeChildView(entry.view)
+        views.delete(viewKey)
+        extensions.removeTab(entry.profileId, entry.view.webContents)
+        entry.windowId = target.id
+        entry.window = target
+        entry.inactiveAt = Date.now()
+        entry.restoreFocus = false
+        views.set(JSON.stringify([target.id, command.key]), entry)
+        target.contentView.addChildView(entry.view)
+        extensions.addTab(entry.profileId, entry.view.webContents, target)
+        profileWindows.set(entry.profileId, { window: target, key: command.key })
+      }
+      tabEvents(target.id).moved.push({
+        key: command.key,
+        tab: entry
+          ? {
+              ...command.tab,
+              url:
+                entry.view.webContents.getURL() === 'about:blank'
+                  ? ''
+                  : entry.view.webContents.getURL(),
+              title: entry.view.webContents.getTitle().slice(0, 4096),
+              favicon: entry.favicon,
+            }
+          : command.tab,
+      })
+      if (target.isMinimized()) target.restore()
+      target.webContents.send('browser:focus-workspace')
+      target.show()
+      target.focus()
+      return
+    }
     if (command.action === 'close') {
       if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
       if (entry) {
@@ -914,12 +1033,59 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
     if (entry?.key !== command.key) {
       // An extension may have closed this very tab; its window still needs to hear about it.
       if (command.action !== 'status') return
-      const events = { ...drainTabEvents(window.id), ...media.snapshot(window.id) }
+      const events = {
+        ...drainTabEvents(window.id, command.tabCount !== undefined),
+        ...media.snapshot(window.id),
+      }
       return Object.keys(events).length
         ? { url: '', back: false, forward: false, ...events }
         : undefined
     }
     const navigation = entry.view.webContents.navigationHistory
+    if (
+      [
+        'site-permissions',
+        'set-site-permission',
+        'request-site-permission',
+        'clear-site-data',
+      ].includes(command.action)
+    ) {
+      if (!entry.workspace)
+        throw new Error('Website controls are available in the browser workspace.')
+      const page = new URL(entry.view.webContents.getURL())
+      if (!['http:', 'https:'].includes(page.protocol))
+        throw new Error('Open a website to manage its permissions.')
+      const origin = page.origin
+      if (command.action !== 'site-permissions' && 'origin' in command && command.origin !== origin)
+        throw new Error('The website changed. Open its controls again before changing permissions.')
+      const permissions = browserPermissions(entry.profileId)
+      if (command.action === 'set-site-permission') {
+        permissions.setSite(origin, command.permission, command.setting)
+        media.revokeSite(entry.profileId, origin)
+      }
+      if (command.action === 'clear-site-data')
+        await entry.view.webContents.session.clearStorageData({ origin })
+      if (command.action === 'request-site-permission') {
+        permissions.setSite(origin, command.permission, 'ask')
+        media.revokeSite(entry.profileId, origin)
+        const script =
+          command.permission === 'notifications'
+            ? 'Notification.requestPermission()'
+            : `navigator.mediaDevices.getUserMedia({${command.permission === 'camera' ? 'video' : 'audio'}:true}).then(stream => {stream.getTracks().forEach(track => track.stop()); return true})`
+        await entry.view.webContents.executeJavaScript(script, true)
+        if (
+          entry.view.webContents.isDestroyed() ||
+          new URL(entry.view.webContents.getURL()).origin !== origin
+        )
+          throw new Error('The website changed while requesting permission.')
+      }
+      return {
+        url: page.href,
+        back: navigation.canGoBack(),
+        forward: navigation.canGoForward(),
+        sitePermissions: permissions.site(origin),
+      }
+    }
     if (command.action === 'selection') {
       // A busy or hung page must not hold the request open; one attempt, then a clear error.
       const reading: Promise<unknown> = entry.view.webContents.executeJavaScript(
@@ -968,7 +1134,7 @@ export function registerBrowser(indexPath: string, directory?: string, preload?:
         back: navigation.canGoBack(),
         forward: navigation.canGoForward(),
         ...(openedLinks.length ? { openedLinks } : {}),
-        ...drainTabEvents(window.id),
+        ...drainTabEvents(window.id, entry.workspace || command.tabCount !== undefined),
         ...media.snapshot(window.id),
       }
     }

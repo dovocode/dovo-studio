@@ -61,6 +61,7 @@ type WorkbenchProps = {
   pickDirectory?: StudioHostApi['pickDirectory']
   browserWindowId?: string
   openBrowserWindow?: StudioHostApi['openBrowserWindow']
+  onBrowserWorkspaceFocus?: (listener: () => void) => () => void
   browser?: StudioHostApi['browser']
   browserExtensions?: StudioHostApi['browserExtensions']
   onBrowserContextAction?: StudioHostApi['onBrowserContextAction']
@@ -189,6 +190,7 @@ function WorkbenchContent({
   onBrowserContextAction,
   browserWindowId,
   openBrowserWindow,
+  onBrowserWorkspaceFocus,
   openBrowserLink,
   accountStorage,
   openExternalLink,
@@ -542,6 +544,10 @@ function WorkbenchContent({
     cancelLink()
   }, [navigationKey, runtimeRegistry.activeId, cancelLink])
   useEffect(() => onOpenLink?.(openLink), [onOpenLink, openLink])
+  useEffect(
+    () => onBrowserWorkspaceFocus?.(() => navigate({ viewId: 'browser' })),
+    [onBrowserWorkspaceFocus, navigate],
+  )
   const linkContext = useRef({ origin: linkOrigin, targets: linkTargets, details: openLinkTarget })
   linkContext.current = { origin: linkOrigin, targets: linkTargets, details: openLinkTarget }
   const openResolvedLink = useCallback(

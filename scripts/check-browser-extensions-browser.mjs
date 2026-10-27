@@ -26,6 +26,7 @@ const built = await bundleBrowser(
           if(window.failAction===command.action)throw new Error('Fixture '+command.action+' failed');
           const entries=window.catalogs[command.profileId];
           if(command.action==='open')return;
+          if(command.action==='pin'||command.action==='unpin')for(const item of entries)if(item.id===command.id)item.pinned=command.action==='pin';
           if(command.action==='install')entries.push(extension('d'.repeat(32),'Installed helper'));
           if(command.action==='remove')window.catalogs[command.profileId]=entries.filter(item=>item.id!==command.id);
           if(command.action==='enable'||command.action==='disable')for(const item of entries)if(item.id===command.id){item.enabled=command.action==='enable';item.loaded=item.enabled}
@@ -180,6 +181,33 @@ try {
     id: 'd'.repeat(32),
   })
 
+  await row('Work helper').getByRole('button', { name: 'Pin to toolbar', exact: true }).click()
+  await row('Work helper')
+    .getByRole('button', { name: 'Unpin from toolbar', exact: true })
+    .waitFor()
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  const pinned = page.getByRole('button', { name: 'Work helper', exact: true })
+  await pinned.waitFor()
+  const pinBounds = await pinned.boundingBox()
+  await pinned.click()
+  await page.waitForFunction(() => window.commands.at(-1)?.action === 'open')
+  assert.equal(
+    (await calls()).at(-1).anchor.x,
+    Math.round(pinBounds.x),
+    'Pinned extension uses its own toolbar anchor',
+  )
+  await render('work')
+  await page.getByRole('button', { name: 'Work helper', exact: true }).waitFor()
+  await render('personal')
+  assert.equal(
+    await page.getByRole('button', { name: 'Work helper', exact: true }).count(),
+    0,
+    'Toolbar pins stay in their profile',
+  )
+  await render('work')
+  await show()
+  await row('Work helper').getByRole('button', { name: 'Unpin from toolbar', exact: true }).click()
+  await row('Work helper').getByRole('button', { name: 'Pin to toolbar', exact: true }).waitFor()
   const popup = row('Work helper').getByRole('button', { name: 'Open popup' })
   const bounds = await page
     .getByRole('button', { name: 'Extensions', exact: true, includeHidden: true })

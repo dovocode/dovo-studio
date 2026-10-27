@@ -3,11 +3,26 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
-import { isPrivateBrowserProfile } from '@dovo/protocol'
+import {
+  isPrivateBrowserProfile,
+  browserPermissionSettingSchema,
+  type BrowserSitePermission,
+  type BrowserPermissionSetting,
+} from '@dovo/protocol'
 
 const schema = Schema.Struct({
   helpers: Schema.Array(Schema.String),
   notifications: Schema.Record(Schema.String, Schema.Boolean),
+  sites: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        notifications: Schema.optional(browserPermissionSettingSchema),
+        microphone: Schema.optional(browserPermissionSettingSchema),
+        camera: Schema.optional(browserPermissionSettingSchema),
+      }),
+    ),
+  ),
   media: Schema.optional(
     Schema.Record(
       Schema.String,
@@ -50,6 +65,19 @@ export function browserPermissions(profileId: string) {
     writeFileSync(temporary, JSON.stringify(next), { mode: 0o600 })
     renameSync(temporary, path)
   }
+  const setting = (
+    current: Permissions,
+    origin: string,
+    permission: BrowserSitePermission,
+  ): BrowserPermissionSetting => {
+    const explicit = current.sites?.[origin]?.[permission]
+    if (explicit) return explicit
+    if (permission === 'notifications') {
+      const saved = current.notifications[origin]
+      return saved === undefined ? 'ask' : saved ? 'allow' : 'block'
+    }
+    return current.media?.[origin]?.[permission === 'camera' ? 'video' : 'audio'] ? 'allow' : 'ask'
+  }
   return {
     helper: (key: string) => read().helpers.includes(key),
     allowHelper: (key: string) => {
@@ -63,25 +91,63 @@ export function browserPermissions(profileId: string) {
         helpers: current.helpers.filter((key) => !key.startsWith(`${extensionId}:`)),
       })
     },
-    notification: (origin: string) => read().notifications[origin],
-    media: (origin: string) => read().media?.[origin],
-    allowMedia: (origin: string, types: { audio: boolean; video: boolean }) => {
+    site: (origin: string) => {
       const current = read()
-      const previous = current.media?.[origin]
+      return {
+        origin,
+        permissions: {
+          notifications: setting(current, origin, 'notifications'),
+          microphone: setting(current, origin, 'microphone'),
+          camera: setting(current, origin, 'camera'),
+        },
+      }
+    },
+    setSite: (
+      origin: string,
+      permission: BrowserSitePermission,
+      value: BrowserPermissionSetting,
+    ) => {
+      const current = read()
       write({
         ...current,
-        media: {
-          ...current.media,
+        sites: { ...current.sites, [origin]: { ...current.sites?.[origin], [permission]: value } },
+      })
+    },
+    notification: (origin: string) => {
+      const value = setting(read(), origin, 'notifications')
+      return value === 'ask' ? undefined : value === 'allow'
+    },
+    media: (origin: string) => {
+      const current = read()
+      if (!current.media?.[origin] && !current.sites?.[origin]) return undefined
+      return {
+        audio: setting(current, origin, 'microphone') === 'allow',
+        video: setting(current, origin, 'camera') === 'allow',
+      }
+    },
+    allowMedia: (origin: string, types: { audio: boolean; video: boolean }) => {
+      const current = read()
+      write({
+        ...current,
+        sites: {
+          ...current.sites,
           [origin]: {
-            audio: types.audio || !!previous?.audio,
-            video: types.video || !!previous?.video,
+            ...current.sites?.[origin],
+            ...(types.audio ? { microphone: 'allow' as const } : {}),
+            ...(types.video ? { camera: 'allow' as const } : {}),
           },
         },
       })
     },
     setNotification: (origin: string, allow: boolean) => {
       const current = read()
-      write({ ...current, notifications: { ...current.notifications, [origin]: allow } })
+      write({
+        ...current,
+        sites: {
+          ...current.sites,
+          [origin]: { ...current.sites?.[origin], notifications: allow ? 'allow' : 'block' },
+        },
+      })
     },
   }
 }

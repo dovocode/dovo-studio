@@ -92,6 +92,7 @@ const registrySchema = mutableStruct({
       id: Schema.String.pipe(Schema.check(Schema.isPattern(EXTENSION))),
       directory: Schema.String.pipe(Schema.check(Schema.isPattern(DIRECTORY))),
       enabled: Schema.Boolean,
+      pinned: Schema.optional(Schema.Boolean),
       removedPermissions: mutableArray(Schema.String),
     }),
   ),
@@ -520,6 +521,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
       name: name.slice(0, 200),
       version: version.slice(0, 50),
       enabled: record.enabled,
+      pinned: !!record.pinned,
       loaded: !!loaded,
       ...(title ? { title: title.slice(0, 200) } : {}),
       ...(icon ? { icon } : {}),
@@ -715,7 +717,13 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
           profile,
           withRecords([
             ...profile.registry.extensions.filter((r) => r !== previous),
-            { id: extension.id, directory, enabled: true, removedPermissions },
+            {
+              id: extension.id,
+              directory,
+              enabled: true,
+              removedPermissions,
+              pinned: previous?.pinned,
+            },
           ]),
         )
       } catch {
@@ -862,7 +870,16 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
         requireEnabled()
         const current = profile.registry.extensions.find((r) => r.id === command.id)
         if (!current) throw new Error('This extension is not installed in this browser profile.')
-        if (command.action === 'remove') await remove(profile, current)
+        if (command.action === 'pin' || command.action === 'unpin')
+          await saveRegistry(
+            profile,
+            withRecords(
+              profile.registry.extensions.map((item) =>
+                item.id === current.id ? { ...item, pinned: command.action === 'pin' } : item,
+              ),
+            ),
+          )
+        else if (command.action === 'remove') await remove(profile, current)
         else await toggle(profile, current, command.action === 'enable')
         return result(profile)
       })

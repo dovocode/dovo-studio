@@ -47,6 +47,11 @@ const mocks = vi.hoisted(() => {
       removeChildView: vi.fn<(...args: unknown[]) => void>(),
     },
     getContentSize: () => [900, 700],
+    getTitle: () => 'Studio',
+    isMinimized: () => false,
+    restore: vi.fn<() => void>(),
+    show: vi.fn<() => void>(),
+    focus: vi.fn<() => void>(),
     isDestroyed: () => false,
     once: vi.fn<(event: string, callback: () => void) => void>(),
     webContents: {
@@ -65,6 +70,7 @@ const mocks = vi.hoisted(() => {
     clipboard: vi.fn<(value: string) => void>(),
     view,
     window,
+    windowFor: undefined as undefined | typeof window,
     contents,
     handle:
       vi.fn<
@@ -89,6 +95,7 @@ const mocks = vi.hoisted(() => {
       attachSession: vi.fn<(...args: unknown[]) => void>(),
       attachTab: vi.fn<(...args: unknown[]) => void>(),
       releaseTab: vi.fn<(...args: unknown[]) => void>(),
+      revokeSite: vi.fn<(...args: unknown[]) => void>(),
       decide: vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
       stop: vi.fn<(...args: unknown[]) => void>(),
       snapshot: vi.fn<(windowId: number) => object>(() => ({})),
@@ -130,7 +137,7 @@ vi.mock('./browser-language.js', () => ({
 vi.mock('electron', () => ({
   Menu: { buildFromTemplate: mocks.menu },
   clipboard: { writeText: mocks.clipboard },
-  BrowserWindow: { fromWebContents: () => mocks.window },
+  BrowserWindow: { fromWebContents: () => mocks.windowFor ?? mocks.window },
   WebContentsView: class {
     constructor(options: unknown) {
       mocks.create(options)
@@ -148,7 +155,9 @@ afterEach(async () => {
 })
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.windowFor = undefined
   mocks.media.snapshot.mockReturnValue({})
+  mocks.media.keepAlive.mockReturnValue(false)
   vi.stubEnv('VITE_DEV_SERVER_URL', '')
 })
 const frame = { url: 'file:///app/index.html' }
@@ -1611,4 +1620,160 @@ it('raises the selected native view and returns input focus on a deliberate page
   await call(event, { action: 'hide', key: 'login' })
   click({}, { type: 'mouseDown' })
   expect(mocks.contents.focus).toHaveBeenCalledOnce()
+})
+
+it('moves a live page to another window without closing or recreating it, including subsequent shortcuts', async () => {
+  const target = {
+    ...mocks.window,
+    id: 2,
+    once: vi.fn<typeof mocks.window.once>(),
+    contentView: {
+      addChildView: vi.fn<typeof mocks.window.contentView.addChildView>(),
+      removeChildView: vi.fn<typeof mocks.window.contentView.removeChildView>(),
+    },
+    webContents: {
+      ...mocks.window.webContents,
+      sendInputEvent: vi.fn<typeof mocks.window.webContents.sendInputEvent>(),
+      send: vi.fn<typeof mocks.window.webContents.send>(),
+    },
+  }
+  registrations.push(
+    registerBrowser('/app/index.html', undefined, undefined, {
+      create: async () => target as never,
+      list: () => [target as never],
+    }),
+  )
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  const tab = {
+    id: 'moving',
+    title: 'Keep this page',
+    url: 'https://example.com/',
+    kind: 'web',
+    profileId: 'work',
+    pinned: true,
+  } as const
+  await call(event, {
+    action: 'show',
+    key: 'moving-key',
+    workspaceBrowser: true,
+    profileId: 'work',
+    url: tab.url,
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  })
+  await call(event, { action: 'move-tab', key: 'moving-key', tab, targetWindowId: 2 })
+  expect(mocks.create).toHaveBeenCalledOnce()
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  expect(target.contentView.addChildView).toHaveBeenCalledWith(mocks.view)
+  expect(target.webContents.send).toHaveBeenCalledWith('browser:focus-workspace')
+  const shortcut = mocks.contents.on.mock.calls.find(
+    ([name]) => name === 'before-input-event',
+  )?.[1] as (event: unknown, input: unknown) => void
+  shortcut(
+    { preventDefault() {} },
+    {
+      type: 'keyDown',
+      key: 't',
+      control: process.platform !== 'darwin',
+      meta: process.platform === 'darwin',
+    },
+  )
+  expect(target.webContents.sendInputEvent).toHaveBeenCalledTimes(2)
+  mocks.windowFor = target
+  await expect(call(event, { action: 'status', key: 'thread-preview' })).resolves.toBeUndefined()
+  await expect(call(event, { action: 'status', key: 'blank', tabCount: 0 })).resolves.toMatchObject(
+    {
+      movedTabs: [{ key: 'moving-key', tab: { ...tab, title: 'Example' } }],
+    },
+  )
+  await call(event, {
+    action: 'show',
+    key: 'moving-key',
+    workspaceBrowser: true,
+    profileId: 'work',
+    url: tab.url,
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  })
+  expect(mocks.create).toHaveBeenCalledOnce()
+  const sourceClosed = mocks.window.once.mock.calls.find(([name]) => name === 'closed')![1]
+  sourceClosed()
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  const targetClosed = target.once.mock.calls.find(([name]) => name === 'closed')![1]
+  targetClosed()
+  expect(mocks.contents.close).toHaveBeenCalledOnce()
+})
+
+it('refuses moving active media and unavailable destinations without releasing the page', async () => {
+  const target = { ...mocks.window, id: 2 }
+  const createWindow = vi.fn<() => Promise<import('electron').BrowserWindow>>(
+    async () => target as never,
+  )
+  registrations.push(
+    registerBrowser('/app/index.html', undefined, undefined, {
+      create: createWindow,
+      list: () => [target as never],
+    }),
+  )
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  const tab = {
+    id: 'moving',
+    title: 'Page',
+    url: 'https://example.com/',
+    kind: 'web',
+    profileId: 'work',
+  }
+  await call(event, {
+    action: 'show',
+    key: 'moving',
+    workspaceBrowser: true,
+    profileId: 'work',
+    url: tab.url,
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  })
+  mocks.media.keepAlive.mockReturnValueOnce(true)
+  await expect(call(event, { action: 'move-tab', key: 'moving', tab })).rejects.toThrow(
+    'active media',
+  )
+  expect(createWindow).not.toHaveBeenCalled()
+  mocks.media.keepAlive.mockReturnValueOnce(true)
+  await expect(
+    call(event, { action: 'move-tab', key: 'moving', tab, targetWindowId: 2 }),
+  ).rejects.toThrow('active media')
+  await expect(
+    call(event, { action: 'move-tab', key: 'moving', tab, targetWindowId: 999 }),
+  ).rejects.toThrow('unavailable')
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+})
+
+it('rejects stale website origins and thread-preview permission controls', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  await expect(
+    call(event, {
+      action: 'set-site-permission',
+      key: workspaceShow.key,
+      origin: 'https://old.example',
+      permission: 'camera',
+      setting: 'allow',
+    }),
+  ).rejects.toThrow('website changed')
+  await expect(
+    call(event, {
+      action: 'request-site-permission',
+      key: workspaceShow.key,
+      origin: 'https://old.example',
+      permission: 'notifications',
+    }),
+  ).rejects.toThrow('website changed')
+  await expect(
+    call(event, {
+      action: 'clear-site-data',
+      key: workspaceShow.key,
+      origin: 'https://old.example',
+    }),
+  ).rejects.toThrow('website changed')
+  const thread = { ...workspaceShow, key: 'thread-permissions', workspaceBrowser: false }
+  await call(event, thread)
+  await expect(call(event, { action: 'site-permissions', key: thread.key })).rejects.toThrow(
+    'browser workspace',
+  )
 })

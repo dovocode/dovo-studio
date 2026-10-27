@@ -130,6 +130,7 @@ import { createServer } from 'node:http'
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerBrowser } from ${JSON.stringify(browserModule)}
+import { registerBrowserWindows } from ${JSON.stringify(join(desktop, 'electron', 'browser-window.ts'))}
 import { workspacePartition } from ${JSON.stringify(join(desktop, 'electron', 'browser-extensions.ts'))}
 
 const work = process.env.SMOKE_DIR!
@@ -165,7 +166,8 @@ app.whenReady().then(async () => {
       },
     })
     const index = join(work, 'studio', 'index.html')
-    const bridge = registerBrowser(index)
+    const browserWindows = registerBrowserWindows(index, join(work, 'studio', 'preload.js'))
+    const bridge = registerBrowser(index, undefined, undefined, browserWindows)
     const studio = new BrowserWindow({
       width: 1100,
       height: 760,
@@ -207,6 +209,44 @@ app.whenReady().then(async () => {
       assert.deepEqual(await main.executeJavaScript('({language:navigator.language,languages:navigator.languages})'), {language:'nl-NL',languages:['nl-NL','nl']})
       stage('language header')
       assert.match(await main.executeJavaScript("fetch('/language').then(response=>response.text())"), /^nl-NL,nl/)
+      stage('site permission controls')
+      const origin = new URL(page).origin
+      const readSite = () => call('browser', {action:'site-permissions', key:tab})
+      assert.equal((await readSite()).sitePermissions.permissions.notifications, 'ask')
+      const requestNotification = async (decision: 'allow' | 'deny') => {
+        const asked = call('browser', {action:'request-site-permission', key:tab, origin, permission:'notifications'})
+        let request: any
+        for(let attempt=0;attempt<40&&!request;attempt++) {
+          request = (await call('browser',{action:'media-status',key:tab}))?.mediaRequests?.find((item:any)=>item.kind==='notifications')
+          if (!request) await wait(50)
+        }
+        assert.ok(request, 'Website controls must create a real notification permission request.')
+        await call('browser',{action:'media',key:tab,requestId:request.id,decision})
+        await asked
+      }
+      await requestNotification('allow')
+      assert.equal((await readSite()).sitePermissions.permissions.notifications, 'allow')
+      await requestNotification('deny')
+      assert.equal((await readSite()).sitePermissions.permissions.notifications, 'block')
+      report.sitePermissionControls = true
+      stage('move page between windows')
+      const marker = await main.executeJavaScript('window.moveMarker = Math.random()')
+      const moving = {id:'native-moving',title:'Moving page',url:page,kind:'web',profileId:'work',pinned:true}
+      await call('browser', {action:'move-tab',key:tab,tab:moving})
+      const destination = browserWindows.list()[0]!
+      assert.ok(destination, 'Moving to a new window must create a browser window.')
+      const destinationCall = (command: object) => destination.webContents.executeJavaScript(\`window.bridge.browser(\${JSON.stringify(command)})\`)
+      const moved = await destinationCall({action:'status',key:'blank',tabCount:0})
+      assert.equal(moved.movedTabs[0].tab.pinned, true)
+      await destinationCall({action:'show',key:tab,url:page,profileId:'work',workspaceBrowser:true,bounds})
+      assert.ok(destination.contentView.children.some((view:any)=>view.webContents===main), 'Move must reparent the existing native view.')
+      assert.equal(await main.executeJavaScript('window.moveMarker'), marker, 'Moving must retain live page state.')
+      await destinationCall({action:'move-tab',key:tab,tab:moving,targetWindowId:studio.id})
+      await call('browser', {action:'status',key:tab})
+      await show(tab, 'work')
+      destination.destroy()
+      assert.equal(await main.executeJavaScript('window.moveMarker'), marker, 'Closing the former window must not close the moved page.')
+      report.windowMoves = true
       stage('open blank')
       await main.executeJavaScript(\`window.child = window.open('', 'new'); setTimeout(() => child.location.href = '\${page}?child=1', 50)\`)
       let createdChild: any

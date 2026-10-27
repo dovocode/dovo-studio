@@ -160,10 +160,13 @@ app.once('will-quit', () => dictation.dispose())
 const inputPreview = registerInputPreview(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => inputPreview.dispose())
 registerRepositoryOpeners(rendererPath)
+const browserWindows = registerBrowserWindows(rendererPath, join(__dirname, 'preload.mjs'))
+app.once('will-quit', () => browserWindows.dispose())
 const browserBridge = registerBrowser(
   join(__dirname, '../dist/index.html'),
   dataDirectory,
   join(__dirname, 'preload.mjs'),
+  browserWindows,
 )
 app.once('will-quit', () => {
   void browserBridge.dispose()
@@ -178,8 +181,6 @@ const runtimeSync = registerRuntimeSync(rendererPath, async (connection) => {
 app.once('will-quit', () => runtimeSync.dispose())
 const threadWindows = registerThreadWindows(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => threadWindows.dispose())
-const browserWindows = registerBrowserWindows(rendererPath, join(__dirname, 'preload.mjs'))
-app.once('will-quit', () => browserWindows.dispose())
 let mainWindow: BrowserWindow | undefined
 /** The renderer reports its resolved palette; Windows and Linux paint the caption buttons
  * natively, so they would otherwise stay dark on a light theme. The last palette is kept for

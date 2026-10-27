@@ -92,6 +92,10 @@ const schema = mutableStruct({
   hideFinishedSubagents: Schema.Boolean,
   showToolDetails: Schema.Boolean,
   toolActivity: Schema.Literals(['collapsed', 'expanded', 'hidden']),
+  browserSidebarWidth: Schema.Number.pipe(
+    Schema.check(Schema.isFinite()),
+    Schema.check(Schema.isBetween({ minimum: 180, maximum: 480 })),
+  ),
   threadSidebarWidth: Schema.Number.pipe(
     Schema.check(Schema.isFinite()),
     Schema.check(Schema.isBetween({ minimum: 180, maximum: 640 })),
@@ -190,6 +194,7 @@ export const defaultAppPreferences: AppPreferences = {
   hideFinishedSubagents: true,
   showToolDetails: false,
   toolActivity: 'collapsed',
+  browserSidebarWidth: 224,
   threadSidebarWidth: 280,
   toolsSidebarWidth: 380,
   viewerSidebarWidth: 560,

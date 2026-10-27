@@ -766,3 +766,34 @@ it('opens a dedicated presentation only after an explicit thread choice', async 
   media.reset()
   expect(close).toHaveBeenCalledOnce()
 })
+
+it('applies saved website blocks and revocation before document grants and prompts again after reset', async () => {
+  const { browserPermissions } = await import('./browser-permissions')
+  const { media, session, call } = setup()
+  const origin = 'https://meet.example'
+  const permissions = browserPermissions('work')
+  permissions.allowMedia(origin, { audio: true, video: true })
+  permissions.setSite(origin, 'camera', 'block')
+  const video = vi.fn<(allow: boolean) => void>()
+  session.request?.(call, 'media', video, {
+    isMainFrame: true,
+    requestingUrl: call.mainFrame.url,
+    mediaTypes: ['video'],
+  })
+  expect(video).toHaveBeenCalledWith(false)
+  expect(session.check?.(call, 'media', origin, { mediaType: 'video' })).toBe(false)
+  expect(session.check?.(call, 'media', origin, { mediaType: 'audio' })).toBe(true)
+  permissions.setSite(origin, 'microphone', 'ask')
+  media.revokeSite('work', origin)
+  const audio = vi.fn<(allow: boolean) => void>()
+  session.request?.(call, 'media', audio, {
+    isMainFrame: true,
+    requestingUrl: call.mainFrame.url,
+    mediaTypes: ['audio'],
+  })
+  expect(audio).not.toHaveBeenCalled()
+  expect(media.snapshot(1).mediaRequests).toHaveLength(1)
+  media.revokeSite('work', origin)
+  expect(audio).toHaveBeenCalledWith(false)
+  expect(media.snapshot(1).mediaRequests).toBeUndefined()
+})

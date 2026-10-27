@@ -1,7 +1,7 @@
+import { flushSync } from 'react-dom'
 import { nativeBrowserBounds, nativeBrowserOcclusion } from './native-browser-layout'
-import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import { BrowserFavicon } from './browser-favicon'
-import { BrowserProfileLabel } from './browser-profile-label'
+import { BrowserTabRow } from './browser-tab-row'
+import { BrowserSiteControls } from './browser-site-controls'
 import { BrowserExtensions } from './browser-extensions'
 import { BrowserLibrary } from './browser-library'
 import {
@@ -666,10 +666,19 @@ function BrowserContent({
     }
   }
   useEffect(() => {
-    if (!browser || (!url && !nativeTabKeys.has(`${scope}:${activeTab}`)) || mode !== 'web') return
+    if (
+      !browser ||
+      (!shared && ((!url && !nativeTabKeys.has(`${scope}:${activeTab}`)) || mode !== 'web'))
+    )
+      return
     let alive = true
     const poll = Effect.tryPromise({
-      try: () => browser({ action: 'status', key: browserKey }),
+      try: () =>
+        browser({
+          action: 'status',
+          key: browserKey,
+          ...(shared ? { tabCount: currentTabs.current.length } : {}),
+        }),
       catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
     }).pipe(
       Effect.tap((state) =>
@@ -684,13 +693,19 @@ function BrowserContent({
                 .map((tab) => tab.id),
             )
             const remaining = currentTabs.current.filter((tab) => !closedIds.has(tab.id))
+            const incoming = (state.movedTabs ?? [])
+              .map(({ key, tab }) => {
+                nativeTabKeys.set(`${scope}:${tab.id}`, key)
+                return tab
+              })
+              .filter((tab) => !remaining.some((item) => item.id === tab.id))
             const additions = (state.createdTabs ?? []).filter(
               (tab) =>
                 !tab.url ||
                 /^https?:\/\//i.test(tab.url) ||
                 /^chrome-extension:\/\/[a-p]{32}\//.test(tab.url),
             )
-            const capacity = Math.max(0, 100 - remaining.length)
+            const capacity = Math.max(0, 100 - remaining.length - incoming.length)
             const identities = new Map(
               additions.slice(0, capacity).map((tab) => [tab.key, randomUUID()]),
             )
@@ -719,7 +734,7 @@ function BrowserContent({
                 setError(`Could not close an extra extension tab: ${String(cause)}`),
               )
             if (rejected.length) setError('Close a tab before opening more extension tabs.')
-            if (closedKeys.size || adopted.length) {
+            if (closedKeys.size || adopted.length || incoming.length) {
               const fallback: BrowserTab = {
                 id: randomUUID(),
                 url: '',
@@ -727,11 +742,11 @@ function BrowserContent({
                 kind: 'web',
                 profileId: 'default',
               }
-              const next = [...remaining, ...adopted]
+              const next = [...remaining, ...incoming, ...adopted]
               currentTabs.current = next.length ? next : [fallback]
               setTabs((previous) => {
                 const kept = previous.filter((tab) => !closedIds.has(tab.id))
-                const next = [...kept, ...adopted].slice(0, 100)
+                const next = [...kept, ...incoming, ...adopted].slice(0, 100)
                 return next.length ? next : [fallback]
               })
               if (closedKeys.has(browserKey))
@@ -749,13 +764,16 @@ function BrowserContent({
               }
               for (const [key, value] of nativeTabKeys)
                 if (closedKeys.has(value)) nativeTabKeys.delete(key)
+              if (incoming.length) selectTab(incoming[incoming.length - 1])
             }
             if (
+              incoming.length ||
               closedKeys.has(browserKey) ||
               additions.slice(0, capacity).some((tab) => tab.active || tab.openerKey)
             )
               return
           }
+          if (mode !== 'web') return
           if (
             !/^https?:\/\//i.test(state.url) &&
             state.url !== 'about:blank' &&
@@ -879,22 +897,40 @@ function BrowserContent({
       if (signature === previousCommand) return
       previousCommand = signature
       const attempt = ++revision
-      if (command.action === 'hide' && obscured && rect?.width && rect.height) {
-        // Capturing can stall on a busy page. Never leave the native layer above a menu
-        // while waiting, and never apply a frame after that menu has already closed.
-        void browser({ action: 'screenshot', key: browserKey })
-          .then((captured) => {
-            if (alive && revision === attempt && captured?.image)
-              setFrozenPage({ key: browserKey, url, image: captured.image })
-          })
-          .catch(() => {
-            /* A loading page may not have a frame. The native layer must still hide. */
-          })
-      }
       void (async () => {
+        if (command.action === 'hide' && obscured && rect?.width && rect.height) {
+          // Keep the live page until its replacement has decoded and committed. Hiding first
+          // exposes the empty native slot for at least one frame whenever a menu opens.
+          let timeout: ReturnType<typeof setTimeout> | undefined
+          try {
+            const captured = await Promise.race([
+              browser({ action: 'screenshot', key: browserKey }),
+              new Promise<undefined>((resolve) => {
+                timeout = setTimeout(() => resolve(undefined), 500)
+              }),
+            ])
+            if (captured?.image && alive && revision === attempt) {
+              const image = new Image()
+              image.src = captured.image
+              await image.decode()
+              if (alive && revision === attempt)
+                flushSync(() => setFrozenPage({ key: browserKey, url, image: captured.image! }))
+            }
+          } catch {
+            /* A hung or loading page must not prevent access to Studio's menus. */
+          } finally {
+            clearTimeout(timeout)
+          }
+        }
         if (!alive || revision !== attempt) return
         await browser(command)
-        if (alive && revision === attempt && command.action === 'show') setFrozenPage(null)
+        // Keep the fallback behind the native page while its compositor resumes painting.
+        if (command.action === 'show')
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              if (alive && revision === attempt) setFrozenPage(null)
+            }),
+          )
       })().catch((e) => {
         if (previousCommand === signature) previousCommand = ''
         if (alive) setError(String(e))
@@ -994,9 +1030,10 @@ function BrowserContent({
       await browser({ action: 'close', key })
     }
   }
-  const closeTab = (tab: BrowserTab) => {
-    if (tab.pinned) return
-    if (shared && restorableTab(tab)) setClosed((previous) => [tab, ...previous].slice(0, 20))
+  const removeTab = (tab: BrowserTab, dispose = true) => {
+    if (tab.pinned && dispose) return
+    if (dispose && shared && restorableTab(tab))
+      setClosed((previous) => [tab, ...previous].slice(0, 20))
     const remaining = currentTabs.current.filter((item) => item.id !== tab.id)
     const next: BrowserTab[] = remaining.length
       ? remaining
@@ -1017,8 +1054,10 @@ function BrowserContent({
         next.find((item) => item.id === tab.previewOf) ??
           next[Math.min(tabs.indexOf(tab), next.length - 1)],
       )
-    void disposeTab(tab).catch((cause) => setError(`Could not close tab: ${String(cause)}`))
+    if (dispose)
+      void disposeTab(tab).catch((cause) => setError(`Could not close tab: ${String(cause)}`))
   }
+  const closeTab = (tab: BrowserTab) => removeTab(tab)
   // Only the active preview's return chain stays alive. Switching tabs or promoting it
   // disposes hidden previews, without reloading the retained page.
   useEffect(() => {
@@ -1215,6 +1254,53 @@ function BrowserContent({
     window.addEventListener('keydown', shortcuts)
     return () => window.removeEventListener('keydown', shortcuts)
   })
+  const [browserWindows, setBrowserWindows] = useApplicationState<{ id: number; title: string }[]>(
+    [],
+  )
+  const loadBrowserWindows = () => {
+    if (browser && shared)
+      void browser({ action: 'browser-windows', key: browserKey })
+        .then((result) => setBrowserWindows(result?.windows ?? []))
+        .catch((cause) => setError(String(cause)))
+  }
+  const renderTab = (tab: BrowserTab) => (
+    <BrowserTabRow
+      key={tab.id}
+      tab={tab}
+      active={activeTab === tab.id}
+      busy={busy}
+      windows={browserWindows}
+      onMenuOpen={loadBrowserWindows}
+      onSelect={() => selectTab(tab)}
+      onPin={() =>
+        setTabs((previous) =>
+          previous.map((item) =>
+            item.id === tab.id
+              ? { ...(item.pinned ? item : wakeBrowserTab(item)), pinned: !item.pinned }
+              : item,
+          ),
+        )
+      }
+      onSettle={() => moveTab(tab)}
+      onSnooze={() => moveTab(tab, tomorrowBrowserTabWake())}
+      onClose={() => closeTab(tab)}
+      onMove={
+        browser && shared
+          ? (targetWindowId) =>
+              void act(async () => {
+                await browser({
+                  action: 'move-tab',
+                  key: nativeKey(tab.id),
+                  tab: { ...tab, title: tab.title.slice(0, 4096) },
+                  targetWindowId,
+                })
+                nativeTabKeys.delete(`${scope}:${tab.id}`)
+                removeTab(tab, false)
+              })
+          : undefined
+      }
+    />
+  )
   const newTabMenu = (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -1694,7 +1780,19 @@ function BrowserContent({
       </IconButton>
       <div className="studio-browser-address flex h-9 min-w-0 flex-1 items-center @max-[480px]/browser:order-first @max-[480px]/browser:basis-full [@media(pointer:coarse)]:h-12">
         <span className="flex w-9 shrink-0 justify-center [@media(pointer:coarse)]:w-11">
-          <Globe2 size={15} className="text-muted-foreground" aria-hidden="true" />
+          {shared && mode === 'web' ? (
+            <BrowserSiteControls
+              key={`${browserKey}:${history.url || url}`}
+              tabKey={browserKey}
+              url={history.url || url}
+              profileName={
+                profiles.find((profile) => profile.id === profileId)?.name ??
+                (isPrivateBrowserProfile(profileId) ? 'Private' : 'Unavailable profile')
+              }
+            />
+          ) : (
+            <Globe2 size={15} className="text-muted-foreground" aria-hidden="true" />
+          )}
         </span>
         <Input
           type="text"
@@ -1922,9 +2020,14 @@ function BrowserContent({
       }
       sidebar={
         shared ? (
-          <aside
+          <ResizableSidebar
+            preference="browserSidebarWidth"
+            side="left"
+            label="Browser tabs"
+            maxFraction={0.4}
+            maxWidth={480}
             aria-label="Recent browser tabs"
-            className="flex w-56 max-w-[35vw] shrink-0 flex-col border-r bg-sidebar"
+            className="flex shrink-0 flex-col border-r bg-sidebar"
           >
             <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3 text-sm font-medium">
               <Globe2 size={16} /> Browser {newTabMenu}
@@ -1953,92 +2056,20 @@ function BrowserContent({
                     regularTabs.filter((tab) => browserTabCategory(tab, clock) === category).length
                   }
                 >
+                  {category === 'active' && (
+                    <div aria-label="Pinned browser tabs" className="mb-1 grid grid-cols-3 gap-1">
+                      {recentBrowserTabs(tabs)
+                        .filter((tab) => tab.pinned)
+                        .map(renderTab)}
+                    </div>
+                  )}
                   {recentBrowserTabs(tabs)
-                    .filter((tab) => browserTabCategory(tab, clock) === category)
-                    .map((tab) => {
-                      const owner =
-                        tab.kind === 'remote'
-                          ? runtimes.find((entry) => entry.profile.id === tab.runtimeId)
-                          : undefined
-                      const computer =
-                        tab.kind === 'web'
-                          ? 'This computer'
-                          : owner
-                            ? runtimeComputerName(owner)
-                            : 'Unavailable computer'
-                      return (
-                        <div
-                          key={tab.id}
-                          className={`group flex min-w-0 items-center rounded-xl border border-transparent ${activeTab === tab.id ? 'bg-accent/70' : 'hover:bg-accent/40'}`}
-                        >
-                          <button
-                            type="button"
-                            aria-current={activeTab === tab.id ? 'page' : undefined}
-                            className="min-w-0 flex-1 space-y-1 px-2.5 py-2 text-left"
-                            onClick={() => selectTab(tab)}
-                            title={tab.url || 'New tab'}
-                          >
-                            <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5">
-                              <BrowserFavicon tab={tab} />
-                              <span className="truncate">
-                                {tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'}
-                              </span>
-                            </span>
-                            <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
-                              <RuntimeIcon
-                                icon={owner?.snapshot?.runtimeIcon}
-                                className="size-3 shrink-0"
-                                aria-hidden="true"
-                              />
-                              <span className="truncate" title={computer}>
-                                {tab.kind === 'web' ? 'Local' : 'Remote'} · {computer}
-                              </span>
-                            </span>
-                            <span className="block truncate pl-4 text-xs leading-4 text-muted-foreground">
-                              <BrowserProfileLabel tab={tab} />
-                              {owner && !owner.connected ? ' · Offline' : ''}
-                            </span>
-                            {tab.snoozedUntil && browserTabCategory(tab, clock) === 'snoozed' && (
-                              <span className="block truncate text-xs text-muted-foreground">
-                                Wakes {new Date(tab.snoozedUntil).toLocaleString()}
-                              </span>
-                            )}
-                          </button>
-                          <IconButton
-                            label={`${tab.pinned ? 'Unpin' : 'Pin'} tab ${tab.title || tab.url || 'New tab'}`}
-                            className={`size-7 shrink-0 ${tab.pinned ? 'text-primary' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}
-                            onClick={() =>
-                              setTabs((previous) =>
-                                previous.map((item) =>
-                                  item.id === tab.id
-                                    ? {
-                                        ...(item.pinned ? item : wakeBrowserTab(item)),
-                                        pinned: !item.pinned,
-                                      }
-                                    : item,
-                                ),
-                              )
-                            }
-                          >
-                            {tab.pinned ? <PinOff size={12} /> : <Pin size={12} />}
-                          </IconButton>
-                          {!tab.pinned && (
-                            <IconButton
-                              label={`Close tab ${tab.title || tab.url || 'New tab'}`}
-                              className="size-7 shrink-0"
-                              disabled={busy}
-                              onClick={() => closeTab(tab)}
-                            >
-                              <X size={12} />
-                            </IconButton>
-                          )}
-                        </div>
-                      )
-                    })}
+                    .filter((tab) => !tab.pinned && browserTabCategory(tab, clock) === category)
+                    .map(renderTab)}
                 </BrowserTabGroup>
               ))}
             </div>
-          </aside>
+          </ResizableSidebar>
         ) : null
       }
     >

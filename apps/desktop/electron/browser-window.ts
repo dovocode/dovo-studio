@@ -9,8 +9,7 @@ import { registerQuitShortcut } from './quit-shortcut.js'
 /** Each browser window hosts browser-only controls and its own independent tab workspace. */
 export function registerBrowserWindows(rendererPath: string, preload: string) {
   const windows = new Set<BrowserWindow>()
-  ipcMain.handle('browser:new-window', async (event) => {
-    requireTrustedRenderer(event, rendererPath)
+  const create = async () => {
     const settings = readLocalSettingsSection('app')
     if (
       !settings ||
@@ -70,8 +69,15 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
       window.destroy()
       throw cause
     }
+    return window
+  }
+  ipcMain.handle('browser:new-window', async (event) => {
+    requireTrustedRenderer(event, rendererPath)
+    await create()
   })
   return {
+    create,
+    list: () => [...windows].filter((window) => !window.isDestroyed()),
     dispose: () => {
       for (const window of windows) window.destroy()
       windows.clear()

@@ -3,6 +3,7 @@ import { defaultAppPreferences, readAppPreferences, updateAppPreferences } from 
 import { useApplicationState } from '@dovo/studio-core/state'
 import { cn } from '@dovo/studio-ui'
 type WidthPreference =
+  | 'browserSidebarWidth'
   | 'threadSidebarWidth'
   | 'toolsSidebarWidth'
   | 'viewerSidebarWidth'

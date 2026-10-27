@@ -807,3 +807,24 @@ it('denies a runtime permission accepted after Browser was turned off', async ()
   answer(0)
   await expect(asking).resolves.toBe(false)
 })
+
+it('persists toolbar pins in the selected profile across restart and toggles', async () => {
+  const extensions = createBrowserExtensions(tabs)
+  choose(await fixture('Pinned helper'))
+  const id = (await extensions.handle(window, { action: 'install', profileId: 'work' }))!.installed!
+  await expect(
+    extensions.handle(window, { action: 'pin', profileId: 'work', id }),
+  ).resolves.toMatchObject({ extensions: [{ id, pinned: true, loaded: true }] })
+  await extensions.handle(window, { action: 'disable', profileId: 'work', id })
+  await extensions.dispose()
+  const restarted = createBrowserExtensions(tabs)
+  await expect(
+    restarted.handle(window, { action: 'list', profileId: 'work' }),
+  ).resolves.toMatchObject({ extensions: [{ id, pinned: true, enabled: false }] })
+  await expect(
+    restarted.handle(window, { action: 'list', profileId: 'personal' }),
+  ).resolves.toMatchObject({ extensions: [] })
+  await expect(
+    restarted.handle(window, { action: 'unpin', profileId: 'work', id }),
+  ).resolves.toMatchObject({ extensions: [{ id, pinned: false, enabled: false }] })
+})

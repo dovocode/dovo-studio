@@ -2,6 +2,7 @@ import { mutableStruct, mutableArray } from '../../shared/schema.js'
 import { minValue, maxValue, urlSchema } from '../../shared/schema.js'
 import { Schema } from 'effect'
 import { threadWindowTargetSchema } from '../../thread-window.js'
+import { browserTabLifecycleFields } from './browser-tab-lifecycle.js'
 import { connectionSchema } from '../connection/runtime.js'
 export function previewUrl(input: string, runtimeAddress?: string): string {
   const text = input.trim()
@@ -121,7 +122,69 @@ export const previewResultSchema = mutableStruct({
     ),
   ),
 })
+export const browserWorkspaceTabSchema = mutableStruct({
+  ...browserTabLifecycleFields,
+  id: maxValue(minValue(Schema.String, 1), 200),
+  url: maxValue(Schema.String, 8192),
+  title: maxValue(Schema.String, 4096),
+  kind: Schema.Literals(['web', 'remote']),
+  profileId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
+  runtimeId: Schema.optional(Schema.String),
+  favicon: Schema.optional(maxValue(Schema.String, 100000)),
+  visitedAt: Schema.optional(Schema.Number),
+  pinned: Schema.optional(Schema.Boolean),
+  thread: Schema.optional(
+    mutableStruct({ id: Schema.String, runtimeId: Schema.NullOr(Schema.String) }),
+  ),
+})
+export type BrowserWorkspaceTab = typeof browserWorkspaceTabSchema.Type
+export const browserSitePermissionSchema = Schema.Literals([
+  'notifications',
+  'microphone',
+  'camera',
+])
+export const browserPermissionSettingSchema = Schema.Literals(['ask', 'allow', 'block'])
+export type BrowserSitePermission = typeof browserSitePermissionSchema.Type
+export type BrowserPermissionSetting = typeof browserPermissionSettingSchema.Type
+export type BrowserSitePermissions = {
+  origin: string
+  permissions: Record<BrowserSitePermission, BrowserPermissionSetting>
+}
 export const browserCommandSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literal('browser-windows'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+  }),
+  mutableStruct({
+    action: Schema.Literal('move-tab'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    targetWindowId: Schema.optional(
+      Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
+    ),
+    tab: browserWorkspaceTabSchema,
+  }),
+  mutableStruct({
+    action: Schema.Literal('site-permissions'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+  }),
+  mutableStruct({
+    action: Schema.Literal('clear-site-data'),
+    origin: maxValue(minValue(Schema.String, 1), 8192),
+    key: maxValue(minValue(Schema.String, 1), 500),
+  }),
+  mutableStruct({
+    action: Schema.Literal('set-site-permission'),
+    origin: maxValue(minValue(Schema.String, 1), 8192),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    permission: browserSitePermissionSchema,
+    setting: browserPermissionSettingSchema,
+  }),
+  mutableStruct({
+    action: Schema.Literal('request-site-permission'),
+    origin: maxValue(minValue(Schema.String, 1), 8192),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    permission: browserSitePermissionSchema,
+  }),
   mutableStruct({
     action: Schema.Literal('external'),
     key: maxValue(minValue(Schema.String, 1), 500),
@@ -252,6 +315,12 @@ export const browserCommandSchema = Schema.Union([
       'tab-activity',
     ]),
     key: maxValue(minValue(Schema.String, 1), 500),
+    tabCount: Schema.optional(
+      Schema.Number.pipe(
+        Schema.check(Schema.isInt()),
+        Schema.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
+      ),
+    ),
   }),
   /** Trusted Studio registers remote workspace tabs as potential sharing sources. */
   mutableStruct({
@@ -349,6 +418,9 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       image?: string
       selection?: string
       favicon?: string
+      sitePermissions?: BrowserSitePermissions
+      windows?: { id: number; title: string }[]
+      movedTabs?: { key: string; tab: BrowserWorkspaceTab }[]
       /** HTTP(S) new-tab requests from a workspace browser view, drained by `status`. */
       openedLinks?: string[]
       /**
@@ -434,7 +506,7 @@ export const browserExtensionCommandSchema = Schema.Union([
     profileId: browserProfileIdSchema,
   }),
   mutableStruct({
-    action: Schema.Literals(['enable', 'disable', 'remove']),
+    action: Schema.Literals(['enable', 'disable', 'remove', 'pin', 'unpin']),
     profileId: browserProfileIdSchema,
     id: browserExtensionIdSchema,
   }),
@@ -459,6 +531,7 @@ export type BrowserExtension = {
   name: string
   version: string
   enabled: boolean
+  pinned?: boolean
   /** Enabled and running in this profile now. */
   loaded: boolean
   title?: string

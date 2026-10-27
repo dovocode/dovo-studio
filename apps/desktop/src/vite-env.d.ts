@@ -14,6 +14,7 @@ interface Window {
     openBrowserLink: NonNullable<import('@dovo/studio-core').StudioHostApi['openBrowserLink']>
     openExternalLink: NonNullable<import('@dovo/studio-core').StudioHostApi['openExternalLink']>
     openBrowserWindow: () => Promise<void>
+    onBrowserWorkspaceFocus: (listener: () => void) => () => void
     browser: import('@dovo/protocol').BrowserBridge
     onBrowserContextAction: NonNullable<
       import('@dovo/studio-core').StudioHostApi['onBrowserContextAction']

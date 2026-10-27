@@ -57,7 +57,7 @@ const built = await build({
           loader: 'js',
           resolveDir: root + 'packages/extension-tasks',
           contents: path.endsWith('/state')
-            ? `export {useState as useApplicationState} from 'react';`
+            ? `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const current=useRef(value);current.current=value;const set=next=>{current.current=typeof next==='function'?next(current.current):next;setValue(current.current)};return [value,set,current]}`
             : path === './screenshot-attachment'
               ? 'export const useScreenshotAttachment=()=>({editor:null,error:"",busy:false,attach:async()=>{}});'
               : path === './device-list'
@@ -80,7 +80,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];const browser=async(command)=>{if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='show')nativePages.set(command.key,{url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0)};if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0)};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -110,7 +110,7 @@ const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
 export {useRemoteBrowserProfiles} from '${root}packages/studio-core/src/browser-profiles.ts';
-export const defaultAppPreferences={toolsSidebarWidth:440};export const readAppPreferences=()=>({browserViewport:'fill',toolsSidebarWidth:440});
+export const defaultAppPreferences={browserSidebarWidth:224,toolsSidebarWidth:440};export const readAppPreferences=()=>({browserViewport:'fill',browserSidebarWidth:224,toolsSidebarWidth:440});
 window.preferences=[];export const updateAppPreferences=change=>{window.preferences.push(change);appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};const polls=new Set();window.pollBrowser=async()=>{for(const poll of [...polls])await Effect.runPromise(poll)};export const startPolling=poll=>{polls.add(poll);return {stop:async()=>{polls.delete(poll)}}};
 `,
         }))
@@ -194,6 +194,11 @@ try {
   )
   await page.getByRole('button', { name: 'Extensions', exact: true }).click()
   await nativeAction('hide')
+  assert.equal(
+    await page.evaluate(() => window.lastHideHadFrame),
+    true,
+    'Fallback must be painted before the native page hides',
+  )
   await page.getByRole('menuitem', { name: 'Manage extensions', exact: true }).click()
   const extensionsDialog = page.getByRole('dialog', { name: 'Browser extensions' })
   await extensionsDialog.waitFor()
@@ -340,7 +345,7 @@ try {
   )
   if (opened.body.taskId !== 'studio:browser') throw new Error('Remote tab borrowed a thread')
   const remoteTab = recent.locator('button[aria-current="page"]')
-  await remoteTab.getByText('Remote · Mac Studio', { exact: true }).waitFor()
+  assert.match(await remoteTab.getAttribute('aria-label'), /Remote · Mac Studio/)
   assert.equal(
     await remoteTab.locator('[data-runtime-icon]').count(),
     1,
@@ -528,7 +533,7 @@ try {
   if (
     !(await rows
       .first()
-      .innerText()
+      .getAttribute('aria-label')
       .then((text) => text.includes('Remote')))
   )
     throw new Error('Most recent tab not first')
@@ -1524,6 +1529,173 @@ try {
   assert.ok(threadBounds.x >= 0 && threadBounds.width <= 390, 'Thread panel fits a narrow window')
   await custom.screenshot({ path: root + 'work/shared-browser-thread-panel.png' })
   await custom.close()
+
+  // Exercise the compact sidebar and site controls with the production components.
+  const controlsPage = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  controlsPage.on('pageerror', (error) => errors.push(error.message))
+  await controlsPage.route('http://localhost/**', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<html class="dark"><body style="margin:0"><div id="app" style="height:800px"></div></body></html>',
+    }),
+  )
+  await controlsPage.goto('http://localhost/')
+  await controlsPage.evaluate(() => {
+    const tabs = Array.from({ length: 5 }, (_, index) => ({
+      id: 'compact-' + index,
+      title: 'Website ' + index,
+      url: 'https://example.test/' + index,
+      kind: 'web',
+      profileId: 'default',
+      pinned: index < 4,
+    }))
+    localStorage.setItem(
+      'dovo.shared-browser-tabs.v1',
+      JSON.stringify({ tabs, active: 'compact-4' }),
+    )
+  })
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+    file.endsWith('.css'),
+  ))
+    await controlsPage.addStyleTag({
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+    })
+  await controlsPage.addScriptTag({ content: built.outputFiles[0].text })
+  const compactSidebar = controlsPage.getByRole('complementary', { name: 'Recent browser tabs' })
+  const pins = compactSidebar.getByLabel('Pinned browser tabs').getByRole('button')
+  await pins.nth(3).waitFor()
+  const pinBounds = await Promise.all([0, 1, 2, 3].map((index) => pins.nth(index).boundingBox()))
+  assert.equal(pinBounds[0].y, pinBounds[1].y)
+  assert.equal(pinBounds[1].y, pinBounds[2].y)
+  assert.ok(pinBounds[3].y > pinBounds[0].y, 'Exactly three pins share a row')
+  assert.equal(
+    await pins.first().getByText('Website 0', { exact: true }).count(),
+    0,
+    'Pins show icons and compact profile labels',
+  )
+  const separator = controlsPage.getByRole('separator', { name: 'Resize Browser tabs' })
+  await separator.focus()
+  await separator.press('ArrowRight')
+  await separator.press('ArrowRight')
+  await controlsPage.waitForFunction(() => window.preferences.at(-1)?.browserSidebarWidth === 244)
+  assert.equal(Math.round((await compactSidebar.boundingBox()).width), 244)
+  const currentRow = compactSidebar.getByRole('button', { name: /^Website 4 Local/ })
+  const close = compactSidebar.getByRole('button', { name: 'Close tab Website 4', exact: true })
+  await controlsPage.mouse.move(1000, 750)
+  assert.equal(
+    await close.evaluate((button) => getComputedStyle(button.parentElement).opacity),
+    '0',
+  )
+  await currentRow.hover()
+  await close.waitFor({ state: 'visible' })
+  assert.equal(
+    await close.evaluate((button) => getComputedStyle(button.parentElement).opacity),
+    '1',
+  )
+  await compactSidebar.getByRole('button', { name: 'Settle tab Website 4', exact: true }).waitFor()
+  await controlsPage.getByRole('button', { name: 'Website permissions and site data' }).click()
+  await controlsPage.getByRole('combobox', { name: 'Microphone permission' }).selectOption('allow')
+  await controlsPage.waitForFunction(() =>
+    window.calls.some(
+      (command) =>
+        command.action === 'set-site-permission' &&
+        command.origin === 'https://example.test' &&
+        command.permission === 'microphone' &&
+        command.setting === 'allow',
+    ),
+  )
+  await controlsPage.getByRole('combobox', { name: 'Camera permission' }).selectOption('block')
+  await controlsPage.getByRole('button', { name: 'Request notifications permission' }).click()
+  await controlsPage.waitForFunction(() =>
+    window.calls.some(
+      (command) =>
+        command.action === 'request-site-permission' && command.permission === 'notifications',
+    ),
+  )
+  await controlsPage.getByRole('button', { name: 'Website permissions and site data' }).click()
+  assert.equal(
+    await controlsPage.getByRole('combobox', { name: 'Camera permission' }).inputValue(),
+    'block',
+  )
+  await controlsPage.getByRole('button', { name: 'Cookies and site data…' }).click()
+  assert.equal(
+    await controlsPage.evaluate(() =>
+      window.calls.some((command) => command.action === 'clear-site-data'),
+    ),
+    false,
+  )
+  await controlsPage.getByRole('button', { name: 'Clear site data', exact: true }).click()
+  await controlsPage.waitForFunction(() =>
+    window.calls.some(
+      (command) =>
+        command.action === 'clear-site-data' && command.origin === 'https://example.test',
+    ),
+  )
+  await controlsPage.screenshot({ path: root + 'work/shared-browser/compact-site-controls.png' })
+  await controlsPage.keyboard.press('Escape')
+  await pins.first().click({ button: 'right' })
+  await controlsPage.getByRole('menuitem', { name: 'Unpin tab', exact: true }).click()
+  await controlsPage.waitForFunction(
+    () =>
+      !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+        (tab) => tab.id === 'compact-0',
+      ).pinned,
+  )
+  await compactSidebar.getByRole('button', { name: /^Website 0 Local/ }).click({ button: 'right' })
+  await controlsPage.getByRole('menuitem', { name: 'Move to new window', exact: true }).click()
+  await controlsPage.waitForFunction(() => window.transferredTab?.tab.id === 'compact-0')
+  const transferred = await controlsPage.evaluate(() => window.transferredTab)
+  assert.equal(transferred.targetWindowId, undefined)
+  assert.equal(
+    await controlsPage.evaluate(() =>
+      window.calls.some(
+        (command) => command.action === 'close' && command.key === window.transferredTab.key,
+      ),
+    ),
+    false,
+    'Moving retains the native page',
+  )
+  await compactSidebar.getByRole('button', { name: /^Website 1 Local/ }).click({ button: 'right' })
+  await controlsPage.getByRole('menuitem', { name: 'Move to another window', exact: false }).hover()
+  await controlsPage.getByRole('menuitem', { name: 'Other browser window', exact: true }).click()
+  await controlsPage.waitForFunction(() => window.transferredTab?.targetWindowId === 2)
+  await currentRow.click({ button: 'right' })
+  await controlsPage.getByRole('menuitem', { name: 'Settle tab', exact: true }).click()
+  await controlsPage.waitForFunction(
+    () =>
+      !!JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+        (tab) => tab.id === 'compact-4',
+      ).settledAt,
+  )
+  // An empty destination consumes its move inbox and adopts the same native key.
+  await controlsPage.evaluate(async (transferred) => {
+    window.movedTabs.push({ key: transferred.key, tab: transferred.tab })
+    window.createdTabs.push({
+      key: 'concurrent-extension',
+      url: 'https://example.test/extension',
+      profileId: 'work',
+      active: false,
+    })
+    window.closedTabs.push(transferred.key.replace('compact-0', 'compact-4'))
+    await window.pollBrowser()
+  }, transferred)
+  await controlsPage.waitForFunction(
+    (key) => window.calls.some((command) => command.action === 'show' && command.key === key),
+    transferred.key,
+  )
+  assert.equal(
+    await compactSidebar
+      .getByRole('button', { name: /^Website 0 Local/ })
+      .getAttribute('aria-current'),
+    'page',
+  )
+  await compactSidebar.getByRole('button', { name: /^example.test\/extension Local/ }).waitFor()
+  assert.equal(
+    await compactSidebar.getByRole('button', { name: /^Website 4 Local/ }).count(),
+    0,
+    'Moves must not drop simultaneous extension creation or closure events',
+  )
+  await controlsPage.close()
 
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
