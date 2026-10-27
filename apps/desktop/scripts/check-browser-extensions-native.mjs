@@ -34,6 +34,7 @@ const require = createRequire(join(desktop, 'package.json'))
 const keep = process.argv.includes('--keep')
 const websites = process.argv.includes('--websites')
 const store = process.argv.includes('--store')
+const proton = process.argv.includes('--proton')
 const work = mkdtempSync(join(tmpdir(), 'dovo-browser-extensions-native-'))
 // Keep native image dependencies in their installed packages rather than bundling their loaders.
 symlinkSync(join(desktop, 'node_modules'), join(work, 'node_modules'), 'junction')
@@ -148,8 +149,8 @@ const run = process.env.SMOKE_RUN!
 const settings = process.env.DOVO_SETTINGS_PATH!
 app.setPath('userData', join(work, 'user-data'))
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-const setBrowser = (enabled: boolean) =>
-  writeFileSync(settings, JSON.stringify({ app: { browserWorkspaceEnabled: enabled, browserProfiles: [{id:"default",name:"Default"},{id:"work",name:"Work",language:"nl-NL"},{id:"personal",name:"Personal"}] } }))
+const setBrowser = (enabled: boolean, route = false) =>
+  writeFileSync(settings, JSON.stringify({ app: { browserWorkspaceEnabled: enabled, browserProfiles: [{id:"default",name:"Default"},{id:"work",name:"Work",language:"nl-NL"},{id:"personal",name:"Personal",linkDomains:route?["127.0.0.1"]:[]}] } }))
 const prompts: { message: string; detail?: string }[] = []
 const loads: string[] = []
 const report: Record<string, unknown> = { run }
@@ -157,7 +158,12 @@ const stage = (name: string) => { report.stage=name; writeFileSync(join(work,'pr
 process.on('uncaughtException',(error)=>{report.error=error.stack??error.message;report.liveWindows=BrowserWindow.getAllWindows().map(w=>({id:w.id,title:w.getTitle(),url:w.webContents.getURL()}));writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report));app.exit(1)})
 const watchdog = setTimeout(()=>{report.error='Native browser smoke timed out at '+report.stage;writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report));app.exit(1)},90_000)
 watchdog.unref()
+const submissions: {method?:string,body:string}[] = []
 const server = createServer((request, response) => {
+  if (request.url?.startsWith('/routing-post')) {
+    let body='';request.setEncoding('utf8');request.on('data',chunk=>{body+=chunk});
+    request.on('end',()=>{submissions.push({method:request.method,body});response.end('<title>submitted</title>done')});return
+  }
   if(request.url==='/profile-icon.svg') {
     response.setHeader('content-type','image/svg+xml')
     const color=request.headers.cookie?.includes('icon=work')?'red':'blue'
@@ -330,6 +336,26 @@ app.whenReady().then(async () => {
       assert.equal(linkChild.openerKey, tab)
       assert.equal(linkChild.profileId, 'work')
       await call('browser',{action:'close',key:linkChild.key})
+      stage('profile routing preserves same-window POST')
+      setBrowser(true,true)
+      await show(tab, 'work')
+      await main.executeJavaScript(\`const form=document.createElement('form');form.method='POST';form.action='\${page}routing-post';const field=document.createElement('input');field.name='proof';field.value='retained';form.append(field);document.body.append(form);form.submit();true\`)
+      for(let i=0;i<60&&!submissions.length;i++) await wait(50)
+      assert.deepEqual(submissions,[{method:'POST',body:'proof=retained'}],'Same-window POST must keep its method and body in its source profile.')
+      assert.equal((await call('browser',{action:'status',key:tab}))?.createdTabs,undefined,'Form submissions must not become routed GET tabs.')
+      await main.loadURL(page)
+      stage('profile routing keeps GET links')
+      await main.executeJavaScript(\`const link=document.createElement('a');link.href='\${page}?routed-get=1#call';document.body.append(link);setTimeout(()=>link.click(),0);true\`)
+      let routedGet: any
+      for(let i=0;i<60&&!routedGet;i++) {routedGet=(await call('browser',{action:'status',key:tab}))?.createdTabs?.[0];if(!routedGet) await wait(50)}
+      assert.equal(routedGet?.profileId,'personal','An ordinary same-window GET link must still use its routed profile.')
+      assert.equal(routedGet.url,page+'?routed-get=1#call','Routing must preserve URL fragments.')
+      await show(routedGet.key,'personal',page+'?routed-get=1#call')
+      assert.equal(await main.executeJavaScript('document.querySelector("a")?.href'),page+'?routed-get=1#call','Routing preserves the opener document.')
+      await call('browser',{action:'close',key:routedGet.key})
+      setBrowser(true)
+      await main.loadURL(page)
+      report.profilePost=true
       const privateId = 'private-00000000-0000-4000-8000-000000000001'
       assert.ok(!workspacePartition(privateId).startsWith('persist:'))
       stage('private profile')
@@ -579,6 +605,44 @@ app.whenReady().then(async () => {
         report.chromeWebStore=true
       }
     }
+    if (process.env.SMOKE_PROTON === '1') {
+      stage('Proton Pass')
+      const profileId='proton-proof', key='proton-tab', id='ghmbeldphafepmbegfdlkpapadhbakde'
+      const proof=session.fromPartition(workspacePartition(profileId))
+      const messages: unknown[]=[]
+      proof.serviceWorkers.on('console-message',(_event,details)=>messages.push(details))
+      await show(key,profileId)
+      const listed=await call('extensions',{action:'list',profileId})
+      if (!listed.extensions.some((item:any)=>item.id===id)) {
+        const added=await call('extensions',{action:'installStore',profileId,url:'https://chromewebstore.google.com/detail/proton-pass-free-password-manager/'+id})
+        assert.ok(added.extensions.find((item:any)=>item.id===id)?.loaded)
+      }
+      const before=new Set(BrowserWindow.getAllWindows())
+      await call('extensions',{action:'open',profileId,id,key,anchor:{x:1000,y:0,width:32,height:32}})
+      let popup: BrowserWindow|undefined, body=''
+      for(let i=0;i<100;i++) {
+        popup=BrowserWindow.getAllWindows().find(window=>!before.has(window))
+        if(popup&&!popup.isDestroyed()) body=await popup.webContents.executeJavaScript('document.body?.innerText')
+        if(body?.match(/Sign in|Log in|Create.*account/i)) break
+        await wait(100)
+      }
+      report.proton={body,messages,workers:proof.serviceWorkers.getAllRunning()}
+      writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report,null,2))
+      assert.match(body,/Sign in|Log in|Create.*account/i,'Real Proton Pass popup must reach its signed-out screen.')
+      assert.doesNotMatch(body,/Grant permissions/,'Required broad web grants must cover Proton sign-in hosts.')
+      assert.ok(popup)
+      await popup.webContents.executeJavaScript(\`[...document.querySelectorAll('button')].find(button=>button.innerText==='Sign in with Proton')?.click()\`)
+      let signIn:any
+      for(let i=0;i<60&&!signIn;i++) {
+        const status=await call('browser',{action:'status',key,tabCount:1})
+        signIn=status.createdTabs?.find((tab:any)=>tab.url.startsWith('https://account.proton.me/'))
+        if(!signIn) await wait(100)
+      }
+      assert.ok(signIn,'Proton sign-in must create a browser tab in its own profile.')
+      assert.equal(signIn.profileId,profileId)
+      report.protonSignIn=true
+      if(!popup.isDestroyed())popup.destroy()
+    }
     report.ok = true
     await bridge.dispose()
   } catch (error) {
@@ -624,6 +688,7 @@ for (const run of ['1', '2']) {
         SMOKE_RUN: run,
         SMOKE_WEBSITES: websites ? '1' : '0',
         SMOKE_STORE: store ? '1' : '0',
+        SMOKE_PROTON: proton ? '1' : '0',
         DOVO_SETTINGS_PATH: join(work, 'settings.json'),
         VITE_DEV_SERVER_URL: '',
         ELECTRON_ENABLE_LOGGING: '',

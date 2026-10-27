@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 const registrations: Array<ReturnType<typeof registerBrowser>> = []
 const mocks = vi.hoisted(() => {
   const contents = {
+    id: 42,
     mainFrame: {
       processId: 10,
       routingId: 1,
@@ -9,6 +10,7 @@ const mocks = vi.hoisted(() => {
       executeJavaScript: vi.fn<(script: string) => Promise<void>>(async () => {}),
     },
     reload: vi.fn<() => void>(),
+    stop: vi.fn<() => void>(),
     getUserAgent: () =>
       'Mozilla/5.0 Chrome/148.0.0.0 Safari/537.36 DovoStudio/0.0.9 Electron/45.0.0',
     setUserAgent: vi.fn<(value: string) => void>(),
@@ -16,6 +18,7 @@ const mocks = vi.hoisted(() => {
     setWindowOpenHandler: vi.fn<(...args: unknown[]) => void>(),
     setIgnoreMenuShortcuts: vi.fn<(ignore: boolean) => void>(),
     session: {
+      webRequest: { onBeforeRequest: vi.fn<(...args: unknown[]) => void>() },
       fetch: vi.fn<(url: string, options?: unknown) => Promise<Response>>(),
       setUserAgent: vi.fn<(value: string) => void>(),
       setPermissionRequestHandler: vi.fn<(...args: unknown[]) => void>(),
@@ -913,6 +916,40 @@ it('routes ordinary new links into another profile while preserving OAuth and fo
   expect(
     openHandler()({ url: target, disposition: 'new-window', features: 'width=500,height=400' }),
   ).toMatchObject({ action: 'allow' })
+})
+it('routes only page-initiated main-frame GET requests and leaves form bodies and browser loads intact', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  mocks.linkProfile.mockReturnValue('work')
+  const request = mocks.contents.session.webRequest.onBeforeRequest.mock.calls[0]?.[0]
+  if (typeof request !== 'function') throw new Error('Missing navigation routing')
+  const navigate = mocks.contents.on.mock.calls
+    .filter(([name]) => name === 'will-navigate')
+    .at(0)?.[1]
+  if (typeof navigate !== 'function') throw new Error('Missing page navigation handler')
+  const respond = vi.fn<(value: { cancel?: boolean }) => void>()
+  const target = 'https://routed.example/'
+  const details = {
+    url: target,
+    resourceType: 'mainFrame',
+    webContentsId: mocks.contents.id,
+    method: 'GET',
+  }
+  // Programmatic loads do not emit will-navigate and must preserve their explicit profile.
+  request(details, respond)
+  expect(respond).toHaveBeenLastCalledWith({ cancel: false })
+  navigate({}, target)
+  request({ ...details, method: 'POST' }, respond)
+  expect(respond).toHaveBeenLastCalledWith({ cancel: false })
+  expect(mocks.create).toHaveBeenCalledOnce()
+  navigate({}, target + '#call')
+  request({ ...details, resourceType: 'subFrame' }, respond)
+  expect(respond).toHaveBeenLastCalledWith({})
+  request(details, respond)
+  expect(respond).toHaveBeenLastCalledWith({ cancel: true })
+  expect(mocks.contents.stop).toHaveBeenCalledOnce()
+  await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2))
+  expect(mocks.contents.loadURL).toHaveBeenLastCalledWith(target + '#call')
 })
 it('protects native Document PiP and returns it to the existing tab without reloading', async () => {
   const call = handler()

@@ -30,6 +30,10 @@ import { extname, join, resolve, sep } from 'node:path'
 import { Schema } from 'effect'
 import { attachNativeMessaging } from './browser-native-messaging.js'
 import { browserPermissions } from './browser-permissions.js'
+import {
+  attachExtensionPermissionChecks,
+  webOriginCovered,
+} from './browser-extension-permissions.js'
 import { dismissExtensionPopupOnBlur } from './browser-extension-popup.js'
 
 /** Shared-browser profiles never share storage with agent-enabled thread previews. */
@@ -385,6 +389,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
           requestPermissions: (extension, request) =>
             requestPermissions(profileId, extension, request),
         })
+        attachExtensionPermissionChecks(extensions)
         // The library's native child window is the overlay: keep it anchored and within Studio.
         extensions.on('browser-action-popup-created', (raw: unknown) => {
           if (!Schema.is(popupInternals)(raw)) return
@@ -561,7 +566,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
   }
   /**
    * `chrome.permissions.request` from a running extension. The library refuses undeclared
-   * permissions but records any origin, so origins must be declared match patterns too. Nothing
+   * permissions but records any origin, so origins must fit inside declared web match patterns too. Nothing
    * is granted without the user's answer to a prompt naming the extension and profile.
    */
   const requestPermissions = async (
@@ -591,7 +596,12 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
       ...declared('optional_host_permissions'),
     ]
     if (!permissions.every((p) => declaredPermissions.includes(p))) return false
-    if (!origins.every((o) => MATCH_PATTERN.test(o) && declaredOrigins.includes(o))) return false
+    if (
+      !origins.every(
+        (o) => MATCH_PATTERN.test(o) && declaredOrigins.some((grant) => webOriginCovered(grant, o)),
+      )
+    )
+      return false
     const name = (extension.name || extension.id).slice(0, 100)
     const detail = [
       ...(permissions.length ? [`Permissions: ${permissions.join(', ')}`] : []),

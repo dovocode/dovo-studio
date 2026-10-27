@@ -127,7 +127,14 @@ export async function flushExternalLinks(
   try {
     while (externalLinks.length && !parent.isDestroyed() && receivers.has(parent.webContents)) {
       const url = externalLinks[0]!
-      const routed = await route?.(url)
+      let routed = false
+      try {
+        routed = (await route?.(url)) ?? false
+      } catch (cause) {
+        // Keep a failed route actionable in the normal chooser and allow the
+        // remaining OS links to drain instead of retrying the same head forever.
+        console.error('Could not route external browser link', cause)
+      }
       if (parent.isDestroyed()) break
       if (!routed) await offerLink(parent, url)
       externalLinks.shift()

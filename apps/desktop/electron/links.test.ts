@@ -192,3 +192,34 @@ it('routes each external link independently before falling back to the chooser',
   expect(route).toHaveBeenCalledTimes(3)
   expect(fixture.sent.mock.calls).toEqual([['links:open', 'http://runtime.lan/']])
 })
+
+it('offers a failed profile route to the chooser and continues draining subsequent links', async () => {
+  const { queueExternalLinks, flushExternalLinks, setLinkReceiver } = await import('./links')
+  const parent = new BrowserWindow()
+  setLinkReceiver(parent.webContents, true)
+  const route = vi
+    .fn<(url: string) => Promise<boolean>>()
+    .mockRejectedValueOnce(new Error('Close a tab before opening more links.'))
+    .mockResolvedValueOnce(true)
+    .mockResolvedValue(false)
+  const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    queueExternalLinks([
+      'https://teams.microsoft.com/failed',
+      'https://teams.microsoft.com/next',
+      'http://runtime.lan/',
+    ])
+    await flushExternalLinks(parent, route)
+    expect(route).toHaveBeenCalledTimes(3)
+    expect(fixture.sent.mock.calls).toEqual([
+      ['links:open', 'https://teams.microsoft.com/failed'],
+      ['links:open', 'http://runtime.lan/'],
+    ])
+    queueExternalLinks(['https://teams.microsoft.com/retry'])
+    await flushExternalLinks(parent, route)
+    expect(fixture.sent).toHaveBeenLastCalledWith('links:open', 'https://teams.microsoft.com/retry')
+    expect(report).toHaveBeenCalledOnce()
+  } finally {
+    report.mockRestore()
+  }
+})

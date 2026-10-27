@@ -95,9 +95,10 @@ specific wildcard. Each rule can belong to only one profile. Rules select a prof
 never a different computer. Private tabs ignore routing rules.
 
 Matching Studio links open directly in the configured profile. Ordinary page links that need a
-different profile open a new preview in that session, retaining the source page. Existing tabs,
-redirects, form POSTs and feature-bearing sign-in popups keep their own session. Bookmarks and
-history retain their saved profile when opened explicitly.
+different profile open a new preview in that session, retaining the source page. Routing only
+intercepts page-initiated main-frame GET requests; form POSTs preserve their body and credentials.
+Existing tabs, redirects, form POSTs and feature-bearing sign-in popups keep their own session.
+Bookmarks and history retain their saved profile when opened explicitly.
 
 Installed desktop builds advertise web-link support to macOS, Windows and Linux. Choose Dovo Studio
 as the browser in your operating system's default-app settings, or send an explicit
@@ -130,6 +131,14 @@ desktop pairing has not been verified; general Chrome extension parity is not cl
 APIs/permissions and load errors are reported by the extension manager. Extension-created tabs
 retain their native identity and profile, and native close events remove them from the tab list.
 Extension URL pages are session-only and are not restored from saved tabs.
+
+Host permission checks recognize narrower origins covered by existing wildcard web grants, including
+Proton Pass sign-in hosts under `https://*/*`. Optional narrower web grants still require review;
+file access and undeclared scopes remain denied.
+`node apps/desktop/scripts/check-browser-extensions-native.mjs --proton` optionally downloads the
+signed Proton Pass store package into an isolated profile and checks its signed-out screen and
+same-profile sign-in tab before/after restart. It requires network access and does not verify an
+authenticated vault, autofill, passkeys or desktop-app pairing.
 
 ## Website and call tab capture
 

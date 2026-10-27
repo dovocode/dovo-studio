@@ -59,6 +59,8 @@ type Entry = {
   keepAwake?: boolean
   videoPictureInPicture?: boolean
   documentPictureInPicture?: boolean
+  /** Page-initiated navigation awaiting its method-aware request check. */
+  routeNavigation?: string
 }
 const MAX_OPENED_LINKS = 20
 const MAX_POPUPS = 2
@@ -80,6 +82,7 @@ const isAborted = (error: unknown) =>
   error instanceof Error && 'code' in error && error.code === 'ERR_ABORTED'
 /** A live renderer can be shown while images or other subresources are still loading. */
 async function loadUntilReady(entry: Entry, url: string) {
+  entry.routeNavigation = undefined
   const contents = entry.view.webContents
   let domReady = false
   let onReady = () => {}
@@ -184,6 +187,7 @@ export function registerBrowser(
   const workspaces = new Set<BrowserWindow>()
   const tabCounts = new Map<number, number>()
   const views = new Map<string, Entry>()
+  const routingSessions = new Set<Electron.Session>()
   const pip = createBrowserPictureInPicture()
   const focusedTabs = new Map<number, string>()
   const awakeRequests = new Map<string, object>()
@@ -553,6 +557,35 @@ export function registerBrowser(
       browserSession: view.webContents.session,
       url: '',
     }
+    if (workspace && !routingSessions.has(created.browserSession)) {
+      const browserSession = created.browserSession
+      routingSessions.add(browserSession)
+      // webRequest is unavailable to installed extensions. Keep one listener per
+      // owned session, and only consider navigations marked by will-navigate.
+      browserSession.webRequest.onBeforeRequest((details, respond) => {
+        if (details.resourceType !== 'mainFrame' || details.webContentsId === undefined) {
+          respond({})
+          return
+        }
+        const source = [...views.values()].find(
+          (entry) => entry.contents.id === details.webContentsId,
+        )
+        const navigation = source?.routeNavigation
+        if (source) source.routeNavigation = undefined
+        const routed =
+          !!source &&
+          source.workspace &&
+          !source.contents.isDestroyed() &&
+          navigation !== undefined &&
+          navigation.split('#')[0] === details.url.split('#')[0] &&
+          details.method === 'GET' &&
+          routeProfileLink(source, navigation)
+        // Stop the navigation before cancelling its request so Chromium keeps
+        // the opener document instead of committing a blocked-request page.
+        if (routed) source.contents.stop()
+        respond({ cancel: routed })
+      })
+    }
     view.webContents.once('destroyed', () => {
       const currentKey = JSON.stringify([created.windowId, created.key])
       if (views.get(currentKey) !== created) return
@@ -660,9 +693,11 @@ export function registerBrowser(
     view.webContents.on('did-finish-load', () => {
       void faviconLoader.load(view.webContents.getURL(), faviconCandidates)
     })
-    view.webContents.on('will-navigate', (event, url) => {
-      if (created.workspace && openableUrl(url) && routeProfileLink(created, url))
-        event.preventDefault()
+    view.webContents.on('will-navigate', (_event, url) => {
+      if (created.workspace) created.routeNavigation = openableUrl(url)
+    })
+    view.webContents.on('did-stop-loading', () => {
+      created.routeNavigation = undefined
     })
     view.webContents.on('context-menu', (_event, params) => {
       if (
@@ -1465,6 +1500,8 @@ export function registerBrowser(
     },
     dispose: async () => {
       disposed = true
+      for (const browserSession of routingSessions) browserSession.webRequest.onBeforeRequest(null)
+      routingSessions.clear()
       awakeRequests.clear()
       focusedTabs.clear()
       clearInterval(reap)

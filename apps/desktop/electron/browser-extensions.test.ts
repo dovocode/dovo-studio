@@ -92,7 +92,11 @@ vi.mock('electron-chrome-extensions', () => ({
     addTab = vi.fn<(...args: unknown[]) => void>()
     selectTab = vi.fn<(...args: unknown[]) => void>()
     removeTab = vi.fn<(...args: unknown[]) => void>()
-    api = { browserAction: { activateClick: vi.fn<(details: unknown) => void>() } }
+    ctx = { router: { apiHandler: () => vi.fn<(...args: unknown[]) => void>() } }
+    api = {
+      permissions: { getAll: vi.fn<() => undefined>() },
+      browserAction: { activateClick: vi.fn<(details: unknown) => void>() },
+    }
     constructor(public options: never) {
       f.instances.push(this as never)
     }
@@ -704,6 +708,11 @@ it('asks before granting optional permissions or declared sites at runtime, canc
   f.review.mockResolvedValueOnce({ response: 1 })
   await expect(requestPermissions(extension, { origins: ['<all_urls>'] })).resolves.toBe(false)
   expect(f.review).toHaveBeenCalledTimes(2)
+  extension.manifest.optional_host_permissions = ['https://*.example.org/*']
+  await expect(
+    requestPermissions(extension, { origins: ['https://login.example.org/*'] }),
+  ).resolves.toBe(true)
+  expect(f.review).toHaveBeenCalledTimes(3)
   f.review.mockClear()
   for (const request of [
     { origins: ['https://evil.example/*'] },

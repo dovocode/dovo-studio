@@ -550,8 +550,11 @@ function WorkbenchContent({
       openExternalLink ? openExternalLink(url) : window.open(url, '_blank', 'noopener,noreferrer'),
     onError: (cause) => setSwitchError(cause instanceof Error ? cause.message : String(cause)),
   })
+  const linkRouting = useRef({ browser, browserWorkspaceEnabled, browserProfiles, chooseLink })
+  linkRouting.current = { browser, browserWorkspaceEnabled, browserProfiles, chooseLink }
   const openLink = useCallback(
     (url: string, options?: LinkOptions) => {
+      const { browser, browserWorkspaceEnabled, browserProfiles, chooseLink } = linkRouting.current
       if (
         browser &&
         browserWorkspaceEnabled &&
@@ -563,7 +566,7 @@ function WorkbenchContent({
       }
       chooseLink(url, options)
     },
-    [browser, browserWorkspaceEnabled, browserProfiles, openSharedBrowserLink, chooseLink],
+    [openSharedBrowserLink],
   )
   useEffect(() => {
     cancelLink()
