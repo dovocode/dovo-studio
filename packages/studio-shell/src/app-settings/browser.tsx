@@ -6,7 +6,7 @@ import {
   browserProfilesSchema,
 } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   useAppPreferences,
   updateAppPreferences,
@@ -19,6 +19,71 @@ import type { BrowserProfile } from '@dovo/protocol'
 import { Button, Input, ChoicePicker } from '@dovo/studio-ui'
 import { SettingsPage, SettingsGroup, SettingRow } from './layout'
 import { SettingsSelect } from './settings-select'
+function DefaultBrowser() {
+  const { defaultBrowser } = useStudioHost()
+  const [status, setStatus] = useState<import('@dovo/protocol').DefaultBrowserStatus>()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const refresh = useCallback(async () => {
+    if (!defaultBrowser) return
+    try {
+      setStatus(await defaultBrowser.status())
+      setError('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }, [defaultBrowser])
+  useEffect(() => {
+    void refresh()
+    const focus = () => void refresh()
+    window.addEventListener('focus', focus)
+    return () => window.removeEventListener('focus', focus)
+  }, [refresh])
+  if (!defaultBrowser) return null
+  return (
+    <SettingsGroup title="Default browser">
+      <SettingRow
+        label="Open links from other apps"
+        description={
+          status?.supported === false
+            ? 'Install Dovo Studio to choose it as your default browser.'
+            : status?.isDefault
+              ? 'Dovo Studio is your default browser for HTTP and HTTPS links.'
+              : 'Choose Dovo Studio as your browser in the system default-app settings.'
+        }
+      >
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy || status?.supported === false || status?.isDefault}
+          onClick={async () => {
+            setBusy(true)
+            setError('')
+            try {
+              await defaultBrowser.request()
+              await refresh()
+            } catch (cause) {
+              setError(cause instanceof Error ? cause.message : String(cause))
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          {busy
+            ? 'Opening system settings…'
+            : status?.isDefault
+              ? 'Default browser'
+              : 'Set as default browser'}
+        </Button>
+      </SettingRow>
+      {error && (
+        <p role="alert" className="px-4 pb-4 text-xs text-destructive">
+          {error}
+        </p>
+      )}
+    </SettingsGroup>
+  )
+}
 function ProfileName({
   profile,
   disabled,
@@ -81,7 +146,7 @@ function ProfileName({
             aria-label={`Link domains for ${profile.name}`}
             value={domains}
             disabled={disabled}
-            placeholder="teams.microsoft.com, *.example.com"
+            placeholder="teams.microsoft.com, example.com/work, *.example.com"
             aria-invalid={!validDomains}
             onChange={(event) => setDomains(event.target.value)}
           />
@@ -202,7 +267,7 @@ function Profiles({
       </form>
       <p className="text-xs text-muted-foreground">
         {routing
-          ? 'Use comma-separated domains. *.example.com matches subdomains; exact domains take priority. A domain can belong to one profile. '
+          ? 'Use comma-separated domain or domain/path rules. Paths match that page and its subpaths; the longest path wins, then exact domains. *.example.com matches subdomains. A rule can belong to one profile. '
           : ''}
         Removing a profile keeps its saved website data.
       </p>
@@ -276,6 +341,7 @@ export default function BrowserSettings() {
       title="Browser"
       description="Preview defaults and local profiles stay on this device. Remote profiles and logins stay on the selected computer."
     >
+      <DefaultBrowser />
       <SettingsGroup title="Browser previews">
         <SettingRow
           label="Default viewport"

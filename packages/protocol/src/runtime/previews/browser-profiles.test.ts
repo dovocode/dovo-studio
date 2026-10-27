@@ -62,7 +62,9 @@ it('routes by exact host and most-specific wildcard without crossing private ses
   expect(normalizeBrowserLinkDomain('  *.EXAMPLE.com  ')).toBe('*.example.com')
   expect(normalizeBrowserLinkDomain('münich.example')).toBe('xn--mnich-kva.example')
   for (const value of [
-    'example.com/path',
+    'example.com/path?token=value',
+    'example.com/path#fragment',
+    'example.com/path*',
     'example.com:443',
     'user@example.com',
     'https://example.com',
@@ -74,6 +76,35 @@ it('routes by exact host and most-specific wildcard without crossing private ses
     decodeResult(browserProfilesSchema, [
       ...profiles,
       { id: 'duplicate', name: 'Duplicate', linkDomains: ['teams.microsoft.com'] },
+    ]).success,
+  ).toBe(false)
+})
+
+it('routes by longest case-sensitive path at segment boundaries, then domain specificity', () => {
+  const profiles = [
+    { id: 'default', name: 'Default', linkDomains: ['example.com'] },
+    { id: 'work', name: 'Work', linkDomains: ['example.com/work', '*.example.com/work'] },
+    { id: 'project', name: 'Project', linkDomains: ['example.com/work/Project'] },
+    { id: 'host', name: 'Host', linkDomains: ['team.example.com/work'] },
+  ]
+  expect(normalizeBrowserLinkDomain(' EXAMPLE.com/work/Project/ ')).toBe('example.com/work/Project')
+  expect(normalizeBrowserLinkDomain('example.com/a/../work')).toBe('example.com/work')
+  expect(normalizeBrowserLinkDomain('münich.example/über')).toBe('xn--mnich-kva.example/%C3%BCber')
+  for (const path of ['/work', '/work/', '/work/a?x=1#anchor'])
+    expect(browserLinkProfile('http://example.com' + path, profiles)).toBe('work')
+  expect(browserLinkProfile('https://example.com/workshop', profiles)).toBe('default')
+  expect(browserLinkProfile('https://example.com/Work', profiles)).toBe('default')
+  expect(browserLinkProfile('https://example.com/work/Project/a', profiles)).toBe('project')
+  expect(browserLinkProfile('https://example.com/work/project/a', profiles)).toBe('work')
+  expect(browserLinkProfile('https://team.example.com/work/a', profiles)).toBe('host')
+  expect(browserLinkProfile('https://other.example.com/work/a', profiles)).toBe('work')
+  expect(browserLinkProfile('https://example.com/work%2FProject', profiles)).toBe('default')
+  expect(browserLinkProfile('https://evil.example/?url=example.com/work', profiles)).toBeUndefined()
+  expect(decodeResult(browserProfilesSchema, profiles).success).toBe(true)
+  expect(
+    decodeResult(browserProfilesSchema, [
+      ...profiles,
+      { id: 'duplicate', name: 'Duplicate', linkDomains: ['example.com/work'] },
     ]).success,
   ).toBe(false)
 })

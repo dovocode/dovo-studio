@@ -2090,3 +2090,84 @@ it('rejects stale website origins and thread-preview permission controls', async
     'browser workspace',
   )
 })
+
+it('queues distinct local and remote link tabs until the workspace consumes them', async () => {
+  const call = handler()
+  const local = {
+    id: 'external-one',
+    title: '',
+    url: 'https://example.com/work#section',
+    kind: 'web',
+    profileId: 'work',
+  } as const
+  const remote = {
+    id: 'external-two',
+    title: '',
+    url: 'http://lan.test/path',
+    kind: 'remote',
+    profileId: 'remote-work',
+    runtimeId: 'paired-computer',
+  } as const
+  await call(event, { action: 'open-tab', key: 'external:one', tab: local })
+  await call(event, { action: 'open-tab', key: 'external:two', tab: remote })
+  expect(mocks.create).toHaveBeenCalledOnce()
+  expect(mocks.contents.loadURL).toHaveBeenCalledWith(local.url)
+  await call(event, { action: 'status', key: 'thread-preview' })
+  await expect(
+    call(event, { action: 'status', key: 'workspace', tabCount: 1 }),
+  ).resolves.toMatchObject({
+    movedTabs: [
+      { key: 'external:one', tab: local },
+      { key: 'external:two', tab: remote },
+    ],
+  })
+  await expect(
+    call(event, { action: 'status', key: 'workspace', tabCount: 3 }),
+  ).resolves.toBeUndefined()
+})
+
+it('rejects unsafe and ownerless external destinations before creating a native page', async () => {
+  const call = handler()
+  const tab = {
+    id: 'external',
+    title: '',
+    url: 'javascript:alert(1)',
+    kind: 'web',
+    profileId: 'work',
+  }
+  await expect(call(event, { action: 'open-tab', key: 'external', tab })).rejects.toThrow(
+    'HTTP or HTTPS',
+  )
+  await expect(
+    call(event, {
+      action: 'open-tab',
+      key: 'external',
+      tab: { ...tab, url: 'https://example.com', kind: 'remote' },
+    }),
+  ).rejects.toThrow('Choose a computer')
+  expect(mocks.create).not.toHaveBeenCalled()
+})
+
+it('retains an external tab and reports its background navigation failure when selected', async () => {
+  const call = handler()
+  mocks.contents.loadURL.mockRejectedValueOnce(new Error('net::ERR_CONNECTION_REFUSED'))
+  const tab = {
+    id: 'failed-link',
+    title: '',
+    url: 'http://unavailable.local/',
+    kind: 'web',
+    profileId: 'work',
+  }
+  await call(event, { action: 'open-tab', key: 'external:failed', tab })
+  // Let the hidden load finish before the browser workspace consumes its handoff.
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  await expect(
+    call(event, { action: 'status', key: 'workspace', tabCount: 1 }),
+  ).resolves.toMatchObject({
+    movedTabs: [{ key: 'external:failed', tab }],
+  })
+  await expect(call(event, { action: 'status', key: 'external:failed' })).rejects.toThrow(
+    'net::ERR_CONNECTION_REFUSED',
+  )
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+})

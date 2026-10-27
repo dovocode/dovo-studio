@@ -4,6 +4,7 @@ import { registerDictation } from './dictation.js'
 import { checkRuntimeConnection } from './runtime-connection-health.js'
 import { configureDesktopRuntimeDirectory, desktopDataRoot } from './runtime-data-directory.js'
 import { registerQuitShortcut } from './quit-shortcut.js'
+import { registerDefaultBrowser } from './default-browser.js'
 import { registerLinuxDesktop } from './linux-desktop.js'
 import { registerInputPreview } from './input-preview.js'
 import { decode, windowsRuntimeChoiceSchema, windowsRuntimeErrorMessage } from '@dovo/protocol'
@@ -154,6 +155,7 @@ if (ownsInstance && !explicitDirectory) {
   }
 }
 registerLinuxDesktop(nightly, appName, rendererPath)
+registerDefaultBrowser(rendererPath, nightly)
 registerConnectionStorage(join(__dirname, '../dist/index.html'))
 registerAccountStorage(rendererPath)
 const dictation = registerDictation(

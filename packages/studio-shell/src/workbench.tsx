@@ -1,5 +1,6 @@
 import { previewUrl, browserLinkProfile } from '@dovo/protocol'
 import { RemoteDesktopSharing } from './remote-desktop-sharing'
+import { ExternalBrowserLinkChooser } from './external-browser-link-chooser'
 import { BrowserMediaControls } from './browser-media-controls'
 import { taskParentReference, resolveThreadRuntime, prepareRuntimeTask } from '@dovo/protocol'
 import { StudioToolsBridge } from './studio-tools-bridge'
@@ -67,6 +68,7 @@ type WorkbenchProps = {
   browserWindowId?: string
   openBrowserWindow?: StudioHostApi['openBrowserWindow']
   onBrowserWorkspaceFocus?: (listener: () => void) => () => void
+  defaultBrowser?: StudioHostApi['defaultBrowser']
   browser?: StudioHostApi['browser']
   browserExtensions?: StudioHostApi['browserExtensions']
   onBrowserContextAction?: StudioHostApi['onBrowserContextAction']
@@ -191,6 +193,7 @@ function WorkbenchContent({
   repositoryOpener,
   pickDirectory,
   browser,
+  defaultBrowser,
   browserExtensions,
   onBrowserContextAction,
   browserWindowId,
@@ -571,9 +574,13 @@ function WorkbenchContent({
   useEffect(() => {
     cancelLink()
   }, [navigationKey, runtimeRegistry.activeId, cancelLink])
-  useEffect(() => onOpenLink?.(openLink), [onOpenLink, openLink])
+  useEffect(() => (!browser ? onOpenLink?.(openLink) : undefined), [onOpenLink, openLink, browser])
   useEffect(
-    () => onBrowserWorkspaceFocus?.(() => navigate({ viewId: 'browser' })),
+    () =>
+      onBrowserWorkspaceFocus?.(() => {
+        updateAppPreferences({ browserWorkspaceEnabled: true })
+        navigate({ viewId: 'browser' })
+      }),
     [onBrowserWorkspaceFocus, navigate],
   )
   const linkContext = useRef({ origin: linkOrigin, targets: linkTargets, details: openLinkTarget })
@@ -634,6 +641,7 @@ function WorkbenchContent({
       repositoryOpener,
       pickDirectory,
       browser,
+      defaultBrowser,
       browserExtensions,
       onBrowserContextAction,
       browserWindowId,
@@ -660,6 +668,7 @@ function WorkbenchContent({
       repositoryOpener,
       pickDirectory,
       browser,
+      defaultBrowser,
       browserExtensions,
       onBrowserContextAction,
       browserWindowId,
@@ -912,6 +921,12 @@ function WorkbenchContent({
               }}
             >
               {linkDialog}
+              {browser && onOpenLink && (
+                <ExternalBrowserLinkChooser
+                  subscribe={onOpenLink}
+                  onOpen={() => navigate({ viewId: 'browser' })}
+                />
+              )}
               {browserWorkspaceEnabled && browser && <BrowserMediaControls />}
               {/* Settings get a grouped sidebar with search; other views use the full area. */}
               <div

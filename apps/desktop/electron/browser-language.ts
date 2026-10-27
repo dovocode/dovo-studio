@@ -16,9 +16,13 @@ const preferences = Schema.Struct({
   browserProfiles: browserProfilesSchema,
   browserWorkspaceEnabled: Schema.optional(Schema.Boolean),
 })
-export function websiteLinkProfile(sourceProfileId: string, url: string) {
+export function websiteLinkProfile(
+  sourceProfileId: string,
+  url: string,
+  context: 'website' | 'external' = 'website',
+) {
   const result = decodeResult(preferences, readLocalSettingsSection('app'))
-  return result.success && result.data.browserWorkspaceEnabled === true
+  return result.success && (context === 'external' || result.data.browserWorkspaceEnabled === true)
     ? browserLinkProfile(url, result.data.browserProfiles, sourceProfileId)
     : undefined
 }

@@ -89,10 +89,12 @@ preview chain and returns to that retained page; **Close preview** returns to th
 ## Link routing
 
 In **Settings → Browser → Local browser profiles**, set **Open links in this profile** to a
-comma-separated list such as `teams.microsoft.com, *.work.example.com`. Exact domains match that
-host; `*.example.com` matches its subdomains. Exact matches take priority, followed by the most
-specific wildcard. Each rule can belong to only one profile. Rules select a profile on this desktop,
-never a different computer. Private tabs ignore routing rules.
+comma-separated list such as `teams.microsoft.com, example.com/work, *.work.example.com`. Exact
+domains match that host; `*.example.com` matches its subdomains. An optional case-sensitive path
+matches that page and its subpaths: `/work` matches `/work/call`, but not `/workshop`. Queries and
+fragments do not affect matching. The longest matching path takes priority, followed by an exact
+host and then the most specific wildcard. Each rule can belong to only one profile. Rules select a
+profile on this desktop, never a different computer. Private tabs ignore routing rules.
 
 Matching Studio links open directly in the configured profile. Ordinary page links that need a
 different profile open a new preview in that session, retaining the source page. Routing only
@@ -101,11 +103,14 @@ Existing tabs, redirects, form POSTs and feature-bearing sign-in popups keep the
 Bookmarks and history retain their saved profile when opened explicitly.
 
 Installed desktop builds advertise web-link support to macOS, Windows and Linux. Choose Dovo Studio
-as the browser in your operating system's default-app settings, or send an explicit
+through **Settings → Browser → Set as default browser**, or send an explicit
 `dovo-studio://open?url=<percent-encoded HTTP or HTTPS URL>` link from another app. Dovo does not
 change your default browser automatically. Cold-start and second-instance links wait for the main
-Studio window to become ready. Matching rules select the configured profile; unmatched links use
-Studio's existing link chooser. Experimental Browser must be enabled to use its local profiles.
+Studio window to become ready. Matching routing rules open automatically in the configured profile.
+Unmatched links ask for a local profile or a profile on a connected remote computer. Each link gets
+its own tab, and incoming links queue while the chooser is open. A failed open retains the link for
+retry; Cancel skips that link. Choosing a destination enables Browser and opens its workspace.
+Remote destinations retain their selected computer and profile.
 
 ## Desktop extensions
 

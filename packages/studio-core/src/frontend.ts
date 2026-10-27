@@ -84,6 +84,7 @@ export interface StudioHostApi {
   taskLauncher?: import('@dovo/protocol').TaskLauncherBridge
   browserWindowId?: string
   openBrowserWindow?: () => Promise<void>
+  defaultBrowser?: import('@dovo/protocol').DefaultBrowserBridge
   browser?: import('@dovo/protocol').BrowserBridge
   onBrowserContextAction?: (
     listener: (action: import('@dovo/protocol').BrowserContextAction) => void,

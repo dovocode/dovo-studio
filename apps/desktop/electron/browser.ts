@@ -475,7 +475,10 @@ export function registerBrowser(
     child.inactiveAt = Date.now()
     child.view.setVisible(false)
     child.url = url
-    child.loading = loadUntilReady(child, url)
+    child.loading = loadUntilReady(child, url).catch((cause: unknown) => {
+      if (!isAborted(cause))
+        child.navigationError = cause instanceof Error ? cause.message : String(cause)
+    })
     events.created.push({
       key,
       url,
@@ -936,9 +939,46 @@ export function registerBrowser(
       })
     })
   })
+  /** Retain external links until the workspace can adopt their native or remote destination. */
+  const openWorkspaceTab = async (
+    window: BrowserWindow,
+    key: string,
+    input: BrowserWorkspaceTab,
+  ) => {
+    const tab = { ...input, url: previewUrl(input.url) }
+    if (tab.kind === 'remote' && !tab.runtimeId)
+      throw new Error('Choose a computer for this remote browser tab.')
+    const events = tabEvents(window.id)
+    const checkCapacity = () => {
+      if ((tabCounts.get(window.id) ?? 1) + events.moved.length + events.created.length >= 100)
+        throw new Error('Close a tab before opening more links.')
+    }
+    checkCapacity()
+    if (tab.kind === 'web') await extensions.prepare(tab.profileId)
+    if (disposed || window.isDestroyed()) throw new Error('The browser window has closed.')
+    checkCapacity()
+    registerWindow(window)
+    workspaces.add(window)
+    if (tab.kind === 'web') {
+      const viewKey = JSON.stringify([window.id, key])
+      if (views.has(viewKey)) throw new Error('This browser tab is already open.')
+      const page = createEntry(window, viewKey, key, tab.profileId, true)
+      page.inactiveAt = Date.now()
+      page.view.setVisible(false)
+      page.url = tab.url
+      page.loading = loadUntilReady(page, tab.url).catch((cause: unknown) => {
+        if (!isAborted(cause))
+          page.navigationError = cause instanceof Error ? cause.message : String(cause)
+      })
+    }
+    // Reuse the workspace's retained handoff queue for both native and remote
+    // tabs. Thread previews cannot consume it before Browser mounts.
+    events.moved.push({ key, tab })
+  }
   ipcMain.handle('preview:browser', async (event, raw: unknown) => {
     const window = trustedWindow(event)
     const command = decode(browserCommandSchema, raw)
+    if (command.action === 'open-tab') return openWorkspaceTab(window, command.key, command.tab)
     if (command.action === 'external') {
       await shell.openExternal(previewUrl(command.url))
       return
@@ -1374,15 +1414,21 @@ export function registerBrowser(
     /** Native external links become independent tabs, so bursts never overwrite navigation. */
     openRoutedLink: async (window: BrowserWindow, raw: string) => {
       const url = previewUrl(raw)
-      const profileId = websiteLinkProfile('default', url)
+      const profileId = websiteLinkProfile('default', url, 'external')
       if (!profileId) return false
-      const opened = await openProfileLink(window, url, profileId)
-      if (opened) {
-        window.webContents.send('browser:focus-workspace')
-        window.show()
-        window.focus()
-      }
-      return !!opened
+      const id = randomUUID()
+      await openWorkspaceTab(window, `external:${id}`, {
+        id,
+        url,
+        title: '',
+        kind: 'web',
+        profileId,
+        visitedAt: Date.now(),
+      })
+      window.webContents.send('browser:focus-workspace')
+      window.show()
+      window.focus()
+      return true
     },
     dispose: async () => {
       disposed = true

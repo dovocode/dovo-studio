@@ -11,6 +11,11 @@ const runtimeSyncError = (id: string, error: unknown) =>
       error instanceof Error ? error.message : 'Could not reach the runtime connection manager.',
   })
 contextBridge.exposeInMainWorld('dovo', {
+  defaultBrowser: {
+    status: (): ReturnType<import('@dovo/protocol').DefaultBrowserBridge['status']> =>
+      ipcRenderer.invoke('browser:default-status'),
+    request: (): Promise<void> => ipcRenderer.invoke('browser:default-request'),
+  },
   repositoryOpener: {
     list: (): ReturnType<import('@dovo/protocol').RepositoryOpenerBridge['list']> =>
       ipcRenderer.invoke('repositories:local-openers'),

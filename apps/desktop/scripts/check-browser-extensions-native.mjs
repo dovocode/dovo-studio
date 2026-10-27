@@ -136,7 +136,7 @@ const browserModule = join(desktop, 'electron', 'browser.ts')
 write(
   join(work, 'harness', 'main.ts'),
   `import assert from 'node:assert/strict'
-import { app, BrowserWindow, dialog, session } from 'electron'
+import { app, BrowserWindow, dialog, session, webContents } from 'electron'
 import { createServer } from 'node:http'
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -294,6 +294,43 @@ app.whenReady().then(async () => {
       destination.destroy()
       assert.equal(await main.executeJavaScript('window.moveMarker'), marker, 'Closing the former window must not close the moved page.')
       report.windowMoves = true
+      stage('automatic external rule while Browser is disabled')
+      setBrowser(false,true)
+      const automaticUrl=page+'work/call#meeting'
+      assert.equal(await bridge.openRoutedLink(studio,automaticUrl),true,'An explicit OS link must follow its matching rule, including before Browser is enabled.')
+      assert.equal((await call('browser',{action:'status',key:'thread-preview'}))?.movedTabs,undefined)
+      const automatic=await call('browser',{action:'status',key:tab,tabCount:1})
+      assert.equal(automatic.movedTabs.length,1,'An automatic external link must survive thread preview polling.')
+      assert.equal(automatic.movedTabs[0].tab.url,automaticUrl)
+      assert.equal(automatic.movedTabs[0].tab.profileId,'personal')
+      setBrowser(true)
+      await call('browser',{action:'close',key:automatic.movedTabs[0].key})
+      report.automaticExternalRouting=true
+      stage('external destination handoff')
+      const external = [
+        {key:'external:local-work',tab:{id:'local-work',title:'',url:page+'?external=work#call',kind:'web',profileId:'work'}},
+        {key:'external:local-personal',tab:{id:'local-personal',title:'',url:page+'?external=personal#call',kind:'web',profileId:'personal'}},
+        {key:'external:remote',tab:{id:'remote',title:'',url:'http://remote.local/call#meeting',kind:'remote',profileId:'remote-work',runtimeId:'paired-computer'}},
+      ]
+      for(const item of external.slice(0,2)) await call('browser',{action:'open-tab',...item})
+      const nativeBeforeRemote=webContents.getAllWebContents().length
+      await call('browser',{action:'open-tab',...external[2]})
+      assert.equal(webContents.getAllWebContents().length,nativeBeforeRemote,'A remote choice must not create a local browser page.')
+      assert.equal((await call('browser',{action:'status',key:'thread-preview'}))?.movedTabs,undefined,'Thread previews must not consume queued links.')
+      const handoff=await call('browser',{action:'status',key:tab,tabCount:1})
+      assert.deepEqual(handoff.movedTabs,external,'Every external link retains its URL, profile and computer through workspace adoption.')
+      await show(external[0].key,'work',external[0].tab.url)
+      const workPage=studio.contentView.children.map((view:any)=>view.webContents).find((contents:any)=>contents?.getURL()===external[0].tab.url)!
+      await show(external[1].key,'personal',external[1].tab.url)
+      const personalPage=studio.contentView.children.map((view:any)=>view.webContents).find((contents:any)=>contents?.getURL()===external[1].tab.url)!
+      assert.equal(workPage.session,work_)
+      assert.notEqual(personalPage.session,workPage.session,'Explicit profile choices must keep their sessions isolated.')
+      assert.equal(await workPage.executeJavaScript('document.cookie'),'icon=work')
+      assert.equal(await personalPage.executeJavaScript('document.cookie'),'','A personal destination must not receive Work cookies.')
+      for(const item of external) await call('browser',{action:'close',key:item.key})
+      assert.equal(main.isDestroyed(),false,'Opening external links must preserve the existing page.')
+      await show(tab,'work')
+      report.externalDestinations=true
       stage('open blank')
       await main.executeJavaScript(\`window.child = window.open('', 'new'); setTimeout(() => child.location.href = '\${page}?child=1', 50)\`)
       let createdChild: any

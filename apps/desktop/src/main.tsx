@@ -55,6 +55,7 @@ createRoot(root).render(
           desktopPlatform={window.dovo?.platform}
           repositoryOpener={window.dovo?.repositoryOpener}
           pickDirectory={window.dovo?.pickDirectory}
+          defaultBrowser={window.dovo?.defaultBrowser}
           browser={window.dovo?.browser}
           browserExtensions={window.dovo?.browserExtensions}
           onBrowserContextAction={window.dovo?.onBrowserContextAction}

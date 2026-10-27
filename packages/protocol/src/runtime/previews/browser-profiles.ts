@@ -44,23 +44,27 @@ export function browserLanguages(language = 'en-US') {
   const locale = Intl.getCanonicalLocales(language)[0] ?? 'en-US'
   return [...new Set([locale, locale.split('-')[0]!])]
 }
-/** Domain rules are canonical hosts, optionally prefixed with *. for subdomains. */
+/** Canonical host, optional *. subdomains, and optional case-sensitive path prefix. */
 export function normalizeBrowserLinkDomain(input: string): string | undefined {
-  const value = input.trim().toLowerCase()
+  const value = input.trim()
   const wildcard = value.startsWith('*.')
-  const host = wildcard ? value.slice(2) : value
-  if (!host || /[\s/?#@:*]/.test(host)) return undefined
+  const rule = wildcard ? value.slice(2) : value
+  const slash = rule.indexOf('/')
+  const host = slash < 0 ? rule : rule.slice(0, slash)
+  const path = slash < 0 ? '' : rule.slice(slash)
+  if (!host || /[\s/?#@:*\\]/.test(host) || /[\s?#\\*]/.test(path)) return undefined
   try {
-    const url = new URL(`http://${host}`)
+    const url = new URL(`http://${host}${path}`)
     const domain = url.hostname.replace(/\.$/, '')
-    if (!domain || url.port || url.pathname !== '/' || domain.includes('..')) return undefined
-    return `${wildcard ? '*.' : ''}${domain}`
+    if (!domain || domain.length > 253 || url.port || domain.includes('..')) return undefined
+    const prefix = url.pathname.replace(/\/+$/, '')
+    return `${wildcard ? '*.' : ''}${domain}${prefix}`
   } catch {
     return undefined
   }
 }
 export const browserLinkDomainSchema = Schema.String.pipe(
-  Schema.check(Schema.isMaxLength(253)),
+  Schema.check(Schema.isMaxLength(2048)),
   Schema.check(Schema.makeFilter((value) => normalizeBrowserLinkDomain(value) === value)),
 )
 export const browserProfileSchema = mutableStruct({
@@ -112,21 +116,32 @@ export function browserLinkProfile(
 ): string | undefined {
   if (sourceProfileId && isPrivateBrowserProfile(sourceProfileId)) return undefined
   let host: string
+  let path: string
   try {
     const target = new URL(url)
     if (!/^https?:$/.test(target.protocol)) return undefined
     host = target.hostname.toLowerCase().replace(/\.$/, '')
+    path = target.pathname
   } catch {
     return undefined
   }
-  let match: { profileId: string; specificity: number } | undefined
+  let match: { profileId: string; specificity: number; pathLength: number } | undefined
   for (const profile of profiles) {
     if (isPrivateBrowserProfile(profile.id)) continue
-    for (const domain of profile.linkDomains ?? []) {
+    for (const rule of profile.linkDomains ?? []) {
+      const slash = rule.indexOf('/')
+      const domain = slash < 0 ? rule : rule.slice(0, slash)
+      const prefix = slash < 0 ? '' : rule.slice(slash)
       const wildcard = domain.startsWith('*.')
       if (wildcard ? !host.endsWith(domain.slice(1)) : host !== domain) continue
+      if (prefix && path !== prefix && !path.startsWith(`${prefix}/`)) continue
       const specificity = wildcard ? domain.length - 2 : 1000 + domain.length
-      if (!match || specificity > match.specificity) match = { profileId: profile.id, specificity }
+      if (
+        !match ||
+        prefix.length > match.pathLength ||
+        (prefix.length === match.pathLength && specificity > match.specificity)
+      )
+        match = { profileId: profile.id, specificity, pathLength: prefix.length }
     }
   }
   return match?.profileId

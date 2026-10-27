@@ -152,6 +152,11 @@ export type BrowserSitePermissions = {
 }
 export const browserCommandSchema = Schema.Union([
   mutableStruct({
+    action: Schema.Literal('open-tab'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    tab: browserWorkspaceTabSchema,
+  }),
+  mutableStruct({
     action: Schema.Literal('keep-awake'),
     key: maxValue(minValue(Schema.String, 1), 500),
     enabled: Schema.Boolean,
@@ -589,3 +594,9 @@ export const browserContextActionSchema = mutableStruct({
   title: maxValue(Schema.String, 500),
 })
 export type BrowserContextAction = Schema.Schema.Type<typeof browserContextActionSchema>
+
+export type DefaultBrowserStatus = { supported: boolean; isDefault: boolean }
+export interface DefaultBrowserBridge {
+  status: () => Promise<DefaultBrowserStatus>
+  request: () => Promise<void>
+}
