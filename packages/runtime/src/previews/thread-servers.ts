@@ -1,11 +1,14 @@
 import { readFile, readdir, readlink } from 'node:fs/promises'
 import { basename } from 'node:path'
+import { endianness } from 'node:os'
+import { isIP } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
 import { exec } from '../process.js'
 import { HttpError } from '../errors.js'
 import type { ThreadServer } from '@dovo/protocol'
 
-type Server = ThreadServer & { taskId: string }
+type Listener = { port: number; hosts: string[] }
+type Server = ThreadServer & { taskId: string; hosts: string[] }
 const runtimeKey = 'DOVO_STUDIO_SERVER_RUNTIME'
 const taskKey = 'DOVO_STUDIO_SERVER_THREAD'
 const sourceKey = 'DOVO_STUDIO_SERVER_SOURCE'
@@ -42,15 +45,61 @@ export function serverOwner(environment: string, runtimeId: string, separator = 
   return { taskId, source: source === 'terminal' ? ('terminal' as const) : ('agent' as const) }
 }
 
+function loopbackHosts(address: string, family = '') {
+  if (address === '0.0.0.0' || (address === '*' && family === 'IPv4')) return ['127.0.0.1']
+  if (address === '::' || (address === '*' && family === 'IPv6')) return ['[::1]']
+  if (isIP(address) === 4 && address.startsWith('127.')) return [address]
+  if (address === '::1') return ['[::1]']
+  return []
+}
+
 export function linuxListeningSockets(text: string) {
-  const sockets = new Map<string, number>()
+  const sockets = new Map<string, Listener>()
   for (const line of text.split('\n').slice(1)) {
     const fields = line.trim().split(/\s+/)
     if (fields[3] !== '0A' || !fields[9]) continue
-    const port = Number.parseInt(fields[1]?.split(':')[1] ?? '', 16)
-    if (port > 0 && port <= 65535) sockets.set(fields[9], port)
+    const [hex, rawPort] = fields[1]?.split(':') ?? []
+    if (!hex || !/^(?:[\da-f]{8}|[\da-f]{32})$/i.test(hex)) continue
+    const port = Number.parseInt(rawPort ?? '', 16)
+    const bytes = Buffer.from(hex, 'hex')
+    if (endianness() === 'LE') bytes.swap32()
+    const address =
+      bytes.length === 4
+        ? [...bytes].join('.')
+        : new URL(
+            `http://[${Array.from({ length: 8 }, (_, index) => bytes.readUInt16BE(index * 2).toString(16)).join(':')}]`,
+          ).hostname.slice(1, -1)
+    if (port > 0 && port <= 65535) sockets.set(fields[9], { port, hosts: loopbackHosts(address) })
   }
   return sockets
+}
+
+function macListeningSockets(text: string) {
+  const rows: Array<Listener & { pid: number; name: string; key: string }> = []
+  let pid = 0,
+    name = '',
+    family = ''
+  for (const line of text.split('\n')) {
+    if (line[0] === 'p') {
+      pid = Number(line.slice(1))
+      family = ''
+    } else if (line[0] === 'c') name = basename(line.slice(1))
+    else if (line[0] === 't') family = line.slice(1)
+    else if (line[0] === 'n') {
+      const match = /^(.*):(\d+)$/.exec(line.slice(1))
+      const port = Number(match?.[2])
+      if (!match || !(pid > 0 && port > 0 && port <= 65535)) continue
+      const address = match[1]!.replace(/^\[|\]$/g, '')
+      rows.push({
+        pid,
+        name,
+        port,
+        hosts: loopbackHosts(address, family),
+        key: `${family}:${line}`,
+      })
+    }
+  }
+  return rows
 }
 
 /** Only marked processes on this runtime are considered. Markers identify provenance,
@@ -94,7 +143,7 @@ export class ThreadServers {
             if (inaccessible(error)) continue
             throw error
           }
-          const ports = new Set<number>()
+          const listeners = new Map<string, Listener>()
           for (const descriptor of descriptors) {
             let link: string
             try {
@@ -104,15 +153,29 @@ export class ThreadServers {
               throw error
             }
             const inode = /^socket:\[(\d+)\]$/.exec(link)?.[1]
-            const port = inode && sockets.get(inode)
-            if (port) ports.add(port)
+            const listener = inode && sockets.get(inode)
+            if (listener) listeners.set(inode, listener)
           }
           const name = (await optionalRead(`/proc/${pid}/comm`)).trim()
           // Verify the process did not change identity during filesystem reads.
           const current = await optionalRead(`/proc/${pid}/stat`)
           if (current.slice(current.lastIndexOf(')') + 2).split(' ')[19] !== started) continue
-          for (const port of ports)
-            servers.push({ pid: Number(pid), started, name, port, ...owner })
+          for (const listener of listeners.values())
+            servers.push({
+              pid: Number(pid),
+              started,
+              name,
+              ...listener,
+              ...owner,
+              hosts: listener.hosts.filter((host) =>
+                [...sockets].every(
+                  ([inode, other]) =>
+                    other.port !== listener.port ||
+                    !other.hosts.includes(host) ||
+                    listeners.has(inode),
+                ),
+              ),
+            })
         }
       }),
     )
@@ -122,7 +185,7 @@ export class ThreadServers {
     let output: string
     try {
       output = (
-        await exec('/usr/sbin/lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-Fpcn'], {
+        await exec('/usr/sbin/lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-Fpcnt'], {
           timeout: 5000,
           maxBuffer: 2 * 1024 * 1024,
         })
@@ -139,17 +202,7 @@ export class ThreadServers {
         return []
       throw error
     }
-    const rows: Array<{ pid: number; name: string; port: number }> = []
-    let pid = 0,
-      name = ''
-    for (const line of output.split('\n')) {
-      if (line[0] === 'p') pid = Number(line.slice(1))
-      else if (line[0] === 'c') name = line.slice(1)
-      else if (line[0] === 'n') {
-        const port = Number(/:(\d+)$/.exec(line)?.[1])
-        if (pid > 0 && port > 0 && port <= 65535) rows.push({ pid, name: basename(name), port })
-      }
-    }
+    const rows = macListeningSockets(output)
     const servers: Server[] = []
     for (const pid of new Set(rows.map((row) => row.pid))) {
       // Read one PID at a time to avoid truncating long launch environments.
@@ -168,7 +221,7 @@ export class ThreadServers {
         listeners = (
           await exec(
             '/usr/sbin/lsof',
-            ['-a', '-p', String(pid), '-nP', '-iTCP', '-sTCP:LISTEN', '-Fn'],
+            ['-a', '-p', String(pid), '-nP', '-iTCP', '-sTCP:LISTEN', '-Fnt'],
             { timeout: 2000, maxBuffer: 1024 * 1024 },
           )
         ).stdout
@@ -181,14 +234,19 @@ export class ThreadServers {
       }
       const owner = serverOwner(environment.trim(), this.runtimeId, ' ')
       if (!owner || !identity || identity !== current) continue
-      const ports = new Set(
-        listeners
-          .split('\n')
-          .filter((line) => line[0] === 'n')
-          .map((line) => Number(/:(\d+)$/.exec(line)?.[1])),
-      )
-      for (const row of rows.filter((row) => row.pid === pid && ports.has(row.port)))
-        servers.push({ ...row, ...owner, started: identity })
+      const currentListeners = new Set(macListeningSockets(listeners).map((row) => row.key))
+      for (const row of rows.filter((row) => row.pid === pid && currentListeners.has(row.key)))
+        servers.push({
+          ...row,
+          ...owner,
+          started: identity,
+          hosts: row.hosts.filter((host) =>
+            rows.every(
+              (other) =>
+                other.pid === pid || other.port !== row.port || !other.hosts.includes(host),
+            ),
+          ),
+        })
     }
     return servers
   }
@@ -204,9 +262,16 @@ export class ThreadServers {
           : Promise.resolve([])
     )
       .then((servers) => {
-        const unique = [
-          ...new Map(servers.map((server) => [`${server.pid}:${server.port}`, server])).values(),
-        ]
+        const byProcessPort = new Map<string, Server>()
+        for (const server of servers) {
+          const key = `${server.pid}:${server.port}`
+          const existing = byProcessPort.get(key)
+          byProcessPort.set(key, {
+            ...server,
+            hosts: [...new Set([...(existing?.hosts ?? []), ...server.hosts])],
+          })
+        }
+        const unique = [...byProcessPort.values()]
         this.cached = { at: Date.now(), servers: unique }
         return unique
       })
@@ -216,15 +281,20 @@ export class ThreadServers {
     return this.pending
   }
   async list(taskId: string) {
-    const servers: ThreadServer[] = (await this.scan())
+    const targets = (await this.scan())
       .filter((server) => server.taskId === taskId)
-      .map(({ pid, port, started, name, source }) => ({ pid, port, started, name, source }))
+      .map<{ server: ThreadServer; hosts: string[] }>(
+        ({ pid, port, started, name, source, hosts }) => ({
+          server: { pid, port, started, name, source },
+          hosts,
+        }),
+      )
     let next = 0
     await Promise.all(
-      Array.from({ length: Math.min(4, servers.length) }, async () => {
-        while (next < servers.length) {
-          const server = servers[next++]!
-          for (const host of ['127.0.0.1', '[::1]']) {
+      Array.from({ length: Math.min(4, targets.length) }, async () => {
+        while (next < targets.length) {
+          const { server, hosts } = targets[next++]!
+          for (const host of hosts) {
             const url = `http://${host}:${server.port}`
             try {
               const response = await fetch(url, {
@@ -245,7 +315,7 @@ export class ThreadServers {
     )
     return {
       supported: this.platform === 'linux' || this.platform === 'darwin',
-      servers,
+      servers: targets.map(({ server }) => server),
     }
   }
   async stop(

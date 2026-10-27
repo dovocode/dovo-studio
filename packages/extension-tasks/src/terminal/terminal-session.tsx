@@ -8,26 +8,44 @@ import {
   systemMonoFont,
 } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { responses, useWorkspace, useStudioTheme, useResolvedTheme } from '@dovo/studio-core'
 import { terminalSelection } from './terminal-selection'
+import { ContextMenu } from '@dovo/studio-ui'
+
+const menuItem =
+  'cursor-default rounded px-2 py-1.5 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50'
 export function TerminalSession({
   id,
   active,
   onAddSelection,
+  readOnly = false,
 }: {
   id: string
   active: boolean
   onAddSelection?: (text: string) => void
+  readOnly?: boolean
 }) {
-  const { connection, request } = useWorkspace(),
+  const { connection, request, connected } = useWorkspace(),
     container = useRef<HTMLDivElement>(null),
     [error, setError] = useApplicationState(''),
     [fontError, setFontError] = useApplicationState('')
   const [selectionError, setSelectionError] = useApplicationState('')
   const [hasSelection, setHasSelection] = useApplicationState(false)
+  const [writable, setWritable] = useApplicationState(false)
+  const [actionError, setActionError] = useApplicationState('')
+  const actionScope = useRef(0)
+  const canWriteRef = useRef<(() => boolean) | null>(null)
+  const menuContext = useRef<{ terminal: Terminal; scope: number; selection: string } | null>(null)
+  useLayoutEffect(() => {
+    actionScope.current++
+    setActionError('')
+    return () => {
+      actionScope.current++
+    }
+  }, [id, connection, request, active, connected, readOnly])
   const { terminalFontFamily, terminalFontSize } = useAppPreferences()
   const colors = useStudioTheme()
   const mode = useResolvedTheme()
@@ -64,6 +82,9 @@ export function TerminalSession({
   useEffect(() => {
     if (!container.current || !connection) return
     let socket: WebSocket | undefined
+    setWritable(false)
+    setHasSelection(false)
+    canWriteRef.current = () => socket?.readyState === WebSocket.OPEN
     const terminal = new Terminal({
         fontSize: 12,
         fontFamily: systemMonoFont,
@@ -109,12 +130,14 @@ export function TerminalSession({
           let heartbeat: ReturnType<typeof startSocketHeartbeat> | undefined
           socket = current
           const cleanup = () => {
+            actionScope.current++
             heartbeat?.stop()
             clearTimeout(timeout)
             signal.removeEventListener('abort', abort)
             current.onopen = current.onmessage = current.onerror = current.onclose = null
             current.close()
             if (socket === current) socket = undefined
+            setWritable(false)
           }
           const abort = () => {
             cleanup()
@@ -132,6 +155,7 @@ export function TerminalSession({
           current.onopen = () => {
             clearTimeout(timeout)
             connected()
+            setWritable(true)
             terminal.reset()
             setError('')
             resize()
@@ -168,6 +192,7 @@ export function TerminalSession({
       terminal.dispose()
       terminalRef.current = null
       resizeRef.current = null
+      canWriteRef.current = null
     }
   }, [id, connection, request])
   useEffect(() => {
@@ -198,35 +223,130 @@ export function TerminalSession({
       cancelled = true
     }
   }, [terminalFontFamily, terminalFontSize, id, connection, request, active, setFontError])
+  const currentMenu = () => {
+    const context = menuContext.current
+    return context &&
+      context.scope === actionScope.current &&
+      context.terminal === terminalRef.current
+      ? context
+      : null
+  }
+  const addSelection = (text: string) => {
+    try {
+      const selection = terminalSelection(text)
+      if (selection) onAddSelection?.(selection)
+    } catch (cause) {
+      setSelectionError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  const clipboard = async (operation: 'copy' | 'paste') => {
+    const context = currentMenu()
+    if (!context) return
+    setActionError('')
+    try {
+      if (operation === 'copy') await navigator.clipboard.writeText(context.selection)
+      else {
+        const text = await navigator.clipboard.readText()
+        if (currentMenu() !== context) return
+        if (!canWriteRef.current?.()) throw new Error('Terminal is not connected.')
+        context.terminal.paste(text)
+      }
+      if (currentMenu() === context) context.terminal.focus()
+    } catch (cause) {
+      if (currentMenu() === context)
+        setActionError(
+          `Could not ${operation} terminal text: ${cause instanceof Error ? cause.message : String(cause)}`,
+        )
+    }
+  }
   return (
-    <div className={active ? 'relative min-h-0 min-w-0 flex-1 overflow-hidden' : 'hidden'}>
-      <div ref={container} className="h-full p-2" />
-      {onAddSelection && hasSelection && (
-        <button
-          type="button"
-          className="absolute right-2 top-2 rounded border bg-card px-2 py-1 text-xs"
-          onClick={() => {
-            try {
-              const text = terminalSelection(terminalRef.current?.getSelection() ?? '')
-              if (text) onAddSelection(text)
-            } catch (cause) {
-              setSelectionError(cause instanceof Error ? cause.message : String(cause))
-            }
-          }}
-        >
-          Add selection to message
-        </button>
-      )}
-      {selectionError && (
-        <p role="alert" className="absolute bottom-0 bg-card p-2 text-xs text-destructive">
-          {selectionError}
-        </p>
-      )}
-      {(error || fontError) && (
-        <p role="alert" className="absolute bottom-0 bg-card p-2 text-xs text-destructive">
-          {error || fontError}
-        </p>
-      )}
-    </div>
+    <ContextMenu.Root
+      onOpenChange={(open) => {
+        if (open && terminalRef.current)
+          menuContext.current = {
+            terminal: terminalRef.current,
+            scope: actionScope.current,
+            selection: terminalRef.current.getSelection(),
+          }
+      }}
+    >
+      <ContextMenu.Trigger asChild>
+        <div className={active ? 'relative min-h-0 min-w-0 flex-1 overflow-hidden' : 'hidden'}>
+          <div ref={container} className="h-full p-2" />
+          {onAddSelection && hasSelection && (
+            <button
+              type="button"
+              className="absolute right-2 top-2 rounded border bg-card px-2 py-1 text-xs"
+              onClick={() => addSelection(terminalRef.current?.getSelection() ?? '')}
+            >
+              Add selection to message
+            </button>
+          )}
+          {selectionError && (
+            <p role="alert" className="absolute bottom-0 bg-card p-2 text-xs text-destructive">
+              {selectionError}
+            </p>
+          )}
+          {(actionError || error || fontError) && (
+            <p role="alert" className="absolute bottom-0 bg-card p-2 text-xs text-destructive">
+              {actionError || error || fontError}
+            </p>
+          )}
+        </div>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="z-50 min-w-40 rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
+          <ContextMenu.Item
+            className={menuItem}
+            disabled={!hasSelection}
+            onSelect={() => void clipboard('copy')}
+          >
+            Copy
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItem}
+            disabled={!active || !connected || !writable || readOnly}
+            onSelect={() => void clipboard('paste')}
+          >
+            Paste
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItem}
+            onSelect={() => {
+              const terminal = currentMenu()?.terminal
+              terminal?.selectAll()
+              terminal?.focus()
+            }}
+          >
+            Select all
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItem}
+            onSelect={() => {
+              const terminal = currentMenu()?.terminal
+              terminal?.scrollToBottom()
+              terminal?.focus()
+            }}
+          >
+            Jump to latest
+          </ContextMenu.Item>
+          {onAddSelection && (
+            <>
+              <ContextMenu.Separator className="my-1 h-px bg-border" />
+              <ContextMenu.Item
+                className={menuItem}
+                disabled={!hasSelection}
+                onSelect={() => {
+                  const context = currentMenu()
+                  if (context) addSelection(context.selection)
+                }}
+              >
+                Add selection to message
+              </ContextMenu.Item>
+            </>
+          )}
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   )
 }

@@ -32,14 +32,15 @@ const environment = (separator: string) =>
     .map(([key, value]) => `${key}=${value}`)
     .join(separator)
 
-function linuxFixture(recycle: boolean) {
+function linuxFixture(recycle: boolean, address = '0100007F') {
   const reads: string[] = []
   let replaced = false
   const stat = (started: string) =>
     `41 (node (worker)) ${['S', ...Array<string>(18).fill('0'), started].join(' ')}`
   system.readFile.mockImplementation(async (path) => {
     reads.push(path)
-    if (path === '/proc/net/tcp') return 'header\n 0: 0100007F:0BB8 0:0 0A 0:0 0:0 0 1000 0 123 1\n'
+    if (path === '/proc/net/tcp')
+      return `header\n 0: ${address}:0BB8 0:0 0A 0:0 0:0 0 1000 0 123 1\n`
     if (path === '/proc/net/tcp6') return 'header\n'
     if (path === '/proc/41/stat') return stat(replaced ? '200' : '100')
     if (path === '/proc/41/environ') {
@@ -99,16 +100,37 @@ it('keeps raw TCP services visible without inventing an HTTP Open endpoint', asy
   const result = await new ThreadServers('runtime', 'linux').list('thread')
   expect(result.servers).toEqual([expect.objectContaining({ pid: 41, port: 3000 })])
   expect(result.servers[0]?.url).toBeUndefined()
-  expect(fetch).toHaveBeenCalledTimes(2)
+  expect(fetch).toHaveBeenCalledTimes(1)
 })
 
 it('opens an IPv6-only HTTP listener through its verified loopback address', async () => {
-  linuxFixture(false)
-  vi.mocked(fetch)
-    .mockRejectedValueOnce(new TypeError('IPv4 refused'))
-    .mockResolvedValueOnce(new Response(null))
+  linuxFixture(false, '00000000000000000000000001000000')
   const result = await new ThreadServers('runtime', 'linux').list('thread')
   expect(result.servers[0]?.url).toBe('http://[::1]:3000')
+  expect(fetch).toHaveBeenCalledExactlyOnceWith('http://[::1]:3000', expect.anything())
+})
+
+it.each(['0100000A', '04030201', '000080FE000000000000000001000000'])(
+  'does not probe another loopback process for a LAN-only Linux listener %s',
+  async (address) => {
+    linuxFixture(false, address)
+    const result = await new ThreadServers('runtime', 'linux').list('thread')
+    expect(result.servers).toEqual([
+      { pid: 41, started: '100', port: 3000, name: 'node', source: 'agent' },
+    ])
+    expect(fetch).not.toHaveBeenCalled()
+  },
+)
+
+it.each([
+  ['00000000', '127.0.0.1'],
+  ['0200007F', '127.0.0.2'],
+  ['00000000000000000000000000000000', '[::1]'],
+])('probes only the owned Linux address %s', async (address, host) => {
+  linuxFixture(false, address)
+  const result = await new ThreadServers('runtime', 'linux').list('thread')
+  expect(result.servers[0]?.url).toBe(`http://${host}:3000`)
+  expect(fetch).toHaveBeenCalledExactlyOnceWith(`http://${host}:3000`, expect.anything())
 })
 
 it('reports a server that ignores SIGTERM without killing its shared process group', async () => {
@@ -134,14 +156,29 @@ it('reports a server that ignores SIGTERM without killing its shared process gro
   }
 })
 
-function macFixture({ recycled = false, listener = true } = {}) {
+function macFixture({
+  recycled = false,
+  listener = true,
+  address = '127.0.0.1',
+  family = 'IPv4',
+  freshAddress = address,
+}: {
+  recycled?: boolean
+  listener?: boolean
+  address?: string
+  family?: string
+  freshAddress?: string
+} = {}) {
   const calls: string[] = []
   let identityReads = 0
   system.exec.mockImplementation(async (command, args) => {
     const call = `${command} ${args.join(' ')}`
     calls.push(call)
     if (command === '/usr/sbin/lsof' && !args.includes('-a'))
-      return { stdout: 'p41\ncnode\nn127.0.0.1:3000\nn[::1]:8080\n', stderr: '' }
+      return {
+        stdout: `p41\ncnode\nt${family}\nn${address}:3000\ntIPv6\nn[::1]:8080\n`,
+        stderr: '',
+      }
     if (command === '/bin/ps' && args.includes('lstart=')) {
       identityReads++
       return {
@@ -155,7 +192,10 @@ function macFixture({ recycled = false, listener = true } = {}) {
     if (command === '/bin/ps' && args.includes('command='))
       return { stdout: `node server.js ${environment(' ')}\n`, stderr: '' }
     if (command === '/usr/sbin/lsof' && args.includes('-a'))
-      return { stdout: listener ? 'p41\nn127.0.0.1:3000\n' : 'p41\nn127.0.0.1:9090\n', stderr: '' }
+      return {
+        stdout: `p41\nt${family}\nn${freshAddress}:${listener ? 3000 : 9090}\n`,
+        stderr: '',
+      }
     throw new Error(`Unexpected command: ${call}`)
   })
   return calls
@@ -178,10 +218,10 @@ it('brackets macOS environment and fresh PID-scoped listeners with process ident
     ],
   })
   expect(calls).toEqual([
-    '/usr/sbin/lsof -nP -iTCP -sTCP:LISTEN -Fpcn',
+    '/usr/sbin/lsof -nP -iTCP -sTCP:LISTEN -Fpcnt',
     '/bin/ps -p 41 -o lstart=',
     '/bin/ps eww -p 41 -o command=',
-    '/usr/sbin/lsof -a -p 41 -nP -iTCP -sTCP:LISTEN -Fn',
+    '/usr/sbin/lsof -a -p 41 -nP -iTCP -sTCP:LISTEN -Fnt',
     '/bin/ps -p 41 -o lstart=',
   ])
   expect(system.readFile).not.toHaveBeenCalled()
@@ -197,6 +237,30 @@ it('rejects stale macOS listener rows even when the PID start identity stays unc
   macFixture({ listener: false })
   expect((await new ThreadServers('runtime', 'darwin').list('thread')).servers).toEqual([])
   expect(fetch).not.toHaveBeenCalled()
+})
+
+it('rejects a changed macOS binding even when the process and port stay the same', async () => {
+  macFixture({ freshAddress: '10.0.0.1' })
+  expect((await new ThreadServers('runtime', 'darwin').list('thread')).servers).toEqual([])
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+it('keeps LAN-only macOS listeners visible without probing a different loopback server', async () => {
+  macFixture({ address: '10.0.0.1' })
+  const result = await new ThreadServers('runtime', 'darwin').list('thread')
+  expect(result.servers).toEqual([expect.objectContaining({ pid: 41, port: 3000 })])
+  expect(result.servers[0]?.url).toBeUndefined()
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+it.each([
+  ['IPv4', '127.0.0.1'],
+  ['IPv6', '[::1]'],
+])('probes only the owning macOS wildcard family %s', async (family, host) => {
+  macFixture({ address: '*', family })
+  const result = await new ThreadServers('runtime', 'darwin').list('thread')
+  expect(result.servers[0]?.url).toBe(`http://${host}:3000`)
+  expect(fetch).toHaveBeenCalledExactlyOnceWith(`http://${host}:3000`, expect.anything())
 })
 
 it('reports unsupported platforms without filesystem, command or network discovery', async () => {

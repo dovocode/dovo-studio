@@ -213,6 +213,7 @@ export function TerminalPane({
               )}
               <TerminalSession
                 id={session.id}
+                readOnly={!!session.exited}
                 active={visible && !!group?.sessions.includes(session.id)}
                 onAddSelection={onAddSelection ? (text) => onAddSelection(taskId, text) : undefined}
               />

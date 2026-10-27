@@ -26,12 +26,77 @@ it('reads IPv4 and IPv6 TCP listeners without including established connections'
  1: 00000000000000000000000000000000:1F90 0:0 0A 0:0 0:0 0 1000 0 456 1
  2: 0100007F:0BB8 0:0 01 0:0 0:0 0 1000 0 789 1`)
   expect([...sockets]).toEqual([
-    ['123', 3000],
-    ['456', 8080],
+    ['123', { port: 3000, hosts: ['127.0.0.1'] }],
+    ['456', { port: 8080, hosts: ['[::1]'] }],
   ])
 })
 
 describe.skipIf(process.platform !== 'linux')('real thread-owned servers', () => {
+  it('does not advertise a wildcard endpoint shadowed by another reuse-port listener', async () => {
+    const discovery = new ThreadServers(randomUUID())
+    const children: ReturnType<typeof spawn>[] = []
+    const start = async (host: string, port: number, marked: boolean) => {
+      const child = spawn(
+        process.execPath,
+        [
+          '-e',
+          `const s=require('http').createServer((q,r)=>r.end('${host}'));s.listen({port:${port},host:'${host}',reusePort:true},()=>process.send(s.address().port));`,
+        ],
+        {
+          env: { ...process.env, ...(marked ? discovery.environment('thread', 'agent') : {}) },
+          stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+        },
+      )
+      children.push(child)
+      const [assigned] = await once(child, 'message')
+      return Number(assigned)
+    }
+    try {
+      const port = await start('0.0.0.0', 0, true)
+      await start('127.0.0.1', port, false)
+      expect(await (await fetch(`http://127.0.0.1:${port}`)).text()).toBe('127.0.0.1')
+      const result = await discovery.list('thread')
+      expect(result.servers).toHaveLength(1)
+      expect(result.servers[0]?.url).toBeUndefined()
+    } finally {
+      for (const child of children)
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }
+  }, 10000)
+
+  it('opens the owned loopback binding when an unrelated process uses the same port', async () => {
+    const discovery = new ThreadServers(randomUUID())
+    const children: ReturnType<typeof spawn>[] = []
+    const start = async (host: string, port: number, marked: boolean) => {
+      const child = spawn(
+        process.execPath,
+        [
+          '-e',
+          `const s=require('http').createServer((q,r)=>r.end('${host}'));s.listen(${port},'${host}',()=>process.send(s.address().port));`,
+        ],
+        {
+          env: { ...process.env, ...(marked ? discovery.environment('thread', 'agent') : {}) },
+          stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+        },
+      )
+      children.push(child)
+      const [assigned] = await once(child, 'message')
+      return Number(assigned)
+    }
+    try {
+      const port = await start('127.0.0.2', 0, true)
+      await start('127.0.0.1', port, false)
+      const result = await discovery.list('thread')
+      expect(result.servers).toHaveLength(1)
+      const url = result.servers[0]!.url
+      expect(url).toBe(`http://127.0.0.2:${port}`)
+      expect(await (await fetch(url!)).text()).toBe('127.0.0.2')
+    } finally {
+      for (const child of children)
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }
+  }, 10000)
+
   it('reports a server that ignores graceful Stop without killing its shared process group', async () => {
     const discovery = new ThreadServers(randomUUID())
     const child = spawn(
