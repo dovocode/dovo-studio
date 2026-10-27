@@ -80,3 +80,55 @@ it('authenticates native reads, fences them to a known child, and pages history 
   expect(s.store.task(task.id).messages).toEqual(parentMessages)
   expect(s.store.task(task.id).activeRunId).toBeUndefined()
 })
+
+it('shows a background job saved output without opening an agent transcript', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    port: 0,
+    databasePath: ':memory:',
+    ownerToken: 'native-thread-test-owner-token-long-enough',
+  })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const task = s.tasks.create({
+    title: 'Watch tests',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Watch tests',
+  })
+  const reader = vi.fn<NonNullable<AgentAdapter['readNativeThread']>>(async () => {
+    throw new Error('Not an agent transcript')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async () => {},
+    readNativeThread: reader,
+  })
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    subagents: [
+      {
+        id: 'monitor',
+        provider: 'codex',
+        name: 'Background: tests',
+        kind: 'background',
+        sessionId: 'session',
+        status: 'completed',
+        result: 'Five cycles passed',
+        startedAt: 'now',
+        updatedAt: 'now',
+      },
+    ],
+  }))
+  const page = await s.tasks.nativeThread({
+    taskId: task.id,
+    id: 'monitor',
+    provider: 'codex',
+    sessionId: 'session',
+  })
+  expect(page.entries).toEqual([{ id: 'result', role: 'assistant', text: 'Five cycles passed' }])
+  expect(page.notice).toContain('Background job')
+  expect(reader).not.toHaveBeenCalled()
+})

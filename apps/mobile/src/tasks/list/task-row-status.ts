@@ -1,4 +1,4 @@
-import { taskIsWorking, isSnoozed, hasUnviewedTaskCompletion, type Task } from '@dovo/protocol'
+import { taskIsWorking, isSnoozed, latestCompletedTaskTurn, type Task } from '@dovo/protocol'
 function age(date: string, now: number) {
   const minutes = Math.max(0, Math.floor((now - Date.parse(date)) / 60000))
   return minutes < 1
@@ -10,9 +10,16 @@ function age(date: string, now: number) {
         : `${Math.floor(minutes / 1440)}d`
 }
 
-/** Input, snooze and failures take priority over an unread successful completion. */
+/** Input, snooze and failures take priority over a successful completion. */
 export function showTaskDone(task: Task, needsInput: boolean, now: number) {
-  return !needsInput && !isSnoozed(task, now) && hasUnviewedTaskCompletion(task)
+  return (
+    !task.archived &&
+    !task.archivedAt &&
+    !task.waitingForFeedback &&
+    !needsInput &&
+    !isSnoozed(task, now) &&
+    !!latestCompletedTaskTurn(task)
+  )
 }
 
 /** Time supplements state without hiding warnings or unread results. */

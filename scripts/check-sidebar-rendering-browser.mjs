@@ -614,6 +614,14 @@ try {
     await settledDetails.locator('summary').click()
   const compactTitle = page.getByText('Compact settled appearance', { exact: true })
   await compactTitle.waitFor()
+  await compactTitle.locator('..').getByLabel('Settled', { exact: true }).waitFor()
+  assert.equal(
+    await compactTitle
+      .locator('..')
+      .getByLabel('Settled', { exact: true })
+      .evaluate((el) => el.classList.contains('text-status-success')),
+    true,
+  )
   const compactBox = await compactTitle.locator('..').boundingBox()
   assert.ok(
     compactBox && compactBox.height <= 38,

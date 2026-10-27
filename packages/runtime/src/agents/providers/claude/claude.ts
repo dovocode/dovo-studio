@@ -460,7 +460,22 @@ export function createClaudeAdapter(): AgentAdapter {
               session.sessionId,
             )
             session.onSubagentEvent?.(message.type, message, session.sessionId)
-            if (!turn) continue
+            if (!turn) {
+              // Native background work can produce a root reply after the user turn has ended.
+              // Persist the canonical message through the session-owned callback, not retired turn hooks.
+              if (message.type === 'assistant' && message.parent_tool_use_id == null) {
+                const text = message.message.content
+                  .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+                  .join('')
+                if (text)
+                  session.onSubagentEvent?.(
+                    'dovo/session/message',
+                    { id: message.uuid, text },
+                    session.sessionId,
+                  )
+              }
+              continue
+            }
             try {
               const intermediate =
                 turn.steered &&

@@ -991,7 +991,7 @@ it.each(['complete', 'cancel', 'stop-failed'] as const)(
         outcome === 'cancel' ? 'cancelled' : 'review',
       )
       expect(runtime.services.store.task(childId).delegation?.completion).toBe(
-        outcome === 'complete' ? 'queued' : 'disposed',
+        outcome === 'complete' ? 'read' : 'disposed',
       )
       expect(resultPrompt.includes('Automation child answer')).toBe(outcome === 'complete')
     } finally {

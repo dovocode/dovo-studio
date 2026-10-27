@@ -200,6 +200,14 @@ function TaskRowView({
     : presentation.state === 'Review'
       ? undefined
       : (statusIcons[presentation.state] ?? CircleDashed)
+  const statusTone = cn(
+    !offline && presentation.state === 'Working' && 'text-primary',
+    !offline &&
+      ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
+      'text-status-success',
+    !offline && presentation.state === 'Failed' && 'text-destructive',
+    !offline && presentation.state === 'Needs input' && 'text-status-warning',
+  )
   const statusDetail = [
     status,
     Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
@@ -274,16 +282,7 @@ function TaskRowView({
                   {!general && task.execution === 'worktree' && (
                     <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
                   )}
-                  <span
-                    className={cn(
-                      'flex shrink-0 items-center gap-1 text-xs',
-                      !offline && presentation.state === 'Working' && 'text-primary',
-                      !offline &&
-                        ['Done', 'Finished', 'Settled'].includes(presentation.state) &&
-                        'text-status-success',
-                      !offline && presentation.state === 'Failed' && 'text-destructive',
-                    )}
-                  >
+                  <span className={cn('flex shrink-0 items-center gap-1 text-xs', statusTone)}>
                     {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
                     {compactStatus}
                   </span>
@@ -301,6 +300,15 @@ function TaskRowView({
               >
                 {task.title}
               </span>
+              {compact && StatusIcon && (
+                <span
+                  className={cn('shrink-0', statusTone)}
+                  aria-label={compactStatus}
+                  title={status}
+                >
+                  <StatusIcon className="size-3.5" aria-hidden="true" />
+                </span>
+              )}
               {!compact && (
                 <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                   {!general && (

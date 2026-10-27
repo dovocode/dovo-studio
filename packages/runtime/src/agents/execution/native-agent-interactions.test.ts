@@ -324,3 +324,64 @@ it.each(['stop', 'read-only'] as const)(
     }
   },
 )
+
+it('persists and deduplicates late root replies while rejecting stale sessions', async () => {
+  const { s, task, owner, runs } = await setup()
+  const message = { id: 'late-message', text: 'Cycle 1 has started' }
+  owner.onSubagentEvent?.('dovo/session/message', message, 'native-session')
+  owner.onSubagentEvent?.('dovo/session/message', message, 'native-session')
+  expect(s.store.task(task.id).messages.filter((item) => item.text === message.text)).toHaveLength(
+    1,
+  )
+  expect(s.store.task(task.id).messages.at(-1)?.text).toBe(message.text)
+  expect(s.store.task(task.id).consumedMessageIds).toContain('native-message:late-message')
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  expect(runs.at(-1)?.prompt).not.toContain(message.text)
+  s.store.updateTask(task.id, (current) => ({ ...current, sessionId: 'new-session' }))
+  owner.onSubagentEvent?.(
+    'dovo/session/message',
+    { id: 'stale', text: 'Stale output' },
+    'native-session',
+  )
+  expect(s.store.task(task.id).messages.some((item) => item.text === 'Stale output')).toBe(false)
+})
+
+it('leaves background command notification delivery to Claude without queueing a duplicate prompt', async () => {
+  const { s, task, owner, runs } = await setup()
+  owner.onSubagentEvent?.(
+    'system',
+    {
+      type: 'system',
+      subtype: 'task_started',
+      task_type: 'local_bash',
+      task_id: 'monitor',
+      is_backgrounded: true,
+      description: 'Watch tests',
+    },
+    'native-session',
+  )
+  expect(s.store.task(task.id).subagents?.find((record) => record.id === 'monitor')).toMatchObject({
+    kind: 'background',
+    status: 'working',
+  })
+  owner.onSubagentEvent?.(
+    'system',
+    {
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 'monitor',
+      status: 'completed',
+      summary: 'Five cycles passed',
+    },
+    'native-session',
+  )
+  await s.tasks.runScheduled()
+  expect(s.store.task(task.id).subagents?.find((record) => record.id === 'monitor')).toMatchObject({
+    completion: 'read',
+    result: 'Five cycles passed',
+  })
+  expect(s.store.task(task.id).subagentInbox ?? []).toEqual([])
+  expect(runs).toHaveLength(1)
+})

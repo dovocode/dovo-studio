@@ -16,7 +16,7 @@ const status = (value: unknown): Subagent['status'] => {
   return 'unknown'
 }
 
-/** Consume only explicit provider subagent events; never infer agents from arbitrary commands. */
+/** Consume explicit provider child and background-job events; never infer work from commands. */
 export function updateSubagents(
   current: Subagent[],
   provider: string,
@@ -152,9 +152,23 @@ export function updateSubagents(
     const live = new Set<string>()
     for (const task of tasks) {
       const id = text(task.task_id)
-      if (!id || task.task_type !== 'local_agent' || task.ambient === true) continue
+      if (
+        !id ||
+        !['local_agent', 'local_bash'].includes(String(task.task_type)) ||
+        task.ambient === true ||
+        task.skip_transcript === true
+      )
+        continue
       live.add(id)
-      put(id, { name: text(task.description) ?? id, status: 'working', background: true })
+      put(id, {
+        kind: task.task_type === 'local_bash' ? 'background' : undefined,
+        name:
+          task.task_type === 'local_bash'
+            ? `Background: ${text(task.description) ?? id}`
+            : (text(task.description) ?? id),
+        status: 'working',
+        background: true,
+      })
     }
     for (const agent of next)
       if (
@@ -173,12 +187,18 @@ export function updateSubagents(
       )
     if (
       event.subtype === 'task_started' &&
-      (event.task_type === 'local_agent' || text(event.subagent_type)) &&
+      (event.task_type === 'local_agent' ||
+        text(event.subagent_type) ||
+        (event.task_type === 'local_bash' && event.is_backgrounded === true)) &&
       event.ambient !== true &&
       event.skip_transcript !== true
     ) {
       put(id, {
-        name: text(event.description) ?? text(event.subagent_type) ?? id,
+        kind: event.task_type === 'local_bash' ? 'background' : undefined,
+        name:
+          event.task_type === 'local_bash'
+            ? `Background: ${text(event.description) ?? id}`
+            : (text(event.description) ?? text(event.subagent_type) ?? id),
         threadId: text(event.agent_id) ?? previous?.threadId,
         status: 'working',
         background:

@@ -211,7 +211,7 @@ it('discovers Codex children before a collaboration event and ignores root event
   expect(completed[0]?.status).toBe('completed')
 })
 
-it('recovers missed Claude starts from its full roster without counting shells or ambient work', () => {
+it('recovers missed Claude agents and background jobs from its roster without ambient work', () => {
   const roster = {
     type: 'system',
     subtype: 'background_tasks_changed',
@@ -224,8 +224,16 @@ it('recovers missed Claude starts from its full roster without counting shells o
   const discovered = updateSubagents([], 'claude', roster, now, 'system', 'session')
   expect(discovered).toMatchObject([
     { id: 'agent', name: 'Explore', status: 'working', background: true, sessionLive: true },
+    {
+      id: 'shell',
+      kind: 'background',
+      name: 'Background: Build',
+      status: 'working',
+      background: true,
+      sessionLive: true,
+    },
   ])
-  expect(discovered).toHaveLength(1)
+  expect(discovered).toHaveLength(2)
   const patch = updateSubagents(
     discovered,
     'claude',
@@ -239,7 +247,11 @@ it('recovers missed Claude starts from its full roster without counting shells o
     'system',
     'session',
   )
-  expect(patch[0]).toMatchObject({ name: 'Review', status: 'stopped', activity: 'Stopped' })
+  expect(patch.find((task) => task.id === 'agent')).toMatchObject({
+    name: 'Review',
+    status: 'stopped',
+    activity: 'Stopped',
+  })
   const removed = updateSubagents(
     discovered,
     'claude',
@@ -274,4 +286,51 @@ it('clears native liveness when a provider process closes without modifying Dovo
   const closed = updateSubagents([native, owned], 'codex', {}, now, 'dovo/session/closed')
   expect(closed[0]).toMatchObject({ status: 'stopped', sessionLive: false, finishedAt: now })
   expect(closed[1]).toBe(owned)
+})
+
+it('tracks an explicitly backgrounded Claude monitor through completion and session closure', () => {
+  const started = updateSubagents(
+    [],
+    'claude',
+    {
+      type: 'system',
+      subtype: 'task_started',
+      task_type: 'local_bash',
+      task_id: 'monitor',
+      description: 'Watch test results',
+      is_backgrounded: true,
+    },
+    now,
+    'system',
+    'session',
+  )
+  expect(started[0]).toMatchObject({
+    kind: 'background',
+    name: 'Background: Watch test results',
+    status: 'working',
+    background: true,
+    sessionLive: true,
+  })
+  const finished = updateSubagents(
+    started,
+    'claude',
+    {
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 'monitor',
+      status: 'completed',
+      summary: 'Five cycles passed',
+    },
+    now,
+    'system',
+    'session',
+  )
+  expect(finished[0]).toMatchObject({
+    status: 'completed',
+    result: 'Five cycles passed',
+    finishedAt: now,
+  })
+  expect(
+    updateSubagents(started, 'claude', {}, now, 'dovo/session/closed', 'session')[0],
+  ).toMatchObject({ status: 'stopped', sessionLive: false })
 })

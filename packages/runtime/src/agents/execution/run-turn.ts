@@ -21,7 +21,7 @@ import {
   CUA_SERVER_NAME,
 } from '../../computer-use/cua.js'
 import { runWithHooks } from './agent-hooks.js'
-import { Cause, Effect, Exit } from 'effect'
+import { Cause, Effect, Exit, Schema } from 'effect'
 import { OwnedProcessShutdownError } from './stop-owned-child.js'
 import { contextUsage, turnTokenCounter } from '../tasks/context-usage.js'
 import { estimatedTurnCost } from '../tasks/estimated-cost.js'
@@ -30,6 +30,7 @@ import { updateSubagents } from './subagents.js'
 import { ReasoningEvents, safeReasoningEvent } from './reasoning-event.js'
 import type { AgentSteer, AgentRun, NativeAgentSession } from './types.js'
 import {
+  decodeResult,
   REVIEW_MODE_INSTRUCTION,
   mentionedResources,
   nativeTodos,
@@ -633,32 +634,64 @@ ${
         let promptAccepted = false
         const acceptPrompt = () => {
           if (!acceptsProviderEvents() || promptAccepted) return
-          this.store.updateTask(
-            id,
-            (t) => ({
-              ...t,
-              runAttempt: {
-                ...t.runAttempt,
-                inputMessageIds: currentMessages.map((m) => m.id),
-                promptAccepted: true,
+          this.store.transaction(() => {
+            const inputs = this.store.taskSummary(id).runAttempt?.subagentInputs ?? []
+            const resultIds = new Set(inputs.map((input) => input.subagentResultId))
+            this.store.updateTask(
+              id,
+              (t) => ({
+                ...t,
+                runAttempt: {
+                  ...t.runAttempt,
+                  inputMessageIds: currentMessages.map((m) => m.id),
+                  promptAccepted: true,
+                },
+                subagents: t.subagents?.map((record) =>
+                  record.completion === 'queued' &&
+                  record.completionId &&
+                  resultIds.has(record.completionId)
+                    ? { ...record, completion: 'read' as const }
+                    : record,
+                ),
+                consumedMessageIds: [
+                  ...new Set([
+                    ...(t.consumedMessageIds ?? []),
+                    ...currentMessages.map((m) => m.id),
+                    assistantId,
+                  ]),
+                ],
+              }),
+              undefined,
+              {
+                id: `start:${turnId}`,
+                taskId: id,
+                attemptId: turnId,
+                kind: 'start',
+                state: 'acknowledged',
               },
-              consumedMessageIds: [
-                ...new Set([
-                  ...(t.consumedMessageIds ?? []),
-                  ...currentMessages.map((m) => m.id),
-                  assistantId,
-                ]),
-              ],
-            }),
-            undefined,
-            {
-              id: `start:${turnId}`,
-              taskId: id,
-              attemptId: turnId,
-              kind: 'start',
-              state: 'acknowledged',
-            },
-          )
+            )
+            for (const input of inputs) {
+              const child = this.store
+                .get()
+                .tasks.find((task) => task.id === input.subagentResultId)
+              const delegation = child?.delegation
+              if (
+                !child ||
+                !delegation ||
+                delegation.parentTaskId !== id ||
+                delegation.completion !== 'queued'
+              )
+                continue
+              const expected = `subagent-result:${child.id}${delegation.resultVersion ? `:${delegation.resultVersion}` : ''}`
+              if (input.id === expected)
+                this.store.updateTask(child.id, (task) => ({
+                  ...task,
+                  delegation: task.delegation
+                    ? { ...task.delegation, completion: 'read' }
+                    : undefined,
+                }))
+            }
+          })
           promptAccepted = true
         }
         const acceptsProviderEvents = () => providerOpen && !controller.signal.aborted
@@ -985,6 +1018,37 @@ ${
                     (controller.signal.aborted && name !== 'dovo/session/closed')
                   )
                     return
+                  if (name === 'dovo/session/message') {
+                    if (!nativeSessionOpen) return
+                    const message = decodeResult(
+                      Schema.Struct({ id: Schema.String, text: Schema.String }),
+                      payload,
+                    ).data
+                    if (!message?.text) return
+                    const messageId = `native-message:${message.id}`
+                    this.store.updateTaskHistory(id, (task) =>
+                      task.messages.some((entry) => entry.id === messageId)
+                        ? task
+                        : {
+                            ...task,
+                            lastViewedTurnId: undefined,
+                            consumedMessageIds: [
+                              ...new Set([...(task.consumedMessageIds ?? []), messageId]),
+                            ],
+                            messages: [
+                              ...task.messages,
+                              {
+                                id: messageId,
+                                turnId,
+                                role: 'assistant',
+                                text: message.text,
+                                createdAt: new Date().toISOString(),
+                              },
+                            ],
+                          },
+                    )
+                    return
+                  }
                   const records = current.subagents ?? []
                   let subagents = updateSubagents(
                     records,
@@ -1013,8 +1077,15 @@ ${
                     return {
                       ...record,
                       completionId: `native-result:${record.provider}:${ownerSessionId}:${record.id}:${record.startedAt}`,
+                      // Claude delivers monitor/command notifications inside its own session.
+                      // Injecting the same result as a new Dovo prompt would deliver it twice.
                       completion:
-                        providerOpen && nativeParentOpen ? ('read' as const) : ('pending' as const),
+                        (record.kind === 'background' &&
+                          nativeSessionOpen &&
+                          name !== 'dovo/session/closed') ||
+                        (providerOpen && nativeParentOpen)
+                          ? ('read' as const)
+                          : ('pending' as const),
                     }
                   })
                   if (subagents !== records)
@@ -1377,7 +1448,12 @@ ${
               runPhase: 'finalizing',
               activity: 'Saving changes',
               consumedMessageIds: [
-                ...new Set([...currentMessages.map((m) => m.id), assistantId, ...acceptedIds]),
+                ...new Set([
+                  ...(t.consumedMessageIds ?? []),
+                  ...currentMessages.map((m) => m.id),
+                  assistantId,
+                  ...acceptedIds,
+                ]),
               ],
               turns: t.turns?.map((turn) =>
                 turn.id === turnId ? { ...turn, status: 'completed', finishedAt } : turn,
@@ -1421,7 +1497,12 @@ ${
             error: review.error ?? captured.error ?? t.error,
             activity: undefined,
             consumedMessageIds: [
-              ...new Set([...currentMessages.map((m) => m.id), assistantId, ...acceptedIds]),
+              ...new Set([
+                ...(t.consumedMessageIds ?? []),
+                ...currentMessages.map((m) => m.id),
+                assistantId,
+                ...acceptedIds,
+              ]),
             ],
             turns: t.turns?.map((turn) =>
               turn.id === turnId
@@ -1451,6 +1532,7 @@ ${
                     queuePaused: true,
                     consumedMessageIds: [
                       ...new Set([
+                        ...(t.consumedMessageIds ?? []),
                         ...currentMessages.map((m) => m.id),
                         assistantId,
                         ...acceptedIds,

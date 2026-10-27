@@ -363,9 +363,14 @@ it('continues native-agent discovery after a warm parent turn ends and rebinds i
   }
 })
 
-it.each(['task_started', 'background_tasks_changed'] as const)(
-  'keeps native Claude agents alive under memory pressure after %s and releases the finished session',
-  async (subtype) => {
+it.each([
+  ['task_started', 'local_agent'],
+  ['background_tasks_changed', 'local_agent'],
+  ['task_started', 'local_bash'],
+  ['background_tasks_changed', 'local_bash'],
+] as const)(
+  'keeps native Claude work alive under memory pressure after %s and releases the finished session',
+  async (subtype, taskType) => {
     const adapter = createClaudeAdapter()
     const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(true)
     let finishChild = () => {}
@@ -384,18 +389,23 @@ it.each(['task_started', 'background_tasks_changed'] as const)(
               subtype,
               session_id: 'session',
               task_id: 'native-child',
-              task_type: 'local_agent',
-              subagent_type: 'Explore',
+              task_type: taskType,
+              is_backgrounded: true,
               description: 'Explore',
-              tasks: [
-                { task_id: 'native-child', task_type: 'local_agent', description: 'Explore' },
-              ],
+              tasks: [{ task_id: 'native-child', task_type: taskType, description: 'Explore' }],
             }
           }
           yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
           if (first) {
             first = false
             await childFinished
+            yield {
+              type: 'assistant',
+              uuid: 'late-reply',
+              session_id: 'session',
+              parent_tool_use_id: null,
+              message: { content: [{ type: 'text', text: 'Background work finished' }] },
+            }
             yield {
               type: 'system',
               subtype: 'task_notification',
@@ -421,6 +431,11 @@ it.each(['task_started', 'background_tasks_changed'] as const)(
           expect.objectContaining({ subtype: 'task_notification', status: 'completed' }),
           'session',
         ),
+      )
+      expect(native).toHaveBeenCalledWith(
+        'dovo/session/message',
+        { id: 'late-reply', text: 'Background work finished' },
+        'session',
       )
       await adapter.run({ ...run, sessionId: 'session', prompt: 'Second' })
       expect(close).toHaveBeenCalled()

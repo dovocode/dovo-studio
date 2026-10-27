@@ -145,7 +145,7 @@ function TaskListRowView({
   const [state, age] = /^(.*) · (now|\d+[mhd])$/.exec(status)?.slice(1) ?? [status, '']
   const working = taskIsWorking(task) && !needsInput
   const stateColor = needsInput
-    ? colors.accent
+    ? colors.warning
     : failed
       ? colors.error
       : done || state === 'Finished' || state === 'Settled'
@@ -479,9 +479,11 @@ function TaskListRowView({
               color={
                 summary.failed
                   ? colors.error
-                  : summary.attention || open
-                    ? colors.accent
-                    : colors.muted
+                  : summary.attention
+                    ? colors.warning
+                    : open
+                      ? colors.accent
+                      : colors.muted
               }
             />
           </Pressable>

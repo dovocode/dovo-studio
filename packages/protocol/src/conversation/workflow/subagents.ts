@@ -2,6 +2,7 @@ import { modelDisplayName } from '../../tasks/model-display-name.js'
 import { mutableStruct } from '../../shared/schema.js'
 import { Schema } from 'effect'
 export const subagentSchema = mutableStruct({
+  kind: Schema.optional(Schema.Literal('background')),
   source: Schema.optional(Schema.Literal('dovo')),
   taskId: Schema.optional(Schema.String),
   /** Native metadata belongs to a live provider session, including between parent turns. */

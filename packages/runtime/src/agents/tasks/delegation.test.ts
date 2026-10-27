@@ -410,7 +410,7 @@ it('keeps children working after a reply and delivers completion once without es
     ).toHaveLength(0)
     expect(s.store.task(parent.id).queue ?? []).toEqual([])
     expect(s.store.task(parent.id).lastPromptAt).toBe(lastPromptAt)
-    expect(s.store.task(childId).delegation?.completion).toBe('queued')
+    expect(s.store.task(childId).delegation?.completion).toBe('read')
     expect(receivedPrompt).toContain('Child async answer')
     expect(childPermission).toBe('read-only')
   } finally {

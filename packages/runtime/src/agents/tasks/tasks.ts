@@ -2261,7 +2261,8 @@ export class Tasks {
     if (!child) throw new HttpError(404, 'Native agent not found in this thread')
     const session = this.nativeSessions.get(task.id)
     let entries: NativeThreadEntry[] | undefined
-    if (session && session.sessionId === child.sessionId && session.control.readThread)
+    if (child.kind === 'background') entries = []
+    else if (session && session.sessionId === child.sessionId && session.control.readThread)
       entries = await session.control.readThread(child.threadId ?? child.id)
     else {
       const resolved = resolveTaskAgent(task, this.store.agentsFor(task.repositoryId))
@@ -2278,15 +2279,25 @@ export class Tasks {
       }
     }
     const notice =
-      entries === undefined
-        ? 'Full native history is unavailable for this agent. Showing the saved prompt and result.'
-        : !entries.length
-          ? 'No transcript messages are available. Showing the saved prompt and result.'
-          : undefined
+      child.kind === 'background'
+        ? 'Background job. Showing its saved output and status.'
+        : entries === undefined
+          ? 'Full native history is unavailable for this agent. Showing the saved prompt and result.'
+          : !entries.length
+            ? 'No transcript messages are available. Showing the saved prompt and result.'
+            : undefined
     if (!entries?.length)
       entries = [
         ...(child.prompt ? [{ id: 'prompt', role: 'user' as const, text: child.prompt }] : []),
-        ...(child.result ? [{ id: 'result', role: 'assistant' as const, text: child.result }] : []),
+        ...(child.result || (child.kind === 'background' && child.activity)
+          ? [
+              {
+                id: 'result',
+                role: 'assistant' as const,
+                text: child.result ?? child.activity ?? '',
+              },
+            ]
+          : []),
       ]
     const end = input.before
       ? entries.findIndex((entry) => entry.id === input.before)
