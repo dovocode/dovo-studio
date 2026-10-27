@@ -29,7 +29,7 @@ import {TooltipProvider} from '@dovo/studio-ui';
 import {WorkspaceValueProvider,useWorkspace,useWorkspaceSelector,updateAppPreferences} from '@dovo/studio-core';
 import {runtimeSnapshotPath} from '@dovo/protocol';
 window.setListPreferences=updateAppPreferences;window.settledPath=()=>runtimeSnapshotPath({address:'http://local',token:'token'});
-window.counts={list:0,rows:0,broad:0,selected:0,pills:0,trees:0};
+window.counts={list:0,rows:0,broad:0,selected:0,trees:0};
 const now=Date.now();
 const iso=offset=>new Date(now-offset).toISOString();
 const base={repositoryId:'repo',agentId:'',draft:'',files:[],example:false};
@@ -39,7 +39,8 @@ const finished=(id,title,age,extra={})=>({...base,id,title,createdAt:iso(age+600
 const running={...base,id:'running',title:'Running thread',createdAt:iso(0),status:'running',
   messages:[{id:'m-running',role:'user',text:'Stream'}],turns:[{id:'turn-running',status:'running',startedAt:iso(0)}]};
 const subagent={id:'child',taskId:'child',source:'dovo',name:'Child agent',provider:'codex',status:'working',startedAt:iso(0),updatedAt:iso(0)};
-const parent=finished('parent','Parent thread',1000,{subagents:[subagent]});
+const native={id:'native',name:'Native child',provider:'claude',status:'completed',startedAt:iso(2000),updatedAt:iso(1000),finishedAt:iso(1000)};
+const parent=finished('parent','Parent thread',1000,{subagents:[subagent,native]});
 const child=finished('child','Child thread',1000,{delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'}});
 window.initialTasks=[running,parent,child,
   ...Array.from({length:300},(_,i)=>finished('task-'+i,'Thread '+i,(i+2)*60000)),
@@ -90,13 +91,6 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Too
     {
       name: 'sidebar-rendering-fixtures',
       setup(builder) {
-        builder.onLoad({ filter: /\/working-subagents\.tsx$/ }, ({ path }) => ({
-          contents: readFileSync(path, 'utf8').replace(
-            'if (!subagents.length) return null',
-            'window.counts.pills++; if (!subagents.length) return null',
-          ),
-          loader: 'tsx',
-        }))
         builder.onLoad({ filter: /\/nested-threads\.tsx$/ }, ({ path }) => ({
           contents: readFileSync(path, 'utf8').replace(
             'if (!threads.length) return null',
@@ -227,9 +221,8 @@ try {
   await finishedToggle.click()
   await page.getByRole('button', { name: 'Open child thread Child thread' }).waitFor()
 
-  // Large child payloads do not repaint the parent's pills. Visible activity still updates.
+  // Studio and native transcript payloads do not repaint the tree. Visible facts still update.
   await page.evaluate(() => {
-    window.counts.pills = 0
     window.counts.trees = 0
     for (let frame = 0; frame < 30; frame++) {
       window.publish(
@@ -254,11 +247,6 @@ try {
       )
     }
   })
-  assert.equal(
-    await page.evaluate(() => window.counts.pills),
-    0,
-    'transcript-only child updates repainted sidebar pills',
-  )
   assert.equal(
     await page.evaluate(() => window.counts.trees),
     0,
@@ -285,6 +273,27 @@ try {
     await page.evaluate(() => window.counts.trees),
     1,
     'visible child activity should repaint only its parent tree',
+  )
+  await page.evaluate(() => {
+    window.counts.trees = 0
+    window.publish(
+      window.tasks.map((task) =>
+        task.id === 'parent'
+          ? {
+              ...task,
+              subagents: task.subagents.map((agent) =>
+                agent.id === 'native' ? { ...agent, name: 'Native child updated' } : agent,
+              ),
+            }
+          : task,
+      ),
+    )
+  })
+  await page.getByRole('button', { name: 'Open child thread Native child updated' }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.counts.trees),
+    1,
+    'visible native agent changes should repaint only their parent tree',
   )
 
   // The running row owns its one-second clock; the list itself does not re-render.
@@ -612,7 +621,7 @@ try {
   )
   assert.deepEqual(errors, [])
   console.log(
-    `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero tree/pill renders for 30 large child-payload updates and one tree render for visible activity; selector isolation, latest-entry commands, nested thread navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
+    `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero tree renders for 30 large Studio/native child-payload updates and one tree render per visible activity/name change; selector isolation, latest-entry commands, nested thread navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
   )
 } finally {
   await browser.close()

@@ -86,7 +86,7 @@ function TaskListRowView({
   canTemplate,
   actions,
   rowWindow,
-  nestedThreads,
+  thread,
   selectedThreadKey,
   searching,
 }: {
@@ -108,7 +108,7 @@ function TaskListRowView({
   canTemplate: boolean
   actions: TaskListRowActions
   rowWindow: TaskListWindow | null
-  nestedThreads: readonly NestedThread[]
+  thread?: NestedThread
   selectedThreadKey?: string
   searching: boolean
 }) {
@@ -228,7 +228,7 @@ function TaskListRowView({
             editable={editable}
             disabled={disabled}
             onSelect={open}
-            nestedThreads={nestedThreads}
+            thread={thread}
             selectedThreadKey={selectedThreadKey}
             searching={searching}
           />

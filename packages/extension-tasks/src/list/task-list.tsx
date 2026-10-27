@@ -946,7 +946,7 @@ export function TaskList({
                     canTemplate={!!onTemplate}
                     actions={rowActions}
                     rowWindow={rowCount > windowedRowCount ? rowWindow : null}
-                    nestedThreads={threadTree.nodes.get(entry.key)?.children ?? []}
+                    thread={threadTree.nodes.get(entry.key)}
                     selectedThreadKey={entry.key === selectedMainKey ? selectedId : undefined}
                     searching={!!deferredQuery.trim()}
                   />

@@ -5,6 +5,7 @@ import {
   decode,
   taskSchema,
   workspaceSchema,
+  threadNativeAgents,
   type Subagent,
   type Task,
   type Workspace,
@@ -313,7 +314,24 @@ function ThreadRows({ args }: { args: ThreadStoryArgs }) {
                 canTemplate={false}
                 actions={actions}
                 rowWindow={null}
-                nestedThreads={children ?? []}
+                thread={{
+                  key: entry.id,
+                  runtimeId: source.runtimeId,
+                  threadId: entry.id,
+                  title: entry.title,
+                  computerName: source.name,
+                  projectName: localWorkspace.repositories.find(
+                    (repository) => repository.id === entry.repositoryId,
+                  )?.name,
+                  online: source.online,
+                  paused: false,
+                  phase: 'running',
+                  nativeAgents: threadNativeAgents({
+                    ...entry,
+                    subagents: entry.id === 'working' && args.showNested ? subagents : [],
+                  }),
+                  children: [...(children ?? [])],
+                }}
                 selectedThreadKey={undefined}
                 searching={false}
               />

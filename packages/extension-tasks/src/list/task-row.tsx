@@ -75,7 +75,7 @@ function TaskRowView({
   editable,
   disabled,
   selectedChildId,
-  nestedThreads,
+  thread,
   selectedThreadKey,
   searching,
 }: {
@@ -91,7 +91,7 @@ function TaskRowView({
   editable: boolean
   disabled: boolean
   selectedChildId?: string
-  nestedThreads?: readonly NestedThread[]
+  thread?: NestedThread
   selectedThreadKey?: string
   searching?: boolean
 }) {
@@ -108,18 +108,19 @@ function TaskRowView({
   const general = repository?.kind === 'scratch'
   const projectName =
     displayProject?.kind === 'scratch' ? 'General' : (displayProject?.name ?? 'No project')
-  const childRows = useMemo(
+  // The list retains this projection across transcript-only updates, including native agents.
+  const rootThread = useMemo(
     () =>
-      threadChildRows({
+      thread ?? {
         runtimeId: owner.runtimeId,
         threadId: task.id,
         title: task.title,
         computerName: owner.name,
         projectName,
         online: owner.online,
-        children: [...(nestedThreads ?? [])],
+        children: [],
         nativeAgents: threadNativeAgents(task, Infinity),
-      }),
+      },
     [
       owner.runtimeId,
       owner.name,
@@ -128,9 +129,10 @@ function TaskRowView({
       task.id,
       task.title,
       task.subagents,
-      nestedThreads,
+      thread,
     ],
   )
+  const childRows = useMemo(() => threadChildRows(rootThread), [rootThread])
   const summary = useMemo(
     () => threadTreeSummary(childRows, task.acknowledgedSubagentFailures),
     [childRows, task.acknowledgedSubagentFailures],
@@ -463,7 +465,7 @@ function TaskRowView({
           task={task}
           online={owner.online}
           runtimeId={owner.runtimeId}
-          includeSpawned={!nestedThreads}
+          includeSpawned={!thread}
         />
       )}
       {open && !!childCount && (
