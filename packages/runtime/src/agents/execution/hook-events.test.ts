@@ -228,3 +228,47 @@ it('tracks native children against their root session, without re-emitting progr
     { event: 'subagent-stop', data: { subagent: { id: 'child', status: 'completed' } } },
   ])
 })
+
+it('pairs server-side discovery hook results with their original query', () => {
+  const events = new HookEvents('claude')
+  events.accept('assistant', {
+    message: {
+      content: [
+        {
+          type: 'server_tool_use',
+          id: 'discovery',
+          name: 'ToolSearch',
+          input: { query: 'browser' },
+        },
+      ],
+    },
+  })
+  expect(
+    events.accept('assistant', {
+      message: {
+        content: [
+          {
+            type: 'tool_search_tool_result',
+            tool_use_id: 'discovery',
+            content: {
+              type: 'tool_search_tool_result_error',
+              error_code: 'unavailable',
+            },
+          },
+        ],
+      },
+    }),
+  ).toMatchObject([
+    {
+      event: 'tool-error',
+      data: {
+        tool: {
+          id: 'discovery',
+          name: 'ToolSearch',
+          input: { query: 'browser' },
+          status: 'failed',
+        },
+      },
+    },
+  ])
+})

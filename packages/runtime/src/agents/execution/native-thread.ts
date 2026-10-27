@@ -1,4 +1,10 @@
-import { decodeResult, mutableArray, type NativeThreadEntry } from '@dovo/protocol'
+import {
+  decodeResult,
+  mutableArray,
+  claudeToolStatus,
+  toolContentText,
+  type NativeThreadEntry,
+} from '@dovo/protocol'
 import { Schema } from 'effect'
 
 const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
@@ -94,7 +100,7 @@ export function claudeThreadEntries(
           ]
         if (block.type === 'thinking')
           return [{ id, role: 'reasoning', text: bounded(text(block.thinking)) }]
-        if (block.type === 'tool_use')
+        if (claudeToolStatus(block) === 'running')
           return [
             {
               id,
@@ -103,13 +109,8 @@ export function claudeThreadEntries(
               text: bounded(JSON.stringify(block.input ?? {})),
             },
           ]
-        if (block.type === 'tool_result') {
-          const value =
-            typeof block.content === 'string'
-              ? block.content
-              : items(block.content)
-                  .map((part) => text(part.text))
-                  .join('\n')
+        if (claudeToolStatus(block) !== undefined) {
+          const value = toolContentText(block.content)
           return [{ id, role: 'tool', label: 'Tool result', text: bounded(value) }]
         }
         return []

@@ -2,6 +2,7 @@ import { mutableArray, mutableStruct } from '../../shared/schema.js'
 import { decodeResult } from '../../shared/schema.js'
 import { Schema } from 'effect'
 import type { recentTools } from '../../automation/activity.js'
+import { claudeToolStatus, toolContentText as text } from '../claude-tools.js'
 const record = Schema.Record(Schema.String, Schema.mutableKey(Schema.Unknown))
 const object = (value: unknown) => decodeResult(record, value).data ?? {}
 const parse = (value: string): unknown => {
@@ -10,14 +11,6 @@ const parse = (value: string): unknown => {
   } catch {
     return undefined
   }
-}
-const text = (value: unknown): string => {
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) return value.map(text).filter(Boolean).join('\n')
-  const data = object(value)
-  if (typeof data.text === 'string') return data.text
-  if (data.content !== undefined) return text(data.content)
-  return ''
 }
 const argument = (value: unknown) => object(typeof value === 'string' ? parse(value) : value)
 export type ToolKind = 'computer' | 'command' | 'web' | 'search' | 'file' | 'tool' | 'reasoning'
@@ -190,7 +183,7 @@ function computePresentation(
   const state = object(part.state)
   const update = object(event.update)
   const blocks = decodeResult(mutableArray(record), object(event.message).content).data ?? []
-  const tool = blocks.find((block) => block.type === 'tool_use')
+  const tool = blocks.find((block) => claudeToolStatus(block) === 'running')
   const args = {
     ...argument(item.arguments),
     ...argument(item.args),
@@ -212,6 +205,8 @@ function computePresentation(
   const search =
     /^(?:search|grep|glob|find|list_files|list_dir|find_files)$/i.test(name) ||
     (typeof args.pattern === 'string' && !command && !path)
+  const toolSearch =
+    /^(?:ToolSearch|tool_search|tool_search_tool_regex|tool_search_tool_bm25)$/.test(name)
   const query =
     text(item.query) ||
     text(args.query) ||
@@ -227,7 +222,7 @@ function computePresentation(
       ? 'command'
       : item.type === 'webSearch' || /(?:web[_ ]?search|search_query|web_fetch)/i.test(name)
         ? 'web'
-        : search
+        : search || toolSearch
           ? 'search'
           : item.type === 'fileChange' ||
               /^(?:read|edit|write|apply_patch|read_file|edit_file|write_file)$/i.test(name)
@@ -266,7 +261,7 @@ function computePresentation(
   let diff: string | undefined
   let suppressOutput = false
   if (kind === 'command') detail = text(args.description) || undefined
-  else if (search) detail = query || undefined
+  else if (search || toolSearch) detail = query || undefined
   else if (kind === 'file' && path) {
     const numbered = visible.match(/^\s*\d+\|/gm)
     const firstLine = /^.*?^\s*(\d+)\|/ms.exec(visible)?.[1]
@@ -301,7 +296,7 @@ function computePresentation(
       text(update.content) ||
       text(update.rawOutput) ||
       blocks
-        .filter((block) => block.type === 'tool_result')
+        .filter((block) => ['completed', 'failed'].includes(claudeToolStatus(block) ?? ''))
         .map((block) => text(block.content))
         .join('\n') ||
       changes?.map((change) => change.path).join('\n') ||
@@ -313,17 +308,21 @@ function computePresentation(
       ? explicitTitle || 'Computer Use'
       : kind === 'command'
         ? command || name
-        : search
+        : toolSearch
           ? query
-            ? `Search ${truncate(query)}`
-            : 'Search'
-          : kind === 'file' && path
-            ? /edit|patch/i.test(name)
-              ? `Edit ${baseName(path)}`
-              : /write/i.test(name)
-                ? `Write ${baseName(path)}`
-                : `Read ${baseName(path)}`
-            : explicitTitle || command || query || path || name
+            ? `Find tools ${truncate(query)}`
+            : 'Find tools'
+          : search
+            ? query
+              ? `Search ${truncate(query)}`
+              : 'Search'
+            : kind === 'file' && path
+              ? /edit|patch/i.test(name)
+                ? `Edit ${baseName(path)}`
+                : /write/i.test(name)
+                  ? `Write ${baseName(path)}`
+                  : `Read ${baseName(path)}`
+              : explicitTitle || command || query || path || name
   const input =
     command ||
     query ||
@@ -351,6 +350,7 @@ function recomputeFromInput(
   const generic =
     result.title === 'Tool result' ||
     result.title === 'Tool update' ||
+    result.title === 'Find tools' ||
     result.kind === 'tool' ||
     result.title === 'Reasoning'
   return {

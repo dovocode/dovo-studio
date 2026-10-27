@@ -5,7 +5,7 @@ describe('task activity state', () => {
   it('finishes active tools according to the parent turn outcome', () => {
     expect(taskActivityState('in_progress', 'running')).toBe('running')
     expect(taskActivityState('running', 'cancelled')).toBe('stopped')
-    expect(taskActivityState('pending', 'failed')).toBe('failed')
+    expect(taskActivityState('pending', 'failed')).toBe('interrupted')
     expect(taskActivityState('started', 'completed')).toBe('interrupted')
   })
   it('preserves independently reported completion, failure and cancellation', () => {

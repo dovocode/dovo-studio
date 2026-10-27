@@ -567,7 +567,7 @@ try {
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[0]), 'settings')
   await page.waitForTimeout(100)
   await page.evaluate(() => {
-    window.rowTheme = { styles: {}, colors: { success: '#00ee88' } }
+    window.rowTheme = { styles: {}, colors: { success: '#00ee88', muted: '#777777' } }
     window.publish({
       'task-7': {
         linkedPullRequests: [7, 8].map((number) => ({
@@ -593,9 +593,14 @@ try {
     await pullBadge
       .getByText('2 PRs', { exact: true })
       .evaluate((element) => getComputedStyle(element).color),
+    'rgb(119, 119, 119)',
+  )
+  assert.equal(
     await pullBadge
       .locator('svg[aria-label="open pull request"]')
       .evaluate((element) => getComputedStyle(element).color),
+    'rgb(0, 238, 136)',
+    'The PR state icon keeps its semantic color',
   )
   await page.evaluate(() => {
     window.rowRenders = {}
@@ -937,6 +942,30 @@ try {
   )
   assert.equal(await page.getByTestId('Task running').getAttribute('aria-pressed'), 'true')
   assert.equal(await page.getByTestId('Task parent').getAttribute('aria-pressed'), 'false')
+  await page.evaluate(() =>
+    window.setPanes({
+      expanded: true,
+      detailWidth: 640,
+      selected: { runtimeId: window.runtime.activeId, taskId: 'task-0' },
+    }),
+  )
+  const selectedReadTitle = page
+    .getByTestId('Task task-0')
+    .getByText(
+      await page.evaluate(
+        () => window.snapshot.workspace.tasks.find((task) => task.id === 'task-0').title,
+      ),
+      { exact: true },
+    )
+  assert.equal(
+    await selectedReadTitle.evaluate((element) => {
+      const expected = document.createElement('span')
+      expected.style.color = window.rowTheme.colors.text
+      return getComputedStyle(element).color === expected.style.color
+    }),
+    true,
+    'Current read titles have full foreground emphasis',
+  )
   await page.getByRole('button', { name: 'New thread', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.routes.at(-1)), '/new')
   await page.evaluate(() =>

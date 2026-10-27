@@ -1,4 +1,4 @@
-import { mutableArray } from '@dovo/protocol'
+import { mutableArray, claudeToolStatus } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { Agent } from '@dovo/protocol'
@@ -64,14 +64,14 @@ export function toolEvent(provider: Agent['provider'], name: string, payload: un
     }
   if (provider === 'claude') {
     const blocks = decodeResult(mutableArray(record), object(data.message).content).data ?? []
-    const tools = blocks.filter((b) => b.type === 'tool_use' || b.type === 'tool_result')
+    const tools = blocks.filter((b) => claudeToolStatus(b) !== undefined)
     if (!tools.length) return
     return {
       toolId: tools.map((b) => string(b.id) || string(b.tool_use_id)).join(','),
       title: tools.map((b) => string(b.name) || 'Tool result').join(', '),
-      status: tools.some((b) => b.is_error === true)
+      status: tools.some((b) => claudeToolStatus(b) === 'failed')
         ? 'failed'
-        : tools[0].type === 'tool_use'
+        : claudeToolStatus(tools[0]) === 'running'
           ? 'running'
           : 'completed',
     }

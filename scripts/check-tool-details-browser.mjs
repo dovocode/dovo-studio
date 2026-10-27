@@ -1,6 +1,6 @@
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { chromium } from './browser/harness.mjs'
+import { bundleBrowser, chromium } from './browser/harness.mjs'
 const built = await build({
   stdin: {
     contents: `
@@ -19,7 +19,7 @@ const museTools=[
 ];
 updateAppPreferences({toolActivity:'expanded',showToolDetails:false});
 window.setDetails=enabled=>updateAppPreferences({showToolDetails:enabled});
-window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App(){const[failed,setFailed]=useState(false);const[source,setSource]=useState(tools);window.museCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);setSource(museTools)};window.failTool=()=>setFailed(true);window.terminalCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);const command='pnpm dev -- --host 0.0.0.0';const base={kind:'tool',scope:'task',time:'2026-10-02T12:00:00Z',summary:'Terminal command'};setSource(recentTools(compactActivityEvents([{...base,id:'terminal',payload:JSON.stringify({turnId:'turn',toolId:'terminal:1',status:'completed',terminalCommand:true,presentation:{kind:'command',title:command,input:command,output:'Started in terminal.'}})},{...base,id:'native',summary:'terminal_run',payload:JSON.stringify({turnId:'turn',toolId:'native',status:'completed',event:{item:{tool:'terminal_run',arguments:{command}}}})}])))};return <TaskActivity tools={failed?source.map(tool=>({...tool,status:'failed'})):source}/>};createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
+window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App(){const[failed,setFailed]=useState(false);const[source,setSource]=useState(tools);window.museCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);setSource(museTools)};window.discoveryCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:true});setFailed(false);setSource(recentTools([{id:'search-start',time:'2026-10-02T12:00:00Z',kind:'tool',scope:'task',summary:'ToolSearch',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'running',event:{message:{content:[{type:'server_tool_use',id:'search',name:'ToolSearch',input:{query:'browser profiles'}}]}}})},{id:'search-result',time:'2026-10-02T12:00:01Z',kind:'tool',scope:'task',summary:'Tool result',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'completed',event:{message:{content:[{type:'tool_search_tool_result',tool_use_id:'search',content:[{type:'tool_reference',tool_name:'mcp__dovo_task__studio_browsers'}]}]}}})}]))};window.interruptTool=()=>{updateAppPreferences({toolActivity:'hidden'});setFailed(false);setSource(tools.map(tool=>({...tool,status:'interrupted'})))};window.failTool=()=>setFailed(true);window.terminalCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);const command='pnpm dev -- --host 0.0.0.0';const base={kind:'tool',scope:'task',time:'2026-10-02T12:00:00Z',summary:'Terminal command'};setSource(recentTools(compactActivityEvents([{...base,id:'terminal',payload:JSON.stringify({turnId:'turn',toolId:'terminal:1',status:'completed',terminalCommand:true,presentation:{kind:'command',title:command,input:command,output:'Started in terminal.'}})},{...base,id:'native',summary:'terminal_run',payload:JSON.stringify({turnId:'turn',toolId:'native',status:'completed',event:{item:{tool:'terminal_run',arguments:{command}}}})}])))};return <TaskActivity tools={failed?source.map(tool=>({...tool,status:'failed'})):source}/>};createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -33,6 +33,82 @@ window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App()
   loader: { '.css': 'empty' },
   define: { 'process.env.NODE_ENV': '"production"' },
 })
+const root = fileURLToPath(new URL('../', import.meta.url))
+const mobile = root + 'apps/mobile/src/'
+const controls = `
+export const View=({children})=><div>{children}</div>;
+export const Text=({children})=><span>{children}</span>;
+export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button disabled={disabled} aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;
+export const ActivityIndicator=()=>null,Icon=()=>null;
+export const useTheme=()=>({colors:{muted:'#777',text:'#222'},styles:{muted:{},error:{}}});
+`
+const mobileBuilt = await bundleBrowser(
+  {
+    stdin: {
+      resolveDir: root + 'apps/mobile',
+      loader: 'tsx',
+      contents: `
+import {createRoot} from 'react-dom/client';import {ToolActivityRow} from './src/tasks/conversation/components/tool-activity-row';import {recentTools} from '@dovo/protocol';
+const root=createRoot(document.getElementById('app'));
+window.renderDiscovery=(failed=false)=>{
+ const content=failed?{type:'tool_search_tool_result_error',error_code:'unavailable'}:[{type:'tool_reference',tool_name:'mcp__dovo_task__studio_browsers'}];
+ const events=[{id:'start',time:'2026-10-02T12:00:00Z',kind:'tool',scope:'task',summary:'ToolSearch',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'running',event:{message:{content:[{type:'server_tool_use',id:'search',name:'ToolSearch',input:{query:'browser profiles'}}]}}})},{id:'end',time:'2026-10-02T12:00:01Z',kind:'tool',scope:'task',summary:'Tool result',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'completed',event:{message:{content:[{type:'tool_search_tool_result',tool_use_id:'search',content}]}}})}];
+ root.render(<ToolActivityRow event={recentTools(events)[0]}/>);
+};window.renderDiscovery();`,
+    },
+    conditions: ['development'],
+    bundle: true,
+    write: false,
+    format: 'iife',
+    jsx: 'automatic',
+    alias: {
+      react: root + 'packages/studio-ui/node_modules/react',
+      'react-dom': root + 'packages/studio-ui/node_modules/react-dom',
+    },
+  },
+  [
+    ...[
+      'react-native',
+      '../../../ui/content/text',
+      '../../../ui/controls/icon',
+      '../../../ui/theme',
+    ].map((path) => ({
+      path,
+      importer: mobile + 'tasks/conversation/components/',
+      contents: controls,
+    })),
+    {
+      path: '../../../runtime/preferences/app-preferences',
+      importer: mobile + 'tasks/conversation/components/',
+      contents: 'export const useMobilePreferences=()=>({showToolDetails:true});',
+    },
+    {
+      path: '../../../runtime/state/application-state',
+      importer: mobile + 'tasks/conversation/components/',
+      contents: "export {useState as useApplicationState} from 'react';",
+    },
+    {
+      path: './thread-markdown',
+      importer: mobile + 'tasks/conversation/components/',
+      contents: 'export const ThreadMarkdown=({text})=><div>{text}</div>;',
+    },
+    {
+      path: './tool-result-images',
+      importer: mobile + 'tasks/conversation/components/',
+      contents: 'export const ToolResultImages=()=>null;',
+    },
+    {
+      path: '../../../ui/content/mcp-app',
+      importer: mobile + 'tasks/conversation/components/',
+      contents: 'export const McpAppView=()=>null;',
+    },
+    {
+      path: '../../../ui/content/artifacts',
+      importer: mobile + 'tasks/conversation/components/',
+      contents: 'export const ArtifactCard=()=>null;',
+    },
+  ],
+)
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
@@ -63,6 +139,8 @@ try {
   await page.getByRole('region', { name: 'Task tool activity' }).waitFor({ state: 'hidden' })
   await page.evaluate(() => window.failTool())
   await page.getByText(/1 failed/).waitFor()
+  await page.evaluate(() => window.interruptTool())
+  await page.getByText(/1 interrupted/).waitFor()
   await page.evaluate(() => window.terminalCase())
   const terminalCard = page.locator('details.group\\/action')
   await terminalCard.getByText('pnpm dev -- --host 0.0.0.0', { exact: true }).first().waitFor()
@@ -92,9 +170,28 @@ try {
     throw new Error('Diff additions must carry the added marker rendered green in the app.')
   if ((await editRows.locator('[data-diff="removed"]').count()) !== 1)
     throw new Error('Diff removals must carry the removed marker rendered red in the app.')
+  await page.evaluate(() => window.discoveryCase())
+  const discovery = page.locator('details.group\\/action')
+  await discovery.getByText('Find tools browser profiles', { exact: true }).waitFor()
+  await discovery.locator(':scope > summary').click()
+  await discovery.getByText('mcp__dovo_task__studio_browsers', { exact: true }).waitFor()
   if (errors.length) throw new Error(errors.join('\n'))
+  const mobilePage = await browser.newPage()
+  const mobileErrors = []
+  mobilePage.setDefaultTimeout(5000)
+  mobilePage.on('pageerror', (error) => mobileErrors.push(error.message))
+  await mobilePage.setContent('<div id="app"></div>')
+  await mobilePage.addScriptTag({ content: mobileBuilt.outputFiles[0].text })
+  await mobilePage.getByRole('button', { name: 'Find tools browser profiles', exact: true }).click()
+  await mobilePage.getByText('mcp__dovo_task__studio_browsers', { exact: true }).waitFor()
+  await mobilePage.evaluate(() => window.renderDiscovery(true))
+  await mobilePage
+    .getByRole('button', { name: 'Find tools browser profiles · Failed', exact: true })
+    .waitFor()
+  await mobilePage.getByText('Tool search failed: unavailable', { exact: true }).waitFor()
+  if (mobileErrors.length) throw new Error(mobileErrors.join('\n'))
   console.log(
-    'Commands remain visible; tool output and raw details mount only when settings enable them and unmount immediately when disabled.',
+    'Tool details and discovery pass on desktop and mobile adapter, including typed errors and original queries.',
   )
 } finally {
   await browser.close()

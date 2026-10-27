@@ -1,6 +1,7 @@
 import {
   decodeResult,
   nativeAgentWorking,
+  claudeToolStatus,
   type Agent,
   type AgentHook,
   type Subagent,
@@ -79,7 +80,7 @@ export class HookEvents {
       const blocks = object(data.message).content
       for (const entry of Array.isArray(blocks) ? blocks : []) {
         const block = object(entry)
-        if (block.type === 'tool_use')
+        if (claudeToolStatus(block) === 'running')
           accept({
             id: text(block.id),
             name: text(block.name),
@@ -87,13 +88,13 @@ export class HookEvents {
             input: block.input,
             status: 'running',
           })
-        if (block.type === 'tool_result')
+        if (['completed', 'failed'].includes(claudeToolStatus(block) ?? ''))
           accept({
             id: text(block.tool_use_id),
             name: '',
             kind: 'tool',
             output: block.content,
-            status: block.is_error ? 'failed' : 'completed',
+            status: claudeToolStatus(block) ?? 'completed',
           })
       }
     } else {

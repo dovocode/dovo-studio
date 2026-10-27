@@ -42,7 +42,7 @@ import {
   resolveTaskAgent,
   type RuntimeTask,
 } from '@dovo/protocol'
-import { PullRequestIcon, usePullRequestColor } from '../../ui/content/pull-request-icon'
+import { PullRequestIcon } from '../../ui/content/pull-request-icon'
 import { DeviceLabel } from './device-label'
 import { TaskRowMenu } from './task-row-menu'
 import { TaskSwipeActions } from './task-swipe-actions'
@@ -122,7 +122,6 @@ function TaskListRowView({
   const pulls = taskPullLinks(task)
   const pullStatus =
     task.pullStatus ?? (pulls[0] ? taskPullStatusFor(task, pulls[0].url) : undefined)
-  const pullColor = usePullRequestColor(pullStatus?.state, pullStatus?.draft)
   const executionDevice = row.runtimeName
   const { modelName, catalog } = useCachedModelCatalog(agent, owner.profile)
   const providerName = agent
@@ -223,7 +222,7 @@ function TaskListRowView({
       numberOfLines={1}
       style={{
         flex: 1,
-        color: unread ? colors.text : colors.muted,
+        color: selected || current || unread ? colors.text : colors.muted,
         fontSize: dense ? 15 : 16,
         lineHeight: dense ? 18 : 20,
         fontWeight: unread ? '600' : '500',
@@ -433,7 +432,7 @@ function TaskListRowView({
                       draft={pullStatus?.draft}
                       size={12}
                     />
-                    <Text numberOfLines={1} style={{ color: pullColor, ...contextText }}>
+                    <Text numberOfLines={1} style={{ color: colors.muted, ...contextText }}>
                       {pulls.length > 1 ? `${pulls.length} PRs` : `#${pulls[0].number}`}
                     </Text>
                   </View>

@@ -950,14 +950,9 @@ a.studio-project-row:hover {
   display: none;
 }
 
-/* Secondary thread details follow the title’s read/unread emphasis, keeping their hues. */
+/* Titles carry selection and unread emphasis; metadata stays secondary. */
 .studio-thread-card-context {
   color: var(--muted-foreground);
-}
-
-[data-unread] .studio-thread-card-context {
-  color: var(--foreground);
-  opacity: 1;
 }
 
 /* Keep keyboard focus visible when the OS supplies its own high-contrast palette. */

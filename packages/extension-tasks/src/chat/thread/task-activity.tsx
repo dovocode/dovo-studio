@@ -233,14 +233,14 @@ export function TaskActivity({
   const current =
     running.filter((entry) => entry.presentation.kind !== 'reasoning').at(-1) ?? running.at(-1)
   if (!tools.length && !error && !turn) return null
-  // Replies only: the agent's text stays, its steps are hidden (errors still show).
+  // Replies only: keep failures, stops and unresolved work visible.
   if (
     toolActivity === 'hidden' &&
     !error &&
     !apps.length &&
     !artifacts.length &&
     !images.length &&
-    !entries.some((entry) => entry.state === 'failed' || entry.state === 'stopped')
+    !entries.some((entry) => ['failed', 'stopped', 'interrupted'].includes(entry.state))
   )
     return null
   const outcome = taskActivityOutcome(

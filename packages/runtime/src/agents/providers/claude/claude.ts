@@ -150,7 +150,7 @@ function claudeStream(
       },
       ...(run.tools !== 'none' && run.agent.permission === 'read-only'
         ? {
-            tools: ['Read', 'Glob', 'Grep', 'AskUserQuestion'],
+            tools: ['Read', 'Glob', 'Grep', 'ToolSearch', 'AskUserQuestion'],
           }
         : {}),
       canUseTool: async (name, input, options) => {
@@ -178,7 +178,7 @@ function claudeStream(
           return { behavior: 'allow', updatedInput: input }
         const disposition = toolPolicyDisposition(
           current,
-          ['Read', 'Glob', 'Grep'].includes(name) ? 'read' : 'other',
+          ['Read', 'Glob', 'Grep', 'ToolSearch'].includes(name) ? 'read' : 'other',
         )
         const allowed =
           disposition === 'allow' ||
@@ -222,7 +222,12 @@ function handleMessage(
     run.onTextBoundary?.()
   if (message.type === 'assistant')
     for (const block of message.message.content)
-      if (block.type === 'tool_use') run.onActivity(block.name)
+      if (
+        block.type === 'tool_use' ||
+        block.type === 'server_tool_use' ||
+        block.type === 'mcp_tool_use'
+      )
+        run.onActivity(block.name)
   if (intermediate) return
   if (
     message.type === 'result' &&

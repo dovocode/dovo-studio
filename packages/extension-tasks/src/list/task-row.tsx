@@ -293,7 +293,9 @@ function TaskRowView({
                   'block min-w-0 truncate text-sm font-medium leading-5',
                   compact ? 'flex-1' : 'w-full',
                   compact && !!childCount && 'pr-7',
-                  unread ? 'text-foreground' : 'text-foreground/65',
+                  highlighted || unread
+                    ? 'text-foreground'
+                    : 'text-foreground/75 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
                   editable &&
                     'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                 )}
@@ -320,10 +322,7 @@ function TaskRowView({
                   {general && <span className="min-w-0 flex-1" />}
                   {!!linkedPulls.length && (
                     <span
-                      className={cn(
-                        'inline-flex shrink-0 items-center gap-0.5',
-                        pullRequestIconTone(badgeStatus?.state, badgeStatus?.draft),
-                      )}
+                      className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground"
                       aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
                       title={linkedPulls
                         .map((pull) => `#${pull.number} · ${pull.title}`)

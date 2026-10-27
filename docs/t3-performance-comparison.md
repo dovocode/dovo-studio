@@ -1,4 +1,4 @@
-# T3 comparison: thread performance, PR navigation and themes
+# T3 comparison: performance, interface and tool discovery
 
 Reviewed T3 Code through `7bafc40c17ab` on 2026-10-25; theme source links remain pinned to
 `d0b9e9d3c72b`. T3 measurements are not Dovo measurements.
@@ -241,3 +241,49 @@ included in each sample. The script checks identical results and comment order, 
 implementations, and takes 11 samples. These are isolated CPU measurements, not total PR-opening or
 device speed. The 120-file browser stability check additionally verifies drafts, viewed marks, focus
 and selection.
+
+## Redesign and native tool discovery (2026-10-27)
+
+Five GPT-6.1 Terra reviewers compared the current sources, pinned to T3
+[`dc84b0962efa4f4e05ef392c08986a9cd7c994d1`](https://github.com/pingdotgg/t3code/tree/dc84b0962efa4f4e05ef392c08986a9cd7c994d1).
+The redesign was also inspected in its published screenshots. This is a source and interface
+comparison, not a performance measurement or an endorsement of the redesign PR's model scores.
+
+Applied in Studio:
+
+- Selected and unread thread titles lead the sidebar on desktop and mobile. Desktop read titles
+  brighten on hover or keyboard focus. Metadata stays secondary even for unread threads; PR numbers
+  are neutral while their state icons keep their semantic colors. Done and yellow Needs input
+  indicators remain visible, including compact rows.
+- Task/message search has visible scope buttons that preserve the query. Tab and Shift+Tab move
+  keyboard focus normally instead of switching search modes. Existing task and conversation commands
+  and shortcuts remain available.
+- Claude's native `ToolSearch` is available in read-only coding sessions and classified as a read
+  operation. Every discovered tool still passes its own permission and ownership checks; similarly
+  named MCP tools receive no special permission. Text-only utilities still disable tools.
+- Tool-search activity shows the query and discovered `tool_reference` names on desktop/mobile and
+  in native child transcripts. Standard, server-side and MCP call/result blocks retain their
+  identity through activity grouping, result errors and lifecycle hooks. Image payloads are not
+  converted to text. Detailed output continues to respect the existing display preference.
+- An unfinished tool on a failed turn is Interrupted, matching mobile, rather than incorrectly
+  claiming the tool itself failed. Explicit failures remain Failed; interrupted work remains visible
+  even when routine activity is hidden.
+
+T3's [redesign](https://github.com/pingdotgg/t3code/pull/24865),
+[tool activity](https://github.com/pingdotgg/t3code/pull/15506),
+[Pi discovery](https://github.com/pingdotgg/t3code/pull/17220) and
+[Claude tool-search settings](https://github.com/pingdotgg/t3code/pull/24654) informed this pass.
+Dovo already has cross-computer indexed conversation search and command-palette entries for both
+search modes; those were preserved rather than reimplemented.
+
+Tool discovery stays provider-native. The installed Claude SDK supports it already; its configured
+`ENABLE_TOOL_SEARCH` values and user/project/local settings remain intact. Providers without native
+discovery keep their existing MCP catalogs. No dynamic tools/list gateway, eager-loading metadata,
+Pi integration or forced search override was added. T3's schema-size/cache measurements do not
+establish savings for Dovo. MCP connection-test pagination and mixed-case header normalization are
+separate follow-ups identified during the review.
+
+Verification covers the shared presentation, read-only permission decisions, server-side lifecycle
+and transcript extraction, plus actual desktop controls and native-adapted mobile rows. The browser
+adapter does not verify native mobile rendering, and this pass does not establish live Claude API
+billing/cache savings or end-to-end tool discovery against a signed-in provider.

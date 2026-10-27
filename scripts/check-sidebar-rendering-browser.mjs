@@ -596,10 +596,11 @@ try {
       { ...base, id: 'settled-style', title: 'Compact settled appearance', archived: true },
     ])
   })
-  const readTitle = page.getByText('Read appearance', { exact: true })
-  const unreadTitle = page.getByText('Unread appearance', { exact: true })
+  const readTitle = page.getByRole('button').getByText('Read appearance', { exact: true })
+  const unreadTitle = page.getByRole('button').getByText('Unread appearance', { exact: true })
   await readTitle.waitFor()
   await unreadTitle.waitFor()
+  await page.mouse.move(1100, 650)
   assert.notEqual(
     await readTitle.evaluate((el) => getComputedStyle(el).color),
     await unreadTitle.evaluate((el) => getComputedStyle(el).color),
@@ -607,6 +608,28 @@ try {
   )
   assert.equal(await unreadTitle.locator('..').getAttribute('data-unread'), 'true')
   assert.equal(await readTitle.locator('..').getAttribute('data-unread'), null)
+  const metadataColor = await readTitle
+    .locator('..')
+    .locator('.studio-thread-card-context')
+    .first()
+    .evaluate((el) => getComputedStyle(el).color)
+  assert.equal(
+    await unreadTitle
+      .locator('..')
+      .locator('.studio-thread-card-context')
+      .first()
+      .evaluate((el) => getComputedStyle(el).color),
+    metadataColor,
+    'Unread metadata stays secondary',
+  )
+  await readTitle.click()
+  await page.mouse.move(800, 600)
+  assert.equal(await readTitle.locator('..').getAttribute('aria-current'), 'true')
+  assert.equal(
+    await readTitle.evaluate((el) => getComputedStyle(el).color),
+    await unreadTitle.evaluate((el) => getComputedStyle(el).color),
+    'Selected read titles have full emphasis',
+  )
   const settledDetails = page
     .locator('details')
     .filter({ has: page.locator('summary').filter({ hasText: 'Settled' }) })
@@ -622,6 +645,8 @@ try {
       .evaluate((el) => el.classList.contains('text-status-success')),
     true,
   )
+  if (process.env.DOVO_UI_SCREENSHOT)
+    await page.screenshot({ path: process.env.DOVO_UI_SCREENSHOT })
   const compactBox = await compactTitle.locator('..').boundingBox()
   assert.ok(
     compactBox && compactBox.height <= 38,

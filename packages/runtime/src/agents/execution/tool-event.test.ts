@@ -92,3 +92,53 @@ it.each(['imageGeneration', 'imageView'])(
     ).toMatchObject({ status: 'failed' })
   },
 )
+
+it('tracks server-side Claude discovery through success and typed failure', () => {
+  expect(
+    toolEvent('claude', 'assistant', {
+      message: { content: [{ type: 'server_tool_use', id: 'discovery', name: 'ToolSearch' }] },
+    }),
+  ).toEqual({ toolId: 'discovery', title: 'ToolSearch', status: 'running' })
+  for (const [content, status] of [
+    [[{ type: 'tool_reference', tool_name: 'browser' }], 'completed'],
+    [{ type: 'tool_search_tool_result_error', error_code: 'unavailable' }, 'failed'],
+  ]) {
+    expect(
+      toolEvent('claude', 'assistant', {
+        message: {
+          content: [{ type: 'tool_search_tool_result', tool_use_id: 'discovery', content }],
+        },
+      }),
+    ).toMatchObject({ toolId: 'discovery', status })
+  }
+})
+
+it.each([
+  'web_search',
+  'web_fetch',
+  'code_execution',
+  'bash_code_execution',
+  'text_editor_code_execution',
+  'advisor',
+])('settles other Claude server-side %s calls instead of leaving them active', (name) => {
+  expect(
+    toolEvent('claude', 'assistant', {
+      message: {
+        content: [{ type: name + '_tool_result', tool_use_id: 'server-call', content: [] }],
+      },
+    }),
+  ).toMatchObject({ toolId: 'server-call', status: 'completed' })
+  expect(
+    toolEvent('claude', 'assistant', {
+      message: {
+        content: [
+          {
+            type: name + '_tool_result',
+            tool_use_id: 'server-call',
+            content: { type: name + '_tool_result_error', error_code: 'unavailable' },
+          },
+        ],
+      },
+    }),
+  ).toMatchObject({ toolId: 'server-call', status: 'failed' })
+})

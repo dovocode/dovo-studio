@@ -5,6 +5,7 @@ import { toolPresentation } from '../conversation/presentation/tool-presentation
 import { mcpAppReferences } from '../conversation/mcp-apps.js'
 import { toolImages, toolImageReferences } from '../conversation/tool-images.js'
 import { artifactReferences } from '../conversation/artifacts.js'
+import { claudeToolStatus } from '../conversation/claude-tools.js'
 /** Low-level CLI and raw provider diagnostics expire independently of activity history. */
 export const DIAGNOSTIC_RETENTION_DAYS = 7
 export const activityEventSchema = mutableStruct({
@@ -75,10 +76,10 @@ function splitCalls(event: Event, payload?: unknown): Event[] {
   const data = object(envelope.event)
   const message = object(data.message)
   const blocks = decodeResult(mutableArray(record), message.content).data ?? []
-  const calls = blocks.filter((block) => block.type === 'tool_use' || block.type === 'tool_result')
+  const calls = blocks.filter((block) => claudeToolStatus(block) !== undefined)
   if (!calls.length) return [event]
   return calls.map((block) => {
-    const id = block.type === 'tool_use' ? block.id : block.tool_use_id
+    const id = claudeToolStatus(block) === 'running' ? block.id : block.tool_use_id
     if (typeof id !== 'string' || !id) return event
     return {
       ...event,
@@ -87,8 +88,7 @@ function splitCalls(event: Event, payload?: unknown): Event[] {
       payload: JSON.stringify({
         ...envelope,
         toolId: id,
-        status:
-          block.type === 'tool_use' ? 'running' : block.is_error === true ? 'failed' : 'completed',
+        status: claudeToolStatus(block),
         event: {
           ...data,
           message: {

@@ -19,11 +19,9 @@ export function taskActivityState(status: string, turn?: TaskTurn['status']): Ac
   if (['running', 'started', 'inprogress', 'pending', 'queued', 'executing'].includes(normalized))
     return turn === 'cancelled'
       ? 'stopped'
-      : turn === 'failed'
-        ? 'failed'
-        : turn === 'completed'
-          ? 'interrupted'
-          : 'running'
+      : turn === 'failed' || turn === 'completed'
+        ? 'interrupted'
+        : 'running'
   return 'recorded'
 }
 

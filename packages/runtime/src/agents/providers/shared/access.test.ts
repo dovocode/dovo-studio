@@ -274,3 +274,36 @@ it('keeps explicit never text-only Claude sessions tool-free', async () => {
   ).toMatchObject({ behavior: 'deny' })
   expect(input.approve).not.toHaveBeenCalled()
 })
+
+it('allows native Claude discovery in read-only runs without authorizing discovered tools', async () => {
+  const input = run('read-only')
+  await claudeAdapter.run(input)
+  const options = captured.options[0]
+  expect(options.tools).toContain('ToolSearch')
+  const check = (name: string) =>
+    options.canUseTool?.(
+      name,
+      {},
+      {
+        signal: input.signal,
+        toolUseID: 'search',
+        requestId: 'request',
+      },
+    )
+  expect(await check('ToolSearch')).toMatchObject({ behavior: 'allow' })
+  for (const name of ['mcp__files__write', 'mcp__files__ToolSearch', 'Bash', 'Write'])
+    expect(await check(name)).toMatchObject({ behavior: 'deny' })
+  expect(input.approve).not.toHaveBeenCalled()
+  expect(options.env?.ENABLE_TOOL_SEARCH).toBe(process.env.ENABLE_TOOL_SEARCH)
+})
+
+it.each(['false', 'auto:15'])(
+  'preserves explicitly configured Claude tool search %s',
+  async (value) => {
+    const input = run('read-only')
+    input.agent.env = { ENABLE_TOOL_SEARCH: value }
+    await claudeAdapter.run(input)
+    expect(captured.options[0].env?.ENABLE_TOOL_SEARCH).toBe(value)
+    expect(captured.options[0].settingSources).toEqual(['user', 'project', 'local'])
+  },
+)

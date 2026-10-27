@@ -89,6 +89,7 @@ export * from './runtime/previews/browser-frames.js'
 export * from './scm/forges/issue-edit.js'
 
 export * from './conversation/presentation/tool-presentation.js'
+export * from './conversation/claude-tools.js'
 
 export * from './runtime/previews/live-activities.js'
 

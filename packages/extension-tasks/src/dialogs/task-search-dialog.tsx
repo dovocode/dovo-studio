@@ -10,7 +10,7 @@ import { switcherResults } from '../list/task-search'
 export type TaskSearchMode = 'tasks' | 'messages'
 
 /** ⌘P jumps to any task on any computer; ⌘⇧F searches every conversation and opens the
- * message. Arrow keys move, Enter opens, Tab switches between the two. */
+ * message. Arrow keys move and Enter opens. Tab follows normal dialog navigation. */
 export function TaskSearchDialog({
   mode,
   entries,
@@ -89,8 +89,7 @@ export function TaskSearchDialog({
           {mode === 'messages' ? 'Search conversations' : 'Go to task'}
         </DialogTitle>
         <DialogDescription className="sr-only">
-          Type to search, use the arrow keys to choose, and Enter to open. Tab switches between
-          tasks and messages.
+          Type to search, use the arrow keys to choose, and Enter to open.
         </DialogDescription>
         <div className="flex min-h-8 items-center gap-2 pl-2 pr-10 max-sm:min-h-11 max-sm:pr-12">
           {mode === 'messages' ? (
@@ -118,16 +117,26 @@ export function TaskSearchDialog({
               } else if (event.key === 'Enter') {
                 event.preventDefault()
                 open(active)
-              } else if (event.key === 'Tab') {
-                event.preventDefault()
-                onModeChange(mode === 'messages' ? 'tasks' : 'messages')
               }
             }}
             className="h-9 border-0 shadow-none focus-visible:ring-0"
           />
-          <span className="shrink-0 text-[0.625rem] text-muted-foreground">
-            Tab: {mode === 'messages' ? 'tasks' : 'messages'}
-          </span>
+        </div>
+        <div role="group" aria-label="Search scope" className="flex gap-1 px-2">
+          {(['tasks', 'messages'] as const).map((scope) => (
+            <button
+              key={scope}
+              type="button"
+              aria-pressed={mode === scope}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring max-sm:min-h-11',
+                mode === scope && 'bg-accent text-foreground',
+              )}
+              onClick={() => onModeChange(scope)}
+            >
+              {scope === 'tasks' ? 'Tasks' : 'Messages'}
+            </button>
+          ))}
         </div>
         <ul
           ref={list}

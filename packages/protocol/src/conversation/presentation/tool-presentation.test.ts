@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { expect, it } from 'vite-plus/test'
-import { recentTools, activitySchema } from '../../automation/activity'
+import { recentTools, compactActivityEvents, activitySchema } from '../../automation/activity'
 import { activitySummary, toolPresentation } from './tool-presentation'
 type Event = Schema.Schema.Type<typeof activitySchema>['events'][number]
 
@@ -447,4 +447,75 @@ it('renders legacy compacted child search tools without recursing on the same pr
       'Glob',
     ),
   ).toEqual({ ...presentation, contextAt: 0 })
+})
+
+it.each(['tool_use', 'server_tool_use'])(
+  'presents Claude %s discovery and structured results with original query',
+  (type) => {
+    const start = event('discovery', 'search-tools', 'running', {
+      message: {
+        content: [
+          { type, id: 'search-tools', name: 'ToolSearch', input: { query: 'browser profiles' } },
+        ],
+      },
+    })
+    const result = event(
+      'discovered',
+      'search-tools',
+      'completed',
+      {
+        message: {
+          content: [
+            {
+              type: type === 'tool_use' ? 'tool_result' : 'tool_search_tool_result',
+              tool_use_id: 'search-tools',
+              content: [
+                { type: 'text', text: 'Available tools:' },
+                { type: 'tool_reference', tool_name: 'mcp__dovo_task__studio_browsers' },
+                { type: 'tool_reference', tool_name: 'mcp__dovo_task__browser' },
+                { type: 'image', data: 'never-display-image-data' },
+              ],
+            },
+          ],
+        },
+      },
+      'Tool result',
+      '2026-09-22T10:00:01Z',
+    )
+    const [compact] = recentTools(compactActivityEvents([start, result]))
+    expect(toolPresentation(compact.payload, compact.summary, compact.inputPayload)).toMatchObject({
+      title: 'Find tools browser profiles',
+      kind: 'search',
+      output: '',
+    })
+    const tools = recentTools([start, result])
+    expect(tools).toHaveLength(1)
+    expect(tools[0].status).toBe('completed')
+    expect(
+      toolPresentation(tools[0].payload, tools[0].summary, tools[0].inputPayload),
+    ).toMatchObject({
+      title: 'Find tools browser profiles',
+      kind: 'search',
+      input: 'browser profiles',
+      output: 'Available tools:\nmcp__dovo_task__studio_browsers\nmcp__dovo_task__browser',
+    })
+  },
+)
+it('keeps typed Claude discovery errors failed with a readable cause', () => {
+  const result = event('failure', 'search', 'completed', {
+    message: {
+      content: [
+        {
+          type: 'tool_search_tool_result',
+          tool_use_id: 'search',
+          content: { type: 'tool_search_tool_result_error', error_code: 'too_many_requests' },
+        },
+      ],
+    },
+  })
+  const [tool] = recentTools([result])
+  expect(tool.status).toBe('failed')
+  expect(toolPresentation(tool.payload, tool.summary).output).toBe(
+    'Tool search failed: too_many_requests',
+  )
 })
