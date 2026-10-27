@@ -54,6 +54,7 @@ export type GithubAccount = {
 // Shared between service instances; linked worktrees write the same config file. Entries
 // exist only while Studio owns or is waiting for a write. External Git keeps its own locks.
 const sharedConfigWrites = new Map<string, Promise<void>>()
+const draftFileWrites = new Map<string, Promise<void>>()
 export class GitService {
   retrieval?: RetrievalHook
   private sharedReaders = new Map<string, { until: number; value: Promise<string> }>()
@@ -1252,15 +1253,34 @@ export class GitService {
   async save(path: string, name: string, expected: string, contents: string) {
     const { path: root } = await this.inspect(path)
     const full = await safeFile(root, name)
-    let current = ''
-    try {
-      current = await readFile(full, 'utf8')
-    } catch (error) {
+    const key = await realpath(full).catch(async (error: unknown) => {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+      return join(await realpath(dirname(full)), basename(full))
+    })
+    const previous = draftFileWrites.get(key)
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    draftFileWrites.set(key, pending)
+    try {
+      await previous
+      // Compare after admission: another Studio client may have applied a draft while
+      // this operation waited. External editors continue to own their own writes.
+      const target = await safeFile(root, name)
+      let current = ''
+      try {
+        current = await readFile(target, 'utf8')
+      } catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+      }
+      if (current !== expected)
+        throw new HttpError(409, 'File changed on disk. Refresh before applying your draft.')
+      await writeFile(target, contents)
+    } finally {
+      release()
+      if (draftFileWrites.get(key) === pending) draftFileWrites.delete(key)
     }
-    if (current !== expected)
-      throw new HttpError(409, 'File changed on disk. Refresh before applying your draft.')
-    await writeFile(full, contents)
   }
   async stage(path: string, names: string[]) {
     const { path: root } = await this.inspect(path)

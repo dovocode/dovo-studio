@@ -101,10 +101,10 @@ const task={id:'thread',repositoryId:'repo',title:'Thread',files:[],messages:[],
 window.detail={pull,files:[{path:'src/new.ts',previousPath:'src/old.ts',status:'modified',patch:'@@ -1 +1 @@\\n-old\\n+new',additions:1,deletions:1}],checks:[],reviews:[],warnings:[],comments:[{id:'1',kind:'comment',author:'dominic',body:'Discussion target',date:'',url:pull.url+'#issuecomment-1'},{id:'2',kind:'inline',path:'src/old.ts',author:'dominic',body:'Inline target',date:'',url:pull.url+'#discussion_r2'}],capabilities:{provider:'github',actions:['comment','reply','inline-comment'],reviewDecisions:[],mergeMethods:[]}};
 const read=async(path,input)=>{if(path==='/api/tasks/waiting')return{dependencies:[{kind:'pipeline',repositoryId:'repo',target:'42',label:'Pipeline 42',project:'Studio',url:'https://github.com/o/r/actions/runs/42'},{kind:'pull',repositoryId:'repo',target:pull.url,label:'PR #7',project:'Studio',url:pull.url}],related:[]};if(path==='/api/scm/open-targets')return{targets:[]};return{ok:true}};
 const connection={address:'http://owner-b.local:8787',token:'paired-b'};
-window.runtime={overviews:[],activeId:'owner-b',profile:{id:'owner-b',name:'Owner B',connection},connection,connected:true,snapshot:{workspace:{repositories:[repo],tasks:[task,{id:'existing',repositoryId:'repo',workItem:{kind:'issue',url:'https://github.com/o/r/issues/1'},title:'Existing task'},{id:'created',repositoryId:'repo',title:'Created task'}]}},call:read,read,callEffect:(path,input)=>Effect.sync(()=>{window.writes.push({path,input});return {id:'created',status:'done'}}),refreshEffect:()=>Effect.void};
+window.runtime={overviews:[],activeId:'owner-b',profile:{id:'owner-b',name:'Owner B',connection},connection,connected:true,snapshot:{workspace:{repositories:[repo],tasks:[task,{id:'existing',repositoryId:'repo',workItem:{kind:'issue',url:'https://github.com/o/r/issues/1'},title:'Existing task'},{id:'created',repositoryId:'repo',title:'Created task'}]}},call:read,read,callEffect:(path,input)=>Effect.sync(()=>{window.writes.push({path,input});if(path==='/api/scm/pulls/action'&&input.action==='review'&&window.partialReview){window.partialReview=false;return{status:'updated',pendingReviewDecision:input.event,message:'Your review comment was posted, but Bitbucket did not confirm the review decision.'}}return {id:'created',status:'done'}}),refreshEffect:()=>Effect.void};
 window.navigation={focused:true,navigate:(view,id,owner)=>{window.events.push('task');window.routes.push({view,id,owner})}};
 function Create(){const action=usePullTaskCreation('repo',pull);return <button disabled={action.busy} onClick={()=>action.start('new-branch')}>Create PR task</button>}
-function App(){const[state,setState]=useState({page:'create',tab:undefined,fragment:''}),[tick,setTick]=useState(0);window.show=(page,tab,fragment='')=>setState({page,tab,fragment});window.update=patch=>{Object.assign(window.runtime,patch);setTick(x=>x+1)};const close=()=>{window.events.push('closed');setState({page:'empty'})};return state.page==='create'?<Sheet title="PR preview" onClose={close}><Create/></Sheet>:state.page==='work'?<Sheet title="Issue preview" onClose={close}><WorkTaskAction repositoryId="repo" source={{kind:'issue',item:{id:'1',url:'https://github.com/o/r/issues/1'}}} disabled={false}/></Sheet>:state.page==='picker'?<Sheet title="Jira preview" onClose={close}><WorkTaskAction jiraSourceId="jira" source={{kind:'issue',item:{id:'1',url:'https://jira.example/TEST-1',revision:'1'}}} disabled={false}/></Sheet>:state.page==='prsheet'?<Sheet title="Linked PR preview" onClose={close}><PullDetail repositoryId="repo" number={7} initialTab="checks" onBack={close}/></Sheet>:state.page==='waiting'?<Sheet title="Project watchers" onClose={close}><TaskWaitingPanel taskId="thread"/></Sheet>:state.page==='project'?<TaskProjectSheet task={task} scripts={[]} branchActions={[]} onClose={close} onChanges={()=>window.events.push('changes')} onPulls={url=>{window.events.push('linked');setState({page:'linked'})}}/>:state.page==='pr'?<PullDetail key={state.tab+state.fragment} repositoryId="repo" number={7} initialTab={state.tab} initialFragment={state.fragment} onBack={()=>setState({page:'empty'})}/>:state.page==='draft'?<PullActionSheet repositoryId="repo" detail={window.detail} target={{action:'comment'}} onClose={close} onDone={()=>window.events.push('posted')}/>:state.page==='linked'?<p>Linked PR destination</p>:<p>Closed</p>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[state,setState]=useState({page:'create',tab:undefined,fragment:''}),[tick,setTick]=useState(0);window.show=(page,tab,fragment='')=>setState({page,tab,fragment});window.update=patch=>{Object.assign(window.runtime,patch);setTick(x=>x+1)};const close=()=>{window.events.push('closed');setState({page:'empty'})};return state.page==='create'?<Sheet title="PR preview" onClose={close}><Create/></Sheet>:state.page==='work'?<Sheet title="Issue preview" onClose={close}><WorkTaskAction repositoryId="repo" source={{kind:'issue',item:{id:'1',url:'https://github.com/o/r/issues/1'}}} disabled={false}/></Sheet>:state.page==='picker'?<Sheet title="Jira preview" onClose={close}><WorkTaskAction jiraSourceId="jira" source={{kind:'issue',item:{id:'1',url:'https://jira.example/TEST-1',revision:'1'}}} disabled={false}/></Sheet>:state.page==='prsheet'?<Sheet title="Linked PR preview" onClose={close}><PullDetail repositoryId="repo" number={7} initialTab="checks" onBack={close}/></Sheet>:state.page==='waiting'?<Sheet title="Project watchers" onClose={close}><TaskWaitingPanel taskId="thread"/></Sheet>:state.page==='project'?<TaskProjectSheet task={task} scripts={[]} branchActions={[]} onClose={close} onChanges={()=>window.events.push('changes')} onPulls={url=>{window.events.push('linked');setState({page:'linked'})}}/>:state.page==='pr'?<PullDetail key={state.tab+state.fragment} repositoryId="repo" number={7} initialTab={state.tab} initialFragment={state.fragment} onBack={()=>setState({page:'empty'})}/>:['draft','review','merge'].includes(state.page)?<PullActionSheet key={state.page} repositoryId="repo" detail={window.detail} target={{action:state.page==='draft'?'comment':state.page}} onClose={close} onDone={()=>window.events.push('posted')}/>:state.page==='linked'?<p>Linked PR destination</p>:<p>Closed</p>};createRoot(document.getElementById('app')).render(<App/>);`,
   },
   bundle: true,
   write: false,
@@ -365,6 +365,52 @@ try {
   await page.getByText('Closed', { exact: true }).waitFor()
   await page.evaluate(() => window.show('draft'))
   assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), '')
+  await page.evaluate(() => window.show('empty'))
+  await page.getByText('Closed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.update({ connected: true })
+    window.detail.pull.provider = 'bitbucket'
+    window.detail.capabilities = {
+      actions: ['review', 'merge'],
+      reviewDecisions: ['comment', 'approve', 'request-changes'],
+      mergeMethods: ['merge'],
+    }
+  })
+  for (const event of ['approve', 'request-changes']) {
+    await page.evaluate(() => window.show('review'))
+    await page.getByRole('combobox', { name: 'Review decision' }).selectOption(event)
+    await page.getByRole('textbox', { name: 'Message' }).fill('Post native feedback once')
+    const before = await page.evaluate(() => {
+      window.partialReview = true
+      return window.writes.length
+    })
+    await page.getByRole('button', { name: 'Submit review', exact: true }).click()
+    await page
+      .getByRole('alert')
+      .getByText(/Your review comment was posted/)
+      .waitFor()
+    assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), '')
+    assert.equal(await page.getByRole('combobox', { name: 'Review decision' }).inputValue(), event)
+    assert.equal(await page.getByRole('dialog').getAttribute('data-presented'), 'true')
+    await page.getByRole('button', { name: 'Submit review', exact: true }).click()
+    await dismiss()
+    const writes = await page.evaluate((offset) => window.writes.slice(offset), before)
+    assert.deepEqual(
+      writes.map((write) => [write.input.body, write.input.event]),
+      [
+        ['Post native feedback once', event],
+        ['', event],
+      ],
+    )
+    assert.ok(writes.every((write) => write.input.headSha === 'a'.repeat(40)))
+  }
+  await page.evaluate(() => window.show('merge'))
+  await page.getByText(/Bitbucket merges the current source branch/).waitFor()
+  await page
+    .getByText(
+      /Studio checks viewed revision aaaaaaaa before submitting; later pushes may also be merged/,
+    )
+    .waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Native audit: owner-qualified task/linked-task navigation, nested dismissal completion, embedded PR pipeline navigation, watcher pipeline routes/offline cache, Linked PR transitions, PR tabs/comment anchors, full drafts/offline retention and account/pairing isolation passed (Chromium with native presentation stubs).',

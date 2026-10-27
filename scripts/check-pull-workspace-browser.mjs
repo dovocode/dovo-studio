@@ -35,6 +35,10 @@ window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connec
 window.detail={pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
 window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',runtimes:[],workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};const originalRequest = window.store.request; const marks = new Map();
 window.store.request = async (path, input, ...rest) => {
+  if (path === '/api/scm/pulls/action' && input.action === 'review' && window.partialReview) {
+    window.writes.push({path,input});window.partialReview=false;
+    return {status:'updated',pendingReviewDecision:input.event,message:'Your review comment was posted, but Bitbucket did not confirm the review decision.'};
+  }
   if (!path.startsWith('/api/review/')) return originalRequest(path, input, ...rest);
   const files = window.detail.files.map(file => {
     const key = window.detail.pull.url + ':' + file.path, fingerprint = pullFileFingerprint(file, window.detail.pull);
@@ -511,6 +515,64 @@ try {
   assert.doesNotMatch(await row('Dependent change').innerText(), /Base PR|undefined|#7 → #8/)
   await noOverflow()
   await page.screenshot({ path: '/tmp/dovo-pull-native-stack-desktop.png' })
+  await page.evaluate(() => {
+    window.detail.pull.provider = 'bitbucket'
+    window.detail.capabilities = {
+      actions: ['review', 'merge'],
+      reviewDecisions: ['comment', 'approve', 'request-changes'],
+      mergeMethods: ['merge'],
+    }
+    window.showDestination('overview', '')
+  })
+  for (const event of ['approve', 'request-changes']) {
+    await page.getByRole('button', { name: 'Review', exact: true }).click()
+    const review = page.getByRole('dialog')
+    await review.locator(`input[value="${event}"]`).check()
+    await review.getByRole('textbox', { name: 'PR action body' }).fill('Post this feedback once')
+    const before = await page.evaluate(() => {
+      window.partialReview = true
+      return window.writes.length
+    })
+    await review.getByRole('button', { name: 'Submit review', exact: true }).click()
+    await review
+      .getByRole('alert')
+      .getByText(/Your review comment was posted/)
+      .waitFor()
+    assert.equal(await review.getByRole('textbox', { name: 'PR action body' }).inputValue(), '')
+    assert.equal(await review.locator(`input[value="${event}"]`).isChecked(), true)
+    assert.equal(
+      await review.getByRole('button', { name: 'Submit review', exact: true }).isEnabled(),
+      true,
+    )
+    await review.getByRole('button', { name: 'Submit review', exact: true }).click()
+    await review.waitFor({ state: 'detached' })
+    const writes = await page.evaluate((offset) => window.writes.slice(offset), before)
+    assert.deepEqual(
+      writes.map((write) => [write.input.body, write.input.event]),
+      [
+        ['Post this feedback once', event],
+        ['', event],
+      ],
+    )
+    assert.ok(writes.every((write) => write.input.headSha === 'a'.repeat(40)))
+  }
+  await page.getByRole('button', { name: 'Merge', exact: true }).click()
+  const bitbucketMerge = page.getByRole('dialog')
+  await bitbucketMerge
+    .getByRole('checkbox', { name: 'Confirm merge of current source branch' })
+    .waitFor()
+  await bitbucketMerge
+    .getByText(
+      /Studio checks viewed revision aaaaaaaa before submitting; later pushes may also be merged/,
+    )
+    .waitFor()
+  assert.equal(
+    await bitbucketMerge
+      .getByRole('checkbox', { name: 'Confirm merge of reviewed commit' })
+      .count(),
+    0,
+  )
+  await bitbucketMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
   assert.deepEqual(errors, [])
   console.log(
     'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts and embedded previews passed.',

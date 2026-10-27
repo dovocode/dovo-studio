@@ -157,6 +157,16 @@ export function PullActionSheet({
             },
             pullActionResultSchema,
           )
+          if (target.action === 'review' && result.pendingReviewDecision) {
+            setBody('')
+            setEvent(result.pendingReviewDecision)
+            setError(
+              result.message ??
+                'Your comment was posted. The review decision still needs confirmation.',
+            )
+            onDone()
+            return
+          }
           clear()
           sheet.current?.dismiss(onDone)
           if (result.status === 'queued')
@@ -287,8 +297,18 @@ export function PullActionSheet({
             Merge {detail.pull.head} into {detail.pull.base}?
           </Text>
           <Text style={styles.muted}>
-            The server will enforce branch policies. This submits the revision you reviewed:{' '}
-            {headSha.slice(0, 8)}.
+            {detail.pull.provider === 'bitbucket' ? (
+              <>
+                Bitbucket merges the current source branch. Studio checks viewed revision{' '}
+                {headSha.slice(0, 8)} before submitting; later pushes may also be merged. Branch
+                policies still apply.
+              </>
+            ) : (
+              <>
+                The server will enforce branch policies. This submits the revision you reviewed:{' '}
+                {headSha.slice(0, 8)}.
+              </>
+            )}
           </Text>
           <Choice
             label="Merge method"

@@ -326,7 +326,11 @@ function PullActionDialog({
     }
   }
   const needsBody =
-    kind === 'comment' || kind === 'reply' || (kind === 'review' && event !== 'approve')
+    kind === 'comment' ||
+    kind === 'reply' ||
+    (kind === 'review' &&
+      event !== 'approve' &&
+      !(detail.pull.provider === 'bitbucket' && event === 'request-changes'))
   const valid =
     (!needsBody || !!body.trim()) &&
     (kind !== 'edit' || !!title.trim()) &&
@@ -348,6 +352,16 @@ function PullActionDialog({
         },
         pullActionResultSchema,
       )
+      if (kind === 'review' && result.pendingReviewDecision) {
+        setBody('')
+        setEvent(result.pendingReviewDecision)
+        setError(
+          result.message ??
+            'Your comment was posted. The review decision still needs confirmation.',
+        )
+        onCompleted(result.message ?? 'Review comment posted; decision not confirmed.')
+        return
+      }
       onCompleted(
         result.message ||
           (result.status === 'merged'
@@ -527,11 +541,25 @@ function PullActionDialog({
                   checked={confirmed}
                   disabled={busy}
                   onCheckedChange={(value) => setConfirmed(value === true)}
-                  aria-label="Confirm merge of reviewed commit"
+                  aria-label={
+                    detail.pull.provider === 'bitbucket'
+                      ? 'Confirm merge of current source branch'
+                      : 'Confirm merge of reviewed commit'
+                  }
                 />
                 <span>
-                  Merge the reviewed commit {scope.headSha.slice(0, 8)}. Repository rules still
-                  apply.
+                  {detail.pull.provider === 'bitbucket' ? (
+                    <>
+                      Merge the current source branch. Studio checks viewed revision{' '}
+                      {scope.headSha.slice(0, 8)} before submitting; later pushes may also be
+                      merged. Repository rules still apply.
+                    </>
+                  ) : (
+                    <>
+                      Merge the reviewed commit {scope.headSha.slice(0, 8)}. Repository rules still
+                      apply.
+                    </>
+                  )}
                 </span>
               </label>
             </>
@@ -543,7 +571,7 @@ function PullActionDialog({
                   ? 'Description'
                   : kind === 'merge'
                     ? 'Commit message (optional)'
-                    : kind === 'review' && event === 'approve'
+                    : kind === 'review' && !needsBody
                       ? 'Review (optional)'
                       : 'Comment'
               }

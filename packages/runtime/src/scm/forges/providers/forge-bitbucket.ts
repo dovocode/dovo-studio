@@ -688,13 +688,24 @@ export class BitbucketForge implements ForgeAdapter {
             },
           },
         })
-      if (input.event !== 'comment')
-        await this.http.json(
-          `${path}/${input.event === 'approve' ? 'approve' : 'request-changes'}`,
-          {
-            method: 'POST',
-          },
-        )
+      if (input.event !== 'comment') {
+        try {
+          await this.http.json(
+            `${path}/${input.event === 'approve' ? 'approve' : 'request-changes'}`,
+            {
+              method: 'POST',
+            },
+          )
+        } catch (cause) {
+          if (!input.body) throw cause
+          return {
+            ...this.result(value),
+            pendingReviewDecision: input.event,
+            message:
+              'Your review comment was posted, but Bitbucket did not confirm the review decision. Check the PR before retrying the decision.',
+          }
+        }
+      }
     } else if (input.action === 'resolve') {
       const id = decode(
         CoercedNumber.pipe(
@@ -747,6 +758,8 @@ export class BitbucketForge implements ForgeAdapter {
         method: 'POST',
       })
     } else if (input.action === 'merge') {
+      // Bitbucket documents no expected-head merge precondition. The earlier current()
+      // check is preflight only; this endpoint merges the source branch at execution time.
       const result = await this.http.jsonResponse(`${path}/merge`, {
         method: 'POST',
         body: {

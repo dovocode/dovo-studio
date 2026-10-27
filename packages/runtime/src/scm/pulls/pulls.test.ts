@@ -84,7 +84,7 @@ it('loads background PR feedback without files, thread metadata, repository sett
   ])
   expect(result.files).toEqual([])
   expect(result.warnings).toEqual([])
-  expect(run.mock.calls.filter(([, args]) => args[0] !== 'repo')).toHaveLength(6)
+  expect(run.mock.calls.filter(([, args]) => args[0] !== 'repo')).toHaveLength(7)
   expect(
     run.mock.calls.filter(([, args]) => args[0] !== 'repo').every(([, , background]) => background),
   ).toBe(true)
@@ -327,3 +327,84 @@ it('rejects patches if a push occurs during file pagination and recovers on a fr
   expect(detail.pull.headSha).toBe(head)
   expect(detail.warnings).toEqual([])
 })
+
+it.each(['checks', 'detail', 'feedback', 'monitor'] as const)(
+  'rejects mixed-revision checks during %s reads and recovers on refresh',
+  async (mode) => {
+    const git = new GitService()
+    let head = pull.head.sha
+    const updatedHead = 'c'.repeat(40)
+    const checkHeads: string[] = []
+    vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
+      if (args[0] === 'repo')
+        return JSON.stringify({
+          nameWithOwner: 'team/project',
+          url: 'https://git.example.com/team/project',
+        })
+      if (args[0] === 'pr') {
+        head = updatedHead
+        return JSON.stringify({
+          statusCheckRollup: [{ name: 'new-head-only', conclusion: 'SUCCESS' }],
+        })
+      }
+      const endpoint = args[3]
+      if (endpoint === 'repos/team/project/pulls/7')
+        return JSON.stringify({ ...pull, head: { ...pull.head, sha: head }, changed_files: 0 })
+      if (endpoint.includes('/check-runs?')) {
+        checkHeads.push(endpoint)
+        return JSON.stringify([{ check_runs: [] }])
+      }
+      if (endpoint.includes('/reviews?') || endpoint.includes('/comments?')) return '[[]]'
+      if (endpoint.includes('/files?')) return '[[]]'
+      throw new Error(`Unexpected request: ${args.join(' ')}`)
+    })
+    const service = new PullRequests(git)
+    const read = () =>
+      mode === 'checks'
+        ? service.section('/project', 7, 'checks')
+        : mode === 'feedback'
+          ? service.feedback('/project', 7)
+          : mode === 'monitor'
+            ? service.status('/project', 7)
+            : service.detail('/project', 7)
+    await expect(read()).rejects.toMatchObject({ status: 409 })
+    const result = await read()
+    expect(result.pull.headSha).toBe(updatedHead)
+    expect(result.checks).toContainEqual({ name: 'new-head-only', status: 'SUCCESS' })
+    expect(checkHeads).toEqual(
+      mode === 'monitor'
+        ? []
+        : [
+            `repos/team/project/commits/${pull.head.sha}/check-runs?per_page=100`,
+            `repos/team/project/commits/${updatedHead}/check-runs?per_page=100`,
+          ],
+    )
+  },
+)
+
+it.each([false, true])(
+  'fails closed when the final checks revision cannot be verified (monitor %s)',
+  async (monitor) => {
+    const git = new GitService()
+    let pullReads = 0
+    vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
+      if (args[0] === 'repo')
+        return JSON.stringify({
+          nameWithOwner: 'team/project',
+          url: 'https://git.example.com/team/project',
+        })
+      if (args[0] === 'pr')
+        return JSON.stringify({ statusCheckRollup: [{ name: 'tests', conclusion: 'SUCCESS' }] })
+      if (args[3] === 'repos/team/project/pulls/7') {
+        if (++pullReads > 1) throw new Error('Revision verification unavailable')
+        return JSON.stringify(pull)
+      }
+      if (args[3].includes('/check-runs?')) return JSON.stringify([{ check_runs: [] }])
+      throw new Error(`Unexpected request: ${args.join(' ')}`)
+    })
+    const service = new PullRequests(git)
+    await expect(
+      monitor ? service.status('/project', 7) : service.section('/project', 7, 'checks'),
+    ).rejects.toThrow('Revision verification unavailable')
+  },
+)

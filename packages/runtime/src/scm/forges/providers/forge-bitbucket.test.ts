@@ -560,6 +560,49 @@ it('reports a 202 merge as queued, never as merged', async () => {
     number: 7,
   })
 })
+it('preserves a posted review body when the separate Bitbucket decision fails, then retries only the decision', async () => {
+  for (const event of ['approve', 'request-changes'] as const) {
+    let failDecision = true
+    const { forge, calls } = fixture(({ method, url }) => {
+      if (method === 'POST' && url.pathname.endsWith(`/${event}`) && failDecision)
+        return { status: 403, data: { error: { message: 'private upstream response' } } }
+    })
+    const partial = await forge.act({
+      action: 'review',
+      event,
+      body: 'Keep this feedback',
+      number: 7,
+      headSha: sha,
+    })
+    expect(partial).toMatchObject({ status: 'updated', pendingReviewDecision: event })
+    expect(partial.message).toContain('comment was posted')
+    expect(partial.message).not.toContain('private upstream response')
+    failDecision = false
+    const retry = await forge.act({ action: 'review', event, body: '', number: 7, headSha: sha })
+    expect(retry).toMatchObject({ status: 'submitted' })
+    expect(
+      calls.filter((call) => call.method === 'POST' && call.url.pathname.endsWith('/comments')),
+    ).toHaveLength(1)
+    expect(
+      calls.filter((call) => call.method === 'POST' && call.url.pathname.endsWith(`/${event}`)),
+    ).toHaveLength(2)
+  }
+})
+it('keeps review failures as errors when no Bitbucket comment was posted', async () => {
+  const { forge, calls } = fixture(({ method, url }) => {
+    if (method === 'POST' && url.pathname.endsWith('/comments'))
+      return { status: 403, data: { error: { message: 'private upstream response' } } }
+    if (method === 'POST' && url.pathname.endsWith('/request-changes'))
+      return { status: 403, data: { error: { message: 'private upstream response' } } }
+  })
+  await expect(
+    forge.act({ action: 'review', event: 'approve', body: 'Feedback', number: 7, headSha: sha }),
+  ).rejects.toThrow('permission')
+  expect(calls.some((call) => call.url.pathname.endsWith('/approve'))).toBe(false)
+  await expect(
+    forge.act({ action: 'review', event: 'request-changes', body: '', number: 7, headSha: sha }),
+  ).rejects.toThrow('permission')
+})
 it('removes only the selected Bitbucket reviewers and preserves everyone omitted', async () => {
   const { forge, calls } = fixture(({ url, method }) =>
     method === 'GET' && url.pathname.endsWith('/pullrequests/7')

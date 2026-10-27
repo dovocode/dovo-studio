@@ -400,5 +400,6 @@ export const pullActionResultSchema = mutableStruct({
   ),
   status: Schema.Literals(['created', 'updated', 'submitted', 'merged', 'queued']),
   message: Schema.optional(Schema.String),
+  pendingReviewDecision: Schema.optional(Schema.Literals(['approve', 'request-changes'])),
 })
 export type PullActionResult = Schema.Schema.Type<typeof pullActionResultSchema>

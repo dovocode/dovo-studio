@@ -369,6 +369,14 @@ export class PullRequests {
         ...(paginate ? ['--paginate', '--slurp'] : []),
       ])
     const pull = decode(restDetail, await api(`pulls/${number}`))
+    const verifyRevision = async (content: 'files' | 'checks', includeBase = false) => {
+      const current = decode(restDetail, await api(`pulls/${number}`))
+      if (current.head.sha !== pull.head.sha || (includeBase && current.base.sha !== pull.base.sha))
+        throw new HttpError(
+          409,
+          `The PR changed while ${content} were loading. Refresh to load its current ${content === 'files' ? 'diff' : 'checks'}.`,
+        )
+    }
     if (monitor) {
       const checks =
         decode(
@@ -383,6 +391,7 @@ export class PullRequests {
             'statusCheckRollup',
           ]),
         ).statusCheckRollup ?? []
+      await verifyRevision('checks')
       return decode(pullDetailSchema, {
         pull: {
           ...summary(pull),
@@ -482,16 +491,13 @@ export class PullRequests {
       comments: PullComment[] = []
     const [conversation, reviews, inline, files, checks, threads, checkDetails, repository] =
       results
-    // GitHub's paginated files endpoint follows the live PR. Do not label patches with an
-    // earlier revision if a push or base update happened while those pages were loading.
-    if (section === 'changes' && files.status === 'fulfilled') {
-      const current = decode(restDetail, await api(`pulls/${number}`))
-      if (current.head.sha !== pull.head.sha || current.base.sha !== pull.base.sha)
-        throw new HttpError(
-          409,
-          'The PR changed while files were loading. Refresh to load its current diff.',
-        )
-    }
+    // The rollup and paginated files follow the live PR; rich checks are head-pinned.
+    // Reject a changed revision instead of combining results from different commits.
+    if (checksRequested || (changes && files.status === 'fulfilled'))
+      await verifyRevision(
+        checksRequested ? 'checks' : 'files',
+        changes && files.status === 'fulfilled',
+      )
     for (const [i, result] of results.entries())
       if (result.status === 'rejected')
         warnings.push(

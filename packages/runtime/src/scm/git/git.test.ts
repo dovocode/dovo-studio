@@ -3,6 +3,37 @@ import { readFile, writeFile, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
 import { GitService } from './git'
+it('serializes concurrent draft saves through canonical paths across service instances', async () => {
+  const f = await fixture()
+  try {
+    await symlink('hello.txt', join(f.directory, 'alias.txt'))
+    const results = await Promise.allSettled(
+      Array.from({ length: 24 }, (_, index) =>
+        new GitService().save(
+          f.directory,
+          index % 2 ? 'alias.txt' : 'hello.txt',
+          'original\n',
+          `draft ${index}\n`,
+        ),
+      ),
+    )
+    const winners = results.flatMap((result, index) =>
+      result.status === 'fulfilled' ? [index] : [],
+    )
+    expect(winners).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toEqual(
+      Array.from({ length: 23 }, () => ({
+        status: 'rejected',
+        reason: expect.objectContaining({ status: 409 }),
+      })),
+    )
+    expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe(`draft ${winners[0]}\n`)
+    await new GitService().save(f.directory, 'hello.txt', `draft ${winners[0]}\n`, 'next\n')
+    expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('next\n')
+  } finally {
+    await f.cleanup()
+  }
+})
 it('reads real diffs and applies edits without overwriting changed disk contents', async () => {
   const f = await fixture(),
     git = new GitService()
