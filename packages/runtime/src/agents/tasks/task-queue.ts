@@ -419,6 +419,37 @@ export class TaskQueue {
     this.store.updateTask(id, (task) => ({ ...task, queue, checkoutLocked: true }))
     this.activity?.add('queue', id, 'Queue reordered', { messageId, beforeMessageId })
   }
+  restore(
+    id: string,
+    input: {
+      requestId: string
+      messageId: string
+      expectedText: string
+      expectedTurnSettings: TurnSettings | null
+      expectedDraftTurnSettings: TurnSettings | null
+      expectedAttachmentIds: string[]
+    },
+  ) {
+    const receipt = createHash('sha256').update(JSON.stringify(input)).digest('hex')
+    return this.store.restoreQueue(id, input.requestId, receipt, () => {
+      const task = this.store.taskSummary(id)
+      if (!sameTurnSettings(task.draftTurnSettings, input.expectedDraftTurnSettings))
+        throw new HttpError(
+          409,
+          'The draft model settings changed. Check the composer before restoring',
+        )
+      const message = task.queue?.find((item) => item.id === input.messageId)
+      if (!message) throw new HttpError(409, 'This message already started or was removed')
+      if (
+        message.text !== input.expectedText ||
+        !sameTurnSettings(message.turnSettings, input.expectedTurnSettings) ||
+        JSON.stringify(message.attachments?.map((file) => file.id) ?? []) !==
+          JSON.stringify(input.expectedAttachmentIds)
+      )
+        throw new HttpError(409, 'The queued message changed. Refresh it before restoring')
+      this.change(id, 'restore', input.messageId)
+    })
+  }
   change(id: string, action: 'remove' | 'restore' | 'up' | 'down' | 'pause', messageId?: string) {
     const task = this.store.taskSummary(id)
     if (action === 'pause') {

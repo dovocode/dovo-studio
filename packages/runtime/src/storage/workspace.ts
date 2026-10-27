@@ -1038,6 +1038,7 @@ export class WorkspaceStore {
         this.providerActions.remove(id)
         this.db.prepare('DELETE FROM task_submissions WHERE task_id = ?').run(id)
         this.db.prepare('DELETE FROM question_responses WHERE task_id = ?').run(id)
+        this.db.prepare('DELETE FROM queue_restore_receipts WHERE task_id = ?').run(id)
       }
       for (const collection of ['tasks', 'agents', 'repositories', 'automations'] as const) {
         const retained = new Set(next[collection].map((item) => item.id))
@@ -1133,6 +1134,26 @@ export class WorkspaceStore {
       )
       .get(id, messageId)
     return row ? decode(rowSchema, row).value : undefined
+  }
+  /** The queue change and its receipt commit together, including live-snapshot rollback. */
+  restoreQueue(id: string, requestId: string, fingerprint: string, apply: () => void) {
+    return this.transaction(() => {
+      const row = this.db
+        .prepare(
+          'SELECT fingerprint AS value FROM queue_restore_receipts WHERE task_id = ? AND id = ?',
+        )
+        .get(id, requestId)
+      if (row) {
+        if (decode(rowSchema, row).value !== fingerprint)
+          throw new HttpError(409, 'This restore ID already belongs to another request')
+        return false
+      }
+      apply()
+      this.db
+        .prepare('INSERT INTO queue_restore_receipts VALUES (?, ?, ?)')
+        .run(id, requestId, fingerprint)
+      return true
+    })
   }
   /** Updates one task's metadata. Its history is neither read nor written. */
   updateTask(

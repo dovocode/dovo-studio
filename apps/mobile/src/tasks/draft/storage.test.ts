@@ -394,3 +394,91 @@ it('keeps restored queue text in memory and flushes it after a failed disk write
   await runClientEffect(drafts.flushEffect())
   expect(await createDraftStorage(storage).read('runtime.task')).toBe('Draft\n\nRestored')
 })
+
+const restore = {
+  requestId: 'restore-operation',
+  messageId: 'queued-message',
+  text: 'Queued message',
+  attachmentIds: ['queued-file'],
+  turnSettings: submission.turnSettings,
+  draftTurnSettings: submission.turnSettings,
+  connection: 'original-connection-fingerprint',
+}
+
+it('durably stages a restore before the request and survives restart with submission/settings intact', async () => {
+  const storage = memoryStorage()
+  const first = createDraftStorage(storage)
+  await first.write('runtime-a.task', 'Existing draft')
+  await runClientEffect(first.stageEffect('runtime-a.task', submission, ''))
+  await runClientEffect(first.stageRestoreEffect('runtime-a.task', restore, ''))
+  const reopened = createDraftStorage(storage)
+  expect(await runClientEffect(reopened.readRecordEffect('runtime-a.task'))).toMatchObject({
+    text: 'Existing draft',
+    restore,
+    submission: { attempt: submission, accepted: false },
+  })
+  expect(await reopened.read('runtime-b.task')).toBeNull()
+  await reopened.write('runtime-a.task', 'Intervening typing')
+  await runClientEffect(reopened.confirmRestoreEffect('runtime-a.task', restore.requestId))
+  await runClientEffect(reopened.confirmRestoreEffect('runtime-a.task', restore.requestId))
+  const after = await runClientEffect(
+    createDraftStorage(storage).readRecordEffect('runtime-a.task'),
+  )
+  expect(after).toMatchObject({
+    text: 'Intervening typing\n\nQueued message',
+    submission: { attempt: submission },
+  })
+  expect(after?.restore).toBeUndefined()
+})
+
+it('does not duplicate a confirmed restore after final disk failure, retry or process restart', async () => {
+  const values = new Map<string, string>()
+  const base = memoryStorage(values)
+  let fail = false
+  const storage = {
+    ...base,
+    setItem: async (key: string, value: string) => {
+      if (fail) throw new Error('Disk full')
+      await base.setItem(key, value)
+    },
+  }
+  const drafts = createDraftStorage(storage)
+  await drafts.write('runtime.task', 'Draft')
+  await runClientEffect(drafts.stageRestoreEffect('runtime.task', restore, ''))
+  fail = true
+  await expect(
+    runClientEffect(drafts.confirmRestoreEffect('runtime.task', restore.requestId)),
+  ).rejects.toThrow('Disk full')
+  expect(await drafts.read('runtime.task')).toBe('Draft\n\nQueued message')
+  // The disk still contains the pending intent, so a fresh process retries it once.
+  const restarted = createDraftStorage(storage)
+  expect((await runClientEffect(restarted.readRecordEffect('runtime.task')))?.restore).toEqual(
+    restore,
+  )
+  fail = false
+  await runClientEffect(restarted.confirmRestoreEffect('runtime.task', restore.requestId))
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe('Draft\n\nQueued message')
+  // Retrying in the original process also keeps the already published append once.
+  await runClientEffect(drafts.stageRestoreEffect('runtime.task', restore, ''))
+  await runClientEffect(drafts.confirmRestoreEffect('runtime.task', restore.requestId))
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe('Draft\n\nQueued message')
+})
+
+it('keeps a pending restore through typing and rejects replacing it until explicitly discarded', async () => {
+  const drafts = createDraftStorage(memoryStorage())
+  await runClientEffect(drafts.stageRestoreEffect('runtime.task', restore, 'Initial draft'))
+  await drafts.write('runtime.task', 'Newer draft')
+  await expect(
+    runClientEffect(
+      drafts.stageRestoreEffect('runtime.task', { ...restore, requestId: 'other' }, ''),
+    ),
+  ).rejects.toThrow('pending')
+  expect((await runClientEffect(drafts.readRecordEffect('runtime.task')))?.restore).toEqual(restore)
+  await runClientEffect(drafts.discardRestoreEffect('runtime.task', 'not-this-request'))
+  expect((await runClientEffect(drafts.readRecordEffect('runtime.task')))?.restore).toEqual(restore)
+  await runClientEffect(drafts.discardRestoreEffect('runtime.task', restore.requestId))
+  expect(await runClientEffect(drafts.readRecordEffect('runtime.task'))).toEqual({
+    text: 'Newer draft',
+    restore: undefined,
+  })
+})

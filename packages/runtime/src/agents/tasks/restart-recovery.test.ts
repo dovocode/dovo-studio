@@ -185,6 +185,92 @@ it.each([false, true])(
     expect(run).toHaveBeenCalledTimes(enabled ? 1 : 0)
   },
 )
+it.each([false, true])(
+  'clears expired local child question notifications on restart (accepted=%s)',
+  async (accepted) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const path = join(f.directory, '.git', 'question-restart.sqlite')
+    const token = 'synthetic-owner-token-for-restart-test'
+    const db = openDatabase(path)
+    const first = createServices(db, token)
+    first.store.update(() => f.workspace)
+    const parent = first.tasks.create({
+      title: 'Parent',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Work',
+    })
+    const child = first.tasks.create({
+      title: 'Child',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Inspect',
+    })
+    first.store.updateTask(child.id, (task) => ({
+      ...task,
+      delegation: {
+        parentTaskId: parent.id,
+        parentRunId: 'old-run',
+        key: 'inspect',
+        completion: 'pending',
+      },
+    }))
+    const expired = {
+      id: 'subagent-question:expired',
+      role: 'user' as const,
+      text: 'Answer an expired question',
+      subagentResultId: child.id,
+      createdAt: '',
+    }
+    const remote = {
+      ...expired,
+      id: 'subagent-question:remote',
+      text: 'Answer a remote question',
+      subagentResultId: 'remote-child',
+    }
+    const completion = { ...expired, id: 'completion', text: 'Retain a real completion' }
+    first.store.updateTask(parent.id, (task) => ({
+      ...task,
+      status: 'running',
+      activeRunId: 'old-run',
+      subagentInbox: [expired, remote, completion],
+      queue: [{ ...expired, id: 'subagent-question:legacy' }],
+      runAttempt: {
+        runId: 'old-run',
+        inputMessageIds: [],
+        promptAccepted: accepted,
+        subagentInputs: [expired, remote, completion],
+      },
+    }))
+    await first.tasks.dispose()
+    db.close()
+    const reopened = openDatabase(path)
+    const runtime = createServices(reopened, token)
+    cleanups.push(async () => {
+      await runtime.tasks.dispose()
+      if (reopened.open) reopened.close()
+    })
+    runtime.tasks.continueAfterRestart(() => false)
+    const task = runtime.store.task(parent.id)
+    expect(task.subagentInbox?.map((message) => message.id)).not.toContain(expired.id)
+    expect(task.subagentInbox?.map((message) => message.id)).not.toContain(
+      'subagent-question:legacy',
+    )
+    expect(task.subagentInbox?.map((message) => message.id)).toEqual(
+      expect.arrayContaining([remote.id, completion.id]),
+    )
+    expect(task.runAttempt?.subagentInputs?.map((message) => message.id)).toEqual(
+      accepted ? [expired.id, remote.id, completion.id] : [remote.id, completion.id],
+    )
+    expect(
+      task.subagentInbox?.some((message) =>
+        message.text.includes('Child interrupted by runtime restart'),
+      ),
+    ).toBe(true)
+    expect(runtime.store.task(child.id).status).toBe('cancelled')
+  },
+)
 it.each(['failed', 'cancelled'] as const)(
   'clears a stale %s run marker at startup without replaying queued input or uncertain actions',
   async (status) => {

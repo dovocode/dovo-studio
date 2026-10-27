@@ -1280,6 +1280,27 @@ export function Composer({
           <Action label="Done" onPress={() => setCheckout(false)} />
         </Sheet>
       )}
+      {!!actions.pendingRestore && (
+        <View style={{ gap: 8 }}>
+          <Text accessibilityRole="alert">
+            A queued message is waiting to return to this draft.
+          </Text>
+          <Text numberOfLines={3}>{actions.pendingRestore.text}</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <Action
+              label="Retry restore"
+              disabled={!connected || busy}
+              onPress={actions.retryRestore}
+            />
+            <Action
+              label="Discard restore"
+              disabled={busy}
+              onPress={actions.discardRestore}
+              secondary
+            />
+          </View>
+        </View>
+      )}
       {!!(error || checkoutAction.error || draft.error || attachmentPicker.error) && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error || checkoutAction.error || draft.error || attachmentPicker.error}

@@ -672,11 +672,13 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             ]),
             messageId: Schema.optional(idSchema),
             duplicateMessageId: Schema.optional(idSchema),
+            restoreRequestId: Schema.optional(idSchema),
             beforeMessageId: Schema.optional(Schema.NullOr(idSchema)),
             text: Schema.optional(maxValue(Schema.String, 120000)),
             expectedText: Schema.optional(maxValue(Schema.String, 120000)),
             turnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
             expectedTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
+            expectedDraftTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
             attachmentIds: Schema.optional(attachmentIdsSchema),
             expectedAttachmentIds: Schema.optional(attachmentIdsSchema),
             runId: Schema.optional(idSchema),
@@ -684,7 +686,26 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         const wasBlockedByMessage = !!s.store.taskSummary(input.id).queue?.[0]?.paused
-        if (input.action === 'duplicate') {
+        if (input.action === 'restore' && input.restoreRequestId) {
+          if (
+            !input.messageId ||
+            input.expectedText === undefined ||
+            input.expectedTurnSettings === undefined ||
+            input.expectedDraftTurnSettings === undefined ||
+            input.expectedAttachmentIds === undefined
+          )
+            throw new HttpError(400, 'Provide the queued message contents before restoring')
+          const applied = s.tasks.queue.restore(input.id, {
+            requestId: input.restoreRequestId,
+            messageId: input.messageId,
+            expectedText: input.expectedText,
+            expectedTurnSettings: input.expectedTurnSettings,
+            expectedDraftTurnSettings: input.expectedDraftTurnSettings,
+            expectedAttachmentIds: input.expectedAttachmentIds,
+          })
+          // Replaying a receipt acknowledges the restore without starting a later queued turn.
+          if (!applied) return yield* serviceResult({ ok: true })
+        } else if (input.action === 'duplicate') {
           if (!input.messageId || !input.duplicateMessageId)
             throw new HttpError(400, 'Choose a queued message and a new message id for its copy')
           s.tasks.queue.duplicate(input.id, input.messageId, input.duplicateMessageId)

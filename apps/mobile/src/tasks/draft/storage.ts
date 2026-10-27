@@ -11,6 +11,18 @@ type Storage = {
 const prefix = 'dovo-draft-record-v1:'
 const recordSchema = mutableStruct({
   text: Schema.String,
+  restored: Schema.optional(Schema.String),
+  restore: Schema.optional(
+    mutableStruct({
+      requestId: Schema.String,
+      messageId: Schema.String,
+      text: Schema.String,
+      attachmentIds: mutableArray(Schema.String),
+      turnSettings: Schema.NullOr(turnSettingsSchema),
+      draftTurnSettings: Schema.NullOr(turnSettingsSchema),
+      connection: Schema.String,
+    }),
+  ),
   submission: Schema.optional(
     mutableStruct({
       attempt: mutableStruct({
@@ -26,6 +38,7 @@ const recordSchema = mutableStruct({
     }),
   ),
 })
+export type PendingQueueRestore = NonNullable<Schema.Schema.Type<typeof recordSchema>['restore']>
 export type DraftRecord = Schema.Schema.Type<typeof recordSchema>
 function decodeRecord(raw: string | null): DraftRecord | null {
   if (raw === null) return null
@@ -34,7 +47,9 @@ function decodeRecord(raw: string | null): DraftRecord | null {
     : { text: raw }
 }
 const encodeRecord = (record: DraftRecord) =>
-  record.submission ? prefix + JSON.stringify(record) : record.text
+  record.submission || record.restore || record.restored
+    ? prefix + JSON.stringify(record)
+    : record.text
 
 /** Draft text and its delivery identity share one durable record, scoped to computer/thread. */
 export function createDraftStorage(storage: Storage) {
@@ -157,6 +172,59 @@ export function createDraftStorage(storage: Storage) {
         })
       }),
     )
+  const stageRestoreEffect = (key: string, restore: PendingQueueRestore, initial: string) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const previous = yield* load(key)
+        if (previous?.restored === restore.requestId) {
+          yield* save(key, previous)
+          return
+        }
+        if (previous?.restore && previous.restore.requestId !== restore.requestId)
+          return yield* Effect.fail(new Error('Resolve the pending queued-message restore first'))
+        yield* save(key, {
+          ...previous,
+          text: publishedText.get(key) ?? previous?.text ?? initial,
+          restore,
+        })
+      }),
+    )
+  const confirmRestoreEffect = (key: string, requestId: string) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const previous = yield* load(key)
+        if (previous?.restored === requestId) {
+          yield* save(key, previous)
+          return
+        }
+        if (!previous?.restore || previous.restore.requestId !== requestId) return
+        const current = publishedText.get(key) ?? previous.text
+        const text = [current, previous.restore.text].filter(Boolean).join('\n\n')
+        // The append and clearing its intent share one durable write. A restart either
+        // retries the old intent or sees the complete append, never both.
+        appendedAt.set(key, ++revision)
+        publishedText.set(key, text)
+        listeners.get(key)?.forEach((listener) => listener(text))
+        yield* save(key, {
+          ...previous,
+          text,
+          restore: undefined,
+          restored: requestId,
+          submission: previous.submission?.accepted ? undefined : previous.submission,
+        })
+      }),
+    )
+  const discardRestoreEffect = (key: string, requestId: string) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const previous = yield* load(key)
+        if (previous?.restore?.requestId === requestId)
+          yield* save(key, { ...previous, restore: undefined })
+      }),
+    )
   const stageEffect = (key: string, attempt: SendAttempt, initial: string) =>
     serialize(
       key,
@@ -215,6 +283,9 @@ export function createDraftStorage(storage: Storage) {
     readEffect,
     writeEffect,
     appendEffect,
+    stageRestoreEffect,
+    confirmRestoreEffect,
+    discardRestoreEffect,
     stageEffect,
     confirmEffect,
     flushEffect,

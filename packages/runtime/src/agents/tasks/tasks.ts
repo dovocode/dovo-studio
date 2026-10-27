@@ -2579,6 +2579,43 @@ export class Tasks {
     enabled: () => boolean,
     automationOwns: (id: string) => boolean = () => false,
   ) {
+    // Question callbacks are process-local. Drop their undelivered notifications after
+    // a restart, while retaining completion results and remote children's live forms.
+    const localChildren = new Map(
+      this.store
+        .get()
+        .tasks.filter((task) => task.delegation)
+        .map((task) => [task.id, task]),
+    )
+    const liveQuestions = new Set(
+      this.questions.list().map((question) => `subagent-question:${question.id}`),
+    )
+    this.store.transaction(() => {
+      for (const parent of this.store.get().tasks) {
+        const keep = (message: { id: string; subagentResultId?: string }) =>
+          !message.id.startsWith('subagent-question:') ||
+          liveQuestions.has(message.id) ||
+          !message.subagentResultId ||
+          localChildren.get(message.subagentResultId)?.delegation?.parentTaskId !== parent.id
+        const inbox = parent.subagentInbox?.filter(keep)
+        const queue = parent.queue?.filter(keep)
+        const inputs = parent.runAttempt?.promptAccepted
+          ? parent.runAttempt.subagentInputs
+          : parent.runAttempt?.subagentInputs?.filter(keep)
+        if (
+          inbox?.length === parent.subagentInbox?.length &&
+          queue?.length === parent.queue?.length &&
+          inputs?.length === parent.runAttempt?.subagentInputs?.length
+        )
+          continue
+        this.store.updateTask(parent.id, (task) => ({
+          ...task,
+          subagentInbox: inbox,
+          queue,
+          runAttempt: task.runAttempt ? { ...task.runAttempt, subagentInputs: inputs } : undefined,
+        }))
+      }
+    })
     // Draft children never reached a running turn, so storage recovery gives them no
     // restart marker. Settle every orphan before a resumed parent can wait on it.
     const interruptedChildren = new Set(

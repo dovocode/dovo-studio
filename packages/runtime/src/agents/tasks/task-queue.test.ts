@@ -1170,3 +1170,79 @@ it('persists subagent input separately from full user queues, drafts and convers
     db.close()
   }
 })
+
+it('persists atomic restore receipts across restart and rejects changed contents without consuming the message', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'restore',
+          title: 'Restore',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          execution: 'main',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: 'Draft',
+          example: false,
+          queuePaused: true,
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    const attachment = {
+      id: '10000000-0000-4000-8000-000000000001',
+      name: 'a.txt',
+      mime: 'text/plain',
+      size: 1,
+    }
+    queue.add('restore', 'queued', 'Queue text', [attachment])
+    const input = {
+      requestId: 'operation',
+      messageId: 'queued',
+      expectedText: 'Queue text',
+      expectedAttachmentIds: ['10000000-0000-4000-8000-000000000001'],
+      expectedTurnSettings: null,
+      expectedDraftTurnSettings: null,
+    }
+    expect(() => queue.restore('restore', { ...input, expectedAttachmentIds: [] })).toThrow(
+      'changed',
+    )
+    expect(store.taskSummary('restore').queue).toHaveLength(1)
+    store.updateTask('restore', (t) => ({
+      ...t,
+      draftTurnSettings: { provider: 'codex', model: 'new-choice', reasoning: '' },
+    }))
+    expect(() => queue.restore('restore', input)).toThrow('draft model settings changed')
+    store.updateTask('restore', (t) => ({ ...t, draftTurnSettings: null }))
+    db.exec(
+      `CREATE TRIGGER fail_restore_receipt BEFORE INSERT ON queue_restore_receipts BEGIN SELECT RAISE(ABORT, 'receipt disk failure'); END`,
+    )
+    expect(() => queue.restore('restore', input)).toThrow('receipt disk failure')
+    expect(store.taskSummary('restore')).toMatchObject({
+      draft: 'Draft',
+      queue: [{ id: 'queued' }],
+    })
+    expect(db.prepare('SELECT * FROM queue_restore_receipts').all()).toEqual([])
+    db.exec('DROP TRIGGER fail_restore_receipt')
+    expect(queue.restore('restore', input)).toBe(true)
+    const reopened = new WorkspaceStore(db)
+    reopened.updateTask('restore', (t) => ({ ...t, draft: 'New typing' }))
+    expect(new TaskQueue(reopened).restore('restore', input)).toBe(false)
+    expect(reopened.taskSummary('restore')).toMatchObject({
+      draft: 'New typing',
+      draftAttachments: [attachment],
+      queue: [],
+    })
+    expect(() =>
+      new TaskQueue(reopened).restore('restore', { ...input, messageId: 'other' }),
+    ).toThrow('another request')
+  } finally {
+    db.close()
+  }
+})

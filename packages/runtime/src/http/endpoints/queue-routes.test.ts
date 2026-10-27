@@ -373,3 +373,47 @@ it('validates duplicate requests and safely replays the accepted copy', async ()
     await runtime.close()
   }
 })
+
+it('acknowledges a restored queue message after response loss without changing newer drafts or starting work', async () => {
+  const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { store, tasks } = runtime.services
+    const task = tasks.create({ title: 'Restore', repositoryId: '', agentId: '', objective: '' })
+    store.updateTask(task.id, (t) => ({ ...t, queuePaused: true, draft: 'Existing draft' }))
+    tasks.queue.add(task.id, 'queued', 'Queued text')
+    const input = {
+      id: task.id,
+      action: 'restore',
+      messageId: 'queued',
+      restoreRequestId: 'restore-operation',
+      expectedText: 'Queued text',
+      expectedTurnSettings: null,
+      expectedDraftTurnSettings: null,
+      expectedAttachmentIds: [],
+    }
+    const request = (value: unknown) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(value),
+      })
+    expect((await request({ ...input, expectedText: 'Stale text' })).status).toBe(409)
+    expect(store.taskSummary(task.id).queue).toHaveLength(1)
+    // A rejection before commit has no receipt; retrying the corrected intent remains safe.
+    expect((await request(input)).status).toBe(200)
+    expect(store.taskSummary(task.id).draft).toBe('Existing draft\n\nQueued text')
+    expect(store.taskSummary(task.id).queue).toEqual([])
+    store.updateTask(task.id, (t) => ({ ...t, draft: 'New draft', queuePaused: false }))
+    const start = vi.spyOn(tasks, 'startEffect')
+    expect((await request(input)).status).toBe(200)
+    expect(start).not.toHaveBeenCalled()
+    expect(store.taskSummary(task.id).draft).toBe('New draft')
+    expect((await request({ ...input, expectedText: 'Different text' })).status).toBe(409)
+    expect((await request({ ...input, restoreRequestId: 'new-operation' })).status).toBe(409)
+    expect((await request({ ...input, expectedAttachmentIds: undefined })).status).toBe(400)
+    start.mockRestore()
+  } finally {
+    await runtime.close()
+  }
+})

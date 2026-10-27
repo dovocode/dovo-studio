@@ -5,7 +5,9 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { Alert, Keyboard } from 'react-native'
-import { randomUUID } from 'expo-crypto'
+import { randomUUID, digestStringAsync, CryptoDigestAlgorithm } from 'expo-crypto'
+import type { PendingQueueRestore } from '../../draft/storage'
+import { nativeEffect } from '../../../runtime/state/native-effect'
 import { useEffect, useRef } from 'react'
 import { Schema, Effect } from 'effect'
 import {
@@ -278,6 +280,7 @@ export function useConversationActions(task: Task) {
     connected &&
     !busy &&
     !cancellation.busy &&
+    !storedDraft.pendingRestore &&
     draft.ready &&
     hasInput &&
     (!editing || !!task.queue?.some((message) => message.id === editing.message.id)) &&
@@ -314,6 +317,10 @@ export function useConversationActions(task: Task) {
   const submit = (mode: 'queue' | 'steer' = 'queue', input = draft.text) => {
     let submittedId: string | undefined
     return mobileWorkflow(function* () {
+      if (storedDraft.pendingRestore)
+        return yield* Effect.fail(
+          new Error('Resolve the pending queued-message restore before sending'),
+        )
       if (policyIssue) return yield* Effect.fail(new Error(policyIssue))
       if (turnSettings && snapshot?.queuedTurnSettingsSupported !== true)
         return yield* Effect.fail(
@@ -467,6 +474,69 @@ export function useConversationActions(task: Task) {
       ),
     )
   }
+  const restoreTried = useRef(new Set<string>())
+  useEffect(() => {
+    restoreTried.current.clear()
+  }, [storedDraft.key, pendingScope])
+  const restoreKey = (restore: PendingQueueRestore) =>
+    JSON.stringify([storedDraft.key, pendingScope, restore.requestId])
+  const connectionIdentity = () =>
+    nativeEffect(() =>
+      digestStringAsync(
+        CryptoDigestAlgorithm.SHA256,
+        JSON.stringify([profile?.connection.address, profile?.connection.token]),
+      ),
+    )
+  const finishRestore = (restore: PendingQueueRestore) =>
+    mobileWorkflow(function* () {
+      if (!snapshot?.queueRestoreReceiptsSupported)
+        throw new Error('Update this computer’s runtime before restoring queued messages')
+      if (restore.connection !== (yield* connectionIdentity()))
+        throw new Error(
+          'This saved restore belongs to the original computer connection. Reconnect it or discard the restore.',
+        )
+      // Re-persist before every request, including retries after an earlier disk failure.
+      yield* storedDraft.stageRestoreEffect(restore)
+      const key = storedDraft.key
+      yield* callEffect(
+        '/api/tasks/queue',
+        {
+          id: task.id,
+          action: 'restore',
+          messageId: restore.messageId,
+          restoreRequestId: restore.requestId,
+          expectedText: restore.text,
+          expectedAttachmentIds: restore.attachmentIds,
+          expectedTurnSettings: restore.turnSettings,
+          expectedDraftTurnSettings: restore.draftTurnSettings,
+        },
+        responses.ok,
+      )
+      yield* storedDraft.confirmRestoreEffect(restore.requestId)
+      if (currentDraftKey.current === key)
+        setTurnSettings((current) =>
+          sameTurnSettings(current, restore.draftTurnSettings) ? restore.turnSettings : current,
+        )
+    })
+  useEffect(() => {
+    const restore = storedDraft.pendingRestore
+    if (!restore || !storedDraft.ready) return
+    const key = restoreKey(restore)
+    if (!connected) {
+      restoreTried.current.delete(key)
+      return
+    }
+    if (busy || restoreTried.current.has(key)) return
+    restoreTried.current.add(key)
+    void run(() => finishRestore(restore))
+  }, [
+    storedDraft.pendingRestore,
+    storedDraft.ready,
+    storedDraft.key,
+    pendingScope,
+    connected,
+    busy,
+  ])
   return {
     editing,
     restoreQueuedMessage: (message: NonNullable<Task['queue']>[number]) =>
@@ -481,17 +551,46 @@ export function useConversationActions(task: Task) {
             throw new Error(
               'Clear the composer before restoring a message with different model settings',
             )
-          const key = storedDraft.key
-          yield* callEffect(
-            '/api/tasks/queue',
-            { id: task.id, action: 'restore', messageId: message.id },
-            responses.ok,
-          )
-          // Append durably to this thread's latest text, including keystrokes ahead of React.
-          yield* storedDraft.appendEffect(message.text)
-          if (currentDraftKey.current === key) setTurnSettings(message.turnSettings ?? null)
+          if (!snapshot?.queueRestoreReceiptsSupported)
+            throw new Error('Update this computer’s runtime before restoring queued messages')
+          const restore = storedDraft.pendingRestore ?? {
+            requestId: randomUUID(),
+            messageId: message.id,
+            text: message.text,
+            attachmentIds: message.attachments?.map((file) => file.id) ?? [],
+            turnSettings: message.turnSettings ?? null,
+            draftTurnSettings,
+            connection: yield* connectionIdentity(),
+          }
+          if (restore.messageId !== message.id)
+            throw new Error('Resolve the pending queued-message restore first')
+          restoreTried.current.add(restoreKey(restore))
+          yield* finishRestore(restore)
         }),
       ),
+    pendingRestore: storedDraft.pendingRestore,
+    retryRestore: () => {
+      const restore = storedDraft.pendingRestore
+      if (restore) void run(() => finishRestore(restore))
+    },
+    discardRestore: () => {
+      const restore = storedDraft.pendingRestore
+      if (!restore) return
+      Alert.alert(
+        'Discard pending restore?',
+        'The runtime may already have returned this message to its draft. Check the thread on its computer before discarding this saved recovery request.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Discard restore',
+            style: 'destructive',
+            onPress: () => {
+              void run(() => storedDraft.discardRestoreEffect(restore.requestId))
+            },
+          },
+        ],
+      )
+    },
     beginEdit: (message: Task['messages'][number]) => {
       if (busy || attaching || editing || dictation.active) return
       setEditing({
