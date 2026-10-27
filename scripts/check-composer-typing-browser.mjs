@@ -8,6 +8,9 @@ import { createRoot } from 'react-dom/client';
 import { useRef, useSyncExternalStore } from 'react';
 import { ComposerEditor } from './src/chat/composer/composer-editor.tsx';
 import { createComposerDraft } from './src/chat/composer/composer-draft.ts';
+const frame = window.requestAnimationFrame.bind(window);
+window.heldFrames = [];
+window.requestAnimationFrame = callback => window.holdFrames ? window.heldFrames.push(callback) : frame(callback);
 const controller = createComposerDraft('', () => {}, console.error);
 window.parentRenders = 0; window.defaults=0;window.alternatives=0;
 window.latencies = [];
@@ -93,9 +96,20 @@ try {
   if ((await input.inputValue()) !== 'Keep my draft')
     throw new Error('History replaced a typed draft')
   await input.fill('')
+  await page.evaluate(() => {
+    window.holdFrames = true
+  })
   await input.press('ArrowUp')
   await page.waitForFunction(() => window.controller.text === 'Second message')
   await input.fill('Edited recalled message')
+  await page.evaluate(() => {
+    window.holdFrames = false
+    for (const callback of window.heldFrames.splice(0)) callback(performance.now())
+  })
+  if (
+    (await input.evaluate((element) => element.selectionStart)) !== 'Edited recalled message'.length
+  )
+    throw new Error('A delayed history cursor reset moved the caret after editing')
   await input.evaluate((element) => element.setSelectionRange(0, 0))
   await input.press('ArrowUp')
   if ((await input.inputValue()) !== 'Edited recalled message')

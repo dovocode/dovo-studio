@@ -1,5 +1,13 @@
 import { createComposerHistory } from './composer-history'
-import { memo, useCallback, useEffect, useRef, useSyncExternalStore, type RefObject } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+  type RefObject,
+} from 'react'
 import { ComposerTextarea } from '@dovo/studio-ui'
 import type { ResourceSettings, SavedPrompt } from '@dovo/protocol'
 import { useFileMentions, type ComposerCommandId } from './file-mentions'
@@ -51,6 +59,7 @@ export const ComposerEditor = memo(function ComposerEditor({
     [controller],
   )
   const history = useRef(createComposerHistory())
+  const historyCaret = useRef(false)
   useEffect(() => history.current.reset(), [controller, taskId])
   const mentions = useFileMentions({
     taskId,
@@ -61,6 +70,13 @@ export const ComposerEditor = memo(function ComposerEditor({
     prompts,
     onCommand,
     onManagePrompts,
+  })
+  // Place the caret with the recalled value's DOM commit, before another edit can begin.
+  useLayoutEffect(() => {
+    if (!historyCaret.current) return
+    historyCaret.current = false
+    input.current?.setSelectionRange(0, 0)
+    mentions.track()
   })
   return (
     <>
@@ -114,11 +130,13 @@ export const ComposerEditor = memo(function ComposerEditor({
           )
           if (recalled === undefined) return
           event.preventDefault()
-          setDraft(recalled)
-          requestAnimationFrame(() => {
+          if (recalled === controller.text) {
             input.current?.setSelectionRange(0, 0)
             mentions.track()
-          })
+          } else {
+            historyCaret.current = true
+            setDraft(recalled)
+          }
         }}
         onSelect={mentions.track}
         onChange={(event) => {
