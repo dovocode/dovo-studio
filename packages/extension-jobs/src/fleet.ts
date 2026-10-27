@@ -1,4 +1,12 @@
-import type { Automation, JobRun, RuntimeOverview } from '@dovo/studio-core'
+import {
+  isActiveRuntime,
+  type Automation,
+  type JobRun,
+  type RuntimeConnection,
+  type RuntimeOverview,
+  type RuntimeSnapshot,
+  type Workspace,
+} from '@dovo/studio-core'
 import { pendingTaskInput, runLabels, runSteps } from './run-progress'
 
 export type FleetAutomation = {
@@ -11,6 +19,31 @@ export type FleetAutomation = {
   status: string
   needsInput: boolean
   projects: string[]
+}
+
+/** Keep unsynced edits on the open connection visible while other hosts use saved snapshots.
+ * A saved computer whose address or pairing differs from the open one keeps its own snapshot. */
+export function liveAutomationRuntimes(
+  runtimes: readonly RuntimeOverview[],
+  live: {
+    activeRuntimeId: string | null
+    connection: RuntimeConnection | null
+    connected: boolean
+    snapshot: RuntimeSnapshot | null
+    workspace: Workspace
+  },
+): RuntimeOverview[] {
+  return runtimes.map((entry) =>
+    isActiveRuntime(entry.profile, live.activeRuntimeId, live.connection)
+      ? {
+          ...entry,
+          connected: live.connected,
+          snapshot: live.snapshot
+            ? { ...live.snapshot, workspace: live.workspace }
+            : entry.snapshot,
+        }
+      : entry,
+  )
 }
 
 export function aggregateAutomations(runtimes: readonly RuntimeOverview[]): FleetAutomation[] {

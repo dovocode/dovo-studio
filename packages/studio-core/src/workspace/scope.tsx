@@ -1,8 +1,9 @@
 import { useCallback, useMemo, type ReactNode } from 'react'
 import { Effect } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import type { RuntimeProfile } from '@dovo/protocol'
+import { resolveRuntimeTarget, type RuntimeProfile } from '@dovo/protocol'
 import { createWorkspace } from './seed'
+import { isActiveRuntime } from '../runtime/ownership'
 import { WorkspaceValueProvider } from './selector'
 import {
   useWorkspace,
@@ -25,14 +26,8 @@ export function WorkspaceScope({
   const root = useWorkspace()
   const { readRuntimeEffect, refreshRuntime, runtimeReadCache, setWorkspace } = root
   const { id, name, connection } = profile
-  const { address, token } = connection
   const owner = useMemo(() => ({ id, name, connection }), [id, name, connection])
-  const entry = root.runtimes.find(
-    (item) =>
-      item.profile.id === id &&
-      item.profile.connection.address === address &&
-      item.profile.connection.token === token,
-  )
+  const entry = root.runtimes.find((item) => resolveRuntimeTarget([item.profile], owner))
   const requestEffect = useCallback<WorkspaceRequestEffect>(
     (path, input, schema, method) =>
       Effect.gen(function* () {
@@ -47,7 +42,7 @@ export function WorkspaceScope({
     (path, input, schema, method) => runClientEffect(requestEffect(path, input, schema, method)),
     [requestEffect],
   )
-  const active = root.activeRuntimeId === id
+  const active = isActiveRuntime(owner, root.activeRuntimeId, root.connection)
   const scopedSetWorkspace = useCallback<WorkspaceContextValue['setWorkspace']>(
     (update) => {
       // Legacy optimistic editors use the active outbox. Remote settings use awaited PATCH requests.

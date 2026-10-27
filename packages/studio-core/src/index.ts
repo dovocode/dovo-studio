@@ -169,6 +169,7 @@ export type { PreviewDevice } from '@dovo/protocol'
 
 export * from './workspace/repository-sources'
 export * from './workspace/runtime-sources'
+export { isActiveRuntime } from './runtime/ownership'
 export * from './workspace/runtime-updates'
 
 export { remoteBrowserTicketSchema } from '@dovo/protocol'

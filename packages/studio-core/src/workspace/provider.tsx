@@ -35,6 +35,8 @@ import {
   getRuntimeSnapshotTag,
   retainRuntimeSnapshot,
   sameRuntimeConnection,
+  resolveRuntimeTarget,
+  verifyRuntimeReplacement,
   retainOverviewSnapshot,
   shouldPublishOverview,
   type RuntimeConnection,
@@ -47,6 +49,12 @@ import {
 } from '@dovo/protocol'
 import { browserMutationStorage } from './read-cache'
 import { recentSnapshot } from '../runtime/recent-snapshot'
+import {
+  currentRuntimeOverview,
+  idleRuntimeOverview,
+  replacedRuntimeConnection,
+  visibleRuntimeOverviews,
+} from '../runtime/ownership'
 import { useAppPreferences, updateAppPreferences, readAppPreferences } from '../preferences'
 import {
   type WorkspaceRequest,
@@ -97,18 +105,6 @@ import {
 const snapshotKey = 'dovo.runtime-snapshots.v1'
 const connectionError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
-const idleOverview = (
-  profile: RuntimeProfile,
-  snapshot: RuntimeSnapshot | null = null,
-): RuntimeOverview => ({
-  profile,
-  snapshot,
-  connected: false,
-  lastSeen: null,
-  error: null,
-  pulls: null,
-  pullError: null,
-})
 export function WorkspaceProvider({
   children,
   runtimeId,
@@ -263,14 +259,7 @@ export function WorkspaceProvider({
     return entry.cache
   }, [])
   const assertProfile = useCallback((profile: RuntimeProfile) => {
-    if (
-      !registryRef.current.profiles.some(
-        (current) =>
-          current.id === profile.id &&
-          current.connection.token === profile.connection.token &&
-          current.connection.address === profile.connection.address,
-      )
-    )
+    if (!resolveRuntimeTarget(registryRef.current.profiles, profile))
       throw new Error('This device connection changed. Reopen the item to continue.')
   }, [])
   const busyHosts = useRef(new Set<string>())
@@ -473,12 +462,7 @@ export function WorkspaceProvider({
       !synchronization.acceptsRevision(value.snapshot.revision, value.snapshot.runtimeInstanceId)
     )
       return
-    const profile = registryRef.current.profiles.find(
-      (entry) =>
-        entry.id === value.profile.id &&
-        sameRuntimeConnection(entry.connection, value.profile.connection),
-    )
-    if (!profile) return
+    if (!resolveRuntimeTarget(registryRef.current.profiles, value.profile)) return
     const next = {
       ...overviewsRef.current,
       [value.profile.id]: overviewsRef.current[value.profile.id]
@@ -491,14 +475,8 @@ export function WorkspaceProvider({
   useEffect(() => {
     const learned = new Map<string, RuntimeConnection>()
     for (const entry of Object.values(overviews)) {
-      const saved = runtimeRegistry.profiles.find((profile) => profile.id === entry.profile.id)
-      if (
-        !saved ||
-        !entry.connected ||
-        !entry.snapshot ||
-        !sameRuntimeConnection(saved.connection, entry.profile.connection)
-      )
-        continue
+      const saved = resolveRuntimeTarget(runtimeRegistry.profiles, entry.profile)
+      if (!saved || !entry.connected || !entry.snapshot) continue
       try {
         const next = learnRuntimeRoutes(saved.connection, entry.snapshot)
         if (JSON.stringify(next) !== JSON.stringify(saved.connection)) learned.set(saved.id, next)
@@ -528,11 +506,7 @@ export function WorkspaceProvider({
             if (
               !entry.snapshot ||
               !entry.connected ||
-              !registryRef.current.profiles.some(
-                (profile) =>
-                  profile.id === entry.profile.id &&
-                  profile.connection.token === entry.profile.connection.token,
-              )
+              !resolveRuntimeTarget(registryRef.current.profiles, entry.profile)
             )
               return
             const tag = getRuntimeSnapshotTag(entry.snapshot)
@@ -553,13 +527,7 @@ export function WorkspaceProvider({
               lastSeen: entry.lastSeen,
               pulls: entry.pulls,
             })
-            if (
-              registryRef.current.profiles.some(
-                (profile) =>
-                  profile.id === entry.profile.id &&
-                  profile.connection.token === entry.profile.connection.token,
-              )
-            )
+            if (resolveRuntimeTarget(registryRef.current.profiles, entry.profile))
               cacheWrites.current.set(entry.profile.id, {
                 token: entry.profile.connection.token,
                 tag,
@@ -736,6 +704,22 @@ export function WorkspaceProvider({
                   'The workspace changed while connecting. Wait for changes to sync, then try again.',
                 ),
               )
+            // Saved edits, caches and windows follow the profile ID: keep it on the same computer.
+            const verified = replacing
+              ? yield* Effect.try({
+                  try: () =>
+                    verifyRuntimeReplacement(
+                      replacedRuntimeConnection(
+                        previousConnection,
+                        previousProfile?.connection,
+                        overviewsRef.current[profile.id],
+                      ),
+                      profile.connection,
+                      value,
+                    ),
+                  catch: connectionError,
+                })
+              : profile.connection
             yield* Effect.tryPromise({
               try: () =>
                 writeWorkspaceDocument(
@@ -755,6 +739,7 @@ export function WorkspaceProvider({
               }).pipe(Effect.uninterruptible)
             const named = {
               ...profile,
+              connection: verified,
               name: runtimeComputerName({ profile, snapshot: value }),
               nameIsCustom: runtimeHasCustomName(profile),
             }
@@ -803,7 +788,7 @@ export function WorkspaceProvider({
             updateOverview({
               ...(previous?.profile.connection.token === profile.connection.token
                 ? previous
-                : idleOverview(named)),
+                : idleRuntimeOverview(named)),
               profile: named,
               snapshot: value,
               connected: true,
@@ -1082,7 +1067,7 @@ export function WorkspaceProvider({
       throw new Error('Runtime connection changed while reloading.')
     adopt(profile, value, true)
     updateOverview({
-      ...(overviewsRef.current[profile.id] ?? idleOverview(profile)),
+      ...(overviewsRef.current[profile.id] ?? idleRuntimeOverview(profile)),
       profile,
       snapshot: value,
       connected: true,
@@ -1110,7 +1095,7 @@ export function WorkspaceProvider({
         if (snapshotOrder.current.get(profile.id) === order) {
           const message = error instanceof Error ? error.message : String(error)
           updateOverview({
-            ...(overviewsRef.current[profile.id] ?? idleOverview(profile)),
+            ...(overviewsRef.current[profile.id] ?? idleRuntimeOverview(profile)),
             profile,
             connected: false,
             error: message,
@@ -1127,7 +1112,7 @@ export function WorkspaceProvider({
       }
       if (snapshotOrder.current.get(profile.id) !== order) return
       updateOverview({
-        ...(overviewsRef.current[profile.id] ?? idleOverview(profile)),
+        ...(overviewsRef.current[profile.id] ?? idleRuntimeOverview(profile)),
         profile,
         snapshot: value,
         connected: true,
@@ -1217,11 +1202,7 @@ export function WorkspaceProvider({
               const checkpoint = synchronization.checkpoint()
               const order = (snapshotOrder.current.get(profile.id) ?? 0) + 1
               snapshotOrder.current.set(profile.id, order)
-              const valid = () =>
-                registryRef.current.profiles.some(
-                  (entry) =>
-                    entry.id === profile.id && entry.connection.token === profile.connection.token,
-                )
+              const valid = () => !!resolveRuntimeTarget(registryRef.current.profiles, profile)
               const receiveSnapshot = (value: RuntimeOverview) => {
                 if (!valid() || snapshotOrder.current.get(profile.id) !== order) return
                 updateOverview(value)
@@ -1273,10 +1254,8 @@ export function WorkspaceProvider({
         )
         yield* loadFleetPullOverviewsEffect(
           registryRef.current.profiles.flatMap((profile) => {
-            const entry = overviewsRef.current[profile.id]
-            return entry && entry.profile.connection.token === profile.connection.token
-              ? [entry]
-              : []
+            const entry = currentRuntimeOverview(profile, overviewsRef.current[profile.id])
+            return entry ? [entry] : []
           }),
           (value) => {
             const previous = overviewsRef.current[value.profile.id]
@@ -1288,11 +1267,7 @@ export function WorkspaceProvider({
               !value.snapshot ||
               pullOverviewScope(previous.snapshot.workspace.repositories) !==
                 pullOverviewScope(value.snapshot.workspace.repositories) ||
-              !registryRef.current.profiles.some(
-                (profile) =>
-                  profile.id === value.profile.id &&
-                  profile.connection.token === value.profile.connection.token,
-              )
+              !resolveRuntimeTarget(registryRef.current.profiles, value.profile)
             )
               return
             updateOverview({ ...previous, pulls: value.pulls, pullError: value.pullError })
@@ -1474,7 +1449,11 @@ export function WorkspaceProvider({
             terminals: [],
             pendingDevices: [],
           }
-        updateOverview({ ...idleOverview(profile, cached[profile.id] ?? null), lastSeen, pulls })
+        updateOverview({
+          ...idleRuntimeOverview(profile, cached[profile.id] ?? null),
+          lastSeen,
+          pulls,
+        })
       }
       if (migrated) yield* native(() => localStorage.removeItem(snapshotKey))
       const active = registry.profiles.find((profile) => profile.id === registry.activeId)
@@ -1628,12 +1607,10 @@ export function WorkspaceProvider({
         void runClientEffect(mutations.recoverEffect(connection)).catch(() => undefined)
         synchronization.clearNetworkError(value.workspaceReconciliationSupported)
         if (synchronization.isCurrent(checkpoint)) installSnapshot(connection, value)
-        const profile = registryRef.current.profiles.find(
-          (entry) => entry.id === id && entry.connection.token === connection.token,
-        )
+        const profile = resolveRuntimeTarget(registryRef.current.profiles, { id, connection })
         if (profile)
           updateOverview({
-            ...(overviewsRef.current[id] ?? idleOverview(profile)),
+            ...(overviewsRef.current[id] ?? idleRuntimeOverview(profile)),
             profile,
             snapshot: value,
             connected: true,
@@ -1686,12 +1663,10 @@ export function WorkspaceProvider({
           void runClientEffect(mutations.recoverEffect(connection)).catch(() => undefined)
           synchronization.clearNetworkError(value.workspaceReconciliationSupported)
           if (synchronization.isCurrent(checkpoint)) installSnapshot(connection, value)
-          const profile = registryRef.current.profiles.find(
-            (entry) => entry.id === id && entry.connection.token === connection.token,
-          )
+          const profile = resolveRuntimeTarget(registryRef.current.profiles, { id, connection })
           if (profile)
             updateOverview({
-              ...(overviewsRef.current[id] ?? idleOverview(profile)),
+              ...(overviewsRef.current[id] ?? idleRuntimeOverview(profile)),
               profile,
               snapshot: value,
               connected: true,
@@ -1841,25 +1816,7 @@ export function WorkspaceProvider({
     })
   }, [previews, overviews, runtimeRegistry.profiles])
   const visibleRuntimes = useMemo(
-    () =>
-      runtimeRegistry.profiles.map((profile) => {
-        const entry =
-          overviews[profile.id]?.profile.connection.token === profile.connection.token
-            ? overviews[profile.id]
-            : idleOverview(profile)
-        if (!entry.snapshot) return entry
-        const workspace = previewWorkspace(
-          entry.snapshot.workspace,
-          profile.connection,
-          previews.filter((item) => !taskPreviewConfirmed(item, entry.snapshot!, previews)),
-        )
-        return workspace === entry.snapshot.workspace
-          ? entry
-          : {
-              ...entry,
-              snapshot: { ...entry.snapshot, workspace },
-            }
-      }),
+    () => visibleRuntimeOverviews(runtimeRegistry.profiles, overviews, previews),
     [runtimeRegistry.profiles, overviews, previews],
   )
   useEffect(() => {
@@ -1917,9 +1874,7 @@ export function WorkspaceProvider({
         })
         .catch((error: unknown) => {
           if (
-            registryRef.current.profiles.some((profile) =>
-              sameRuntimeConnection(profile.connection, entry.profile.connection),
-            ) &&
+            resolveRuntimeTarget(registryRef.current.profiles, entry.profile) &&
             overviewsRef.current[entry.profile.id]?.connected
           )
             failedPresetRequests.current.set(entry.profile.id, {
@@ -1995,9 +1950,7 @@ export function WorkspaceProvider({
         })
         .catch((error: unknown) => {
           if (
-            registryRef.current.profiles.some((profile) =>
-              sameRuntimeConnection(profile.connection, entry.profile.connection),
-            ) &&
+            resolveRuntimeTarget(registryRef.current.profiles, entry.profile) &&
             overviewsRef.current[entry.profile.id]?.connected
           )
             failedSettingsRequests.current.set(entry.profile.id, {

@@ -1,6 +1,7 @@
 import {
   createRuntimeClient,
   decodeResult,
+  resolveRuntimeTarget,
   sameRuntimeConnection,
   snapshotSchema,
   type RuntimeRegistry,
@@ -15,6 +16,7 @@ import { type WorkspaceContextValue } from './context'
 import { WorkspaceValueProvider } from './selector'
 import { createWorkspace } from './seed'
 import { browserReadCache } from './read-cache'
+import { currentRuntimeOverview } from '../runtime/ownership'
 
 const unavailable = () => {
   throw new Error('Open Dovo to manage workspace settings')
@@ -44,13 +46,7 @@ export function LauncherWorkspaceProvider({
   }, [])
   useEffect(() => {
     for (const [id, entry] of caches.current) {
-      if (
-        !registry.profiles.some(
-          (profile) =>
-            profile.id === id &&
-            sameRuntimeConnection(profile.connection, entry.profile.connection),
-        )
-      ) {
+      if (!resolveRuntimeTarget(registry.profiles, { id, connection: entry.profile.connection })) {
         void entry.cache.close()
         caches.current.delete(id)
       }
@@ -66,11 +62,7 @@ export function LauncherWorkspaceProvider({
   const readRuntimeEffect = useCallback<WorkspaceContextValue['readRuntimeEffect']>(
     (profile, path, input, schema, method) =>
       Effect.suspend(() => {
-        const valid = () =>
-          current.current.profiles.some(
-            (item) =>
-              item.id === profile.id && sameRuntimeConnection(item.connection, profile.connection),
-          )
+        const valid = () => !!resolveRuntimeTarget(current.current.profiles, profile)
         if (!valid())
           return Effect.fail(new Error('This computer connection changed. Reopen quick task.'))
         return createRuntimeClient(profile.connection)
@@ -127,20 +119,18 @@ export function LauncherWorkspaceProvider({
     [requestEffect],
   )
   const value = useMemo<WorkspaceContextValue>(() => {
-    const runtimes = registry.profiles.map((profile) => {
-      const entry = entries[profile.id]
-      return entry && sameRuntimeConnection(entry.profile.connection, profile.connection)
-        ? entry
-        : {
-            profile,
-            snapshot: null,
-            connected: false,
-            lastSeen: null,
-            error: null,
-            pulls: null,
-            pullError: null,
-          }
-    })
+    const runtimes = registry.profiles.map(
+      (profile) =>
+        currentRuntimeOverview(profile, entries[profile.id]) ?? {
+          profile,
+          snapshot: null,
+          connected: false,
+          lastSeen: null,
+          error: null,
+          pulls: null,
+          pullError: null,
+        },
+    )
     const active = runtimes.find((entry) => entry.profile.id === profile?.id)
     return {
       workspace: active?.snapshot?.workspace ?? {

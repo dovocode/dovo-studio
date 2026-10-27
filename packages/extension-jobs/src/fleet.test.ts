@@ -7,7 +7,7 @@ import {
   type RuntimeOverview,
 } from '@dovo/studio-core'
 import { createWorkspace } from '@dovo/studio-core/testing'
-import { aggregateAutomations } from './fleet'
+import { aggregateAutomations, liveAutomationRuntimes } from './fleet'
 const workspace = createWorkspace()
 const flow = workspace.automations[0]
 const run: JobRun = {
@@ -154,5 +154,39 @@ describe('unified automation collection', () => {
     expect(rows[0].flow).toEqual(flow)
     expect(rows[0].latest).toEqual(run)
     expect(saved.snapshot?.runs).toEqual([run])
+  })
+  it('shows unsynced edits only on the open address and pairing', () => {
+    const open = runtime('open')
+    const other = runtime('other')
+    const edited = { ...workspace, automations: [{ ...flow, name: 'Unsent rename' }] }
+    const live = {
+      activeRuntimeId: open.profile.id,
+      connection: open.profile.connection,
+      connected: false,
+      snapshot: open.snapshot,
+      workspace: edited,
+    }
+    const names = (entries: RuntimeOverview[]) =>
+      aggregateAutomations(entries).map((row) => [
+        row.runtimeName,
+        row.flow.name,
+        row.runtime.connected,
+      ])
+    expect(names(liveAutomationRuntimes([open, other], live))).toEqual([
+      ['other', flow.name, true],
+      ['open', 'Unsent rename', false],
+    ])
+    // Same pairing at a new saved address: the old connection's edits are not attributed to it.
+    const moved = {
+      ...open,
+      profile: {
+        ...open.profile,
+        connection: { ...open.profile.connection, address: 'http://open.vpn:51464' },
+      },
+    }
+    expect(names(liveAutomationRuntimes([moved, other], live))).toEqual([
+      ['open', flow.name, true],
+      ['other', flow.name, true],
+    ])
   })
 })

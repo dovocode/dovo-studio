@@ -1,10 +1,11 @@
-import { randomUUID } from '@dovo/protocol'
+import { randomUUID, resolveRuntimeTarget } from '@dovo/protocol'
 import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import { ArrowLeft, ArrowRight, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
 import {
   clientScopeKey,
+  isActiveRuntime,
   useWorkspace,
   type RuntimeConnection,
   type StudioViewProps,
@@ -23,7 +24,7 @@ import {
 } from '@dovo/studio-ui'
 import { AutomationDetail } from './automation-detail'
 import { CachedAutomation } from './cached-automation'
-import { aggregateAutomations, type FleetAutomation } from './fleet'
+import { aggregateAutomations, liveAutomationRuntimes, type FleetAutomation } from './fleet'
 import { newNode } from './graph'
 type Selection = {
   runtimeId: string
@@ -76,21 +77,13 @@ export default function JobsView({ entityId }: StudioViewProps) {
     },
     [],
   )
-  // Keep unsynced edits on the current host visible while other hosts use saved snapshots.
-  const entries = runtimes.map((entry) =>
-    entry.profile.id === activeRuntimeId && connection?.token === entry.profile.connection.token
-      ? {
-          ...entry,
-          connected,
-          snapshot: snapshot
-            ? {
-                ...snapshot,
-                workspace,
-              }
-            : entry.snapshot,
-        }
-      : entry,
-  )
+  const entries = liveAutomationRuntimes(runtimes, {
+    activeRuntimeId,
+    connection,
+    connected,
+    snapshot,
+    workspace,
+  })
   const rows = aggregateAutomations(entries)
   const notifiedRun = entityId
     ? entries
@@ -119,10 +112,7 @@ export default function JobsView({ entityId }: StudioViewProps) {
         row.runtime.profile.id === selected.runtimeId && row.flow.id === selected.automationId,
     )
   const ownDetail =
-    !!chosen &&
-    connected &&
-    activeRuntimeId === chosen.runtime.profile.id &&
-    connection?.token === chosen.runtime.profile.connection.token
+    !!chosen && connected && isActiveRuntime(chosen.runtime.profile, activeRuntimeId, connection)
   const back = () => {
     setSelected(null)
     setError('')
@@ -173,12 +163,12 @@ export default function JobsView({ entityId }: StudioViewProps) {
     }
   }
   useEffect(() => {
+    const target = pending && { id: pending.runtimeId, connection: pending.connection }
     if (
-      pending &&
-      !runtimes.some(
-        (entry) =>
-          entry.profile.id === pending.runtimeId &&
-          entry.profile.connection.token === pending.connection.token,
+      target &&
+      !resolveRuntimeTarget(
+        runtimes.map((entry) => entry.profile),
+        target,
       )
     ) {
       setPending(null)
@@ -190,9 +180,8 @@ export default function JobsView({ entityId }: StudioViewProps) {
     }
     if (
       !pending ||
-      activeRuntimeId !== pending.runtimeId ||
-      !connection ||
-      connection.token !== pending.connection.token ||
+      !target ||
+      !isActiveRuntime(target, activeRuntimeId, connection) ||
       completedCreation.current === pending.id
     )
       return

@@ -1,13 +1,14 @@
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, runtimeResourceKey } from '@dovo/protocol'
 import { useMemo } from 'react'
 import type { Repository, RuntimeProfile } from '@dovo/protocol'
 import { useWorkspace } from './provider'
-export const repositorySourceKey = (runtimeId: string, repositoryId: string) =>
-  JSON.stringify([runtimeId, repositoryId])
+import { isActiveRuntime } from '../runtime/ownership'
+export const repositorySourceKey = runtimeResourceKey
 export function useRepositorySources() {
   const {
     workspace,
     activeRuntimeId,
+    connection,
     connected,
     runtimes,
     readRuntime,
@@ -16,7 +17,7 @@ export function useRepositorySources() {
   } = useWorkspace()
   const descriptors = JSON.stringify(
     runtimes.flatMap((entry) => {
-      const active = entry.profile.id === activeRuntimeId
+      const active = isActiveRuntime(entry.profile, activeRuntimeId, connection)
       const repositories = active
         ? workspace.repositories
         : (entry.snapshot?.workspace.repositories ?? [])

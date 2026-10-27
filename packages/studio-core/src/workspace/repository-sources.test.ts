@@ -3,6 +3,7 @@ import { decode } from '@dovo/protocol'
 import { beforeEach, expect, it, vi } from 'vite-plus/test'
 import { Effect, Schema } from 'effect'
 import {
+  resolveRuntimeTarget,
   runtimeProfile,
   snapshotSchema,
   type RuntimeOverview,
@@ -14,6 +15,7 @@ type Store = Pick<
   ReturnType<typeof useWorkspace>,
   | 'workspace'
   | 'activeRuntimeId'
+  | 'connection'
   | 'connected'
   | 'runtimes'
   | 'readRuntime'
@@ -95,6 +97,7 @@ const caches = new Map([
 beforeEach(() => {
   store = {
     activeRuntimeId: mac.profile.id,
+    connection: mac.profile.connection,
     workspace: {
       ...snapshot.workspace,
       repositories: [
@@ -146,6 +149,7 @@ it('binds each request and read cache to its owner independently of the active h
   store = {
     ...store,
     activeRuntimeId: linux.profile.id,
+    connection: linux.profile.connection,
     workspace: snapshot.workspace,
   }
   expect(useRepositorySources().find((entry) => entry.key === source.key)?.scope).toBe(source.scope)
@@ -216,4 +220,47 @@ it('retains cached offline projects and omits computers without a loaded snapsho
     ['Mac', false],
     ['Linux', false],
   ])
+})
+it('retires captured requests after a same-pairing address change and keeps other hosts', async () => {
+  // Mirrors the provider: explicit-owner reads dispatch only to a currently saved pairing.
+  const read = mutableStruct({ owner: Schema.String, address: Schema.String })
+  store = {
+    ...store,
+    readRuntime: async (profile, _path, _input, schema) => {
+      if (
+        !resolveRuntimeTarget(
+          store.runtimes.map((entry) => entry.profile),
+          profile,
+        )
+      )
+        throw new Error('This device connection changed. Reopen the item to continue.')
+      return decode(schema, { owner: profile.id, address: profile.connection.address })
+    },
+  }
+  const [captured, other] = useRepositorySources()
+  const replaced = {
+    ...mac,
+    profile: {
+      ...mac.profile,
+      connection: { ...mac.profile.connection, address: 'http://mac.vpn:51464' },
+    },
+  }
+  // The registry already names the new address; the open connection is still the old one.
+  store = { ...store, runtimes: [replaced, linux] }
+  const [current, inactive] = useRepositorySources()
+  expect(current.key).toBe(captured.key)
+  expect(current.scope).not.toBe(captured.scope)
+  expect(current.repository.name).toBe('Cached project')
+  await expect(captured.request('/api/read', {}, read)).rejects.toThrow('connection changed')
+  expect(await current.request('/api/read', {}, read)).toEqual({
+    owner: mac.profile.id,
+    address: 'http://mac.vpn:51464',
+  })
+  expect(await other.request('/api/read', {}, read)).toEqual({
+    owner: linux.profile.id,
+    address: 'http://linux.local:51464',
+  })
+  expect(inactive.scope).toBe(other.scope)
+  store = { ...store, connection: replaced.profile.connection }
+  expect(useRepositorySources()[0].repository.name).toBe('Unsent rename')
 })
