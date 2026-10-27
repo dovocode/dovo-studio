@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
+import { createRequire } from 'node:module'
 import { openDatabase } from '../../packages/runtime/dist/storage/database.js'
 import { Devices } from '../../packages/runtime/dist/auth/devices.js'
 import { Pairing } from '../../packages/runtime/dist/auth/pairing.js'
 import { preparePairingFlow, startPairingControl } from './mobile-pairing.mjs'
+
+const { parseAllDocuments } = createRequire(
+  new URL('../../packages/runtime/package.json', import.meta.url),
+)('yaml')
 
 void test('slow driver startup gets a fresh single-use code with normal expiry and approval', async () => {
   const db = openDatabase(':memory:')
@@ -48,6 +53,17 @@ void test('the native release flow mints its code at input, after driver startup
   )
   const prepared = preparePairingFlow(flow)
   assert.ok(!prepared.includes('${PAIRING_CODE}'))
+  const documents = parseAllDocuments(prepared)
+  assert.ok(documents.every((document) => document.errors.length === 0))
+  const commands = documents[1].toJS()
+  const addressInput = commands.findIndex((command) => command.inputText === '${RUNTIME_ADDRESS}')
+  assert.deepEqual(commands[addressInput + 1], {
+    assertVisible: { id: 'Computer address', text: '${RUNTIME_ADDRESS}' },
+  })
+  const codeInput = commands.findIndex((command) => command.inputText === '${output.pairing.code}')
+  assert.deepEqual(commands[codeInput + 1], {
+    assertVisible: { id: 'Pairing code', text: '${output.pairing.code}' },
+  })
   const mint = prepared.indexOf('- evalScript: ${output.pairing')
   assert.ok(mint > prepared.indexOf('id: Pairing code'))
   assert.ok(mint < prepared.indexOf('- inputText: ${output.pairing.code}'))

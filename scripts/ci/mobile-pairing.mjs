@@ -3,10 +3,15 @@ import { createServer } from 'node:http'
 // Maestro starts its host-side driver before entering the pairing form. Request
 // the real code only when typing it, so startup never consumes its lifetime.
 export function preparePairingFlow(flow) {
-  return flow.replaceAll(
-    '- inputText: ${PAIRING_CODE}',
-    "- evalScript: ${output.pairing = json(http.post(PAIRING_CONTROL_ADDRESS + '/pairing-code', {body:'{}'}).body)}\n- inputText: ${output.pairing.code}",
-  )
+  return flow
+    .replaceAll(
+      '- inputText: ${RUNTIME_ADDRESS}',
+      '- inputText: ${RUNTIME_ADDRESS}\n- assertVisible:\n    id: Computer address\n    text: ${RUNTIME_ADDRESS}',
+    )
+    .replaceAll(
+      '- inputText: ${PAIRING_CODE}',
+      "- evalScript: ${output.pairing = json(http.post(PAIRING_CONTROL_ADDRESS + '/pairing-code', {body:'{}'}).body)}\n- inputText: ${output.pairing.code}\n- assertVisible:\n    id: Pairing code\n    text: ${output.pairing.code}",
+    )
 }
 
 // Fixture-only loopback control; production pairing and its expiry stay intact.

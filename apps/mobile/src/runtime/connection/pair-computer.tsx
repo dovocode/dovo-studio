@@ -17,7 +17,7 @@ import { nativeEffect, mobileWorkflow } from '../state/native-effect'
 import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import { useApplicationState } from '../state/application-state'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ActivityIndicator, AppState, Keyboard, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { useRuntime } from './provider'
@@ -46,11 +46,13 @@ export function PairComputer({
 
   const { connect, cancelPairing } = useRuntime(),
     { busy, error, act } = useAction(),
-    [address, setAddress] = useApplicationState(invitation?.address ?? initialAddress ?? ''),
+    // Native text and its React echo must commit together; external-store updates can
+    // run before TextInput has recorded its native event count and overwrite new typing.
+    [address, setAddress] = useState(invitation?.address ?? initialAddress ?? ''),
     [peer, setPeer] = useApplicationState<PeerConfig | undefined>(invitation?.peer),
-    [name, setName] = useApplicationState('My phone'),
-    [computerName, setComputerName] = useApplicationState(''),
-    [code, setCode] = useApplicationState(invitation?.code ?? ''),
+    [name, setName] = useState('My phone'),
+    [computerName, setComputerName] = useState(''),
+    [code, setCode] = useState(invitation?.code ?? ''),
     [options, setOptions] = useApplicationState(false),
     [help, setHelp] = useApplicationState(false),
     [keyboard, setKeyboard] = useApplicationState(false),
