@@ -517,3 +517,22 @@ database; an earlier reviewer reply incorrectly suggested the server ID itself w
 identity migration follows from that claim. Shared repository URLs are presentation identities, not
 authorization to move a mutation to another computer or account. Reads and actions must retain their
 computer, resource, verified forge account/destination and freshness constraints.
+
+### Environment implementation direction
+
+The follow-through adopts T3's explicit scope boundaries while keeping Dovo's existing paired
+computer registry and persistent server identities. Shared client targets bind a saved computer to
+the address and credential captured by an operation; scoped resource keys keep identical local IDs
+on different computers distinct. Connection replacement verifies the authenticated server identity
+before transferring saved edits. See [Runtime client](runtime-client.md#computer-and-resource-scope)
+for the contract and identity distinctions.
+
+Desktop and mobile consumers must resolve the saved owner rather than borrowing whichever computer
+is currently selected. Cached data stays associated with the connection that read it; live workspace
+state is overlaid only when the open connection matches. Runtime Studio tools additionally resolve
+profile aliases and persistent server IDs to one computer, with explicit ambiguity handling.
+
+This is ownership and recovery consolidation, not a new account requirement or a server mesh.
+Repository grouping does not authorize cross-computer writes. The GitHub workflow additions above
+remain separate recommendations; this work does not imply that auto-merge, batched reviews or
+viewed-file sync have been implemented.
