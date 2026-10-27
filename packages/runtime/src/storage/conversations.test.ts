@@ -356,6 +356,35 @@ it('pages stored history exactly like the in-memory page at every cursor', () =>
     db.close()
   }
 })
+it.each(['Message', 'Message\0', 'Message\ufffd'])(
+  'pages every matching message for %s without loading whole histories',
+  (query) => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new WorkspaceStore(db)
+      const messages = task.messages.map((message, index) => ({
+        ...message,
+        text: `${query} ${index}`,
+      }))
+      store.update((current) => ({ ...current, tasks: [{ ...task, messages }, second] }))
+      const retained = store.retainedHistories()
+      const ids: string[] = []
+      let before: string | undefined
+      do {
+        const page = store.searchHistory(query, task.id, before)
+        expect(page.hits.length).toBeLessThanOrEqual(50)
+        ids.push(...page.hits.map((hit) => hit.messageId))
+        before = page.nextBefore
+      } while (before !== undefined)
+      expect(ids).toEqual(messages.map((message) => message.id).reverse())
+      expect(store.retainedHistories()).toEqual(retained)
+      expect(() => store.searchHistory(query, task.id, 's0')).toThrow('cursor no longer exists')
+    } finally {
+      db.close()
+    }
+  },
+)
+
 it('searches stored history with the in-memory ordering, snippets and complete task list', () => {
   const db = openDatabase(':memory:')
   try {

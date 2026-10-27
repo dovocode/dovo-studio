@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import type { Task } from '@dovo/studio-core'
-import { messageResults, switcherResults } from './task-search'
+import { mergeMessageResults, messageResults, switcherResults } from './task-search'
 import type { TaskEntry } from './task-collection'
 
 const entry = (id: string, title: string, text: string, changes: Partial<Task> = {}): TaskEntry =>
@@ -35,4 +35,22 @@ it('returns message snippets around the match', () => {
   expect(hit.snippet.startsWith('…')).toBe(true)
   expect(hit.snippet).toContain('token refresh fails')
   expect(messageResults([entry('a', 'Auth', long)], 'x')).toEqual([])
+})
+
+it('ranks hits across computers before applying the global cap and keeps identities distinct', () => {
+  const old = entry('computer-a:shared', 'Old', 'needle')
+  const recent = entry('computer-b:shared', 'Recent', 'needle', {
+    updatedAt: '2026-10-27T00:00:00Z',
+  })
+  const hits = Array.from({ length: 50 }, (_, index) => ({
+    entry: old,
+    messageId: String(index),
+    snippet: 'old',
+    role: 'user',
+  }))
+  const newer = { entry: recent, messageId: '0', snippet: 'new', role: 'assistant' }
+  const result = mergeMessageResults([...hits, newer, { ...newer, snippet: 'cached' }])
+  expect(result).toHaveLength(50)
+  expect(result[0]).toEqual({ ...newer, snippet: 'cached' })
+  expect(result[1]).toEqual(hits[0])
 })

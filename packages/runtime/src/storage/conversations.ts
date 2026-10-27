@@ -257,12 +257,31 @@ export class Conversations {
     return conversationWindowPage({ messages, turns, historyRevision })
   }
   /** `searchTaskMessages` over stored history. Every matching task is listed; hits are bounded. */
-  search(orderedTaskIds: readonly string[], needle: string, limit = 50): TaskSearchResult {
+  search(
+    orderedTaskIds: readonly string[],
+    needle: string,
+    limit = 50,
+    before?: string,
+  ): TaskSearchResult {
     if (!needle || !orderedTaskIds.length) return { taskIds: [], hits: [] }
+    let end = Number.MAX_SAFE_INTEGER
+    if (before !== undefined) {
+      if (orderedTaskIds.length !== 1) throw new Error('Choose one thread for paged search')
+      const cursor = decode(
+        ordinalSchema,
+        this.db
+          .prepare(
+            "SELECT ordinal FROM conversation_items WHERE task_id = ? AND kind = 'message' AND item_id = ?",
+          )
+          .get(orderedTaskIds[0], before),
+      )
+      if (!cursor) throw new Error('The search cursor no longer exists. Search again.')
+      end = cursor.ordinal
+    }
     // SQLite encodes strings as UTF-8. For malformed UTF-16, replacement characters, and
     // NULs, match original JSON text in JS to preserve the protocol's exact semantics.
     if (/[\ud800-\udfff]/u.test(needle) || needle.includes('\ufffd') || needle.includes('\0'))
-      return this.searchOriginalText(orderedTaskIds, needle, limit)
+      return this.searchOriginalText(orderedTaskIds, needle, limit, end)
     const candidates = this.searchCandidates(needle)
     const candidateJson = candidates === undefined ? undefined : JSON.stringify(candidates)
     if (orderedTaskIds.length === 1) {
@@ -273,12 +292,13 @@ export class Conversations {
           .prepare(`SELECT item.value FROM conversation_index AS entry
         JOIN conversation_items AS item USING (task_id, kind, item_id)
         WHERE ${candidateJson === undefined ? '' : 'entry.rowid IN (SELECT value FROM json_each(?)) AND'}
-          entry.task_id = ? AND entry.kind = 'message' AND instr(entry.search_text, ?) > 0
+          entry.task_id = ? AND entry.kind = 'message' AND instr(entry.search_text, ?) > 0 AND entry.ordinal < ?
         ORDER BY entry.ordinal DESC LIMIT ?`)
           .all(
             ...(candidateJson === undefined ? [] : [candidateJson]),
             taskId,
             needle,
+            end,
             Math.max(1, limit),
           ),
       )
@@ -346,14 +366,19 @@ export class Conversations {
     )
     return candidates.length > candidateLimit ? undefined : candidates.map((row) => row.rowid)
   }
-  private searchOriginalText(orderedTaskIds: readonly string[], needle: string, limit: number) {
+  private searchOriginalText(
+    orderedTaskIds: readonly string[],
+    needle: string,
+    limit: number,
+    end: number,
+  ) {
     const result: TaskSearchResult = { taskIds: [], hits: [] }
     const read = this.db.prepare(
-      "SELECT value FROM conversation_items WHERE task_id = ? AND kind = 'message' ORDER BY ordinal DESC",
+      "SELECT value FROM conversation_items WHERE task_id = ? AND kind = 'message' AND ordinal < ? ORDER BY ordinal DESC",
     )
     for (const taskId of orderedTaskIds) {
       let matched = false
-      for (const row of read.iterate(taskId)) {
+      for (const row of read.iterate(taskId, end)) {
         const stored = decode(mutableStruct({ value: Schema.String }), row)
         const hit = taskSearchHit(taskId, decode(messageSchema, JSON.parse(stored.value)), needle)
         if (!hit) continue

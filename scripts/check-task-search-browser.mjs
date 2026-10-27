@@ -200,3 +200,5 @@ try {
 } finally {
   await browser.close()
 }
+
+await import('./browser/thread-search.mjs')

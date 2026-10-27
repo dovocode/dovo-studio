@@ -3,6 +3,8 @@ import { mutableArray, mutableStruct } from '../shared/schema.js'
 import type { Task } from '../workspace.js'
 export const taskSearchSchema = mutableStruct({
   taskIds: mutableArray(Schema.String),
+  /** Older matching messages in a single-thread search; omitted for global search. */
+  nextBefore: Schema.optional(Schema.String),
   hits: mutableArray(
     mutableStruct({
       taskId: Schema.String,

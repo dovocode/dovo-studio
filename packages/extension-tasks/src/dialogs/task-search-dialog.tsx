@@ -190,7 +190,9 @@ export function TaskSearchDialog({
                 ? 'Offline computers: searching saved messages only.'
                 : mode === 'messages' && !query.trim()
                   ? 'Type to search conversation history.'
-                  : '\u00a0')}
+                  : mode === 'messages' && search.hits.length === 50
+                    ? 'Showing up to 50 matches. Refine your search for older messages.'
+                    : '\u00a0')}
         </p>
       </DialogContent>
     </Dialog>

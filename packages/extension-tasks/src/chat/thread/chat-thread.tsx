@@ -183,7 +183,12 @@ export function ChatThread({
   const revealId = revealMessage?.startsWith(revealPrefix)
     ? revealMessage.slice(revealPrefix.length)
     : undefined
-  const target = selectedMatch?.id ?? revealId
+  // An explicit jump from global search wins over a previous in-thread search.
+  // Close that search so clearing the jump highlight cannot scroll back to it.
+  useEffect(() => {
+    if (revealId) setSearchOpen(false)
+  }, [revealId])
+  const target = revealId ?? selectedMatch?.id
   const targetVisible = !!target && task.messages.some((message) => message.id === target)
   useEffect(() => {
     if (
@@ -351,7 +356,18 @@ export function ChatThread({
           />
           <span role="status" className="text-xs tabular-nums text-muted-foreground">
             {matches.length ? Math.min(matchIndex + 1, matches.length) : 0}/{matches.length}
+            {search.loading ? '…' : search.hasMore ? '+' : ''}
           </span>
+          {search.hasMore && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={search.loading}
+              onClick={() => void search.loadMore()}
+            >
+              {search.loading ? 'Loading…' : 'Older matches'}
+            </Button>
+          )}
           <IconButton
             label="Previous match"
             className="size-7"

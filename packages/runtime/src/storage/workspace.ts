@@ -1104,11 +1104,16 @@ export class WorkspaceStore {
     return this.conversations.page(id, before, this.taskSummary(id).historyRevision)
   }
   /** Search committed histories in SQLite, ordered and bounded like `searchTaskMessages`. */
-  searchHistory(query: string, id?: string) {
-    return this.conversations.search(
+  searchHistory(query: string, id?: string, before?: string) {
+    const result = this.conversations.search(
       taskSearchOrder(id ? [this.taskSummary(id)] : this.workspace.tasks).map((task) => task.id),
       taskSearchNeedle(query),
+      id ? 51 : 50,
+      before,
     )
+    if (!id || result.hits.length <= 50) return result
+    const hits = result.hits.slice(0, 50)
+    return { ...result, hits, nextBefore: hits.at(-1)!.messageId }
   }
   // Questions consumes this through its injected receipt-store contract.
   questionResponse(id: string) {

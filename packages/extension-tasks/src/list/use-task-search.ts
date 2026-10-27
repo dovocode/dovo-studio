@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { taskSearchSchema, type TaskSearchResult } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
-import { messageResults } from './task-search'
+import { mergeMessageResults, messageResults } from './task-search'
 import { taskCollectionKey, type TaskEntry } from './task-collection'
 
 /** Query each owning runtime instead of downloading every conversation for a search. */
@@ -80,11 +80,7 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
         : []
     }),
   )
-  const hits = [
-    ...new Map(
-      [...remoteHits, ...local].map((hit) => [`${hit.entry.key}:${hit.messageId}`, hit]),
-    ).values(),
-  ].slice(0, 50)
+  const hits = mergeMessageResults([...remoteHits, ...local])
   return {
     hits,
     keys: new Set([

@@ -38,6 +38,17 @@ export function switcherResults(entries: readonly TaskEntry[], query: string, li
 
 export type MessageHit = { entry: TaskEntry; messageId: string; snippet: string; role: string }
 
+/** Rank the combined computers before limiting; connection order is not recency. */
+export function mergeMessageResults(hits: readonly MessageHit[], limit = 50) {
+  return [...new Map(hits.map((hit) => [`${hit.entry.key}:${hit.messageId}`, hit])).values()]
+    .sort((a, b) =>
+      (b.entry.task.updatedAt ?? b.entry.task.createdAt).localeCompare(
+        a.entry.task.updatedAt ?? a.entry.task.createdAt,
+      ),
+    )
+    .slice(0, limit)
+}
+
 /** Messages containing the query (case-insensitive), newest tasks first, with a snippet
  * centred on the match. */
 export function messageResults(entries: readonly TaskEntry[], query: string, limit = 50) {

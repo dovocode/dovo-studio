@@ -36,7 +36,7 @@ import {createRoot} from 'react-dom/client';import {useState} from 'react';impor
 window.markdownRenders=0;window.timelineCalls=0;
 const messages=Array.from({length:500},(_,index)=>({id:String(index),role:index%2?'assistant':'user',text:'Message '+index}));
 const turns=messages.filter(m=>m.role==='assistant').map((m,index)=>({id:'turn-'+index,assistantId:m.id,status:index===249?'running':'completed',startedAt:'2026-10-02T12:00:00Z',finishedAt:index===249?undefined:'2026-10-02T12:00:01Z'}));
-function App(){const [task,setTask]=useState({id:'thread',status:'running',messages,turns});window.stream=()=>setTask(old=>({...old,messages:old.messages.map((message,index)=>index===499?{...message,text:message.text+'x'}:message)}));window.complete=()=>setTask(old=>({...old,status:'completed',turns:old.turns.map(turn=>turn.status==='running'?{...turn,status:'completed'}:turn)}));return <ChatThread task={task}/>;}
+function App(){const [reveal,setReveal]=useState();window.reveal=id=>setReveal('message-thread-'+id);const [task,setTask]=useState({id:'thread',status:'running',messages,turns});window.stream=()=>setTask(old=>({...old,messages:old.messages.map((message,index)=>index===499?{...message,text:message.text+'x'}:message)}));window.complete=()=>setTask(old=>({...old,status:'completed',turns:old.turns.map(turn=>turn.status==='running'?{...turn,status:'completed'}:turn)}));return <ChatThread task={task} revealMessage={reveal} onRevealHandled={()=>setReveal(undefined)}/>;}
 createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
@@ -163,6 +163,26 @@ try {
   await page.waitForFunction(() =>
     document.getElementById('message-thread-499').textContent.includes('Message 499'),
   )
+  await page.evaluate(() => {
+    window.jumps = []
+    Element.prototype.scrollIntoView = function () {
+      window.jumps.push(this.id)
+    }
+    window.dispatchEvent(new CustomEvent('dovo:search-thread', { detail: 'thread' }))
+  })
+  await page.getByRole('searchbox', { name: 'Search this thread' }).fill('Message 3')
+  await page.waitForFunction(() => window.jumps.includes('message-thread-3'))
+  await page.evaluate(() => window.reveal('477'))
+  await page.waitForFunction(() =>
+    document.getElementById('message-thread-477')?.classList.contains('studio-search-hit'),
+  )
+  await page.getByRole('searchbox', { name: 'Search this thread' }).waitFor({ state: 'detached' })
+  await page.waitForFunction(
+    () => !document.getElementById('message-thread-477')?.classList.contains('studio-search-hit'),
+  )
+  if (await page.evaluate(() => window.jumps.at(-1) !== 'message-thread-477'))
+    throw new Error('Global search jumped back to the previous in-thread match')
+  console.log('Explicit message reveals override in-thread search without jumping back.')
   if (errors.length) throw new Error(errors.join('\n'))
 } finally {
   await browser.close()

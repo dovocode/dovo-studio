@@ -1128,11 +1128,17 @@ export function route(
         throw new HttpError(404, 'Unknown sharing action')
       }
       if (method === 'POST' && path === '/api/tasks/search') {
-        const { query, id } = decode(
-          mutableStruct({ query: maxValue(Schema.String, 500), id: Schema.optional(idSchema) }),
+        const { query, id, before } = decode(
+          mutableStruct({
+            query: maxValue(Schema.String, 500),
+            id: Schema.optional(idSchema),
+            before: Schema.optional(idSchema),
+          }),
           yield* serviceResult(body(request, 4096)),
         )
-        return s.store.searchHistory(query, id)
+        if (before !== undefined && !id)
+          throw new HttpError(400, 'Choose one thread for paged search')
+        return s.store.searchHistory(query, id, before)
       }
       if (method === 'GET' && path === '/api/snapshot') {
         return yield* runtimeSnapshot(
