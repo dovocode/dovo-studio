@@ -45,7 +45,7 @@ void test('rejects mismatched or non-nightly release provenance', () => {
   assert.throws(() => validatePublication(manifest, sha, { ...release, targetCommitish: 'main' }))
 })
 
-void test('completion events dispatch downstream builds once, from the validated tag', () => {
+void test('desktop publication dispatches distribution once and never starts a mobile release', () => {
   const directory = mkdtempSync(join(tmpdir(), 'dovo-publication-test-'))
   const tag = 'v0.0.9-nightly.526'
   const fixture = {
@@ -101,22 +101,7 @@ else if (args[0] === 'release' && args[1] === 'edit') {fixture.release.isDraft=f
     assert.equal(calls.filter((args) => args[0] === 'release' && args[1] === 'edit').length, 1)
     assert.deepEqual(
       calls.filter((args) => args[0] === 'workflow'),
-      [
-        ['workflow', 'run', 'distribution.yml', '-f', `tag=${tag}`],
-        [
-          'workflow',
-          'run',
-          'release-mobile.yml',
-          '--ref',
-          tag,
-          '-f',
-          `release_tag=${tag}`,
-          '-f',
-          'platform=all',
-          '-f',
-          'upload=true',
-        ],
-      ],
+      [['workflow', 'run', 'distribution.yml', '-f', `tag=${tag}`]],
     )
 
     // A newer published nightly must still prevent an older draft from publishing.

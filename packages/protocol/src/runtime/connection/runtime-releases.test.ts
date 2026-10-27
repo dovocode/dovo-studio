@@ -40,6 +40,14 @@ it('retains API release notes when available and does not query fallback metadat
               }
             : [
                 {
+                  tag_name: 'mobile-v9.0.0-beta.2026102003',
+                  html_url:
+                    'https://github.com/dovocode/dovo-studio/releases/tag/mobile-v9.0.0-beta.2026102003',
+                  draft: false,
+                  prerelease: true,
+                  body: 'Mobile beta notes',
+                },
+                {
                   tag_name: 'v0.0.7-nightly.171',
                   html_url:
                     'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.7-nightly.171',

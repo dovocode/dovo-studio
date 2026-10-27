@@ -151,37 +151,6 @@ jobs:
           packages/runtime/src/agents/configuration/acp-installations.test.ts
           packages/runtime/src/previews/physical-device-startup.test.ts
           apps/desktop/electron
-  mobile-native:
-    runs-on: macos-26
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-build
-        id: setup
-      - run: pnpm install --frozen-lockfile
-      - uses: ./.github/actions/save-dependencies
-        with:
-          store: ${{ steps.setup.outputs.store }}
-          key: ${{ steps.setup.outputs.store-key }}
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Install Maestro CLI
-        run: |
-          curl --fail --location --retry 2 https://github.com/mobile-dev-inc/maestro/releases/download/cli-2.11.0/maestro.zip -o "$RUNNER_TEMP/maestro.zip"
-          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP/maestro-cli"
-          echo "$RUNNER_TEMP/maestro-cli/maestro/bin" >> "$GITHUB_PATH"
-      - name: Build and verify installed native app on disposable iPhone simulator
-        run: node scripts/ci/mobile-native-smoke.mjs
-      - uses: actions/upload-artifact@v7
-        if: failure()
-        with:
-          name: mobile-native-failure
-          path: |
-            work/mobile-native-smoke/
-            ~/.maestro/tests/
-          if-no-files-found: ignore
   # Windows shell selection, launcher and server lifecycle suites.
   windows:
     # Temporarily paused; keep the job definition for restoring Windows coverage.

@@ -65,13 +65,24 @@ server, enable task notifications, then verify a background input/completion not
 thread link. Verify that disabling one server leaves another enabled. Account-free pairing and HTTP
 LAN/VPN connections remain supported.
 
-## Automated mobile nightlies
+## Manual mobile beta releases
 
-The **Mobile nightly** GitHub Actions workflow builds iOS on `macos-26` and Android on
-`ubuntu-24.04`. Each successfully published desktop/server nightly dispatches it from the **same
-nightly source tag**. Manual runs support one or both platforms and artifact-only builds by turning
-`upload` off. A passing **Check** workflow is required for that exact commit, including manual runs.
-Stable desktop releases do not trigger mobile nightlies.
+The **Mobile beta release** GitHub Actions workflow is manual only. It builds iOS on `macos-26` and
+Android on `ubuntu-24.04`, independently of desktop/server releases. Both **Check** and **Mobile
+integration** must pass for the exact source commit before signing begins. Choose one or both
+platforms; turn `upload` off to skip TestFlight/Play uploads while retaining signed artifacts and
+publishing a separate GitHub mobile prerelease.
+
+After those checks pass, start a build from Actions or run:
+
+```sh
+gh workflow run release-mobile.yml --ref main -f platform=all -f upload=true
+```
+
+Mobile GitHub releases use `mobile-vVERSION-beta.BUILD`, with the version from
+`apps/mobile/app.json`. They never attach artifacts to desktop tags or become the repository's
+latest stable release. Desktop publication never starts mobile builds, and Homebrew/mise
+distribution ignores mobile tags.
 
 Store versions retain `app.json`'s marketing version. Native build numbers use
 `MOBILE_BUILD_NUMBER_BASE + workflow run number * 100 + run attempt`, with at most 99 attempts. The
@@ -80,8 +91,9 @@ default base `2026101902` exceeds the previous manual beta builds. Set the repos
 workflow run sequence or reuse a store build number. The Android limit is checked before a native
 build.
 
-Configure the `mobile-nightly` GitHub environment for the intended release branch/tag policy. Its
-secrets (or repository secrets inherited by the environment) are:
+The existing `mobile-nightly` GitHub environment is retained for its signing credentials and review
+policy. Configure it for the intended manual release branches. Its secrets (or repository secrets
+inherited by the environment) are:
 
 | Secret                                                                                     | Value                                                                                                                                                  |
 | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -117,18 +129,24 @@ uploads request a completed beta release. Google may still require review or rej
 automatic production submission is implemented. Read
 [the disclosure evidence](mobile-store-disclosures.md) before completing forms.
 
-The signed IPA/AAB and provenance (source SHA, version, native build number and SHA256) are retained
-as Actions artifacts for 14 days and attached to the matching GitHub nightly when provided. App
-Store IPAs are not a replacement for TestFlight enrollment. Build, GitHub attachment, upload, review
-and distribution are distinct statuses; a failed store upload preserves the already-built artifact.
+The signed IPA/AAB and provenance (source SHA, mobile release tag, version, native build number and
+SHA256) are retained as Actions artifacts for 14 days. Once every selected platform succeeds, a
+separate GitHub mobile prerelease publishes both packages and their verified provenance. Incomplete
+GitHub uploads leave a draft that can be resumed; published releases are not overwritten. A failed
+store upload preserves the already-built Actions artifact and prevents final GitHub publication. App
+Store IPAs are not a replacement for TestFlight enrollment. Build, GitHub publication, store upload,
+review and distribution are distinct statuses.
 
 ## Installed-app release gate
 
-Check builds a Release iOS simulator app, signs it ad hoc with its normal entitlements, and installs
-it on a fresh disposable simulator. The Maestro release smoke pairs with an isolated HTTP runtime,
-sends into an existing thread and a new thread, checks draft retention through navigation, and opens
-App & updates. This job gates automatic nightly publication and mobile store dispatch. It does not
-verify Android, physical-device signing, push delivery, or microphone/camera permissions.
+The separate **Mobile integration** workflow builds a Release iOS simulator app, signs it ad hoc
+with its normal entitlements, and installs it on a fresh disposable simulator. The Maestro release
+smoke pairs with an isolated HTTP runtime, sends into an existing thread and a new thread, checks
+draft retention through navigation, and opens App & updates. It runs on main pushes, pull requests
+and manual dispatch. This integration gate is required for manual mobile releases; desktop nightlies
+do not wait for it. Shared TypeScript, unit and browser checks remain in **Check**. The mobile
+integration smoke does not verify Android, physical-device signing, push delivery, or
+microphone/camera permissions.
 
 On a Mac with Xcode, CocoaPods and Maestro 2.11.0, run:
 

@@ -92,9 +92,9 @@ platform artifacts and the Check workflow pass verification. **Publish nightly**
 completion of either workflow and validates the exact commit and release provenance before
 publishing; a slow Check run leaves a verified draft pending. Retry publication without rebuilding
 with `gh workflow run publish-nightly.yml -f sha=COMMIT_SHA`. Already-published tags are skipped to
-avoid duplicate mobile builds. If a downstream dispatch fails after publication, rerun Distribution
-or Mobile nightly directly with that tag. Nightly releases are GitHub prereleases and do not replace
-the latest Stable release. Their release notes list commit messages since the previous published
+avoid duplicate distribution runs. If distribution dispatch fails after publication, rerun
+Distribution directly with that tag. Nightly releases are GitHub prereleases and do not replace the
+latest Stable release. Their release notes list commit messages since the previous published
 nightly, including direct commits to main. Failed draft builds do not advance that baseline. They
 include separate signed **Dovo Studio (Nightly)** Mac bundles, Windows/Linux installers, server
 archives, update metadata, Homebrew definitions, and a pinned mise config. The Stable release
@@ -129,21 +129,23 @@ back to ad hoc signing and macOS may ask for Keychain access again after an upda
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for a local ad hoc verification build without selecting a saved
 identity; published updates still require the Developer ID.
 
-## Mobile nightly pipeline
+## Mobile beta pipeline
 
 A pnpm patch for `react-native-webrtc@155.0.1` lets R8 remove the unused `Dav1dDecoderJni` adapter
 bundled in the M155 Android AAR without its decoder interface. All other WebRTC JNI classes remain
 kept, and R8's missing-class checks remain enabled. Recheck the patch against the upstream AAR when
 updating WebRTC.
 
-A successfully published desktop/server nightly dispatches **Mobile nightly** from the same source
-tag. It builds signed iOS and Android artifacts, adds commit/checksum provenance, attaches them to
-the GitHub nightly, and uploads to TestFlight/Google Play testing when private credentials are
-configured. Stable desktop releases do not trigger it. Store processing, external beta review and
-public-link enrollment remain distinct from successful uploads. Android uploads default to draft
-until the testing setup is ready; production tracks are disabled. See
-[mobile beta automation](mobile-beta-testing.md#automated-mobile-nightlies) for environment secrets,
-manual artifact-only runs, increasing build numbers and initial store setup.
+**Mobile beta release** runs only by manual dispatch. It requires successful **Check** and **Mobile
+integration** workflows for the exact source commit, builds signed iOS and/or Android artifacts, and
+publishes a separate `mobile-vVERSION-beta.BUILD` GitHub prerelease with verified commit/checksum
+provenance. Optional uploads target TestFlight/Google Play testing using the existing private
+credentials. Desktop releases never trigger mobile builds, and mobile integration failures do not
+hold desktop publication. Store processing, external beta review and public-link enrollment remain
+distinct from successful uploads. Android uploads default to draft until the testing setup is ready;
+production tracks are disabled. See
+[mobile beta releases](mobile-beta-testing.md#manual-mobile-beta-releases) for environment secrets,
+manual builds without store uploads, increasing build numbers and initial store setup.
 
 ## Local iPhone updates
 

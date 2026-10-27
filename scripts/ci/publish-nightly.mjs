@@ -69,7 +69,7 @@ function publishNightly() {
     )
     validatePublication(manifest, sha, release)
     // Both completion events can queue after both runs finish. Publication is serialized,
-    // so the second event must not dispatch another pair of distribution builds.
+    // so the second event must not dispatch distribution again.
     if (!release.isDraft) {
       console.log(
         `${manifest.tag} is already published; downstream workflows are not dispatched again.`,
@@ -88,19 +88,6 @@ function publishNightly() {
     }
     gh('release', 'edit', manifest.tag, '--draft=false', '--prerelease', '--latest=false')
     gh('workflow', 'run', 'distribution.yml', '-f', `tag=${manifest.tag}`)
-    gh(
-      'workflow',
-      'run',
-      'release-mobile.yml',
-      '--ref',
-      manifest.tag,
-      '-f',
-      `release_tag=${manifest.tag}`,
-      '-f',
-      'platform=all',
-      '-f',
-      'upload=true',
-    )
     console.log(`Published ${manifest.tag} from passing source ${sha}.`)
   } finally {
     rmSync(directory, { recursive: true, force: true })
