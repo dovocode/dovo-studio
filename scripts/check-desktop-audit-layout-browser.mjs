@@ -158,7 +158,10 @@ try {
       const row = page.locator('.group\\/task')
       const title = await row.getByText('Short title', { exact: true }).boundingBox()
       if (archived) {
-        const button = row.getByRole('button', { name: 'Short title', exact: true })
+        const button = row
+          .getByRole('button')
+          .filter({ has: page.getByText('Short title', { exact: true }) })
+        await button.getByLabel('Settled', { exact: true }).waitFor()
         const bounds = await button.boundingBox()
         assert.ok(bounds.height <= 38, 'Settled threads retain their compact height')
         await contained(row.getByText('Short title', { exact: true }), button)
