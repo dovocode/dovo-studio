@@ -160,7 +160,7 @@
     "test:file-drop:browser": "node scripts/check-composer-send-browser.mjs && node scripts/check-mobile-file-drop-browser.mjs",
     "test:native-project-panels:browser": "node scripts/check-native-project-panels-browser.mjs && node scripts/check-native-audit-browser.mjs",
     "test:shared-pages:browser": "node scripts/check-shared-pages-browser.mjs",
-    "test:integration-scopes:browser": "node scripts/check-integration-scopes-browser.mjs && node scripts/check-work-navigation-browser.mjs && node scripts/check-desktop-source-readers-browser.mjs && node scripts/check-desktop-integration-continuity-browser.mjs && node scripts/check-desktop-destination-guards-browser.mjs && node scripts/check-mobile-integration-continuity-browser.mjs",
+    "test:integration-scopes:browser": "node scripts/check-integration-scopes-browser.mjs && node scripts/check-work-navigation-browser.mjs && node scripts/check-desktop-source-readers-browser.mjs && node scripts/check-pr-read-continuity-browser.mjs && node scripts/check-desktop-integration-continuity-browser.mjs && node scripts/check-desktop-destination-guards-browser.mjs && node scripts/check-mobile-integration-continuity-browser.mjs",
     "test:code-theme-editor:browser": "node scripts/check-code-theme-editor-browser.mjs",
     "test:model-catalog-cache:browser": "node scripts/check-model-catalog-cache-browser.mjs",
     "test:permission-policy:browser": "node scripts/check-permission-policy-browser.mjs",

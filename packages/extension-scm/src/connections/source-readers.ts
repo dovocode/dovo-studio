@@ -337,12 +337,23 @@ export function useDetailReader<T extends Source>(
   )
   const namespace = `detail:${origin?.scope ?? entity}:${entity}`
   const selected = useSourceReaders(group, namespace, remote, !!origin, origin, allowHandoff)
-  return useMemo(() => {
-    if (!origin) return { reader: undefined, destination: undefined }
-    const reader = selected.sources[0]
-    return {
-      reader,
-      destination: assignments.get(namespace)?.destinations.get(remote(origin)),
-    }
-  }, [origin, selected.sources, namespace])
+  const reader = origin ? selected.sources[0] : undefined
+  const destination = origin
+    ? assignments.get(namespace)?.destinations.get(remote(origin))
+    : undefined
+  // This is a request target, not source presentation. Unrelated workspace edits rebuild source
+  // objects but must not cancel a pending PR/pipeline read. Scope includes the pairing and project
+  // binding; account, availability, destination and cache changes still replace the target.
+  return useMemo(
+    () => ({ reader, destination }),
+    [
+      namespace,
+      reader?.key,
+      reader?.scope,
+      reader?.readerIdentity,
+      reader?.connected,
+      reader?.readCache,
+      destination,
+    ],
+  )
 }
