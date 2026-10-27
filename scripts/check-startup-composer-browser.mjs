@@ -60,7 +60,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
   './detail/task-header': `export const TaskHeader=({task,onSurface})=><header data-thread-header={task.id}>{task.title}<button onClick={()=>onSurface('agents')}>Agents</button><button onClick={()=>onSurface('changes')}>Show diff fixture</button><button onClick={()=>onSurface('files')}>Show file fixture</button></header>;`,
   './detail/task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
-  '../chat/thread/chat-thread': `export const ChatThread=({task})=><div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
+  '../chat/thread/chat-thread': `export const ChatThread=({task,emptyState})=>task.status==='draft'&&!task.messages.length&&emptyState?emptyState:<div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
   '../chat/thread/use-task-viewed': 'export const useTaskViewed=()=>({error:null});',
   './detail/live-refresh': 'export const useLiveRefresh=()=>null;',
@@ -209,6 +209,29 @@ try {
   assert.equal(
     await page.locator('[data-composer-project]').getAttribute('data-auto-project'),
     'false',
+  )
+  // A starter commits the existing draft, keeps the welcome and focuses the same editor.
+  await editor.evaluate((element) => {
+    window.starterEditor = element
+  })
+  await page.getByRole('button', { name: 'Fix a bug', exact: true }).click()
+  await page.waitForFunction(() => window.saved.length === 2)
+  assert.equal(await editor.inputValue(), 'Help me investigate and fix this issue: ')
+  assert(
+    await editor.evaluate(
+      (element) => element === window.starterEditor && document.activeElement === element,
+    ),
+  )
+  assert.equal(
+    await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
+    1,
+  )
+  assert.equal(await page.getByRole('navigation', { name: 'Start with a prompt' }).count(), 0)
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
+    ),
+    0,
   )
   await editor.fill('abcdef')
   await editor.evaluate((element) => {

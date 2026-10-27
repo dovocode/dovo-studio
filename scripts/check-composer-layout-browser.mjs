@@ -26,8 +26,23 @@ const mocks = {
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=()=>null;`,
   './use-attachments': `export const useAttachments=()=>({files:[],previews:[],uploading:[],busy:false,error:'',upload:async()=>{},remove:()=>{}});`,
-  './task-activity': `const tools=[];export const useTaskActivity=()=>({tools,error:''});export const TaskActivity=()=>null;`,
+  './task-activity': `import {useState} from 'react';const tools=[];export const useTaskActivity=()=>{const [error,setError]=useState('');window.setActivityError=setError;return {tools,error}};export {TaskActivity} from '../extension-tasks/src/chat/thread/task-activity';`,
 }
+// Keep the production conversation/composer shell; unrelated review surfaces are boundaries.
+mocks['../chat/thread-sharing'] =
+  'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;'
+mocks['../chat/thread/use-task-viewed'] = 'export const useTaskViewed=()=>({error:null});'
+for (const [path, name] of [
+  ['../chat/thread/task-questions', 'TaskQuestions'],
+  ['../chat/actions/run-controls', 'RunControls'],
+  ['../chat/thread/preparation-progress', 'PreparationProgress'],
+  ['../chat/thread/review-comments-tray', 'ReviewCommentsTray'],
+  ['../chat/thread/plan-approval', 'PlanApproval'],
+  ['../chat/thread/review-findings', 'ReviewFindings'],
+  ['../review/code-review-card', 'CodeReviewCard'],
+  ['../dialogs/task-pull-link-dialog', 'TaskPullLinkDialog'],
+])
+  mocks[path] = `export const ${name}=()=>null;`
 const built = await build({
   stdin: {
     contents: `
@@ -36,9 +51,7 @@ const built = await build({
       import {Context,defaultTaskHarness} from '@dovo/studio-core';
       import {TooltipProvider,TaskDefaultSettings} from '@dovo/studio-ui';
       import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
-      import {ChatThread} from '../extension-tasks/src/chat/thread/chat-thread';
-      import {Composer} from '../extension-tasks/src/chat/composer/composer';
-      import {MessageQueue} from '../extension-tasks/src/chat/thread/message-queue';
+      import {TaskConversation} from '../extension-tasks/src/detail/task-conversation';
       import {ComposerActivity} from '../extension-tasks/src/chat/composer/composer-activity';
       const repositories=[
         {id:'scratch',kind:'scratch',name:'Thread folder',path:'/private/thread',branch:''},
@@ -56,7 +69,7 @@ const built = await build({
         const [pending,setPending]=useState(null);
         const [multiple,setMultiple]=useState(false);window.setMultiple=setMultiple;
         const [activity,setActivity]=useState(false);window.setActivity=setActivity;const [activityPaused,setActivityPaused]=useState(true);window.setActivityPaused=setActivityPaused;
-        const [settings,setSettings]=useState(false);window.showSettings=()=>setSettings(true);
+        const [settings,setSettings]=useState(false);window.showSettings=()=>setSettings(true);window.hideSettings=()=>setSettings(false);
         const task=workspace.tasks.find(task=>task.id===id);
         window.task=task;window.reset=()=>{setId(null);setPending(null);setWorkspace({repositories,agents:[],tasks:[],automations:[]})};
         window.setTask=update=>setWorkspace(w=>({...w,tasks:w.tasks.map(t=>t.id===id?{...t,...update}:t)}));
@@ -75,9 +88,8 @@ const built = await build({
           throw Error('Unexpected request '+path);
         };
         const value={workspace,setWorkspace,snapshot:{workspace,defaults,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{}};
-        const visiblePending=pending?[pending]:[];
-        const displayed=task&&{...task,messages:pending?.destination==='thread'&&!task.messages.some(m=>m.id===pending.message.id)?[...task.messages,pending.message]:task.messages};
-        return <Context.Provider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?<><ChatThread task={displayed} pending={visiblePending}/><Composer key={task.id} task={task} onPending={setPending} queuedMessages={<MessageQueue task={task}/>}/></>:<StartupDraft onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
+        const renderThread=(task,workspaceControls,temporary)=><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} visible onReview={()=>{}}/>;
+        return <Context.Provider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
       }
       createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
     `,
@@ -142,6 +154,7 @@ try {
     { name: 'desktop', width: 1440, height: 900 },
     { name: 'mobile', width: 390, height: 844 },
     { name: 'small-mobile', width: 320, height: 700 },
+    { name: 'short-window', width: 900, height: 520 },
   ]) {
     await page.setViewportSize(device)
     for (const project of ['No project', 'dovo-studio', 'Design notes']) {
@@ -156,6 +169,8 @@ try {
           .querySelector('[aria-label="Choose agent and model"]')
           .textContent.includes('GPT-6.1-Sol'),
       )
+      if (screenshots && device.name === 'desktop' && project === 'No project')
+        await page.screenshot({ path: screenshots + '/desktop-empty.png' })
       const before = await geometry()
       const input = page.getByRole('textbox', { name: 'Message task' })
       if (device.name === 'desktop' && project === 'No project') {
@@ -180,8 +195,9 @@ try {
         )
       assert.equal(after.subtitleSize, '14px')
       assert.equal(after.overflow, false)
-      assert(after.heroY > device.height / 4)
-      assert(after.composerY + after.composerHeight > device.height - 120)
+      assert(after.heroY > 48)
+      assert(after.composerY > after.heroY)
+      assert(after.composerY + after.composerHeight < device.height - 40)
       assert.equal(await input.inputValue(), 'Make both composers uniform using this styling.')
       assert(await input.evaluate((element) => document.activeElement === element))
       assert.equal(
@@ -247,8 +263,14 @@ try {
     const compact = await page
       .getByRole('button', { name: 'Compact context', exact: true })
       .boundingBox()
-    const queue = await page.locator('[aria-label="Queued follow-ups"] summary').boundingBox()
-    const queueStrip = await page.locator('[aria-label="Queued follow-ups"]').boundingBox()
+    if (await page.getByRole('button', { name: 'Collapse composer activity', exact: true }).count())
+      await page.getByRole('button', { name: 'Collapse composer activity', exact: true }).click()
+    const queue = await page
+      .getByRole('button', { name: 'Expand composer activity', exact: true })
+      .boundingBox()
+    const queueStrip = await page
+      .getByRole('region', { name: 'Composer activity', exact: true })
+      .boundingBox()
     const composer = await page.locator('.studio-composer').boundingBox()
     const project = await page
       .getByRole('group', { name: 'Project and checkout', exact: true })
@@ -259,15 +281,14 @@ try {
       Math.abs(queueStrip.x - project.x) < 1 && Math.abs(queueStrip.width - project.width) < 1,
     )
     assert.ok(
-      Math.abs(queue.y + queue.height - composer.y) < 2,
+      Math.abs(queueStrip.y + queueStrip.height - 12 - composer.y) < 2,
       JSON.stringify({ queue, composer }),
     )
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
       false,
     )
-    const summary = page.locator('[aria-label="Queued follow-ups"] summary')
-    await summary.click()
+    await page.getByRole('button', { name: 'Expand composer activity', exact: true }).click()
     const queuedRow = page.locator('[aria-label="Queued follow-ups"] li').first()
     const rowBounds = await queuedRow.boundingBox()
     assert.ok(rowBounds.height <= 36, JSON.stringify(rowBounds))
@@ -282,7 +303,7 @@ try {
       false,
     )
     if (screenshots) await page.screenshot({ path: screenshots + '/queue-row-' + width + '.png' })
-    await summary.click()
+    await page.getByRole('button', { name: 'Collapse composer activity', exact: true }).click()
     assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: 'Steer agent', exact: true }).count(), 0)
     await page.getByRole('button', { name: 'More message actions', exact: true }).click()
@@ -486,6 +507,34 @@ try {
       await collapse.waitFor()
     }
   }
+  // Light mode, draft-only starters, and errors in an otherwise empty saved draft.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.evaluate(() => {
+    window.setActivity(false)
+    window.hideSettings()
+    window.reset()
+    document.documentElement.style.fontSize = '16px'
+    document.documentElement.classList.remove('dark')
+    document.documentElement.dataset.theme = 'light'
+  })
+  await page.getByRole('button', { name: 'Build something', exact: true }).waitFor()
+  if (screenshots) await page.screenshot({ path: screenshots + '/desktop-empty-light.png' })
+  const sentBefore = await page.evaluate(
+    () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
+  )
+  await page.getByRole('button', { name: 'Build something', exact: true }).click()
+  const draftInput = page.getByRole('textbox', { name: 'Message task', exact: true })
+  assert.equal(await draftInput.inputValue(), 'Help me build ')
+  assert(await draftInput.evaluate((node) => document.activeElement === node))
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
+    ),
+    sentBefore,
+  )
+  await page.evaluate(() => window.setActivityError('Activity fixture unavailable'))
+  await page.getByRole('alert').filter({ hasText: 'Activity fixture unavailable' }).waitFor()
+  assert.equal(await page.locator('[data-thread-start]').count(), 0)
   assert.deepEqual(errors, [])
   console.log(
     'Composer layout: project/no-project/folder drafts stay centered on commit at desktop, phone and 320px; send, checkout locking, history and overflow checks passed.',

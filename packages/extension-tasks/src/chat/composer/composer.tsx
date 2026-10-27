@@ -1,4 +1,5 @@
 import { QueueEditContext } from './queue-edit'
+import { ThreadStarters } from '../../task-creation/thread-starters'
 import { useChatImageUploader } from './chat-image-edit-context'
 import { createComposerDraft } from './composer-draft'
 import { TurnModelControls } from './turn-model-controls'
@@ -1090,6 +1091,18 @@ export function Composer({
           · Shift + Enter for a new line
         </p>
       </div>
+      {firstMessage && task.status === 'draft' && !pendingQuestion && (
+        <div className={hasInput ? 'invisible' : undefined} aria-hidden={hasInput || undefined}>
+          <ThreadStarters
+            disabled={hasInput || sending || !!task.archivedAt || !!task.example}
+            onChoose={(prompt) => {
+              if (composerDraft.controller.text.trim()) return
+              setDraft(prompt)
+              input.current?.focus()
+            }}
+          />
+        </div>
+      )}
     </div>
   )
 }

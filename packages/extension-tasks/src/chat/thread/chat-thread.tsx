@@ -62,6 +62,7 @@ export function ChatThread({
   onReadingHistory,
   active = true,
   footer,
+  emptyState,
 }: {
   task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'> & {
     archived?: Task['archived']
@@ -80,6 +81,7 @@ export function ChatThread({
   onManagePulls?: () => void
   onReadingHistory?: () => void
   footer?: ReactNode
+  emptyState?: ReactNode
   active?: boolean
 }) {
   const { request, connected, workspace, connection, activeRuntimeId } = useWorkspace()
@@ -328,6 +330,7 @@ export function ChatThread({
       }),
     [task.id, groups],
   )
+  if (emptyDraft && emptyState) return emptyState
   return (
     <TurnWindowContext value={turnWindow}>
       {searchOpen && (

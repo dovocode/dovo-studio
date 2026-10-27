@@ -321,3 +321,5 @@ export * from './tasks/watch-message.js'
 export * from './tasks/settled-page.js'
 
 export * from './shared/client-diagnostics.js'
+
+export { THREAD_STARTERS } from './tasks/thread-starters.js'

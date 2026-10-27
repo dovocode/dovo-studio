@@ -307,3 +307,23 @@ Verification covers the shared presentation, read-only permission decisions, ser
 and transcript extraction, plus actual desktop controls and native-adapted mobile rows. The browser
 adapter does not verify native mobile rendering, and this pass does not establish live Claude API
 billing/cache savings or end-to-end tool discovery against a signed-in provider.
+
+## Prompt-first thread start (2026-10-27)
+
+Reviewed T3's mobile app at `5808469018fb95676af148e7a7662c23665c67a3`, especially
+[NewTaskDraftScreen](https://github.com/pingdotgg/t3code/blob/5808469018fb95676af148e7a7662c23665c67a3/apps/mobile/src/features/threads/NewTaskDraftScreen.tsx)
+and
+[ThreadScreenHost](https://github.com/pingdotgg/t3code/blob/5808469018fb95676af148e7a7662c23665c67a3/apps/mobile/src/features/threads/ThreadScreenHost.tsx).
+Its useful patterns are a project-aware welcome, nearby project/environment controls and a mounted
+composer that survives the first send.
+
+Dovo adapts these to its existing desktop and native mobile shells: desktop centers the welcome and
+composer; mobile keeps the composer at the bottom, places context controls beside it and scrolls the
+welcome above it. Four shared starter prompts fill and focus a draft without sending. Typing, saving
+and choosing a starter preserve the existing draft and computer ownership. Saved empty drafts keep
+the welcome; messages, history and activity errors still use the conversation. No new dependencies
+or alternative draft store were introduced.
+
+Browser coverage exercises the production desktop shell, first-send and remote-draft lifecycle, and
+native-adapted mobile starter actions, input identity and narrow/short viewport geometry. The mobile
+adapter does not establish native iOS/Android rendering or software-keyboard behavior.

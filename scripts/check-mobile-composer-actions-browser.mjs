@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
+import { mkdirSync } from 'node:fs'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 // Real composer and queue; native controls and the conversation/runtime boundary are adapters.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/'
+const screenshots = process.env.DOVO_COMPOSER_SCREENSHOTS
+if (screenshots) mkdirSync(screenshots, { recursive: true })
 const controls = `
 import {useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';
-const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(Array.isArray(s.transform))s.transform=s.transform.map(t=>'translateY('+t.translateY+'px)').join(' ');return s};
+const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(typeof s.lineHeight==='number')s.lineHeight=s.lineHeight+'px';if(Array.isArray(s.transform))s.transform=s.transform.map(t=>'translateY('+t.translateY+'px)').join(' ');return s};
 const useLayout=(ref,callback)=>{const current=useRef(callback);current.current=callback;const report=()=>{if(!ref.current||!current.current)return;const r=ref.current.getBoundingClientRect(),p=ref.current.parentElement.getBoundingClientRect();current.current({nativeEvent:{layout:{x:ref.current.offsetLeft-ref.current.parentElement.offsetLeft,y:ref.current.offsetTop-ref.current.parentElement.offsetTop,width:r.width,height:r.height}}})};useLayoutEffect(report);useLayoutEffect(()=>{const observer=new ResizeObserver(report);observer.observe(ref.current);return()=>observer.disconnect()},[])};
 export const View=({children,style,testID,accessibilityRole,accessibilityLabel,onLayout,ref:forwardedRef})=>{const ref=useRef(null);useLayout(ref,onLayout);useImperativeHandle(forwardedRef,()=>({measureInWindow:callback=>{const r=ref.current.getBoundingClientRect();callback(r.x,r.y,r.width,r.height)}}));return <div ref={ref} role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',borderStyle:'solid',borderWidth:0,...flat(style)}}>{children}</div>};
 export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,overflowY:scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:'column',...flat(contentContainerStyle)}}>{children}</div></div>};
@@ -114,8 +117,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
   {
     path: './composer-field',
     importer: mobile,
-    contents:
-      'export const ComposerField=({value,onChangeText,onFocus,onBlur,editable})=><textarea style={{width:"100%",minWidth:0,boxSizing:"border-box"}} aria-label="Message" value={value} disabled={!editable} onFocus={onFocus} onBlur={onBlur} onChange={event=>onChangeText(event.target.value)}/>;',
+    contents: `import {useRef,useEffect} from 'react';export const ComposerField=({value,onChangeText,onFocus,onBlur,editable,focusKey})=>{const ref=useRef(null);useEffect(()=>{if(focusKey)ref.current?.focus()},[focusKey]);return <textarea ref={ref} style={{width:"100%",minWidth:0,boxSizing:"border-box"}} aria-label="Message" value={value} disabled={!editable} onFocus={onFocus} onBlur={onBlur} onChange={event=>onChangeText(event.target.value)}/>};`,
   },
   ...[
     ['../creation/checkout-choice', 'CheckoutChoice'],
@@ -143,18 +145,18 @@ const built = await bundleBrowser(
       contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
 import {defaultTaskHarness} from '@dovo/protocol';
-import {Composer} from './src/tasks/composer/composer';import {ComposerActivity} from './src/tasks/composer/composer-activity';
+import {TaskEmptyState} from './src/tasks/creation/task-empty-state';import {Composer} from './src/tasks/composer/composer';import {ComposerActivity} from './src/tasks/composer/composer-activity';
 window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
 function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',activeRunId:'active-run',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
   const [inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;
-  const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;const [text,setText]=useState('Continue the review');const [connected,setConnected]=useState(true);
+  const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;const [text,setText]=useState('Continue the review');window.setDraftText=setText;const [connected,setConnected]=useState(true);
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
   const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
   window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}},catch:error=>error})};
-  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:false,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
-  return <Composer task={task} renderAbove={setup=> <>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
+  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
+  return <Composer task={task} renderAbove={(setup,starters)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState starters={starters} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
     },
@@ -182,7 +184,7 @@ try {
     console.error(error.message)
   })
   await page.setContent(
-    '<style>#app{display:flex;flex-direction:column}</style><div id="app"></div>',
+    '<style>body{margin:0;background:#101010;color:#eee;font-family:system-ui}button,textarea,select{font:inherit}#app{display:flex;flex-direction:column}</style><div id="app"></div>',
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('button', { name: 'Queue follow-up', exact: true }).click()
@@ -860,6 +862,74 @@ try {
   assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
   await page.evaluate(() => window.setTask({ queue: [] }))
   await page.getByTestId('Queued messages').waitFor({ state: 'detached' })
+  // Prompt-first native layout uses the production empty state and starter actions.
+  await page.evaluate(() => {
+    window.setDraftText('')
+    window.setTask({
+      status: 'draft',
+      messages: [],
+      queue: [],
+      nativeTodos: undefined,
+      contextUsage: undefined,
+    })
+    document.getElementById('app').style.height = '100dvh'
+  })
+  for (const viewport of [
+    { width: 320, height: 700 },
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 320, height: 400 },
+  ]) {
+    await page.setViewportSize(viewport)
+    const start = page.getByTestId('Thread start')
+    await start.waitFor()
+    for (const label of ['Build something', 'Fix a bug', 'Understand code', 'Plan a change']) {
+      const button = page.getByRole('button', { name: label, exact: true })
+      await button.scrollIntoViewIfNeeded()
+      const box = await button.boundingBox()
+      assert.ok(
+        box &&
+          box.width >= 44 &&
+          box.height >= 48 &&
+          box.x >= 0 &&
+          box.x + box.width <= viewport.width,
+        JSON.stringify(box),
+      )
+    }
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+      false,
+    )
+    if (viewport.height >= 700) {
+      await start.evaluate((node) => {
+        node.parentElement.scrollTop = 0
+      })
+      const heading = await page
+        .getByText('What would you like to work on?', { exact: true })
+        .boundingBox()
+      assert.ok(heading && heading.y >= 0 && heading.height <= 110, JSON.stringify(heading))
+    }
+    if (screenshots)
+      await page.screenshot({
+        path: screenshots + '/native-adapter-' + viewport.width + 'x' + viewport.height + '.png',
+      })
+  }
+  const calls = await page.evaluate(() => window.calls.length)
+  const draftInput = page.getByRole('textbox', { name: 'Message', exact: true })
+  await draftInput.evaluate((node) => {
+    window.starterInput = node
+  })
+  await page.getByRole('button', { name: 'Plan a change', exact: true }).click()
+  assert.equal(await draftInput.inputValue(), 'Help me plan this change: ')
+  assert(
+    await draftInput.evaluate(
+      (node) => node === window.starterInput && document.activeElement === node,
+    ),
+  )
+  assert.equal(await page.getByRole('button', { name: 'Build something', exact: true }).count(), 0)
+  assert.equal(await page.evaluate(() => window.calls.length), calls)
+  await draftInput.fill('My own draft')
+  assert.equal(await draftInput.inputValue(), 'My own draft')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile composer: inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/direct steer/restore, compact anchored queue menus, retry-safe duplication, composer queue editing, checklist collapse, side-chat sending, failure recovery and offline guards passed with native control adapters.',

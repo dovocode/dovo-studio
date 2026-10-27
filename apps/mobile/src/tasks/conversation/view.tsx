@@ -522,10 +522,12 @@ const messageKey = (id: string) => id
 export function Conversation({
   onBrowse,
   setup,
+  starters,
   children,
 }: {
   onBrowse?: () => void
   setup?: ReactNode
+  starters?: ReactNode
   children?: ReactNode
 }) {
   const { colors, styles, reduceMotion } = useTheme()
@@ -542,7 +544,8 @@ export function Conversation({
     message.role === 'assistant' && message.bookmarked ? [{ message, index }] : [],
   )
   const car = useCarMode()
-  const { activeId, connected } = useRuntime()
+  const { activeId, connected, snapshot } = useRuntime()
+  const project = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const messageIds = unstable_useThreadMessageIds()
   const messageCount = messageIds.length
   const emptyDraft =
@@ -707,7 +710,11 @@ export function Conversation({
           emptyDraft ? (
             // FlatList applies its inversion and measurement props to this native view.
             <View style={{ flex: 1 }}>
-              <TaskEmptyState onBrowse={onBrowse} setup={setup} />
+              <TaskEmptyState
+                onBrowse={onBrowse}
+                starters={starters}
+                projectName={project?.kind !== 'scratch' ? project?.name : undefined}
+              />
             </View>
           ) : undefined
         }
@@ -769,9 +776,7 @@ export function Conversation({
   return (
     <>
       {conversation}
-      {!emptyDraft && setup && (
-        <View style={{ paddingHorizontal: 12, paddingBottom: 4 }}>{setup}</View>
-      )}
+      {setup && <View style={{ paddingHorizontal: 12, paddingBottom: 4 }}>{setup}</View>}
     </>
   )
 }

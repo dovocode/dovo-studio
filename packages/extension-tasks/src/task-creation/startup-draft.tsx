@@ -173,14 +173,24 @@ function StartupComposer({
   )
   if (renderThread) return renderThread(task, workspaceControls, temporary)
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <TaskEmptyState onBrowse={onBrowse} />
-      <Composer
-        task={task}
-        temporary={temporary}
-        onPending={() => {}}
-        workspaceControls={workspaceControls}
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+      <TaskEmptyState
+        welcome
+        onBrowse={onBrowse}
+        projectName={
+          store.workspace.repositories.find(
+            (repo) => repo.id === task.repositoryId && repo.kind !== 'scratch',
+          )?.name
+        }
       />
+      <div className="mb-auto w-full shrink-0 pb-8">
+        <Composer
+          task={task}
+          temporary={temporary}
+          onPending={() => {}}
+          workspaceControls={workspaceControls}
+        />
+      </div>
     </div>
   )
 }

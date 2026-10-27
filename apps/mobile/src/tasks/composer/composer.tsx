@@ -1,4 +1,5 @@
 import { contentColumn } from '../../ui/layout/content-column'
+import { ThreadStarters } from '../creation/thread-starters'
 import { TurnModelControls } from './turn-model-controls'
 import { applyTurnSettings } from '@dovo/protocol'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
@@ -57,7 +58,7 @@ export function Composer({
 }: {
   task: Task
   queuedMessages?: ReactNode
-  renderAbove?: (setup: ReactNode) => ReactNode
+  renderAbove?: (setup: ReactNode, starters?: ReactNode) => ReactNode
   onAsk?: (chatId?: string) => void
   onSelectRemote?: (
     runtimeId: string,
@@ -138,6 +139,7 @@ export function Composer({
   const [focused, setFocused] = useApplicationState(false),
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
+  const [starterFocus, setStarterFocus] = useState<string>()
   const selection = useRef<DraftSelection | undefined>(undefined)
   const [caret, setCaret] = useState(0)
   const focus = useCallback(() => setFocused(true), [setFocused])
@@ -752,7 +754,7 @@ export function Composer({
               }}
             >
               <ComposerField
-                focusKey={editing?.message.id}
+                focusKey={editing?.message.id ?? starterFocus}
                 key={draft.key}
                 onFocus={focus}
                 onBlur={blur}
@@ -1235,7 +1237,26 @@ export function Composer({
   )
   return renderAbove ? (
     <>
-      {renderAbove(setup)}
+      {renderAbove(
+        setup,
+        firstMessage && task.status === 'draft' && !hasInput ? (
+          <ThreadStarters
+            disabled={
+              !draft.ready ||
+              busy ||
+              attaching ||
+              dictation.active ||
+              !!task.archivedAt ||
+              !!task.example
+            }
+            onChoose={(prompt) => {
+              if (latestDraft.current.text.trim()) return
+              draft.update(prompt)
+              setStarterFocus(randomUUID())
+            }}
+          />
+        ) : null,
+      )}
       {input}
     </>
   ) : (

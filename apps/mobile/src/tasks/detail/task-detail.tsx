@@ -1021,8 +1021,8 @@ function TaskDetailContent({
           >
             <Composer
               queuedMessages={<ComposerActivity task={task} />}
-              renderAbove={(setup) => (
-                <Conversation onBrowse={startup?.onBrowse} setup={setup}>
+              renderAbove={(setup, starters) => (
+                <Conversation onBrowse={startup?.onBrowse} setup={setup} starters={starters}>
                   {preparation ? (
                     <PreparationProgress
                       preparation={preparation}

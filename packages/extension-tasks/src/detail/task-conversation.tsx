@@ -89,7 +89,8 @@ export function TaskConversation({
   }, [collapseComposerOnScroll])
   const [managePullTask, setManagePullTask] = useState<string | null>(null)
   const [pending, setPending] = useApplicationState<(PendingMessage & { scope: string })[]>([])
-  const { pendingMessages: savedMessages, connection } = useWorkspace()
+  const { pendingMessages: savedMessages, connection, workspace } = useWorkspace()
+  const project = workspace.repositories.find((repository) => repository.id === task.repositoryId)
   const pendingScope = JSON.stringify([connection?.address, connection?.token, task.id])
   const onPending = useCallback(
     (message: PendingMessage | null) => {
@@ -165,6 +166,14 @@ export function TaskConversation({
       task.historyRevision,
     ],
   )
+  const welcome =
+    status === 'draft' &&
+    !displayedTask.messages.length &&
+    !queue?.length &&
+    !turns?.length &&
+    !task.historyBefore &&
+    !compactions?.length &&
+    !historyError
   const { snapshot } = useWorkspace()
   const loaded =
     historyLoaded ?? (!snapshot?.detailTaskIds || snapshot.detailTaskIds.includes(task.id))
@@ -203,17 +212,31 @@ export function TaskConversation({
       disabled={!!task.archivedAt || !!task.example}
       onEdit={() => setComposerCollapsed(false)}
     >
-      <div data-task-conversation={task.id} className="flex h-full min-h-0 flex-col">
-        {!temporary && !task.example && (
+      <div
+        data-task-conversation={task.id}
+        className={`flex h-full min-h-0 flex-col ${welcome ? 'overflow-y-auto' : ''}`}
+      >
+        {!welcome && !task.example && (
           <div className="flex justify-end px-4 py-1">
             <ThreadSharing taskId={task.id} title={task.title} />
           </div>
         )}
         {temporary ? (
-          <TaskEmptyState />
+          <TaskEmptyState
+            welcome
+            projectName={project?.kind !== 'scratch' ? project?.name : undefined}
+          />
         ) : (
           <ArtifactOpenContext value={onArtifact}>
             <ChatThread
+              emptyState={
+                welcome ? (
+                  <TaskEmptyState
+                    welcome
+                    projectName={project?.kind !== 'scratch' ? project?.name : undefined}
+                  />
+                ) : undefined
+              }
               onUseTemplate={(text) =>
                 setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
               }
@@ -313,7 +336,11 @@ export function TaskConversation({
         {onCodeReview && <CodeReviewCard task={task} onOpen={onCodeReview} visible={visible} />}
         <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />
         <ReviewCommentsTray task={task} className="px-5 pb-2" />
-        <div ref={composer} onFocusCapture={() => setComposerCollapsed(false)}>
+        <div
+          ref={composer}
+          className={welcome ? 'mb-auto w-full shrink-0 pb-8' : undefined}
+          onFocusCapture={() => setComposerCollapsed(false)}
+        >
           <Composer
             collapsed={collapseComposerOnScroll && composerCollapsed}
             key={task.id}
