@@ -141,7 +141,9 @@ function JiraCollection(){const value=useWorkCollection('issues',JSON.stringify(
 function Reader(){const value=usePullDetail('repo',7);window.reader=value;return <div aria-label="reader">{value.detail?.pull.title}{value.error}</div>}
 function List(){const value=usePulls('','open');window.list=value;return <div aria-label="list">{value.pages.map(page=>page.runtimeName+':'+page.pulls.length).join(',')}</div>}
 function Task(){const value=usePullTaskCreation('repo',pull.pull);return <><button onClick={()=>value.start('new-branch')}>Create task</button><span>{value.error}</span></>}
-function Detail({kind,observed}){useEffect(()=>{window.mounts++;window.mountedKind=kind},[]);return kind==='jira-collection'?<JiraCollection/>:kind==='jira-detail'?<WorkItemScreen mode="issues" jiraSourceId="jira" itemId="TEAM-7" expectedURL={issue.url} onBack={()=>{}}/>:kind==='pipeline'?<WorkItemScreen mode="pipelines" repositoryId="repo" itemId="42" expectedURL={pipelineRun.url} onBack={()=>{}}/>:kind==='markdown'?<Markdown text="[PR](https://github.com/team/project/pull/7/files#diff-1) [Issue](https://github.com/team/project/issues/7) [Jira](https://team.atlassian.net/browse/TEAM-7) [Pipeline](https://github.com/team/project/actions/runs/7)"/>:kind==='line'?<LineComment repositoryId="repo" detail={pull} path="file.ts" onClose={()=>{}} onDone={()=>{}}/>:kind==='work'?<WorkForm kind="comment" jiraSourceId="jira" issue={issue} options={options} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='run'?<WorkForm kind="run" repositoryId="repo" options={pipelineOptions} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='worktask'||kind==='worktaskpicker'?<WorkTaskAction repositoryId={kind==='worktask'?'repo':undefined} jiraSourceId="jira" source={{kind:'issue',item:observed?{...issue,destination:'new-destination'}:issue}} disabled={false}/>:kind==='create'?<CreatePull repositoryId="repo" onClose={()=>{}} onCreated={()=>{}}/>:kind==='task'?<Task/>:kind==='reader'?<Reader/>:<PullActionSheet repositoryId="repo" detail={observed?{...pull,destination:"new-destination",pull:{...pull.pull,destination:"new-destination"}}:pull} target={{action:'comment'}} onClose={()=>{}} onDone={()=>{}}/>}
+// A refreshed detail can report a new PR head; each newly opened sheet receives it.
+const atHead=detail=>window.headSha?{...detail,pull:{...detail.pull,headSha:window.headSha}}:detail;
+function Detail({kind,observed}){useEffect(()=>{window.mounts++;window.mountedKind=kind},[]);return kind==='jira-collection'?<JiraCollection/>:kind==='jira-detail'?<WorkItemScreen mode="issues" jiraSourceId="jira" itemId="TEAM-7" expectedURL={issue.url} onBack={()=>{}}/>:kind==='pipeline'?<WorkItemScreen mode="pipelines" repositoryId="repo" itemId="42" expectedURL={pipelineRun.url} onBack={()=>{}}/>:kind==='markdown'?<Markdown text="[PR](https://github.com/team/project/pull/7/files#diff-1) [Issue](https://github.com/team/project/issues/7) [Jira](https://team.atlassian.net/browse/TEAM-7) [Pipeline](https://github.com/team/project/actions/runs/7)"/>:kind==='line'?<LineComment repositoryId="repo" detail={atHead(pull)} path="file.ts" onClose={()=>{}} onDone={()=>{}}/>:kind==='work'?<WorkForm kind="comment" jiraSourceId="jira" issue={issue} options={options} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='run'?<WorkForm kind="run" repositoryId="repo" options={pipelineOptions} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='worktask'||kind==='worktaskpicker'?<WorkTaskAction repositoryId={kind==='worktask'?'repo':undefined} jiraSourceId="jira" source={{kind:'issue',item:observed?{...issue,destination:'new-destination'}:issue}} disabled={false}/>:kind==='create'?<CreatePull repositoryId="repo" onClose={()=>{}} onCreated={()=>{}}/>:kind==='task'?<Task/>:kind==='reader'?<Reader/>:<PullActionSheet repositoryId="repo" detail={atHead(observed?{...pull,destination:"new-destination",pull:{...pull.pull,destination:"new-destination"}}:pull)} target={{action:'comment'}} onClose={()=>{}} onDone={()=>{}}/>}
 function App(){const [active,setActive]=useState('one'),[name,setName]=useState('Original Jira'),[kind,setKind]=useState('markdown'),[shown,setShown]=useState(true),[offline,setOffline]=useState(false),[observed,setObserved]=useState(false);
 window.setKind=value=>{window.remote='old-destination';setObserved(false);setKind(value)};window.setActive=setActive;window.setShown=setShown;window.setOffline=setOffline;
 const overviews=profiles.map(profile=>({profile,connected:profile.id==='one'?!offline:true,snapshot:workspace(name),error:null,pulls:null,pullError:null,lastSeen:null}));
@@ -527,6 +529,39 @@ try {
     'Same-number issue',
   )
   assert.equal(await page.evaluate(() => window.jiraCollection.pages[0].stale), false)
+  // After the PR head moves, reopening keeps unsent text but targets the new revision. Line drafts
+  // stay with the revision their line numbers describe.
+  await page.evaluate(() => {
+    window.headSha = 'b'.repeat(40)
+  })
+  await choose('markdown')
+  await choose('action')
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message' }).inputValue(),
+    'Unsent PR comment',
+  )
+  await page.getByRole('button', { name: 'Add comment', exact: true }).click()
+  await page.waitForFunction(() => window.accepted.some((call) => call.path.endsWith('/action')))
+  assert.equal(
+    await page.evaluate(
+      () => window.accepted.find((call) => call.path.endsWith('/action')).input.headSha,
+    ),
+    'b'.repeat(40),
+    'A retained PR draft must not resubmit against an old head',
+  )
+  await choose('line')
+  assert.equal(await page.getByRole('textbox', { name: 'Line in the diff' }).inputValue(), '')
+  assert.equal(await page.getByRole('textbox', { name: 'Comment', exact: true }).inputValue(), '')
+  await page.evaluate(() => {
+    window.headSha = undefined
+  })
+  await choose('markdown')
+  await choose('line')
+  assert.equal(await page.getByRole('textbox', { name: 'Line in the diff' }).inputValue(), '1')
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Comment', exact: true }).inputValue(),
+    'Unsent inline comment',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Mobile integration continuity passed: actual RuntimeScope and Markdown owner after global selection; PR action/inline/create/task and Jira destination guards; preserved rejected drafts and Jira rename mount; verified reader/account rejection and explicit recovery; retained list owner through remount; pipeline/Jira task guards; actual pipeline and Jira screens independent overview/options/discussion loading, section failure/retry, pagination, pinned runtime and offline sections. Native boundaries mocked; no device or provider writes.',

@@ -11,8 +11,9 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';
 import {memo} from 'react';
 import {Effect} from 'effect';
-import {runtimeProfile,peerAddress,workspacePatchResultSchema} from '@dovo/protocol';
+import {runtimeProfile,peerAddress,workspacePatchResultSchema,responses} from '@dovo/protocol';window.okSchema=responses.ok;
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
+import {browserReadCache} from './packages/studio-core/src/workspace/read-cache.ts';window.readCacheFor=browserReadCache;
 import {RuntimeProvider,useRuntime,useRuntimeSelector} from './apps/mobile/src/runtime/connection/provider.tsx';
 import {preparePeerConnection} from './apps/mobile/src/runtime/connection/peer-transport.ts';window.prepareAccountPeer=preparePeerConnection;window.accountPeerAddress=peerAddress;
 window.readFails=true;window.writes=[];window.requests=[];window.peerOpens=[];window.peerCloses=0;window.setPeerRelay=(id,relay)=>Effect.runPromise(window.runtime.setPeerRelayEffect(id,relay));window.upgradePeer=(profile,peer)=>Effect.runPromise(window.runtime.upgradeInternetEffect(profile.id,profile.connection,peer));window.connectPeer=()=>{const peer={origin:'https://connect.example',secret:'a'.repeat(64)};preparePeerConnection(peer);return window.runtime.connect({address:peerAddress(peer),token:'private-peer-device-token',peer},'Peer')};
@@ -25,6 +26,12 @@ window.fetch=async(url,init={})=>{
   // Model a history-heavy runtime whose full snapshot cannot fit a mobile connection.
   if(parsed.host==='127.0.0.1:44555' && parsed.pathname==='/api/snapshot' && !parsed.searchParams.has('scope'))return Response.json({error:'Full history download exceeds this connection budget'},{status:413});
   if(parsed.pathname==='/api/mutations/status')return Response.json({version:1,workspaceMutations:1});
+  if(parsed.pathname==='/api/echo-ok')return Response.json({ok:true});
+  // Route verification identifies whichever computer currently answers this address.
+  if(parsed.pathname==='/health')return Response.json({service:'dovo-runtime',runtimeId:window.servers[parsed.host]?.runtimeId});
+  // Hold reads on the old LAN route while the same computer moves to a new address.
+  if(window.holdThird && parsed.host==='third.lan:8787' && ['/api/snapshot','/api/held-read'].includes(parsed.pathname))
+    return new Promise(resolve=>window.heldThird.push(()=>resolve(Response.json(parsed.pathname==='/api/held-read'?{ok:true}:window.servers[parsed.host]))));
   const server=window.servers[parsed.host]??= {revision:1,runtimeInstanceId:'runtime-'+parsed.host,owner:false,workspaceReconciliationSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],tasks:[],repositories:[{id:'repo',name:'Runtime name',path:'/before',branch:'main'}],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]};
   if(parsed.pathname==='/api/workspace'){
     if(window.patchOffline)throw Error('Offline');
@@ -445,6 +452,185 @@ try {
     beforeUpgrade.saved.activeId,
     'Upgrading another computer must not change the active computer',
   )
+  // A known computer must prove the same identity before its address or credential is replaced.
+  const oneId = await page.evaluate(async () => {
+    const one = window.runtime.profiles.find((profile) => profile.name === 'one')
+    window.servers['one.lan:8787'].runtimeId = 'one-computer'
+    await window.runtime.refreshRuntime(one)
+    return one.id
+  })
+  await page.waitForFunction(
+    (id) =>
+      JSON.parse(window.saved).profiles.find((profile) => profile.id === id)?.connection
+        .runtimeId === 'one-computer',
+    oneId,
+  )
+  const replacement = await page.evaluate(async (id) => {
+    const saved = () => JSON.parse(window.saved).profiles.find((profile) => profile.id === id)
+    const before = saved()
+    const one = window.runtime.profiles.find((profile) => profile.id === id)
+    const upgrade = () =>
+      window.upgradePeer(one, { origin: 'https://connect.example', secret: '9'.repeat(64) }).then(
+        () => 'upgraded',
+        (error) => error.message,
+      )
+    const missing = await upgrade()
+    window.servers['127.0.0.1:44555'].runtimeId = 'other-computer'
+    const different = await upgrade()
+    delete window.servers['127.0.0.1:44555'].runtimeId
+    // Another computer now answers at this saved computer's original address.
+    window.servers['one.lan:8787'].runtimeId = 'intruder-computer'
+    await window.runtime.syncAccountSession('replacement-session')
+    const overwrite = await window.runtime
+      .connect(
+        {
+          address: 'http://one.lan:8787',
+          token: 'intruder-account-token-private',
+          accountSession: 'replacement-session',
+        },
+        'Intruder',
+      )
+      .then(
+        () => 'saved',
+        (error) => error.message,
+      )
+    window.servers['one.lan:8787'].runtimeId = 'one-computer'
+    return { missing, different, overwrite, before, after: saved() }
+  }, oneId)
+  assert.match(replacement.missing, /Could not verify this is the same computer/)
+  assert.match(replacement.different, /different computer/)
+  assert.match(replacement.overwrite, /different computer/)
+  assert.deepEqual(replacement.after, replacement.before)
+  // The same device token on a replacement address still retires work captured for the old route:
+  // held reads cannot publish, captured actions cannot dispatch or queue, and overview refreshes
+  // cannot join an old-route read.
+  const scoped = await page.evaluate(async () => {
+    window.previousActiveId = window.runtime.activeId
+    const third = window.runtime.profiles.find(
+      (profile) => profile.connection.address === 'http://third.lan:8787',
+    )
+    await window.runtime.selectRuntime(third.id)
+    return third
+  })
+  await page.waitForFunction((id) => window.runtime.profile?.id === id, scoped.id)
+  await page.evaluate(() => {
+    window.stale = { read: window.runtime.read, call: window.runtime.call }
+    window.heldThird = []
+    window.holdThird = true
+    window.heldRead = window.stale.read('/api/held-read', undefined, window.okSchema, 'GET').then(
+      () => 'published',
+      (error) => error.message,
+    )
+    void window.runtime.refreshAll()
+  })
+  await page.waitForFunction(
+    () =>
+      window.requests.some((url) => url.startsWith('http://third.lan:8787/api/held-read')) &&
+      window.requests.some((url) => url.startsWith('http://third.lan:8787/api/snapshot')),
+  )
+  await page.evaluate(
+    (profile) =>
+      window.upgradePeer(profile, { origin: 'https://connect.example', secret: 'd'.repeat(64) }),
+    scoped,
+  )
+  const upgradedThird = await page.evaluate(() => window.runtime.profile)
+  assert.equal(upgradedThird.id, scoped.id)
+  assert.equal(upgradedThird.connection.token, scoped.connection.token)
+  assert.ok(upgradedThird.connection.address.endsWith('.p2p.invalid'))
+  const oldRouteRequests = await page.evaluate(
+    () => window.requests.filter((url) => url.startsWith('http://third.lan:8787/')).length,
+  )
+  assert.equal(
+    await page.evaluate(() =>
+      Promise.race([
+        window.runtime.refreshAll().then(() => 'settled'),
+        new Promise((resolve) => setTimeout(() => resolve('joined old route'), 2000)),
+      ]),
+    ),
+    'settled',
+    'A refresh for the new address must not wait on an old-route overview',
+  )
+  const staleCall = await page.evaluate(async () => {
+    window.patchOffline = true
+    const message = await window.stale
+      .call(
+        '/api/workspace',
+        {
+          collection: 'repositories',
+          id: 'repo',
+          changes: { name: { before: 'Runtime name', after: 'Stale route name' } },
+        },
+        window.okSchema,
+        'PATCH',
+      )
+      .then(
+        () => 'dispatched',
+        (error) => error.message,
+      )
+    window.patchOffline = false
+    return message
+  })
+  assert.match(staleCall, /selected computer changed/)
+  assert.deepEqual(
+    await page.evaluate(
+      (old) => [
+        window.runtime.mutationStatus(window.runtime.profile).pending,
+        window.runtime.mutationStatus(old).pending,
+      ],
+      scoped,
+    ),
+    [0, 0],
+    'A captured action must not queue under either route',
+  )
+  assert.equal(
+    await page.evaluate(
+      (old) =>
+        window.runtime.readRuntime(old, '/api/echo-ok', undefined, window.okSchema, 'GET').then(
+          () => 'published',
+          (error) => error.message,
+        ),
+      scoped,
+    ),
+    'This computer connection changed. Refresh the collection.',
+  )
+  await page.evaluate(() => {
+    window.holdThird = false
+    for (const release of window.heldThird.splice(0)) release()
+  })
+  assert.match(await page.evaluate(() => window.heldRead), /selected computer changed/)
+  assert.deepEqual(
+    await page.evaluate(async (id) => {
+      // Let the released old-route overview and live refresh finish publishing.
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      const entry = window.runtime.overviews.find((item) => item.profile.id === id)
+      return [
+        entry.profile.connection.address === window.runtime.connection.address,
+        entry.snapshot?.runtimeInstanceId,
+        window.runtime.snapshot?.runtimeInstanceId,
+      ]
+    }, scoped.id),
+    [true, 'runtime-127.0.0.1:44555', 'runtime-127.0.0.1:44555'],
+    'A released old-route snapshot must not replace the current overview',
+  )
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((url) => url.startsWith('http://third.lan:8787/')).length,
+    ),
+    oldRouteRequests,
+    'No request may use the replaced address after the upgrade commits',
+  )
+  // The current saved owner remains readable after another computer becomes active.
+  await page.evaluate(() => window.runtime.selectRuntime(window.previousActiveId))
+  await page.waitForFunction(() => window.runtime.activeId === window.previousActiveId)
+  assert.equal(
+    await page.evaluate((id) => {
+      const owner = window.runtime.profiles.find((profile) => profile.id === id)
+      return window.runtime
+        .readRuntime(owner, '/api/echo-ok', undefined, window.okSchema, 'GET')
+        .then((result) => result.ok)
+    }, scoped.id),
+    true,
+  )
   await page.evaluate(async () => {
     window.rejectPeerSnapshot = false
     window.accountOriginalCount = window.runtime.profiles.length
@@ -544,6 +730,31 @@ try {
   })
   assert.match(rejectedRecovery.failure, /different computer/)
   assert.deepEqual(rejectedRecovery.saved, recovered.saved)
+  // A computer reachable only through the account is removed with its offline data at sign-out.
+  const accountOnly = await page.evaluate(async () => {
+    const peer = { origin: 'https://connect.example', secret: '2'.repeat(64), relay: 'dovo' }
+    window.prepareAccountPeer(peer)
+    window.servers['127.0.0.1:44555'].runtimeId = 'account-only-computer'
+    await window.runtime.connect(
+      {
+        address: window.accountPeerAddress(peer),
+        peer,
+        runtimeId: 'account-only-computer',
+        token: 'account-only-internet-token-private',
+        accountSession: 'signed-in-phone',
+      },
+      'Account only',
+    )
+    window.servers['127.0.0.1:44555'].runtimeId = 'account-computer'
+    const profile = window.runtime.profiles.find(
+      (item) => item.connection.runtimeId === 'account-only-computer',
+    )
+    const lan = window.runtime.profiles.find((item) => item.id === window.accountProfileId)
+    await window.runtime.cacheForRuntime(profile).write('probe', { ok: true })
+    await window.runtime.cacheForRuntime(lan).write('probe', { ok: true })
+    return profile
+  })
+  assert.equal(accountOnly.connection.accountSession, 'signed-in-phone')
   await page.evaluate(() => window.runtime.selectRuntime(window.accountProfileId))
   const unresolved = await page.evaluate(async () => {
     const profile = window.runtime.profile
@@ -581,6 +792,28 @@ try {
     await page.evaluate(() => window.runtime.profile.connection.token),
     'explicit-lan-pairing-token-private',
   )
+  const signedOut = await page.evaluate(async (removed) => {
+    const lan = window.runtime.profiles.find((item) => item.id === window.accountProfileId)
+    const probe = (connection) =>
+      window
+        .readCacheFor(connection)
+        .read('probe', window.okSchema)
+        .then((cached) => !!cached)
+    return {
+      saved: window.runtime.profiles.some((item) => item.id === removed.id),
+      overview: window.runtime.overviews.some((entry) => entry.profile.id === removed.id),
+      removedCache: await probe(removed.connection),
+      lanCache: await probe(lan.connection),
+      error: window.runtime.error,
+    }
+  }, accountOnly)
+  assert.deepEqual(signedOut, {
+    saved: false,
+    overview: false,
+    removedCache: false,
+    lanCache: true,
+    error: '',
+  })
   const renders = await page.evaluate(() => window.renders)
   assert.ok(renders.broad > 3, `broad runtime reader rendered ${renders.broad} times`)
   assert.equal(renders.selected, 1, 'an action selector re-rendered for runtime state changes')

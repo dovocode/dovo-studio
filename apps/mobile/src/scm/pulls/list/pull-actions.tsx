@@ -31,10 +31,8 @@ export type PullActionTarget = {
   action: PullAction['action']
   comment?: PullComment
 }
+// Drafts retain user input only. Each opened sheet targets the revision it was opened against.
 const actionDrafts = createDetailDrafts<{
-  connectionId: string | undefined
-  expectedDestination: string | undefined
-  headSha: string
   title: string
   body: string
   base: string
@@ -81,9 +79,6 @@ export function PullActionSheet({
       const preferred = readMobilePreferences().mergeMethod
       const offered: readonly string[] = detail.capabilities?.mergeMethods ?? []
       return {
-        connectionId: detail.pull.connectionId,
-        expectedDestination: detail.destination ?? detail.pull.destination,
-        headSha: detail.pull.headSha,
         title: detail.pull.title,
         body: target.action === 'edit' ? detail.pull.body : '',
         base: detail.pull.base,
@@ -96,19 +91,9 @@ export function PullActionSheet({
       }
     },
   )
-  const {
-    connectionId,
-    expectedDestination,
-    headSha,
-    title,
-    body,
-    base,
-    reviewers,
-    teams,
-    event,
-    method,
-    operation,
-  } = draft
+  const { title, body, base, reviewers, teams, event, method, operation } = draft
+  const { connectionId, headSha } = detail.pull
+  const expectedDestination = detail.destination ?? detail.pull.destination
   const setTitle = (value: string) => setField('title', value)
   const setBody = (value: string) => setField('body', value)
   const setBase = (value: string) => setField('base', value)

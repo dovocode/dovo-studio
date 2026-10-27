@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react'
-import { taskSearchSchema, type RuntimeOverview } from '@dovo/protocol'
+import { runtimeResourceKey, taskSearchSchema, type RuntimeOverview } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 
 /** Search history on each owning computer; snapshots deliberately omit conversation bodies. */
@@ -29,7 +29,7 @@ export function useTaskSearch(entries: readonly RuntimeOverview[], query: string
             { query: needle },
             taskSearchSchema,
           )
-          return result.taskIds.map((id) => JSON.stringify([entry.profile.id, id]))
+          return result.taskIds.map((id) => runtimeResourceKey(entry.profile.id, id))
         }),
       ).then((results) => {
         if (cancelled) return

@@ -1,5 +1,5 @@
 import type { Repository, RuntimeOverview, RuntimeProfile } from '@dovo/protocol'
-import { runtimeComputerName } from '@dovo/protocol'
+import { runtimeComputerName, runtimeResourceKey } from '@dovo/protocol'
 
 export type ProjectSource = {
   key: string
@@ -10,8 +10,8 @@ export type ProjectSource = {
   computerName: string
 }
 
-export const projectSourceKey = (runtimeId: string, repositoryId: string) =>
-  JSON.stringify([runtimeId, repositoryId])
+/** A project's identity within its saved computer. */
+export const projectSourceKey = runtimeResourceKey
 
 export function collectionSources(overviews: RuntimeOverview[]): ProjectSource[] {
   return overviews.flatMap((entry) =>

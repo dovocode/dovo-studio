@@ -34,7 +34,10 @@ import {
   pullOverviewScope,
   isUnauthorizedRuntimeError,
   sameRuntimeConnection,
+  resolveRuntimeTarget,
+  verifyRuntimeReplacement,
   type RuntimeConnection,
+  type RuntimeSnapshot,
   type RuntimeRegistry,
   type RuntimeProfile,
   type RuntimeOverview,
@@ -87,7 +90,7 @@ import { Atom } from 'effect/reactivity'
 import { AppState } from 'react-native'
 import * as Network from 'expo-network'
 import * as SecureStore from 'expo-secure-store'
-import { Data, Effect, Schema, Semaphore } from 'effect'
+import { Data, Effect, Result, Schema, Semaphore } from 'effect'
 import { mobileReadCache } from './read-cache'
 import {
   clientScopeKey,
@@ -282,7 +285,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     new Map<
       string,
       {
-        token: string
+        connection: RuntimeConnection
         effect: Effect.Effect<void>
       }
     >(),
@@ -302,7 +305,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     new Map<
       string,
       {
-        token: string
+        connection: RuntimeConnection
         tag: string | undefined
         pulls: string
         writtenAt: number
@@ -363,7 +366,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           !tag ||
           !mark ||
           mark.tag !== tag ||
-          mark.token !== profile.connection.token ||
+          !sameRuntimeConnection(mark.connection, profile.connection) ||
           mark.pulls !== JSON.stringify(entry.pulls) ||
           Date.now() - mark.writtenAt > 60000
         )
@@ -392,7 +395,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         })
         if (caches.current.get(id)?.cache === cache)
           cacheMarks.current.set(id, {
-            token: entry.profile.connection.token,
+            connection: entry.profile.connection,
             tag: getRuntimeSnapshotTag(entry.snapshot),
             pulls: JSON.stringify(entry.pulls),
             writtenAt: Date.now(),
@@ -615,7 +618,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     (profile: RuntimeProfile): Effect.Effect<void> =>
       Effect.suspend(() => {
         const pending = fleetPending.current.get(profile.id)
-        if (pending?.token === profile.connection.token) return pending.effect
+        // A same-token address change must not join a read still bound to the old route.
+        if (pending && sameRuntimeConnection(pending.connection, profile.connection))
+          return pending.effect
         const version = (sequence.current.get(profile.id) ?? 0) + 1
         sequence.current.set(profile.id, version)
         const shared = Effect.runSync(
@@ -654,7 +659,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           ),
         )
         fleetPending.current.set(profile.id, {
-          token: profile.connection.token,
+          connection: profile.connection,
           effect: shared,
         })
         return shared
@@ -673,7 +678,9 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         )
         const entries = current.current.profiles.flatMap((profile) => {
           const entry = entryRef.current[profile.id]
-          return entry && entry.profile.connection.token === profile.connection.token ? [entry] : []
+          return entry && sameRuntimeConnection(entry.profile.connection, profile.connection)
+            ? [entry]
+            : []
         })
         const scope = (entry: RuntimeOverview, repositories: readonly Repository[]) =>
           JSON.stringify([entry.profile.connection, pullOverviewScope(repositories)])
@@ -732,7 +739,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   }, [appActive, selectedPeerAddress, registryLoaded])
   const connection = profile?.connection ?? null
   const active =
-    profile && entries[profile.id]?.profile.connection.token === profile.connection.token
+    profile && sameRuntimeConnection(entries[profile.id]?.profile.connection, profile.connection)
       ? entries[profile.id]
       : undefined
   const refreshEffect = useCallback(() => {
@@ -752,9 +759,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               'Saved computers could not be loaded. Retry loading before pairing or editing connections.',
             ),
           )
+        let snapshot: RuntimeSnapshot | undefined
         if (proof || value.accountSession) {
           // Verify identity and learn routes without downloading the computer's history.
-          const snapshot = yield* createRuntimeClient(value).requestEffect(
+          snapshot = yield* createRuntimeClient(value).requestEffect(
             '/api/snapshot?scope=overview',
             undefined,
             snapshotSchema,
@@ -779,6 +787,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
           nameIsCustom: name?.trim() ? true : previous ? runtimeHasCustomName(previous) : false,
           ...(previous ? { id: previous.id } : {}),
         }
+        // Saving overwrites the profile with this ID, which may be an unrelated computer first
+        // paired at the same address. Prove it is the same server before pairing is confirmed.
+        const replaced = current.current.profiles.find((item) => item.id === next.id)
+        if (snapshot && replaced) verifyRuntimeReplacement(replaced.connection, value, snapshot)
         if (previous && !sameRuntimeConnection(previous.connection, next.connection))
           yield* beforeReplace(previous.connection)
         yield* refreshProfileEffect(next)
@@ -838,8 +850,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               (profile.connection.internet && profile.connection.internet.session !== session)
             )
               yield* mutations.assertEmptyEffect(profile.connection)
+          let removed: RuntimeProfile[] = []
           yield* changeRegistryEffect((saved) => {
             let changed = false
+            removed = []
             const profiles = saved.profiles.flatMap((profile) => {
               if (
                 profile.connection.accountSession &&
@@ -847,6 +861,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               ) {
                 forgetPeerConnection(profile.connection.address)
                 changed = true
+                removed.push(profile)
                 return []
               }
               if (profile.connection.internet && profile.connection.internet.session !== session) {
@@ -866,10 +881,32 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
                 }
               : saved
           })
+          if (!removed.length) return
+          // Account-managed computers leave no offline workspace data behind. Computers that only
+          // lose their internet fallback keep their independently paired cache.
+          const remaining = { ...entryRef.current }
+          for (const profile of removed) delete remaining[profile.id]
+          setEntries(remaining)
+          const failures: string[] = []
+          for (const profile of removed) {
+            clearRuntimeRequestCache(profile.connection)
+            const cleared = yield* Effect.result(cacheFor(profile).clearEffect())
+            caches.current.delete(profile.id)
+            cacheDirty.current.delete(profile.id)
+            cacheMarks.current.delete(profile.id)
+            if (Result.isFailure(cleared))
+              failures.push(`${profile.name}: ${cleared.failure.message}`)
+          }
+          if (failures.length)
+            return yield* Effect.fail(
+              new Error(
+                `Signed out, but saved offline data could not be deleted. ${failures.join(' · ')}`,
+              ),
+            )
         }).pipe(Effect.tapError((error) => Effect.sync(() => setStorageError(error.message)))),
       )
     },
-    [changeRegistryEffect, mutations],
+    [changeRegistryEffect, mutations, cacheFor],
   )
   const recoverAccountConnection = useCallback(
     async (previous: RuntimeProfile, incoming: RuntimeConnection, signal: AbortSignal) => {
@@ -886,7 +923,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         )
         if (snapshot.runtimeId !== incoming.runtimeId)
           throw new Error('This connection belongs to a different computer')
-        const verified = learnRuntimeRoutes(incoming, snapshot)
+        // The directory's identity must also match the saved computer before edits are renewed.
+        const verified = verifyRuntimeReplacement(previous.connection, incoming, snapshot)
         let next = saveRecoveredAccountConnection(
           current.current,
           previous,
@@ -1067,7 +1105,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             snapshotSchema,
             { method: 'GET', timeoutMs: 30000 },
           )
-          const verified = learnRuntimeRoutes(connection, snapshot)
+          // A known computer must report the same identity over its new route.
+          const verified = verifyRuntimeReplacement(previous, connection, snapshot)
           yield* beforeReplace(previous)
           yield* changeRegistryEffect((saved) => {
             const current = saved.profiles.find((item) => item.id === id)
@@ -1134,18 +1173,19 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
               message: 'Connect a computer first',
             }),
           )
+        // Replacing the address with the same device token still retires this captured route.
         const valid = () =>
-          current.current.activeId === profile.id &&
-          current.current.profiles.some(
-            (item) => item.id === profile.id && item.connection.token === profile.connection.token,
-          )
+          current.current.activeId === profile.id
+            ? resolveRuntimeTarget(current.current.profiles, profile)
+            : undefined
         const changed = () =>
           new ConnectionChangedError({
             message: 'The selected computer changed. Try the action again.',
           })
-        if (!valid()) return Effect.fail(changed())
+        const target = valid()
+        if (!target) return Effect.fail(changed())
         return mutations
-          .requestEffect(profile.connection, path, input, schema, method)
+          .requestEffect(target.connection, path, input, schema, method)
           .pipe(
             Effect.flatMap((result) => (valid() ? Effect.succeed(result) : Effect.fail(changed()))),
           )
@@ -1157,20 +1197,15 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const readRuntimeEffect = useCallback<RuntimeReadEffect>(
     (owner, path, input, schema, method) =>
       Effect.suspend(() => {
-        const valid = () =>
-          current.current.profiles.some(
-            (saved) =>
-              saved.id === owner.id &&
-              saved.connection.address === owner.connection.address &&
-              saved.connection.token === owner.connection.token,
-          )
+        const valid = () => resolveRuntimeTarget(current.current.profiles, owner)
         const changed = () =>
           new ConnectionChangedError({
             message: 'This computer connection changed. Refresh the collection.',
           })
-        if (!valid()) return Effect.fail(changed())
+        const target = valid()
+        if (!target) return Effect.fail(changed())
         return mutations
-          .requestEffect(owner.connection, path, input, schema, method)
+          .requestEffect(target.connection, path, input, schema, method)
           .pipe(
             Effect.flatMap((result) => (valid() ? Effect.succeed(result) : Effect.fail(changed()))),
           )
@@ -1464,7 +1499,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       registry.profiles.map((item) =>
         previewTasks(
           {
-            ...(entries[item.id]?.profile.connection.token === item.connection.token
+            ...(sameRuntimeConnection(entries[item.id]?.profile.connection, item.connection)
               ? entries[item.id]
               : initialOverview(item)),
             profile: item,

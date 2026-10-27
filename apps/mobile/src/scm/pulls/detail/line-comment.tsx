@@ -17,10 +17,8 @@ import { Choice } from '../../../ui/controls/choice'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
+// Line numbers describe one revision, so drafts are keyed by it and never move to a new head.
 const lineDrafts = createDetailDrafts<{
-  connectionId: string | undefined
-  expectedDestination: string | undefined
-  headSha: string
   line: string
   end: string
   side: string
@@ -55,20 +53,20 @@ export function LineComment({
         detail.destination ?? detail.pull.destination,
         detail.pull.repositoryUrl,
         detail.pull.number,
+        detail.pull.headSha,
         path,
       ),
     ).current,
     () => ({
-      connectionId: detail.pull.connectionId,
-      expectedDestination: detail.destination ?? detail.pull.destination,
-      headSha: detail.pull.headSha,
       line: '',
       end: '',
       side: 'additions',
       body: '',
     }),
   )
-  const { connectionId, expectedDestination, headSha, line, end, side, body } = draft
+  const { line, end, side, body } = draft
+  const { connectionId, headSha } = detail.pull
+  const expectedDestination = detail.destination ?? detail.pull.destination
   const setLine = (value: string) => setField('line', value)
   const setEnd = (value: string) => setField('end', value)
   const setSide = (value: string) => setField('side', value)

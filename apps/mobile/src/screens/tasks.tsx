@@ -32,6 +32,7 @@ import {
   compareTasks,
   isSnoozed,
   resolveTaskAgent,
+  runtimeResourceKey,
   type RuntimeTask,
 } from '@dovo/protocol'
 import { useNavigation } from '../shell/navigation'
@@ -187,7 +188,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         projectGroups
           .find((group) => group.key === project)
           ?.entries.map(({ runtimeId, repository }) =>
-            JSON.stringify([runtimeId, repository.id]),
+            runtimeResourceKey(runtimeId, repository.id),
           ) ?? [],
       ),
     [projectGroups, project],
@@ -211,13 +212,15 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         (row) =>
           (source === 'all' || row.runtimeId === source) &&
           (!project ||
-            projectMembers.has(JSON.stringify([row.runtimeId, row.task.repositoryId]))) &&
+            projectMembers.has(runtimeResourceKey(row.runtimeId, row.task.repositoryId))) &&
           (archived ? !!row.task.archivedAt : !row.task.archivedAt),
         (child) =>
           !archived &&
           (source === 'all' || child.runtimeId === source) &&
           (!project ||
-            projectMembers.has(JSON.stringify([child.runtimeId, child.repositoryId])) ||
+            (!!child.runtimeId &&
+              !!child.repositoryId &&
+              projectMembers.has(runtimeResourceKey(child.runtimeId, child.repositoryId))) ||
             (!!child.projectIdentity && project === child.projectIdentity) ||
             (project === 'scratch' && child.projectKind === 'scratch')),
       ),
@@ -238,7 +241,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         ({ key, task, needsInput, projectName, runtimeName, runtimeId }) =>
           (tree.contextKeys.has(key) ||
             ((source === 'all' || runtimeId === source) &&
-              (!project || projectMembers.has(JSON.stringify([runtimeId, task.repositoryId]))))) &&
+              (!project ||
+                projectMembers.has(runtimeResourceKey(runtimeId, task.repositoryId))))) &&
           (archived ? !!task.archivedAt : !task.archivedAt) &&
           (!car ||
             (!task.archived &&
@@ -417,7 +421,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           group.entries.map(
             ({ runtimeId, repository }) =>
               [
-                JSON.stringify([runtimeId, repository.id]),
+                runtimeResourceKey(runtimeId, repository.id),
                 { key: group.key, name: repository.kind === 'scratch' ? 'General' : group.name },
               ] as const,
           ),
@@ -425,8 +429,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       )
       const projects = new Map<string, (typeof groups)[number]>()
       for (const entry of unsettled) {
-        const identity = identities.get(JSON.stringify([entry.runtimeId, entry.task.repositoryId]))
-        const key = identity?.key ?? JSON.stringify([entry.runtimeId, entry.task.repositoryId])
+        const identity = identities.get(
+          runtimeResourceKey(entry.runtimeId, entry.task.repositoryId),
+        )
+        const key = identity?.key ?? runtimeResourceKey(entry.runtimeId, entry.task.repositoryId)
         const group = projects.get(key) ?? {
           key,
           name: identity?.name ?? entry.projectName,
