@@ -373,3 +373,116 @@ Raw GitHub retrieval was unavailable during the review. The cited cached T3 file
 against Git blob hashes in the downloaded tree for the pinned SHA, including files read from the
 older local checkout. This confirms source identity, not runtime behavior. Native iOS/Android
 rendering, keyboard handling and notification delivery were not tested in this review.
+
+## Feature implementation follow-through (2026-10-27)
+
+The next implementation pass keeps the existing prompt-first start and adds:
+
+- Device-local text draft stashes on desktop and mobile, scoped to the owning computer and thread.
+  Restoring appends to current text and retains the saved copy. Stashing/restoring is unavailable
+  while attachments are present; attachment retention is deliberately outside this text-only flow.
+  Storage failure and newer typing never clear the current draft.
+- Explicit same-computer thread context attachments. The picker fetches complete,
+  revision-consistent history rather than copying the sidebar projection, enforces the existing 5 MB
+  attachment limit, and leaves the snapshot removable through normal attachment controls. It never
+  sends a message.
+- Desktop terminal selection handoff into the existing draft insertion path, with a bounded
+  selection and editable text. Mobile terminals add one-shot Ctrl/Alt controls, preserving paste and
+  IME input and clearing modifiers when transport disconnects.
+- Mobile notification taps retained until runtime/navigation readiness. Foreground input alerts are
+  quiet only for the exact accessible input, with conservative behavior when visibility is
+  uncertain.
+- Native iOS hardware keyboard commands for New thread, Back and focused Tasks search, yielding to
+  text editors, web views and presented modals. Android does not advertise these commands.
+- Temporary mobile Undo after Settle or Snooze. Restoration belongs to the original computer and
+  validates the whole thread family's expected lifecycle state before applying any change.
+
+These are workflow improvements, not measured speed improvements. Native iOS compilation,
+external-keyboard behavior and real notification delivery require a native build/device check; DOM
+adapters do not verify those platform behaviors. Reading-position restoration and additional PR-tour
+presentation remain follow-ups rather than implied shipped features.
+
+## Further feature review (five Terra 6.1 reviewers, 2026-10-27)
+
+A separate read-only round excluded the shipped features and implementation pass above. These are
+source-confirmed differences or risks, not device/browser reproductions:
+
+| Priority           | Finding                               | Smallest useful follow-up and verification                                                                                                                                                                                                                                                                                                                                          |
+| ------------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First              | Worktree handoff recovery             | `packages/runtime/src/scm/tasks/task-handoff.ts` removes the old worktree before checkout in the project folder. Force the later checkout to fail, then verify rollback restores the checkout or gives explicit recovery instructions while preserving branch, stash and all changes. Metadata must not point at a missing checkout.                                                |
+| First to reproduce | Claude background session ownership   | `packages/runtime/src/agents/execution/subagents.ts` scopes insertion by session but roster reconciliation/previous-record lookup can consider another session. Add two-session reducer cases and a real session-replacement/late-event case before claiming a live provider failure.                                                                                               |
+| Next               | Reuse a sent prompt                   | Add a text-only **Use in composer** action on desktop and mobile using existing insertion paths. Append without overwriting the current draft or attachments and never send or mutate history. This is separate from destructive timeline rewind, which needs provider/file rollback guarantees.                                                                                    |
+| Next               | Restore conversation reading position | Desktop remounts start at the live end, while mobile visibility explicitly follows latest. Start with bounded desktop message anchors per existing computer/credential/thread scope. Explicit search/bookmark reveals and user scrolling must win; missing anchors should fall back to latest without repeated fetching. Mobile requires its own inverted-list/native verification. |
+| Later              | Offline attachment drafting on mobile | Persist selected files locally per computer/thread, then upload to the original owner after reconnect. Preserve failed uploads and provide retry/remove/cleanup. Removing the current online guard alone would lose files across restart. Native picker/relaunch tests are required.                                                                                                |
+
+T3 evidence is pinned to `5808469018fb95676af148e7a7662c23665c67a3`: `BranchToolbar.logic.ts`,
+`useThreadLifecycle.tsx`, `useTimelineRewind.ts`, `chatViewSend.ts`, `composerImages.ts`,
+`use-composer-drafts.ts`, `composerAttachmentUploadQueue.ts`, `MessagesTimeline.tsx`,
+`useTimelinePositionRestore.ts`, `timelineScrollAnchoring.ts`, and the Claude background
+interruption fixture were checked against downloaded tree blob IDs. Cached files whose blobs
+differed were not used as evidence. The pin is not a claim about the latest upstream commit.
+
+A shared-project branch-drift warning is a further candidate, but older main-mode threads do not
+necessarily record a branch baseline. Detecting a mismatch must not silently switch a shared dirty
+checkout or interfere with other threads; investigate baseline semantics before implementing it.
+
+## Current-source follow-up review (five Terra 6.1 reviewers, 2026-10-27)
+
+This round uses a fresh source archive pinned to T3
+[`5e9d56416f6b395095c772c597e79cd5f94e3052`](https://github.com/pingdotgg/t3code/commit/5e9d56416f6b395095c772c597e79cd5f94e3052),
+including its newer machine mentions and linked-environment controls. These are recommendations, not
+additional implemented features. The review excludes the implementation above and the earlier
+follow-ups, and checks Dovo's existing capabilities before calling something missing.
+
+The recommended first shared workflow improvement is PR-template-aware description generation: it
+can improve both apps through the existing runtime endpoint without adding another UI flow.
+
+| Priority               | Opportunity                                 | Dovo behavior and smallest useful adaptation                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Small desktop change   | Command-palette aliases                     | [Commands](../packages/studio-shell/src/command-palette.tsx) match only a contiguous title substring. Add deliberate optional search aliases, with title matches ranked ahead of aliases; keep existing commands, focus and keyboard execution. This helps queries such as “new task” find New thread.                                                                                                               |
+| First mobile follow-up | Open PDF attachments                        | [Attachment previews](../apps/mobile/src/tasks/conversation/components/message-attachments.tsx) treat non-images as UTF-8 text. Add an explicit PDF viewer action using the existing authenticated read, with Share/error fallback and temporary-file cleanup. Verify real iOS and Android behavior before shipping.                                                                                                 |
+| Next                   | Keyboard access to queued messages          | Dovo already has edit and steer buttons in [message queues](../packages/extension-tasks/src/chat/thread/message-queue.tsx). Reuse those guarded actions for discoverable desktop shortcuts, preserving drafts and attachments and yielding to terminals, composition, repeats and disconnected or pending states.                                                                                                    |
+| Next                   | Mention a computer in the composer          | Extend the existing [mention menu](../packages/extension-tasks/src/chat/composer/file-mentions.tsx) with paired computer references. Include a stable validated identity as request context, without changing thread ownership or granting access. Account for duplicate names, offline computers and disabled Studio Tools.                                                                                         |
+| Later                  | Implement a selected plan in a fresh thread | The existing [plan action](../packages/extension-tasks/src/chat/thread/plan-approval.tsx) continues in the same thread with a generic prompt. A fresh-thread action should transfer inspectable, selected plan text and preserve the original computer/project. The current heuristic for detecting plans is insufficient for automatic handoff; creation failures and checkout ownership require explicit handling. |
+
+The Git/review reviewer also identified three useful shared workflow additions:
+
+- **PR-template-aware descriptions:**
+  [Generation](../packages/runtime/src/agents/tasks/title-generation.ts) receives thread context,
+  commits and diff, but no repository template. Read one unambiguous, bounded regular Git blob from
+  the selected base revision and include it as generation context. Preserve editable results and
+  newer user edits. Test missing, multiple, oversized and symlink templates, unresolved bases, and
+  the original computer/account.
+- **Workflows awaiting approval:** Dovo handles `ACTION_REQUIRED` checks when GitHub returns them,
+  but does not separately read approval-required workflow runs. Add a read-only, head-bound PR
+  detail section first, with GitHub links and explicit unavailable/error state. Verify real fork-PR
+  behavior before treating the feed gap as a reproduced failure. Approving execution is a separate
+  action.
+- **Auto-merge and branch updates:** Retain reviewed-SHA protection for immediate merge. Add
+  explicit enable/disable auto-merge controls and a separate expected-head branch-update action,
+  with fresh permissions and queue capability checks. Distinguish armed/queued from merged; preserve
+  the selected computer, repository and account on desktop and mobile.
+
+T3 evidence for these differences:
+
+- [PR template discovery](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/packages/source-control-github/src/server/gitHubChangeRequestTemplate.ts#L128)
+  and
+  [generation context](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/apps/server/src/git/GitManager.ts#L2275).
+- [Workflow approval reads](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/packages/source-control-github/src/server/GitHubPullRequestApi.ts#L1517)
+  and
+  [guarded PR mutations](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/packages/source-control-github/src/server/GitHubPullRequestApi.ts#L2531).
+- [Command title and search-term scoring](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/apps/web/src/components/CommandPalette.logic.ts#L508).
+- Native
+  [PDF preview](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/apps/mobile/src/components/FilePreview.tsx#L15)
+  and
+  [Android renderer](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/apps/mobile/src/components/PdfPreview.android.tsx#L7).
+- [Queued-message shortcuts](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/apps/web/src/components/chat/QueuedRunsControl.tsx#L166).
+- [Machine mention suggestions](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/apps/web/src/components/chat/useComposerMenuItems.ts#L106)
+  and
+  [persistent context identities](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/apps/web/src/lib/composerContextRecords.ts#L178).
+- [Fresh-thread plan handoff](https://github.com/pingdotgg/t3code/blob/5e9d56416f6b395095c772c597e79cd5f94e3052/apps/web/src/components/chat/useProposedPlanSend.ts#L294).
+
+Dovo already supports same-computer linked checkouts, adding projects to another computer, remote
+Studio tools, queue controls and attachment sharing. Recreating those systems would add complexity
+without filling these UX gaps. This round is source research; its recommendations have not been
+runtime- or device-verified, and it establishes no performance improvement.
