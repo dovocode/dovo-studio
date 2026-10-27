@@ -16,6 +16,7 @@ import {flushSync} from 'react-dom';
 import {useCallback,useEffect,useState} from 'react';
 import {decode,forgePipelineDetailSchema} from '@dovo/protocol';
 import {usePipelineSections} from '${mobile}/scm/work/use-pipeline-sections.ts';
+import {usePipelineSections as useDesktopPipelineSections} from '${root}/packages/extension-scm/src/work/use-pipeline-sections.ts';
 import {PipelineRunInfo,PipelineJobs} from '${mobile}/scm/pulls/detail/pipeline-details.tsx';
 import {PipelineSectionStatus} from '${mobile}/scm/work/pipeline-section-status.tsx';
 import {PullPipelineRuns} from '${root}/packages/extension-scm/src/pulls/detail/pipeline-runs.tsx';
@@ -33,8 +34,8 @@ if(path.endsWith('/pipelines/list'))return {items:[run]};
 if(path.endsWith('/pipelines/detail'))return {run:{...run},jobs:input.section==='jobs'?(input.cursor?[{...job,id:'job-2',name:'Publish job',status:'failure',steps:[{id:'step-2',number:1,name:'Upload artifact',status:'failure'}]}]:[job]):[],next:input.section==='jobs'&&!input.cursor?'2':undefined,graph:input.section==='graph'?[{id:'build',name:'Build job',needs:[],jobIds:[]},{id:'publish',name:'Publish job',needs:['build'],jobIds:[]}]:undefined};
 throw new Error('Unexpected request '+path);
 }};
-const saved=window.saved=new Map();window.store.readCache={read:async(key,schema)=>{const row=saved.get(key);return row?{...row,value:decode(schema,row.value)}:null},write:async(key,value)=>{saved.set(key,{value:structuredClone(value),cachedAt:'2026-10-14'})},remove:async key=>{saved.delete(key)}};
-function Mobile(){const[overview,setOverview]=useState(window.mobileOverview),[revision,setRevision]=useState(0);const load=useCallback(async(section,cursor,refresh,revision)=>decode(forgePipelineDetailSchema,await window.store.request('/api/scm/work/pipelines/detail',{section,cursor,refresh,revision})),[]);const sections=usePipelineSections({overview,enabled:window.active&&window.store.connected,readCache:window.store.readCache,cacheKey:'mobile-run',refreshToken:revision,load,refreshOverview:()=>setOverview({run:{...run},jobs:[]})});window.mobileSections=sections;return <div aria-label="Mobile pipeline" style={{display:'flex',flexDirection:'column',gap:20,padding:16,maxWidth:600,margin:'auto'}}><PipelineRunInfo run={overview.run}/><PipelineSectionStatus label="Jobs" state={sections.jobs} connected={window.store.connected}/><PipelineSectionStatus label="Workflow" state={sections.graph} connected={window.store.connected}/><PipelineJobs jobs={sections.detail.jobs} graph={sections.detail.graph} hasMore={!!sections.detail.next} ready={sections.jobs.ready} onOpen={()=>{}}/>{sections.detail.next&&<button onClick={sections.jobs.more}>More jobs</button>}</div>}
+const saved=window.saved=new Map();window.store.readCache={read:async(key,schema)=>{if(window.cacheFailure==='read')throw new Error('Offline storage unavailable');const row=saved.get(key);return row?{...row,value:decode(schema,row.value)}:null},write:async(key,value)=>{if(window.cacheFailure==='write')throw new Error('Offline storage full');saved.set(key,{value:structuredClone(value),cachedAt:'2026-10-14'})},remove:async key=>{if(window.cacheFailure==='remove')throw new Error('Offline storage locked');saved.delete(key)}};
+function Mobile(){const[overview,setOverview]=useState(window.mobileOverview),[revision,setRevision]=useState(0);const load=useCallback(async(section,cursor,refresh,revision)=>decode(forgePipelineDetailSchema,await window.store.request('/api/scm/work/pipelines/detail',{section,cursor,refresh,revision})),[]);const useSections=window.desktopHook?useDesktopPipelineSections:usePipelineSections;const sections=useSections({overview,enabled:window.active&&window.store.connected,readCache:window.store.readCache,cacheKey:'mobile-run',refreshToken:revision,load,refreshOverview:()=>setOverview({run:{...run},jobs:[]})});window.invalidateSections=()=>setRevision(value=>value+1);window.mobileSections=sections;return <div aria-label="Mobile pipeline" style={{display:'flex',flexDirection:'column',gap:20,padding:16,maxWidth:600,margin:'auto'}}><PipelineRunInfo run={overview.run}/><PipelineSectionStatus label="Jobs" state={sections.jobs} connected={window.store.connected}/><PipelineSectionStatus label="Workflow" state={sections.graph} connected={window.store.connected}/><PipelineJobs jobs={sections.detail.jobs} graph={sections.detail.graph} hasMore={!!sections.detail.next} ready={sections.jobs.ready} onOpen={()=>{}}/>{sections.detail.next&&<button onClick={sections.jobs.more}>More jobs</button>}</div>}
 const app=createRoot(document.getElementById('app'));window.active=true;window.mount=()=>flushSync(()=>app.render(window.empty?<p>Unmounted</p>:window.mobile?<Mobile key={window.mobileKey??0}/>:<div hidden={!window.active}><PullPipelineRuns repositoryId="repo" sha="commit" active={window.active}/></div>));window.mount();`,
     },
     bundle: true,
@@ -320,6 +321,52 @@ try {
   await page
     .getByText('Jobs: jobs temporarily unavailable', { exact: true })
     .waitFor({ state: 'detached' })
+  // Local cache failures must never prevent a live jobs or graph read, including retries.
+  for (const desktopHook of [true, false]) {
+    await page.evaluate((desktopHook) => {
+      window.desktopHook = desktopHook
+      window.mobileKey = (window.mobileKey ?? 0) + 1
+      window.cacheFailure = 'read'
+      window.mount()
+    }, desktopHook)
+    await page.waitForFunction(
+      () => window.mobileSections.jobs.ready && window.mobileSections.graph.ready,
+    )
+    await page.getByRole('button', { name: 'Job Build job', exact: true }).waitFor()
+    await page
+      .getByText('Jobs: Saved jobs could not be read from this device.', { exact: true })
+      .waitFor()
+    await page.evaluate(() => {
+      window.cacheFailure = 'remove'
+      window.invalidateSections()
+    })
+    await page.waitForFunction(
+      () => window.mobileSections.jobs.ready && !window.mobileSections.jobs.busy,
+    )
+    await page
+      .getByText('Jobs: Saved jobs could not be cleared. Live data is still available.', {
+        exact: true,
+      })
+      .waitFor()
+    await page.evaluate(() => {
+      window.cacheFailure = 'write'
+    })
+    await page.getByRole('button', { name: 'Refresh jobs', exact: true }).click()
+    await page
+      .getByText('Jobs: Jobs loaded, but could not be saved for offline use.', { exact: true })
+      .waitFor()
+    assert.equal(await page.evaluate(() => window.mobileSections.jobs.detail.stale ?? false), false)
+    await page.evaluate(() => {
+      window.cacheFailure = undefined
+    })
+    await page.getByRole('button', { name: 'Refresh jobs', exact: true }).click()
+    await page.waitForFunction(
+      () =>
+        window.mobileSections.jobs.ready &&
+        !window.mobileSections.jobs.busy &&
+        !window.mobileSections.jobs.error,
+    )
+  }
   assert.deepEqual(errors, [])
   console.log(
     'Pipelines: independent overview/jobs/graph/options, retry, rerun isolation, pagination/offline cache, active-only desktop/native polling, retained context, graph selection and narrow layouts passed. Screenshots: /tmp/dovo-pipelines (native primitives mocked).',

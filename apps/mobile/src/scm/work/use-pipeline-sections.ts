@@ -53,12 +53,14 @@ function useSection(input: Input, section: Section) {
     scope: string
     value?: ForgePipelineDetail
     error: string
+    cacheError: string
     busy: boolean
     tick: number
   }>({
     scope: key,
     value: undefined,
     error: '',
+    cacheError: '',
     busy: false,
     tick: 0,
   })
@@ -70,11 +72,20 @@ function useSection(input: Input, section: Section) {
   useEffect(() => {
     depth.current = 1
     moreNext.current = undefined
-    setState((current) => ({ ...current, scope: key, value: undefined, error: '', busy: false }))
+    setState((current) => ({
+      ...current,
+      scope: key,
+      value: undefined,
+      error: '',
+      cacheError: '',
+      busy: false,
+    }))
   }, [key, readCache])
   useEffect(() => {
     let stopped = false
     let hydrated = false
+    let hydrationError = ''
+    setState((current) => ({ ...current, cacheError: '' }))
     const invalidated = token.current !== refreshToken
     if (invalidated) {
       forceNext.current = true
@@ -96,33 +107,49 @@ function useSection(input: Input, section: Section) {
         setState((current) => ({ ...current, value, error: value.refreshError ?? '' }))
         if (matchingPipelineSection(overview, value)) {
           depth.current = pages
-          await readCache?.write(key, { ...value, loadedPages: pages })
+          try {
+            await readCache?.write(key, { ...value, loadedPages: pages })
+            if (!stopped) setState((current) => ({ ...current, cacheError: hydrationError }))
+          } catch {
+            if (!stopped)
+              setState((current) => ({
+                ...current,
+                cacheError: `${section === 'jobs' ? 'Jobs' : 'Workflow'} loaded, but could not be saved for offline use.`,
+              }))
+          }
         }
       }
       try {
         if (!hydrated) {
           hydrated = true
-          if (invalidated) {
-            await readCache?.remove(key)
-            const legacy = await readCache?.read(cacheKey, cachedSchema)
-            if (legacy && !legacy.value.overviewOnly) await readCache?.remove(cacheKey)
-          }
-          const saved = invalidated
-            ? undefined
-            : ((await readCache?.read(key, cachedSchema)) ??
-              (await readCache?.read(cacheKey, cachedSchema)))
-          if (stopped) return
-          if (
-            saved &&
-            !saved.value.overviewOnly &&
-            matchingPipelineSection(overview, saved.value)
-          ) {
-            depth.current = saved.value.loadedPages ?? 1
-            setState((current) => ({
-              ...current,
-              value: current.value ?? { ...saved.value, stale: true },
-              error: '',
-            }))
+          try {
+            if (invalidated) {
+              await readCache?.remove(key)
+              const legacy = await readCache?.read(cacheKey, cachedSchema)
+              if (legacy && !legacy.value.overviewOnly) await readCache?.remove(cacheKey)
+            }
+            const saved = invalidated
+              ? undefined
+              : ((await readCache?.read(key, cachedSchema)) ??
+                (await readCache?.read(cacheKey, cachedSchema)))
+            if (stopped) return
+            if (
+              saved &&
+              !saved.value.overviewOnly &&
+              matchingPipelineSection(overview, saved.value)
+            ) {
+              depth.current = saved.value.loadedPages ?? 1
+              setState((current) => ({
+                ...current,
+                value: current.value ?? { ...saved.value, stale: true },
+                error: '',
+              }))
+            }
+          } catch {
+            hydrationError = invalidated
+              ? `Saved ${section} could not be cleared. Live data is still available.`
+              : `Saved ${section} could not be read from this device.`
+            if (!stopped) setState((current) => ({ ...current, cacheError: hydrationError }))
           }
         }
         if (!enabled || !overview || !(AppState.currentState === 'active')) return
@@ -205,7 +232,10 @@ function useSection(input: Input, section: Section) {
     detail: currentValue,
     ready: matchingPipelineSection(overview, currentValue),
     busy: state.scope === key && state.busy,
-    error: (state.scope === key ? state.error : '') || currentValue?.refreshError || '',
+    error:
+      (state.scope === key ? state.error || state.cacheError : '') ||
+      currentValue?.refreshError ||
+      '',
     refresh: () => {
       forceNext.current = true
       setState((current) => ({ ...current, tick: current.tick + 1 }))
