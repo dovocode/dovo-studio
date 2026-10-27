@@ -815,3 +815,44 @@ correctness findings.
   update before this operation. Storage, runtime-route and real-hook browser checks cover lost
   responses, restart, changed queue contents, credential changes and disk-write failure. This
   extends Dovo's existing durable-send approach rather than introducing T3's different draft model.
+
+## Full-app follow-up review
+
+Another five Terra 6.1 reviewers inspected desktop product flows, mobile, agents/tools, SCM and
+browser/runtime reliability against the same pinned T3 `4fc9e5f2` source. They checked the preceding
+implementation before reporting gaps. The SCM review found no additional bounded correctness issue;
+it confirmed existing pagination, truncation warnings, revision guards and worktree ownership
+checks. This is source inspection, not a live-provider certification.
+
+The resulting implementation addresses these reproduced gaps:
+
+- **Explicit command approval classification:** MCP App tool titles and arguments could collide with
+  saved shell-command rules. Only trusted provider adapters can now classify command execution;
+  unknown fields, additional grants, environment overrides and ambiguous command payloads remain
+  interactive. Exact supported Claude/Codex/ACP commands retain saved rules. A real MCP bridge
+  regression demonstrates the old bypass and checks explicit approval and denial.
+- **Desktop draft reconciliation:** Sending text no longer blacklists that text for the composer's
+  lifetime. Once a replacement is observed, an independent browser handoff can add the same text
+  again. Local edit revisions also prevent side-question saves, sends and forks from clearing a
+  newer edit, even when the user edited away and back to identical words. Tests retain failed-clear,
+  pending typing and ordered-snapshot protections. T3's guarded draft consumption in
+  `apps/web/src/components/chat/useComposerSend.ts` informed this comparison.
+- **Mobile fork recovery:** A fork intent is saved before contacting the original computer. Lost
+  responses, remounts and restarts reuse the same fork ID and payload; source attachments remain
+  available until confirmation. Confirmation conditionally clears only the submitted text and files,
+  preserving later insertions. Retry and confirmed discard are visible. Fork uses the source
+  thread's configuration, so desktop/mobile explicitly block it while next-message overrides are
+  selected. Storage and real-hook browser regressions cover delivery and cleanup failures.
+- **Cross-window cache invalidation:** Forgetting a computer now invalidates delayed cache writes in
+  other browser windows, including snapshots, indexes and decoded history. IndexedDB checks the
+  captured host generation and credential digest inside the same transaction as each operation. A
+  forgotten namespace stays closed until a committed connection addition authorizes it; stale
+  registry acknowledgements cannot reactivate it. Two real pages exercise late writes, stale new
+  handles, unaffected computers and legitimate re-pairing. This is a Dovo-specific race, not a claim
+  that T3's different mobile cache architecture solves it.
+
+The reported CI failures also had stale fixtures for MCP message origins, serialized Git writes,
+revision-checked PR monitoring and mobile foreground hooks. Their updated assertions verify the new
+behavior instead of removing those checks. Native Expo execution, live agent approvals and live
+forge API behavior were not exercised by this follow-up; browser adapters do not establish native
+mobile behavior. The larger feature proposals above remain separate from these fixes.
