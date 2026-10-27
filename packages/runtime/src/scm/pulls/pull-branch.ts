@@ -114,7 +114,7 @@ export async function createPullBranchWorktree(
   } else {
     if (local?.[3])
       throw new HttpError(409, 'The PR branch upstream is unavailable. Choose a separate branch.')
-    await git.command(root, ['remote', 'add', remote, url])
+    await git.sharedConfigCommand(root, ['remote', 'add', remote, url])
   }
   if (local?.[2] !== directory)
     await git.addWorktree(
@@ -123,7 +123,9 @@ export async function createPullBranchWorktree(
       local ? [directory, branch] : ['--no-track', '-b', branch, directory, head],
     )
   await git.command(root, ['update-ref', `refs/remotes/${remote}/${branch}`, head])
-  await git.command(root, ['config', `branch.${branch}.remote`, remote])
-  await git.command(root, ['config', `branch.${branch}.merge`, ref])
+  await git.withSharedConfig(root, async () => {
+    await git.command(root, ['config', `branch.${branch}.remote`, remote])
+    await git.command(root, ['config', `branch.${branch}.merge`, ref])
+  })
   return branch
 }

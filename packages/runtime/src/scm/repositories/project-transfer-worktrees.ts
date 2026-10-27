@@ -88,8 +88,10 @@ export async function cleanupTransferredWorktree(
     )
       .trim()
       .split('\n')
-    if (owned.branch && refs.includes(`refs/heads/${owned.branch}`))
-      await transferGit(s, owned.repositoryPath, ['branch', '-D', '--', owned.branch])
+    const root = owned.repositoryPath
+    const branch = owned.branch
+    if (branch && refs.includes(`refs/heads/${branch}`))
+      await s.git.withSharedConfig(root, () => transferGit(s, root, ['branch', '-D', '--', branch]))
     for (const ref of ['head', 'base'])
       await transferGit(s, owned.repositoryPath, [
         'update-ref',
@@ -157,8 +159,11 @@ export async function installWorktreeTransfer(
       await command(['symbolic-ref', 'HEAD', `refs/heads/${worktree.baseBranch}`])
     } else await command(['update-ref', '--no-deref', 'HEAD', worktree.baseHead])
     await command(['reset', '--hard', worktree.baseHead])
-    if (git.remote && projectTransferRemote(git.remote))
-      await command(['remote', 'add', 'origin', git.remote])
+    const remote = git.remote
+    if (remote && projectTransferRemote(remote))
+      await s.git.withSharedConfig(repositoryPath, () =>
+        command(['remote', 'add', 'origin', remote]),
+      )
   }
   const branches = (await command(['for-each-ref', '--format=%(refname)', 'refs/heads/']))
     .trim()
@@ -169,15 +174,17 @@ export async function installWorktreeTransfer(
     if (branches.includes(`refs/heads/${branch}`))
       branch = `dovo/copy-${manifest.id}-${path.slice(-6)}`
   }
-  await command([
-    'worktree',
-    'add',
-    '--no-checkout',
-    ...(branch ? ['-b', branch] : ['--detach']),
-    '--',
-    path,
-    git.head,
-  ])
+  await s.git.withSharedConfig(repositoryPath, () =>
+    command([
+      'worktree',
+      'add',
+      '--no-checkout',
+      ...(branch ? ['-b', branch] : ['--detach']),
+      '--',
+      path,
+      git.head,
+    ]),
+  )
   if (branch) {
     owned = { ...owned, branch }
     saveOwnership(owned)

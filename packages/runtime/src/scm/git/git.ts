@@ -51,6 +51,9 @@ export type GithubAccount = {
   onUnauthorized?: () => void
   beforeDispatch?: () => void
 }
+// Shared between service instances; linked worktrees write the same config file. Entries
+// exist only while Studio owns or is waiting for a write. External Git keeps its own locks.
+const sharedConfigWrites = new Map<string, Promise<void>>()
 export class GitService {
   retrieval?: RetrievalHook
   private sharedReaders = new Map<string, { until: number; value: Promise<string> }>()
@@ -374,10 +377,34 @@ export class GitService {
   command(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
     return this.run(cwd, this.settings().git, args, 30000, 12 * 1024 * 1024, env)
   }
+  /** Git operations that write repository configuration shared by every linked worktree. */
+  sharedConfigCommand(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
+    return this.withSharedConfig(cwd, () => this.command(cwd, args, env))
+  }
+  async withSharedConfig<T>(cwd: string, operation: () => Promise<T>): Promise<T> {
+    const common = (
+      await this.command(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+    ).replace(/\r?\n$/, '')
+    const key = await realpath(common)
+    const previous = sharedConfigWrites.get(key)
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    sharedConfigWrites.set(key, pending)
+    try {
+      await previous
+      return await operation()
+    } finally {
+      release()
+      if (sharedConfigWrites.get(key) === pending) sharedConfigWrites.delete(key)
+    }
+  }
   /** Copy project-local files only into freshly created checkouts, before setup runs. */
   async addWorktree(root: string, directory: string, args: string[]) {
     const files = await includedWorktreeFiles(root)
-    await this.command(root, ['worktree', 'add', ...args])
+    // Creating a branch from a remote ref can also record its tracking configuration.
+    await this.sharedConfigCommand(root, ['worktree', 'add', ...args])
     try {
       const canonicalDirectory = await realpath(directory)
       await copyWorktreeFiles(root, canonicalDirectory, files)
@@ -433,13 +460,15 @@ export class GitService {
       const env = { ...processEnvironment(), ...(await this.githubEnvironment(cwd)) }
       await this.run(cwd, this.settings().gh, ['auth', 'status'], 30000, 1024 * 1024, env)
       if (!status.initialized) await this.command(cwd, ['init', '-b', 'main'])
-      await this.run(
-        cwd,
-        this.settings().gh,
-        ['repo', 'create', name, `--${visibility}`, '--source', cwd, '--remote', 'origin'],
-        60000,
-        1024 * 1024,
-        env,
+      await this.withSharedConfig(cwd, () =>
+        this.run(
+          cwd,
+          this.settings().gh,
+          ['repo', 'create', name, `--${visibility}`, '--source', cwd, '--remote', 'origin'],
+          60000,
+          1024 * 1024,
+          env,
+        ),
       )
       return this.inspect(cwd)
     } finally {
@@ -482,7 +511,7 @@ export class GitService {
     }
     const host = env.GH_HOST || 'github.com'
     const gh = "'" + this.settings().gh.replaceAll("'", "'\"'\"'") + "'"
-    await this.command(
+    await this.sharedConfigCommand(
       cwd,
       [
         '-c',

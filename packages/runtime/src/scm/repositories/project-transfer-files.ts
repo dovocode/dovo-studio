@@ -378,8 +378,11 @@ export async function installTransfer(
         signal,
       )
     await transferGit(s, workspace, ['reset', '--mixed', manifest.git.head], signal)
-    if (manifest.git.remote && projectTransferRemote(manifest.git.remote))
-      await transferGit(s, workspace, ['remote', 'add', 'origin', manifest.git.remote], signal)
+    const remote = manifest.git.remote
+    if (remote && projectTransferRemote(remote))
+      await s.git.withSharedConfig(workspace, () =>
+        transferGit(s, workspace, ['remote', 'add', 'origin', remote], signal),
+      )
   }
   await restoreTransfer(s, manifest, folder, workspace, signal)
   return workspace

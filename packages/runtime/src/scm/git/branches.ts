@@ -135,11 +135,15 @@ export function switchBranchEffect(
               )
               if (input.name.startsWith('-') || input.name.includes('@{'))
                 throw new HttpError(400, 'Invalid branch name')
-              yield* runtimeOperation(() => s.git.command(cwd, ['switch', '-c', input.name]))
+              yield* runtimeOperation(() =>
+                s.git.sharedConfigCommand(cwd, ['switch', '-c', input.name]),
+              )
             } else {
               if (!branch) throw new HttpError(409, 'Branch no longer exists. Refresh branches.')
               if (branch.remote)
-                yield* runtimeOperation(() => s.git.command(cwd, ['switch', '--track', branch.ref]))
+                yield* runtimeOperation(() =>
+                  s.git.sharedConfigCommand(cwd, ['switch', '--track', branch.ref]),
+                )
               else
                 yield* runtimeOperation(() =>
                   s.git.command(cwd, ['switch', '--no-guess', branch.name]),

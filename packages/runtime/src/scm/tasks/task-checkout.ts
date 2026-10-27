@@ -452,6 +452,10 @@ export class TaskCheckout {
     if (task.submodules && task.submodules !== 'none' && !task.worktreeSubmodulesComplete) {
       this.progress(id, steps, 'submodules', branch)
       signal?.throwIfAborted()
+      // URL registration writes the shared repository config. Keep the later clone and
+      // checkout work outside that lock so independent worktrees can prepare in parallel.
+      await this.git.sharedConfigCommand(cwd, ['submodule', 'init'])
+      signal?.throwIfAborted()
       await this.git.command(
         cwd,
         [
