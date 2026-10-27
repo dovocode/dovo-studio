@@ -76,7 +76,11 @@ function publishNightly() {
       )
       return
     }
-    const releases = JSON.parse(gh('api', `repos/${repo}/releases?per_page=100`))
+    // Full release responses include every asset and exceed execFileSync's buffer as
+    // release history grows. Project the two fields needed before gh writes stdout.
+    const releases = JSON.parse(
+      gh('api', `repos/${repo}/releases?per_page=100`, '--jq', 'map({draft, tag_name})'),
+    )
     const number = (tag) => Number(/^v\d+\.\d+\.\d+-nightly\.(\d+)$/.exec(tag)?.[1] ?? -1)
     if (releases.some((r) => !r.draft && number(r.tag_name) > number(manifest.tag))) {
       console.log('A newer nightly has already been published; leaving this draft untouched.')

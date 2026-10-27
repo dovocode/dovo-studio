@@ -52,6 +52,10 @@ void test('completion events dispatch downstream builds once, from the validated
     runs: [check, release],
     manifest: { sha, channel: 'nightly', tag },
     release: { tagName: tag, targetCommitish: sha, isPrerelease: true, isDraft: true },
+    releases: [
+      { draft: true, tag_name: 'v0.0.9-nightly.527', body: 'x'.repeat(2 * 1024 * 1024) },
+      { draft: false, tag_name: 'v0.0.9-nightly.525' },
+    ],
   }
   try {
     writeFileSync(join(directory, 'fixture.json'), JSON.stringify(fixture))
@@ -65,7 +69,13 @@ const args = process.argv.slice(2);
 fs.appendFileSync(path.join(root, 'calls.jsonl'), JSON.stringify(args)+'\\n');
 if (args[0] === 'api' && args[1].includes('/artifacts')) console.log(JSON.stringify({artifacts:[{name:'nightly-publication',expired:false}]}));
 else if (args[0] === 'api' && args[1].includes('/actions/runs?')) console.log(JSON.stringify({workflow_runs:fixture.runs}));
-else if (args[0] === 'api') console.log('[]');
+else if (args[0] === 'api') {
+  // Model gh's output projection. Without it, this realistic release history
+  // exceeds the publication subprocess's default buffer and the test fails.
+  const releases = args.at(-2) === '--jq' && args.at(-1) === 'map({draft, tag_name})'
+    ? fixture.releases.map(({draft, tag_name}) => ({draft, tag_name})) : fixture.releases;
+  console.log(JSON.stringify(releases));
+}
 else if (args[0] === 'run') fs.writeFileSync(path.join(args.at(-1),'nightly.json'),JSON.stringify(fixture.manifest));
 else if (args[0] === 'release' && args[1] === 'view') console.log(JSON.stringify(fixture.release));
 else if (args[0] === 'release' && args[1] === 'edit') {fixture.release.isDraft=false;fs.writeFileSync(path.join(root,'fixture.json'),JSON.stringify(fixture));}
@@ -107,6 +117,26 @@ else if (args[0] === 'release' && args[1] === 'edit') {fixture.release.isDraft=f
           'upload=true',
         ],
       ],
+    )
+
+    // A newer published nightly must still prevent an older draft from publishing.
+    const newer = JSON.parse(readFileSync(join(directory, 'fixture.json'), 'utf8'))
+    newer.release.isDraft = true
+    newer.releases[0].draft = false
+    writeFileSync(join(directory, 'fixture.json'), JSON.stringify(newer))
+    writeFileSync(join(directory, 'calls.jsonl'), '')
+    run()
+    const skippedCalls = readFileSync(join(directory, 'calls.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    assert.equal(
+      skippedCalls.some((args) => args[0] === 'workflow'),
+      false,
+    )
+    assert.equal(
+      skippedCalls.some((args) => args[0] === 'release' && args[1] === 'edit'),
+      false,
     )
   } finally {
     rmSync(directory, { recursive: true, force: true })
