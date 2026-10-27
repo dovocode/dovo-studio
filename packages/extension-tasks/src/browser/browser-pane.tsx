@@ -2606,45 +2606,53 @@ function BrowserLayout({
       aria-label={devices ? 'Device previews' : 'Browser previews'}
     >
       {!sidebarState?.collapsed && sidebar}
-      {preview && (
-        <div
-          data-browser-preview-background
-          aria-hidden
-          inert
-          className="pointer-events-none flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
-        >
-          <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4 text-xs text-muted-foreground">
-            <Globe2 size={14} />
-            <span className="truncate">{preview.background?.url || preview.background?.title}</span>
-          </div>
-          {preview.background?.image && (
-            <img
-              alt=""
-              src={preview.background.image}
-              className="min-h-0 w-full flex-1 object-fill"
-            />
-          )}
-        </div>
-      )}
-      <FloatingPreview
-        title={preview ? 'Link' : 'Browser'}
-        placement={preview?.placement ?? 'inline'}
-        onPlacementChange={(placement) => preview?.onPlacementChange(placement)}
-        onClose={preview?.onClose}
-        returnLabel="Back to tab"
-        inlineClassName="min-w-0 flex-1"
-        hideInlineHeader
-        startCentered={!!preview}
-        actions={
-          preview && (
-            <Button size="sm" variant="ghost" onClick={preview.onPromote}>
-              Keep as tab
-            </Button>
-          )
-        }
+      <div
+        className="relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden"
+        data-browser-viewport
       >
-        {children}
-      </FloatingPreview>
+        {preview && (
+          <div
+            data-browser-preview-background
+            aria-hidden
+            inert
+            className="pointer-events-none flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
+          >
+            <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4 text-xs text-muted-foreground">
+              <Globe2 size={14} />
+              <span className="truncate">
+                {preview.background?.url || preview.background?.title}
+              </span>
+            </div>
+            {preview.background?.image && (
+              <img
+                alt=""
+                src={preview.background.image}
+                className="min-h-0 w-full flex-1 object-fill"
+              />
+            )}
+          </div>
+        )}
+        <FloatingPreview
+          title={preview ? 'Link' : 'Browser'}
+          placement={preview?.placement ?? 'inline'}
+          onPlacementChange={(placement) => preview?.onPlacementChange(placement)}
+          onClose={preview?.onClose}
+          returnLabel="Back to tab"
+          inlineClassName="min-w-0 flex-1"
+          hideInlineHeader
+          startCentered={!!preview}
+          contained
+          actions={
+            preview && (
+              <Button size="sm" variant="ghost" onClick={preview.onPromote}>
+                Keep as tab
+              </Button>
+            )
+          }
+        >
+          {children}
+        </FloatingPreview>
+      </div>
       {threadPanel && (
         <ResizableSidebar
           preference="toolsSidebarWidth"

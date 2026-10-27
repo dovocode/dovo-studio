@@ -706,34 +706,79 @@ try {
     (await background.textContent()).includes(sourceBeforeOpen.url),
     'The opener remains visible beneath the link',
   )
+  const viewport = page.locator('[data-browser-viewport]')
+  const assertContained = async () => {
+    const area = await viewport.boundingBox()
+    const box = await preview.boundingBox()
+    assert(box.x >= area.x + 7 && box.y >= area.y + 7, 'Preview stays inside the browser page area')
+    assert(box.x + box.width <= area.x + area.width - 7, 'Preview never covers the tab sidebar')
+    assert(
+      box.y + box.height <= area.y + area.height - 7,
+      'Preview stays above the browser bottom edge',
+    )
+  }
+  const area = await viewport.boundingBox()
   const centered = await preview.boundingBox()
   assert(
-    centered.width >= 900 && centered.height >= 600,
-    'Link preview must open at a useful reading size',
+    centered.width >= area.width * 0.8 && centered.height >= area.height * 0.8,
+    'Link preview uses most of the browser page area',
   )
   assert(
-    Math.abs(centered.x + centered.width / 2 - 600) <= 1,
-    'Link preview is horizontally centered',
+    Math.abs(centered.x + centered.width / 2 - area.x - area.width / 2) <= 1,
+    'Link preview is horizontally centered within the browser',
   )
   assert(
-    Math.abs(centered.y + centered.height / 2 - 400) <= 1,
-    'Link preview is vertically centered',
+    Math.abs(centered.y + centered.height / 2 - area.y - area.height / 2) <= 1,
+    'Link preview is vertically centered within the browser',
   )
+  await assertContained()
+
+  // Resizing the pane without resizing the window also updates the preview bounds.
+  await page.locator('#app').evaluate((app) =>
+    Object.assign(app.style, {
+      width: '1000px',
+      height: '600px',
+      marginLeft: '70px',
+      marginTop: '40px',
+    }),
+  )
+  await page.waitForFunction(() => {
+    const area = document.querySelector('[data-browser-viewport]').getBoundingClientRect()
+    const box = document.querySelector('[aria-label="Link preview"]').getBoundingClientRect()
+    return (
+      Math.abs(box.x + box.width / 2 - area.x - area.width / 2) <= 1 &&
+      Math.abs(box.y + box.height / 2 - area.y - area.height / 2) <= 1 &&
+      box.height < area.height
+    )
+  })
+  await assertContained()
+  await preview.getByRole('button', { name: 'Expand preview', exact: true }).click()
+  await assertContained()
+  await preview.getByRole('button', { name: 'Float preview', exact: true }).click()
+  const move = preview.getByRole('button', { name: 'Move Link preview', exact: true })
+  await move.focus()
+  for (let step = 0; step < 25; step++) await move.press('Shift+ArrowLeft')
+  for (let step = 0; step < 25; step++) await move.press('Shift+ArrowUp')
+  await assertContained()
+  const resize = preview.getByRole('button', { name: 'Resize Link preview', exact: true })
+  await resize.focus()
+  for (let step = 0; step < 25; step++) await resize.press('Shift+ArrowRight')
+  for (let step = 0; step < 25; step++) await resize.press('Shift+ArrowDown')
+  await assertContained()
+  await page.locator('#app').evaluate((app) => {
+    app.style.cssText = 'height:700px'
+  })
   await page.setViewportSize({ width: 380, height: 700 })
   await page.waitForFunction(() => {
+    const area = document.querySelector('[data-browser-viewport]').getBoundingClientRect()
     const box = document.querySelector('[aria-label="Link preview"]').getBoundingClientRect()
-    return box.x >= 8 && box.right <= 372 && box.y >= 8 && box.bottom <= 692
+    return box.x >= area.x + 7 && box.right <= area.right - 7 && box.bottom <= area.bottom - 7
   })
-  const narrowPreview = await preview.boundingBox()
-  assert(
-    narrowPreview.x >= 8 && narrowPreview.x + narrowPreview.width <= 372,
-    'Preview fits narrow screens',
-  )
-  assert(
-    narrowPreview.y >= 8 && narrowPreview.y + narrowPreview.height <= 692,
-    'Preview height fits narrow screens',
-  )
+  await assertContained()
   await page.setViewportSize({ width: 1200, height: 800 })
+  await page.locator('#app').evaluate((app) => {
+    app.style.cssText = 'height:800px'
+  })
   assert.equal(
     (await persisted()).tabs.some((tab) => tab.url.endsWith('/new-window')),
     false,
