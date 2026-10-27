@@ -14,6 +14,9 @@ export async function usePrimaryUbuntuMirror(directory = '/etc/apt') {
   const sources = join(directory, 'sources.list.d')
   const paths = [
     join(directory, 'sources.list'),
+    // Hosted Ubuntu uses mirror+file: sources; changing only .sources is ineffective.
+    join(directory, 'apt-mirrors.txt'),
+    join(directory, 'apt-mirrors-security.txt'),
     ...(await readdir(sources))
       .filter((name) => /\.(list|sources)$/.test(name))
       .map((name) => join(sources, name)),

@@ -54,9 +54,7 @@ appId: com.dovo.studio
 - tapOn: Dismiss keyboard
 - tapOn:
     id: Send
-- extendedWaitUntil:
-    visible: .*Verified fixture response.*
-    timeout: 30000
+- runFlow: fixture-response.yaml
 - tapOn:
     id: Message
 - inputText: Draft survives navigation
@@ -79,9 +77,7 @@ appId: com.dovo.studio
 - tapOn: Dismiss keyboard
 - tapOn:
     id: Send
-- extendedWaitUntil:
-    visible: .*Verified fixture response.*
-    timeout: 30000
+- runFlow: fixture-response.yaml
 - runFlow: back-to-threads.yaml
 - tapOn: More actions
 - tapOn: Settings

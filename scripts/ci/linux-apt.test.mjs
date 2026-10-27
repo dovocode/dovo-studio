@@ -20,12 +20,13 @@ await test('bounds apt downloads and changes only the Azure Ubuntu mirror in bot
     await writeFile(join(directory, 'sources.list.d/ubuntu.sources'), modern)
     await writeFile(join(directory, 'sources.list.d/ports.list'), ports)
     await writeFile(join(directory, 'sources.list.d/ubuntu.sources.backup'), modern)
+    await writeFile(join(directory, 'apt-mirrors.txt'), 'http://azure.archive.ubuntu.com/ubuntu/\n')
     await configureApt(directory)
     assert.match(
       await readFile(join(directory, 'apt.conf.d/99dovo-ci'), 'utf8'),
       /Acquire::http::Timeout "30"/,
     )
-    assert.equal(await usePrimaryUbuntuMirror(directory), 2)
+    assert.equal(await usePrimaryUbuntuMirror(directory), 3)
     assert.equal(
       await readFile(join(directory, 'sources.list'), 'utf8'),
       legacy.replace('azure.archive', 'archive'),
@@ -38,6 +39,10 @@ await test('bounds apt downloads and changes only the Azure Ubuntu mirror in bot
     assert.equal(
       await readFile(join(directory, 'sources.list.d/ubuntu.sources.backup'), 'utf8'),
       modern,
+    )
+    assert.equal(
+      await readFile(join(directory, 'apt-mirrors.txt'), 'utf8'),
+      'http://archive.ubuntu.com/ubuntu/\n',
     )
     assert.equal(await usePrimaryUbuntuMirror(directory), 0)
   } finally {
@@ -55,16 +60,30 @@ await test('browser setup recovers interrupted dpkg and propagates recovery and 
       '#!/bin/sh\nprintf "%s\\n" "$1 $2" >> "$DOVO_TIMEOUT_LOG"\nshift 2\nexec "$@"\n',
       { mode: 0o755 },
     )
+    await writeFile(join(bin, 'sudo'), '#!/bin/sh\nexport DOVO_TEST_ROOT=1\nexec "$@"\n', {
+      mode: 0o755,
+    })
     await writeFile(
-      join(bin, 'sudo'),
-      '#!/bin/sh\nprintf "%s\\n" "$*" >> "$DOVO_FALLBACK_LOG"\nif [ "$1" = dpkg ]; then exit "$DOVO_DPKG_STATUS"; fi\n',
-      {
-        mode: 0o755,
-      },
+      join(bin, 'dpkg'),
+      '#!/bin/sh\nprintf "dpkg %s\\n" "$*" >> "$DOVO_FALLBACK_LOG"\nexit "$DOVO_DPKG_STATUS"\n',
+      { mode: 0o755 },
+    )
+    await writeFile(
+      join(bin, 'node'),
+      '#!/bin/sh\nprintf "node %s\\n" "$*" >> "$DOVO_FALLBACK_LOG"\n',
+      { mode: 0o755 },
     )
     await writeFile(
       join(bin, 'pnpm'),
-      '#!/bin/sh\nprintf "%s\\n" "$*" >> "$DOVO_INSTALL_LOG"\nif [ "$(wc -l < "$DOVO_INSTALL_LOG")" -eq 1 ]; then exit "$DOVO_FIRST_STATUS"; fi\nexit "$DOVO_SECOND_STATUS"\n',
+      `#!/bin/sh
+printf "%s root=%s\\n" "$*" "\${DOVO_TEST_ROOT:-0}" >> "$DOVO_INSTALL_LOG"
+case "$*" in
+  *install-deps*)
+    if [ "$(wc -l < "$DOVO_INSTALL_LOG")" -eq 1 ]; then exit "$DOVO_FIRST_STATUS"; fi
+    exit "$DOVO_SECOND_STATUS";;
+  *) exit 0;;
+esac
+`,
       { mode: 0o755 },
     )
     for (const [first, dpkg, second, expected] of [
@@ -92,18 +111,23 @@ await test('browser setup recovers interrupted dpkg and propagates recovery and 
       assert.equal(result.status, expected, result.stderr)
       const retried = first !== 0 && dpkg === 0
       const attempts = retried ? 2 : 1
-      assert.deepEqual(
-        (await readFile(install, 'utf8')).trim().split('\n'),
-        Array(attempts).fill('--filter @dovo/runtime exec playwright install --with-deps chromium'),
-      )
+      assert.deepEqual((await readFile(install, 'utf8')).trim().split('\n'), [
+        ...Array(attempts).fill(
+          '--filter @dovo/runtime exec playwright install-deps chromium root=1',
+        ),
+        ...(expected === 0
+          ? ['--filter @dovo/runtime exec playwright install chromium root=0']
+          : []),
+      ])
       assert.deepEqual(
         (await readFile(timeout, 'utf8')).trim().split('\n'),
         first === 0
-          ? ['--kill-after=10s 240']
+          ? ['--kill-after=10s 240', '--kill-after=10s 240']
           : [
               '--kill-after=10s 240',
               '--kill-after=10s 120',
               ...(retried ? ['--kill-after=10s 240'] : []),
+              ...(expected === 0 ? ['--kill-after=10s 240'] : []),
             ],
       )
       if (first)

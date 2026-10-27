@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promis
 import { tmpdir, networkInterfaces } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFile, execFileSync, spawn } from 'node:child_process'
+import { promisify } from 'node:util'
 import { createServer, request as httpRequest } from 'node:http'
 
 const device = process.argv[2]
@@ -313,14 +314,36 @@ try {
     if (codeResult !== 0) {
       const diagnostics = resolve('work/mobile-native-smoke')
       await mkdir(diagnostics, { recursive: true })
+      // Preserve runtime state at failure, before starting another UI driver.
+      await writeFile(
+        join(diagnostics, 'runtime.json'),
+        JSON.stringify(
+          {
+            at: new Date().toISOString(),
+            tasks: runtime.services.store.get().tasks.map((task) => ({
+              id: task.id,
+              status: task.status,
+              runPhase: task.runPhase,
+              activity: task.activity,
+              error: task.error,
+              preparation: task.preparation,
+              turns: task.turns,
+              messages: task.messages,
+            })),
+          },
+          null,
+          2,
+        ),
+      )
       try {
-        await writeFile(
-          join(diagnostics, 'hierarchy.json'),
-          execFileSync('maestro', ['--device', device, 'hierarchy', '--no-ansi'], {
-            encoding: 'utf8',
-            maxBuffer: 8 * 1024 * 1024,
-          }),
+        // A synchronous driver startup blocks HTTP/WebSocket heartbeats and
+        // produces a misleading Offline state in the failure diagnostics.
+        const { stdout } = await promisify(execFile)(
+          'maestro',
+          ['--device', device, 'hierarchy', '--no-ansi'],
+          { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, timeout: 30000 },
         )
+        await writeFile(join(diagnostics, 'hierarchy.json'), stdout)
       } catch (error) {
         console.error('Could not capture failed native flow hierarchy:', error)
       }

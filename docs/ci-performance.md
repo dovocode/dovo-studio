@@ -46,7 +46,10 @@ written to the job summary.
 
 Linux CI bounds apt download retries and timeouts. Chromium setup has a four-minute attempt budget;
 if setup fails or stalls on Ubuntu's Azure mirror, it switches only that mirror to Ubuntu's primary
-archive and makes one final bounded attempt. Package signatures and Chromium's sandbox stay enabled.
+archive and makes one final bounded attempt. The dependency timeout runs as root so it can stop
+apt's root-owned descendants before repairing dpkg. Fallback updates both conventional source files
+and hosted Ubuntu's mirror-list files. Browser downloads run as the runner user, preserving cache
+ownership. Package signatures and Chromium's sandbox stay enabled.
 
 The baseline Check run
 [40553363177](https://github.com/dovocode/dovo-studio/actions/runs/40553363177) spent 19 minutes in

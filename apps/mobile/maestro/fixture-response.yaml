@@ -1,0 +1,16 @@
+appId: com.dovo.studio
+---
+# A cold checkout/provider startup took 27s on the hosted Mac. Give startup its
+# own budget, then verify the fixture's five-second streamed reply separately.
+- extendedWaitUntil:
+    visible: .*Working on this request.*
+    timeout: 60000
+- extendedWaitUntil:
+    visible: .*Verified fixture response.*
+    timeout: 20000
+# Final output precedes checkpoint capture. Wait for the turn to settle before
+# navigating or submitting the next prompt; neither run may pass on old output.
+- extendedWaitUntil:
+    notVisible:
+      id: Stop
+    timeout: 30000
