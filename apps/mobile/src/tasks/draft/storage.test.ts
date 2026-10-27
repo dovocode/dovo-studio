@@ -482,3 +482,154 @@ it('keeps a pending restore through typing and rejects replacing it until explic
     restore: undefined,
   })
 })
+
+const fork = {
+  id: 'fork-id',
+  sourceTaskId: 'task',
+  text: 'Fork this draft',
+  draftText: '  Fork this draft  ',
+  attachmentIds: ['source-file'],
+  connection: 'original-owner',
+  accepted: false,
+}
+
+it('persists a fork identity before sending and recovers its original payload across restarts', async () => {
+  const storage = memoryStorage()
+  const first = createDraftStorage(storage)
+  await first.write('runtime.task', fork.draftText)
+  await runClientEffect(first.stageForkEffect('runtime.task', fork, ''))
+  const reopened = createDraftStorage(storage)
+  const record = await runClientEffect(reopened.readRecordEffect('runtime.task'))
+  expect(record?.fork).toEqual(fork)
+  await reopened.write('runtime.task', 'Newer browser insertion')
+  await runClientEffect(reopened.confirmForkEffect('runtime.task', fork.id))
+  const accepted = await runClientEffect(
+    createDraftStorage(storage).readRecordEffect('runtime.task'),
+  )
+  expect(accepted?.text).toBe('Newer browser insertion')
+  expect(accepted?.fork).toEqual({ ...fork, accepted: true })
+})
+
+it('conditionally clears fork text against latest published keystrokes rather than a stale render', async () => {
+  const storage = memoryStorage()
+  const block = gate()
+  let slow = false
+  const drafts = createDraftStorage({
+    ...storage,
+    setItem: async (key, value) => {
+      if (slow) await block.promise
+      await storage.setItem(key, value)
+    },
+  })
+  await drafts.write('runtime.task', fork.draftText)
+  await runClientEffect(drafts.stageForkEffect('runtime.task', fork, ''))
+  slow = true
+  const saving = drafts.write('runtime.task', fork.draftText)
+  const confirming = runClientEffect(drafts.confirmForkEffect('runtime.task', fork.id))
+  const typing = drafts.write('runtime.task', 'Latest native text')
+  block.resolve()
+  await Promise.all([saving, confirming, typing])
+  expect(await createDraftStorage(storage).read('runtime.task')).toBe('Latest native text')
+  // An accepted retry cannot clear an intentionally identical follow-up.
+  await drafts.write('runtime.task', fork.draftText)
+  await runClientEffect(drafts.confirmForkEffect('runtime.task', fork.id))
+  expect(await drafts.read('runtime.task')).toBe(fork.draftText)
+})
+
+it('stores fork acceptance with conditional clearing and retries failed disk writes without clearing newer input', async () => {
+  const base = memoryStorage()
+  let fail = false
+  const storage = {
+    ...base,
+    setItem: async (key: string, value: string) => {
+      if (fail) throw new Error('Disk unavailable')
+      await base.setItem(key, value)
+    },
+  }
+  const drafts = createDraftStorage(storage)
+  await drafts.write('runtime.task', fork.draftText)
+  await runClientEffect(drafts.stageForkEffect('runtime.task', fork, ''))
+  fail = true
+  await expect(runClientEffect(drafts.confirmForkEffect('runtime.task', fork.id))).rejects.toThrow(
+    'Disk unavailable',
+  )
+  expect(await drafts.read('runtime.task')).toBe('')
+  expect(
+    (await runClientEffect(createDraftStorage(storage).readRecordEffect('runtime.task')))?.fork
+      ?.accepted,
+  ).toBe(false)
+  fail = false
+  await drafts.write('runtime.task', fork.draftText)
+  const pending = await runClientEffect(drafts.stageForkEffect('runtime.task', fork, ''))
+  expect(pending.accepted).toBe(true)
+  await runClientEffect(drafts.confirmForkEffect('runtime.task', fork.id))
+  expect(await drafts.read('runtime.task')).toBe(fork.draftText)
+  await runClientEffect(drafts.finishForkEffect('runtime.task', fork.id))
+  expect(
+    (await runClientEffect(createDraftStorage(storage).readRecordEffect('runtime.task')))?.fork,
+  ).toBeUndefined()
+})
+
+it('preserves other draft journals and scopes while refusing conflicting pending operations', async () => {
+  const drafts = createDraftStorage(memoryStorage())
+  await drafts.write('runtime.task', 'Draft')
+  await runClientEffect(drafts.stageEffect('runtime.task', submission, ''))
+  await expect(runClientEffect(drafts.stageForkEffect('runtime.task', fork, ''))).rejects.toThrow(
+    'pending message delivery',
+  )
+  await runClientEffect(drafts.confirmEffect('runtime.task', submission, false))
+  await runClientEffect(drafts.stageForkEffect('runtime.task', fork, ''))
+  expect(
+    (await runClientEffect(drafts.readRecordEffect('runtime.task')))?.submission?.accepted,
+  ).toBe(true)
+  await expect(runClientEffect(drafts.stageEffect('runtime.task', submission, ''))).rejects.toThrow(
+    'pending fork',
+  )
+  await expect(
+    runClientEffect(drafts.stageRestoreEffect('runtime.task', restore, '')),
+  ).rejects.toThrow('pending fork')
+  await expect(
+    runClientEffect(drafts.stageForkEffect('runtime.task', { ...fork, id: 'another' }, '')),
+  ).rejects.toThrow('pending fork')
+  expect(await drafts.read('other-runtime.task')).toBeNull()
+  await runClientEffect(drafts.discardForkEffect('runtime.task', 'other'))
+  expect((await runClientEffect(drafts.readRecordEffect('runtime.task')))?.fork).toEqual(fork)
+  await runClientEffect(drafts.discardForkEffect('runtime.task', fork.id))
+  await runClientEffect(drafts.stageRestoreEffect('runtime.task', restore, ''))
+  await expect(runClientEffect(drafts.stageForkEffect('runtime.task', fork, ''))).rejects.toThrow(
+    'pending queued-message restore',
+  )
+  expect((await runClientEffect(drafts.readRecordEffect('runtime.task')))?.restore).toEqual(restore)
+})
+
+it('retains completed fork acceptance for stale retries and persists retried discards after disk failure', async () => {
+  const base = memoryStorage()
+  let fail = false
+  const storage = {
+    ...base,
+    setItem: async (key: string, value: string) => {
+      if (fail) throw new Error('Disk unavailable')
+      await base.setItem(key, value)
+    },
+  }
+  const drafts = createDraftStorage(storage)
+  await drafts.write('runtime.task', fork.draftText)
+  await runClientEffect(drafts.stageForkEffect('runtime.task', fork, ''))
+  await runClientEffect(drafts.confirmForkEffect('runtime.task', fork.id))
+  await runClientEffect(drafts.finishForkEffect('runtime.task', fork.id))
+  await drafts.write('runtime.task', fork.draftText)
+  expect((await runClientEffect(drafts.stageForkEffect('runtime.task', fork, ''))).accepted).toBe(
+    true,
+  )
+  await runClientEffect(drafts.confirmForkEffect('runtime.task', fork.id))
+  expect(await drafts.read('runtime.task')).toBe(fork.draftText)
+  fail = true
+  await expect(runClientEffect(drafts.discardForkEffect('runtime.task', fork.id))).rejects.toThrow(
+    'Disk unavailable',
+  )
+  fail = false
+  await runClientEffect(drafts.discardForkEffect('runtime.task', fork.id))
+  expect(
+    (await runClientEffect(createDraftStorage(storage).readRecordEffect('runtime.task')))?.fork,
+  ).toBeUndefined()
+})

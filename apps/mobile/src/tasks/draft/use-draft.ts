@@ -6,7 +6,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useRuntime } from '../../runtime/connection/provider'
 import { AppState } from 'react-native'
 import type { SendAttempt } from '../composer/send-attempts'
-import { createDraftStorage, type DraftRecord, type PendingQueueRestore } from './storage'
+import {
+  createDraftStorage,
+  type DraftRecord,
+  type PendingQueueRestore,
+  type PendingFork,
+} from './storage'
 import { hydrateDraft } from './hydration'
 const drafts = createDraftStorage(AsyncStorage)
 export function saveRuntimeDraft(runtimeId: string, taskId: string, text: string) {
@@ -34,6 +39,7 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
   // Only external edits are sent back to the native input; keyboard edits already live there.
   const [{ text, revision }, setDraft] = useState({ text: '', revision: 0 }),
     [loadedKey, setLoadedKey] = useApplicationState<string | null>(null),
+    [pendingFork, setPendingFork] = useApplicationState<DraftRecord['fork']>(undefined),
     [pendingRestore, setPendingRestore] = useApplicationState<DraftRecord['restore']>(undefined),
     [submission, setSubmission] = useApplicationState<DraftRecord['submission']>(undefined),
     [error, setError] = useApplicationState('')
@@ -53,6 +59,7 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
     setLoadedKey(null)
     setSubmission(undefined)
     setPendingRestore(undefined)
+    setPendingFork(undefined)
     // Wait for the durable delivery record rather than flashing a server's stale pre-send draft.
     setDraft((previous) => ({ text: '', revision: previous.revision + 1 }))
     setError('')
@@ -76,6 +83,7 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
                 if (!disposed) {
                   setSubmission(record?.submission)
                   setPendingRestore(record?.restore)
+                  setPendingFork(record?.fork)
                 }
               }),
             ),
@@ -158,6 +166,51 @@ export function useDraft(taskId: string, initial = '', deliveredIds: readonly st
     update,
     ready: loadedKey === key,
     submission: loadedKey === key ? submission : undefined,
+    pendingFork: loadedKey === key ? pendingFork : undefined,
+    stageForkEffect: (fork: PendingFork) =>
+      drafts.stageForkEffect(key, fork, text).pipe(
+        Effect.tap((pending) =>
+          Effect.sync(() => {
+            if (activeKey.current === key) setPendingFork(pending)
+          }),
+        ),
+        Effect.tapError(() =>
+          drafts.readRecordEffect(key).pipe(
+            Effect.tap((record) =>
+              Effect.sync(() => {
+                if (activeKey.current === key) setPendingFork(record?.fork)
+              }),
+            ),
+            Effect.catch(() => Effect.void),
+          ),
+        ),
+      ),
+    confirmForkEffect: (id: string) =>
+      drafts.confirmForkEffect(key, id).pipe(
+        Effect.tap((pending) =>
+          Effect.sync(() => {
+            if (activeKey.current === key && pending) setPendingFork(pending)
+          }),
+        ),
+      ),
+    finishForkEffect: (id: string) =>
+      drafts.finishForkEffect(key, id).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (activeKey.current === key)
+              setPendingFork((current) => (current?.id === id ? undefined : current))
+          }),
+        ),
+      ),
+    discardForkEffect: (id: string) =>
+      drafts.discardForkEffect(key, id).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (activeKey.current === key)
+              setPendingFork((current) => (current?.id === id ? undefined : current))
+          }),
+        ),
+      ),
     pendingRestore: loadedKey === key ? pendingRestore : undefined,
     stageRestoreEffect: (restore: PendingQueueRestore) =>
       drafts.stageRestoreEffect(key, restore, text).pipe(

@@ -12,6 +12,18 @@ const prefix = 'dovo-draft-record-v1:'
 const recordSchema = mutableStruct({
   text: Schema.String,
   restored: Schema.optional(Schema.String),
+  forked: Schema.optional(Schema.String),
+  fork: Schema.optional(
+    mutableStruct({
+      id: Schema.String,
+      sourceTaskId: Schema.String,
+      text: Schema.String,
+      draftText: Schema.String,
+      attachmentIds: mutableArray(Schema.String),
+      connection: Schema.String,
+      accepted: Schema.Boolean,
+    }),
+  ),
   restore: Schema.optional(
     mutableStruct({
       requestId: Schema.String,
@@ -38,6 +50,7 @@ const recordSchema = mutableStruct({
     }),
   ),
 })
+export type PendingFork = NonNullable<Schema.Schema.Type<typeof recordSchema>['fork']>
 export type PendingQueueRestore = NonNullable<Schema.Schema.Type<typeof recordSchema>['restore']>
 export type DraftRecord = Schema.Schema.Type<typeof recordSchema>
 function decodeRecord(raw: string | null): DraftRecord | null {
@@ -47,7 +60,7 @@ function decodeRecord(raw: string | null): DraftRecord | null {
     : { text: raw }
 }
 const encodeRecord = (record: DraftRecord) =>
-  record.submission || record.restore || record.restored
+  record.submission || record.restore || record.restored || record.fork || record.forked
     ? prefix + JSON.stringify(record)
     : record.text
 
@@ -172,11 +185,76 @@ export function createDraftStorage(storage: Storage) {
         })
       }),
     )
+  const stageForkEffect = (key: string, fork: PendingFork, initial: string) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const previous = yield* load(key)
+        if (previous?.restore)
+          return yield* Effect.fail(new Error('Resolve the pending queued-message restore first'))
+        if (previous?.submission && !previous.submission.accepted)
+          return yield* Effect.fail(
+            new Error('Resolve the pending message delivery before starting a fork'),
+          )
+        if (previous?.fork && previous.fork.id !== fork.id)
+          return yield* Effect.fail(new Error('Resolve the pending fork first'))
+        // Retry uses the original payload, including attachment ids and acceptance state.
+        const pending = previous?.fork ?? {
+          ...fork,
+          accepted: fork.accepted || previous?.forked === fork.id,
+        }
+        yield* save(key, {
+          ...previous,
+          text: publishedText.get(key) ?? previous?.text ?? initial,
+          fork: pending,
+        })
+        return pending
+      }),
+    )
+  const confirmForkEffect = (key: string, id: string) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const previous = yield* load(key)
+        if (!previous?.fork || previous.fork.id !== id) return
+        const fork = { ...previous.fork, accepted: true }
+        const current = publishedText.get(key) ?? previous.text
+        const text = !previous.fork.accepted && current === fork.draftText ? '' : current
+        // Acceptance and its conditional clear share a record. Subsequent retries never
+        // clear a follow-up, even if the user deliberately types the same text again.
+        appendedAt.set(key, ++revision)
+        if (text !== current) {
+          publishedText.set(key, text)
+          listeners.get(key)?.forEach((listener) => listener(text))
+        }
+        yield* save(key, { ...previous, text, fork })
+        return fork
+      }),
+    )
+  const finishForkEffect = (key: string, id: string) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const previous = yield* load(key)
+        if (previous?.fork?.id === id || (!previous?.fork && previous?.forked === id))
+          yield* save(key, { ...previous, fork: undefined, forked: id })
+      }),
+    )
+  const discardForkEffect = (key: string, id: string) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const previous = yield* load(key)
+        if (previous && (!previous.fork || previous.fork.id === id))
+          yield* save(key, { ...previous, fork: undefined })
+      }),
+    )
   const stageRestoreEffect = (key: string, restore: PendingQueueRestore, initial: string) =>
     serialize(
       key,
       Effect.gen(function* () {
         const previous = yield* load(key)
+        if (previous?.fork) return yield* Effect.fail(new Error('Resolve the pending fork first'))
         if (previous?.restored === restore.requestId) {
           yield* save(key, previous)
           return
@@ -230,6 +308,7 @@ export function createDraftStorage(storage: Storage) {
       key,
       Effect.gen(function* () {
         const previous = yield* load(key)
+        if (previous?.fork) return yield* Effect.fail(new Error('Resolve the pending fork first'))
         yield* save(key, {
           ...(previous ?? { text: initial }),
           submission: {
@@ -283,6 +362,10 @@ export function createDraftStorage(storage: Storage) {
     readEffect,
     writeEffect,
     appendEffect,
+    stageForkEffect,
+    confirmForkEffect,
+    finishForkEffect,
+    discardForkEffect,
     stageRestoreEffect,
     confirmRestoreEffect,
     discardRestoreEffect,

@@ -1,4 +1,6 @@
 import { blockAccessibleNotificationInputs } from '../../notifications/visibility'
+import { randomUUID } from 'expo-crypto'
+import { useForkDraft } from './use-fork-draft'
 import { ThreadContextPicker } from './thread-context-picker'
 import { DraftStash } from './draft-stash'
 import { draftStashScope } from '@dovo/protocol'
@@ -28,7 +30,6 @@ import {
   responses,
   taskResources,
   worktreeChoicesSchema,
-  taskForkResultSchema,
   type WorktreeChoices,
   type Task,
   type Repository,
@@ -50,9 +51,7 @@ import { CarComposer } from './car-composer'
 import { FileMentions, type ComposerCommandId } from '../conversation/components/file-mentions'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
-import { randomUUID } from 'expo-crypto'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
-import { useNavigation } from '../../shell/navigation'
 export function Composer({
   task,
   onAsk,
@@ -113,16 +112,8 @@ export function Composer({
     modelName,
     modelCatalog?.harness?.name,
   )
-  const { navigate } = useNavigation()
   const { activeId: stashRuntimeId } = useRuntime()
-  const forkAction = useAction()
   const checkoutAction = useAction()
-  const forkAttempt = useRef<{
-    scope: string
-    id: string
-    text: string
-    attachmentIds: string[]
-  } | null>(null)
   const [turnModelOpen, setTurnModelOpen] = useApplicationState(false)
   const [advanced, setAdvanced] = useApplicationState(false)
   useEffect(() => setAdvanced(false), [task.id, task.repositoryId, setAdvanced])
@@ -134,10 +125,25 @@ export function Composer({
   const asideRequest = useRef(false)
   const latestDraft = useRef(draft)
   latestDraft.current = draft
+  const fork = useForkDraft({
+    task,
+    draft,
+    turnSettings,
+    disabled:
+      actionBusy ||
+      machineMoving ||
+      checkoutAction.busy ||
+      asideCreating ||
+      linkedProjectsAction.busy ||
+      attaching ||
+      dictation.active ||
+      !!editing ||
+      !!(agent && permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true)),
+  })
   const busy =
     actionBusy ||
     machineMoving ||
-    forkAction.busy ||
+    fork.busy ||
     checkoutAction.busy ||
     asideCreating ||
     linkedProjectsAction.busy
@@ -158,10 +164,12 @@ export function Composer({
   )
   const type = useCallback((text: string) => draft.update(text, 'keyboard'), [draft.update])
   const meter = contextMeter(task)
-  const { call, callEffect: commandCall, activeId } = useRuntime()
+  const { call, callEffect: commandCall } = useRuntime()
   const askAside = async () => {
     if (
       !!editing ||
+      !!draft.pendingFork ||
+      !!draft.pendingRestore ||
       !onAsk ||
       !connected ||
       !draft.ready ||
@@ -210,55 +218,6 @@ export function Composer({
       setAsideCreating(false)
     }
   }
-  const startFork = () => {
-    const text = draft.text.trim()
-    const attachmentIds = (actions.draftAttachments ?? []).map((file) => file.id)
-    if (
-      !connected ||
-      busy ||
-      attaching ||
-      (!text && !attachmentIds.length) ||
-      (agent && permissionPolicyUIIssue(agent, snapshot?.permissionPolicySupported === true))
-    )
-      return
-    const scope = actions.threadScope
-    if (
-      forkAttempt.current?.scope !== scope ||
-      forkAttempt.current.text !== text ||
-      JSON.stringify(forkAttempt.current.attachmentIds) !== JSON.stringify(attachmentIds)
-    )
-      forkAttempt.current = { scope, id: randomUUID(), text, attachmentIds }
-    forkAction.act(() =>
-      commandCall(
-        '/api/tasks/start-fork',
-        { id: task.id, forkId: forkAttempt.current?.id, text, attachmentIds },
-        taskForkResultSchema,
-      ).pipe(
-        Effect.tap((result) =>
-          Effect.sync(() => {
-            draft.update('')
-            if (attachmentIds.length)
-              void patch({
-                draftAttachments: {
-                  before: task.draftAttachments,
-                  after: task.draftAttachments?.filter((file) => !attachmentIds.includes(file.id)),
-                },
-              }).catch((cause: unknown) =>
-                Alert.alert(
-                  'Could not clear the original attachments',
-                  cause instanceof Error ? cause.message : String(cause),
-                ),
-              )
-            forkAttempt.current = null
-            navigate('tasks', result.id, activeId ?? undefined)
-          }),
-        ),
-      ),
-    )
-  }
-  useEffect(() => {
-    if (forkAction.error) Alert.alert('Could not start in fork', forkAction.error)
-  }, [forkAction.error])
   const commandAction = useAction()
   const compactDisabled =
     !connected ||
@@ -395,6 +354,8 @@ export function Composer({
               ? 'Dictation cleaned up'
               : ''
   const selectProject = async (repository: Repository, autoProject?: boolean) => {
+    if (latestDraft.current.pendingFork)
+      throw new Error('Resolve the pending fork before changing its project or computer')
     const next = {
       ...(autoProject
         ? changeTaskAutoProject(
@@ -446,9 +407,19 @@ export function Composer({
             <TaskMachineSelector
               task={task}
               text={draft.text}
-              disabled={busy || !draft.ready || attaching || dictation.active}
+              disabled={
+                busy || !draft.ready || attaching || dictation.active || !!draft.pendingFork
+              }
               onMoving={setMachineMoving}
-              onSelectRemote={onSelectRemote}
+              onSelectRemote={
+                onSelectRemote
+                  ? async (...args) => {
+                      if (latestDraft.current.pendingFork)
+                        throw new Error('Resolve the pending fork before changing its computer')
+                      return onSelectRemote(...args)
+                    }
+                  : undefined
+              }
               onAuto={async () => {
                 const repository = snapshot?.workspace.repositories.find(
                   (repo) => repo.kind === 'scratch',
@@ -722,7 +693,12 @@ export function Composer({
           remove={editing ? actions.removeEditAttachment : undefined}
           removable
           edit={attachmentPicker.edit}
-          disabled={(!!editing && !snapshot?.fullTurnSettingsSupported) || busy || attaching}
+          disabled={
+            (!!editing && !snapshot?.fullTurnSettingsSupported) ||
+            busy ||
+            attaching ||
+            (!!draft.pendingFork && !draft.pendingFork.accepted)
+          }
           onBusy={setAttaching}
         />
         {focused && (
@@ -1004,8 +980,8 @@ export function Composer({
                     variant="plain"
                     icon="changes"
                     label="Fork"
-                    disabled={!canSend || busy}
-                    onPress={startFork}
+                    disabled={!canSend || busy || !!turnSettings}
+                    onPress={fork.start}
                   />
                 )}
               </View>
@@ -1016,7 +992,9 @@ export function Composer({
               label={editing ? 'Save changes' : task.status === 'running' ? 'Stop' : 'Send'}
               disabled={
                 machineMoving ||
-                (!editing && task.status === 'running' ? !connected || stopping : !canSend)
+                (!editing && task.status === 'running'
+                  ? !connected || stopping
+                  : !canSend || fork.busy)
               }
               onPress={!editing && task.status === 'running' ? stop : () => send()}
             />
@@ -1280,6 +1258,21 @@ export function Composer({
           <Action label="Done" onPress={() => setCheckout(false)} />
         </Sheet>
       )}
+      {showFork && !!turnSettings && (
+        <Text style={styles.muted}>
+          Fork uses the thread’s settings. Select Use thread defaults to fork.
+        </Text>
+      )}
+      {!!fork.pending && (
+        <View style={{ gap: 8 }}>
+          <Text accessibilityRole="alert">A fork request is waiting for this computer.</Text>
+          <Text numberOfLines={3}>{fork.pending.text}</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <Action label="Retry fork" disabled={!connected || busy} onPress={fork.retry} />
+            <Action label="Discard fork request" disabled={busy} onPress={fork.discard} secondary />
+          </View>
+        </View>
+      )}
       {!!actions.pendingRestore && (
         <View style={{ gap: 8 }}>
           <Text accessibilityRole="alert">
@@ -1301,9 +1294,9 @@ export function Composer({
           </View>
         </View>
       )}
-      {!!(error || checkoutAction.error || draft.error || attachmentPicker.error) && (
+      {!!(error || fork.error || checkoutAction.error || draft.error || attachmentPicker.error) && (
         <Text accessibilityRole="alert" style={styles.error}>
-          {error || checkoutAction.error || draft.error || attachmentPicker.error}
+          {error || fork.error || checkoutAction.error || draft.error || attachmentPicker.error}
         </Text>
       )}
       {attachmentPicker.editor}

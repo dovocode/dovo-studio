@@ -52,6 +52,7 @@
     "test:task-callbacks:browser": "node scripts/check-task-callbacks-browser.mjs",
     "test:composer-server-switch:browser": "node scripts/check-composer-server-switch-browser.mjs",
     "test:composer-project:browser": "node scripts/check-composer-project-browser.mjs && node scripts/check-mobile-project-browser.mjs && node scripts/check-mobile-add-project-browser.mjs && node scripts/check-dovo-projects-browser.mjs",
+    "test:mobile-fork:browser": "node scripts/check-mobile-fork-browser.mjs",
     "test:mobile-queue-restore:browser": "node scripts/check-mobile-queue-restore-browser.mjs",
     "test:composer-send:browser": "node scripts/check-composer-send-browser.mjs && node scripts/check-mobile-settled-send-browser.mjs",
     "test:composer-providers:browser": "node scripts/check-composer-providers-browser.mjs",

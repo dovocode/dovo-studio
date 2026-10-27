@@ -125,7 +125,11 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
     path: 'react-native-safe-area-context',
     contents: 'export const useSafeAreaInsets=()=>({top:0,right:0,bottom:0,left:0});',
   },
-  { path: 'expo-crypto', contents: 'let id=0;export const randomUUID=()=> "fork-"+(++id);' },
+  {
+    path: 'expo-crypto',
+    contents:
+      'let id=0;export const randomUUID=()=> "fork-"+(++id);export const CryptoDigestAlgorithm={SHA256:"SHA256"};export const digestStringAsync=async(_algorithm,text)=>text;',
+  },
   {
     path: './file-drop-target',
     importer: mobile,
@@ -136,9 +140,13 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
     importer: mobile,
     contents: `import {useRef,useEffect} from 'react';export const ComposerField=({value,onChangeText,onFocus,onBlur,editable,focusKey})=>{const ref=useRef(null);useEffect(()=>{if(focusKey)ref.current?.focus()},[focusKey]);return <textarea ref={ref} style={{width:"100%",minWidth:0,boxSizing:"border-box"}} aria-label="Message" value={value} disabled={!editable} onFocus={onFocus} onBlur={onBlur} onChange={event=>onChangeText(event.target.value)}/>};`,
   },
+  {
+    path: '../creation/task-machine-selector',
+    importer: mobile,
+    contents: 'export const TaskMachineSelector=props=>{window.machineSelector=props;return null;}',
+  },
   ...[
     ['../creation/checkout-choice', 'CheckoutChoice'],
-    ['../creation/task-machine-selector', 'TaskMachineSelector'],
     ['../creation/worktree-base-picker', 'WorktreeBasePicker'],
     ['../conversation/components/message-attachments', 'MessageAttachments'],
     ['../conversation/components/file-mentions', 'FileMentions'],
@@ -160,7 +168,7 @@ const built = await bundleBrowser(
       resolveDir: mobile,
       loader: 'tsx',
       contents: `
-import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
+import {useState,useRef} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
 import {defaultTaskHarness} from '@dovo/protocol';
 import {TaskEmptyState} from './src/tasks/creation/task-empty-state';import {Composer} from './src/tasks/composer/composer';import {ComposerActivity} from './src/tasks/composer/composer-activity';
 window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
@@ -170,8 +178,8 @@ function App(){
   const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;const [text,setText]=useState('Continue the review');window.setDraftText=setText;const [connected,setConnected]=useState(true);
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
   const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
-  const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
-  window.runtime={connected,snapshot,activeId:'runtime',call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:'fork'}:{ok:true}},catch:error=>error})};
+  const [pendingFork,setPendingFork]=useState();window.setPendingFork=setPendingFork;const forkRef=useRef();const textRef=useRef(text);textRef.current=text;const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',pendingFork,stageForkEffect:fork=>Effect.sync(()=>{forkRef.current=fork;setPendingFork(fork);return fork}),confirmForkEffect:()=>Effect.sync(()=>{const fork={...forkRef.current,accepted:true};if(textRef.current===fork.draftText)setText('');forkRef.current=fork;setPendingFork(fork);return fork}),finishForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),discardForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
+  window.runtime={connected,snapshot,activeId:'runtime',profile:{connection:{address:'http://runtime.lan',token:'token'}},call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true}},catch:error=>error})};
   window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
   return <Composer task={task} renderAbove={(setup,starters)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState starters={starters} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
@@ -409,12 +417,25 @@ try {
     await page.getByRole('button', { name: 'Steer agent', exact: true }).isDisabled(),
     true,
   )
+  assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).isDisabled(), true)
+  assert.equal(
+    await page
+      .getByText('Fork uses the thread’s settings. Select Use thread defaults to fork.')
+      .isVisible(),
+    true,
+  )
   await page.getByRole('button', { name: 'Agent & model', exact: true }).click()
   await page.getByRole('button', { name: 'Use thread defaults', exact: true }).click()
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('button', { name: 'Fork', exact: true }).click()
   await page.waitForFunction(() => window.navigations.length === 1)
-  assert.deepEqual(await page.evaluate(() => window.navigations[0]), ['tasks', 'fork', 'runtime'])
+  assert.deepEqual(await page.evaluate(() => window.navigations[0]), [
+    'tasks',
+    await page.evaluate(
+      () => window.calls.find((call) => call.path === '/api/tasks/start-fork').input.forkId,
+    ),
+    'runtime',
+  ])
   assert.equal(await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(), '')
   await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Edit queued message 1', exact: true }).click()
@@ -955,6 +976,58 @@ try {
   assert.equal(await page.evaluate(() => window.calls.length), calls)
   await draftInput.fill('My own draft')
   assert.equal(await draftInput.inputValue(), 'My own draft')
+  // A saved retry waits for an in-progress machine operation, including automatic replay.
+  const beforeMachineRetry = await page.evaluate(() => window.calls.length)
+  await page.evaluate(() => {
+    window.machineSelector.onMoving(true)
+    window.setPendingFork({
+      id: 'machine-pending',
+      sourceTaskId: 'task',
+      text: 'My own draft',
+      draftText: 'My own draft',
+      attachmentIds: [],
+      connection: JSON.stringify(['http://runtime.lan', 'token']),
+      accepted: false,
+    })
+  })
+  await page.getByText('A fork request is waiting for this computer.').waitFor()
+  assert.equal(await page.evaluate(() => window.calls.length), beforeMachineRetry)
+  await page.evaluate(() => window.machineSelector.onMoving(false))
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.forkId === 'machine-pending')
+  await page
+    .getByText('A fork request is waiting for this computer.')
+    .waitFor({ state: 'detached' })
+  // Unresolved forks lock project/computer moves and reject a stale picker callback.
+  await page.evaluate(() => {
+    window.setConnected(false)
+    window.setPendingFork({
+      id: 'locked-pending',
+      sourceTaskId: 'task',
+      text: 'Saved',
+      draftText: 'Saved',
+      attachmentIds: [],
+      connection: 'original',
+      accepted: false,
+    })
+  })
+  await page.getByText('A fork request is waiting for this computer.').waitFor()
+  assert.equal(await page.evaluate(() => window.machineSelector.disabled), true)
+  const beforeProjectMove = await page.evaluate(() => window.calls.length)
+  const moveError = await page.evaluate(async () => {
+    try {
+      await window.machineSelector.onProjectChange({
+        id: 'another',
+        name: 'Another',
+        path: '/another',
+        branch: 'main',
+      })
+      return ''
+    } catch (error) {
+      return error.message
+    }
+  })
+  assert.match(moveError, /pending fork/)
+  assert.equal(await page.evaluate(() => window.calls.length), beforeProjectMove)
   assert.deepEqual(errors, [])
   console.log(
     'Mobile composer: inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/direct steer/restore, compact anchored queue menus, retry-safe duplication, composer queue editing, checklist collapse, side-chat sending, failure recovery and offline guards passed with native control adapters.',

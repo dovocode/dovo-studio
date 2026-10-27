@@ -281,6 +281,7 @@ export function useConversationActions(task: Task) {
     !busy &&
     !cancellation.busy &&
     !storedDraft.pendingRestore &&
+    !storedDraft.pendingFork &&
     draft.ready &&
     hasInput &&
     (!editing || !!task.queue?.some((message) => message.id === editing.message.id)) &&
@@ -317,6 +318,8 @@ export function useConversationActions(task: Task) {
   const submit = (mode: 'queue' | 'steer' = 'queue', input = draft.text) => {
     let submittedId: string | undefined
     return mobileWorkflow(function* () {
+      if (storedDraft.pendingFork)
+        return yield* Effect.fail(new Error('Resolve the pending fork before sending'))
       if (storedDraft.pendingRestore)
         return yield* Effect.fail(
           new Error('Resolve the pending queued-message restore before sending'),
@@ -542,6 +545,7 @@ export function useConversationActions(task: Task) {
     restoreQueuedMessage: (message: NonNullable<Task['queue']>[number]) =>
       run(() =>
         mobileWorkflow(function* () {
+          if (storedDraft.pendingFork) throw new Error('Resolve the pending fork first')
           if (editing || attaching || dictation.active || !storedDraft.ready)
             throw new Error('Finish editing or attaching files before returning a queued message')
           if (
