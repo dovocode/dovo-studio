@@ -20,6 +20,14 @@ outputs:
 runs:
   using: composite
   steps:
+    # Hosted Ubuntu images include this feed for preinstalled Microsoft tools. Our apt
+    # installs use Ubuntu packages; a 403 from this unrelated feed must not block them.
+    # Only change the disposable CI runner. Installed tools and signature checks stay intact.
+    - name: Disable unused Microsoft apt feed
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/microsoft-prod.sources
     - uses: pnpm/action-setup@v6
     - uses: actions/setup-node@v7
       with:
