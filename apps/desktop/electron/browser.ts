@@ -1,4 +1,4 @@
-import { createBrowserFaviconLoader } from '@dovo/runtime/browser-favicon'
+import { loadBrowserFaviconModule } from './browser-favicon.js'
 import {
   selectedBrowserText,
   isPrivateBrowserProfile,
@@ -6,7 +6,7 @@ import {
 } from '@dovo/protocol'
 import { createBrowserCdp } from './browser-cdp.js'
 import { decode } from '@dovo/protocol'
-import { BrowserWindow, WebContentsView, ipcMain, shell, Menu, clipboard } from 'electron'
+import { app, BrowserWindow, WebContentsView, ipcMain, shell, Menu, clipboard } from 'electron'
 import { trustedRendererUrl } from './renderer-trust.js'
 import { createBrowserExtensions, workspacePartition } from './browser-extensions.js'
 import { createBrowserMedia, type MediaTab } from './browser-media.js'
@@ -15,6 +15,10 @@ import { configureBrowserLanguage, websiteCustomization } from './browser-langua
 import { openThreadMedia } from './browser-thread-media.js'
 import { randomUUID } from 'node:crypto'
 import { browserCommandSchema, previewUrl } from '@dovo/protocol'
+const { createBrowserFaviconLoader } = loadBrowserFaviconModule(
+  app.isPackaged ? process.resourcesPath : undefined,
+)
+
 type Entry = {
   windowId: number
   window: BrowserWindow

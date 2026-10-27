@@ -135,6 +135,7 @@ vi.mock('./browser-language.js', () => ({
   ) => session.setUserAgent(userAgent),
 }))
 vi.mock('electron', () => ({
+  app: { isPackaged: false },
   Menu: { buildFromTemplate: mocks.menu },
   clipboard: { writeText: mocks.clipboard },
   BrowserWindow: { fromWebContents: () => mocks.windowFor ?? mocks.window },

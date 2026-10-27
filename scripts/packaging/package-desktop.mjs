@@ -4,6 +4,7 @@ import { runtimeSmoke } from './runtime-smoke.mjs'
 import { deploy } from './deploy.mjs'
 import { stageDesktopWorkspace } from './stage-workspace.mjs'
 import { desktopMiseArchive } from './desktop-mise-archive.mjs'
+import { verifyDesktopImports } from './desktop-imports.mjs'
 import { verifyDesktopBuild } from './desktop-build-stamp.mjs'
 import { copyPreparedRuntime } from './prepared-runtime.mjs'
 import { windowsReleaseConfig } from './windows-signing.mjs'
@@ -124,6 +125,7 @@ try {
       dependencies,
     }),
   )
+  await verifyDesktopImports(application)
   if (process.argv.includes('--publish') && process.platform === 'darwin' && !macSigningIdentity)
     throw new Error(
       'Publishing desktop updates requires a Developer ID signing identity (CSC_NAME).',

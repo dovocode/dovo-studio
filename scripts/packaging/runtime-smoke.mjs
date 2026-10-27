@@ -1,6 +1,18 @@
 // Exercise native SQLite and a responsive PTY from the packaged dependency tree.
 export const runtimeSmoke = `
 import { startRuntime } from '@dovo/runtime';
+// Electron loads this helper from the same deployed tree. Exercise its native image closure too.
+import { createBrowserFaviconLoader } from '@dovo/runtime/browser-favicon';
+let favicon;
+const loader = createBrowserFaviconLoader(
+  () => { throw new Error('The inline packaging icon must not access the network'); },
+  value => { favicon = value; },
+);
+await loader.load('https://packaging.invalid/', [
+  'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>'),
+]);
+if (!favicon?.startsWith('data:image/png;base64,')) throw new Error('Packaged favicon decoder failed');
+loader.reset();
 const runtime = await startRuntime({
   databasePath: ':memory:', ownerToken: 'packaging-smoke-token-at-least-32-characters', port: 0,
 });

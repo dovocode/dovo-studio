@@ -30,10 +30,7 @@ export default defineConfig({
     tailwindcss(),
     react(),
     electron({
-      main: {
-        entry: 'electron/main.ts',
-        vite: { build: { rolldownOptions: { external: ['@dovo/runtime/browser-favicon'] } } },
-      },
+      main: { entry: 'electron/main.ts' },
       preload: { input: 'electron/preload.ts' },
     }),
     {
