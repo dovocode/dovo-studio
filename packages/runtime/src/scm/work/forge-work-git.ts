@@ -416,10 +416,10 @@ export class GitForgeWork implements ForgeWorkProvider {
       manual: false,
     }
   }
-  async pipelines(cursor?: string) {
+  async pipelines(cursor?: string, sha?: string) {
     const page = workPage(cursor)
     const data = await this.get(
-      `actions/runs?${this.provider === 'github' ? 'per_page' : 'limit'}=30&page=${page}`,
+      `actions/runs?${this.provider === 'github' ? 'per_page' : 'limit'}=30&page=${page}${this.provider === 'github' && sha ? `&head_sha=${encodeURIComponent(sha)}` : ''}`,
     )
     const raw = decode(
       mutableStruct({

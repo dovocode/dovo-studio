@@ -145,6 +145,7 @@ export function WorkScreen({
     mode === 'pipelines' ? 'all' : state,
     mode === 'issues' ? serverQuery : '',
     jiraOnly ? jiraFilters : undefined,
+    mode === 'pipelines' ? commitSha : undefined,
   )
   const connected = sources.some(
     (source) => (!repositoryId || source.key === repositoryId) && source.connected,

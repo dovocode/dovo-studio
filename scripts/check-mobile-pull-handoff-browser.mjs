@@ -93,6 +93,7 @@ if(path.endsWith('/detail')){
  if(input.section==='changes') { if(window.changesWarning)value.warnings=['Incomplete patch']; value.pull.headSha=(window.pushed?'c':'a').repeat(40); value.files=[{path:'changed.ts',status:'added',additions:1,deletions:0,patch:'@@ -0,0 +1 @@\\n+new code'}]; }
  return value;
 }
+if(path.endsWith('/overview')&&window.pagedNumbers){if(input.page===2&&window.failLaterPage)throw Error('Older PR page unavailable');const numbers=window.pagedNumbers[input.page-1]??[];return decode(schema,{destination:'destination-'+id,pulls:numbers.map(number=>({...detail(id).pull,number,url:'https://github.com/team/project/pull/'+number})),page:input.page,hasMore:input.page<window.pagedNumbers.length,stale:input.page===2&&window.staleLaterPage});}
 if(path.endsWith('/overview')&&window.simulatedPages?.[id])return decode(schema,{destination:'destination-'+id,pulls:[{...detail(id).pull,number:window.simulatedPages[id].number}],page:1,hasMore:false,cachedAt:window.simulatedPages[id].cachedAt,stale:window.simulatedPages[id].stale});if(path.endsWith('/overview'))return decode(schema,{destination:'destination-'+id,pulls:[input.page===2?{...detail(id).pull,number:8,url:'https://github.com/team/project/pull/8'}:detail(id).pull],page:input.page,hasMore:input.page===1});
 throw Error('Unexpected request '+path);
 },catch:error=>error});
@@ -431,6 +432,83 @@ try {
   assert.deepEqual(errors, [])
   console.log(
     'Mobile PR selected-source checks passed: same-account peers never take over; offline/remount/reconnect, account replacement, legacy reads, guarded pagination, newer cache retention, independent sections, pushed-diff selection and linked-tab stability. Native presentation and transport mocked; no provider writes.',
+  )
+  const moving = await browser.newPage()
+  moving.setDefaultTimeout(7000)
+  await moving.clock.install()
+  await moving.setContent('<div id="app"></div>')
+  await moving.addScriptTag({
+    content: 'window.initialListOnly=true;window.pagedNumbers=[[7,6],[5,4],[3,2]]',
+  })
+  await moving.addScriptTag({ content: built.outputFiles[0].text })
+  await moving.waitForFunction(() => window.list?.pages[0]?.pulls.length === 2)
+  await moving.getByRole('button', { name: 'More PRs', exact: true }).click()
+  await moving.waitForFunction(() => window.list.pages[0]?.page === 2)
+  await moving.evaluate(() => {
+    window.pagedNumbers = [
+      [8, 7],
+      [6, 5],
+      [4, 3],
+    ]
+  })
+  await moving.clock.runFor(10001)
+  await moving.waitForFunction(() => window.list.pages[0]?.pulls[0]?.number === 8)
+  assert.deepEqual(
+    await moving.evaluate(() => window.list.pages[0].pulls.map((pull) => pull.number)),
+    [8, 7, 6, 5],
+    'A PR moving from page one into page two must remain visible',
+  )
+  await moving.evaluate(() => {
+    window.pagedNumbers = [
+      [9, 8],
+      [7, 6],
+      [5, 4],
+    ]
+    window.failLaterPage = true
+  })
+  await moving.clock.runFor(10001)
+  await moving.waitForFunction(() => window.list.pages[0]?.error === 'Older PR page unavailable')
+  assert.deepEqual(
+    await moving.evaluate(() => window.list.pages[0].pulls.map((pull) => pull.number)),
+    [8, 7, 6, 5],
+    'Later-page failure preserves the previous coherent snapshot',
+  )
+  assert.equal(await moving.evaluate(() => window.list.pages[0].stale), true)
+  await moving.evaluate(() => {
+    window.failLaterPage = false
+    window.staleLaterPage = true
+    window.list.refresh()
+  })
+  await moving.waitForFunction(() =>
+    window.list.pages[0]?.error?.includes('Older PR pages are unavailable'),
+  )
+  assert.deepEqual(
+    await moving.evaluate(() => window.list.pages[0].pulls.map((pull) => pull.number)),
+    [8, 7, 6, 5],
+    'Offline later-page fallback also preserves the complete snapshot',
+  )
+  await moving.evaluate(() => {
+    window.staleLaterPage = false
+  })
+  await moving.evaluate(() => {
+    window.failLaterPage = false
+    window.pagedNumbers = [
+      [9, 8],
+      [6, 5],
+    ]
+    window.list.refresh()
+  })
+  await moving.waitForFunction(
+    () => !window.list.pages[0]?.error && window.list.pages[0]?.pulls[0]?.number === 9,
+  )
+  assert.deepEqual(
+    await moving.evaluate(() => window.list.pages[0].pulls.map((pull) => pull.number)),
+    [9, 8, 6, 5],
+    'A closed PR disappears after all opened pages are revalidated',
+  )
+  await moving.close()
+  console.log(
+    'Mobile PR opened-page refresh passed: shifted boundaries, retained snapshots on network/stale errors, closed PRs, and retry depth.',
   )
 } finally {
   await browser.close()

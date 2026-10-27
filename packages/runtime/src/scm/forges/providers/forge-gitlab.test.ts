@@ -222,3 +222,21 @@ it('invalidates rejected GitLab credentials', async () => {
   await expect(new GitLabForge(http, 'team/sub/app').repository()).rejects.toThrow('Authentication')
   expect(unauthorized).toHaveBeenCalledOnce()
 })
+
+it('filters GitLab pipeline pages by the exact PR commit without affecting repository lists', async () => {
+  const { work, requests } = setup((url) =>
+    Array.from({ length: 50 }, (_, index) => ({
+      ...pipeline,
+      id: index + 1,
+      sha: url.searchParams.get('sha') ?? 'b'.repeat(40),
+    })),
+  )
+  expect((await work.pipelines()).items[0]?.sha).toBe('b'.repeat(40))
+  const first = await work.pipelines(undefined, sha)
+  expect(first.items.every((run) => run.sha === sha)).toBe(true)
+  expect(first.next).toBe('2')
+  await work.pipelines(first.next, sha)
+  expect(requests[0]?.url.searchParams.has('sha')).toBe(false)
+  expect(requests.slice(1).every(({ url }) => url.searchParams.get('sha') === sha)).toBe(true)
+  expect(requests.at(-1)?.url.searchParams.get('page')).toBe('2')
+})

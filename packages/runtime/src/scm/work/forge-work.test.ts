@@ -749,3 +749,52 @@ it.each(['COMPLETED', 'UNKNOWN'])(
     expect(json).toHaveBeenCalledTimes(1)
   },
 )
+
+it('pins GitHub pipeline pages and refreshes to a PR commit on busy repositories', async () => {
+  const sha = 'a'.repeat(40)
+  const target = {
+    id: 42,
+    html_url: 'https://github.com/me/app/actions/runs/42',
+    head_branch: 'feature',
+    head_sha: sha,
+    status: 'completed',
+    conclusion: 'success',
+    created_at: '2026-09-20T10:00:00Z',
+    updated_at: '2026-09-20T10:02:00Z',
+  }
+  let busy = false
+  const json = vi.fn<WorkHttp['json']>().mockImplementation(async (path) => {
+    const url = new URL(path, 'https://api.github.com/')
+    return {
+      workflow_runs:
+        url.searchParams.get('head_sha') === sha
+          ? url.searchParams.get('page') === '2'
+            ? [target]
+            : Array.from({ length: 30 }, (_, i) => ({ ...target, id: i + 100 }))
+          : [busy ? { ...target, head_sha: 'b'.repeat(40) } : target],
+    }
+  })
+  const provider = new GitForgeWork({ json }, 'github', 'me/app')
+  expect((await provider.pipelines()).items[0]?.sha).toBe(sha)
+  busy = true
+  expect((await provider.pipelines()).items[0]?.sha).not.toBe(sha)
+  const first = await provider.pipelines(undefined, sha)
+  expect(first.items).toHaveLength(30)
+  expect(first.next).toBe('2')
+  expect((await provider.pipelines(first.next, sha)).items[0]?.id).toBe('42')
+  expect((await provider.pipelines(undefined, sha)).items.every((run) => run.sha === sha)).toBe(
+    true,
+  )
+  const urls = json.mock.calls.map(([path]) => new URL(path, 'https://api.github.com/'))
+  expect(urls[0]?.searchParams.has('head_sha')).toBe(false)
+  expect(urls.slice(2).every((url) => url.searchParams.get('head_sha') === sha)).toBe(true)
+  expect(urls.every((url) => !url.searchParams.has('event'))).toBe(true)
+})
+it.each(['gitea', 'forgejo'] as const)(
+  'leaves %s pipeline pagination compatible with client commit filtering',
+  async (provider) => {
+    const json = vi.fn<WorkHttp['json']>().mockResolvedValue({ workflow_runs: [] })
+    await new GitForgeWork({ json }, provider, 'me/app').pipelines('2', 'a'.repeat(40))
+    expect(json).toHaveBeenCalledWith('api/v1/repos/me/app/actions/runs?limit=30&page=2', undefined)
+  },
+)

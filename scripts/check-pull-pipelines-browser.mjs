@@ -21,7 +21,7 @@ import {usePipelineSections as useDesktopPipelineSections} from '${root}/package
 import {PipelineRunInfo,PipelineJobs} from '${mobile}/scm/pulls/detail/pipeline-details.tsx';
 import {PipelineSectionStatus} from '${mobile}/scm/work/pipeline-section-status.tsx';
 import {PullPipelineRuns} from '${root}/packages/extension-scm/src/pulls/detail/pipeline-runs.tsx';
-const run={id:'run-1',number:'1',title:'PR build',url:'https://github.com/team/project/actions/runs/1',status:'failure',attempt:1,sha:'commit',ref:'feature',workflow:'Build',updatedAt:'2026-10-14',createdAt:'2026-10-14',actor:'Dominic'};
+const run={id:'run-1',number:'1',title:'PR build',url:'https://github.com/team/project/actions/runs/1',status:'failure',attempt:1,sha:'a'.repeat(40),ref:'feature',workflow:'Build',updatedAt:'2026-10-14',createdAt:'2026-10-14',actor:'Dominic'};
 const job={id:'job-1',name:'Build job',status:'success',startedAt:'2026-10-14T10:00:00Z',completedAt:'2026-10-14T10:02:14Z',url:run.url+'/job/1',steps:[{id:'step-1',number:1,name:'Compile source',status:'success'}]};
 window.blocked=[];window.failed=[];window.releases={};window.run=run;window.release=section=>{window.blocked=window.blocked.filter(s=>s!==section);for(const done of window.releases[section]??[])done();window.releases[section]=[]};
 window.reads=[];window.store={connected:true,activeRuntimeId:'owner',runtimes:[],connection:{address:'http://owner.local'},workspace:{repositories:[{id:'repo',name:'Project',forge:{connectionId:'account-1',repository:'team/project'}}]},request:async(path,input)=>{
@@ -31,6 +31,7 @@ const section=input.section??(path.endsWith('/options')?'options':'other');
 if(window.blocked.includes(section))await new Promise(resolve=>(window.releases[section]??=[]).push(resolve));
 if(window.failed.includes(section))throw new Error(section+' temporarily unavailable');
 if(path.endsWith('/options'))return {provider:'github',pipelines:true,issues:false,pipelineActions:[],pipelineDefinitions:[]};
+if(path.endsWith('/pipelines/list')&&input.sha!==run.sha)return {items:[{...run,id:'unrelated',title:'Another commit build',sha:'b'.repeat(40)}]};
 if(path.endsWith('/pipelines/list'))return window.listPages?(input.cursor?{items:[{...run,id:'older-run',number:'0',title:'Older PR build'}]}:{items:[run],next:'older'}):{items:[run]};
 if(path.endsWith('/pipelines/detail'))return {run:{...run},jobs:input.section==='jobs'?(input.cursor?[{...job,id:'job-2',name:'Publish job',status:'failure',steps:[{id:'step-2',number:1,name:'Upload artifact',status:'failure'}]}]:[job]):[],next:input.section==='jobs'&&!input.cursor?'2':undefined,graph:input.section==='graph'?[{id:'build',name:'Build job',needs:[],jobIds:[]},{id:'publish',name:'Publish job',needs:['build'],jobIds:[]}]:undefined};
 throw new Error('Unexpected request '+path);
@@ -42,7 +43,7 @@ window.store.readRuntime=async(_profile,path,input,schema)=>decode(schema,await 
 window.store.readRuntimeEffect=(...args)=>Effect.tryPromise({try:()=>window.store.readRuntime(...args),catch:error=>error});
 window.store.runtimeReadCache=()=>cache;
 function Mobile(){const[overview,setOverview]=useState(window.mobileOverview),[revision,setRevision]=useState(0);const load=useCallback(async(section,cursor,refresh,revision)=>decode(forgePipelineDetailSchema,await window.store.request('/api/scm/work/pipelines/detail',{section,cursor,refresh,revision})),[]);const useSections=window.desktopHook?useDesktopPipelineSections:usePipelineSections;const sections=useSections({overview,enabled:window.active&&window.store.connected,readCache:window.store.readCache,cacheKey:'mobile-run',refreshToken:revision,load,refreshOverview:()=>setOverview({run:{...run},jobs:[]})});window.invalidateSections=()=>setRevision(value=>value+1);window.mobileSections=sections;return <div aria-label="Mobile pipeline" style={{display:'flex',flexDirection:'column',gap:20,padding:16,maxWidth:600,margin:'auto'}}><PipelineRunInfo run={overview.run}/><PipelineSectionStatus label="Jobs" state={sections.jobs} connected={window.store.connected}/><PipelineSectionStatus label="Workflow" state={sections.graph} connected={window.store.connected}/><PipelineJobs jobs={sections.detail.jobs} graph={sections.detail.graph} hasMore={!!sections.detail.next} ready={sections.jobs.ready} onOpen={()=>{}}/>{sections.detail.next&&<button onClick={sections.jobs.more}>More jobs</button>}</div>}
-const app=createRoot(document.getElementById('app'));window.active=true;window.mount=()=>flushSync(()=>app.render(window.empty?<p>Unmounted</p>:window.mobile?<Mobile key={window.mobileKey??0}/>:<div hidden={!window.active}><PullPipelineRuns repositoryId="repo" sha="commit" active={window.active}/></div>));window.mount();`,
+const app=createRoot(document.getElementById('app'));window.active=true;window.mount=()=>flushSync(()=>app.render(window.empty?<p>Unmounted</p>:window.mobile?<Mobile key={window.mobileKey??0}/>:<div hidden={!window.active}><PullPipelineRuns repositoryId="repo" sha={'a'.repeat(40)} active={window.active}/></div>));window.mount();`,
     },
     bundle: true,
     write: false,
@@ -420,6 +421,24 @@ try {
   })
   await paged.waitForFunction(refreshFinished)
   await paged.getByText('Older PR build', { exact: true }).waitFor()
+  assert.equal(
+    await paged.evaluate(() =>
+      window.reads
+        .filter((read) => read.path.endsWith('/pipelines/list'))
+        .every((read) => read.input.sha === 'a'.repeat(40)),
+    ),
+    true,
+    'Every page and refresh stays scoped to the PR head',
+  )
+  assert.equal(
+    await paged.evaluate(() =>
+      window.reads
+        .filter((read) => !read.path.endsWith('/pipelines/list'))
+        .every((read) => read.input.sha === undefined),
+    ),
+    true,
+    'Commit filters are only sent to pipeline lists',
+  )
   await paged.close()
   assert.deepEqual(errors, [])
   console.log(

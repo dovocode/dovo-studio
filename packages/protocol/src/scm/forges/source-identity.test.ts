@@ -94,3 +94,17 @@ it('preserves reader and destination guards across issue and pipeline operations
       expectedDestination,
     )
 })
+
+it('accepts full SHA-1 and SHA-256 pipeline filters and rejects abbreviated or unsafe refs', () => {
+  for (const sha of ['a'.repeat(40), 'B'.repeat(40), 'c'.repeat(64)])
+    expect(decode(forgeWorkQuerySchema, { sha }).sha).toBe(sha)
+  for (const sha of [
+    '',
+    'a'.repeat(7),
+    'a'.repeat(41),
+    'main',
+    'g'.repeat(40),
+    'a'.repeat(40) + '&page=2',
+  ])
+    expect(decodeResult(forgeWorkQuerySchema, { sha }).success).toBe(false)
+})

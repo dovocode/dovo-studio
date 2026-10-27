@@ -41,6 +41,9 @@ export const forgeWorkQuerySchema = mutableStruct({
   section: Schema.optional(Schema.Literals(['overview', 'discussion', 'jobs', 'graph'])),
   revision: Schema.optional(maxValue(Schema.String, 1000)),
   cursor: Schema.optional(maxValue(Schema.String, 4000)),
+  sha: Schema.optional(
+    refine(Schema.String, (value) => /^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(value)),
+  ),
   query: Schema.optional(maxValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 300)),
   state: maxValue(Schema.String, 100).pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => 'open')),

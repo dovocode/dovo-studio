@@ -363,3 +363,30 @@ it('reserves GitHub quota for automatic pipeline reads while explicit refreshes 
     api.mock.calls.find(([args]) => args.some((arg) => arg.includes('actions/runs')))?.[4],
   ).toBe(true)
 })
+
+it('isolates PR commit and page reads from unfiltered repository pipelines', async () => {
+  const { service } = setup()
+  const load = vi
+    .spyOn(GitForgeWork.prototype, 'pipelines')
+    .mockResolvedValue({ items: [], next: undefined })
+  const sha = 'a'.repeat(40)
+  await service.request('repo', 'pipelines/list', {})
+  await service.request('repo', 'pipelines/list', { sha })
+  await service.request('repo', 'pipelines/list', { sha: 'b'.repeat(64) })
+  await service.request('repo', 'pipelines/list', { sha, cursor: '2' })
+  await service.request('repo', 'pipelines/list', { sha: sha.toUpperCase() })
+  expect(load).toHaveBeenCalledTimes(4)
+  expect(load).toHaveBeenNthCalledWith(1, undefined, undefined)
+  expect(load).toHaveBeenNthCalledWith(2, undefined, sha)
+  expect(load).toHaveBeenNthCalledWith(3, undefined, 'b'.repeat(64))
+  expect(load).toHaveBeenNthCalledWith(4, '2', sha)
+})
+
+it('rejects commit filters on operations that cannot honor them', async () => {
+  const { service } = setup()
+  const load = vi.spyOn(GitForgeWork.prototype, 'issues')
+  await expect(service.request('repo', 'issues/list', { sha: 'a'.repeat(40) })).rejects.toThrow(
+    'only supported for pipeline lists',
+  )
+  expect(load).not.toHaveBeenCalled()
+})

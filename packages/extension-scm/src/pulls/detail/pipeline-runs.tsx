@@ -96,6 +96,7 @@ export function PullPipelineRuns({
           '/api/scm/work/pipelines/list',
           {
             repositoryId,
+            sha,
             cursor,
             refresh,
           },
@@ -109,7 +110,7 @@ export function PullPipelineRuns({
         while (!cursor && page.next && pages < depth.current) {
           const nextPage = await readRequest(
             '/api/scm/work/pipelines/list',
-            { repositoryId, cursor: page.next, refresh },
+            { repositoryId, sha, cursor: page.next, refresh },
             forgePipelinePageSchema,
           )
           if (current !== generation.current) return

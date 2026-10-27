@@ -3,29 +3,32 @@ import { retainNewerPullSnapshot } from '@dovo/protocol'
 
 export type CachedPullPage = PullPage & { firstPageIds?: string[] }
 
-/** Keep explicitly loaded later pages while replacing rows that used to be on page one. */
+/** Publish one complete opened-page snapshot; shifted boundaries must never reuse old pages. */
 export function refreshPullPage(
   previous: CachedPullPage | undefined,
   incoming: PullPage,
-  force: boolean,
+  laterPages: PullPage[] = [],
 ): CachedPullPage {
   const retained = retainNewerPullSnapshot(previous, incoming)
   if (retained !== incoming) return retained
   const firstPageIds = incoming.pulls.map((pull) => String(pull.number))
-  if (force || !incoming.hasMore || !previous || previous.page <= 1 || !previous.firstPageIds)
-    return { ...incoming, firstPageIds }
-
-  const replaced = new Set([...previous.firstPageIds, ...firstPageIds])
+  const failed = laterPages.find((page) => page.stale || page.refreshError)
+  if (failed)
+    return {
+      ...(previous ?? incoming),
+      stale: true,
+      refreshError: failed.refreshError ?? 'Older PR pages are unavailable; showing saved results.',
+    }
+  const last = laterPages.at(-1) ?? incoming
   return {
     ...incoming,
-    page: previous.page,
-    hasMore: previous.hasMore,
-    stale: true,
-    refreshError: incoming.refreshError,
+    page: last.page,
+    hasMore: last.hasMore,
     firstPageIds,
     pulls: [
-      ...incoming.pulls,
-      ...previous.pulls.filter((pull) => !replaced.has(String(pull.number))),
+      ...new Map(
+        [incoming, ...laterPages].flatMap((page) => page.pulls).map((pull) => [pull.number, pull]),
+      ).values(),
     ],
   }
 }

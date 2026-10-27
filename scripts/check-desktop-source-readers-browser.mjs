@@ -49,7 +49,7 @@ if(path==='/api/scm/work/issues/list')return decode(schema,{items:[{id:input.cur
 if(path==='/api/scm/work/pipelines/list')return decode(schema,{items:[{id:input.cursor?'10':window.freshWorkRows?'9':'7',title:input.cursor?'Next run':window.freshWorkRows?'New run after handoff':'Listed run',url:'https://github.com/team/project/actions/runs/'+(input.cursor?'10':window.freshWorkRows?'9':'7'),ref:'main',sha:'same-sha',actor:'Dominic',status:'success',createdAt:'2026-10-14',updatedAt:'2026-10-14',destination:window.destinations[id]}],next:input.cursor?undefined:'page-2'});
 if(path==='/api/scm/work/issues/detail')return decode(schema,{destination:window.destinations[id],issue:{id:input.id,title:input.id==='9'?'New issue after handoff':'Kept issue',body:'Description',state:'open',url:'https://github.com/team/project/issues/'+input.id,author:'Dominic',assignees:[],labels:[],updatedAt:'2026-10-14',revision:'same-revision',destination:window.destinations[id]},comments:[{id:input.cursor?'second':'first',body:'Page',author:'Dominic',createdAt:'2026-10-14'}],next:input.cursor?undefined:'page-2'});
 if(path==='/api/scm/work/pipelines/detail')return decode(schema,{destination:window.destinations[id],run:{id:input.id,title:input.id==='9'?'New run after handoff':'Kept run',url:'https://github.com/team/project/actions/runs/'+input.id,ref:'main',sha:'same-sha',actor:'Dominic',status:'success',createdAt:'2026-10-14',updatedAt:'2026-10-14',destination:window.destinations[id]},jobs:[{id:input.cursor?'second':'first',name:'Job',status:'success',url:'https://github.com/team/project/actions/runs/7'}],next:input.cursor?undefined:'page-2'});
-if(path==='/api/scm/pulls/overview'&&window.cacheResponses?.[id])return decode(schema,window.cacheResponses[id]);if(path==='/api/scm/pulls/detail')return decode(schema,{destination:window.destinations[id],pull:{number:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],body:'Description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',additions:0,deletions:0,changedFiles:0,mergeable:true,reviewers:[],assignees:[],destination:window.destinations[id]},capabilities:{actions:['comment','merge'],mergeMethods:['squash'],reviewDecisions:[]},files:[],comments:[],checks:[],warnings:[]});return decode(schema,{pulls:[{number:input.page===2?8:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],viewerIsAuthor:true,destination:window.destinations[id]}],page:input.page,hasMore:input.page===1})},catch:e=>e})}};
+if(path==='/api/scm/pulls/overview'&&window.pagedNumbers){if(input.page===2&&window.failLaterPage)throw Error('Older PR page unavailable');return decode(schema,{destination:window.destinations[id],pulls:(window.pagedNumbers[input.page-1]??[]).map(number=>({number,title:'PR '+number,url:'https://github.com/team/project/pull/'+number,state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],destination:window.destinations[id]})),page:input.page,hasMore:input.page<window.pagedNumbers.length});}if(path==='/api/scm/pulls/overview'&&window.cacheResponses?.[id])return decode(schema,window.cacheResponses[id]);if(path==='/api/scm/pulls/detail')return decode(schema,{destination:window.destinations[id],pull:{number:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],body:'Description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',additions:0,deletions:0,changedFiles:0,mergeable:true,reviewers:[],assignees:[],destination:window.destinations[id]},capabilities:{actions:['comment','merge'],mergeMethods:['squash'],reviewDecisions:[]},files:[],comments:[],checks:[],warnings:[]});return decode(schema,{pulls:[{number:input.page===2?8:7,title:'Kept PR',url:'https://github.com/team/project/pull/7',state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-14',head:'branch',base:'main',labels:[],viewerIsAuthor:true,destination:window.destinations[id]}],page:input.page,hasMore:input.page===1})},catch:e=>e})}};
 window.sources=['a','b'].map(source).map(s=>({...s,name:s.repository.name,jira:window.jiraMode?{id:'tracker',site:'https://team.atlassian.net',project:'TEAM',name:'Team'}:undefined,input:window.jiraMode?{jiraSourceId:'tracker'}:{repositoryId:s.repository.id},request:(path,input,schema)=>Effect.runPromise(s.requestEffect(path,input,schema)),readCache:{...s.readCache,read:(key,schema)=>Effect.runPromise(s.readCache.readEffect(key,schema)),write:(key,value)=>Effect.runPromise(s.readCache.writeEffect(key,value)),remove:key=>Effect.runPromise(s.readCache.removeEffect(key))}}));window.store={activeRuntimeId:'a',runtimes:[],workspace:{repositories:[window.sources[0].repository],jiraSources:window.sources[0].jira?[window.sources[0].jira]:[],tasks:[]},runtimeRegistry:{activeId:'a'},connected:true,requestEffect:window.sources[0].requestEffect,readCache:window.sources[0].readCache};
 function View(){const [filter,setFilter]=useState(window.filter??'');window.setFilter=value=>{window.filter=value;setFilter(value)};const result=usePulls('open',filter);window.result=result;return <pre>{JSON.stringify(result.pages.map(p=>({owner:p.source.runtimeId,error:p.error,cached:p.stale,pulls:p.pulls})))}</pre>}
 function Detail(){const result=usePullDetail('repo-a',7);window.detailResult=result;return <pre>{JSON.stringify(result.detail)}</pre>}
@@ -199,6 +199,73 @@ try {
     assert.deepEqual(errors, [])
     await page.close()
   }
+  const moving = await browser.newPage()
+  moving.setDefaultTimeout(8000)
+  await moving.clock.install()
+  await moving.setContent('<div id="app"></div>')
+  await moving.addScriptTag({
+    content: "window.filter=JSON.stringify(['a','repo-a']);window.pagedNumbers=[[7,6],[5,4],[3,2]]",
+  })
+  await moving.addScriptTag({ content: built.outputFiles[0].text })
+  await moving.waitForFunction(() => window.result?.pages[0]?.pulls.length === 2)
+  await moving.evaluate(() => window.result.more(window.result.pages[0].source.key))
+  await moving.waitForFunction(() => window.result.pages[0]?.page === 2)
+  await moving.evaluate(() => {
+    window.pagedNumbers = [
+      [8, 7],
+      [6, 5],
+      [4, 3],
+    ]
+  })
+  await moving.clock.runFor(30001)
+  await moving.waitForFunction(() => window.result.pages[0]?.pulls[0]?.number === 8)
+  assert.deepEqual(
+    await moving.evaluate(() => window.result.pages[0].pulls.map((pull) => pull.number)),
+    [8, 7, 6, 5],
+    'Desktop refresh retains PRs shifted across a page boundary',
+  )
+  assert.equal(
+    await moving.evaluate(
+      () => window.reads.filter((read) => read.input.page === 2).at(-1).input.refresh,
+    ),
+    true,
+    'Shifted boundaries bypass independently cached later pages',
+  )
+  await moving.evaluate(() => {
+    window.pagedNumbers = [
+      [9, 8],
+      [7, 6],
+      [5, 4],
+    ]
+    window.failLaterPage = true
+  })
+  await moving.clock.runFor(30001)
+  await moving.waitForFunction(() => window.result.pages[0]?.error === 'Older PR page unavailable')
+  assert.deepEqual(
+    await moving.evaluate(() => window.result.pages[0].pulls.map((pull) => pull.number)),
+    [8, 7, 6, 5],
+    'Desktop later-page failure preserves the coherent previous snapshot',
+  )
+  assert.equal(await moving.evaluate(() => window.result.pages[0].stale), true)
+  await moving.evaluate(() => {
+    window.failLaterPage = false
+    window.pagedNumbers = [
+      [9, 8],
+      [8, 6],
+    ]
+    window.result.refresh()
+  })
+  await moving.waitForFunction(
+    () => !window.result.pages[0]?.error && window.result.pages[0]?.pulls[0]?.number === 9,
+  )
+  assert.deepEqual(
+    await moving.evaluate(() => window.result.pages[0].pulls.map((pull) => pull.number)),
+    [9, 8, 6],
+    'Closed PRs disappear and moving boundaries deduplicate after retry',
+  )
+  assert.equal(await moving.evaluate(() => window.result.pages[0].hasMore), false)
+  assert.equal(await moving.evaluate(() => window.reads.every((read) => read.id === 'a')), true)
+  await moving.close()
   // A credential/account change cannot silently authorize another machine or overwrite old data.
   const changed = await browser.newPage()
   changed.setDefaultTimeout(8000)

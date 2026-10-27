@@ -258,3 +258,14 @@ it('preserves legacy Jira offline keys for unfiltered lists, options and details
     workCacheKey(source, 'issues', 'options'),
   )
 })
+
+it('separates offline PR pipeline commits and pages while normalizing SHA case', () => {
+  const sha = 'a'.repeat(40)
+  const key = workCacheKey(repository, 'pipelines', 'list', { sha })
+  expect(key).toBe(workCacheKey(repository, 'pipelines', 'list', { sha: sha.toUpperCase() }))
+  for (const query of [{}, { sha: 'b'.repeat(40) }, { sha, cursor: '2' }])
+    expect(workCacheKey(repository, 'pipelines', 'list', query)).not.toBe(key)
+  expect(workCacheKey(repository, 'pipelines', 'options', { sha })).toBe(
+    workCacheKey(repository, 'pipelines', 'options'),
+  )
+})

@@ -32,7 +32,10 @@ export interface ForgeWorkProvider {
   createIssue(input: ForgeIssueCreate): Promise<ForgeWorkResult>
   actOnIssue(input: ForgeIssueAction): Promise<ForgeWorkResult>
   definitions(cursor?: string): Promise<Schema.Schema.Type<typeof forgeDefinitionsSchema>>
-  pipelines(cursor?: string): Promise<Schema.Schema.Type<typeof forgePipelinePageSchema>>
+  pipelines(
+    cursor?: string,
+    sha?: string,
+  ): Promise<Schema.Schema.Type<typeof forgePipelinePageSchema>>
   pipeline(
     id: string,
     cursor?: string,

@@ -13,7 +13,6 @@ import {
   type PullPage,
 } from '@dovo/protocol'
 import { useApplicationState } from '../../../runtime/state/application-state'
-import { refreshFirstPage } from '../../work/collection-pages'
 import { useRuntime } from '../../../runtime/connection/provider'
 import {
   collectionSources,
@@ -300,6 +299,37 @@ export function usePulls(repositoryId: string, state: string) {
               refresh,
             })
             const retained = retainNewerPullSnapshot<PullPage>(previous, response)
+            const firstPageIds = response.pulls.map((pull) => String(pull.number))
+            const changed = JSON.stringify(previous?.firstPageIds) !== JSON.stringify(firstPageIds)
+            // Publish only after the entire opened prefix has been revalidated.
+            let combined = response
+            if (retained === response)
+              for (let number = 2; combined.hasMore && number <= (previous?.page ?? 1); number++) {
+                const next = yield* request(entry, {
+                  repositoryId: entry.repository.id,
+                  state: remoteState,
+                  page: number,
+                  // A membership change invalidates independently cached page boundaries.
+                  refresh: refresh || changed,
+                })
+                if (next.stale || next.refreshError)
+                  return yield* Effect.fail(
+                    new Error(
+                      next.refreshError ?? 'Older PR pages are unavailable; showing saved results.',
+                    ),
+                  )
+                combined = {
+                  ...next,
+                  cachedAt: response.cachedAt,
+                  stale: response.stale,
+                  refreshError: response.refreshError,
+                  pulls: [
+                    ...new Map(
+                      [...combined.pulls, ...next.pulls].map((pull) => [pull.number, pull]),
+                    ).values(),
+                  ],
+                }
+              }
             const page: Page =
               retained !== response && previous
                 ? {
@@ -310,24 +340,11 @@ export function usePulls(repositoryId: string, state: string) {
                     error: retained.refreshError,
                   }
                 : {
-                    ...response,
+                    ...combined,
                     ...metadata(entry),
-                    error: response.refreshError,
-                    stale: !!response.stale || !!response.refreshError,
-                    firstPageIds: response.pulls.map((pull) => String(pull.number)),
-                    ...(previous?.page > 1 && previous.firstPageIds && !refresh && response.hasMore
-                      ? {
-                          page: previous.page,
-                          hasMore: previous.hasMore,
-                          stale: true,
-                          pulls: refreshFirstPage(
-                            previous.pulls,
-                            previous.firstPageIds,
-                            response.pulls,
-                            (pull) => String(pull.number),
-                          ),
-                        }
-                      : {}),
+                    error: combined.refreshError,
+                    stale: !!combined.stale || !!combined.refreshError,
+                    firstPageIds,
                   }
             update(entry.key, page)
             if (!page.stale && !page.error)

@@ -228,11 +228,13 @@ export class GitLabForgeWork implements ForgeWorkProvider {
       hint: 'Uses .gitlab-ci.yml from the selected ref. Inputs are passed as pipeline variables.',
     }
   }
-  async pipelines(cursor?: string) {
+  async pipelines(cursor?: string, sha?: string) {
     const page = workPage(cursor)
     const rows = decode(
       mutableArray(gitlabPipeline),
-      await this.get(`pipelines?order_by=updated_at&sort=desc&per_page=${SIZE}&page=${page}`),
+      await this.get(
+        `pipelines?order_by=updated_at&sort=desc&per_page=${SIZE}&page=${page}${sha ? `&sha=${encodeURIComponent(sha)}` : ''}`,
+      ),
     )
     return {
       items: rows.map((run) => this.normalizePipeline(run)),

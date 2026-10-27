@@ -45,6 +45,7 @@ export function useWorkCollection(
   state: string,
   query = '',
   jiraFilters?: JiraIssueFilters,
+  commitSha?: string,
 ) {
   const { overviews, readRuntimeEffect: readRuntime, cacheForRuntime } = useRuntime()
   const { focused } = useNavigation()
@@ -57,6 +58,7 @@ export function useWorkCollection(
     workSourceInput,
     focused,
   )
+  const sha = mode === 'pipelines' ? commitSha?.toLowerCase() : undefined
   const filterKey = JSON.stringify(jiraIssueFilterKey(jiraFilters))
   const identity = workSourceIdentity(sources)
   const sourcesRef = useRef(sources)
@@ -101,6 +103,7 @@ export function useWorkCollection(
         {
           state,
           cursor,
+          sha,
           query,
           jiraFilters: source.kind === 'jira' ? jiraFilters : undefined,
         },
@@ -231,6 +234,7 @@ export function useWorkCollection(
                 '/api/scm/work/pipelines/list',
                 {
                   ...workSourceInput(source),
+                  sha,
                   cursor,
                   refresh: force,
                 },
@@ -319,10 +323,10 @@ export function useWorkCollection(
   loadRef.current = load
   useEffect(() => {
     const current = ++generation.current
-    const queryKey = JSON.stringify([state, mode, query, filterKey])
+    const queryKey = JSON.stringify([state, mode, query, filterKey, sha])
     const sweepKeys = new Set(
       sourcesRef.current.map((source) =>
-        JSON.stringify([workSourceContentIdentity(source), mode, state, query, filterKey]),
+        JSON.stringify([workSourceContentIdentity(source), mode, state, query, filterKey, sha]),
       ),
     )
     for (const key of fullSweepAt.current.keys())
@@ -365,6 +369,7 @@ export function useWorkCollection(
               state,
               query,
               filterKey,
+              sha,
             ])
             const lastSweep = fullSweepAt.current.get(sweepKey) ?? Date.now()
             if (!fullSweepAt.current.has(sweepKey)) fullSweepAt.current.set(sweepKey, lastSweep)
@@ -444,6 +449,7 @@ export function useWorkCollection(
                     state,
                     query,
                     filterKey,
+                    sha,
                   ]),
                   Date.now(),
                 )
@@ -461,14 +467,14 @@ export function useWorkCollection(
       void polling.stop()
       void commands.stop()
     }
-  }, [identity, state, mode, query, filterKey, revision, focused])
+  }, [identity, state, mode, query, filterKey, sha, revision, focused])
   const refresh = () => {
     forceNext.current = true
     setRevision((value) => value + 1)
   }
   return {
     pages:
-      lastQuery.current === JSON.stringify([state, mode, query, filterKey])
+      lastQuery.current === JSON.stringify([state, mode, query, filterKey, sha])
         ? retainWorkPages(Object.values(pages), sources)
         : [],
     sources,

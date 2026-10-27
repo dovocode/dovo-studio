@@ -119,6 +119,7 @@ if(/\\/(action|comment|create|task)$/.test(path)){
 if(path.endsWith('/options/read'))return decode(schema,{destination:window.remote,provider:'github',draft:true});
 if(path.endsWith('/definitions'))return decode(schema,{items:[{id:'ci',name:'CI'}],manual:false});
 if(path.endsWith('/overview'))return decode(schema,{pulls:[pull.pull],page:1,hasMore:false});
+if(path==='/api/scm/work/pipelines/list'){const sha=input.sha??'c'.repeat(40);return decode(schema,{destination:window.remote,items:[{...pipelineRun,id:input.cursor?'older-'+sha:sha,title:(input.cursor?'Older ':'')+'Commit '+sha[0],sha,destination:window.remote}],next:input.cursor?undefined:'2'});}
 if(path==='/api/scm/work/issues/list')return decode(schema,{items:[issue],next:undefined});
 if(input.jiraSourceId && (path==='/api/scm/work/issues/detail'||path==='/api/scm/work/options')){
 const section=input.section??'issue-options';
@@ -137,13 +138,14 @@ return decode(schema,{destination:window.remote,run:{...pipelineRun,destination:
 if(path.endsWith('/detail'))return decode(schema,pull);
 throw Error('Unexpected request '+path);
 },catch:error=>error});
+function PipelineCollection(){const[sha,setSha]=useState(window.sameSha);window.setCollectionSha=setSha;const value=useWorkCollection('pipelines',JSON.stringify(['one','repo']),'all','',undefined,sha);window.pipelineCollection=value;return <div>{value.pages.flatMap(page=>page.items).map(item=><span key={item.id}>{item.title}</span>)}</div>}
 function JiraCollection(){const value=useWorkCollection('issues',JSON.stringify(['one','jira','jira']),'open','TEAM-7');window.jiraCollection=value;return <div>{value.pages.flatMap(page=>page.items).map(item=><span key={item.id}>{item.title}</span>)}</div>}
 function Reader(){const value=usePullDetail('repo',7);window.reader=value;return <div aria-label="reader">{value.detail?.pull.title}{value.error}</div>}
 function List(){const value=usePulls('','open');window.list=value;return <div aria-label="list">{value.pages.map(page=>page.runtimeName+':'+page.pulls.length).join(',')}</div>}
 function Task(){const value=usePullTaskCreation('repo',pull.pull);return <><button onClick={()=>value.start('new-branch')}>Create task</button><span>{value.error}</span></>}
 // A refreshed detail can report a new PR head; each newly opened sheet receives it.
 const atHead=detail=>window.headSha?{...detail,pull:{...detail.pull,headSha:window.headSha}}:detail;
-function Detail({kind,observed}){useEffect(()=>{window.mounts++;window.mountedKind=kind},[]);return kind==='jira-collection'?<JiraCollection/>:kind==='jira-detail'?<WorkItemScreen mode="issues" jiraSourceId="jira" itemId="TEAM-7" expectedURL={issue.url} onBack={()=>{}}/>:kind==='pipeline'?<WorkItemScreen mode="pipelines" repositoryId="repo" itemId="42" expectedURL={pipelineRun.url} onBack={()=>{}}/>:kind==='markdown'?<Markdown text="[PR](https://github.com/team/project/pull/7/files#diff-1) [Issue](https://github.com/team/project/issues/7) [Jira](https://team.atlassian.net/browse/TEAM-7) [Pipeline](https://github.com/team/project/actions/runs/7)"/>:kind==='line'?<LineComment repositoryId="repo" detail={atHead(pull)} path="file.ts" onClose={()=>{}} onDone={()=>{}}/>:kind==='work'?<WorkForm kind="comment" jiraSourceId="jira" issue={issue} options={options} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='run'?<WorkForm kind="run" repositoryId="repo" options={pipelineOptions} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='worktask'||kind==='worktaskpicker'?<WorkTaskAction repositoryId={kind==='worktask'?'repo':undefined} jiraSourceId="jira" source={{kind:'issue',item:observed?{...issue,destination:'new-destination'}:issue}} disabled={false}/>:kind==='create'?<CreatePull repositoryId="repo" onClose={()=>{}} onCreated={()=>{}}/>:kind==='task'?<Task/>:kind==='reader'?<Reader/>:<PullActionSheet repositoryId="repo" detail={atHead(observed?{...pull,destination:"new-destination",pull:{...pull.pull,destination:"new-destination"}}:pull)} target={{action:'comment'}} onClose={()=>{}} onDone={()=>{}}/>}
+function Detail({kind,observed}){useEffect(()=>{window.mounts++;window.mountedKind=kind},[]);return kind==='pipeline-collection'?<PipelineCollection/>:kind==='jira-collection'?<JiraCollection/>:kind==='jira-detail'?<WorkItemScreen mode="issues" jiraSourceId="jira" itemId="TEAM-7" expectedURL={issue.url} onBack={()=>{}}/>:kind==='pipeline'?<WorkItemScreen mode="pipelines" repositoryId="repo" itemId="42" expectedURL={pipelineRun.url} onBack={()=>{}}/>:kind==='markdown'?<Markdown text="[PR](https://github.com/team/project/pull/7/files#diff-1) [Issue](https://github.com/team/project/issues/7) [Jira](https://team.atlassian.net/browse/TEAM-7) [Pipeline](https://github.com/team/project/actions/runs/7)"/>:kind==='line'?<LineComment repositoryId="repo" detail={atHead(pull)} path="file.ts" onClose={()=>{}} onDone={()=>{}}/>:kind==='work'?<WorkForm kind="comment" jiraSourceId="jira" issue={issue} options={options} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='run'?<WorkForm kind="run" repositoryId="repo" options={pipelineOptions} disabled={false} onClose={()=>{}} onDone={()=>{}}/>:kind==='worktask'||kind==='worktaskpicker'?<WorkTaskAction repositoryId={kind==='worktask'?'repo':undefined} jiraSourceId="jira" source={{kind:'issue',item:observed?{...issue,destination:'new-destination'}:issue}} disabled={false}/>:kind==='create'?<CreatePull repositoryId="repo" onClose={()=>{}} onCreated={()=>{}}/>:kind==='task'?<Task/>:kind==='reader'?<Reader/>:<PullActionSheet repositoryId="repo" detail={atHead(observed?{...pull,destination:"new-destination",pull:{...pull.pull,destination:"new-destination"}}:pull)} target={{action:'comment'}} onClose={()=>{}} onDone={()=>{}}/>}
 function App(){const [active,setActive]=useState('one'),[name,setName]=useState('Original Jira'),[kind,setKind]=useState('markdown'),[shown,setShown]=useState(true),[offline,setOffline]=useState(false),[observed,setObserved]=useState(false);
 window.setKind=value=>{window.remote='old-destination';setObserved(false);setKind(value)};window.setActive=setActive;window.setShown=setShown;window.setOffline=setOffline;
 const overviews=profiles.map(profile=>({profile,connected:profile.id==='one'?!offline:true,snapshot:workspace(name),error:null,pulls:null,pullError:null,lastSeen:null}));
@@ -561,6 +563,52 @@ try {
   assert.equal(
     await page.getByRole('textbox', { name: 'Comment', exact: true }).inputValue(),
     'Unsent inline comment',
+  )
+  await page.evaluate(() => {
+    window.account = 'account-one'
+    window.setOffline(false)
+  })
+  await choose('pipeline-collection')
+  await page.waitForFunction(
+    () => window.pipelineCollection?.pages[0]?.items[0]?.sha === 'a'.repeat(40),
+  )
+  const sourceKey = await page.evaluate(() => window.pipelineCollection.pages[0].source.key)
+  await page.evaluate((key) => window.pipelineCollection.more(key), sourceKey)
+  await page.waitForFunction(() => window.pipelineCollection.pages[0]?.items.length === 2)
+  await page.evaluate(() => window.setCollectionSha('b'.repeat(40)))
+  await page.waitForFunction(
+    () => window.pipelineCollection.pages[0]?.items[0]?.sha === 'b'.repeat(40),
+  )
+  assert.equal(
+    await page.evaluate(() =>
+      window.pipelineCollection.pages.every((page) =>
+        page.items.every((item) => item.sha === 'b'.repeat(40)),
+      ),
+    ),
+    true,
+    'New PR head never retains the previous head pages',
+  )
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls
+        .filter((call) => call.path.endsWith('/pipelines/list'))
+        .every((call) => call.input.sha && call.owner === 'one'),
+    ),
+    true,
+    'Mobile pipeline pages preserve commit and owning computer',
+  )
+  await page.evaluate(() => {
+    window.setOffline(true)
+    window.setCollectionSha('a'.repeat(40))
+  })
+  await page.waitForFunction(
+    () => window.pipelineCollection.pages[0]?.items[0]?.sha === 'a'.repeat(40),
+  )
+  assert.equal(await page.evaluate(() => window.pipelineCollection.pages[0].stale), true)
+  assert.equal(
+    await page.evaluate(() => window.pipelineCollection.pages[0].items.length),
+    1,
+    'Offline first page is isolated by commit',
   )
   assert.deepEqual(errors, [])
   console.log(

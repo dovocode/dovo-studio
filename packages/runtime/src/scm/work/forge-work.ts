@@ -306,6 +306,9 @@ export class ForgeWork {
       input,
     )
     const query = decode(forgeWorkQuerySchema, input)
+    if (query.sha !== undefined && operation !== 'pipelines/list')
+      throw new HttpError(400, 'Commit filters are only supported for pipeline lists')
+    const sha = query.sha?.toLowerCase()
     if (query.jiraFilters !== undefined && operation !== 'issues/list')
       throw new HttpError(400, 'Jira filters are only supported for issue lists')
     if (
@@ -384,6 +387,7 @@ export class ForgeWork {
       query.cursor,
       query.query,
       ...(query.section ? [query.section] : []),
+      ...(sha ? [{ sha }] : []),
     ])
     if (operation === 'issues/list' && provider instanceof JiraWork) {
       // ACLI has no page token: every page is a slice of one ordered prefix. Cache the prefix
@@ -477,7 +481,7 @@ export class ForgeWork {
           schema: forgePipelinePageSchema,
           refresh: query.refresh,
           load: async () => {
-            const result = await provider.pipelines(query.cursor)
+            const result = await provider.pipelines(query.cursor, sha)
             return {
               ...result,
               destination: identity.destination,

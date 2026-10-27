@@ -15,6 +15,7 @@ export function workCacheKey(
   query: {
     id?: string
     state?: string
+    sha?: string
     cursor?: string
     query?: string
     jiraFilters?: JiraIssueFilters
@@ -48,6 +49,9 @@ export function workCacheKey(
     query.state,
     query.cursor,
     ...(query.query?.trim() ? [query.query.trim()] : []),
+    ...(area === 'pipelines' && kind === 'list' && query.sha
+      ? [{ sha: query.sha.toLowerCase() }]
+      : []),
   ])
 }
 

@@ -12,7 +12,7 @@ const mobile = root + 'apps/mobile/src/'
 const data = `
 window.sources=[{key:'repo',scope:'mac',name:'Dovo Studio',runtimeId:'mac',runtimeName:'Mac Studio',computerName:'Mac Studio',connected:true,kind:'repository',repository:{id:'repo',name:'Dovo Studio',path:'/repo'},profile:{id:'mac',connection:{address:'http://mac',token:'paired'}}}];
 window.runs=['success','succeeded','SUCCESSFUL','failure','failed','in_progress','skipped'].map((status,index)=>({id:String(index),number:index+1,title:['Release desktop','Typecheck','Browser checks','Release mobile','Unit tests','Native build','Other commit'][index],status,url:'https://github.com/team/repo/actions/runs/'+index,ref:'main',sha:index===6?'other':'head',actor:'Dominic',createdAt:'2026-10-23T12:00:00Z',updatedAt:'2026-10-23T12:00:00Z'}));
-window.renderCount=0;window.readStates=[];window.refreshing=false;window.refreshes=0;window.refreshWork=()=>{window.refreshes++;window.refreshing=true;window.render()};window.finishRefresh=()=>{window.refreshing=false;window.render()};
+window.renderCount=0;window.readStates=[];window.readCommits=[];window.refreshing=false;window.refreshes=0;window.refreshWork=()=>{window.refreshes++;window.refreshing=true;window.render()};window.finishRefresh=()=>{window.refreshing=false;window.render()};
 `
 const native = `
 const flat=style=>Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));
@@ -41,7 +41,7 @@ async function bundle(isMobile) {
         '../../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
         '../../shell/source-route': `export const backToCollection=()=>{};export const issueHref=()=>'/issue';export const jiraIssueHref=()=>'/jira';export const pipelineHref=(runtime,repo,id)=>'/pipeline/'+id;`,
         './work-sources': `export const jiraSourceKey=()=>'';export const workSources=()=>window.sources;export const workSourceName=source=>source.name;export const workSourceContentIdentity=source=>source.key;export const workSourceInput=()=>({});`,
-        './use-work-collection': `export const useWorkCollection=(mode,id,state)=>{window.readStates.push(state);return {pages:window.sources.map(source=>({source,items:window.runs,stale:!source.connected,options:{provider:'github'},next:'page2'})),busy:window.refreshing,refresh:window.refreshWork,more:async()=>{window.runs.push({...window.runs[3],id:'more',title:'Earlier release'});window.render()}}};`,
+        './use-work-collection': `export const useWorkCollection=(mode,id,state,query,filters,sha)=>{window.readStates.push(state);window.readCommits.push(sha);return {pages:window.sources.map(source=>({source,items:window.runs,stale:!source.connected,options:{provider:'github'},next:'page2'})),busy:window.refreshing,refresh:window.refreshWork,more:async()=>{window.runs.push({...window.runs[3],id:'more',title:'Earlier release'});window.render()}}};`,
         '../../ui/layout/use-list-scroll': `export const useListScroll=()=>({retainPosition:()=>{}});`,
         '../connections/jira-binding': `export const JiraProjectForm=()=>null;`,
         './work-form': `export const WorkForm=()=>null;`,
@@ -222,6 +222,11 @@ try {
           await page.evaluate(() => window.readStates.every((state) => state === 'all')),
           true,
           'Local status filtering does not change collection fetch state',
+        )
+        assert.equal(
+          await page.evaluate(() => window.readCommits.every((sha) => sha === 'head')),
+          true,
+          'Mobile PR pipelines pass their pinned commit to collection reads',
         )
         const title = rows.first().getByText('Release desktop', { exact: true })
         const status = rows.first().getByText('Passed', { exact: true })

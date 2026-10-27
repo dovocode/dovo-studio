@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Effect, Schema, Semaphore } from 'effect'
 import {
   pullRepositoryKey,
+  retainNewerPullSnapshot,
+  type PullPage,
   publicPullSummaries,
   mutableArray,
   mutableStruct,
@@ -214,7 +216,24 @@ export function usePulls(state: string, repositoryId = '') {
           Effect.gen(function* () {
             const previous = pagesRef.current[source.key]
             const response = yield* readPage(source, { state: remoteState, page: 1, refresh })
-            const page = refreshPullPage(previous, response, refresh)
+            // Stage every opened page before publishing. Page boundaries move as PRs change.
+            const laterPages: PullPage[] = []
+            const changed =
+              JSON.stringify(previous?.firstPageIds) !==
+              JSON.stringify(response.pulls.map((pull) => String(pull.number)))
+            let last = response
+            if (retainNewerPullSnapshot(previous, response) === response)
+              for (let number = 2; last.hasMore && number <= (previous?.page ?? 1); number++) {
+                last = yield* readPage(source, {
+                  state: remoteState,
+                  page: number,
+                  // Later page caches may still describe the old page-one boundary.
+                  refresh: refresh || changed,
+                })
+                laterPages.push(last)
+                if (last.stale || last.refreshError) break
+              }
+            const page = refreshPullPage(previous, response, laterPages)
             update(source, page, page.refreshError)
             yield* save(source, page)
           }).pipe(
