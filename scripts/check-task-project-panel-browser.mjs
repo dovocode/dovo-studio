@@ -617,8 +617,28 @@ try {
       assert.equal(await page.locator('.studio-thread-card-context').count(), 8)
       assert.equal(
         await page.locator('.studio-thread-card-context > span.flex.text-status-success').count(),
-        4,
+        2,
       )
+      // Only unread completions keep Done and its success icon. Read rows retain
+      // their age without an equivalent green checkmark under another label.
+      for (const [project, unread] of [
+        ['Project', true],
+        ['Mobile app', false],
+        ['Runtime', true],
+        ['Draft PR', false],
+      ]) {
+        const context = page.locator('.studio-thread-card-context').filter({
+          has: page.getByText(project, { exact: true }),
+        })
+        const status = context.locator(':scope > span.flex')
+        assert.equal(await status.count(), 1)
+        assert.equal(await status.getByText('Done', { exact: true }).count(), Number(unread))
+        assert.equal(await status.locator('svg').count(), Number(unread))
+        assert.equal(
+          await status.evaluate((element) => element.classList.contains('text-status-success')),
+          unread,
+        )
+      }
       const toggle = page.getByRole('button', {
         name: 'Subthreads for Fix reconnection across Wi-Fi switches',
         exact: true,
