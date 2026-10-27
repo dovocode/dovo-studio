@@ -10,7 +10,8 @@
  * frames and tab audio in the capturing page, Stop ending the real tracks with `ended`, cancel,
  * and camera/microphone allow, remember and deny.
  *
- * Usage: node apps/desktop/scripts/check-browser-media-native.mjs [--keep]
+ * Usage: node apps/desktop/scripts/check-browser-media-native.mjs [--keep] [--youtube]
+ * The optional live YouTube check needs Linux/X11 and xdotool to select the native video menu.
  * Linux needs a display with a window manager (for example, Xvfb with Openbox) so Chromium can
  * discover shareable windows. Xvfb alone has no managed window sources. The sandbox must be available.
  */
@@ -24,6 +25,7 @@ import { fileURLToPath } from 'node:url'
 const desktop = fileURLToPath(new URL('../', import.meta.url))
 const require = createRequire(join(desktop, 'package.json'))
 const keep = process.argv.includes('--keep')
+const youtube = process.argv.includes('--youtube')
 const work = mkdtempSync(join(tmpdir(), 'dovo-browser-media-native-'))
 // Keep native image dependencies in their installed packages rather than bundling their loaders.
 symlinkSync(join(desktop, 'node_modules'), join(work, 'node_modules'), 'junction')
@@ -64,6 +66,7 @@ import { app, BrowserWindow, session, webContents, nativeImage } from 'electron'
 import { createServer } from 'node:http'
 import { WebSocketServer } from ${JSON.stringify(require.resolve('ws'))}
 import { writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { registerBrowser } from ${JSON.stringify(browserModule)}
 import { registerConnectionStorage } from ${JSON.stringify(connectionModule)}
@@ -243,6 +246,117 @@ app.whenReady().then(async () => {
       throw new Error('Capture state never reached the expected value.')
     }
 
+    if (process.env.YOUTUBE_SMOKE) {
+      stage('youtube-load')
+      const youtubeUrl = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+      await call({action:'show',key:'youtube',url:youtubeUrl,profileId:'work',workspaceBrowser:true,bounds})
+      const youtubePage = webContents.getAllWebContents().find(item => item.getURL().startsWith('https://www.youtube.com/watch'))
+      assert.ok(youtubePage, 'YouTube did not load in the browser view')
+      await wait(8000)
+      report.consent = await youtubePage.executeJavaScript('Array.from(document.querySelectorAll("ytd-consent-bump-v2-lightbox button")).map(e=>({text:e.innerText,aria:e.getAttribute("aria-label")}))')
+      const point = async (selector: string) => youtubePage.executeJavaScript('(e => {if (!e) return null; const r=e.getBoundingClientRect();return r.width>0 && r.height>0 ? {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)} : null})(document.querySelector(' + JSON.stringify(selector) + '))')
+      const click = (position: {x:number,y:number}, button: 'left' | 'right' = 'left') => {
+        youtubePage.sendInputEvent({type:'mouseMove',...position})
+        youtubePage.sendInputEvent({type:'mouseDown',...position,button,clickCount:1})
+        youtubePage.sendInputEvent({type:'mouseUp',...position,button,clickCount:1})
+      }
+      youtubePage.focus()
+      const rejectSelector = 'ytd-consent-bump-v2-lightbox button[aria-label^="Reject"]'
+      await youtubePage.executeJavaScript('document.querySelector(' + JSON.stringify(rejectSelector) + ')?.scrollIntoView({block:"center"})')
+      await wait(200)
+      const rejectCookies = await point(rejectSelector)
+      if (rejectCookies) {
+        assert.equal(await youtubePage.executeJavaScript('(()=>{const e=document.querySelector(' + JSON.stringify(rejectSelector) + '),hit=document.elementFromPoint(' + rejectCookies.x + ',' + rejectCookies.y + ');return !!e && !!hit && (hit===e || e.contains(hit))})()'),true,'The cookie choice must be visible before clicking')
+        click(rejectCookies)
+        await wait(3000)
+      }
+      const videoState = () => youtubePage.executeJavaScript('(()=>{const v=document.querySelector("video"),c=document.querySelector("ytd-consent-bump-v2-lightbox .body");return {paused:v?.paused,muted:v?.muted,time:v?.currentTime,ready:v?.readyState,mediaError:v?.error?.message,pageError:document.querySelector(".ytp-error-content-wrap")?.innerText,consentVisible:!!c && c.getBoundingClientRect().width>0 && getComputedStyle(c).visibility!=="hidden"}})()')
+      const failureScreenshot = async () => {
+        try {
+          writeFileSync(join(work, 'youtube-failure.png'), (await youtubePage.capturePage()).toPNG())
+          report.screenshot = join(work, 'youtube-failure.png')
+        } catch (error) { report.screenshotError = String(error) }
+      }
+      const beforeMute = await videoState()
+      const mute = await point('.ytp-mute-button')
+      if (mute && !(await youtubePage.executeJavaScript('document.querySelector("video")?.muted'))) click(mute)
+      await wait(1000)
+      const afterMute = await videoState()
+      const play = await point('.ytp-play-button')
+      const clickedPlay = !!play && afterMute.paused === true
+      if (clickedPlay) click(play)
+      await wait(5000)
+      const initial = await videoState()
+      const playbackOk = initial.paused === false && initial.time > afterMute.time + 1
+      report.playback = {ok:playbackOk,beforeMute,afterMute,clickedPlay,afterPlay:initial}
+      let fullscreenOk = false
+      try {
+        const videoPoint = await youtubePage.executeJavaScript('(()=>{const v=document.querySelector("video");if(!v)return null;const r=v.getBoundingClientRect();return {x:Math.floor(r.left+r.width/2),y:Math.floor(r.top+r.height/2),width:r.width,height:r.height}})()')
+        assert.ok(videoPoint && videoPoint.width > 0 && videoPoint.height > 0, 'YouTube video unavailable for control hover')
+        youtubePage.sendInputEvent({type:'mouseMove',x:videoPoint.x,y:videoPoint.y})
+        await wait(500)
+        const fullscreenButton = await youtubePage.executeJavaScript('(()=>{const e=document.querySelector(".ytp-fullscreen-button");if(!e)return null;const r=e.getBoundingClientRect(),x=Math.floor(r.left+r.width/2),y=Math.floor(r.top+r.height/2),hit=document.elementFromPoint(x,y),style=getComputedStyle(e);return {x,y,width:r.width,height:r.height,visible:style.visibility,display:style.display,hit:hit?.outerHTML.slice(0,300),target:!!hit&&(hit===e||e.contains(hit)),inViewport:x>=0&&y>=0&&x<innerWidth&&y<innerHeight}})()')
+        report.fullscreenTarget = fullscreenButton
+        assert.ok(fullscreenButton && fullscreenButton.width > 0 && fullscreenButton.height > 0 && fullscreenButton.inViewport && fullscreenButton.target && fullscreenButton.visible === 'visible' && fullscreenButton.display !== 'none', 'YouTube fullscreen control is hidden, offscreen or obstructed')
+        click({x:fullscreenButton.x,y:fullscreenButton.y})
+        await wait(1000)
+        assert.equal(await youtubePage.executeJavaScript('!!document.fullscreenElement'), true, 'YouTube fullscreen control')
+        assert.equal(studio.isFullScreen(), true)
+        youtubePage.sendInputEvent({type:'keyDown',keyCode:'Escape'})
+        youtubePage.sendInputEvent({type:'keyUp',keyCode:'Escape'})
+        await wait(1000)
+        assert.equal(await youtubePage.executeJavaScript('!!document.fullscreenElement'), false)
+        fullscreenOk = true
+        report.fullscreen = {ok:true}
+      } catch (error) {
+        report.fullscreen = {ok:false,error:String(error)}
+        await failureScreenshot()
+        youtubePage.sendInputEvent({type:'keyDown',keyCode:'Escape'})
+        youtubePage.sendInputEvent({type:'keyUp',keyCode:'Escape'})
+        await wait(500)
+      }
+      if ((!playbackOk || !fullscreenOk) && !report.screenshot) await failureScreenshot()
+      let pipOk = false
+      let backgroundOk = false
+      try {
+        const videoPoint = await point('video')
+        assert.ok(videoPoint, 'YouTube video unavailable')
+        let context: unknown
+        youtubePage.on('context-menu', (_event, params) => { context = {mediaType:params.mediaType,flags:params.mediaFlags, x:params.x,y:params.y} })
+        click(videoPoint, 'right')
+        await wait(500)
+        click(videoPoint, 'right')
+        await wait(500)
+        report.context = context ?? null
+        assert.ok(context, 'YouTube did not open the native video menu')
+        execFileSync('xdotool', ['key', 'Home', 'Return'])
+        await wait(1200)
+        pipOk = await youtubePage.executeJavaScript('!!document.pictureInPictureElement')
+        assert.equal(pipOk, true, 'The native menu opens video PiP')
+        const before = await videoState()
+        await call({action:'hide',key:'youtube'})
+        await wait(2500)
+        const after = await videoState()
+        backgroundOk = after.time > before.time + 1
+        const active = await youtubePage.executeJavaScript('!!document.pictureInPictureElement')
+        pipOk = pipOk && active
+        report.pip = {ok:pipOk,before,after,backgroundPlayback:backgroundOk,active}
+      } catch (error) {
+        report.pip = {ok:false,error:String(error)}
+        await failureScreenshot()
+      }
+      report.youtube = await youtubePage.executeJavaScript('({url:location.href,title:document.title})')
+      report.ok = playbackOk && fullscreenOk && pipOk && backgroundOk
+      if (!report.ok) {
+        report.page = await videoState()
+        if (!report.screenshot) await failureScreenshot()
+      }
+      writeFileSync(join(work, 'result.json'), JSON.stringify(report, null, 2))
+      await bridge.dispose()
+      app.exit(report.ok ? 0 : 1)
+      return
+    }
+
     stage('website-customization')
     const website = {origin:new URL(url('')).origin, enabled:true, css:'p { color: rgb(123, 45, 67); }', script:'document.querySelector("p").textContent = "Customized";'}
     const settings = (websites: object[]) => writeFileSync(process.env.DOVO_SETTINGS_PATH!, JSON.stringify({app:{browserWorkspaceEnabled:true,browserProfiles:[{id:'default',name:'Default'},{id:'work',name:'Work',websites},{id:'personal',name:'Personal'}]}}))
@@ -313,6 +427,97 @@ app.whenReady().then(async () => {
     assert.ok(level > 0.05, \`Tab audio peak was \${level}.\`)
     report.capture = { frame, level }
 
+    stage('fullscreen')
+    const fullscreenPage = page('/requester', WORK)
+    const fullscreenView = studio.contentView.children.find((child) => child.webContents === fullscreenPage)!
+    const originalBounds = fullscreenView.getBounds()
+    assert.equal(studio.isFullScreen(), false)
+    await run('/requester', 'document.body.insertAdjacentHTML("afterbegin", "<button id=full>Fullscreen</button>");document.querySelector("#full").onclick=()=>document.documentElement.requestFullscreen().catch(error=>window.fullscreenError=error.name);true', false)
+    fullscreenPage.focus()
+    fullscreenPage.sendInputEvent({type:'mouseDown',x:20,y:15,button:'left',clickCount:1})
+    fullscreenPage.sendInputEvent({type:'mouseUp',x:20,y:15,button:'left',clickCount:1})
+    await wait(500)
+    assert.equal(await run('/requester', 'window.fullscreenError || !!document.fullscreenElement', false), true, 'A real click enters HTML fullscreen')
+    assert.equal(studio.isFullScreen(), true, 'The Studio window enters fullscreen')
+    const [fullscreenWidth, fullscreenHeight] = studio.getContentSize()
+    assert.deepEqual(fullscreenView.getBounds(), { x: 0, y: 0, width: fullscreenWidth, height: fullscreenHeight }, 'The browser fills the fullscreen window')
+    const latestBounds = {x: 20, y: 60, width: 900, height: 600}
+    await call({action:'show',key:'studio:browser:requester',url:url('/requester'),profileId:'work',workspaceBrowser:true,bounds:latestBounds})
+    assert.deepEqual(fullscreenView.getBounds(), { x: 0, y: 0, width: fullscreenWidth, height: fullscreenHeight }, 'Layout updates do not shrink fullscreen')
+    fullscreenPage.sendInputEvent({type:'keyDown',keyCode:'Escape'})
+    fullscreenPage.sendInputEvent({type:'keyUp',keyCode:'Escape'})
+    await wait(500)
+    assert.equal(await run('/requester', '!!document.fullscreenElement', false), false, 'Escape exits HTML fullscreen')
+    assert.equal(studio.isFullScreen(), false, 'Escape restores the Studio window')
+    assert.deepEqual(fullscreenView.getBounds(), latestBounds, 'Escape restores the latest browser layout')
+    await show('studio:browser:requester', '/requester', 'work')
+    assert.deepEqual(fullscreenView.getBounds(), originalBounds)
+    studio.setFullScreen(true)
+    await wait(500)
+    fullscreenPage.focus()
+    fullscreenPage.sendInputEvent({type:'mouseDown',x:20,y:15,button:'left',clickCount:1})
+    fullscreenPage.sendInputEvent({type:'mouseUp',x:20,y:15,button:'left',clickCount:1})
+    await wait(500)
+    assert.equal(await run('/requester', '!!document.fullscreenElement', false), true)
+    fullscreenPage.sendInputEvent({type:'keyDown',keyCode:'Escape'})
+    fullscreenPage.sendInputEvent({type:'keyUp',keyCode:'Escape'})
+    await wait(500)
+    assert.equal(studio.isFullScreen(), true, 'Exiting website fullscreen preserves a pre-existing fullscreen window')
+    studio.setFullScreen(false)
+    await wait(500)
+    fullscreenPage.focus()
+    fullscreenPage.sendInputEvent({type:'mouseDown',x:20,y:15,button:'left',clickCount:1})
+    fullscreenPage.sendInputEvent({type:'mouseUp',x:20,y:15,button:'left',clickCount:1})
+    await wait(500)
+    assert.equal(await run('/requester', '!!document.fullscreenElement', false), true)
+    await call({action:'hide',key:'studio:browser:requester'})
+    await wait(500)
+    assert.equal(await run('/requester', '!!document.fullscreenElement', false), false, 'Hiding a tab exits its fullscreen')
+    assert.equal(studio.isFullScreen(), false)
+    await show('studio:browser:requester', '/requester', 'work')
+
+    stage('fullscreen-lifecycle')
+    const lifecycleKey = 'studio:browser:fullscreen-lifecycle'
+    await show(lifecycleKey, '/custom', 'work')
+    const lifecyclePage = page('/custom', WORK)
+    const lifecycleView = studio.contentView.children.find((child) => child.webContents === lifecyclePage)!
+    const lifecycleBounds = lifecycleView.getBounds()
+    const enterLifecycle = async () => {
+      await lifecyclePage.executeJavaScript('document.documentElement.requestFullscreen()', true)
+      await wait(500)
+      assert.equal(await lifecyclePage.executeJavaScript('!!document.fullscreenElement'), true)
+    }
+    await enterLifecycle()
+    await show('studio:browser:requester', '/requester', 'work')
+    await wait(500)
+    assert.equal(await lifecyclePage.executeJavaScript('!!document.fullscreenElement'), false, 'Switching tabs exits fullscreen')
+    assert.equal(studio.isFullScreen(), false)
+    assert.deepEqual(lifecycleView.getBounds(), lifecycleBounds, 'Switching restores the old view bounds')
+    await show(lifecycleKey, '/custom', 'work')
+    await enterLifecycle()
+    await lifecyclePage.loadURL(url('/plain?fullscreen-navigation'))
+    await wait(500)
+    assert.equal(studio.isFullScreen(), false, 'Navigating exits fullscreen')
+    assert.deepEqual(lifecycleView.getBounds(), lifecycleBounds, 'Navigating restores view bounds')
+    await enterLifecycle()
+    await call({action:'close',key:lifecycleKey})
+    await wait(500)
+    assert.equal(studio.isFullScreen(), false, 'Closing a fullscreen tab restores the window')
+    await show(lifecycleKey, '/custom', 'work')
+    const destroyedPage = page('/custom', WORK)
+    studio.setFullScreen(true)
+    await wait(500)
+    await destroyedPage.executeJavaScript('document.documentElement.requestFullscreen()', true)
+    await wait(500)
+    assert.equal(await destroyedPage.executeJavaScript('!!document.fullscreenElement'), true)
+    destroyedPage.close()
+    await wait(500)
+    assert.equal(studio.isFullScreen(), true, 'Destroying a fullscreen page preserves a previously fullscreen window')
+    studio.setFullScreen(false)
+    await wait(500)
+    await show('studio:browser:requester', '/requester', 'work')
+    report.fullscreenLifecycle = 'switch-navigation-close-destroy-preexisting-fullscreen'
+
     stage('picture-in-picture')
     const pipKey = 'studio:browser:requester'
     assert.equal(await run('/requester', 'typeof documentPictureInPicture', false), 'undefined',
@@ -340,8 +545,8 @@ app.whenReady().then(async () => {
     // Exercise PiP without an active call/capture protecting the tab on its behalf.
     const standaloneKey = 'studio:browser:native-video'
     await show(standaloneKey, '/plain', 'work')
-    const standalone = page('/plain', WORK)
-    await run('/plain', \`(async()=>{
+    const standalone = studio.contentView.children.find((child) => child.getVisible() && child.webContents?.getURL() === url('/plain'))!.webContents
+    await standalone.executeJavaScript(\`(async()=>{
       const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
       const context=canvas.getContext('2d');let hue=0;
       window.pipTimer=setInterval(()=>{context.fillStyle='hsl('+(hue+=20)+',90%,50%)';context.fillRect(0,0,160,90)},30);
@@ -349,7 +554,7 @@ app.whenReady().then(async () => {
       document.body.append(nativeVideo);await nativeVideo.play();
       window.pipFrames=0;const next=()=>{window.pipFrames++;nativeVideo.requestVideoFrameCallback(next)};next();
       await nativeVideo.requestPictureInPicture();
-    })()\`)
+    })()\`, true)
     for(let attempt=0;attempt<20;attempt++) {
       if((await call({action:'tab-activity',key:'activity'})).protectedKeys.includes(standaloneKey)) break
       await wait(50)
@@ -606,12 +811,14 @@ const args = [
   electron,
   '--disable-gpu',
   '--use-fake-device-for-media-stream',
-  '--autoplay-policy=no-user-gesture-required',
+  ...(youtube ? ['--mute-audio'] : []),
+  ...(!youtube ? ['--autoplay-policy=no-user-gesture-required'] : []),
   join(work, 'out', 'main.cjs'),
 ]
 const child = spawnSync(display ? 'xvfb-run' : args[0], display ? ['-a', ...args] : args.slice(1), {
   env: {
     ...process.env,
+    YOUTUBE_SMOKE: youtube ? '1' : '',
     SMOKE_DIR: work,
     DOVO_SETTINGS_PATH: join(work, 'settings.json'),
     VITE_DEV_SERVER_URL: '',
@@ -629,7 +836,9 @@ try {
   }
 }
 console.log(
-  result.ok ? `media smoke passed ${JSON.stringify(result.capture)}` : 'media smoke FAILED',
+  result.ok
+    ? `media smoke passed ${JSON.stringify(youtube ? result : result.capture)}`
+    : 'media smoke FAILED',
 )
 if (process.env.SMOKE_DEBUG)
   console.log(

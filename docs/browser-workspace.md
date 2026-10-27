@@ -63,7 +63,19 @@ memory-only storage, and self-closing pages release their native tab entries.
 
 Websites can use Chromium's native video Picture-in-Picture controls, including videos in embedded
 frames. Studio does not add its own PiP toolbar, whole-page floating window or persistent Teams
-banner. Focusing the original tab leaves native video PiP under the website's control.
+banner. Focusing the original tab leaves native video PiP under the website's control. The native
+video context menu also offers Picture-in-Picture for main-page videos when Chromium reports
+support. That action invokes the video PiP API: Chromium owns the floating window and its playback
+controls. On YouTube, right-click the video twice to reach this menu, then select
+Picture-in-Picture. Electron's
+[video PiP implementation](https://github.com/electron/electron/blob/v45.0.0/shell/browser/api/electron_api_web_contents.cc#L5385)
+delegates to Chrome's `PictureInPictureWindowManager`.
+
+Native video PiP does not normally request a site permission prompt. Chromium requires a user
+activation and enforces the page/iframe Permissions Policy; Studio does not bypass either. A missing
+prompt is not evidence that PiP permission was denied. Website fullscreen requests are allowed for
+owned browser tabs, expand the page to the native window bounds, and restore Studio's browser layout
+when fullscreen ends or the tab is hidden.
 
 Electron currently exposes an unsupported Document Picture-in-Picture API: its window immediately
 closes ([electron#39633](https://github.com/electron/electron/issues/39633)). Website views disable

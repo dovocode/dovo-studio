@@ -53,6 +53,8 @@ type Entry = {
   restoreFocus?: boolean
   keepAwake?: boolean
   videoPictureInPicture?: boolean
+  fullscreenBounds?: Electron.Rectangle
+  fullscreenWindowWasFullscreen?: boolean
   /** Page-initiated navigation awaiting its method-aware request check. */
   routeNavigation?: string
 }
@@ -230,6 +232,27 @@ export function registerBrowser(
     )
       entry.window.webContents.focus()
   }
+  const fitFullscreen = (entry: Entry) => {
+    if (!entry.fullscreenBounds || entry.window.isDestroyed()) return
+    const { width, height } = entry.window.contentView.getBounds()
+    entry.view.setBounds({ x: 0, y: 0, width, height })
+  }
+  const exitFullscreen = (entry: Entry, closing = false) => {
+    if (!entry.fullscreenBounds) return
+    if (closing) {
+      if (!entry.fullscreenWindowWasFullscreen && !entry.window.isDestroyed())
+        entry.window.setFullScreen(false)
+      entry.fullscreenBounds = undefined
+      entry.fullscreenWindowWasFullscreen = undefined
+      return
+    }
+    if (!entry.contents.isDestroyed())
+      void entry.contents
+        .executeJavaScript('document.fullscreenElement && document.exitFullscreen()')
+        .catch((error: unknown) => {
+          console.error('Could not exit browser fullscreen.', error)
+        })
+  }
   const closePopups = (entry: Entry) => {
     for (const popup of entry.popups) if (!popup.isDestroyed()) popup.close()
     entry.popups.clear()
@@ -285,6 +308,19 @@ export function registerBrowser(
       for (const entry of views.values())
         // Handlers can receive a different wrapper object for the same page; compare by ID.
         if (entry.workspace && entry.view.webContents.id === contents.id) return mediaTab(entry)
+    },
+    canFullscreen: (contents) =>
+      [...views.values()].some(
+        (entry) =>
+          entry.workspace &&
+          entry.contents.id === contents.id &&
+          entry.view.getVisible() &&
+          activeViews.get(entry.windowId)?.key === JSON.stringify([entry.windowId, entry.key]),
+      ),
+    prepareFullscreen: (contents) => {
+      const entry = [...views.values()].find((item) => item.contents.id === contents.id)
+      if (entry && !entry.fullscreenBounds)
+        entry.fullscreenWindowWasFullscreen = entry.window.isFullScreen()
     },
     tabs: () => [...views.values()].filter((e) => e.workspace).map(mediaTab),
   })
@@ -364,6 +400,7 @@ export function registerBrowser(
   const releaseView = (key: string) => {
     const entry = views.get(key)
     if (!entry) return
+    exitFullscreen(entry, true)
     focusStudio(entry)
     views.delete(key)
     awakeRequests.delete(key)
@@ -414,6 +451,7 @@ export function registerBrowser(
       if (owner.window === window) profileWindows.delete(profileId)
     for (const [key, current] of views) {
       if (current.windowId !== window.id) continue
+      exitFullscreen(current, true)
       views.delete(key)
       awakeRequests.delete(key)
       cdp?.remove(key)
@@ -430,6 +468,12 @@ export function registerBrowser(
   const registerWindow = (window: BrowserWindow) => {
     if (!registered.has(window)) {
       registered.add(window)
+      const resizeFullscreen = () => {
+        for (const entry of views.values()) if (entry.window === window) fitFullscreen(entry)
+      }
+      window.on('resize', resizeFullscreen)
+      window.on('enter-full-screen', resizeFullscreen)
+      window.contentView.on('bounds-changed', resizeFullscreen)
       window.once('closed', () => releaseWindow(window, false))
       // A renderer reload loses its tab IDs. Release their main-process owners too.
       window.webContents.on('did-start-navigation', (event) => {
@@ -589,6 +633,27 @@ export function registerBrowser(
       created.videoPictureInPicture = active
       view.webContents.setBackgroundThrottling(!active && !created.keepAwake)
     })
+    view.webContents.on('enter-html-full-screen', () => {
+      if (
+        !created.workspace ||
+        activeViews.get(created.windowId)?.key !==
+          JSON.stringify([created.windowId, created.key]) ||
+        !view.getVisible()
+      ) {
+        void view.webContents
+          .executeJavaScript('document.fullscreenElement && document.exitFullscreen()')
+          .catch((error: unknown) => console.error('Could not exit browser fullscreen.', error))
+        return
+      }
+      created.fullscreenBounds ??= view.getBounds()
+      fitFullscreen(created)
+    })
+    view.webContents.on('leave-html-full-screen', () => {
+      if (!created.fullscreenBounds) return
+      view.setBounds(created.fullscreenBounds)
+      created.fullscreenBounds = undefined
+      created.fullscreenWindowWasFullscreen = undefined
+    })
     view.webContents.on('did-navigate', () => {
       created.videoPictureInPicture = false
       view.webContents.setBackgroundThrottling(!created.keepAwake)
@@ -620,6 +685,7 @@ export function registerBrowser(
         .catch((error: unknown) => console.error('Could not apply website customization', error))
     })
     let faviconCandidates: string[] = []
+    let navigationRevision = 0
     const faviconLoader = createBrowserFaviconLoader(
       (url, signal) => view.webContents.session.fetch(url, { signal, credentials: 'include' }),
       (favicon) => {
@@ -634,6 +700,7 @@ export function registerBrowser(
     view.webContents.once('destroyed', () => faviconLoader.reset())
     view.webContents.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
       if (!isMainFrame || inPlace) return
+      navigationRevision++
       faviconLoader.reset()
       faviconCandidates = []
       created.favicon = undefined
@@ -658,7 +725,50 @@ export function registerBrowser(
       )
         return
       const navigation = view.webContents.navigationHistory
-      const items: Electron.MenuItemConstructorOptions[] = [
+      const items: Electron.MenuItemConstructorOptions[] = []
+      if (
+        params.mediaType === 'video' &&
+        (params.mediaFlags.canShowPictureInPicture ||
+          params.mediaFlags.isShowingPictureInPicture) &&
+        params.frame &&
+        params.frame === view.webContents.mainFrame
+      ) {
+        const frame = params.frame
+        const frameUrl = frame.url
+        const revision = navigationRevision
+        const { x, y } = params
+        items.push(
+          {
+            label: params.mediaFlags.isShowingPictureInPicture
+              ? 'Exit Picture-in-Picture'
+              : 'Picture-in-Picture',
+            click: () => {
+              if (
+                view.webContents.isDestroyed() ||
+                view.webContents.mainFrame !== frame ||
+                frame.url !== frameUrl ||
+                navigationRevision !== revision
+              )
+                return
+              const script = `(async () => {
+              const videos = Array.from(document.querySelectorAll('video')).filter((video) => {
+                const rect = video.getBoundingClientRect()
+                return rect.width > 0 && rect.height > 0 && ${x} >= rect.left && ${x} < rect.right && ${y} >= rect.top && ${y} < rect.bottom
+              })
+              if (videos.length !== 1) throw new Error('Could not identify the selected video.')
+              if (document.pictureInPictureElement === videos[0]) await document.exitPictureInPicture()
+              else await videos[0].requestPictureInPicture()
+              return true
+            })()`
+              void frame.executeJavaScript(script, true).catch((error: unknown) => {
+                console.error('Could not change picture-in-picture.', error)
+              })
+            },
+          },
+          { type: 'separator' },
+        )
+      }
+      items.push(
         { label: 'Back', enabled: navigation.canGoBack(), click: () => navigation.goBack() },
         {
           label: 'Forward',
@@ -667,7 +777,7 @@ export function registerBrowser(
         },
         { label: 'Reload', click: () => view.webContents.reload() },
         { type: 'separator' },
-      ]
+      )
       if (params.linkURL && openableUrl(params.linkURL))
         items.push(
           {
@@ -1037,6 +1147,8 @@ export function registerBrowser(
           throw new Error(
             'Stop this tab’s active media or sharing before moving it to another window.',
           )
+        if (entry?.fullscreenBounds)
+          throw new Error('Exit website fullscreen before moving this tab to another window.')
       }
       // Reject a busy or stale source before creating an otherwise empty destination.
       validateSource()
@@ -1101,6 +1213,7 @@ export function registerBrowser(
     if (command.action === 'hide') {
       if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
       if (entry?.key === command.key) {
+        exitFullscreen(entry)
         entry.restoreFocus = !!(
           command.preserveFocus &&
           (entry.restoreFocus || entry.view.webContents.isFocused())
@@ -1138,6 +1251,7 @@ export function registerBrowser(
       if (entry) entry.inactiveAt = undefined
       for (const [key, other] of views) {
         if (other.windowId !== window.id || other === entry) continue
+        exitFullscreen(other)
         other.restoreFocus = false
         other.view.setVisible(false)
         other.inactiveAt ??= Date.now()
@@ -1197,7 +1311,8 @@ export function registerBrowser(
         width: Math.min(requested.width, width - x),
         height: Math.min(requested.height, height - y),
       }
-      entry.view.setBounds(bounds)
+      if (entry.fullscreenBounds) entry.fullscreenBounds = bounds
+      else entry.view.setBounds(bounds)
       if (entry.url !== url) {
         entry.url = url
         entry.loading =

@@ -81,10 +81,13 @@ const tab = (key: string, contents: Page, profileId = 'work', windowId = 1): Med
 })
 const host = {
   tabFor: (contents: { id: number }) => tabs.find((item) => item.contents.id === contents.id),
+  canFullscreen: vi.fn<() => boolean>(() => true),
+  prepareFullscreen: vi.fn<() => void>(),
   tabs: () => tabs,
 }
 beforeEach(async () => {
   vi.clearAllMocks()
+  host.canFullscreen.mockReturnValue(true)
   root = await mkdtemp(join(tmpdir(), 'dovo-browser-media-'))
   f.userData = root
   f.frames.clear()
@@ -143,6 +146,37 @@ it('installs the capture preload and handlers once per shared-browser session', 
   // The page side may name a capture for Stop, but never reports one as ended.
   expect(preload).toContain("apply(readyState, tracks[index], []) === 'live'")
   expect(preload).not.toContain('loopback')
+})
+
+it('allows fullscreen only for owned web tabs while retaining the activation requirement', () => {
+  const { session, call, personal } = setup()
+  const answer = vi.fn<(allowed: unknown) => void>()
+  session.request?.(call, 'fullscreen', answer, {
+    isMainFrame: true,
+    requestingUrl: call.mainFrame.url,
+  })
+  expect(answer).toHaveBeenLastCalledWith(true)
+  session.request?.(call, 'fullscreen', answer, {
+    isMainFrame: false,
+    requestingUrl: 'https://embedded.example/video',
+  })
+  expect(answer).toHaveBeenLastCalledWith(true)
+  session.request?.(personal, 'fullscreen', answer, {
+    isMainFrame: true,
+    requestingUrl: personal.mainFrame.url,
+  })
+  expect(answer).toHaveBeenLastCalledWith(false)
+  session.request?.(call, 'fullscreen', answer, { isMainFrame: true, requestingUrl: 'file:///x' })
+  expect(answer).toHaveBeenLastCalledWith(false)
+  expect(session.check?.(call, 'fullscreen', 'https://embedded.example', {})).toBe(true)
+  expect(session.check?.(call, 'automatic-fullscreen', call.mainFrame.url, {})).toBe(false)
+  host.canFullscreen.mockReturnValue(false)
+  session.request?.(call, 'fullscreen', answer, {
+    isMainFrame: true,
+    requestingUrl: call.mainFrame.url,
+  })
+  expect(answer).toHaveBeenLastCalledWith(false)
+  expect(session.check?.(call, 'fullscreen', call.mainFrame.url, {})).toBe(false)
 })
 
 it('queues a display request without choosing anything, listing tabs across profiles', () => {

@@ -18,6 +18,8 @@ export type MediaTab = {
 }
 export type MediaHost = {
   tabFor(contents: Electron.WebContents): MediaTab | undefined
+  canFullscreen(contents: Electron.WebContents): boolean
+  prepareFullscreen(contents: Electron.WebContents): void
   /** All local shared-browser tabs, including other profiles and windows. */
   tabs(): MediaTab[]
   openThread?(
@@ -378,8 +380,15 @@ export function createBrowserMedia(host: MediaHost) {
       })
       session.setPermissionRequestHandler((contents, permission, callback, details) => {
         const tab = host.tabFor(contents)
-        if (!tab || tab.profileId !== profileId || !details.isMainFrame) return callback(false)
+        if (!tab || tab.profileId !== profileId) return callback(false)
         const origin = webOrigin(details.requestingUrl)
+        if (permission === 'fullscreen') {
+          const allowed =
+            !!origin && !!webOrigin(contents.mainFrame.url) && host.canFullscreen(contents)
+          if (allowed) host.prepareFullscreen(contents)
+          return callback(allowed)
+        }
+        if (!details.isMainFrame) return callback(false)
         if (!origin || webOrigin(contents.mainFrame.url) !== origin) return callback(false)
         if (permission === 'notifications') {
           const saved = browserPermissions(profileId).notification(origin)
@@ -434,6 +443,8 @@ export function createBrowserMedia(host: MediaHost) {
         const tab = host.tabFor(contents)
         const page = webOrigin(origin)
         if (!tab || tab.profileId !== profileId || !page) return false
+        if (permission === 'fullscreen')
+          return !!webOrigin(contents.mainFrame.url) && host.canFullscreen(contents)
         // Chromium checks this before getDisplayMedia reaches the display handler, which still
         // waits for the user's choice; only the tab's own page origin passes.
         if (permission === 'display-capture') return webOrigin(contents.mainFrame.url) === page

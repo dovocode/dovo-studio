@@ -52,22 +52,28 @@ const mocks = vi.hoisted(() => {
   const view = {
     webContents: contents,
     getVisible: vi.fn<() => boolean>(() => true),
+    getBounds: vi.fn<() => Electron.Rectangle>(() => ({ x: 0, y: 40, width: 900, height: 660 })),
     setVisible: vi.fn<(...args: unknown[]) => void>(),
     setBounds: vi.fn<(...args: unknown[]) => void>(),
   }
   const window = {
     id: 1,
     contentView: {
+      on: vi.fn<(...args: unknown[]) => void>(),
+      getBounds: vi.fn<() => Electron.Rectangle>(() => ({ x: 0, y: 0, width: 900, height: 700 })),
       addChildView: vi.fn<(...args: unknown[]) => void>(),
       removeChildView: vi.fn<(...args: unknown[]) => void>(),
     },
     getContentSize: () => [900, 700],
     getTitle: () => 'Studio',
     isMinimized: () => false,
+    isFullScreen: vi.fn<() => boolean>(() => false),
+    setFullScreen: vi.fn<(value: boolean) => void>(),
     restore: vi.fn<() => void>(),
     show: vi.fn<() => void>(),
     focus: vi.fn<() => void>(),
     isDestroyed: () => false,
+    on: vi.fn<(...args: unknown[]) => void>(),
     once: vi.fn<(event: string, callback: () => void) => void>(),
     webContents: {
       on: vi.fn<(event: string, callback: (...args: unknown[]) => void) => void>(),
@@ -182,6 +188,8 @@ beforeEach(() => {
   mocks.windowFor = undefined
   mocks.media.snapshot.mockReturnValue({})
   mocks.media.keepAlive.mockReturnValue(false)
+  mocks.window.isFullScreen.mockReturnValue(false)
+  mocks.window.contentView.getBounds.mockReturnValue({ x: 0, y: 0, width: 900, height: 700 })
   vi.stubEnv('VITE_DEV_SERVER_URL', '')
 })
 const frame = { url: 'file:///app/index.html' }
@@ -797,6 +805,72 @@ const workspaceShow = {
   workspaceBrowser: true,
   bounds: { x: 0, y: 0, width: 400, height: 300 },
 }
+it('fits an owned fullscreen view, restores its bounds and exits when hidden', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  listener('enter-html-full-screen')?.()
+  expect(mocks.view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 900, height: 700 })
+  mocks.window.contentView.getBounds.mockReturnValue({ x: 0, y: 0, width: 1200, height: 800 })
+  const resized = mocks.window.contentView.on.mock.calls.findLast(
+    ([name]) => name === 'bounds-changed',
+  )?.[1]
+  if (typeof resized !== 'function') throw new Error('Missing fullscreen resize listener')
+  resized()
+  expect(mocks.view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 1200, height: 800 })
+  await call(event, { ...workspaceShow, bounds: { x: 20, y: 80, width: 600, height: 500 } })
+  expect(mocks.view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 1200, height: 800 })
+  await call(event, { action: 'hide', key: 'shared' })
+  expect(mocks.contents.executeJavaScript).toHaveBeenCalledWith(
+    'document.fullscreenElement && document.exitFullscreen()',
+  )
+  listener('leave-html-full-screen')?.()
+  expect(mocks.view.setBounds).toHaveBeenLastCalledWith({ x: 20, y: 80, width: 600, height: 500 })
+})
+it('does not move a tab until its fullscreen exit completes', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  listener('enter-html-full-screen')?.()
+  const tab = {
+    id: 'shared',
+    title: 'Shared',
+    url: 'https://example.com/',
+    kind: 'web',
+    profileId: 'default',
+  }
+  await expect(call(event, { action: 'move-tab', key: 'shared', tab })).rejects.toThrow(
+    'Exit website fullscreen',
+  )
+  await call(event, { action: 'hide', key: 'shared' })
+  await expect(call(event, { action: 'move-tab', key: 'shared', tab })).rejects.toThrow(
+    'Exit website fullscreen',
+  )
+  listener('leave-html-full-screen')?.()
+  await expect(call(event, { action: 'move-tab', key: 'shared', tab })).rejects.toThrow(
+    'destination browser window is unavailable',
+  )
+})
+it('allows fullscreen only for the active visible workspace page', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  expect(mocks.media.host?.canFullscreen(mocks.contents as never)).toBe(true)
+  mocks.view.getVisible.mockReturnValueOnce(false)
+  expect(mocks.media.host?.canFullscreen(mocks.contents as never)).toBe(false)
+  await call(event, { action: 'hide', key: 'shared' })
+  expect(mocks.media.host?.canFullscreen(mocks.contents as never)).toBe(false)
+})
+it.each([false, true])(
+  'restores the owning window on fullscreen tab closure (previous fullscreen: %s)',
+  async (alreadyFullscreen) => {
+    const call = handler()
+    await call(event, workspaceShow)
+    mocks.window.isFullScreen.mockReturnValue(alreadyFullscreen)
+    mocks.media.host?.prepareFullscreen(mocks.contents as never)
+    listener('enter-html-full-screen')?.()
+    mocks.window.setFullScreen.mockClear()
+    await call(event, { action: 'close', key: 'shared' })
+    expect(mocks.window.setFullScreen.mock.calls).toEqual(alreadyFullscreen ? [] : [[false]])
+  },
+)
 it('focuses the exact existing tab without reloading it or letting thread previews consume the focus', async () => {
   const call = handler()
   await call(event, workspaceShow)
@@ -1065,16 +1139,14 @@ it('adopts bounded native new tabs with their profile, background disposition an
     ['https://example.com/download', 'other'],
   ]) {
     const result = open({ url, disposition, features: '' })
-    if (
-      [
-        'https://example.com/tab',
-        'http://192.168.1.20:3000/',
-        'https://example.com/shift',
-      ].includes(url)
-    ) {
-      expect(result.action).toBe('allow')
-      result.createWindow?.({ webPreferences: { javascript: true } })
-    } else expect(result).toEqual({ action: 'deny' })
+    const allowed = [
+      'https://example.com/tab',
+      'http://192.168.1.20:3000/',
+      'https://example.com/shift',
+    ].includes(url)
+    expect(result.action).toBe(allowed ? 'allow' : 'deny')
+    expect(allowed || Object.keys(result).length === 1).toBe(true)
+    if (allowed) result.createWindow?.({ webPreferences: { javascript: true } })
   }
   await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
     createdTabs: [
@@ -1863,6 +1935,80 @@ it('routes workspace context menus to the selected page and keeps password text 
   expect(mocks.menu).not.toHaveBeenCalled()
 })
 
+it('offers picture-in-picture only for the selected supported video and its frame', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const executeJavaScript = mocks.contents.mainFrame.executeJavaScript
+  const params = {
+    frame: mocks.contents.mainFrame,
+    x: 100,
+    y: 200,
+    mediaType: 'video',
+    mediaFlags: { canShowPictureInPicture: true, isShowingPictureInPicture: false },
+    linkURL: '',
+    selectionText: '',
+    formControlType: 'none',
+    isEditable: false,
+  }
+  listener('context-menu')?.({}, params)
+  const item = mocks.menu.mock.calls
+    .at(-1)?.[0]
+    .find((entry) => entry.label === 'Picture-in-Picture')
+  expect(item?.click).toBeDefined()
+  item?.click?.(
+    {} as import('electron').MenuItem,
+    mocks.window as unknown as import('electron').BrowserWindow,
+    {} as import('electron').KeyboardEvent,
+  )
+  expect(executeJavaScript).toHaveBeenCalledWith(
+    expect.stringContaining('requestPictureInPicture'),
+    true,
+  )
+  executeJavaScript.mockClear()
+  listener('did-start-navigation')?.({}, 'https://example.com/', false, true)
+  item?.click?.(
+    {} as import('electron').MenuItem,
+    mocks.window as unknown as import('electron').BrowserWindow,
+    {} as import('electron').KeyboardEvent,
+  )
+  expect(executeJavaScript).not.toHaveBeenCalled()
+  listener('context-menu')?.({}, { ...params, mediaType: 'image' })
+  expect(
+    mocks.menu.mock.calls.at(-1)?.[0].some((entry) => entry.label === 'Picture-in-Picture'),
+  ).toBe(false)
+  listener('context-menu')?.(
+    {},
+    {
+      ...params,
+      mediaFlags: { canShowPictureInPicture: false, isShowingPictureInPicture: false },
+    },
+  )
+  expect(
+    mocks.menu.mock.calls.at(-1)?.[0].some((entry) => entry.label === 'Picture-in-Picture'),
+  ).toBe(false)
+  listener('context-menu')?.(
+    {},
+    {
+      ...params,
+      mediaFlags: { canShowPictureInPicture: false, isShowingPictureInPicture: true },
+    },
+  )
+  expect(
+    mocks.menu.mock.calls.at(-1)?.[0].some((entry) => entry.label === 'Exit Picture-in-Picture'),
+  ).toBe(true)
+  listener('context-menu')?.(
+    {},
+    { ...params, frame: { ...mocks.contents.mainFrame, routingId: 2 } },
+  )
+  expect(
+    mocks.menu.mock.calls.at(-1)?.[0].some((entry) => entry.label === 'Picture-in-Picture'),
+  ).toBe(false)
+  listener('context-menu')?.({}, { ...params, frame: null })
+  expect(
+    mocks.menu.mock.calls.at(-1)?.[0].some((entry) => entry.label === 'Picture-in-Picture'),
+  ).toBe(false)
+})
+
 it('captures a bounded website favicon and exposes it in native status', async () => {
   const call = handler()
   await call(event, workspaceShow)
@@ -1923,6 +2069,8 @@ it.each(['window', 'page'] as const)(
       id: 2,
       once: vi.fn<typeof mocks.window.once>(),
       contentView: {
+        on: vi.fn<typeof mocks.window.contentView.on>(),
+        getBounds: mocks.window.contentView.getBounds,
         addChildView: vi.fn<typeof mocks.window.contentView.addChildView>(),
         removeChildView: vi.fn<typeof mocks.window.contentView.removeChildView>(),
       },
