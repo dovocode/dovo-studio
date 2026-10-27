@@ -3,12 +3,7 @@ import { Effect } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { decode, threadWindowTargetSchema, mutableArray, runtimeComputerName } from '@dovo/protocol'
-import type {
-  BrowserCommand,
-  BrowserMediaRequest,
-  BrowserCapture,
-  BrowserCallTab,
-} from '@dovo/protocol'
+import type { BrowserCommand, BrowserMediaRequest, BrowserCapture } from '@dovo/protocol'
 import {
   Button,
   Checkbox,
@@ -22,7 +17,6 @@ import {
 type Snapshot = {
   requests: BrowserMediaRequest[]
   captures: BrowserCapture[]
-  calls: BrowserCallTab[]
 }
 const sourceTypes = [
   { id: 'tab', label: 'Tabs' },
@@ -52,7 +46,7 @@ export function BrowserMediaControls() {
       ),
     [runtimes],
   )
-  const [snapshot, setSnapshot] = useState<Snapshot>({ requests: [], captures: [], calls: [] })
+  const [snapshot, setSnapshot] = useState<Snapshot>({ requests: [], captures: [] })
   const [pollError, setPollError] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -67,7 +61,6 @@ export function BrowserMediaControls() {
     const next = {
       requests: result?.mediaRequests ?? [],
       captures: result?.captures ?? [],
-      calls: result?.callTabs ?? [],
     }
     const nextSignature = JSON.stringify(next)
     if (signature.current !== nextSignature) {
@@ -108,50 +101,6 @@ export function BrowserMediaControls() {
   if (!browser) return null
   return (
     <>
-      {snapshot.calls.length > 0 && (
-        <aside
-          aria-label="Browser calls and Picture-in-Picture"
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-card px-4 py-2"
-        >
-          {snapshot.calls.map((call) => (
-            <div
-              key={call.key}
-              className="flex min-w-0 max-w-full flex-wrap items-center gap-2 rounded-md border px-2 py-1"
-              role="group"
-              aria-label={call.title || call.url}
-            >
-              <span className="max-w-40 truncate text-xs" title={call.url}>
-                {call.title || call.url}
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 min-w-0 gap-2 text-xs"
-                disabled={busy}
-                title={`${call.title || call.url} · ${call.profileId}`}
-                onClick={() => void act({ action: 'focus-tab', key: call.key })}
-              >
-                {call.teams
-                  ? 'Return to Teams'
-                  : call.pictureInPicture
-                    ? 'Return to tab'
-                    : 'Return to call'}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                disabled={busy}
-                onClick={() =>
-                  void act({ action: 'picture-in-picture', key: call.key, mode: 'tab' })
-                }
-              >
-                {call.pictureInPicture ? 'Float tab' : 'PiP'}
-              </Button>
-            </div>
-          ))}
-        </aside>
-      )}
       {snapshot.captures.length > 0 && (
         <aside
           aria-label="Browser tab sharing"

@@ -62,7 +62,6 @@ import {
   PinOff,
   MessageSquare,
   Paintbrush,
-  PictureInPicture2,
 } from 'lucide-react'
 import {
   useWorkspace,
@@ -227,7 +226,6 @@ function BrowserContent({
     back: false,
     forward: false,
   })
-  const [floatingTabKey, setFloatingTabKey] = useApplicationState<string | undefined>(undefined)
   const [tabs, setTabs] = useApplicationState<BrowserTab[]>(
     () =>
       saved?.tabs ?? [
@@ -782,7 +780,6 @@ function BrowserContent({
       Effect.tap((state) =>
         Effect.sync(() => {
           if (!alive || !state) return
-          setFloatingTabKey(state.pictureInPicture ? browserKey : undefined)
           if (shared) {
             if (state.faviconUpdates?.length) {
               setTabs((previous) =>
@@ -1996,59 +1993,6 @@ function BrowserContent({
           <Star size={15} fill={bookmarked ? 'currentColor' : 'none'} />
         </IconButton>
       )}
-      {shared && mode === 'web' && browser && url && (
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <IconButton
-              type="button"
-              label="Picture-in-Picture"
-              className="size-8 shrink-0"
-              disabled={busy}
-            >
-              <PictureInPicture2 size={15} />
-            </IconButton>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              align="end"
-              className="z-50 min-w-48 rounded-lg border bg-popover p-1 text-sm shadow-lg"
-            >
-              {(
-                [
-                  [
-                    floatingTabKey === browserKey ? 'return' : 'tab',
-                    floatingTabKey === browserKey ? 'Return tab to browser' : 'Float whole tab',
-                  ],
-                  ['video', 'Video Picture-in-Picture'],
-                ] as const
-              ).map(([pipMode, label]) => (
-                <DropdownMenu.Item
-                  key={pipMode}
-                  className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
-                  onSelect={() =>
-                    void act(async () => {
-                      if (pipMode !== 'return' && selectedTab.previewOf)
-                        setTabs((previous) =>
-                          previous.map((tab) =>
-                            tab.id === activeTab ? { ...tab, previewOf: undefined } : tab,
-                          ),
-                        )
-                      await browser({
-                        action: 'picture-in-picture',
-                        key: browserKey,
-                        mode: pipMode,
-                      })
-                      setFloatingTabKey(pipMode === 'tab' ? browserKey : undefined)
-                    })
-                  }
-                >
-                  {label}
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
-      )}
       {shared && mode === 'web' && !isPrivateBrowserProfile(profileId) && (
         <BrowserExtensions
           key={`${profileId}:${browserKey}`}
@@ -2587,28 +2531,6 @@ function BrowserContent({
                       }
                 }
               >
-                {browser && floatingTabKey === browserKey && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background p-6 text-center text-sm">
-                    <PictureInPicture2 size={28} className="text-muted-foreground" />
-                    <p>This page is open in Picture-in-Picture.</p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        void act(async () => {
-                          await browser({
-                            action: 'picture-in-picture',
-                            key: browserKey,
-                            mode: 'return',
-                          })
-                          setFloatingTabKey(undefined)
-                        })
-                      }
-                    >
-                      Return tab to browser
-                    </Button>
-                  </div>
-                )}
                 {browser && frozenPage?.key === browserKey && frozenPage.url === url && (
                   <img
                     aria-hidden

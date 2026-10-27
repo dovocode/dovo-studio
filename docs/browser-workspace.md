@@ -61,18 +61,18 @@ memory-only storage, and self-closing pages release their native tab entries.
 
 ## Picture-in-Picture and background pages
 
-Local desktop Browser tabs offer **Picture-in-Picture → Float whole tab** for the complete live page
-and its controls, or **Video Picture-in-Picture** for a ready video, including embedded videos. The
-whole-tab window stays above other applications and uses the original page, cookies and live call
-tracks. Close its window or choose **Return tab to browser** to return without reloading. Websites
-can also open Chromium's native Document Picture-in-Picture window through their own call controls.
-Thread previews and paired-runtime streams do not expose these desktop controls.
+Websites can use Chromium's native video Picture-in-Picture controls, including videos in embedded
+frames. Studio does not add its own PiP toolbar, whole-page floating window or persistent Teams
+banner. Focusing the original tab leaves native video PiP under the website's control.
 
-A persistent call strip keeps Teams tabs, floating pages and sharing recipients reachable while
-working in a thread. **Return to Teams** selects the original tab in its owning Studio window and
-profile. Website notification clicks likewise select the source tab; service-worker notifications
-that call `clients.focus()` follow the same path. This does not enable notifications without the
-existing per-profile permission approval.
+Electron currently exposes an unsupported Document Picture-in-Picture API: its window immediately
+closes ([electron#39633](https://github.com/electron/electron/issues/39633)). Website views disable
+that capability so sites can detect its absence and choose their video PiP or ordinary popup
+fallback. No replacement Document PiP API is injected.
+
+Website notification clicks select the original tab in its owning Studio window and profile;
+service-worker notifications that call `clients.focus()` follow the same path. This does not enable
+notifications without the existing per-profile permission approval.
 
 Right-click a local HTTP/HTTPS tab and enable **Keep awake** to keep its page running in the
 background and exclude it from inactive-page eviction and automatic settle/close rules. The setting

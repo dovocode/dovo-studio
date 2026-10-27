@@ -70,21 +70,6 @@ const PRELOAD = `const { contextBridge, ipcRenderer } = require('electron')
     args: [(active) => ipcRenderer.send('browser:video-pip', active)],
   })
 if (process.isMainFrame) {
-  // Chromium owns Document PiP windows; Electron does not emit did-create-window for them.
-  contextBridge.executeInMainWorld({
-    func: (report) => {
-      const api = globalThis.documentPictureInPicture
-      if (!api) return
-      const add = EventTarget.prototype.addEventListener
-      const apply = Reflect.apply
-      apply(add, api, ['enter', (event) => {
-        if (!event.isTrusted) return
-        report(true)
-        apply(add, event.window, ['pagehide', (hidden) => { if (hidden.isTrusted) report(false) }, { once: true }])
-      }])
-    },
-    args: [(active) => ipcRenderer.send('browser:document-pip', active)],
-  })
   // Keep the native Notification API and the website's own click handlers intact.
   contextBridge.executeInMainWorld({
     func: (clicked) => {

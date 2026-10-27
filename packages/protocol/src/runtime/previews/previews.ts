@@ -159,11 +159,6 @@ export const browserCommandSchema = Schema.Union([
     profileId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
   }),
   mutableStruct({
-    action: Schema.Literal('picture-in-picture'),
-    key: maxValue(minValue(Schema.String, 1), 500),
-    mode: Schema.Literals(['tab', 'video', 'return']),
-  }),
-  mutableStruct({
     action: Schema.Literal('browser-windows'),
     key: maxValue(minValue(Schema.String, 1), 500),
   }),
@@ -463,9 +458,8 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       mediaRequests?: BrowserMediaRequest[]
       /** Ongoing tab captures in this window; a snapshot, repeated while they run. */
       captures?: BrowserCapture[]
-      /** Teams tabs, active sharing recipients and floating pages in this Studio window. */
+      /** Teams tabs, active sharing recipients and native video PiP in this Studio window. */
       callTabs?: BrowserCallTab[]
-      pictureInPicture?: boolean
       /** Exact existing tab to select after a native focus request; consumed only by status. */
       focusedTabKey?: string
       protectedKeys?: string[]

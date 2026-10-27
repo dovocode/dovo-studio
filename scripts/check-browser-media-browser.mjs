@@ -218,7 +218,7 @@ try {
     await window.pollMedia()
   })
   await dialog.waitFor({ state: 'hidden' })
-  // Native call controls retain the exact tab key even when two profiles use the same URL.
+  // Open Teams pages must not add a persistent call/PiP banner to the workbench.
   await page.evaluate(async () => {
     window.callTabs = [
       {
@@ -240,22 +240,10 @@ try {
     ]
     await window.pollMedia()
   })
-  const calls = page.getByRole('complementary', { name: 'Browser calls and Picture-in-Picture' })
-  await calls
-    .getByRole('group', { name: 'Personal call' })
-    .getByRole('button', { name: 'Return to Teams' })
-    .click()
-  assert.deepEqual(
-    await page.evaluate(() => window.commands.findLast((c) => c.action === 'focus-tab')),
-    { action: 'focus-tab', key: 'teams-personal' },
-  )
-  await calls
-    .getByRole('group', { name: 'Work call' })
-    .getByRole('button', { name: 'PiP', exact: true })
-    .click()
-  assert.deepEqual(
-    await page.evaluate(() => window.commands.findLast((c) => c.action === 'picture-in-picture')),
-    { action: 'picture-in-picture', key: 'teams-work', mode: 'tab' },
+  assert.equal(
+    await page.getByRole('complementary', { name: 'Browser calls and Picture-in-Picture' }).count(),
+    0,
+    'Teams pages do not add a global return-to-call banner',
   )
   await page.evaluate(async () => {
     window.callTabs = []

@@ -10,11 +10,6 @@ import { app, BrowserWindow, WebContentsView, ipcMain, shell, Menu, clipboard } 
 import { trustedRendererUrl } from './renderer-trust.js'
 import { createBrowserExtensions, workspacePartition } from './browser-extensions.js'
 import { createBrowserMedia, type MediaTab } from './browser-media.js'
-import {
-  createBrowserPictureInPicture,
-  exitBrowserVideoPictureInPicture,
-  toggleBrowserVideoPictureInPicture,
-} from './browser-picture-in-picture.js'
 import { browserPermissions, forgetPrivateBrowserPermissions } from './browser-permissions.js'
 import {
   configureBrowserLanguage,
@@ -58,7 +53,6 @@ type Entry = {
   restoreFocus?: boolean
   keepAwake?: boolean
   videoPictureInPicture?: boolean
-  documentPictureInPicture?: boolean
   /** Page-initiated navigation awaiting its method-aware request check. */
   routeNavigation?: string
 }
@@ -188,18 +182,9 @@ export function registerBrowser(
   const tabCounts = new Map<number, number>()
   const views = new Map<string, Entry>()
   const routingSessions = new Set<Electron.Session>()
-  const pip = createBrowserPictureInPicture()
   const focusedTabs = new Map<number, string>()
   const awakeRequests = new Map<string, object>()
   let disposed = false
-  const closeDocumentPictureInPicture = (entry: Entry) => {
-    if (!entry.documentPictureInPicture || entry.contents.isDestroyed()) return Promise.resolve()
-    return entry.contents.mainFrame
-      .executeJavaScript('globalThis.documentPictureInPicture?.window?.close()')
-      .then(() => {
-        entry.documentPictureInPicture = false
-      })
-  }
   const focusTab = (entry: Entry) => {
     if (
       entry.window.isDestroyed() ||
@@ -207,20 +192,11 @@ export function registerBrowser(
       views.get(JSON.stringify([entry.windowId, entry.key])) !== entry
     )
       return
-    const closing = Promise.all([
-      closeDocumentPictureInPicture(entry),
-      ...(entry.videoPictureInPicture ? [exitBrowserVideoPictureInPicture(entry.contents)] : []),
-    ]).catch((cause: unknown) => {
-      entry.navigationError = `Could not close Picture-in-Picture: ${String(cause)}`
-    })
-    pip.restore(entry.contents, false)
-    entry.contents.setBackgroundThrottling(!entry.keepAwake && !entry.videoPictureInPicture)
     focusedTabs.set(entry.windowId, entry.key)
     if (entry.window.isMinimized()) entry.window.restore()
     entry.window.webContents.send('browser:focus-workspace')
     entry.window.show()
     entry.window.focus()
-    return closing
   }
   const callTabs = (windowId: number) => {
     const captures = media.snapshot(windowId).captures ?? []
@@ -231,8 +207,7 @@ export function registerBrowser(
       const teams = ['teams.microsoft.com', 'teams.cloud.microsoft', 'teams.live.com'].includes(
         host,
       )
-      const pictureInPicture =
-        pip.has(entry.contents) || !!entry.videoPictureInPicture || !!entry.documentPictureInPicture
+      const pictureInPicture = !!entry.videoPictureInPicture
       return teams || pictureInPicture || captures.some((capture) => capture.key === entry.key)
         ? [
             {
@@ -390,7 +365,6 @@ export function registerBrowser(
     const entry = views.get(key)
     if (!entry) return
     focusStudio(entry)
-    pip.restore(entry.contents, false)
     views.delete(key)
     awakeRequests.delete(key)
     if (activeViews.get(entry.windowId)?.key === key) activeViews.delete(entry.windowId)
@@ -410,10 +384,8 @@ export function registerBrowser(
         entry.inactiveAt !== undefined &&
         !isPrivateBrowserProfile(entry.profileId) &&
         !cdp?.connected(key) &&
-        !pip.has(entry.contents) &&
         !entry.keepAwake &&
         !entry.videoPictureInPicture &&
-        !entry.documentPictureInPicture &&
         !(entry.workspace && media.keepAlive(entry.view.webContents)),
     )
     inactive.sort((a, b) => a[1].inactiveAt! - b[1].inactiveAt!)
@@ -444,7 +416,6 @@ export function registerBrowser(
       if (current.windowId !== window.id) continue
       views.delete(key)
       awakeRequests.delete(key)
-      pip.restore(current.contents, false)
       cdp?.remove(key)
       if (current.workspace) {
         extensions.removeTab(current.profileId, current.contents)
@@ -537,6 +508,9 @@ export function registerBrowser(
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        // Electron exposes Document PiP but closes its window immediately (electron#39633).
+        // Let websites detect its absence and use native video PiP or their popup fallback.
+        disableBlinkFeatures: 'DocumentPictureInPictureAPI',
         partition: workspace
           ? workspacePartition(profileId)
           : `${isPrivateBrowserProfile(profileId) ? '' : 'persist:'}dovo-preview:${profileId}`,
@@ -601,55 +575,30 @@ export function registerBrowser(
       }
     })
     view.webContents.on('render-process-gone', (_event, details) => {
-      pip.restore(created.contents, false)
       if (details.reason !== 'clean-exit')
         created.navigationError = 'This page stopped unexpectedly. Reload to try again.'
     })
     view.webContents.ipc.on('browser:notification-click', (event) => {
-      if (created.workspace && event.senderFrame === view.webContents.mainFrame)
-        void focusTab(created)
+      if (created.workspace && event.senderFrame === view.webContents.mainFrame) focusTab(created)
     })
     view.webContents.ipc.on('browser:video-pip', (event, active: unknown) => {
       if (!created.workspace || !event.senderFrame || typeof active !== 'boolean') return
       created.videoPictureInPicture = active
-      view.webContents.setBackgroundThrottling(
-        !active &&
-          !created.keepAwake &&
-          !created.documentPictureInPicture &&
-          !pip.has(created.contents),
-      )
-    })
-    view.webContents.ipc.on('browser:document-pip', (event, active: unknown) => {
-      if (
-        !created.workspace ||
-        event.senderFrame !== view.webContents.mainFrame ||
-        typeof active !== 'boolean'
-      )
-        return
-      created.documentPictureInPicture = active
-      view.webContents.setBackgroundThrottling(
-        !active &&
-          !created.keepAwake &&
-          !created.videoPictureInPicture &&
-          !pip.has(created.contents),
-      )
+      view.webContents.setBackgroundThrottling(!active && !created.keepAwake)
     })
     view.webContents.on('did-navigate', () => {
       created.videoPictureInPicture = false
-      view.webContents.setBackgroundThrottling(
-        !created.keepAwake && !created.documentPictureInPicture && !pip.has(created.contents),
-      )
+      view.webContents.setBackgroundThrottling(!created.keepAwake)
     })
     // Service-worker clients.focus() and Chromium's native notification focus follow this path.
     view.webContents.on('focus', () => {
       if (
         created.workspace &&
-        !pip.has(created.contents) &&
         !view.getVisible() &&
         openableUrl(created.contents.getURL()) &&
         !windowTabs.get(created.windowId)?.created.some((tab) => tab.key === created.key)
       )
-        void focusTab(created)
+        focusTab(created)
     })
     // Websites such as Teams reject Electron-branded user agents despite a supported engine.
     // Only website views use Chromium's UA; Studio and runtime request identities are unchanged.
@@ -796,24 +745,6 @@ export function registerBrowser(
           })
         return { action: 'deny' }
       }
-      // Chromium uses `other` + about:blank for Document Picture-in-Picture, not a new tab.
-      if (details.disposition === 'other' && details.url === 'about:blank') {
-        if (created.popups.size >= MAX_POPUPS) return { action: 'deny' }
-        return {
-          action: 'allow',
-          overrideBrowserWindowOptions: {
-            alwaysOnTop: true,
-            autoHideMenuBar: true,
-            webPreferences: {
-              sandbox: true,
-              contextIsolation: true,
-              nodeIntegration: false,
-              nodeIntegrationInSubFrames: false,
-              webviewTag: false,
-            },
-          },
-        }
-      }
       if (popupRequest(details) && openableUrl(details.url)) {
         if (created.popups.size >= MAX_POPUPS) return { action: 'deny' }
         // The popup keeps the opener's session (profile) and sandbox; it never gets Node.
@@ -826,6 +757,7 @@ export function registerBrowser(
               sandbox: true,
               contextIsolation: true,
               nodeIntegration: false,
+              disableBlinkFeatures: 'DocumentPictureInPictureAPI',
               nodeIntegrationInSubFrames: false,
               webviewTag: false,
             },
@@ -1033,12 +965,7 @@ export function registerBrowser(
       if (!entry.workspace || entry.profileId !== command.profileId)
         throw new Error('The tab changed before Keep awake could be updated.')
       entry.keepAwake = command.enabled
-      entry.contents.setBackgroundThrottling(
-        !command.enabled &&
-          !entry.videoPictureInPicture &&
-          !entry.documentPictureInPicture &&
-          !pip.has(entry.contents),
-      )
+      entry.contents.setBackgroundThrottling(!command.enabled && !entry.videoPictureInPicture)
       await entry.loading
       return
     }
@@ -1066,13 +993,7 @@ export function registerBrowser(
               entry.view.webContents.isDestroyed()))
         )
           throw new Error('The browser tab changed before it could be moved.')
-        if (
-          entry &&
-          (media.keepAlive(entry.view.webContents) ||
-            pip.has(entry.contents) ||
-            entry.videoPictureInPicture ||
-            entry.documentPictureInPicture)
-        )
+        if (entry && (media.keepAlive(entry.view.webContents) || entry.videoPictureInPicture))
           throw new Error(
             'Stop this tab’s active media or sharing before moving it to another window.',
           )
@@ -1140,7 +1061,6 @@ export function registerBrowser(
     if (command.action === 'hide') {
       if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
       if (entry?.key === command.key) {
-        if (pip.has(entry.contents)) return
         entry.restoreFocus = !!(
           command.preserveFocus &&
           (entry.restoreFocus || entry.view.webContents.isFocused())
@@ -1179,7 +1099,7 @@ export function registerBrowser(
       for (const [key, other] of views) {
         if (other.windowId !== window.id || other === entry) continue
         other.restoreFocus = false
-        if (!pip.has(other.contents)) other.view.setVisible(false)
+        other.view.setVisible(false)
         other.inactiveAt ??= Date.now()
         if (other.taskId === command.taskId && !command.agentAccess) {
           other.agentAccess = false
@@ -1217,11 +1137,6 @@ export function registerBrowser(
         entry.cdp = undefined
       }
       if (activeViews.get(window.id) !== showing) return
-      // Renderer resizes and tab switches must never steal a page from its floating window.
-      if (pip.has(entry.contents)) {
-        if (entry.url === url || entry.contents.getURL() === url) return
-        pip.restore(entry.contents, false)
-      }
       const [width, height] = window.getContentSize()
       // DOM rectangles use CSS pixels; native views and popup anchors use window DIPs.
       const zoom = window.webContents.getZoomFactor()
@@ -1321,10 +1236,8 @@ export function registerBrowser(
             entry.windowId === window.id &&
             entry.workspace &&
             (media.keepAlive(entry.view.webContents) ||
-              pip.has(entry.contents) ||
               entry.keepAwake ||
-              entry.videoPictureInPicture ||
-              entry.documentPictureInPicture),
+              entry.videoPictureInPicture),
         )
         .map((entry) => entry.key)
       for (const capture of snapshot.captures ?? [])
@@ -1350,32 +1263,6 @@ export function registerBrowser(
     if (command.action === 'focus-tab') {
       if (!entry.workspace) throw new Error('Only Browser workspace tabs can be focused.')
       return focusTab(entry)
-    }
-    if (command.action === 'picture-in-picture') {
-      if (!entry.workspace)
-        throw new Error('Picture-in-Picture is available in the Browser workspace.')
-      if (command.mode === 'return') await focusTab(entry)
-      else if (command.mode === 'video') {
-        pip.restore(entry.contents, false)
-        await toggleBrowserVideoPictureInPicture(entry.contents)
-      } else {
-        await closeDocumentPictureInPicture(entry)
-        if (entry.videoPictureInPicture) await exitBrowserVideoPictureInPicture(entry.contents)
-        entry.contents.setBackgroundThrottling(false)
-        try {
-          await pip.open({
-            window: entry.window,
-            view: entry.view,
-            onReturn: () => focusTab(entry),
-          })
-        } catch (cause) {
-          entry.contents.setBackgroundThrottling(
-            !entry.keepAwake && !entry.videoPictureInPicture && !entry.documentPictureInPicture,
-          )
-          throw cause
-        }
-      }
-      return
     }
     const navigation = entry.view.webContents.navigationHistory
     if (
@@ -1469,7 +1356,6 @@ export function registerBrowser(
         title: entry.view.webContents.getTitle(),
         favicon: entry.favicon,
         cdp: entry.cdp,
-        pictureInPicture: pip.has(entry.contents),
         ...(focusedTabKey ? { focusedTabKey } : {}),
         back: navigation.canGoBack(),
         forward: navigation.canGoForward(),
@@ -1505,7 +1391,6 @@ export function registerBrowser(
       awakeRequests.clear()
       focusedTabs.clear()
       clearInterval(reap)
-      pip.dispose()
       media.reset()
       for (const [key, entry] of views) {
         cdp?.remove(key)

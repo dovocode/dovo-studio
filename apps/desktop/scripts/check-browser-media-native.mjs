@@ -314,61 +314,60 @@ app.whenReady().then(async () => {
     report.capture = { frame, level }
 
     stage('picture-in-picture')
-    const requester = page('/requester', WORK)
     const pipKey = 'studio:browser:requester'
-    await call({ action: 'picture-in-picture', key: pipKey, mode: 'tab' })
-    const floating = BrowserWindow.getAllWindows().find(window => window.getTitle() === 'Dovo Picture-in-Picture')!
-    assert.ok(floating && floating.isAlwaysOnTop(), 'Whole-tab PiP must be a native always-on-top window.')
-    assert.equal(BrowserWindow.fromWebContents(requester), floating)
-    await show('studio:browser:personal', '/plain', 'personal')
-    await call({ action: 'hide', key: pipKey })
-    assert.equal(BrowserWindow.fromWebContents(requester), floating, 'Switching away must not steal the floating call.')
-    assert.equal(await run('/requester', 'window.marker', false), marker)
-    assert.deepEqual(await run('/requester', 'window.trackStates()', false), ['live', 'live'])
-    assert.ok((await call({ action: 'tab-activity', key: 'activity' })).protectedKeys.includes(pipKey))
-    floating.close()
-    assert.equal(requester.isDestroyed(), false, 'Closing PiP must detach before destroying its window.')
-    assert.equal(BrowserWindow.fromWebContents(requester), studio)
-    const focused = await call({ action: 'status', key: pipKey, tabCount: 3 })
-    assert.equal(focused.focusedTabKey, pipKey)
-    assert.equal(await run('/requester', 'window.marker', false), marker)
-    await show(pipKey, '/requester', 'work')
-
-    const documentPip = await run('/requester', '(async()=>{window.docPip=await documentPictureInPicture.requestWindow({width:400,height:300});window.docPip.document.body.innerHTML="<button>Native call control</button>";return !!window.docPip})()')
-    assert.equal(documentPip, true, 'The website Document PiP API must open a real Chromium PiP window.')
-    assert.equal(await run('/requester', 'documentPictureInPicture.window === window.docPip && !window.docPip.closed', false), true)
-    for (let attempt=0; attempt<20; attempt++) {
-      const status = await call({ action: 'media-status', key: 'activity' })
-      if (status.callTabs.some(tab => tab.key === pipKey && tab.pictureInPicture)) break
-      await wait(50)
-    }
-    assert.ok((await call({ action: 'tab-activity', key: 'activity' })).protectedKeys.includes(pipKey))
-    await call({ action: 'focus-tab', key: pipKey })
-    assert.equal(await run('/requester', 'window.docPip.closed', false), true)
-    assert.equal(await run('/requester', 'window.marker', false), marker)
+    assert.equal(await run('/requester', 'typeof documentPictureInPicture', false), 'undefined',
+      'Do not advertise the unsupported Document PiP API: websites must choose their fallback.')
+    assert.equal(await run('/requester', 'document.pictureInPictureEnabled', false), true)
 
     await run('/requester', '(async()=>{window.pipVideo=document.createElement("video");pipVideo.muted=true;pipVideo.srcObject=new MediaStream(window.stream.getVideoTracks());document.body.append(pipVideo);await pipVideo.play()})()')
-    await call({ action: 'picture-in-picture', key: pipKey, mode: 'video' })
-    assert.equal(await run('/requester', 'document.pictureInPictureElement === window.pipVideo', false), true)
-    await call({ action: 'picture-in-picture', key: pipKey, mode: 'video' })
-    assert.equal(await run('/requester', 'document.pictureInPictureElement === null', false), true)
-    // A video's own native control must be tracked, and Return must close its PiP window.
+    // A video's own native control must be tracked and survive focusing its tab.
     await run('/requester', 'pipVideo.requestPictureInPicture()')
     for (let attempt=0; attempt<20; attempt++) {
       if ((await call({ action:'media-status',key:'activity' })).callTabs.some(tab=>tab.key===pipKey && tab.pictureInPicture)) break
       await wait(50)
     }
     await call({ action:'focus-tab',key:pipKey })
-    assert.equal(await run('/requester', 'document.pictureInPictureElement === null',false),true)
+    assert.equal(await run('/requester', 'document.pictureInPictureElement === window.pipVideo',false),true)
+    await run('/requester', 'document.exitPictureInPicture()')
     await run('/requester', 'pipVideo.pause();pipVideo.remove()', false)
     await run('/requester', '(async()=>{window.pipFrame=document.createElement("iframe");document.body.append(pipFrame);const doc=pipFrame.contentDocument;const video=doc.createElement("video");video.muted=true;video.srcObject=new MediaStream(window.stream.getVideoTracks());doc.body.append(video);await video.play()})()')
-    await call({ action:'picture-in-picture',key:pipKey,mode:'video' })
+    await run('/requester', 'pipFrame.contentDocument.querySelector("video").requestPictureInPicture()')
     assert.equal(await run('/requester','!!pipFrame.contentDocument.pictureInPictureElement',false),true,'Embedded video uses native PiP too.')
-    await call({ action:'picture-in-picture',key:pipKey,mode:'video' })
+    await run('/requester', 'pipFrame.contentDocument.exitPictureInPicture()')
     assert.equal(await run('/requester','pipFrame.contentDocument.pictureInPictureElement === null',false),true)
     await run('/requester','pipFrame.contentDocument.querySelector("video").pause();pipFrame.remove()',false)
 
-    report.pictureInPicture = 'whole-tab-native-window-document-api-video-api-and-live-call-retention'
+    // Exercise PiP without an active call/capture protecting the tab on its behalf.
+    const standaloneKey = 'studio:browser:native-video'
+    await show(standaloneKey, '/plain', 'work')
+    const standalone = page('/plain', WORK)
+    await run('/plain', \`(async()=>{
+      const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
+      const context=canvas.getContext('2d');let hue=0;
+      window.pipTimer=setInterval(()=>{context.fillStyle='hsl('+(hue+=20)+',90%,50%)';context.fillRect(0,0,160,90)},30);
+      window.nativeVideo=document.createElement('video');nativeVideo.muted=true;nativeVideo.srcObject=canvas.captureStream(30);
+      document.body.append(nativeVideo);await nativeVideo.play();
+      window.pipFrames=0;const next=()=>{window.pipFrames++;nativeVideo.requestVideoFrameCallback(next)};next();
+      await nativeVideo.requestPictureInPicture();
+    })()\`)
+    for(let attempt=0;attempt<20;attempt++) {
+      if((await call({action:'tab-activity',key:'activity'})).protectedKeys.includes(standaloneKey)) break
+      await wait(50)
+    }
+    assert.ok((await call({action:'tab-activity',key:'activity'})).protectedKeys.includes(standaloneKey))
+    const framesBefore=await standalone.executeJavaScript('pipFrames')
+    await call({action:'hide',key:standaloneKey})
+    for(let index=0;index<7;index++) await show('studio:browser:pip-idle-'+index, '/plain', 'work')
+    assert.equal(standalone.isDestroyed(),false,'Inactive page eviction must preserve native video PiP.')
+    assert.equal(standalone.getBackgroundThrottling(),false)
+    await wait(250)
+    assert.ok(await standalone.executeJavaScript('pipFrames')>framesBefore,'Native PiP video keeps producing frames in the background.')
+    assert.equal(await standalone.executeJavaScript('document.pictureInPictureElement===nativeVideo'),true)
+    await standalone.executeJavaScript('document.exitPictureInPicture()',true)
+    await call({action:'close',key:standaloneKey})
+    await show(pipKey, '/requester', 'work')
+
+    report.pictureInPicture = 'website-native-video-api-with-live-call-retention-and-document-fallback'
 
     stage('keep-awake')
     const beforeAwake = new Set(webContents.getAllWebContents().map(contents => contents.id))

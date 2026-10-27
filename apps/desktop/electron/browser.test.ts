@@ -253,6 +253,7 @@ it('isolates tabs, clamps their bounds, ignores unknown hides and retains inacti
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      disableBlinkFeatures: 'DocumentPictureInPictureAPI',
       partition: 'persist:dovo-preview:default',
     },
   })
@@ -552,6 +553,7 @@ it('replaces the native view when its profile changes, keeping separate persiste
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        disableBlinkFeatures: 'DocumentPictureInPictureAPI',
         partition: 'persist:dovo-preview:work',
       },
     },
@@ -560,6 +562,7 @@ it('replaces the native view when its profile changes, keeping separate persiste
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        disableBlinkFeatures: 'DocumentPictureInPictureAPI',
         partition: 'persist:dovo-preview:personal',
       },
     },
@@ -951,27 +954,23 @@ it('routes only page-initiated main-frame GET requests and leaves form bodies an
   await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2))
   expect(mocks.contents.loadURL).toHaveBeenLastCalledWith(target + '#call')
 })
-it('protects native Document PiP and returns it to the existing tab without reloading', async () => {
+it('protects website-native video PiP and leaves it open when focusing the original tab', async () => {
   const call = handler()
   await call(event, workspaceShow)
   const changed = mocks.contents.ipc.on.mock.calls.find(
-    ([name]) => name === 'browser:document-pip',
+    ([name]) => name === 'browser:video-pip',
   )?.[1]
-  if (typeof changed !== 'function') throw new Error('Missing native Document PiP tracking')
+  if (typeof changed !== 'function') throw new Error('Missing native video PiP tracking')
   changed({ senderFrame: mocks.contents.mainFrame }, true)
   expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
   expect(await call(event, { action: 'tab-activity', key: 'activity' })).toHaveProperty(
     'protectedKeys',
     ['shared'],
   )
-  expect(await call(event, { action: 'media-status', key: 'activity' })).toHaveProperty(
-    'callTabs',
-    [expect.objectContaining({ key: 'shared', pictureInPicture: true })],
-  )
+  mocks.contents.mainFrame.executeJavaScript.mockClear()
   await call(event, { action: 'focus-tab', key: 'shared' })
-  expect(mocks.contents.mainFrame.executeJavaScript).toHaveBeenCalledWith(
-    'globalThis.documentPictureInPicture?.window?.close()',
-  )
+  expect(mocks.contents.mainFrame.executeJavaScript).not.toHaveBeenCalled()
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
   changed({ senderFrame: mocks.contents.mainFrame }, false)
   expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
   expect(await call(event, { action: 'tab-activity', key: 'activity' })).toHaveProperty(
@@ -979,21 +978,21 @@ it('protects native Document PiP and returns it to the existing tab without relo
     [],
   )
 })
-it('lets website Document Picture-in-Picture create a sandboxed native window', async () => {
+it('does not advertise unsupported Document PiP or allow its blank popup', async () => {
   const call = handler()
   await call(event, workspaceShow)
-  expect(openHandler()({ url: 'about:blank', disposition: 'other', features: '' })).toMatchObject({
-    action: 'allow',
-    overrideBrowserWindowOptions: {
-      alwaysOnTop: true,
-      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
-    },
-  })
-  await call(event, { ...workspaceShow, workspaceBrowser: false })
+  expect(mocks.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      webPreferences: expect.objectContaining({
+        disableBlinkFeatures: 'DocumentPictureInPictureAPI',
+      }),
+    }),
+  )
   expect(openHandler()({ url: 'about:blank', disposition: 'other', features: '' })).toEqual({
     action: 'deny',
   })
 })
+
 function popupWindow() {
   const popup = {
     close: vi.fn<() => void>(),
