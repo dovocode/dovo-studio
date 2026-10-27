@@ -4,7 +4,7 @@ import { Schema } from 'effect'
 import { useCatalogVisible } from './catalog-demand'
 import { createModelLabels, type ModelLabelHarness } from './model-labels'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import {
   modelCatalogSchema,
   modelDiscoveryInput,
@@ -33,6 +33,8 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
   const visible = useCatalogVisible()
   const savedModelName = useModelLabel(connection?.address, harness)
   const [state, setState] = useApplicationState({ key: '', loading: false, error: '' })
+  const [refreshVersion, setRefreshVersion] = useApplicationState(0)
+  const requestedRefresh = useRef(0)
   const input = modelDiscoveryInput(harness)
   const model = harness.model
   const scope = modelCatalogCacheScope(activeRuntimeId, connection, snapshot, harness)
@@ -49,13 +51,15 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
     if (!active) return
     if (!visible) return
     let stopped = false
-    setState({ key, error: '', loading: connected && !cachedCatalogs.isFresh(scope) })
     if (!connected) return
+    const refresh = refreshVersion !== requestedRefresh.current
+    requestedRefresh.current = refreshVersion
+    setState({ key, error: '', loading: refresh || !cachedCatalogs.isFresh(scope) })
     void cachedCatalogs
       .load(
         scope,
-        () => request('/api/agents/models', input, modelCatalogSchema),
-        false,
+        () => request('/api/agents/models', { ...input, refresh }, modelCatalogSchema),
+        refresh,
         () => request('/api/agents/models/cached', input, cachedSchema),
       )
       .then((value) => {
@@ -70,11 +74,12 @@ export function useHarnessCatalog(harness: TaskHarness, active: boolean) {
     return () => {
       stopped = true
     }
-  }, [active, visible, connected, request, key])
+  }, [active, visible, connected, request, key, refreshVersion])
   return {
     catalog,
     modelName: catalog?.models.find((item) => item.id === model)?.name ?? savedModelName,
     error: state.key === key ? state.error : '',
     loading: active && visible && connected && (state.key !== key || state.loading),
+    refresh: () => setRefreshVersion((version) => version + 1),
   }
 }

@@ -207,6 +207,27 @@ try {
     const retry = await next({ active: true })
     await finish(retry, catalog('Recovered model'))
     await named('Recovered model')
+    const beforeRefresh = await count()
+    await page.evaluate(() => window.catalog.refresh())
+    await page.waitForFunction(
+      (before) =>
+        window.requests.filter((item) => item.path === '/api/agents/models').length === before + 1,
+      beforeRefresh,
+    )
+    const refreshed = await page.evaluate(() =>
+      window.requests.findLast((item) => item.path === '/api/agents/models'),
+    )
+    assert.equal(
+      refreshed.input.refresh,
+      true,
+      `${platform}: refresh must bypass the runtime cache`,
+    )
+    const updated = catalog('Recovered model')
+    updated.models.push({ id: 'gpt-6.1-terra', name: 'GPT-6.1 Terra' })
+    await finish(refreshed.id, updated)
+    await page.waitForFunction(() =>
+      window.catalog.catalog?.models.some((model) => model.id === 'gpt-6.1-terra'),
+    )
     const old = await next({ boot: 'boot-3' })
     const newer = await next({ boot: 'boot-4' })
     await finish(newer, catalog('Current boot model'))

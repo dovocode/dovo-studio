@@ -46,7 +46,7 @@ const repository={id:'repo',name:'Repo',path:'/repo',branch:'main'};
 const snapshot={workspace:{agents,repositories:[repository],tasks:[]},defaults:{},acpInstallations:installations};
 window.deferModels=false;window.pendingModels=[];window.modelRequests=[];window.pending=[];window.changes=[];window.mode='desktop';
 function App(){const[host,setHost]=useState('one');const[mode,setMode]=useState('desktop');const[locked,setLocked]=useState(undefined);const[value,setValue]=useState(defaultTaskHarness('codex'));window.host=setHost;window.mode=setMode;window.lock=setLocked;window.value=value;
-const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'model',name:input.provider+' model'}],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
+const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'model',name:input.provider+' model'},...(window.terraAvailable?[{id:'gpt-6.1-terra',name:'GPT-6.1 Terra'}]:[])],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
 const profile={id:host,connection:{address:'http://'+host,token:'token-'+host}};
 const change=async next=>{window.changes.push(next);setValue(next);return true};
 return mode==='desktop'?<Context.Provider value={{request,connected:true,connection:profile.connection,snapshot}}><ComposerModelPicker repositoryId="repo" value={value} agents={agents} disabled={false} lockedProvider={locked} onChange={change} onConfigure={()=>{}} onSelectAgent={async id=>{window.changes.push(id);return true}} onUseHarness={change}/></Context.Provider>:<MobileContext.Provider value={{profile,connected:true,snapshot,readRuntime:(_profile,path,input)=>request(path,input)}}><TaskLauncherControls snapshot={snapshot} repository={repository} selection={{key:'harness:codex',name:'Codex',provider:'codex',model:'',harness:value}} disabled={false} onChange={next=>window.changes.push(next)}/></MobileContext.Provider>};
@@ -136,7 +136,7 @@ try {
   const codexSignIn = page.getByRole('button', { name: 'Codex requires sign-in' })
   if (!(await codexSignIn.isDisabled())) throw new Error('Signed-out provider is selectable')
   await page.getByText('codex login', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Refresh providers' }).click()
+  await page.getByRole('button', { name: 'Refresh providers and models' }).click()
   await waitRequests(4)
   if (!(await page.evaluate(() => window.pending[3].input.refresh)))
     throw new Error('Manual refresh did not bypass cached availability')
@@ -144,19 +144,20 @@ try {
   await finish(3, ['harness:claude', 'harness:codex'])
   await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
   await absent(codexSignIn)
-  await page.getByRole('button', { name: 'Refresh providers' }).click()
+  await page.getByRole('button', { name: 'Refresh providers and models' }).click()
   await waitRequests(5)
   await page.evaluate(() => window.pending[4].reject(new Error('Refresh failed')))
   await absent(page.getByRole('button', { name: 'Codex models', exact: true }))
   await page
     .getByText('Could not check available providers: Error: Refresh failed', { exact: true })
     .waitFor()
-  const modelRequests = await page.evaluate(() => window.modelRequests.length)
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
   await waitRequests(6)
   await finish(5, ['harness:claude', 'harness:codex'])
   await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
+  await page.locator('[role=option][data-value=model]').waitFor()
+  const modelRequests = await page.evaluate(() => window.modelRequests.length)
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
   await page.getByRole('button', { name: 'Choose agent and model' }).click()
   await page.getByRole('button', { name: 'Codex models', exact: true }).waitFor()
@@ -221,6 +222,23 @@ try {
   await page.evaluate(() => window.pendingModels[0].reject(new Error('Model refresh failed')))
   await page.getByText('Error: Model refresh failed', { exact: true }).waitFor()
   await page.locator('[role=option][data-value=model]').waitFor()
+  await page.evaluate(() => {
+    window.deferModels = false
+  })
+  await page.getByRole('combobox', { name: 'Search models', exact: true }).fill('gpt-6.1-terra')
+  await page.getByRole('option', { name: 'Use custom model “gpt-6.1-terra”' }).click()
+  if (await page.evaluate(() => window.value.model !== 'gpt-6.1-terra'))
+    throw new Error('Custom Terra model ID was not preserved')
+  await page.getByRole('button', { name: 'Choose agent and model' }).click()
+  await page.evaluate(() => {
+    window.terraAvailable = true
+  })
+  await page.getByRole('button', { name: 'Refresh providers and models', exact: true }).click()
+  await waitRequests(10)
+  await finish(9, ['harness:codex', 'harness:claude'])
+  await page.getByRole('option', { name: 'GPT-6.1 Terra' }).waitFor()
+  if (!(await page.evaluate(() => window.modelRequests.at(-1).input.refresh)))
+    throw new Error('Picker refresh did not bypass the cached model list')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop/mobile provider availability, favorites, saved agents, runtime isolation, locks, cached reopening, stale model refresh and failure recovery passed.',

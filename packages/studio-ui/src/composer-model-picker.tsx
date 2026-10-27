@@ -184,10 +184,12 @@ export function ComposerModelPicker({
           }
         : changeHarnessProvider(value, activeProvider)
   const harnessAvailable = availability.available.has(harnessChoiceId(selectedHarness))
-  const { catalog, loading, error } = useHarnessCatalog(
-    selectedHarness,
-    open && mode === 'models' && harnessAvailable,
-  )
+  const {
+    catalog,
+    loading,
+    error,
+    refresh: refreshCatalog,
+  } = useHarnessCatalog(selectedHarness, open && mode === 'models' && harnessAvailable)
   const selectedCatalog = useHarnessCatalog(value, true)
   const listId = useId()
   const items: PickerItem[] = !open
@@ -545,11 +547,16 @@ export function ComposerModelPicker({
                 size="icon"
                 variant="ghost"
                 className="size-7 shrink-0"
-                aria-label="Refresh providers"
-                disabled={availability.loading}
-                onClick={availability.refresh}
+                aria-label="Refresh providers and models"
+                disabled={availability.loading || loading}
+                onClick={() => {
+                  availability.refresh()
+                  refreshCatalog()
+                }}
               >
-                <RefreshCw className={cn('size-3.5', availability.loading && 'animate-spin')} />
+                <RefreshCw
+                  className={cn('size-3.5', (availability.loading || loading) && 'animate-spin')}
+                />
               </Button>
             </div>
             <div className="relative mb-2 border-b pb-2">
