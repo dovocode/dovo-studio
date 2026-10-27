@@ -1,4 +1,5 @@
 import { startRuntime } from '../packages/runtime/dist/index.js'
+import { preparePairingFlow, startPairingControl } from './ci/mobile-pairing.mjs'
 import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir, networkInterfaces } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -44,6 +45,7 @@ const runtime = await startRuntime({
 })
 let approve
 let settingsProxy
+let pairingControl
 let terminalConnected = false
 const composerMessageAttempts = []
 const composerRetryAttempts = []
@@ -218,7 +220,7 @@ try {
       },
     })
   }
-  const code = runtime.services.pairing.createCode().code
+  pairingControl = await startPairingControl(runtime.services.pairing)
   // Approve only this isolated fixture's explicitly named test device.
   approve = setInterval(() => {
     for (const terminal of runtime.services.terminals.list()) {
@@ -273,8 +275,8 @@ try {
   // Keep nested flows beside the transformed entrypoint so their selectors agree.
   const fixtureFlows = join(directory, 'flows')
   await mkdir(fixtureFlows)
-  const nativeTabSelectors = (flow) =>
-    flow
+  const prepareFlow = (flow) =>
+    preparePairingFlow(flow)
       .replace(
         /^(\s*)id: Tab (.+)$/gm,
         (_match, indent, label) =>
@@ -285,11 +287,11 @@ try {
     if (name.endsWith('.yaml'))
       await writeFile(
         join(fixtureFlows, name),
-        nativeTabSelectors(await readFile(resolve('apps/mobile/maestro', name), 'utf8')),
+        prepareFlow(await readFile(resolve('apps/mobile/maestro', name), 'utf8')),
       )
   const runFlow = async (path) => {
     const entrypoint = join(fixtureFlows, path.split('/').at(-1))
-    await writeFile(entrypoint, nativeTabSelectors(await readFile(path, 'utf8')))
+    await writeFile(entrypoint, prepareFlow(await readFile(path, 'utf8')))
     const child = spawn(
       'maestro',
       [
@@ -299,7 +301,7 @@ try {
         '-e',
         `RUNTIME_ADDRESS=http://${fixtureHost}:${settingsProxy?.port ?? runtime.port}`,
         '-e',
-        `PAIRING_CODE=${code}`,
+        `PAIRING_CONTROL_ADDRESS=${pairingControl.address}`,
         entrypoint,
       ],
       { stdio: 'inherit' },
@@ -591,6 +593,7 @@ try {
   if (dictationOnly)
     execFileSync('xcrun', ['simctl', 'privacy', device, 'reset', 'microphone', 'com.dovo.studio'])
   clearInterval(approve)
+  await pairingControl?.close()
   await settingsProxy?.close()
   await runtime.close()
   await rm(directory, { recursive: true, force: true })
