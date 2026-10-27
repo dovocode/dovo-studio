@@ -313,6 +313,74 @@ app.whenReady().then(async () => {
     assert.ok(level > 0.05, \`Tab audio peak was \${level}.\`)
     report.capture = { frame, level }
 
+    stage('picture-in-picture')
+    const requester = page('/requester', WORK)
+    const pipKey = 'studio:browser:requester'
+    await call({ action: 'picture-in-picture', key: pipKey, mode: 'tab' })
+    const floating = BrowserWindow.getAllWindows().find(window => window.getTitle() === 'Dovo Picture-in-Picture')!
+    assert.ok(floating && floating.isAlwaysOnTop(), 'Whole-tab PiP must be a native always-on-top window.')
+    assert.equal(BrowserWindow.fromWebContents(requester), floating)
+    await show('studio:browser:personal', '/plain', 'personal')
+    await call({ action: 'hide', key: pipKey })
+    assert.equal(BrowserWindow.fromWebContents(requester), floating, 'Switching away must not steal the floating call.')
+    assert.equal(await run('/requester', 'window.marker', false), marker)
+    assert.deepEqual(await run('/requester', 'window.trackStates()', false), ['live', 'live'])
+    assert.ok((await call({ action: 'tab-activity', key: 'activity' })).protectedKeys.includes(pipKey))
+    floating.close()
+    assert.equal(requester.isDestroyed(), false, 'Closing PiP must detach before destroying its window.')
+    assert.equal(BrowserWindow.fromWebContents(requester), studio)
+    const focused = await call({ action: 'status', key: pipKey, tabCount: 3 })
+    assert.equal(focused.focusedTabKey, pipKey)
+    assert.equal(await run('/requester', 'window.marker', false), marker)
+    await show(pipKey, '/requester', 'work')
+
+    const documentPip = await run('/requester', '(async()=>{window.docPip=await documentPictureInPicture.requestWindow({width:400,height:300});window.docPip.document.body.innerHTML="<button>Native call control</button>";return !!window.docPip})()')
+    assert.equal(documentPip, true, 'The website Document PiP API must open a real Chromium PiP window.')
+    assert.equal(await run('/requester', 'documentPictureInPicture.window === window.docPip && !window.docPip.closed', false), true)
+    for (let attempt=0; attempt<20; attempt++) {
+      const status = await call({ action: 'media-status', key: 'activity' })
+      if (status.callTabs.some(tab => tab.key === pipKey && tab.pictureInPicture)) break
+      await wait(50)
+    }
+    assert.ok((await call({ action: 'tab-activity', key: 'activity' })).protectedKeys.includes(pipKey))
+    await call({ action: 'focus-tab', key: pipKey })
+    assert.equal(await run('/requester', 'window.docPip.closed', false), true)
+    assert.equal(await run('/requester', 'window.marker', false), marker)
+
+    await run('/requester', '(async()=>{window.pipVideo=document.createElement("video");pipVideo.muted=true;pipVideo.srcObject=new MediaStream(window.stream.getVideoTracks());document.body.append(pipVideo);await pipVideo.play()})()')
+    await call({ action: 'picture-in-picture', key: pipKey, mode: 'video' })
+    assert.equal(await run('/requester', 'document.pictureInPictureElement === window.pipVideo', false), true)
+    await call({ action: 'picture-in-picture', key: pipKey, mode: 'video' })
+    assert.equal(await run('/requester', 'document.pictureInPictureElement === null', false), true)
+    // A video's own native control must be tracked, and Return must close its PiP window.
+    await run('/requester', 'pipVideo.requestPictureInPicture()')
+    for (let attempt=0; attempt<20; attempt++) {
+      if ((await call({ action:'media-status',key:'activity' })).callTabs.some(tab=>tab.key===pipKey && tab.pictureInPicture)) break
+      await wait(50)
+    }
+    await call({ action:'focus-tab',key:pipKey })
+    assert.equal(await run('/requester', 'document.pictureInPictureElement === null',false),true)
+    await run('/requester', 'pipVideo.pause();pipVideo.remove()', false)
+    await run('/requester', '(async()=>{window.pipFrame=document.createElement("iframe");document.body.append(pipFrame);const doc=pipFrame.contentDocument;const video=doc.createElement("video");video.muted=true;video.srcObject=new MediaStream(window.stream.getVideoTracks());doc.body.append(video);await video.play()})()')
+    await call({ action:'picture-in-picture',key:pipKey,mode:'video' })
+    assert.equal(await run('/requester','!!pipFrame.contentDocument.pictureInPictureElement',false),true,'Embedded video uses native PiP too.')
+    await call({ action:'picture-in-picture',key:pipKey,mode:'video' })
+    assert.equal(await run('/requester','pipFrame.contentDocument.pictureInPictureElement === null',false),true)
+    await run('/requester','pipFrame.contentDocument.querySelector("video").pause();pipFrame.remove()',false)
+
+    report.pictureInPicture = 'whole-tab-native-window-document-api-video-api-and-live-call-retention'
+
+    stage('keep-awake')
+    const beforeAwake = new Set(webContents.getAllWebContents().map(contents => contents.id))
+    await call({ action: 'keep-awake', key: 'awake-tab', enabled: true, url: url('/plain'), profileId: 'work' })
+    const awake = webContents.getAllWebContents().find(contents => !beforeAwake.has(contents.id) && contents.getURL() === url('/plain'))!
+    assert.ok(awake, 'Keep awake restores the saved tab in the background.')
+    assert.equal(awake.getBackgroundThrottling(), false)
+    assert.ok((await call({ action: 'tab-activity', key: 'activity' })).protectedKeys.includes('awake-tab'))
+    await call({ action: 'keep-awake', key: 'awake-tab', enabled: false, url: url('/plain'), profileId: 'work' })
+    assert.equal(awake.getBackgroundThrottling(), true)
+    await call({ action: 'close', key: 'awake-tab' })
+
     const before = await run(
       '/requester',
       "document.getElementById('note').value = 'unsent draft'; [location.href, window.marker]",
@@ -444,6 +512,38 @@ app.whenReady().then(async () => {
       await captures((list) => list.length === 0)
       report[kind+'Capture'] = {width:frame.width,height:frame.height}
     }
+
+    stage('profile-routing')
+    const beforeRouting = new Set(webContents.getAllWebContents().map(contents=>contents.id))
+    await show('routing-source','/plain','work')
+    const routeSource=webContents.getAllWebContents().find(contents=>!beforeRouting.has(contents.id)&&contents.getURL()===url('/plain'))!
+    await routeSource.executeJavaScript('window.routeMarker="retained-source"')
+    writeFileSync(process.env.DOVO_SETTINGS_PATH!,JSON.stringify({app:{browserWorkspaceEnabled:true,browserProfiles:[{id:'default',name:'Default'},{id:'work',name:'Work'},{id:'personal',name:'Personal',linkDomains:['127.0.0.1']}]}}))
+    await routeSource.executeJavaScript(\`location.href=\${JSON.stringify(url('/custom?routed=1'))};true\`)
+    let routed
+    for(let attempt=0;attempt<40&&!routed;attempt++) {
+      routed=(await call({action:'status',key:'routing-source',tabCount:4})).createdTabs?.find(tab=>tab.profileId==='personal')
+      if(!routed) await wait(50)
+    }
+    assert.ok(routed,'A link must open in its configured profile.')
+    assert.equal(routed.openerKey,'routing-source')
+    assert.equal(routeSource.getURL(),url('/plain'))
+    assert.equal(await routeSource.executeJavaScript('window.routeMarker'),'retained-source')
+    await call({action:'show',key:routed.key,url:routed.url,profileId:'personal',workspaceBrowser:true,bounds})
+    const routedContents=webContents.getAllWebContents().find(contents=>contents.getURL()===url('/custom?routed=1'))!
+    assert.equal(routedContents.session,session.fromPartition('persist:dovo-browser-workspace:personal'))
+    assert.equal(await routedContents.executeJavaScript('window.opener===null'),true,'Different profiles must not share a script opener.')
+    const externalUrls=[url('/plain?external=1'),url('/plain?external=2')]
+    assert.deepEqual(await Promise.all(externalUrls.map(url=>bridge.openRoutedLink(studio,url))),[true,true])
+    const externalTabs=(await call({action:'status',key:'routing-source',tabCount:4})).createdTabs
+    assert.deepEqual(externalTabs.map(tab=>tab.url).sort(),externalUrls.sort(),'External-link bursts retain both tabs.')
+    assert.ok(externalTabs.every(tab=>tab.profileId==='personal' && !tab.openerKey))
+    for (const tab of externalTabs) await call({action:'close',key:tab.key})
+    await call({action:'close',key:routed.key})
+    await call({action:'close',key:'routing-source'})
+    settings([])
+    await show('studio:browser:requester','/requester','work')
+    report.profileRouting='native-navigation-preserves-opener-and-isolates-target-session'
 
     stage('endings')
     // Closing the capturing tab, or turning Browser off, really ends a capture.

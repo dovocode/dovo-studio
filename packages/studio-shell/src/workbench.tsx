@@ -1,10 +1,15 @@
-import { previewUrl } from '@dovo/protocol'
+import { previewUrl, browserLinkProfile } from '@dovo/protocol'
 import { RemoteDesktopSharing } from './remote-desktop-sharing'
 import { BrowserMediaControls } from './browser-media-controls'
 import { taskParentReference, resolveThreadRuntime, prepareRuntimeTask } from '@dovo/protocol'
 import { StudioToolsBridge } from './studio-tools-bridge'
 import { StudioPairedComputersBridge } from './studio-paired-computers-bridge'
-import { resolveLinkTargets, type LinkTarget, type LinkOrigin } from '@dovo/studio-core/links'
+import {
+  resolveLinkTargets,
+  type LinkTarget,
+  type LinkOrigin,
+  type LinkOptions,
+} from '@dovo/studio-core/links'
 import { configuredTaskHarness, decodeWorkTarget, encodeWorkTarget } from '@dovo/protocol'
 import { useLinkChooser } from './link-chooser'
 import { ApplicationStateProvider, useApplicationState } from '@dovo/studio-core/state'
@@ -202,7 +207,7 @@ function WorkbenchContent({
   taskLauncher,
   windowColors,
 }: WorkbenchProps) {
-  const { showIssues, showJira, browserWorkspaceEnabled } = useAppPreferences()
+  const { showIssues, showJira, browserWorkspaceEnabled, browserProfiles } = useAppPreferences()
   useAppearance(windowColors)
   const [update, setUpdate] = useState<DesktopUpdateState>({ status: 'idle' })
   useEffect(() => {
@@ -532,7 +537,7 @@ function WorkbenchContent({
     else window.open(url, '_blank', 'noopener,noreferrer')
   }, [])
   const {
-    openLink,
+    openLink: chooseLink,
     getLinkActions,
     cancel: cancelLink,
     dialog: linkDialog,
@@ -545,6 +550,21 @@ function WorkbenchContent({
       openExternalLink ? openExternalLink(url) : window.open(url, '_blank', 'noopener,noreferrer'),
     onError: (cause) => setSwitchError(cause instanceof Error ? cause.message : String(cause)),
   })
+  const openLink = useCallback(
+    (url: string, options?: LinkOptions) => {
+      if (
+        browser &&
+        browserWorkspaceEnabled &&
+        !options?.browser &&
+        browserLinkProfile(url, browserProfiles)
+      ) {
+        void openSharedBrowserLink(url).catch((cause) => setSwitchError(String(cause)))
+        return
+      }
+      chooseLink(url, options)
+    },
+    [browser, browserWorkspaceEnabled, browserProfiles, openSharedBrowserLink, chooseLink],
+  )
   useEffect(() => {
     cancelLink()
   }, [navigationKey, runtimeRegistry.activeId, cancelLink])

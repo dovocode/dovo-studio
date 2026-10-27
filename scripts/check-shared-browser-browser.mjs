@@ -16,7 +16,7 @@ if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},
 });</script></body></html>`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {TooltipProvider} from '@dovo/studio-ui';window.renderBrowser=()=>root.render(<TooltipProvider>{window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared/>}</TooltipProvider>);const root=createRoot(document.getElementById('app'));window.renderBrowser();`,
+    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {TooltipProvider} from '@dovo/studio-ui';window.renderBrowser=()=>root.render(<TooltipProvider>{window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink}/>}</TooltipProvider>);const root=createRoot(document.getElementById('app'));window.renderBrowser();`,
     resolveDir: root + 'packages/extension-tasks',
     loader: 'tsx',
   },
@@ -82,7 +82,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status')return {...nativePages.get(command.key),openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='picture-in-picture'){decode(browserCommandSchema,command);window.floatingTabKey=command.mode==='tab'?command.key:undefined;return;}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),pictureInPicture:window.floatingTabKey===command.key,focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -173,6 +173,100 @@ try {
         action,
       action,
     )
+  await page.getByRole('button', { name: 'Picture-in-Picture', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Float whole tab', exact: true }).click()
+  await page.getByText('This page is open in Picture-in-Picture.', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.calls.findLast((c) => c.action === 'picture-in-picture').mode),
+    'tab',
+  )
+  await page.getByRole('button', { name: 'Return tab to browser', exact: true }).click()
+  await page
+    .getByText('This page is open in Picture-in-Picture.', { exact: true })
+    .waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Picture-in-Picture', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Video Picture-in-Picture', exact: true }).click()
+  assert.equal(
+    await page.evaluate(() => window.calls.findLast((c) => c.action === 'picture-in-picture').mode),
+    'video',
+  )
+  const localRow = recent.getByRole('button', { name: /localhost:3000/ }).first()
+  await localRow.click({ button: 'right' })
+  await page.getByRole('menuitemcheckbox', { name: 'Keep awake', exact: true }).click()
+  await page.waitForFunction(() => window.calls.some((c) => c.action === 'keep-awake' && c.enabled))
+  assert.equal(
+    await page.evaluate(
+      () =>
+        JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.find(
+          (t) => t.id === JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
+        ).keepAwake,
+    ),
+    true,
+  )
+  await localRow.click({ button: 'right' })
+  assert.equal(
+    await page
+      .getByRole('menuitemcheckbox', { name: 'Keep awake', exact: true })
+      .getAttribute('aria-checked'),
+    'true',
+  )
+  await page.getByRole('menuitemcheckbox', { name: 'Keep awake', exact: true }).click()
+  await page.waitForFunction(
+    () => window.calls.findLast((c) => c.action === 'keep-awake')?.enabled === false,
+  )
+  await page.mouse.move(1190, 790)
+  await nativeAction('show')
+  await page.evaluate(async () => {
+    window.createdTabs.push({
+      key: 'notification-other-tab',
+      url: 'http://localhost:3000/notify',
+      profileId: 'local-work',
+      active: false,
+    })
+    window.focusedTabKey = 'notification-other-tab'
+    await window.pollBrowser()
+  })
+  await recent.getByRole('button', { name: /^localhost:3000\/notify Local/ }).waitFor()
+  assert.equal(
+    await recent
+      .getByRole('button', { name: /^localhost:3000\/notify Local/ })
+      .getAttribute('aria-current'),
+    'page',
+  )
+  await page.evaluate(async () => {
+    window.closedTabs.push('notification-other-tab')
+    await window.pollBrowser()
+  })
+  // External/Studio link requests choose the matching local profile before creating a page.
+  await page.evaluate(() => {
+    window.setCleanup({
+      browserProfiles: [
+        { id: 'default', name: 'Local Default' },
+        { id: 'local-work', name: 'Local Work', linkDomains: ['teams.microsoft.com'] },
+      ],
+    })
+    window.fixtureOpenLink = { id: 'routed-studio-link', url: 'https://teams.microsoft.com/call' }
+    window.renderBrowser()
+  })
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (c) =>
+        c.action === 'show' &&
+        c.url === 'https://teams.microsoft.com/call' &&
+        c.profileId === 'local-work',
+    ),
+  )
+  await page.evaluate(async () => {
+    window.closedTabs.push(
+      window.calls.findLast(
+        (c) => c.action === 'show' && c.url === 'https://teams.microsoft.com/call',
+      ).key,
+    )
+    await window.pollBrowser()
+    window.fixtureOpenLink = undefined
+    window.renderBrowser()
+  })
+  await nativeAction('show')
   // A hung capture must never keep the native view over the real Extensions menu.
   await page.evaluate(() => {
     window.holdCapture = true
@@ -182,6 +276,8 @@ try {
   await page.waitForFunction(() => typeof window.finishCapture === 'function')
   await nativeAction('hide')
   await page.keyboard.press('Escape')
+  await page.mouse.move(1190, 790)
+  await url.focus()
   await nativeAction('show')
   await page.evaluate(() => {
     window.holdCapture = false
@@ -755,7 +851,21 @@ try {
   await assertContained()
   await preview.getByRole('button', { name: 'Expand preview', exact: true }).click()
   await assertContained()
-  await preview.getByRole('button', { name: 'Float preview', exact: true }).click()
+  const beforeContract = await page.evaluate(
+    () =>
+      window.calls.filter((c) => c.action === 'show' && c.url.endsWith('/new-window')).at(-1)?.key,
+  )
+  await preview.getByRole('button', { name: 'Contract preview', exact: true }).click()
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls.filter((c) => c.action === 'show' && c.url.endsWith('/new-window')).at(-1)
+          ?.key,
+    ),
+    beforeContract,
+    'Contract preserves the live page identity',
+  )
+  await preview.getByRole('button', { name: 'Expand preview', exact: true }).waitFor()
   const move = preview.getByRole('button', { name: 'Move Link preview', exact: true })
   await move.focus()
   for (let step = 0; step < 25; step++) await move.press('Shift+ArrowLeft')
@@ -825,6 +935,41 @@ try {
   )
   await background.waitFor({ state: 'detached' })
   await recent.getByRole('button', { name: /^localhost:3000\/new-window Local/ }).click()
+  // Clicking the opener dismisses the expanded preview and keeps its original native page.
+  const openerKey = await page.evaluate(
+    () => window.calls.filter((c) => c.action === 'show').at(-1).key,
+  )
+  await page.evaluate(async () => {
+    window.createdTabs.push({
+      key: 'outside-dismiss-preview',
+      url: 'http://localhost:3000/outside-dismiss',
+      profileId: 'local-work',
+      openerKey: window.calls.filter((c) => c.action === 'show').at(-1).key,
+    })
+    await window.pollBrowser()
+  })
+  await preview.getByRole('button', { name: 'Expand preview', exact: true }).click()
+  const openerBox = await page
+    .getByRole('button', { name: 'Return to opener', exact: true })
+    .boundingBox()
+  await page.mouse.click(openerBox.x + openerBox.width / 2, openerBox.y + 4)
+  await preview.waitFor({ state: 'hidden' })
+  await page.waitForFunction(() =>
+    window.calls.some((c) => c.action === 'close' && c.key === 'outside-dismiss-preview'),
+  )
+  await page.waitForFunction(
+    (key) => window.calls.filter((c) => c.action === 'show').at(-1).key === key,
+    openerKey,
+  )
+  assert.equal(
+    await page.evaluate(
+      (key) => window.calls.some((c) => c.action === 'close' && c.key === key),
+      openerKey,
+    ),
+    false,
+    'Dismissing leaves the opener alive',
+  )
+
   // Command-click disposition still previews the original Chromium child; nested close returns
   // to its opener and promotion retains the exact key and profile.
   await page.evaluate(async () => {

@@ -57,7 +57,8 @@ Comment=Personal agent workspace
 Exec=/usr/bin/env ${executableArgument(executable)} %U
 Icon=${desktopString(installedIcon)}
 Terminal=false
-Categories=Development;
+Categories=Development;WebBrowser;
+MimeType=x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/dovo-studio;
 StartupWMClass=${id}
 ${owner}
 `

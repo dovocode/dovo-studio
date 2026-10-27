@@ -26,6 +26,9 @@ vi.mock('electron', () => ({
         setPermissionCheckHandler: () => {},
       },
     }
+    isDestroyed() {
+      return false
+    }
     show() {}
     focus() {}
     loadURL = fixture.loaded
@@ -149,4 +152,43 @@ it('shows only one fallback dialog while the app chooser is unavailable', async 
   expect(fixture.answer).toHaveBeenCalledOnce()
   finish({ response: 2 })
   await first
+})
+
+it('queues cold-start external links until Studio is ready and delivers once', async () => {
+  const { queueExternalLinks, flushExternalLinks, setLinkReceiver } = await import('./links')
+  const parent = new BrowserWindow()
+  queueExternalLinks([
+    '--flag',
+    'javascript:alert(1)',
+    'dovo-studio://open?url=javascript%3Aalert(1)',
+    'http://runtime.lan/call',
+    'dovo-studio://open?url=https%3A%2F%2Fteams.microsoft.com%2Fcall',
+  ])
+  await flushExternalLinks(parent)
+  expect(fixture.sent).not.toHaveBeenCalled()
+  setLinkReceiver(parent.webContents, true)
+  await flushExternalLinks(parent)
+  await flushExternalLinks(parent)
+  expect(fixture.sent.mock.calls).toEqual([
+    ['links:open', 'http://runtime.lan/call'],
+    ['links:open', 'https://teams.microsoft.com/call'],
+  ])
+  expect(fixture.answer).not.toHaveBeenCalled()
+})
+
+it('routes each external link independently before falling back to the chooser', async () => {
+  const { queueExternalLinks, flushExternalLinks, setLinkReceiver } = await import('./links')
+  const parent = new BrowserWindow()
+  setLinkReceiver(parent.webContents, true)
+  const route = vi.fn<(url: string) => Promise<boolean>>(async (url) =>
+    url.includes('teams.microsoft.com'),
+  )
+  queueExternalLinks([
+    'https://teams.microsoft.com/first',
+    'https://teams.microsoft.com/second',
+    'http://runtime.lan/',
+  ])
+  await flushExternalLinks(parent, route)
+  expect(route).toHaveBeenCalledTimes(3)
+  expect(fixture.sent.mock.calls).toEqual([['links:open', 'http://runtime.lan/']])
 })

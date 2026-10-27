@@ -44,6 +44,25 @@ export function browserLanguages(language = 'en-US') {
   const locale = Intl.getCanonicalLocales(language)[0] ?? 'en-US'
   return [...new Set([locale, locale.split('-')[0]!])]
 }
+/** Domain rules are canonical hosts, optionally prefixed with *. for subdomains. */
+export function normalizeBrowserLinkDomain(input: string): string | undefined {
+  const value = input.trim().toLowerCase()
+  const wildcard = value.startsWith('*.')
+  const host = wildcard ? value.slice(2) : value
+  if (!host || /[\s/?#@:*]/.test(host)) return undefined
+  try {
+    const url = new URL(`http://${host}`)
+    const domain = url.hostname.replace(/\.$/, '')
+    if (!domain || url.port || url.pathname !== '/' || domain.includes('..')) return undefined
+    return `${wildcard ? '*.' : ''}${domain}`
+  } catch {
+    return undefined
+  }
+}
+export const browserLinkDomainSchema = Schema.String.pipe(
+  Schema.check(Schema.isMaxLength(253)),
+  Schema.check(Schema.makeFilter((value) => normalizeBrowserLinkDomain(value) === value)),
+)
 export const browserProfileSchema = mutableStruct({
   id: browserProfileIdSchema,
   name: Schema.String.pipe(
@@ -52,6 +71,12 @@ export const browserProfileSchema = mutableStruct({
     Schema.check(Schema.isPattern(/\S/)),
   ),
   language: Schema.optional(browserLanguageSchema),
+  linkDomains: Schema.optional(
+    mutableArray(browserLinkDomainSchema).pipe(
+      Schema.check(Schema.isMaxLength(64)),
+      Schema.check(Schema.makeFilter((domains) => new Set(domains).size === domains.length)),
+    ),
+  ),
   websites: Schema.optional(
     mutableArray(browserWebsiteCustomizationSchema).pipe(
       Schema.check(Schema.isMaxLength(64)),
@@ -70,9 +95,39 @@ export const browserProfilesSchema = mutableArray(browserProfileSchema).pipe(
     Schema.makeFilter(
       (profiles) =>
         profiles.some((profile) => profile.id === 'default') &&
-        new Set(profiles.map((profile) => profile.id)).size === profiles.length,
+        new Set(profiles.map((profile) => profile.id)).size === profiles.length &&
+        new Set(profiles.flatMap((profile) => profile.linkDomains ?? [])).size ===
+          profiles.flatMap((profile) => profile.linkDomains ?? []).length,
     ),
   ),
 )
 export const browserProfilesResultSchema = mutableStruct({ profiles: browserProfilesSchema })
 export type BrowserProfile = Schema.Schema.Type<typeof browserProfileSchema>
+
+/** Match only a new HTTP(S) link; never move an existing private session into another profile. */
+export function browserLinkProfile(
+  url: string,
+  profiles: readonly BrowserProfile[],
+  sourceProfileId?: string,
+): string | undefined {
+  if (sourceProfileId && isPrivateBrowserProfile(sourceProfileId)) return undefined
+  let host: string
+  try {
+    const target = new URL(url)
+    if (!/^https?:$/.test(target.protocol)) return undefined
+    host = target.hostname.toLowerCase().replace(/\.$/, '')
+  } catch {
+    return undefined
+  }
+  let match: { profileId: string; specificity: number } | undefined
+  for (const profile of profiles) {
+    if (isPrivateBrowserProfile(profile.id)) continue
+    for (const domain of profile.linkDomains ?? []) {
+      const wildcard = domain.startsWith('*.')
+      if (wildcard ? !host.endsWith(domain.slice(1)) : host !== domain) continue
+      const specificity = wildcard ? domain.length - 2 : 1000 + domain.length
+      if (!match || specificity > match.specificity) match = { profileId: profile.id, specificity }
+    }
+  }
+  return match?.profileId
+}

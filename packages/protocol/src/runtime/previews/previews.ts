@@ -152,6 +152,18 @@ export type BrowserSitePermissions = {
 }
 export const browserCommandSchema = Schema.Union([
   mutableStruct({
+    action: Schema.Literal('keep-awake'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    enabled: Schema.Boolean,
+    url: maxValue(minValue(Schema.String, 1), 8192),
+    profileId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
+  }),
+  mutableStruct({
+    action: Schema.Literal('picture-in-picture'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    mode: Schema.Literals(['tab', 'video', 'return']),
+  }),
+  mutableStruct({
     action: Schema.Literal('browser-windows'),
     key: maxValue(minValue(Schema.String, 1), 500),
   }),
@@ -313,6 +325,7 @@ export const browserCommandSchema = Schema.Union([
       'media-status',
       /** Active media/sharing tab keys; never drains page-created tab events. */
       'tab-activity',
+      'focus-tab',
     ]),
     key: maxValue(minValue(Schema.String, 1), 500),
     tabCount: Schema.optional(
@@ -410,6 +423,14 @@ export type BrowserCapture = {
   unresponsive?: boolean
 }
 export type BrowserCommand = Schema.Schema.Type<typeof browserCommandSchema>
+export type BrowserCallTab = {
+  key: string
+  title: string
+  url: string
+  profileId: string
+  teams: boolean
+  pictureInPicture: boolean
+}
 export type BrowserBridge = (command: BrowserCommand) => Promise<
   | {
       url: string
@@ -442,6 +463,11 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       mediaRequests?: BrowserMediaRequest[]
       /** Ongoing tab captures in this window; a snapshot, repeated while they run. */
       captures?: BrowserCapture[]
+      /** Teams tabs, active sharing recipients and floating pages in this Studio window. */
+      callTabs?: BrowserCallTab[]
+      pictureInPicture?: boolean
+      /** Exact existing tab to select after a native focus request; consumed only by status. */
+      focusedTabKey?: string
       protectedKeys?: string[]
       back: boolean
       forward: boolean

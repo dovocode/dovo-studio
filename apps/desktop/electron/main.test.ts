@@ -89,6 +89,8 @@ vi.mock('./browser.js', () => ({
   })),
 }))
 vi.mock('./links.js', () => ({
+  queueExternalLinks: vi.fn<typeof import('./links.js').queueExternalLinks>(),
+  flushExternalLinks: vi.fn<typeof import('./links.js').flushExternalLinks>(async () => {}),
   setLinkReceiver: vi.fn<typeof import('./links.js').setLinkReceiver>(),
   offerLink: vi.fn<(...args: unknown[]) => Promise<void>>(),
   openExternalLink: vi.fn<(url: string) => Promise<void>>(),

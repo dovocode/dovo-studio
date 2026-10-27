@@ -1,4 +1,10 @@
-import { runtimeComputerName, browserLanguageSchema, decodeResult } from '@dovo/protocol'
+import {
+  runtimeComputerName,
+  browserLanguageSchema,
+  decodeResult,
+  normalizeBrowserLinkDomain,
+  browserProfilesSchema,
+} from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useState } from 'react'
 import {
@@ -18,14 +24,25 @@ function ProfileName({
   disabled,
   onSave,
   onRemove,
+  routing,
 }: {
   profile: BrowserProfile
   disabled: boolean
-  onSave: (name: string, language: string) => void
+  routing: boolean
+  onSave: (name: string, language: string, linkDomains: string[]) => void
   onRemove: () => void
 }) {
   const [name, setName] = useState(profile.name)
   const [language, setLanguage] = useState(profile.language ?? 'en-US')
+  const [domains, setDomains] = useState((profile.linkDomains ?? []).join(', '))
+  const linkDomains = domains
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map(normalizeBrowserLinkDomain)
+  const validDomains =
+    linkDomains.every((value): value is string => value !== undefined) &&
+    new Set(linkDomains).size === linkDomains.length
   const validLanguage = decodeResult(browserLanguageSchema, language).success
   return (
     <form
@@ -33,7 +50,8 @@ function ProfileName({
       className="flex flex-wrap items-center gap-2"
       onSubmit={(event) => {
         event.preventDefault()
-        if (validLanguage) onSave(name.trim(), Intl.getCanonicalLocales(language)[0]!)
+        if (validLanguage && validDomains)
+          onSave(name.trim(), Intl.getCanonicalLocales(language)[0]!, linkDomains)
       }}
     >
       <Input
@@ -56,6 +74,19 @@ function ProfileName({
           onChange={(event) => setLanguage(event.target.value)}
         />
       </label>
+      {routing && (
+        <label className="flex min-w-0 basis-full flex-col gap-1 text-xs text-muted-foreground">
+          Open links in this profile
+          <Input
+            aria-label={`Link domains for ${profile.name}`}
+            value={domains}
+            disabled={disabled}
+            placeholder="teams.microsoft.com, *.example.com"
+            aria-invalid={!validDomains}
+            onChange={(event) => setDomains(event.target.value)}
+          />
+        </label>
+      )}
       <Button
         title={`Save name for ${profile.name}`}
         size="sm"
@@ -64,7 +95,10 @@ function ProfileName({
           disabled ||
           !name.trim() ||
           !validLanguage ||
-          (name.trim() === profile.name && language === (profile.language ?? 'en-US'))
+          !validDomains ||
+          (name.trim() === profile.name &&
+            language === (profile.language ?? 'en-US') &&
+            domains === (profile.linkDomains ?? []).join(', '))
         }
       >
         Save
@@ -88,10 +122,12 @@ function Profiles({
   profiles,
   save,
   disabled = false,
+  routing = false,
 }: {
   profiles: BrowserProfile[]
   save: (profiles: BrowserProfile[]) => void | Promise<void>
   disabled?: boolean
+  routing?: boolean
 }) {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -101,7 +137,12 @@ function Profiles({
     setBusy(true)
     setError('')
     try {
-      await save(next)
+      const parsed = decodeResult(browserProfilesSchema, next)
+      if (!parsed.success)
+        throw new Error(
+          'Check the profile details. Each link domain must be valid and assigned to only one profile.',
+        )
+      await save(parsed.data)
       if (added) setName('')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -118,12 +159,15 @@ function Profiles({
       )}
       {profiles.map((profile) => (
         <ProfileName
-          key={`${profile.id}:${profile.name}:${profile.language}`}
+          key={`${profile.id}:${profile.name}:${profile.language}:${profile.linkDomains?.join()}`}
           profile={profile}
+          routing={routing}
           disabled={disabled || busy}
-          onSave={(name, language) =>
+          onSave={(name, language, linkDomains) =>
             void update(
-              profiles.map((item) => (item.id === profile.id ? { ...item, name, language } : item)),
+              profiles.map((item) =>
+                item.id === profile.id ? { ...item, name, language, linkDomains } : item,
+              ),
             )
           }
           onRemove={() => {
@@ -157,7 +201,10 @@ function Profiles({
         </Button>
       </form>
       <p className="text-xs text-muted-foreground">
-        Removing a profile from this list keeps its saved website data.
+        {routing
+          ? 'Use comma-separated domains. *.example.com matches subdomains; exact domains take priority. A domain can belong to one profile. '
+          : ''}
+        Removing a profile keeps its saved website data.
       </p>
       {busy && (
         <p role="status" className="text-xs text-muted-foreground">
@@ -249,7 +296,7 @@ export default function BrowserSettings() {
       </SettingsGroup>
       <SettingsGroup
         title="Tab cleanup"
-        description="Timers are saved on this device. 0 turns a timer off. The current tab, pinned tabs and active media are protected. Checks run when Browser is open."
+        description="Timers are saved on this device. 0 turns a timer off. The current tab, pinned tabs, Keep awake pages and active media are protected. Checks run when Browser is open."
       >
         {(
           [
@@ -278,11 +325,12 @@ export default function BrowserSettings() {
       {browser && (
         <SettingsGroup
           title="Local browser profiles"
-          description="Used by regular tabs on this desktop. Saved automatically on this device."
+          description="Used by regular tabs on this desktop. Domain rules also handle links sent from other apps when Dovo is chosen as their browser. Rules preserve private tabs and sign-in popup sessions."
         >
           <div className="space-y-3 p-4">
             <Profiles
               profiles={preferences.browserProfiles}
+              routing
               save={(browserProfiles) => updateAppPreferences({ browserProfiles })}
             />
           </div>

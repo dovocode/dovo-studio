@@ -60,7 +60,54 @@ const MAX_PENDING_PER_WINDOW = 6
  * dispatches `ended`, like Chromium's own "Stop sharing" button, so call apps update their UI.
  */
 const PRELOAD = `const { contextBridge, ipcRenderer } = require('electron')
+  contextBridge.executeInMainWorld({
+    func: (report) => {
+      const add = EventTarget.prototype.addEventListener
+      const apply = Reflect.apply
+      for (const [name, active] of [['enterpictureinpicture', true], ['leavepictureinpicture', false]])
+        apply(add, document, [name, (event) => { if (event.isTrusted) report(active) }, true])
+    },
+    args: [(active) => ipcRenderer.send('browser:video-pip', active)],
+  })
 if (process.isMainFrame) {
+  // Chromium owns Document PiP windows; Electron does not emit did-create-window for them.
+  contextBridge.executeInMainWorld({
+    func: (report) => {
+      const api = globalThis.documentPictureInPicture
+      if (!api) return
+      const add = EventTarget.prototype.addEventListener
+      const apply = Reflect.apply
+      apply(add, api, ['enter', (event) => {
+        if (!event.isTrusted) return
+        report(true)
+        apply(add, event.window, ['pagehide', (hidden) => { if (hidden.isTrusted) report(false) }, { once: true }])
+      }])
+    },
+    args: [(active) => ipcRenderer.send('browser:document-pip', active)],
+  })
+  // Keep the native Notification API and the website's own click handlers intact.
+  contextBridge.executeInMainWorld({
+    func: (clicked) => {
+      const NativeNotification = globalThis.Notification
+      if (typeof NativeNotification !== 'function') return
+      const construct = Reflect.construct
+      const apply = Reflect.apply
+      const add = EventTarget.prototype.addEventListener
+      Object.defineProperty(globalThis, 'Notification', {
+        configurable: true, writable: true,
+        value: new Proxy(NativeNotification, {
+          construct(target, args, newTarget) {
+            const notification = construct(target, args, newTarget)
+            apply(add, notification, ['click', (event) => {
+              if (event.isTrusted) clicked()
+            }])
+            return notification
+          },
+        }),
+      })
+    },
+    args: [() => ipcRenderer.send('browser:notification-click')],
+  })
   const controller = contextBridge.executeInMainWorld({
     func: (report) => {
       // Capture every builtin now, before page scripts can replace them, and avoid iterators,

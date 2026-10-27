@@ -53,6 +53,7 @@ export function FloatingPreview({
   children,
   inlineClassName = 'h-96',
   returnLabel = 'Return to thread',
+  expandedReturnPlacement = 'inline',
   hideInlineHeader = false,
   startCentered = false,
   contained = false,
@@ -65,6 +66,7 @@ export function FloatingPreview({
   children: ReactNode
   inlineClassName?: string
   returnLabel?: string
+  expandedReturnPlacement?: 'inline' | 'floating'
   hideInlineHeader?: boolean
   startCentered?: boolean
   contained?: boolean
@@ -192,9 +194,17 @@ export function FloatingPreview({
           {floating ? <PanelRight size={14} /> : <PictureInPicture2 size={14} />}
         </IconButton>
         <IconButton
-          label={placement === 'expanded' ? returnLabel : 'Expand preview'}
+          label={
+            placement === 'expanded'
+              ? expandedReturnPlacement === 'floating'
+                ? 'Contract preview'
+                : returnLabel
+              : 'Expand preview'
+          }
           className="size-7 shrink-0"
-          onClick={() => onPlacementChange(placement === 'expanded' ? 'inline' : 'expanded')}
+          onClick={() =>
+            onPlacementChange(placement === 'expanded' ? expandedReturnPlacement : 'expanded')
+          }
         >
           {placement === 'expanded' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </IconButton>

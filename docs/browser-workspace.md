@@ -59,6 +59,53 @@ outstanding JavaScript dialog; disconnecting clears the viewer's old dialog. Age
 not expire a session while a human viewer is attached. Private desktop preview profiles use
 memory-only storage, and self-closing pages release their native tab entries.
 
+## Picture-in-Picture and background pages
+
+Local desktop Browser tabs offer **Picture-in-Picture → Float whole tab** for the complete live page
+and its controls, or **Video Picture-in-Picture** for a ready video, including embedded videos. The
+whole-tab window stays above other applications and uses the original page, cookies and live call
+tracks. Close its window or choose **Return tab to browser** to return without reloading. Websites
+can also open Chromium's native Document Picture-in-Picture window through their own call controls.
+Thread previews and paired-runtime streams do not expose these desktop controls.
+
+A persistent call strip keeps Teams tabs, floating pages and sharing recipients reachable while
+working in a thread. **Return to Teams** selects the original tab in its owning Studio window and
+profile. Website notification clicks likewise select the source tab; service-worker notifications
+that call `clients.focus()` follow the same path. This does not enable notifications without the
+existing per-profile permission approval.
+
+Right-click a local HTTP/HTTPS tab and enable **Keep awake** to keep its page running in the
+background and exclude it from inactive-page eviction and automatic settle/close rules. The setting
+persists with the tab and restores background pages when that Browser workspace is opened. Closing
+the tab still closes the page. PiP and active call media are protected independently of this
+setting. Keep awake does not keep the computer powered on after Studio exits or the operating system
+sleeps.
+
+Links opened as temporary previews retain the original opener beneath them. **Expand preview** and
+**Contract preview** change the same live preview's size. Clicking the visible opener dismisses the
+preview chain and returns to that retained page; **Close preview** returns to the immediate opener.
+**Keep as tab** retains the preview as a normal tab without creating another session.
+
+## Link routing
+
+In **Settings → Browser → Local browser profiles**, set **Open links in this profile** to a
+comma-separated list such as `teams.microsoft.com, *.work.example.com`. Exact domains match that
+host; `*.example.com` matches its subdomains. Exact matches take priority, followed by the most
+specific wildcard. Each rule can belong to only one profile. Rules select a profile on this desktop,
+never a different computer. Private tabs ignore routing rules.
+
+Matching Studio links open directly in the configured profile. Ordinary page links that need a
+different profile open a new preview in that session, retaining the source page. Existing tabs,
+redirects, form POSTs and feature-bearing sign-in popups keep their own session. Bookmarks and
+history retain their saved profile when opened explicitly.
+
+Installed desktop builds advertise web-link support to macOS, Windows and Linux. Choose Dovo Studio
+as the browser in your operating system's default-app settings, or send an explicit
+`dovo-studio://open?url=<percent-encoded HTTP or HTTPS URL>` link from another app. Dovo does not
+change your default browser automatically. Cold-start and second-instance links wait for the main
+Studio window to become ready. Matching rules select the configured profile; unmatched links use
+Studio's existing link chooser. Experimental Browser must be enabled to use its local profiles.
+
 ## Desktop extensions
 
 In a local desktop Browser tab, open **Extensions → Manage extensions** and load an unpacked

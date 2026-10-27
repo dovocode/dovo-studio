@@ -45,6 +45,7 @@ export function windowsReleaseConfig(root, variant) {
   return {
     win: { icon: join(root, 'apps/desktop/build/icon.png') },
     nsis: {
+      include: join(root, 'apps/desktop/build/browser-associations.nsh'),
       oneClick: false,
       allowToChangeInstallationDirectory: true,
       artifactName: `${variant.artifactPrefix}-\${version}-windows-\${arch}.\${ext}`,

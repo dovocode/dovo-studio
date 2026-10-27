@@ -21,7 +21,14 @@ import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { registerUpdates } from './updates.js'
 import { registerRemoteUpdates } from './remote-updates.js'
 import { registerBrowser } from './browser.js'
-import { setLinkReceiver, offerLink, openExternalLink, openBrowserLink } from './links.js'
+import {
+  setLinkReceiver,
+  offerLink,
+  openExternalLink,
+  openBrowserLink,
+  queueExternalLinks,
+  flushExternalLinks,
+} from './links.js'
 import {
   startLocalRuntime,
   stopLocalRuntime,
@@ -182,6 +189,21 @@ app.once('will-quit', () => runtimeSync.dispose())
 const threadWindows = registerThreadWindows(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => threadWindows.dispose())
 let mainWindow: BrowserWindow | undefined
+queueExternalLinks(process.argv.slice(1))
+const deliverExternalLinks = () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  const window = mainWindow
+  void flushExternalLinks(window, (url) => browserBridge.openRoutedLink(window, url)).catch(
+    (error: unknown) => console.error('Could not open the external browser link.', error),
+  )
+}
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  queueExternalLinks([url])
+  if (app.isReady() && (!mainWindow || mainWindow.isDestroyed())) createWindow()
+  deliverExternalLinks()
+})
 /** The renderer reports its resolved palette; Windows and Linux paint the caption buttons
  * natively, so they would otherwise stay dark on a light theme. The last palette is kept for
  * the next launch, before any renderer has painted. */
@@ -295,16 +317,19 @@ function createWindow(): void {
   }
 }
 
-app.on('second-instance', () => {
-  const window = BrowserWindow.getAllWindows()[0]
-  if (window?.isMinimized()) window.restore()
-  window?.focus()
+app.on('second-instance', (_event, args) => {
+  queueExternalLinks(args.slice(1))
+  if (app.isReady() && (!mainWindow || mainWindow.isDestroyed())) createWindow()
+  if (mainWindow?.isMinimized()) mainWindow.restore()
+  mainWindow?.focus()
+  deliverExternalLinks()
 })
 
 ipcMain.handle('links:ready', (event, ready: unknown) => {
   requireTrustedRenderer(event, rendererPath)
   if (typeof ready !== 'boolean') throw new Error('Expected link receiver readiness')
   setLinkReceiver(event.sender, ready)
+  if (ready && mainWindow?.webContents === event.sender) deliverExternalLinks()
 })
 ipcMain.handle('links:browser', async (event, url: unknown) => {
   requireTrustedRenderer(event, rendererPath)

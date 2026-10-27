@@ -1,6 +1,7 @@
 import { app, type Session } from 'electron'
 import {
   browserLanguages,
+  browserLinkProfile,
   browserProfilesSchema,
   browserWebsiteCustomizationScript,
   decodeResult,
@@ -11,7 +12,16 @@ import { join } from 'node:path'
 import { Schema } from 'effect'
 
 const configured = new WeakMap<Session, string>()
-const preferences = Schema.Struct({ browserProfiles: browserProfilesSchema })
+const preferences = Schema.Struct({
+  browserProfiles: browserProfilesSchema,
+  browserWorkspaceEnabled: Schema.optional(Schema.Boolean),
+})
+export function websiteLinkProfile(sourceProfileId: string, url: string) {
+  const result = decodeResult(preferences, readLocalSettingsSection('app'))
+  return result.success && result.data.browserWorkspaceEnabled === true
+    ? browserLinkProfile(url, result.data.browserProfiles, sourceProfileId)
+    : undefined
+}
 export function websiteCustomization(profileId: string, url: string) {
   const result = decodeResult(preferences, readLocalSettingsSection('app'))
   const origin = new URL(url).origin

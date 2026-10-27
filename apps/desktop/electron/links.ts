@@ -96,3 +96,43 @@ export async function openBrowserLink(parent: BrowserWindow, raw: string) {
   browser.webContents.session.setPermissionCheckHandler(() => false)
   await browser.loadURL(url)
 }
+
+const externalLinks: string[] = []
+const delivering = new WeakSet<BrowserWindow>()
+/** Accept OS launches and the explicit dovo-studio://open?url=... handoff. */
+export function queueExternalLinks(inputs: readonly string[]) {
+  for (const input of inputs) {
+    if (externalLinks.length >= 20 || input.length > 8192) continue
+    try {
+      const link = new URL(input)
+      const raw =
+        link.protocol === 'dovo-studio:' && link.hostname === 'open'
+          ? link.searchParams.get('url')
+          : /^https?:$/.test(link.protocol)
+            ? input
+            : undefined
+      if (raw) externalLinks.push(previewUrl(raw))
+    } catch {
+      /* Arguments other than supported links are not URLs to open. */
+    }
+  }
+}
+/** Cold-start links wait for the trusted renderer, including across renderer reloads. */
+export async function flushExternalLinks(
+  parent: BrowserWindow,
+  route?: (url: string) => Promise<boolean>,
+) {
+  if (delivering.has(parent)) return
+  delivering.add(parent)
+  try {
+    while (externalLinks.length && !parent.isDestroyed() && receivers.has(parent.webContents)) {
+      const url = externalLinks[0]!
+      const routed = await route?.(url)
+      if (parent.isDestroyed()) break
+      if (!routed) await offerLink(parent, url)
+      externalLinks.shift()
+    }
+  } finally {
+    delivering.delete(parent)
+  }
+}

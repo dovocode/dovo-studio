@@ -13,7 +13,7 @@ const built = await bundleBrowser(
     import {createRoot} from 'react-dom/client';
     import {BrowserMediaControls} from '${root}packages/studio-shell/src/browser-media-controls';
     import {decode,browserCommandSchema} from '@dovo/protocol';
-    window.runtimes=[];window.commands=[];window.requests=[];window.captures=[];window.failure='';
+    window.runtimes=[];window.commands=[];window.requests=[];window.captures=[];window.callTabs=[];window.failure='';
     window.bridge=async command=>{
       decode(browserCommandSchema,command);window.commands.push(command);
       if(window.failure===command.action)throw Error('Fixture request failed');
@@ -23,7 +23,7 @@ const built = await bundleBrowser(
         window.requests=window.requests.filter(r=>r.id!==command.requestId);
       }
       if(command.action==='stop-capture')window.captures=window.captures.map(c=>c.id===command.captureId?{...c,state:'stopping'}:c);
-      return {url:'',back:false,forward:false,mediaRequests:structuredClone(window.requests),captures:structuredClone(window.captures)};
+      return {url:'',back:false,forward:false,mediaRequests:structuredClone(window.requests),captures:structuredClone(window.captures),callTabs:structuredClone(window.callTabs)};
     };
     window.requestCapture=async(kind='display')=>{
       window.requests=[{id:crypto.randomUUID(),kind,key:'call-tab',profileId:'work',origin:'https://meet.example',video:kind==='display',audio:true,expiresAt:Date.now()+60000,sources:kind==='display'?[{key:'source-tab',title:'Development page',url:'http://localhost:3000',requester:false}]:undefined}];await window.pollMedia();
@@ -218,6 +218,102 @@ try {
     await window.pollMedia()
   })
   await dialog.waitFor({ state: 'hidden' })
+  // Native call controls retain the exact tab key even when two profiles use the same URL.
+  await page.evaluate(async () => {
+    window.callTabs = [
+      {
+        key: 'teams-work',
+        title: 'Work call',
+        url: 'https://teams.microsoft.com/call',
+        profileId: 'work',
+        teams: true,
+        pictureInPicture: false,
+      },
+      {
+        key: 'teams-personal',
+        title: 'Personal call',
+        url: 'https://teams.microsoft.com/call',
+        profileId: 'personal',
+        teams: true,
+        pictureInPicture: false,
+      },
+    ]
+    await window.pollMedia()
+  })
+  const calls = page.getByRole('complementary', { name: 'Browser calls and Picture-in-Picture' })
+  await calls
+    .getByRole('group', { name: 'Personal call' })
+    .getByRole('button', { name: 'Return to Teams' })
+    .click()
+  assert.deepEqual(
+    await page.evaluate(() => window.commands.findLast((c) => c.action === 'focus-tab')),
+    { action: 'focus-tab', key: 'teams-personal' },
+  )
+  await calls
+    .getByRole('group', { name: 'Work call' })
+    .getByRole('button', { name: 'PiP', exact: true })
+    .click()
+  assert.deepEqual(
+    await page.evaluate(() => window.commands.findLast((c) => c.action === 'picture-in-picture')),
+    { action: 'picture-in-picture', key: 'teams-work', mode: 'tab' },
+  )
+  await page.evaluate(async () => {
+    window.callTabs = []
+    await window.pollMedia()
+  })
+
+  // Fieldsets default to min-content width: long titles and thumbnails must not widen the dialog.
+  await page.evaluate(async () => {
+    await window.requestCapture()
+    window.requests[0].origin = 'https://' + 'verylonghostname'.repeat(15) + '.example'
+    window.requests[0].sourceError = 'unavailable-' + 'detail'.repeat(80)
+    window.requests[0].sources = Array.from({ length: 30 }, (_, i) => ({
+      key: 'long-' + i,
+      title: 'UnbrokenTitle'.repeat(40),
+      url: 'http://localhost/' + 'path'.repeat(100),
+      thumbnail:
+        'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="48"/>',
+      requester: false,
+    }))
+    await window.pollMedia()
+  })
+  for (const viewport of [
+    { width: 1000, height: 800 },
+    { width: 390, height: 600 },
+    { width: 320, height: 400 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await dialog.waitFor()
+    const geometry = await dialog.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const fieldset = element.querySelector('fieldset')
+      return {
+        left: box.left,
+        right: box.right,
+        top: box.top,
+        bottom: box.bottom,
+        width: innerWidth,
+        height: innerHeight,
+        overflow: element.scrollWidth - element.clientWidth,
+        sourceOverflow: fieldset.scrollWidth - fieldset.clientWidth,
+      }
+    })
+    assert.ok(
+      geometry.left >= 0 &&
+        geometry.right <= geometry.width &&
+        geometry.top >= 0 &&
+        geometry.bottom <= geometry.height,
+      JSON.stringify(geometry),
+    )
+    assert.ok(geometry.overflow <= 1 && geometry.sourceOverflow <= 1, JSON.stringify(geometry))
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).scrollIntoViewIfNeeded()
+    await page.screenshot({
+      path: root + 'work/browser-media/long-sources-' + viewport.width + '.png',
+    })
+  }
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  await page.setViewportSize({ width: 390, height: 844 })
   // A thread after the first 200 must be searchable and shareable without pre-registering it.
   await page.evaluate(async () => {
     window.runtimes = [

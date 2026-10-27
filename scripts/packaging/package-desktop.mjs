@@ -141,6 +141,12 @@ try {
       appId: variant.appId,
       productName: variant.productName,
       electronVersion: electron.version,
+      protocols: [
+        { name: 'Dovo Studio links', schemes: ['dovo-studio'], role: 'Viewer' },
+        ...(process.platform === 'win32'
+          ? []
+          : [{ name: 'Web links', schemes: ['http', 'https'], role: 'Viewer' }]),
+      ],
       directories: { app: application, output: join(root, 'release') },
       files: ['dist/**/*', 'dist-electron/**/*', 'package.json'],
       extraResources: [
@@ -216,6 +222,11 @@ try {
       linux: {
         icon: join(root, 'apps/desktop/build/icon.png'),
         syncDesktopName: true,
+        mimeTypes: [
+          'x-scheme-handler/http',
+          'x-scheme-handler/https',
+          'x-scheme-handler/dovo-studio',
+        ],
         category: 'Development',
         executableName: variant.nightly ? 'dovo-studio-nightly' : 'dovo-studio',
         maintainer: 'Dovocode <noreply@github.com>',

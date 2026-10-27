@@ -5,6 +5,7 @@ const timestamp = Schema.Number.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0)),
 )
 export const browserTabLifecycleFields = {
+  keepAwake: Schema.optional(Schema.Boolean),
   lastActiveAt: Schema.optional(timestamp),
   settledAt: Schema.optional(timestamp),
   snoozedUntil: Schema.optional(timestamp),
@@ -17,6 +18,7 @@ export type BrowserTabLifecycle = {
   settledAt?: number
   snoozedUntil?: number
   pinned?: boolean
+  keepAwake?: boolean
   previewOf?: string
 }
 export type BrowserTabCategory = 'active' | 'snoozed' | 'settled'
@@ -69,7 +71,14 @@ export function cleanBrowserTabs<T extends BrowserTabLifecycle>(
   const closeIds: string[] = []
   const next = tabs.flatMap((tab): T[] => {
     if (tab.snoozedUntil !== undefined && tab.snoozedUntil <= now) return [wakeBrowserTab(tab, now)]
-    if (tab.id === activeId || tab.pinned || tab.previewOf || protectedIds.has(tab.id)) return [tab]
+    if (
+      tab.id === activeId ||
+      tab.pinned ||
+      tab.keepAwake ||
+      tab.previewOf ||
+      protectedIds.has(tab.id)
+    )
+      return [tab]
     if (browserTabCategory(tab, now) === 'snoozed') return [tab]
     if (tab.settledAt !== undefined) {
       if (

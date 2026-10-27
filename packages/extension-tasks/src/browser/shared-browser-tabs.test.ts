@@ -58,6 +58,12 @@ it('restores local and remote tabs with their profiles without storing runtime c
   expect([...values.values()][0]).not.toContain('token')
 })
 
+it('restores Keep awake without changing the tab computer or profile', () => {
+  storage()
+  const tabs = [{ ...local, keepAwake: true }, remote]
+  saveSharedBrowserTabs({ tabs, active: 'remote' })
+  expect(readSharedBrowserTabs().state?.tabs).toEqual(tabs)
+})
 it('keeps pinned tabs ahead of recent visits and restores them in their original profile', () => {
   storage()
   const tabs = [{ ...local, pinned: true }, remote]

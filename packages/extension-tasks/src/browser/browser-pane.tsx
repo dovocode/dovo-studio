@@ -26,6 +26,7 @@ import { ResizableSidebar } from '../detail/resizable-sidebar'
 import {
   randomUUID,
   runtimeComputerName,
+  browserLinkProfile,
   isPrivateBrowserProfile,
   browserTabCategory,
   wakeBrowserTab,
@@ -61,6 +62,7 @@ import {
   PinOff,
   MessageSquare,
   Paintbrush,
+  PictureInPicture2,
 } from 'lucide-react'
 import {
   useWorkspace,
@@ -104,7 +106,7 @@ import { deviceHostSettingsResultSchema } from '@dovo/protocol'
 const threadBrowserWindowId = randomUUID()
 const addresses = new Map<string, string>()
 type OpenLink = { id: string; url: string }
-type BrowserPreviewBackground = { url: string; title: string; image?: string }
+type BrowserPreviewBackground = { tabId: string; url: string; title: string; image?: string }
 const savedTabs = new Map<string, BrowserTabs>()
 // Extension-created pages already have a native view. Keep its identity for this renderer session.
 const nativeTabKeys = new Map<string, string>()
@@ -225,6 +227,7 @@ function BrowserContent({
     back: false,
     forward: false,
   })
+  const [floatingTabKey, setFloatingTabKey] = useApplicationState<string | undefined>(undefined)
   const [tabs, setTabs] = useApplicationState<BrowserTab[]>(
     () =>
       saved?.tabs ?? [
@@ -303,6 +306,31 @@ function BrowserContent({
       : request(path, input, schema, method)
   const profileId = selectedTab.profileId ?? 'default'
   const nativeKey = (id: string) => nativeTabKeys.get(`${scope}:${id}`) ?? `${scope}:${id}`
+  const routingProfiles = useRef(profiles)
+  routingProfiles.current = profiles
+  const awakeCommands = useRef(new Map<string, string>())
+  useEffect(() => {
+    if (!shared || !browser) return
+    for (const tab of tabs) {
+      if (tab.kind !== 'web' || !/^https?:\/\//i.test(tab.url)) continue
+      const key = nativeKey(tab.id)
+      if (!tab.keepAwake && !awakeCommands.current.has(key)) continue
+      const command = {
+        action: 'keep-awake' as const,
+        key,
+        enabled: !!tab.keepAwake,
+        url: tab.url,
+        profileId: tab.profileId,
+      }
+      const signature = JSON.stringify(command)
+      if (awakeCommands.current.get(key) === signature) continue
+      awakeCommands.current.set(key, signature)
+      void browser(command).catch((cause) => {
+        awakeCommands.current.delete(key)
+        setError(`Could not update Keep awake: ${String(cause)}`)
+      })
+    }
+  }, [browser, shared, tabs])
   const browserKey = nativeKey(activeTab)
   useEffect(() => {
     if (!browser || !shared) return
@@ -396,7 +424,7 @@ function BrowserContent({
         clearTimeout(timeout)
       }
       if (attempt !== previewRequest.current) return
-      setPreviewBackground({ url: source.url, title: source.title, image })
+      setPreviewBackground({ tabId: source.id, url: source.url, title: source.title, image })
     }
     if (attempt !== previewRequest.current) return
     setPreviewPlacement('floating')
@@ -487,7 +515,14 @@ function BrowserContent({
   }
   useEffect(() => {
     if (!openLink || openedLink.current === openLink.id) return
-    if (!newTab(previewUrl(openLink.url))) return
+    if (
+      !newTab(
+        previewUrl(openLink.url),
+        browser ? 'web' : 'remote',
+        browser ? (browserLinkProfile(openLink.url, profiles) ?? 'default') : 'default',
+      )
+    )
+      return
     openedLink.current = openLink.id
     onLinkOpened?.()
   }, [openLink?.id, browser, onLinkOpened, tabs.length])
@@ -747,6 +782,7 @@ function BrowserContent({
       Effect.tap((state) =>
         Effect.sync(() => {
           if (!alive || !state) return
+          setFloatingTabKey(state.pictureInPicture ? browserKey : undefined)
           if (shared) {
             if (state.faviconUpdates?.length) {
               setTabs((previous) =>
@@ -841,6 +877,30 @@ function BrowserContent({
                 if (closedKeys.has(value)) nativeTabKeys.delete(key)
               if (incoming.length) selectTab(incoming[incoming.length - 1])
             }
+            if (state.focusedTabKey) {
+              const target = currentTabs.current.find(
+                (tab) => nativeKey(tab.id) === state.focusedTabKey,
+              )
+              if (target && target.id !== activeTab) {
+                if (state.openedLinks?.length) {
+                  const additions = state.openedLinks
+                    .slice(0, Math.max(0, 100 - currentTabs.current.length))
+                    .map((url) => ({
+                      id: randomUUID(),
+                      url,
+                      title: '',
+                      kind: 'web' as const,
+                      profileId:
+                        browserLinkProfile(url, routingProfiles.current, profileId) ?? profileId,
+                      visitedAt: 0,
+                      previewOf: activeTab,
+                    }))
+                  setTabs((previous) => [...previous, ...additions])
+                }
+                selectTab(target)
+                return
+              }
+            }
             if (
               incoming.length ||
               closedKeys.has(browserKey) ||
@@ -864,7 +924,8 @@ function BrowserContent({
                 url: target,
                 title: '',
                 kind: 'web' as const,
-                profileId,
+                profileId:
+                  browserLinkProfile(target, routingProfiles.current, profileId) ?? profileId,
                 visitedAt: 0,
                 previewOf: activeTab,
               }))
@@ -1348,6 +1409,18 @@ function BrowserContent({
       busy={busy}
       windows={browserWindows}
       onMenuOpen={loadBrowserWindows}
+      onKeepAwake={
+        browser && shared && tab.kind === 'web' && /^https?:\/\//i.test(tab.url)
+          ? () =>
+              setTabs((previous) =>
+                previous.map((item) =>
+                  item.id === tab.id
+                    ? { ...wakeBrowserTab(item), previewOf: undefined, keepAwake: !item.keepAwake }
+                    : item,
+                ),
+              )
+          : undefined
+      }
       onSelect={() => selectTab(tab)}
       onPin={() =>
         setTabs((previous) =>
@@ -1923,6 +1996,59 @@ function BrowserContent({
           <Star size={15} fill={bookmarked ? 'currentColor' : 'none'} />
         </IconButton>
       )}
+      {shared && mode === 'web' && browser && url && (
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <IconButton
+              type="button"
+              label="Picture-in-Picture"
+              className="size-8 shrink-0"
+              disabled={busy}
+            >
+              <PictureInPicture2 size={15} />
+            </IconButton>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              align="end"
+              className="z-50 min-w-48 rounded-lg border bg-popover p-1 text-sm shadow-lg"
+            >
+              {(
+                [
+                  [
+                    floatingTabKey === browserKey ? 'return' : 'tab',
+                    floatingTabKey === browserKey ? 'Return tab to browser' : 'Float whole tab',
+                  ],
+                  ['video', 'Video Picture-in-Picture'],
+                ] as const
+              ).map(([pipMode, label]) => (
+                <DropdownMenu.Item
+                  key={pipMode}
+                  className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent"
+                  onSelect={() =>
+                    void act(async () => {
+                      if (pipMode !== 'return' && selectedTab.previewOf)
+                        setTabs((previous) =>
+                          previous.map((tab) =>
+                            tab.id === activeTab ? { ...tab, previewOf: undefined } : tab,
+                          ),
+                        )
+                      await browser({
+                        action: 'picture-in-picture',
+                        key: browserKey,
+                        mode: pipMode,
+                      })
+                      setFloatingTabKey(pipMode === 'tab' ? browserKey : undefined)
+                    })
+                  }
+                >
+                  {label}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      )}
       {shared && mode === 'web' && !isPrivateBrowserProfile(profileId) && (
         <BrowserExtensions
           key={`${profileId}:${browserKey}`}
@@ -2092,6 +2218,13 @@ function BrowserContent({
               onPlacementChange: (placement) =>
                 placement === 'inline' ? closeTab(selectedTab) : setPreviewPlacement(placement),
               onClose: () => closeTab(selectedTab),
+              onReturnToOpener: () => {
+                const opener = currentTabs.current.find(
+                  (tab) => tab.id === previewBackground?.tabId,
+                )
+                if (opener) selectTab(opener)
+                else closeTab(selectedTab)
+              },
               onPromote: () =>
                 setTabs((previous) =>
                   previous.map((tab) =>
@@ -2454,6 +2587,28 @@ function BrowserContent({
                       }
                 }
               >
+                {browser && floatingTabKey === browserKey && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background p-6 text-center text-sm">
+                    <PictureInPicture2 size={28} className="text-muted-foreground" />
+                    <p>This page is open in Picture-in-Picture.</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        void act(async () => {
+                          await browser({
+                            action: 'picture-in-picture',
+                            key: browserKey,
+                            mode: 'return',
+                          })
+                          setFloatingTabKey(undefined)
+                        })
+                      }
+                    >
+                      Return tab to browser
+                    </Button>
+                  </div>
+                )}
                 {browser && frozenPage?.key === browserKey && frozenPage.url === url && (
                   <img
                     aria-hidden
@@ -2623,6 +2778,7 @@ function BrowserLayout({
     background: BrowserPreviewBackground | null
     onPlacementChange: (placement: PreviewPlacement) => void
     onClose: () => void
+    onReturnToOpener: () => void
     onPromote: () => void
   }
 }) {
@@ -2638,11 +2794,12 @@ function BrowserLayout({
         data-browser-viewport
       >
         {preview && (
-          <div
+          <button
+            type="button"
             data-browser-preview-background
-            aria-hidden
-            inert
-            className="pointer-events-none flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
+            aria-label="Return to opener"
+            onClick={preview.onReturnToOpener}
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-left focus-visible:outline-2 focus-visible:outline-ring"
           >
             <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4 text-xs text-muted-foreground">
               <Globe2 size={14} />
@@ -2657,13 +2814,14 @@ function BrowserLayout({
                 className="min-h-0 w-full flex-1 object-fill"
               />
             )}
-          </div>
+          </button>
         )}
         <FloatingPreview
           title={preview ? 'Link' : 'Browser'}
           placement={preview?.placement ?? 'inline'}
           onPlacementChange={(placement) => preview?.onPlacementChange(placement)}
           onClose={preview?.onClose}
+          expandedReturnPlacement={preview ? 'floating' : 'inline'}
           returnLabel="Back to tab"
           inlineClassName="min-w-0 flex-1"
           hideInlineHeader

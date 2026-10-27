@@ -50,7 +50,7 @@ export * from '@dovo/protocol';export {useRemoteBrowserProfiles} from '${root}pa
 export const providers=[];export const useResolvedTheme=()=> 'dark';
 let preferences={browserAutoSettleMinutes:0,browserCloseSettledMinutes:0,browserViewport:'fill',browserProfiles:[{id:'default',name:'Local Default'}]};const listeners=new Set();
 export const useAppPreferences=()=>useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>preferences);
-export const updateAppPreferences=changes=>{preferences={...preferences,...changes};for(const notify of listeners)notify()};
+export const updateAppPreferences=changes=>{preferences={...preferences,...changes};window.preferences=preferences;for(const notify of listeners)notify()};
 export const useStudioHost=()=>({browser:async()=>{}});
 const allRuntimes=[{profile:{id:'one',name:'Mac',connection:{address:'http://one',token:'token-one'}},connected:true},{profile:{id:'two',name:'Server',connection:{address:'http://two',token:'token-two'}},connected:true}];
 let runtimes=allRuntimes;window.setRuntimeCount=count=>{runtimes=allRuntimes.slice(0,count);updateAppPreferences({})};
@@ -118,6 +118,52 @@ try {
     await local.getByRole('textbox', { name: 'Language for Local Work' }).inputValue(),
     'nl-NL',
   )
+  const domains = local.getByRole('textbox', { name: 'Link domains for Local Work' })
+  await domains.fill('https://invalid.example/path')
+  assert.equal(await domains.getAttribute('aria-invalid'), 'true')
+  await domains.fill('TEAMS.MICROSOFT.COM, *.example.com')
+  await local.getByRole('button', { name: 'Save', exact: true }).last().click()
+  assert.deepEqual(
+    await page.evaluate(
+      () => window.preferences.browserProfiles.find((p) => p.name === 'Local Work').linkDomains,
+    ),
+    ['teams.microsoft.com', '*.example.com'],
+  )
+  assert.equal(
+    await local.getByRole('textbox', { name: 'Link domains for Local Work' }).inputValue(),
+    'teams.microsoft.com, *.example.com',
+  )
+  assert.equal(
+    await remote.getByRole('textbox', { name: /Link domains for/ }).count(),
+    0,
+    'Rules belong to local desktop profiles',
+  )
+  await local
+    .getByRole('textbox', { name: 'Link domains for Local Default' })
+    .fill('teams.microsoft.com')
+  await local
+    .getByRole('form', { name: 'Browser profile Local Default' })
+    .getByRole('button', { name: 'Save', exact: true })
+    .click()
+  await local
+    .getByRole('alert')
+    .getByText(/assigned to only one profile/)
+    .waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.preferences.browserProfiles.find((p) => p.id === 'default').linkDomains,
+    ),
+    undefined,
+  )
+  await local
+    .getByRole('textbox', { name: 'Link domains for Local Default' })
+    .fill('support.example.com')
+  await local
+    .getByRole('form', { name: 'Browser profile Local Default' })
+    .getByRole('button', { name: 'Save', exact: true })
+    .click()
+  assert.equal(await local.getByRole('alert').count(), 0)
+
   await remote.getByRole('textbox', { name: 'Name for Remote Default' }).waitFor()
   await remote.getByRole('textbox', { name: 'New profile name' }).fill('Remote Work')
   await remote.getByRole('button', { name: 'Add profile', exact: true }).click()

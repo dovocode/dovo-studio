@@ -19,6 +19,7 @@ export function BrowserTabRow({
   onClose,
   onMove,
   onMenuOpen,
+  onKeepAwake,
 }: {
   tab: BrowserTab
   active: boolean
@@ -31,6 +32,7 @@ export function BrowserTabRow({
   onClose: () => void
   onMove?: (windowId?: number) => void
   onMenuOpen: () => void
+  onKeepAwake?: () => void
 }) {
   const { runtimes } = useWorkspace()
   const profile = useBrowserProfileName(tab)
@@ -64,6 +66,15 @@ export function BrowserTabRow({
             className={`flex min-w-0 flex-1 items-center gap-2 text-left ${tab.pinned ? 'justify-center px-1 py-2.5' : 'h-9 px-2 text-xs'}`}
           >
             <BrowserFavicon tab={tab} />
+            {tab.keepAwake && (
+              <span
+                aria-label="Kept awake"
+                title="Keep awake is on"
+                className="shrink-0 text-status-success"
+              >
+                ●
+              </span>
+            )}
             {!tab.pinned && <span className="min-w-0 flex-1 truncate">{title}</span>}
             <span
               className="flex shrink-0 items-center gap-0.5 text-[9px] leading-none text-muted-foreground"
@@ -114,6 +125,16 @@ export function BrowserTabRow({
             {tab.pinned ? <PinOff size={13} /> : <Pin size={13} />}
             {tab.pinned ? 'Unpin tab' : 'Pin tab'}
           </ContextMenu.Item>
+          {onKeepAwake && (
+            <ContextMenu.CheckboxItem
+              className={menuItem}
+              checked={!!tab.keepAwake}
+              disabled={busy}
+              onCheckedChange={onKeepAwake}
+            >
+              Keep awake
+            </ContextMenu.CheckboxItem>
+          )}
           {category !== 'active' && (
             <ContextMenu.Item className={menuItem} disabled={busy} onSelect={onSelect}>
               <ArrowUpRight size={13} />

@@ -67,6 +67,7 @@ it.each(['unused', 'settled'] as const)(
     const tabs = [
       { ...base, id: 'current' },
       { ...base, id: 'pinned', pinned: true },
+      { ...base, id: 'awake', keepAwake: true },
       { ...base, id: 'preview', previewOf: 'source' },
       { ...base, id: 'media' },
     ]
