@@ -763,3 +763,55 @@ Line-anchored PR conversations, provider-permitted comment editing, conditional 
 and a directory-scoped mobile file browser remain feature/measurement work, not fixes shipped by
 this batch. Broad source review is not evidence of live Bitbucket/store behavior or native device
 recovery.
+
+## Fresh-source all-aspects review
+
+Five further Terra 6.1 reviewers compared product flows, browser/native integration, agents/tools,
+SCM and runtime/delivery against T3
+[`4fc9e5f2fc68b0cb691a088060cf849398db5b01`](https://github.com/pingdotgg/t3code/commit/4fc9e5f2fc68b0cb691a088060cf849398db5b01),
+fetched on 2026-10-27. Reviewers checked Dovo's current implementation, including the preceding
+fixes, rather than treating every T3 feature as missing. T3's standalone pipeline and local iOS
+browser surfaces differ from Dovo's; comparisons below distinguish shared techniques from Dovo-only
+correctness findings.
+
+- **Command search aliases:** T3's `apps/web/src/components/CommandPalette.logic.ts` combines item
+  titles with deliberate search terms. Dovo now accepts optional command aliases and reuses existing
+  settings keywords before and after the settings view loads. Title matches precede alias-only
+  matches, with declaration order retained inside each group. Familiar terms such as “new task” can
+  find New thread without changing the command's title or action. The real-palette browser check
+  covers ranking, duplicate hits, keyboard/mouse execution, composition, empty results and focus.
+- **Commit-scoped PR pipelines:** T3's GitHub workflow lookup scopes reads to the PR head. Dovo's
+  repository-wide scan could miss the PR build on a busy repository, even after retaining opened
+  page depth. The optional full commit filter now reaches GitHub (`head_sha`) and GitLab (`sha`),
+  with commit-specific runtime and mobile offline cache keys. Other forges retain their existing
+  scan and exact client-side commit check. Desktop/mobile regressions cover unrelated traffic,
+  commit changes, pagination and cache separation; this does not claim live-provider latency gains.
+- **Expired child questions:** T3's newer
+  `apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts` recovers eligible questions
+  as message-answerable requests. Dovo deliberately cancels process-local question callbacks after a
+  restart. Its parent inbox could nevertheless retain their answer instructions. Startup now removes
+  expired local-child question notifications from inboxes, legacy queues and unaccepted attempts.
+  Real completion results, remote-child questions and already accepted inputs remain.
+  Database-reopen regressions fail before the fix and cover both acceptance states.
+
+- **Coherent PR pagination:** Dovo's first-page refresh could discard a PR that moved into an
+  already opened later page. Desktop and mobile now stage the entire opened page depth before
+  publishing a replacement. Changed boundaries force fresh later pages; later-page errors retain the
+  complete previous snapshot with an error. Hook-level browser regressions cover insertions,
+  closures, moving boundaries, offline results and retry.
+- **Bounded native iOS browser recovery:** Local WKWebView renderer recovery now permits one
+  automatic reload per user-navigation budget. Hidden or background pages defer recovery; a second
+  loss becomes an explicit failure, and manual navigation/reload resets the budget. Closed or
+  replaced tabs ignore stale callbacks. The Mac Studio simulator passed 91 native harness checks,
+  including 31 recovery checks; the original implementation fails the second-loss regression. These
+  use actual WKWebViews with deterministic delegate invocation, not actual OS process termination or
+  the full Expo app. This is a Dovo-native lifecycle fix informed by the review, not a claim that T3
+  has the same local browser architecture.
+- **Durable mobile queue restoration:** Restoring a queued message now stages a local recovery
+  record before contacting its computer. The runtime atomically commits the queue change and an
+  idempotency receipt; reconnecting or reopening the thread retries that same request. Local
+  confirmation appends once while preserving newer typing, and binds recovery to the original
+  computer connection. Pending restores offer retry and confirmed discard; older runtimes require an
+  update before this operation. Storage, runtime-route and real-hook browser checks cover lost
+  responses, restart, changed queue contents, credential changes and disk-write failure. This
+  extends Dovo's existing durable-send approach rather than introducing T3's different draft model.

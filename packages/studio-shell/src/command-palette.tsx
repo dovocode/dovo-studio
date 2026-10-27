@@ -23,14 +23,22 @@ export function CommandPalette({
     [selected, setSelected] = useApplicationState(0)
   const origin = useRef<HTMLElement | null>(null)
   const executed = useRef(false)
-  const filtered = commands.filter((c) => c.title.toLowerCase().includes(query.toLowerCase()))
+  const search = query.trim().toLowerCase()
+  const titleMatches: StudioCommand[] = []
+  const aliasMatches: StudioCommand[] = []
+  for (const command of commands) {
+    if (command.title.toLowerCase().includes(search)) titleMatches.push(command)
+    else if (command.aliases?.some((alias) => alias.toLowerCase().includes(search)))
+      aliasMatches.push(command)
+  }
+  const filtered = [...titleMatches, ...aliasMatches]
   const index = Math.min(selected, Math.max(0, filtered.length - 1))
   useEffect(() => {
     if (open)
       document.getElementById(`command-option-${index}`)?.scrollIntoView({
         block: 'nearest',
       })
-  }, [index, open])
+  }, [index, open, query])
   useEffect(() => {
     if (!open) {
       setQuery('')

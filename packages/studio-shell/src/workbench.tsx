@@ -794,6 +794,7 @@ function WorkbenchContent({
     .map((view) => ({
       id: `${view.extensionId}.open.${view.id}`,
       title: `Open ${view.title}`,
+      ...(view.navigationGroup === 'settings' && view.keywords ? { aliases: [view.keywords] } : {}),
       run: () => navigateSection(view.id),
     }))
   if (captureContent) return <StudioHostProvider api={api}>{captureContent}</StudioHostProvider>

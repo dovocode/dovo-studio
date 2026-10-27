@@ -58,6 +58,31 @@ it('keeps detail-only views addressable without contributing navigation commands
   )
   await catalog.host.dispose()
 })
+it('reuses settings keywords as command aliases without loading the settings component', async () => {
+  const registerCommand = vi.fn<StudioHostApi['registerCommand']>(() => () => {})
+  const load = vi.fn<StudioView['load']>(async () => ({ default: () => null }))
+  const extension = defineStudioExtension({ id: 'settings', name: 'Settings', version: '1' }, [
+    {
+      id: 'appearance',
+      title: 'Appearance',
+      icon: 'runtime',
+      order: 0,
+      navigationGroup: 'settings',
+      keywords: 'fonts typography themes',
+      load,
+    },
+  ])
+  const catalog = createExtensionCatalog([extension], { navigate: () => {}, registerCommand })
+  await catalog.host.activate('settings')
+  expect(load).not.toHaveBeenCalled()
+  expect(registerCommand).toHaveBeenCalledWith(
+    expect.objectContaining({
+      id: 'settings.open.appearance',
+      aliases: ['fonts typography themes'],
+    }),
+  )
+  await catalog.host.dispose()
+})
 
 it('registers all shipped settings and feature views without ID collisions', async () => {
   const [

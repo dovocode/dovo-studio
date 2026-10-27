@@ -73,6 +73,8 @@ export interface StudioView {
 export interface StudioCommand {
   id: string
   title: string
+  /** Deliberate search terms; title matches stay ahead of alias-only results. */
+  readonly aliases?: readonly string[]
   run: () => void
 }
 export interface StudioHostApi {
@@ -157,6 +159,9 @@ export function defineStudioExtension(
           const command = {
             id: `${manifest.id}.open.${view.id}`,
             title: `Open ${view.title}`,
+            ...(view.navigationGroup === 'settings' && view.keywords
+              ? { aliases: [view.keywords] }
+              : {}),
             run: () => api.navigate({ viewId: view.id }),
           }
           const unregister = api.registerCommand(command)

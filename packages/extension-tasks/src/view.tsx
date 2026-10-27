@@ -641,6 +641,7 @@ export default function TasksView({
       host.registerCommand({
         id: 'tasks.new',
         title: 'New thread',
+        aliases: ['new task', 'new chat', 'start conversation'],
         run: newThread,
       }),
     [host, newThread],
@@ -650,11 +651,13 @@ export default function TasksView({
       host.registerCommand({
         id: 'tasks.switch',
         title: 'Go to task…',
+        aliases: ['go to thread', 'find thread', 'find task', 'switch thread', 'switch task'],
         run: () => setSearching('tasks'),
       }),
       host.registerCommand({
         id: 'tasks.search',
         title: 'Search conversations…',
+        aliases: ['search messages', 'find message', 'search thread', 'find in conversation'],
         run: () => setSearching('messages'),
       }),
     ]
@@ -667,6 +670,7 @@ export default function TasksView({
       host.registerCommand({
         id: 'tasks.terminal',
         title: 'Toggle terminal',
+        aliases: ['shell', 'console', 'command line'],
         run: toggleTerminal,
       }),
     [host, toggleTerminal],
