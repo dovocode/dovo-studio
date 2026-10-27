@@ -883,7 +883,7 @@ try {
   assert.equal(fullEdit.expectedText, 'Preserve queued message')
   assert.equal(await input.inputValue(), 'Preserve my draft')
   assert.equal(await page.evaluate(() => window.current.harness ?? null), null)
-  // Approval shortcuts only operate within the focused approval card.
+  // Multiple approval requests require focus on the intended card and use button payloads.
   await page.evaluate(() =>
     window.setInputs({
       questions: [],
@@ -920,6 +920,7 @@ try {
   assert.deepEqual(await page.evaluate(() => window.requests.at(-1).input), {
     id: 'approve-two',
     allow: true,
+    decision: 'approve',
   })
   await page.locator('[data-approval-id="approve-one"]').focus()
   await page.keyboard.press('n')
@@ -931,6 +932,7 @@ try {
   assert.deepEqual(await page.evaluate(() => window.requests.at(-1).input), {
     id: 'approve-one',
     allow: false,
+    decision: 'deny',
   })
   // Watch notifications keep the queue compact and open full details without editing agent input.
   await page.evaluate(() => {
