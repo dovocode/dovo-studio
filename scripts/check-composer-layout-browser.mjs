@@ -291,13 +291,67 @@ try {
     await page.getByRole('button', { name: 'Expand composer activity', exact: true }).click()
     const queuedRow = page.locator('[aria-label="Queued follow-ups"] li').first()
     const rowBounds = await queuedRow.boundingBox()
-    assert.ok(rowBounds.height <= 36, JSON.stringify(rowBounds))
+    // Queued rows have a source line above their single-line message preview.
+    assert.ok(rowBounds.height <= 56, JSON.stringify(rowBounds))
+    await queuedRow.getByText('You', { exact: true }).waitFor()
     const preview = queuedRow.locator('span[title]').first()
     assert.equal(
       await preview.evaluate((element) => getComputedStyle(element).whiteSpace),
       'nowrap',
     )
     assert.ok(await preview.evaluate((element) => element.scrollWidth > element.clientWidth))
+    for (const source of [
+      {
+        kind: 'thread',
+        runtimeId: 'linux',
+        threadId: 'reviewer',
+        title: 'A long review thread name '.repeat(10),
+        computerName: 'Linux workstation',
+      },
+      {
+        kind: 'automation',
+        automationId: 'daily-review',
+        runId: 'run-1',
+        title: 'A long automation name '.repeat(10),
+      },
+      { kind: 'pipeline', url: 'https://github.com/dovocode/dovo-studio/actions/runs/1' },
+    ]) {
+      await page.evaluate(
+        (source) =>
+          window.setTask({ queue: window.task.queue.map((item) => ({ ...item, source })) }),
+        source,
+      )
+      const sourceControl = queuedRow.getByRole(source.kind === 'pipeline' ? 'link' : 'button', {
+        name:
+          source.kind === 'thread'
+            ? `Open source thread: ${source.title} · ${source.computerName}`
+            : source.kind === 'automation'
+              ? `Open source: Automation · ${source.title}`
+              : 'Open source: Pipeline watch',
+        exact: true,
+      })
+      await sourceControl.waitFor()
+      const bounds = await queuedRow.boundingBox()
+      const sourceBounds = await sourceControl.boundingBox()
+      const previewBounds = await preview.boundingBox()
+      assert.ok(bounds.height <= 56, JSON.stringify({ source: source.kind, bounds }))
+      assert.ok(sourceBounds.y + sourceBounds.height <= previewBounds.y + 1)
+      assert.equal(
+        await sourceControl.evaluate((element) => getComputedStyle(element).whiteSpace),
+        'nowrap',
+      )
+      const editBounds = await queuedRow
+        .getByRole('button', { name: 'Edit queued message 1' })
+        .boundingBox()
+      assert.ok(previewBounds.x + previewBounds.width <= editBounds.x)
+      assert.equal(
+        await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+        false,
+      )
+    }
+    await page.evaluate(() =>
+      window.setTask({ queue: window.task.queue.map(({ source: _source, ...item }) => item) }),
+    )
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
       false,
