@@ -344,6 +344,20 @@ export default function BrowserSettings() {
       <DefaultBrowser />
       <SettingsGroup title="Browser previews">
         <SettingRow
+          label="Open links in"
+          description="Choose how links that open another page appear in Studio’s browser."
+        >
+          <SettingsSelect
+            label="Open links in"
+            value={preferences.browserLinkOpening}
+            options={[
+              ['preview', 'Link preview'],
+              ['tab', 'New tab'],
+            ]}
+            onChange={(browserLinkOpening) => updateAppPreferences({ browserLinkOpening })}
+          />
+        </SettingRow>
+        <SettingRow
           label="Default viewport"
           description="Saved on this device. You can change the viewport in each preview."
         >

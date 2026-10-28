@@ -42,6 +42,7 @@ import { Effect } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef, useId, type ReactNode } from 'react'
 import {
+  Home,
   ArrowLeft,
   ArrowRight,
   RotateCw,
@@ -208,6 +209,15 @@ function BrowserContent({
     ? preferences.browserProfiles
     : [{ id: 'default', name: 'Default' }]
   const agentAccess = preferences.browserAgentAccess[scope] ?? false
+  const previewLinks = useRef(true)
+  previewLinks.current = preferences.browserLinkOpening !== 'tab'
+  const [homeEditor, setHomeEditor] = useApplicationState<{ tabId: string; url: string } | null>(
+    null,
+  )
+  const [homeError, setHomeError] = useApplicationState('')
+  const [homeRequest, setHomeRequest] = useApplicationState<{ tabId: string; url: string } | null>(
+    null,
+  )
   const [restored] = useApplicationState(() =>
     shared ? readSharedBrowserTabs(storageWindowId) : {},
   )
@@ -393,6 +403,10 @@ function BrowserContent({
     setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
   }
   const showLinkPreview = async (tab: BrowserTab, source = selectedTab) => {
+    if (!previewLinks.current) {
+      selectTab(tab)
+      return
+    }
     const attempt = ++previewRequest.current
     setPendingPreview(tab.id)
     // Nested previews retain the original page, rather than replacing it with the last overlay.
@@ -830,11 +844,13 @@ function BrowserContent({
                 runtimeId: store.localRuntimeId ?? undefined,
                 profileId: tab.profileId,
                 visitedAt: 0,
-                previewOf: tab.openerKey
-                  ? (identities.get(tab.openerKey) ??
-                    currentTabs.current.find((item) => nativeKey(item.id) === tab.openerKey)?.id ??
-                    activeTab)
-                  : undefined,
+                previewOf:
+                  previewLinks.current && tab.openerKey
+                    ? (identities.get(tab.openerKey) ??
+                      currentTabs.current.find((item) => nativeKey(item.id) === tab.openerKey)
+                        ?.id ??
+                      activeTab)
+                    : undefined,
               }
             })
             const rejected = (state.createdTabs ?? []).filter(
@@ -867,7 +883,7 @@ function BrowserContent({
                 )
               let foreground = -1
               additions.slice(0, capacity).forEach((tab, index) => {
-                if (tab.active || tab.openerKey) foreground = index
+                if (tab.active || (previewLinks.current && tab.openerKey)) foreground = index
               })
               if (foreground >= 0) {
                 void showLinkPreview(adopted[foreground], previousSelected)
@@ -892,7 +908,7 @@ function BrowserContent({
                       profileId:
                         browserLinkProfile(url, routingProfiles.current, profileId) ?? profileId,
                       visitedAt: 0,
-                      previewOf: activeTab,
+                      previewOf: previewLinks.current ? activeTab : undefined,
                     }))
                   setTabs((previous) => [...previous, ...additions])
                 }
@@ -903,7 +919,9 @@ function BrowserContent({
             if (
               incoming.length ||
               closedKeys.has(browserKey) ||
-              additions.slice(0, capacity).some((tab) => tab.active || tab.openerKey)
+              additions
+                .slice(0, capacity)
+                .some((tab) => tab.active || (previewLinks.current && tab.openerKey))
             )
               return
           }
@@ -926,7 +944,7 @@ function BrowserContent({
                 profileId:
                   browserLinkProfile(target, routingProfiles.current, profileId) ?? profileId,
                 visitedAt: 0,
-                previewOf: activeTab,
+                previewOf: previewLinks.current ? activeTab : undefined,
               }))
             if (additions.length) {
               setTabs((previous) => [...previous, ...additions])
@@ -1400,6 +1418,34 @@ function BrowserContent({
         .then((result) => setBrowserWindows(result?.windows ?? []))
         .catch((cause) => setError(String(cause)))
   }
+  const togglePin = (tab: BrowserTab) => {
+    setTabs((previous) =>
+      previous.map((item) =>
+        item.id === tab.id
+          ? {
+              ...wakeBrowserTab(item),
+              pinned: !item.pinned,
+              homeUrl: item.pinned ? undefined : item.url,
+              previewOf: undefined,
+            }
+          : item,
+      ),
+    )
+  }
+  const returnHome = (tab: BrowserTab) => {
+    if (!tab.homeUrl) return
+    selectTab(tab)
+    setHomeRequest({ tabId: tab.id, url: tab.homeUrl })
+  }
+  useEffect(() => {
+    if (homeRequest?.tabId !== activeTab) return
+    navigate(homeRequest.url)
+    setHomeRequest(null)
+  }, [homeRequest, activeTab])
+  const editHome = (tab: BrowserTab) => {
+    setHomeError('')
+    setHomeEditor({ tabId: tab.id, url: tab.homeUrl ?? tab.url })
+  }
   const renderTab = (tab: BrowserTab) => (
     <BrowserTabRow
       key={tab.id}
@@ -1421,15 +1467,9 @@ function BrowserContent({
           : undefined
       }
       onSelect={() => selectTab(tab)}
-      onPin={() =>
-        setTabs((previous) =>
-          previous.map((item) =>
-            item.id === tab.id
-              ? { ...(item.pinned ? item : wakeBrowserTab(item)), pinned: !item.pinned }
-              : item,
-          ),
-        )
-      }
+      onPin={() => togglePin(tab)}
+      onHome={tab.pinned && tab.homeUrl ? () => returnHome(tab) : undefined}
+      onEditHome={tab.pinned ? () => editHome(tab) : undefined}
       onSettle={() => moveTab(tab)}
       onSnooze={() => moveTab(tab, tomorrowBrowserTabWake())}
       onClose={() => closeTab(tab)}
@@ -1599,6 +1639,23 @@ function BrowserContent({
           )}
           {shared && (
             <div className="space-y-2">
+              <label htmlFor={`${controlsId}-links`} className="text-xs font-medium">
+                Open links in
+              </label>
+              <select
+                id={`${controlsId}-links`}
+                aria-label="Open links in"
+                className="w-full rounded-md border bg-background p-2 text-xs"
+                value={preferences.browserLinkOpening ?? 'preview'}
+                onChange={(event) =>
+                  updateAppPreferences({
+                    browserLinkOpening: event.target.value === 'tab' ? 'tab' : 'preview',
+                  })
+                }
+              >
+                <option value="preview">Link preview</option>
+                <option value="tab">New tab</option>
+              </select>
               <p className="text-xs font-medium">Browser location</p>
               <p className="text-xs text-muted-foreground">
                 Location stays with this tab. Open another tab to use a different computer.
@@ -1845,15 +1902,7 @@ function BrowserContent({
             size="sm"
             variant="ghost"
             className="justify-start gap-2 text-xs"
-            onClick={() =>
-              setTabs((previous) =>
-                previous.map((tab) =>
-                  tab.id === activeTab
-                    ? { ...tab, pinned: !tab.pinned, previewOf: undefined }
-                    : tab,
-                ),
-              )
-            }
+            onClick={() => togglePin(selectedTab)}
           >
             {selectedTab.pinned ? <PinOff size={14} /> : <Pin size={14} />}
             {selectedTab.pinned ? 'Unpin tab' : 'Pin tab'}
@@ -1927,6 +1976,17 @@ function BrowserContent({
       >
         <RotateCw size={15} />
       </IconButton>
+      {selectedTab.pinned && selectedTab.homeUrl && (
+        <IconButton
+          label="Return to tab home"
+          type="button"
+          className="size-8 shrink-0"
+          disabled={busy}
+          onClick={() => returnHome(selectedTab)}
+        >
+          <Home size={15} />
+        </IconButton>
+      )}
       <div className="studio-browser-address flex h-9 min-w-0 flex-1 items-center @max-[480px]/browser:order-first @max-[480px]/browser:basis-full [@media(pointer:coarse)]:h-12">
         <span className="flex w-9 shrink-0 justify-center [@media(pointer:coarse)]:w-11">
           {shared && mode === 'web' ? (
@@ -2159,6 +2219,7 @@ function BrowserContent({
       preview={
         selectedTab.previewOf
           ? {
+              title: selectedTab.url.replace(/^https?:\/\//, '').split('/')[0] || 'Link',
               placement: previewPlacement,
               background: previewBackground,
               onPlacementChange: (placement) =>
@@ -2235,6 +2296,62 @@ function BrowserContent({
         ) : null
       }
     >
+      {homeEditor && (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setHomeEditor(null)
+          }}
+        >
+          <DialogContent>
+            <DialogTitle>Edit pinned tab home</DialogTitle>
+            <DialogDescription>
+              Return to this address whenever you want to start fresh in this pinned tab.
+            </DialogDescription>
+            <form
+              className="mt-4 space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault()
+                try {
+                  const homeUrl = browserAddress(homeEditor.url)
+                  if (!homeUrl) throw new Error('Enter a home URL.')
+                  setTabs((previous) =>
+                    previous.map((tab) =>
+                      tab.id === homeEditor.tabId ? { ...tab, homeUrl } : tab,
+                    ),
+                  )
+                  setHomeEditor(null)
+                } catch (cause) {
+                  setHomeError(cause instanceof Error ? cause.message : String(cause))
+                }
+              }}
+            >
+              <label className="flex flex-col gap-2 text-xs">
+                Home URL
+                <Input
+                  autoFocus
+                  value={homeEditor.url}
+                  onChange={(event) => {
+                    setHomeEditor({ ...homeEditor, url: event.target.value })
+                    setHomeError('')
+                  }}
+                />
+              </label>
+              {homeError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {homeError}
+                </p>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setHomeEditor(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Save home</Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
       {screenshots.editor}
       {screenshots.error && (
         <p role="alert" className="p-2 text-xs text-destructive">
@@ -2423,7 +2540,8 @@ function BrowserContent({
                       title: '',
                       favicon: undefined,
                       pinned: false,
-                      previewOf: tab.id,
+                      homeUrl: undefined,
+                      previewOf: previewLinks.current ? tab.id : undefined,
                     }))
                     currentTabs.current = [...currentTabs.current, ...adopted]
                     setTabs((previous) => [
@@ -2698,6 +2816,7 @@ function BrowserLayout({
   devices: boolean
   children: React.ReactNode
   preview?: {
+    title: string
     placement: PreviewPlacement
     background: BrowserPreviewBackground | null
     onPlacementChange: (placement: PreviewPlacement) => void
@@ -2742,6 +2861,8 @@ function BrowserLayout({
         )}
         <FloatingPreview
           title={preview ? 'Link' : 'Browser'}
+          displayTitle={preview?.title}
+          minimalFrame={!!preview}
           placement={preview?.placement ?? 'inline'}
           onPlacementChange={(placement) => preview?.onPlacementChange(placement)}
           onClose={preview?.onClose}
@@ -2753,9 +2874,13 @@ function BrowserLayout({
           contained
           actions={
             preview && (
-              <Button size="sm" variant="ghost" onClick={preview.onPromote}>
-                Keep as tab
-              </Button>
+              <IconButton
+                label="Open in new tab"
+                className="size-7 shrink-0"
+                onClick={preview.onPromote}
+              >
+                <ArrowUpRight size={14} />
+              </IconButton>
             )
           }
         >

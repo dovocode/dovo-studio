@@ -505,7 +505,7 @@ try {
         '*',
       ),
     )
-  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  await preview.getByRole('button', { name: 'Open in new tab', exact: true }).waitFor()
   await page.locator('[data-browser-preview-background] img').waitFor()
   const remotePreviewFrame = preview
     .locator('iframe[title="Host browser"]')
@@ -515,7 +515,7 @@ try {
   const remoteOpens = await page.evaluate(
     () => window.calls.filter((call) => call.path === '/api/previews/browser/open').length,
   )
-  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).click()
+  await preview.getByRole('button', { name: 'Open in new tab', exact: true }).click()
   await page.waitForFunction(() =>
     JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some(
       (tab) =>
@@ -783,7 +783,7 @@ try {
     window.openedLinks.push('http://localhost:3000/new-window')
     await window.pollBrowser()
   })
-  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  await preview.getByRole('button', { name: 'Open in new tab', exact: true }).waitFor()
   const background = page.locator('[data-browser-preview-background]')
   await background.locator('img').waitFor()
   assert(
@@ -896,7 +896,7 @@ try {
         .filter((call) => call.action === 'show' && call.url.endsWith('/new-window'))
         .at(-1)?.key,
   )
-  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).click()
+  await preview.getByRole('button', { name: 'Open in new tab', exact: true }).click()
   await page.waitForFunction(() =>
     JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some(
       (tab) => tab.url === 'http://localhost:3000/new-window',
@@ -970,7 +970,7 @@ try {
     })
     await window.pollBrowser()
   })
-  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  await preview.getByRole('button', { name: 'Open in new tab', exact: true }).waitFor()
   await page.waitForFunction(() =>
     window.calls.some((call) => call.action === 'show' && call.key === 'native-link-preview'),
   )
@@ -1006,7 +1006,7 @@ try {
     () =>
       window.calls.filter((call) => call.action === 'show').at(-1)?.key === 'native-link-preview',
   )
-  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).click()
+  await preview.getByRole('button', { name: 'Open in new tab', exact: true }).click()
   await page.waitForFunction(() =>
     JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some((tab) =>
       tab.url.endsWith('/cmd-link'),
@@ -1027,7 +1027,7 @@ try {
     })
     await window.pollBrowser()
   })
-  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  await preview.getByRole('button', { name: 'Open in new tab', exact: true }).waitFor()
   await page.evaluate(async () => {
     window.setNativePage('native-deferred-preview', {
       url: 'http://localhost:3000/deferred-preview',
@@ -1163,6 +1163,26 @@ try {
   await pageAction('Pin tab')
   const pinnedSource = await selected()
   assert.equal(pinnedSource.pinned, true)
+  assert.equal(pinnedSource.homeUrl, pinnedSource.url, 'Pinning captures the current address')
+  const pinnedTile = recent
+    .getByLabel('Pinned browser tabs')
+    .getByRole('button', { name: /Local|Remote/ })
+    .first()
+  await pinnedTile.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Edit home URL', exact: true }).click()
+  const homeDialog = page.getByRole('dialog', { name: 'Edit pinned tab home' })
+  await homeDialog.getByLabel('Home URL', { exact: true }).fill('http://vpn.local/pinned-home')
+  await homeDialog.getByRole('button', { name: 'Save home', exact: true }).click()
+  await homeDialog.waitFor({ state: 'hidden' })
+  assert.equal((await selected()).homeUrl, 'http://vpn.local/pinned-home')
+  const homeIdentity = (await selected()).id
+  await page.getByRole('button', { name: 'Return to tab home', exact: true }).click()
+  await page.waitForFunction(() => {
+    const state = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+    return state.tabs.find((tab) => tab.id === state.active)?.url === 'http://vpn.local/pinned-home'
+  })
+  assert.equal((await selected()).id, homeIdentity, 'Going home preserves the tab and profile')
+  await page.screenshot({ path: root + 'work/shared-browser/pinned-home.png' })
   const pinnedCount = (await persisted()).tabs.length
   await page.keyboard.press('Control+w')
   assert.equal((await persisted()).tabs.length, pinnedCount, 'Pinned tabs resist accidental close')
@@ -1215,7 +1235,7 @@ try {
     )
     await window.pollBrowser()
   })
-  await preview.getByRole('button', { name: 'Keep as tab', exact: true }).waitFor()
+  await preview.getByRole('button', { name: 'Open in new tab', exact: true }).waitFor()
   await page.waitForFunction(
     () => window.calls.filter((call) => call.action === 'close').length >= 79,
   )
@@ -1239,6 +1259,31 @@ try {
   await preview.waitFor({ state: 'hidden' })
   assert.equal((await persisted()).tabs.length, tabsBeforeFlood.length)
   assert.equal((await selected()).id, floodSource.id)
+  // Links can skip the overlay and stay as regular tabs without a second navigation.
+  const directOpenerLabel = await recent
+    .locator('button[aria-current="page"]')
+    .getAttribute('aria-label')
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Open links in', exact: true }).selectOption('tab')
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.evaluate(async () => {
+    window.createdTabs.push({
+      key: 'direct-tab',
+      url: 'http://localhost:3000/direct-tab',
+      profileId: 'default',
+      active: true,
+      openerKey: 'studio:browser:main:local',
+    })
+    await window.pollBrowser()
+  })
+  await recent.getByRole('button', { name: /^localhost:3000\/direct-tab Local/ }).waitFor()
+  assert.equal(await preview.count(), 0, 'New-tab mode skips the floating preview')
+  assert.equal((await selected()).previewOf, undefined)
+  await page.keyboard.press('Control+w')
+  await recent.getByRole('button', { name: directOpenerLabel, exact: true }).click()
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Open links in', exact: true }).selectOption('preview')
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
   // Exercise the real BrowserView gate in a fresh browser context, with reactive preferences.
   const gatePage = await browser.newPage({ viewport: { width: 1200, height: 800 } })
   gatePage.on('pageerror', (error) => errors.push(error.message))
@@ -1917,7 +1962,9 @@ try {
     })
   await controlsPage.addScriptTag({ content: built.outputFiles[0].text })
   const compactSidebar = controlsPage.getByRole('complementary', { name: 'Recent browser tabs' })
-  const pins = compactSidebar.getByLabel('Pinned browser tabs').getByRole('button')
+  const pins = compactSidebar
+    .getByLabel('Pinned browser tabs')
+    .getByRole('button', { name: / Local ·/ })
   await pins.nth(3).waitFor()
   await controlsPage.evaluate(async () => {
     window.setNativePage('studio:browser:main:compact-4', {
@@ -1961,8 +2008,8 @@ try {
   assert.ok(pinBounds[3].y > pinBounds[0].y, 'Exactly three pins share a row')
   assert.equal(
     await pins.first().getByText('Website 0', { exact: true }).count(),
-    0,
-    'Pins show icons and compact profile labels',
+    1,
+    'Pins show a favicon and a readable title',
   )
   const separator = controlsPage.getByRole('separator', { name: 'Resize Browser tabs' })
   await separator.focus()

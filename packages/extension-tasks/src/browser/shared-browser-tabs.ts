@@ -15,6 +15,7 @@ export type BrowserTab = BrowserTabLifecycle & {
   favicon?: string
   visitedAt?: number
   pinned?: boolean
+  homeUrl?: string
   /** Temporary page opened by a link; promotion keeps this exact page identity. */
   previewOf?: string
   thread?: { id: string; runtimeId: string | null }
@@ -30,6 +31,7 @@ const tabSchema = Schema.Struct({
   favicon: Schema.optional(Schema.String),
   visitedAt: Schema.optional(Schema.Number),
   pinned: Schema.optional(Schema.Boolean),
+  homeUrl: Schema.optional(Schema.String),
   thread: Schema.optional(
     Schema.Struct({ id: Schema.String, runtimeId: Schema.NullOr(Schema.String) }),
   ),
@@ -77,7 +79,10 @@ function validatedTabs(input: unknown): BrowserTabs {
   const state = result.data
   return {
     active: state.active,
-    tabs: state.tabs.map((tab) => ({ ...tab })),
+    tabs: state.tabs.map((tab) => ({
+      ...tab,
+      ...(tab.pinned && !tab.homeUrl && tab.url ? { homeUrl: tab.url } : {}),
+    })),
     ...(state.closed ? { closed: state.closed.map((tab) => ({ ...tab })) } : {}),
     ...(state.bookmarks ? { bookmarks: state.bookmarks.map((tab) => ({ ...tab })) } : {}),
     ...(state.visits ? { visits: state.visits.map((tab) => ({ ...tab })) } : {}),

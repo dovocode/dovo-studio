@@ -66,10 +66,23 @@ it('restores Keep awake without changing the tab computer or profile', () => {
 })
 it('keeps pinned tabs ahead of recent visits and restores them in their original profile', () => {
   storage()
-  const tabs = [{ ...local, pinned: true }, remote]
+  const tabs = [{ ...local, pinned: true, homeUrl: 'http://localhost:3000/home' }, remote]
   expect(recentBrowserTabs(visitBrowserTab(tabs, 'remote', 100))[0].id).toBe('local')
   saveSharedBrowserTabs({ tabs, active: 'remote' })
   expect(readSharedBrowserTabs().state?.tabs).toEqual(tabs)
+})
+it('gives older pinned tabs a home while preserving an edited home across navigation', () => {
+  storage()
+  saveSharedBrowserTabs({ tabs: [{ ...local, pinned: true }], active: local.id })
+  expect(readSharedBrowserTabs().state?.tabs[0]?.homeUrl).toBe(local.url)
+  const navigated = {
+    ...local,
+    pinned: true,
+    url: 'http://localhost:3000/other',
+    homeUrl: 'http://vpn.local/home',
+  }
+  saveSharedBrowserTabs({ tabs: [navigated], active: local.id })
+  expect(readSharedBrowserTabs().state?.tabs[0]).toEqual(navigated)
 })
 it('rejects malformed, duplicate or stale active-tab storage instead of reassigning ownership', () => {
   for (const value of [

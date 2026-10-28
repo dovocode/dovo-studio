@@ -1,5 +1,15 @@
-import { Archive, X, Pin, PinOff, AlarmClock, ExternalLink, ArrowUpRight } from 'lucide-react'
-import { ContextMenu, IconButton } from '@dovo/studio-ui'
+import {
+  Home,
+  Pencil,
+  Archive,
+  X,
+  Pin,
+  PinOff,
+  AlarmClock,
+  ExternalLink,
+  ArrowUpRight,
+} from 'lucide-react'
+import { cn, ContextMenu, IconButton } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { useWorkspace } from '@dovo/studio-core'
 import { browserTabCategory, runtimeComputerName } from '@dovo/protocol'
@@ -14,6 +24,8 @@ export function BrowserTabRow({
   windows,
   onSelect,
   onPin,
+  onHome,
+  onEditHome,
   onSettle,
   onSnooze,
   onClose,
@@ -27,6 +39,8 @@ export function BrowserTabRow({
   windows: { id: number; title: string }[]
   onSelect: () => void
   onPin: () => void
+  onHome?: () => void
+  onEditHome?: () => void
   onSettle: () => void
   onSnooze: () => void
   onClose: () => void
@@ -55,7 +69,19 @@ export function BrowserTabRow({
     >
       <ContextMenu.Trigger asChild>
         <div
-          className={`group relative flex min-w-0 items-center rounded-md ${active ? 'bg-accent/70 text-foreground' : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground'}`}
+          className={cn(
+            'group relative flex min-w-0 items-center rounded-lg transition-colors',
+            tab.pinned
+              ? cn(
+                  'border',
+                  active
+                    ? 'border-primary/30 bg-accent text-foreground shadow-sm'
+                    : 'border-border/50 bg-background/50 text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground',
+                )
+              : active
+                ? 'bg-accent/70 text-foreground'
+                : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+          )}
         >
           <button
             type="button"
@@ -63,7 +89,7 @@ export function BrowserTabRow({
             aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}`}
             onClick={onSelect}
             title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
-            className={`flex min-w-0 flex-1 items-center gap-2 text-left ${tab.pinned ? 'justify-center px-1 py-2.5' : 'h-9 px-2 text-xs'}`}
+            className={`flex min-w-0 flex-1 items-center gap-2 text-left ${tab.pinned ? 'h-14 flex-col justify-center gap-1.5 px-2 text-[10px]' : 'h-9 px-2 text-xs'}`}
           >
             <BrowserFavicon tab={tab} />
             {tab.keepAwake && (
@@ -75,9 +101,19 @@ export function BrowserTabRow({
                 ●
               </span>
             )}
-            {!tab.pinned && <span className="min-w-0 flex-1 truncate">{title}</span>}
             <span
-              className="flex shrink-0 items-center gap-0.5 text-[9px] leading-none text-muted-foreground"
+              className={
+                tab.pinned ? 'w-full truncate text-center leading-none' : 'min-w-0 flex-1 truncate'
+              }
+            >
+              {title}
+            </span>
+            <span
+              className={
+                tab.pinned
+                  ? 'sr-only'
+                  : 'flex shrink-0 items-center gap-0.5 text-[9px] leading-none text-muted-foreground'
+              }
               aria-label={`${computer} · ${profile}`}
             >
               <RuntimeIcon
@@ -90,6 +126,17 @@ export function BrowserTabRow({
               </span>
             </span>
           </button>
+          {tab.pinned && onHome && (
+            <IconButton
+              type="button"
+              label={`Return ${title} to home`}
+              disabled={busy}
+              onClick={onHome}
+              className="absolute right-0.5 top-0.5 size-5 bg-background/90 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+            >
+              <Home size={11} />
+            </IconButton>
+          )}
           {!tab.pinned && (
             <div className="absolute right-0.5 flex items-center gap-0.5 rounded bg-sidebar opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:opacity-100">
               {category === 'active' && (
@@ -125,6 +172,20 @@ export function BrowserTabRow({
             {tab.pinned ? <PinOff size={13} /> : <Pin size={13} />}
             {tab.pinned ? 'Unpin tab' : 'Pin tab'}
           </ContextMenu.Item>
+          {tab.pinned && (
+            <>
+              {onHome && (
+                <ContextMenu.Item className={menuItem} disabled={busy} onSelect={onHome}>
+                  <Home size={13} /> Return to home
+                </ContextMenu.Item>
+              )}
+              {onEditHome && (
+                <ContextMenu.Item className={menuItem} disabled={busy} onSelect={onEditHome}>
+                  <Pencil size={13} /> Edit home URL
+                </ContextMenu.Item>
+              )}
+            </>
+          )}
           {onKeepAwake && (
             <ContextMenu.CheckboxItem
               className={menuItem}

@@ -133,6 +133,7 @@ export const browserWorkspaceTabSchema = mutableStruct({
   favicon: Schema.optional(maxValue(Schema.String, 100000)),
   visitedAt: Schema.optional(Schema.Number),
   pinned: Schema.optional(Schema.Boolean),
+  homeUrl: Schema.optional(maxValue(Schema.String, 4096)),
   thread: Schema.optional(
     mutableStruct({ id: Schema.String, runtimeId: Schema.NullOr(Schema.String) }),
   ),

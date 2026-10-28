@@ -123,6 +123,7 @@ const schema = mutableStruct({
   // Legacy initial-tab default; new profile selections belong to individual tabs.
   browserProfileByThread: Schema.Record(Schema.String, Schema.String),
   browserAgentAccess: Schema.Record(Schema.String, Schema.Boolean),
+  browserLinkOpening: Schema.Literals(['preview', 'tab']),
   browserViewport: Schema.Literals(['fill', 'phone', 'tablet', 'desktop']),
 })
 export type AppPreferences = Schema.Schema.Type<typeof schema>
@@ -206,6 +207,7 @@ export const defaultAppPreferences: AppPreferences = {
   browserProfiles: defaultBrowserProfiles(),
   browserProfileByThread: {},
   browserAgentAccess: {},
+  browserLinkOpening: 'preview',
   browserViewport: 'fill',
 }
 const key = 'dovo.app-preferences.v1'

@@ -46,6 +46,8 @@ const initialFrame = (centered: boolean, viewport?: Viewport): Frame => {
 /** Keep the same preview mounted when moving it between the thread and floating view. */
 export function FloatingPreview({
   title,
+  displayTitle = title,
+  minimalFrame = false,
   placement,
   onPlacementChange,
   onClose,
@@ -59,6 +61,8 @@ export function FloatingPreview({
   contained = false,
 }: {
   title: string
+  displayTitle?: string
+  minimalFrame?: boolean
   placement: PreviewPlacement
   onPlacementChange: (placement: PreviewPlacement) => void
   onClose?: () => void
@@ -135,7 +139,10 @@ export function FloatingPreview({
         className={
           hideInlineHeader && placement === 'inline'
             ? 'hidden'
-            : 'flex h-10 shrink-0 items-center gap-1 rounded-t-[inherit] border-b px-2'
+            : cn(
+                'flex shrink-0 items-center gap-1 rounded-t-[inherit] border-b px-2',
+                minimalFrame ? 'h-9 bg-muted/40' : 'h-10',
+              )
         }
       >
         {floating && (
@@ -143,7 +150,12 @@ export function FloatingPreview({
             type="button"
             aria-label={`Move ${title} preview`}
             title="Drag to move; use arrow keys when focused"
-            className="flex size-7 shrink-0 cursor-move touch-none items-center justify-center rounded hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary"
+            className={cn(
+              'flex h-7 cursor-move touch-none items-center rounded text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary',
+              minimalFrame
+                ? 'min-w-0 flex-1 gap-2 px-1 text-left text-xs'
+                : 'w-7 shrink-0 justify-center hover:bg-accent',
+            )}
             onPointerDown={(event) => {
               if (event.button !== 0) return
               event.preventDefault()
@@ -179,20 +191,30 @@ export function FloatingPreview({
               setFrame((value) => constrain({ ...value, x: value.x + dx, y: value.y + dy }))
             }}
           >
-            <Grip size={14} />
+            {minimalFrame ? (
+              <span className="truncate" title={displayTitle}>
+                {displayTitle}
+              </span>
+            ) : (
+              <Grip size={14} />
+            )}
           </button>
         )}
-        <span className="min-w-0 flex-1 truncate text-xs font-medium" title={title}>
-          {title}
-        </span>
+        {!(minimalFrame && floating) && (
+          <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium" title={displayTitle}>
+            {displayTitle}
+          </span>
+        )}
         {actions}
-        <IconButton
-          label={placement === 'floating' ? returnLabel : 'Float preview'}
-          className="size-7 shrink-0"
-          onClick={() => onPlacementChange(floating ? 'inline' : 'floating')}
-        >
-          {floating ? <PanelRight size={14} /> : <PictureInPicture2 size={14} />}
-        </IconButton>
+        {!minimalFrame && (
+          <IconButton
+            label={placement === 'floating' ? returnLabel : 'Float preview'}
+            className="size-7 shrink-0"
+            onClick={() => onPlacementChange(floating ? 'inline' : 'floating')}
+          >
+            {floating ? <PanelRight size={14} /> : <PictureInPicture2 size={14} />}
+          </IconButton>
+        )}
         <IconButton
           label={
             placement === 'expanded'
@@ -209,7 +231,11 @@ export function FloatingPreview({
           {placement === 'expanded' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </IconButton>
         {onClose && (
-          <IconButton label="Close preview" className="size-7 shrink-0" onClick={onClose}>
+          <IconButton
+            label="Close preview"
+            className="size-7 shrink-0 hover:bg-destructive/10 hover:text-destructive"
+            onClick={onClose}
+          >
             <X size={14} />
           </IconButton>
         )}
@@ -223,7 +249,7 @@ export function FloatingPreview({
           type="button"
           aria-label={`Resize ${title} preview`}
           title="Drag to resize; use arrow keys when focused"
-          className="absolute bottom-0 right-0 z-50 flex size-5 cursor-nwse-resize touch-none items-center justify-center rounded-br-xl bg-background/80 text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary"
+          className="absolute bottom-0 right-0 z-50 flex size-5 cursor-nwse-resize touch-none items-center justify-center rounded-br-xl text-muted-foreground/50 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
           onPointerDown={(event) => {
             if (event.button !== 0) return
             event.preventDefault()

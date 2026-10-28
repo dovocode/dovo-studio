@@ -43,6 +43,7 @@ it('keeps valid saved choices, fills in new defaults and ignores invalid values'
     collapseChangedFiles: true,
     browserAutoSettleMinutes: 0,
     browserCloseSettledMinutes: 0,
+    browserLinkOpening: 'preview',
   })
   expect(readAppPreferences()).not.toHaveProperty('launchView')
 })
@@ -70,10 +71,11 @@ it('persists updates and notifies subscribers', async () => {
   const local = storage()
   vi.stubGlobal('localStorage', local)
   const { readAppPreferences, updateAppPreferences } = await import('./preferences')
-  updateAppPreferences({ textSize: 'large', notifyDone: true })
+  updateAppPreferences({ textSize: 'large', notifyDone: true, browserLinkOpening: 'tab' })
   expect(readAppPreferences()).toMatchObject({ textSize: 'large', notifyDone: true, theme: 'dark' })
   expect(JSON.parse(local.values.get('dovo.app-preferences.v1') ?? '{}')).toMatchObject({
     textSize: 'large',
+    browserLinkOpening: 'tab',
   })
 })
 
