@@ -240,7 +240,7 @@ function TaskRowView({
       onMouseLeave={() => setHovered(false)}
       className={cn(
         'group/task relative w-full min-w-0',
-        grouped && 'mb-0.5 rounded-xl border transition-colors',
+        grouped && 'mb-[3px] rounded-xl border transition-colors',
         grouped &&
           (highlighted
             ? 'border-transparent bg-accent/70 hover:bg-accent/80'
@@ -255,7 +255,7 @@ function TaskRowView({
               aria-current={selected ? 'true' : undefined}
               data-unread={unread || undefined}
               className={cn(
-                'mb-0.5 h-auto w-full min-w-0 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
+                'mb-[3px] h-auto w-full min-w-0 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
                 compact
                   ? 'min-h-9 flex-row items-center gap-2 py-1.5'
                   : cn(
@@ -331,7 +331,7 @@ function TaskRowView({
                 </span>
               )}
               {!compact && (!general || !!linkedPulls.length) && (
-                <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
+                <span className="studio-thread-card-context mt-0.5 flex min-w-0 items-center gap-1 text-xs leading-4">
                   {!general && (
                     <>
                       <GitBranch className="size-3 shrink-0" />

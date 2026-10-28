@@ -196,7 +196,7 @@ function TaskListRowView({
   const headerHeight = dense ? compactContextHeight : Math.max(26, Math.ceil(16 * fontScale))
   const hasFooter = !general || pulls.length > 0 || row.reachability === 'offline'
   const compactRowHeight =
-    16 + compactTitleHeight + (hasFooter ? 6 : 3) + compactContextHeight * (hasFooter ? 2 : 1)
+    16 + compactTitleHeight + (hasFooter ? 8 : 3) + compactContextHeight * (hasFooter ? 2 : 1)
   const badgeSize = dense ? Math.max(16, Math.ceil(12 * fontScale)) : 20
   const contextSize = dense ? 11 : 12
   const contextText = { fontSize: contextSize, lineHeight: dense ? 14 : 16 }
@@ -283,7 +283,7 @@ function TaskListRowView({
   const content = (
     <View
       style={{
-        marginVertical: dense ? 1 : 2,
+        marginVertical: dense ? 1.5 : 3,
         borderRadius: 12,
         backgroundColor: selected || current ? colors.selection : colors.background,
       }}
@@ -434,6 +434,7 @@ function TaskListRowView({
                     flexDirection: 'row',
                     alignItems: 'center',
                     flexWrap: 'nowrap',
+                    marginTop: 2,
                     height: dense ? compactContextHeight : undefined,
                     overflow: dense ? 'hidden' : undefined,
                     gap: 6,
