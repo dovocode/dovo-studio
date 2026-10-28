@@ -1,11 +1,18 @@
 import type { BrowserCapture, BrowserMediaRequest } from '@dovo/protocol'
 import { app, desktopCapturer, systemPreferences, webContents as allContents } from 'electron'
+import {
+  BROWSER_PERMISSION_PRELOAD,
+  BROWSER_UNAVAILABLE_BACKGROUND_PRELOAD,
+} from './browser-permission-preload.js'
 import { DOCUMENT_PIP_PRELOAD } from './browser-document-pip.js'
 import {
   commonBrowserPermission,
+  commonBrowserPermissionAllowed,
   requestCommonBrowserPermission,
+  revokeCommonBrowserPermissions,
 } from './browser-common-permissions.js'
 import { browserPermissions } from './browser-permissions.js'
+import { createBrowserDevices, browserDevicePermission } from './browser-devices.js'
 import { openRemoteMedia } from './browser-remote-media.js'
 import { prepareScreenRecording } from './browser-screen-permission.js'
 import type { ThreadWindowTarget } from '@dovo/protocol'
@@ -185,6 +192,16 @@ const mediaTypes = (details: unknown) => {
 }
 
 export function createBrowserMedia(host: MediaHost) {
+  const notifyIdlePermission = (profileId: string, origin: string) => {
+    for (const tab of host.tabs())
+      if (
+        tab.profileId === profileId &&
+        !tab.contents.isDestroyed() &&
+        webOrigin(tab.contents.mainFrame.url) === origin
+      )
+        tab.contents.send('browser-permission:idle-changed')
+  }
+  const devices = createBrowserDevices(host)
   const pending = new Map<string, Pending>()
   const captures = new Map<string, Capture>()
   /** Camera/microphone answers belong to one live document, never another tab at that origin. */
@@ -281,6 +298,8 @@ export function createBrowserMedia(host: MediaHost) {
   }
   /** Pending requests die with their page; captures are judged only by Chromium (`refresh`). */
   const forgetContents = (contents: Electron.WebContents) => {
+    devices.releaseTab(contents)
+    revokeCommonBrowserPermissions(contents)
     grants.delete(contents.id)
     for (const [id, capture] of captures)
       if (!capture.source && capture.contents.id === contents.id) removeCapture(id)
@@ -320,7 +339,14 @@ export function createBrowserMedia(host: MediaHost) {
     const directory = join(app.getPath('userData'), 'browser-media')
     mkdirSync(directory, { recursive: true })
     const path = join(directory, 'capture.preload.js')
-    writeFileSync(path, PRELOAD + DOCUMENT_PIP_PRELOAD)
+    writeFileSync(
+      path,
+      PRELOAD +
+        DOCUMENT_PIP_PRELOAD +
+        BROWSER_PERMISSION_PRELOAD +
+        BROWSER_UNAVAILABLE_BACKGROUND_PRELOAD,
+    )
+    writeFileSync(join(directory, 'background.preload.js'), BROWSER_UNAVAILABLE_BACKGROUND_PRELOAD)
     return (preload = path)
   }
 
@@ -339,10 +365,16 @@ export function createBrowserMedia(host: MediaHost) {
     attachSession: (session: Electron.Session, profileId: string) => {
       if (sessions.has(session)) return
       sessions.add(session)
+      devices.attachSession(session, profileId)
       session.registerPreloadScript({
         id: 'dovo-browser-media',
         type: 'frame',
         filePath: writePreload(),
+      })
+      session.registerPreloadScript({
+        id: 'dovo-browser-background-capabilities',
+        type: 'service-worker',
+        filePath: join(app.getPath('userData'), 'browser-media', 'background.preload.js'),
       })
       session.setDisplayMediaRequestHandler((request, callback) => {
         const deny = () => callback(null)
@@ -408,7 +440,10 @@ export function createBrowserMedia(host: MediaHost) {
               },
             )
       })
-      session.setPermissionRequestHandler((contents, permission, callback, details) => {
+      session.setPermissionRequestHandler((contents, nativePermission, callback, details) => {
+        // Electron requests midiSysex even for requestMIDIAccess({ sysex: false }).
+        const permission = nativePermission === 'midiSysex' ? 'midi' : nativePermission
+        if (!contents) return callback(false)
         const tab = host.tabFor(contents)
         if (!tab || tab.profileId !== profileId) return callback(false)
         const origin = webOrigin(details.requestingUrl)
@@ -420,6 +455,12 @@ export function createBrowserMedia(host: MediaHost) {
         }
         if (!details.isMainFrame) return callback(false)
         if (!origin || webOrigin(contents.mainFrame.url) !== origin) return callback(false)
+        // This permits opening a chooser, not access to any device. The separate device
+        // permission handler only accepts the exact devices selected by this website.
+        if (browserDevicePermission(permission))
+          return callback(
+            browserPermissions(profileId).site(origin).permissions[permission] !== 'block',
+          )
         if (commonBrowserPermission(permission)) {
           void requestCommonBrowserPermission(
             contents,
@@ -427,10 +468,29 @@ export function createBrowserMedia(host: MediaHost) {
             origin,
             permission,
             tab.windowId,
-          ).then(callback, (error: unknown) => {
-            console.error('Could not request website permission.', error)
-            callback(false)
-          })
+            permission === 'fileSystem' &&
+              'filePath' in details &&
+              typeof details.filePath === 'string'
+              ? {
+                  filePath: details.filePath,
+                  ...('fileAccessType' in details && typeof details.fileAccessType === 'string'
+                    ? { fileAccessType: details.fileAccessType }
+                    : {}),
+                  ...('isDirectory' in details && typeof details.isDirectory === 'boolean'
+                    ? { isDirectory: details.isDirectory }
+                    : {}),
+                }
+              : undefined,
+          ).then(
+            (allowed) => {
+              if (permission === 'idle-detection') notifyIdlePermission(profileId, origin)
+              callback(allowed)
+            },
+            (error: unknown) => {
+              console.error('Could not request website permission.', error)
+              callback(false)
+            },
+          )
           return
         }
         if (permission === 'notifications') {
@@ -478,7 +538,8 @@ export function createBrowserMedia(host: MediaHost) {
           answer: (allow) => callback(allow !== false),
         })
       })
-      session.setPermissionCheckHandler((contents, permission, origin, details) => {
+      session.setPermissionCheckHandler((contents, nativePermission, origin, details) => {
+        const permission = nativePermission === 'midiSysex' ? 'midi' : nativePermission
         if (!contents)
           return (
             permission === 'notifications' &&
@@ -498,11 +559,17 @@ export function createBrowserMedia(host: MediaHost) {
             webOrigin(contents.mainFrame.url) === page &&
             browserPermissions(profileId).notification(page) === true
           )
+        if (browserDevicePermission(permission))
+          return (
+            details.isMainFrame &&
+            webOrigin(contents.mainFrame.url) === page &&
+            browserPermissions(profileId).site(page).permissions[permission] !== 'block'
+          )
         if (commonBrowserPermission(permission))
           return (
             webOrigin(contents.mainFrame.url) === page &&
             details.isMainFrame &&
-            browserPermissions(profileId).site(page).permissions[permission] === 'allow'
+            commonBrowserPermissionAllowed(contents, profileId, page, permission)
           )
         if (permission !== 'media') return false
         if (webOrigin(contents.mainFrame.url) !== page) return false
@@ -527,6 +594,30 @@ export function createBrowserMedia(host: MediaHost) {
     attachTab: (contents: Electron.WebContents) => {
       if (tabsAttached.has(contents)) return
       tabsAttached.add(contents)
+      devices.attachTab(contents)
+      contents.ipc.handle('browser-permission:idle-state', (event) => {
+        const tab = host.tabFor(contents)
+        const origin = !contents.isDestroyed() && webOrigin(contents.mainFrame.url)
+        if (!tab || !origin || event.senderFrame !== contents.mainFrame) return 'denied'
+        if (commonBrowserPermissionAllowed(contents, tab.profileId, origin, 'idle-detection'))
+          return 'granted'
+        return browserPermissions(tab.profileId).site(origin).permissions['idle-detection'] ===
+          'block'
+          ? 'denied'
+          : 'prompt'
+      })
+      contents.ipc.handle('browser-permission:local-fonts', async (event) => {
+        const tab = host.tabFor(contents)
+        const origin = !contents.isDestroyed() && webOrigin(contents.mainFrame.url)
+        if (!tab || !origin || event.senderFrame !== contents.mainFrame) return false
+        return requestCommonBrowserPermission(
+          contents,
+          tab.profileId,
+          origin,
+          'local-fonts',
+          tab.windowId,
+        )
+      })
       contents.ipc.on('browser-media:track', (event, raw: unknown) => {
         if (!raw || typeof raw !== 'object') return
         const phase: unknown = Reflect.get(raw, 'phase')
@@ -564,6 +655,15 @@ export function createBrowserMedia(host: MediaHost) {
     },
     /** Call before a tab's page is closed. */
     revokeSite: (profileId: string, origin: string) => {
+      devices.revokeSite(profileId, origin)
+      for (const tab of host.tabs())
+        if (
+          tab.profileId === profileId &&
+          !tab.contents.isDestroyed() &&
+          webOrigin(tab.contents.mainFrame.url) === origin
+        )
+          revokeCommonBrowserPermissions(tab.contents)
+      notifyIdlePermission(profileId, origin)
       for (const [id, grant] of grants)
         if (grant.profileId === profileId && grant.origin === origin) grants.delete(id)
       for (const request of pending.values())
@@ -850,6 +950,10 @@ export function createBrowserMedia(host: MediaHost) {
     reset: () => {
       for (const request of [...pending.values()]) settle(request, false)
       grants.clear()
+      for (const tab of host.tabs()) {
+        devices.releaseTab(tab.contents)
+        revokeCommonBrowserPermissions(tab.contents)
+      }
       remoteSources.clear()
       threadSources.clear()
       for (const capture of captures.values()) capture.closeSource?.()

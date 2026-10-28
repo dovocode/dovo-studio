@@ -2,6 +2,7 @@ import {
   decodeResult,
   isPrivateBrowserProfile,
   browserTabLifecycleFields,
+  browserTabCategory,
   type BrowserTabLifecycle,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -146,12 +147,38 @@ export function saveSharedBrowserTabs(state: BrowserTabs, windowId = 'main') {
   const storage = windowId === 'main' ? localStorage : sessionStorage
   storage.setItem(storageKey, JSON.stringify(saved))
 }
-export function recentBrowserTabs(tabs: readonly BrowserTab[]) {
+export function recentBrowserTabs(tabs: readonly BrowserTab[], sortByActivity = true) {
   return tabs
     .filter((tab) => !tab.previewOf)
     .sort(
-      (a, b) => Number(!!b.pinned) - Number(!!a.pinned) || (b.visitedAt ?? 0) - (a.visitedAt ?? 0),
+      (a, b) =>
+        Number(!!b.pinned) - Number(!!a.pinned) ||
+        (sortByActivity && !a.pinned ? (b.visitedAt ?? 0) - (a.visitedAt ?? 0) : 0),
     )
+}
+
+/** Dragging changes order only, never pinning, lifecycle, profile or page identity. */
+export function browserTabDragGroup(tab: BrowserTab, sortByActivity: boolean, now = Date.now()) {
+  if (tab.previewOf || (!tab.pinned && sortByActivity)) return undefined
+  return tab.pinned ? 'pinned' : browserTabCategory(tab, now)
+}
+export function reorderBrowserTabs(
+  tabs: BrowserTab[],
+  sourceId: string,
+  targetId: string,
+  edge: 'before' | 'after',
+  sortByActivity: boolean,
+  now = Date.now(),
+) {
+  const source = tabs.find((tab) => tab.id === sourceId),
+    target = tabs.find((tab) => tab.id === targetId)
+  if (!source || !target || source === target) return tabs
+  const group = browserTabDragGroup(source, sortByActivity, now)
+  if (!group || group !== browserTabDragGroup(target, sortByActivity, now)) return tabs
+  const next = tabs.filter((tab) => tab.id !== sourceId)
+  const index = next.indexOf(target) + (edge === 'after' ? 1 : 0)
+  next.splice(index, 0, source)
+  return next
 }
 
 export function visitBrowserTab(tabs: BrowserTab[], id: string, now = Date.now()) {

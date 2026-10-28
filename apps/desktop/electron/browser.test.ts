@@ -110,6 +110,7 @@ const mocks = vi.hoisted(() => {
     view,
     window,
     windowFor: undefined as undefined | typeof window,
+    automaticPip: false,
     contents,
     handle:
       vi.fn<
@@ -129,6 +130,7 @@ const mocks = vi.hoisted(() => {
       dispose: vi.fn<() => Promise<void>>(async () => {}),
     },
     on: vi.fn<(name: string, listener: (event: unknown, ...args: unknown[]) => void) => void>(),
+    pipWindow: vi.fn<typeof import('./browser-document-pip-controls').createDocumentPipWindow>(),
     linkProfile: vi.fn<(source: string, url: string) => string | undefined>(() => undefined),
     media: {
       host: undefined as undefined | import('./browser-media').MediaHost,
@@ -148,9 +150,14 @@ const mocks = vi.hoisted(() => {
     },
   }
 })
+vi.mock('./browser-document-pip-controls.js', () => ({
+  DOCUMENT_PIP_HEADER_HEIGHT: 36,
+  createDocumentPipWindow: mocks.pipWindow,
+}))
 vi.mock('./browser-permissions.js', () => ({
   forgetPrivateBrowserPermissions: () => {},
   browserPermissions: () => ({
+    site: () => ({ permissions: { 'automatic-pip': mocks.automaticPip ? 'allow' : 'block' } }),
     notification: () => undefined,
     setNotification: vi.fn<(origin: string, allow: boolean) => void>(),
   }),
@@ -206,6 +213,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.linkProfile.mockReturnValue(undefined)
   mocks.windowFor = undefined
+  mocks.automaticPip = false
   mocks.view.getVisible.mockReturnValue(true)
   mocks.view.setVisible.mockImplementation((visible) => {
     mocks.view.getVisible.mockReturnValue(Boolean(visible))
@@ -807,7 +815,7 @@ it('streams hidden pages only to their owner and restores throttling on unsubscr
   await call(event, { action: 'watch-frames', key: 'live', enabled: true })
   await call(event, { action: 'watch-frames', key: 'live', enabled: true })
   expect(mocks.contents.beginFrameSubscription).toHaveBeenCalledOnce()
-  await call(event, { action: 'hide', key: 'live' })
+  await call(event, { action: 'hide', key: 'live', occluded: true })
   expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
   expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', true)
   const deliver = mocks.contents.beginFrameSubscription.mock.calls[0]![1]
@@ -823,12 +831,51 @@ it('streams hidden pages only to their owner and restores throttling on unsubscr
   await call(event, { action: 'watch-frames', key: 'live', enabled: false })
   expect(mocks.contents.endFrameSubscription).toHaveBeenCalledOnce()
   expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
-  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', false)
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', true)
   deliver(image)
   expect(mocks.window.webContents.send).toHaveBeenCalledTimes(1)
   await call(event, { action: 'watch-frames', key: 'live', enabled: true })
   await call(event, { action: 'close', key: 'live' })
   expect(mocks.contents.endFrameSubscription).toHaveBeenCalledTimes(2)
+})
+
+it('activates automatic PiP when leaving an occluded tab even with a live preview subscription', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  mocks.automaticPip = true
+  const allowed = mocks.contents.ipc.handle.mock.calls.find(
+    ([name]) => name === 'browser:document-pip-auto',
+  )?.[1]
+  if (typeof allowed !== 'function') throw new Error('Missing automatic PiP check')
+  const mainFrame = { senderFrame: mocks.contents.mainFrame }
+  await call(event, { action: 'watch-frames', key: 'shared', enabled: true })
+  await call(event, { action: 'hide', key: 'shared', occluded: true })
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', true)
+  expect(allowed(mainFrame)).toBe(false)
+  mocks.contents.send.mockClear()
+  // Navigating to another Studio section can leave the native view already hidden.
+  await call(event, { action: 'hide', key: 'shared' })
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', false)
+  expect(allowed(mainFrame)).toBe(true)
+  expect(allowed({ senderFrame: {} })).toBe(false)
+  mocks.automaticPip = false
+  expect(allowed(mainFrame)).toBe(false)
+  await call(event, workspaceShow)
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', true)
+  expect(allowed(mainFrame)).toBe(false)
+})
+
+it('reports a background page on tab switching and after its document reloads', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  await call(event, { action: 'watch-frames', key: 'shared', enabled: true })
+  mocks.contents.send.mockClear()
+  await call(event, { ...workspaceShow, key: 'next' })
+  expect(mocks.contents.send).toHaveBeenCalledWith('browser:document-pip-visibility', false)
+  await call(event, { action: 'hide', key: 'next' })
+  mocks.contents.send.mockClear()
+  listener('dom-ready')?.()
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', false)
 })
 
 it('cleans up a failed frame subscription', async () => {
@@ -872,6 +919,7 @@ it('reads a bounded literal selection only from the requested browser view', asy
 
 type OpenHandler = (details: {
   url: string
+  frameName?: string
   disposition: string
   features: string
   referrer?: { url: string; policy: string }
@@ -2294,10 +2342,18 @@ it.each(['window', 'page'] as const)(
     const popup = popupWindow()
     listener('did-create-window')?.(popup)
     const pip = popupWindow()
-    listener('did-create-window')?.(pip, {
-      frameName: '__dovo_document_picture_in_picture__:moving',
-      options: {},
-    })
+    const authorize = mocks.contents.ipc.handle.mock.calls.find(
+      ([name]) => name === 'browser:document-pip-authorize',
+    )?.[1]
+    if (typeof authorize !== 'function') throw new Error('Missing PiP authorization')
+    const name = authorize({ senderFrame: mocks.contents.mainFrame }, true, false)
+    mocks.pipWindow.mockReturnValue({ window: pip as never, contents: pip.webContents as never })
+    openHandler()({
+      url: 'about:blank',
+      frameName: name,
+      disposition: 'new-window',
+      features: 'popup,width=420,height=280',
+    }).createWindow?.({})
     const videoPip = mocks.contents.ipc.on.mock.calls.find(
       ([name]) => name === 'browser:video-pip',
     )?.[1]
@@ -2539,15 +2595,15 @@ it('accepts one-use PiP tickets only from the owning main frame and protects the
       alwaysOnTop: true,
       frame: false,
       width: 420,
-      height: 280,
+      height: 316,
       webPreferences: { sandbox: true, nodeIntegration: false },
     },
   })
   expect(openHandler()(details)).toEqual({ action: 'deny' })
-  const created = mocks.contents.on.mock.calls.find(([name]) => name === 'did-create-window')?.[1]
-  if (typeof created !== 'function') throw new Error('Missing popup lifecycle')
   const popup = popupWindow()
-  created(popup, details)
+  mocks.pipWindow.mockReturnValue({ window: popup as never, contents: popup.webContents as never })
+  expect(result.createWindow?.({})).toBe(popup.webContents)
+  expect(mocks.pipWindow).toHaveBeenCalledWith({}, 'https://example.com/', expect.any(Function))
   expect(popup.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
   expect(popup.setVisibleOnAllWorkspaces.mock.calls).toEqual(
     process.platform === 'linux' ? [[true]] : [],

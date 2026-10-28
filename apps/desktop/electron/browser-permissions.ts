@@ -6,6 +6,7 @@ import { Schema } from 'effect'
 import {
   isPrivateBrowserProfile,
   browserPermissionSettingSchema,
+  browserSitePermissionSchema,
   type BrowserSitePermission,
   type BrowserPermissionSetting,
 } from '@dovo/protocol'
@@ -13,20 +14,14 @@ import {
 const schema = Schema.Struct({
   helpers: Schema.Array(Schema.String),
   notifications: Schema.Record(Schema.String, Schema.Boolean),
+  devices: Schema.optional(Schema.Record(Schema.String, Schema.Array(Schema.String))),
   sites: Schema.optional(
     Schema.Record(
       Schema.String,
-      Schema.Struct({
-        notifications: Schema.optional(browserPermissionSettingSchema),
-        microphone: Schema.optional(browserPermissionSettingSchema),
-        camera: Schema.optional(browserPermissionSettingSchema),
-        'clipboard-read': Schema.optional(browserPermissionSettingSchema),
-        'clipboard-sanitized-write': Schema.optional(browserPermissionSettingSchema),
-        'speaker-selection': Schema.optional(browserPermissionSettingSchema),
-        'screen-wake-lock': Schema.optional(browserPermissionSettingSchema),
-        'persistent-storage': Schema.optional(browserPermissionSettingSchema),
-        'automatic-pip': Schema.optional(browserPermissionSettingSchema),
-      }),
+      Schema.Record(
+        browserSitePermissionSchema,
+        Schema.optionalKey(browserPermissionSettingSchema),
+      ),
     ),
   ),
   media: Schema.optional(
@@ -105,17 +100,16 @@ export function browserPermissions(profileId: string) {
       const current = read()
       return {
         origin,
-        permissions: {
-          notifications: setting(current, origin, 'notifications'),
-          microphone: setting(current, origin, 'microphone'),
-          camera: setting(current, origin, 'camera'),
-          'clipboard-read': setting(current, origin, 'clipboard-read'),
-          'clipboard-sanitized-write': setting(current, origin, 'clipboard-sanitized-write'),
-          'speaker-selection': setting(current, origin, 'speaker-selection'),
-          'screen-wake-lock': setting(current, origin, 'screen-wake-lock'),
-          'persistent-storage': setting(current, origin, 'persistent-storage'),
-          'automatic-pip': setting(current, origin, 'automatic-pip'),
-        },
+        permissions: Schema.decodeUnknownSync(
+          Schema.Record(browserSitePermissionSchema, browserPermissionSettingSchema),
+        )(
+          Object.fromEntries(
+            browserSitePermissionSchema.literals.map((permission) => [
+              permission,
+              setting(current, origin, permission),
+            ]),
+          ),
+        ),
       }
     },
     setSite: (
@@ -127,6 +121,25 @@ export function browserPermissions(profileId: string) {
       write({
         ...current,
         sites: { ...current.sites, [origin]: { ...current.sites?.[origin], [permission]: value } },
+        ...(current.devices && ['usb', 'hid', 'serial'].includes(permission)
+          ? {
+              devices: {
+                ...current.devices,
+                [origin]: (current.devices[origin] ?? []).filter(
+                  (key) => !key.startsWith(`${permission}:`),
+                ),
+              },
+            }
+          : {}),
+      })
+    },
+    device: (origin: string, key: string) => read().devices?.[origin]?.includes(key) === true,
+    setDevice: (origin: string, key: string, allow: boolean) => {
+      const current = read()
+      const keys = (current.devices?.[origin] ?? []).filter((value) => value !== key)
+      write({
+        ...current,
+        devices: { ...current.devices, [origin]: allow ? [...keys, key] : keys },
       })
     },
     notification: (origin: string) => {

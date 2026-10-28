@@ -1,5 +1,192 @@
+diff --git a/dist/chrome-extension-api.preload.js b/dist/chrome-extension-api.preload.js
+index 67d3be4b5026069ec4ae73c1fc6e661f8a19098e..f9cc0b713ee2df916da9a38fba80be1beff964b8 100644
+--- a/dist/chrome-extension-api.preload.js
++++ b/dist/chrome-extension-api.preload.js
+@@ -14,18 +14,17 @@
+   var import_electron = __require("electron");
+   var formatIpcName = (name) => `crx-${name}`;
+   var listenerMap = /* @__PURE__ */ new Map();
++  var listenerCallbacks = new Map();
+   var addExtensionListener = (extensionId, name, callback) => {
+     const listenerCount = listenerMap.get(name) || 0;
+     if (listenerCount === 0) {
+       import_electron.ipcRenderer.send("crx-add-listener", extensionId, name);
+     }
+     listenerMap.set(name, listenerCount + 1);
+-    import_electron.ipcRenderer.addListener(formatIpcName(name), function(event, ...args) {
+-      if (true) {
+-        console.log(name, "(result)", ...args);
+-      }
+-      callback(...args);
+-    });
++    const listener = (_event, ...args) => callback(...args);
++    if (!listenerCallbacks.has(name)) listenerCallbacks.set(name, new Map());
++    listenerCallbacks.get(name).set(callback, listener);
++    import_electron.ipcRenderer.addListener(formatIpcName(name), listener);
+   };
+   var removeExtensionListener = (extensionId, name, callback) => {
+     if (listenerMap.has(name)) {
+@@ -37,5 +36,8 @@
+         listenerMap.set(name, listenerCount - 1);
+       }
+     }
+-    import_electron.ipcRenderer.removeListener(formatIpcName(name), callback);
++    const callbacks = listenerCallbacks.get(name);
++    const listener = callbacks?.get(callback);
++    if (listener) import_electron.ipcRenderer.removeListener(formatIpcName(name), listener);
++    callbacks?.delete(callback);
+   };
+@@ -43,8 +45,8 @@
+   // src/renderer/index.ts
+   var injectExtensionAPIs = () => {
+     const invokeExtension = async function(extensionId, fnName, options = {}, ...args) {
+       const callback = typeof args[args.length - 1] === "function" ? args.pop() : void 0;
+-      if (true) {
++      if (!options.strict) {
+         console.log(fnName, args);
+       }
+       if (options.noop) {
+@@ -59,10 +61,11 @@
+       try {
+         result = await import_electron2.ipcRenderer.invoke("crx-msg", extensionId, fnName, ...args);
+       } catch (e) {
++        if (options.strict) throw new Error(e.message || "Extension API request failed.");
+         console.error(e);
+         result = void 0;
+       }
+-      if (true) {
++      if (!options.strict) {
+         console.log(fnName, "(result)", result);
+       }
+       if (callback) {
+@@ -105,6 +108,20 @@
+       const extensionId = chrome.runtime?.id;
+       const manifest = extensionId && chrome.runtime.getManifest?.() || {};
+       const invokeExtension2 = (fnName, opts = {}) => (...args) => electron.invokeExtension(extensionId, fnName, opts, ...args);
++      // Promise rejection and callback runtime.lastError follow Chrome semantics.
++      const invokeBrowserAPI = (name) => (...args) => {
++        const callback = typeof args.at(-1) === "function" ? args.pop() : undefined;
++        const promise = electron.invokeExtension(extensionId, name, { strict: true }, ...args);
++        if (!callback) return promise;
++        promise.then(result => callback(result), error => {
++          const previous = Object.getOwnPropertyDescriptor(chrome.runtime, "lastError");
++          Object.defineProperty(chrome.runtime, "lastError", { configurable: true, value: { message: error.message } });
++          try { callback(); } finally {
++            if (previous) Object.defineProperty(chrome.runtime, "lastError", previous);
++            else delete chrome.runtime.lastError;
++          }
++        });
++      };
+       function imageData2base64(imageData) {
+         const canvas = document.createElement("canvas");
+         const ctx = canvas.getContext("2d");
+@@ -117,28 +134,28 @@
+       class ExtensionEvent {
+         constructor(name) {
+           this.name = name;
++          this.listeners = new Set();
+         }
+         addListener(callback) {
++          if (this.listeners.has(callback)) return;
++          this.listeners.add(callback);
+           electron.addExtensionListener(extensionId, this.name, callback);
+         }
+         removeListener(callback) {
++          if (!this.listeners.delete(callback)) return;
+           electron.removeExtensionListener(extensionId, this.name, callback);
+         }
+         getRules(ruleIdentifiers, callback) {
+           throw new Error("Method not implemented.");
+         }
+-        hasListener(callback) {
+-          throw new Error("Method not implemented.");
+-        }
++        hasListener(callback) { return this.listeners.has(callback); }
+         removeRules(ruleIdentifiers, callback) {
+           throw new Error("Method not implemented.");
+         }
+         addRules(rules, callback) {
+           throw new Error("Method not implemented.");
+         }
+-        hasListeners() {
+-          throw new Error("Method not implemented.");
+-        }
++        hasListeners() { return this.listeners.size > 0; }
+       }
+       class ChromeSetting {
+         constructor() {
+@@ -319,30 +336,46 @@
+             };
+           }
+         },
+-        // TODO: implement
+         downloads: {
+-          factory: (base) => {
+-            return {
+-              ...base,
+-              acceptDanger: invokeExtension2("downloads.acceptDanger", { noop: true }),
+-              cancel: invokeExtension2("downloads.cancel", { noop: true }),
+-              download: invokeExtension2("downloads.download", { noop: true }),
+-              erase: invokeExtension2("downloads.erase", { noop: true }),
+-              getFileIcon: invokeExtension2("downloads.getFileIcon", { noop: true }),
+-              open: invokeExtension2("downloads.open", { noop: true }),
+-              pause: invokeExtension2("downloads.pause", { noop: true }),
+-              removeFile: invokeExtension2("downloads.removeFile", { noop: true }),
+-              resume: invokeExtension2("downloads.resume", { noop: true }),
+-              search: invokeExtension2("downloads.search", { noop: true }),
+-              setUiOptions: invokeExtension2("downloads.setUiOptions", { noop: true }),
+-              show: invokeExtension2("downloads.show", { noop: true }),
+-              showDefaultFolder: invokeExtension2("downloads.showDefaultFolder", { noop: true }),
+-              onChanged: new ExtensionEvent("downloads.onChanged"),
+-              onCreated: new ExtensionEvent("downloads.onCreated"),
+-              onDeterminingFilename: new ExtensionEvent("downloads.onDeterminingFilename"),
+-              onErased: new ExtensionEvent("downloads.onErased")
+-            };
+-          }
++          factory: () => ({
++            cancel: invokeBrowserAPI("downloads.cancel"),
++            download: invokeBrowserAPI("downloads.download"),
++            erase: invokeBrowserAPI("downloads.erase"),
++            getFileIcon: invokeBrowserAPI("downloads.getFileIcon"),
++            open: invokeBrowserAPI("downloads.open"),
++            pause: invokeBrowserAPI("downloads.pause"),
++            removeFile: invokeBrowserAPI("downloads.removeFile"),
++            resume: invokeBrowserAPI("downloads.resume"),
++            search: invokeBrowserAPI("downloads.search"),
++            show: invokeBrowserAPI("downloads.show"),
++            showDefaultFolder: invokeBrowserAPI("downloads.showDefaultFolder"),
++            onChanged: new ExtensionEvent("downloads.onChanged"),
++            onCreated: new ExtensionEvent("downloads.onCreated"),
++            onErased: new ExtensionEvent("downloads.onErased")
++          })
++        },
++        history: {
++          factory: () => ({
++            search: invokeBrowserAPI("history.search"),
++            getVisits: invokeBrowserAPI("history.getVisits"),
++            addUrl: invokeBrowserAPI("history.addUrl"),
++            deleteUrl: invokeBrowserAPI("history.deleteUrl"),
++            deleteRange: invokeBrowserAPI("history.deleteRange"),
++            deleteAll: invokeBrowserAPI("history.deleteAll"),
++            onVisited: new ExtensionEvent("history.onVisited"),
++            onVisitRemoved: new ExtensionEvent("history.onVisitRemoved")
++          })
++        },
++        identity: {
++          factory: () => ({
++            getRedirectURL: (path = "") => {
++              if (typeof path !== "string") throw new TypeError("Invalid redirect path.");
++              const url = new URL(`https://${extensionId}.chromiumapp.org/`);
++              url.pathname = "/" + path.replace(/^\/+/, "");
++              return url.href;
++            },
++            launchWebAuthFlow: invokeBrowserAPI("identity.launchWebAuthFlow")
++          })
+         },
+         extension: {
+           factory: (base) => {
 diff --git a/dist/cjs/index.js b/dist/cjs/index.js
-index a91ca8fd07194abb081e9bb35fad0060fefddf91..21c87256c10145543b8a5d3b4f149872a538d0de 100644
+index a91ca8fd07194abb081e9bb35fad0060fefddf91..4fac545fbe07ea135e77d1c61d611870c1451958 100644
 --- a/dist/cjs/index.js
 +++ b/dist/cjs/index.js
 @@ -223,9 +223,9 @@ var _PopupView = class _PopupView extends import_node_events.EventEmitter {
@@ -28,8 +215,36 @@ index a91ca8fd07194abb081e9bb35fad0060fefddf91..21c87256c10145543b8a5d3b4f149872
    }
    async create(event, details = {}) {
      const url = details.url ? validateExtensionUrl(details.url, event.extension) : void 0;
+@@ -2583,7 +2585,15 @@ var PermissionsAPI = class {
+     this.getAll = ({ extension }) => {
+       return this.permissionMap.get(extension.id);
+     };
+-    this.remove = ({ extension }, permissions) => {
++    this.remove = ({ extension }, request) => {
++      const current = this.permissionMap.get(extension.id);
++      if (!current) return false;
++      const removed = { permissions: current.permissions.filter(p => request.permissions?.includes(p)), origins: current.origins.filter(o => request.origins?.includes(o)) };
++      this.permissionMap.set(extension.id, {
++        permissions: current.permissions.filter(p => !removed.permissions.includes(p)),
++        origins: current.origins.filter(o => !removed.origins.includes(o))
++      });
++      if (removed.permissions.length || removed.origins.length) this.ctx.router.sendEvent(extension.id, "permissions.onRemoved", removed);
+       return true;
+     };
+     this.request = async ({ extension }, request) => {
+@@ -2630,8 +2640,8 @@ var PermissionsAPI = class {
+   processExtension(extension) {
+     const manifest = extension.manifest;
+     this.permissionMap.set(extension.id, {
+-      permissions: manifest.permissions || [],
+-      origins: manifest.host_permissions || []
++      permissions: [...manifest.permissions || []],
++      origins: [...manifest.host_permissions || []]
+     });
+   }
+ };
 diff --git a/dist/esm/index.mjs b/dist/esm/index.mjs
-index 43929222572e4d6875cc192aca0750da79d8ff14..34fa2ec5c775aee22c47576e4f00bb327019466d 100644
+index 43929222572e4d6875cc192aca0750da79d8ff14..7e7dc957d44ffa74bc70d784145e601611a13e7b 100644
 --- a/dist/esm/index.mjs
 +++ b/dist/esm/index.mjs
 @@ -186,9 +186,9 @@ var _PopupView = class _PopupView extends EventEmitter {
@@ -58,3 +273,31 @@ index 43929222572e4d6875cc192aca0750da79d8ff14..34fa2ec5c775aee22c47576e4f00bb32
    }
    async create(event, details = {}) {
      const url = details.url ? validateExtensionUrl(details.url, event.extension) : void 0;
+@@ -2546,7 +2548,15 @@ var PermissionsAPI = class {
+     this.getAll = ({ extension }) => {
+       return this.permissionMap.get(extension.id);
+     };
+-    this.remove = ({ extension }, permissions) => {
++    this.remove = ({ extension }, request) => {
++      const current = this.permissionMap.get(extension.id);
++      if (!current) return false;
++      const removed = { permissions: current.permissions.filter(p => request.permissions?.includes(p)), origins: current.origins.filter(o => request.origins?.includes(o)) };
++      this.permissionMap.set(extension.id, {
++        permissions: current.permissions.filter(p => !removed.permissions.includes(p)),
++        origins: current.origins.filter(o => !removed.origins.includes(o))
++      });
++      if (removed.permissions.length || removed.origins.length) this.ctx.router.sendEvent(extension.id, "permissions.onRemoved", removed);
+       return true;
+     };
+     this.request = async ({ extension }, request) => {
+@@ -2593,8 +2603,8 @@ var PermissionsAPI = class {
+   processExtension(extension) {
+     const manifest = extension.manifest;
+     this.permissionMap.set(extension.id, {
+-      permissions: manifest.permissions || [],
+-      origins: manifest.host_permissions || []
++      permissions: [...manifest.permissions || []],
++      origins: [...manifest.host_permissions || []]
+     });
+   }
+ };

@@ -54,10 +54,17 @@ it('keeps private approvals in memory and discards them on close', async () => {
   const permissions = browserPermissions(id)
   permissions.allowMedia('https://meet.example', { audio: true, video: true })
   permissions.setNotification('https://meet.example', true)
+  permissions.setSite('https://meet.example', 'idle-detection', 'allow')
   expect(browserPermissions(id).media('https://meet.example')).toEqual({ audio: true, video: true })
+  expect(browserPermissions(id).site('https://meet.example').permissions['idle-detection']).toBe(
+    'allow',
+  )
   expect(await readdir(state.root)).toEqual([])
   forgetPrivateBrowserPermissions(id)
   expect(browserPermissions(id).media('https://meet.example')).toBeUndefined()
+  expect(browserPermissions(id).site('https://meet.example').permissions['idle-detection']).toBe(
+    'ask',
+  )
 })
 
 it('resets legacy grants to ask and blocks each device without affecting another origin or profile', () => {
@@ -96,10 +103,15 @@ it('persists common API settings by origin and profile with explicit automatic P
   const work = browserPermissions('work')
   expect(work.site(origin).permissions['automatic-pip']).toBe('block')
   expect(work.site(origin).permissions['screen-wake-lock']).toBe('allow')
+  expect(work.site(origin).permissions['idle-detection']).toBe('ask')
+  work.setSite(origin, 'idle-detection', 'allow')
   work.setSite(origin, 'clipboard-read', 'block')
   work.setSite(origin, 'automatic-pip', 'allow')
   expect(browserPermissions('work').site(origin).permissions['clipboard-read']).toBe('block')
   expect(browserPermissions('work').site(origin).permissions['automatic-pip']).toBe('allow')
   expect(browserPermissions('personal').site(origin).permissions['automatic-pip']).toBe('block')
   expect(work.site('https://other.example').permissions['clipboard-read']).toBe('ask')
+  expect(browserPermissions('work').site(origin).permissions['idle-detection']).toBe('allow')
+  expect(browserPermissions('personal').site(origin).permissions['idle-detection']).toBe('ask')
+  expect(work.site('https://other.example').permissions['idle-detection']).toBe('ask')
 })

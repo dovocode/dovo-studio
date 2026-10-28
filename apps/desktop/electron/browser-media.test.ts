@@ -42,7 +42,10 @@ function page(id: number, url: string) {
     getTitle: () => `Page ${id}`,
     getURL: () => mainFrame.url,
     send: vi.fn<(channel: string, ...args: unknown[]) => void>(),
-    ipc: { on: (name: string, listener: Listener) => void ipc.set(name, listener) },
+    ipc: {
+      handle: vi.fn<(...args: unknown[]) => void>(),
+      on: (name: string, listener: Listener) => void ipc.set(name, listener),
+    },
     on: (name: string, listener: Listener) => void events.set(name, listener),
     once: (name: string, listener: Listener) => void events.set(name, listener),
     report: (raw: unknown, frame: unknown = mainFrame) =>
@@ -56,6 +59,9 @@ type Page = ReturnType<typeof page>
 function fakeSession() {
   return {
     registerPreloadScript: vi.fn<(script: unknown) => void>(),
+    on: vi.fn<(...args: unknown[]) => void>(),
+    setDevicePermissionHandler: vi.fn<(...args: unknown[]) => void>(),
+    setBluetoothPairingHandler: vi.fn<(...args: unknown[]) => void>(),
     display: undefined as undefined | Listener,
     request: undefined as undefined | Listener,
     check: undefined as undefined | ((...args: unknown[]) => boolean),
@@ -133,7 +139,7 @@ it('installs the capture preload and handlers once per shared-browser session', 
   const session = fakeSession()
   media.attachSession(session as never, 'work')
   media.attachSession(session as never, 'work')
-  expect(session.registerPreloadScript).toHaveBeenCalledOnce()
+  expect(session.registerPreloadScript).toHaveBeenCalledTimes(2)
   const [{ filePath, type }] = session.registerPreloadScript.mock.calls[0] as [
     { filePath: string; type: string },
   ]
@@ -523,12 +529,12 @@ it('asks before camera or microphone use, remembers the live document, and reset
   expect(session.check?.(call, 'media', 'https://meet.example/', { mediaType: 'video' })).toBe(
     false,
   )
-  const geolocation = vi.fn<(allowed: boolean) => void>()
-  session.request?.(call, 'geolocation', geolocation, {
+  const unsupported = vi.fn<(allowed: boolean) => void>()
+  session.request?.(call, 'vr', unsupported, {
     isMainFrame: true,
     requestingUrl: call.mainFrame.url,
   })
-  expect(geolocation).toHaveBeenCalledWith(false)
+  expect(unsupported).toHaveBeenCalledWith(false)
   // Opt-out forgets the answer: the same origin has to ask again, and pending asks are denied.
   media.reset()
   const after = ask(call, ['audio'])
@@ -897,6 +903,7 @@ it.each([
   'speaker-selection',
   'screen-wake-lock',
   'persistent-storage',
+  'idle-detection',
 ])('limits native %s access to the owned profile and top-level origin', async (permission) => {
   const { session, call, personal } = setup()
   const { browserPermissions } = await import('./browser-permissions')
@@ -908,6 +915,7 @@ it.each([
     'speaker-selection',
     'screen-wake-lock',
     'persistent-storage',
+    'idle-detection',
   ] as const
   const checked = known.find((name) => name === permission)
   if (!checked) throw new Error('Unknown fixture permission')

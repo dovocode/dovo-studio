@@ -12,6 +12,9 @@ import {
   SHARED_BROWSER_LIBRARY_KEY,
   saveSharedBrowserTabs,
   recentBrowserTabs,
+  visitBrowserTab,
+  reorderBrowserTabs,
+  browserTabDragGroup,
   browserAddress,
   browserPageKey,
   rememberBrowserVisit,
@@ -40,7 +43,15 @@ import {
 } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef, useId, type ReactNode, type RefObject } from 'react'
+import {
+  useEffect,
+  useRef,
+  useId,
+  useState,
+  type DragEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import {
   Home,
   ArrowLeft,
@@ -205,6 +216,9 @@ function BrowserContent({
   const runtimesRef = useRef(runtimes)
   runtimesRef.current = runtimes
   const preferences = useAppPreferences()
+  const sortByActivity = preferences.browserSortByActivity !== false
+  const [draggingTab, setDraggingTab] = useState<string | null>(null)
+  const [tabDrop, setTabDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const profiles = preferences.browserProfiles.length
     ? preferences.browserProfiles
     : [{ id: 'default', name: 'Default' }]
@@ -400,7 +414,7 @@ function BrowserContent({
     if (tab.id === activeTab) return
     const now = Date.now()
     setTabs((previous) =>
-      previous.map((item) =>
+      visitBrowserTab(previous, tab.id, now).map((item) =>
         item.id === tab.id
           ? wakeBrowserTab(item, now)
           : item.id === activeTab
@@ -1019,6 +1033,13 @@ function BrowserContent({
   }, [browser, url, mode, scope, browserKey, profileId, shared])
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
   useEffect(() => {
+    if (!browser || mode !== 'web') return
+    return () => {
+      // Leaving this tab/Studio section is distinct from reconfiguring its URL or viewport.
+      void browser({ action: 'hide', key: browserKey }).catch(() => {})
+    }
+  }, [browser, browserKey, mode])
+  useEffect(() => {
     if (!browser || (!url && !nativeTabKeys.has(`${scope}:${activeTab}`)) || mode !== 'web') return
     let alive = true
     let frame: number | undefined
@@ -1058,6 +1079,7 @@ function BrowserContent({
           : {
               action: 'hide' as const,
               key: browserKey,
+              ...(obscured ? { occluded: true } : {}),
               ...(occlusion === 'tooltip' ? { preserveFocus: true } : {}),
             }
       const signature = JSON.stringify(command)
@@ -1152,6 +1174,7 @@ function BrowserContent({
       void browser({
         action: 'hide',
         key: browserKey,
+        occluded: true,
       }).catch(() => {})
     }
   }, [
@@ -1385,7 +1408,7 @@ function BrowserContent({
     currentTabs.current = next
     setTabs(next)
     if (tab.id !== activeTab) return
-    const available = recentBrowserTabs(next).filter((item) => item.id !== tab.id)
+    const available = recentBrowserTabs(next, sortByActivity).filter((item) => item.id !== tab.id)
     const target =
       available.find((item) => browserTabCategory(item, now) === 'active') ?? available[0]
     if (target) selectTab(target)
@@ -1499,12 +1522,98 @@ function BrowserContent({
     setHomeError('')
     setHomeEditor({ tabId: tab.id, url: tab.homeUrl ?? tab.url })
   }
+  const clearTabDrag = () => {
+    setDraggingTab(null)
+    setTabDrop(null)
+  }
+  const tabDragGroup = (tab: BrowserTab) => browserTabDragGroup(tab, sortByActivity, clock)
+  const acceptsTabDrop = (target: BrowserTab) => {
+    const source = tabs.find((tab) => tab.id === draggingTab)
+    return (
+      !busy &&
+      !!source &&
+      source.id !== target.id &&
+      !!tabDragGroup(source) &&
+      tabDragGroup(source) === tabDragGroup(target)
+    )
+  }
+  const tabDropEdge = (event: DragEvent<HTMLDivElement>, tab: BrowserTab) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return tab.pinned
+      ? event.clientX < rect.left + rect.width / 2
+        ? 'before'
+        : 'after'
+      : event.clientY < rect.top + rect.height / 2
+        ? 'before'
+        : 'after'
+  }
   const renderTab = (tab: BrowserTab) => (
     <BrowserTabRow
       key={tab.id}
       tab={tab}
       active={activeTab === tab.id}
       busy={busy}
+      reorder={
+        !busy && tabDragGroup(tab)
+          ? {
+              dragging: draggingTab === tab.id,
+              edge: tabDrop?.id === tab.id ? tabDrop.edge : undefined,
+              onDragStart: (event) => {
+                if (
+                  event.target instanceof Element &&
+                  event.target.closest('button') &&
+                  !event.target.closest('[data-browser-tab-select]')
+                ) {
+                  event.preventDefault()
+                  return
+                }
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('application/x-dovo-browser-tab', tab.id)
+                event.dataTransfer.setDragImage(event.currentTarget, 16, 16)
+                setDraggingTab(tab.id)
+              },
+              onDragOver: (event) => {
+                if (!acceptsTabDrop(tab)) {
+                  setTabDrop(null)
+                  return
+                }
+                event.preventDefault()
+                event.dataTransfer.dropEffect = 'move'
+                setTabDrop({ id: tab.id, edge: tabDropEdge(event, tab) })
+              },
+              onDrop: (event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                if (draggingTab && acceptsTabDrop(tab)) {
+                  const sourceId = draggingTab,
+                    edge = tabDropEdge(event, tab)
+                  setTabs((previous) =>
+                    reorderBrowserTabs(previous, sourceId, tab.id, edge, sortByActivity, clock),
+                  )
+                }
+                clearTabDrag()
+              },
+              onDragEnd: clearTabDrag,
+              onMove: (direction) => {
+                const group = recentBrowserTabs(tabs, false).filter(
+                  (item) => tabDragGroup(item) === tabDragGroup(tab),
+                )
+                const target = group[group.indexOf(tab) + (direction === 'previous' ? -1 : 1)]
+                if (target)
+                  setTabs((previous) =>
+                    reorderBrowserTabs(
+                      previous,
+                      tab.id,
+                      target.id,
+                      direction === 'previous' ? 'before' : 'after',
+                      sortByActivity,
+                      clock,
+                    ),
+                  )
+              },
+            }
+          : undefined
+      }
       windows={browserWindows}
       onMenuOpen={loadBrowserWindows}
       onKeepAwake={
@@ -1709,6 +1818,20 @@ function BrowserContent({
                 <option value="preview">Link preview</option>
                 <option value="tab">New tab</option>
               </select>
+              <label className="flex items-center gap-2 text-xs font-medium">
+                <input
+                  type="checkbox"
+                  checked={sortByActivity}
+                  onChange={(event) =>
+                    updateAppPreferences({ browserSortByActivity: event.target.checked })
+                  }
+                />
+                Order tabs by activity
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Pinned tabs always keep their manual order. Turn this off to drag other tabs into
+                order.
+              </p>
               <p className="text-xs font-medium">Browser location</p>
               <p className="text-xs text-muted-foreground">
                 Location stays with this tab. Open another tab to use a different computer.
@@ -2340,12 +2463,12 @@ function BrowserContent({
                       aria-label="Pinned browser tabs"
                       className="mb-2 grid grid-cols-[repeat(auto-fill,minmax(4rem,1fr))] gap-1.5"
                     >
-                      {recentBrowserTabs(tabs)
+                      {recentBrowserTabs(tabs, sortByActivity)
                         .filter((tab) => tab.pinned)
                         .map(renderTab)}
                     </div>
                   )}
-                  {recentBrowserTabs(tabs)
+                  {recentBrowserTabs(tabs, sortByActivity)
                     .filter((tab) => !tab.pinned && browserTabCategory(tab, clock) === category)
                     .map(renderTab)}
                 </BrowserTabGroup>

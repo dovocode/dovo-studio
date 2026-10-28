@@ -14,6 +14,7 @@ function Icon({ url }: { url: string }) {
       src={url}
       alt=""
       aria-hidden
+      draggable={false}
       width={16}
       height={16}
       loading="eager"

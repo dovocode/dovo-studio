@@ -34,6 +34,7 @@ import {
   attachExtensionPermissionChecks,
   webOriginCovered,
 } from './browser-extension-permissions.js'
+import { attachExtensionBrowserAPIs } from './browser-extension-browser-apis.js'
 import { dismissExtensionPopupOnBlur } from './browser-extension-popup.js'
 
 /** Shared-browser profiles never share storage with agent-enabled thread previews. */
@@ -55,6 +56,10 @@ const SUPPORTED_PERMISSIONS = new Set([
   'commands',
   'contextMenus',
   'cookies',
+  'downloads',
+  'downloads.open',
+  'history',
+  'identity',
   'management',
   'notifications',
   'nativeMessaging',
@@ -111,6 +116,7 @@ type Profile = {
   errors: Map<string, string>
   queue: Promise<unknown>
   native: ReturnType<typeof attachNativeMessaging>
+  browserAPIs: ReturnType<typeof attachExtensionBrowserAPIs>
 }
 type ActionClick = (details: {
   eventType: 'click'
@@ -366,6 +372,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
   }
   const unload = (profile: Profile, id: string) => {
     profile.native.close(id)
+    profile.browserAPIs.close(id)
     if (profile.session.extensions.getExtension(id)) profile.session.extensions.removeExtension(id)
   }
 
@@ -467,8 +474,14 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
             }
           },
         })
+        const browserAPIs = attachExtensionBrowserAPIs(extensions, {
+          session: browserSession,
+          profileId,
+          window: () => tabs.window(profileId),
+        })
         const profile: Profile = {
           native,
+          browserAPIs,
           id: profileId,
           session: browserSession,
           extensions,
@@ -804,7 +817,10 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
       return on
     },
     dispose: async () => {
-      for (const profile of await opened()) unloadAll(profile)
+      for (const profile of await opened()) {
+        unloadAll(profile)
+        profile.browserAPIs.dispose()
+      }
     },
     /** Whether a URL is a page of an extension running in this profile. */
     ownsUrl: (profileId: string, url: string) => {
@@ -822,13 +838,18 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
       }
     },
     addTab: (profileId: string, contents: Electron.WebContents, window: BaseWindow) => {
-      if (!contents.isDestroyed()) ready.get(profileId)?.extensions.addTab(contents, window)
+      if (!contents.isDestroyed()) {
+        const profile = ready.get(profileId)
+        profile?.extensions.addTab(contents, window)
+        profile?.browserAPIs.attachTab(contents)
+      }
     },
     selectTab: (profileId: string, contents: Electron.WebContents) => {
       if (!contents.isDestroyed()) ready.get(profileId)?.extensions.selectTab(contents)
     },
     /** Call before closing; the library also forgets tabs whose contents are destroyed. */
     removeTab: (profileId: string, contents: Electron.WebContents) => {
+      ready.get(profileId)?.browserAPIs.removeTab(contents)
       if (!contents.isDestroyed()) ready.get(profileId)?.extensions.removeTab(contents)
     },
     handle: async (

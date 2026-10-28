@@ -9,8 +9,18 @@ import {
   Clipboard,
   Volume2,
   Monitor,
+  UserRound,
   Database,
   PictureInPicture2,
+  MapPin,
+  FolderOpen,
+  Type,
+  Usb,
+  Bluetooth,
+  Music,
+  MousePointer2,
+  Keyboard,
+  PanelsTopLeft,
 } from 'lucide-react'
 import { useStudioHost } from '@dovo/studio-core'
 import { Button, IconButton, Popover } from '@dovo/studio-ui'
@@ -24,8 +34,21 @@ const controls = [
   { permission: 'clipboard-sanitized-write', label: 'Write clipboard', Icon: Clipboard },
   { permission: 'speaker-selection', label: 'Speaker selection', Icon: Volume2 },
   { permission: 'screen-wake-lock', label: 'Keep screen awake', Icon: Monitor },
+  { permission: 'idle-detection', label: 'Device presence', Icon: UserRound },
   { permission: 'persistent-storage', label: 'Persistent storage', Icon: Database },
   { permission: 'automatic-pip', label: 'Automatic call PiP', Icon: PictureInPicture2 },
+  { permission: 'geolocation', label: 'Precise location', Icon: MapPin },
+  { permission: 'geolocation-approximate', label: 'Approximate location', Icon: MapPin },
+  { permission: 'fileSystem', label: 'Files and folders you choose', Icon: FolderOpen },
+  { permission: 'local-fonts', label: 'Installed fonts', Icon: Type },
+  { permission: 'usb', label: 'USB devices', Icon: Usb },
+  { permission: 'hid', label: 'HID devices', Icon: Usb },
+  { permission: 'serial', label: 'Serial ports', Icon: Usb },
+  { permission: 'bluetooth', label: 'Bluetooth devices', Icon: Bluetooth },
+  { permission: 'midi', label: 'MIDI devices (including SysEx)', Icon: Music },
+  { permission: 'pointerLock', label: 'Capture mouse pointer', Icon: MousePointer2 },
+  { permission: 'keyboardLock', label: 'Capture keyboard shortcuts', Icon: Keyboard },
+  { permission: 'window-management', label: 'Displays and window placement', Icon: PanelsTopLeft },
 ] as const
 
 /** Every command is resolved against the native page's current origin and profile. */

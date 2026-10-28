@@ -1,7 +1,7 @@
 import {
   DOCUMENT_PIP_NAME,
   authorizeDocumentPip,
-  attachDocumentPipControls,
+  createDocumentPipWindow,
 } from './browser-document-pip.js'
 import { loadBrowserFaviconModule } from './browser-favicon.js'
 import {
@@ -37,6 +37,8 @@ type Entry = {
   agentAccess: boolean
   /** Shared Browser activity view; thread-side previews keep denying popups and shortcuts. */
   workspace: boolean
+  /** Selected page, including temporary menu underlays; independent of frame subscribers. */
+  foreground: boolean
   openedLinks: string[]
   favicon?: string | null
   /** Reported once by the next `status`; native POST loads have no other channel to the UI. */
@@ -196,14 +198,11 @@ export function registerBrowser(
   const focusedTabs = new Map<number, string>()
   const awakeRequests = new Map<string, object>()
   let disposed = false
+  const pageVisible = (entry: Entry) =>
+    entry.foreground && !entry.window.isMinimized() && entry.window.isVisible()
   const reportVisibility = (entry: Entry) => {
     if (entry.workspace && !entry.contents.isDestroyed())
-      entry.contents.send(
-        'browser:document-pip-visibility',
-        (entry.view.getVisible() || !!entry.stopFrames) &&
-          !entry.window.isMinimized() &&
-          entry.window.isVisible(),
-      )
+      entry.contents.send('browser:document-pip-visibility', pageVisible(entry))
   }
   const syncBackgroundThrottling = (entry: Entry) => {
     if (!entry.contents.isDestroyed())
@@ -217,11 +216,14 @@ export function registerBrowser(
         ),
       )
   }
-  const setVisible = (entry: Entry, visible: boolean) => {
+  const setVisible = (entry: Entry, visible: boolean, occluded = false) => {
     const changed = entry.view.getVisible() !== visible
+    const foreground = visible || (occluded && entry.foreground)
+    const selectionChanged = entry.foreground !== foreground
+    entry.foreground = foreground
     syncBackgroundThrottling(entry)
     if (changed) entry.view.setVisible(visible)
-    if (changed) reportVisibility(entry)
+    if (changed || selectionChanged) reportVisibility(entry)
   }
   const focusTab = (entry: Entry) => {
     if (
@@ -621,6 +623,7 @@ export function registerBrowser(
       profileId,
       agentAccess: false,
       workspace,
+      foreground: false,
       openedLinks: [],
       popups: new Set(),
       view,
@@ -728,8 +731,9 @@ export function registerBrowser(
     view.webContents.setUserAgent(userAgent)
     configureBrowserLanguage(view.webContents.session, profileId, userAgent)
     view.webContents.on('dom-ready', () => {
-      const contents = view.webContents
+      // A new document's preload has no memory of its predecessor's selection state.
       reportVisibility(created)
+      const contents = view.webContents
       // Sites such as Teams define Electron drag regions before redirecting to sign-in.
       // Electron retains those regions across navigation, swallowing clicks on the next page.
       // Embedded pages must never define Studio's window chrome; user-origin CSS also wins
@@ -907,11 +911,67 @@ export function registerBrowser(
       ? authorizeDocumentPip(
           view.webContents,
           () =>
-            (!view.getVisible() || created.window.isMinimized() || !created.window.isVisible()) &&
+            !pageVisible(created) &&
             browserPermissions(profileId).site(new URL(view.webContents.getURL()).origin)
               .permissions['automatic-pip'] === 'allow',
         )
       : () => undefined
+    const trackPopup = (
+      popup: BrowserWindow,
+      contents: Electron.WebContents,
+      documentPip = false,
+      disallowReturn = false,
+    ) => {
+      if (
+        views.get(JSON.stringify([created.windowId, created.key])) !== created ||
+        !created.workspace
+      ) {
+        popup.close()
+        return
+      }
+      if (documentPip) {
+        created.documentPip = popup
+        const keepOnTop = () => {
+          if (!popup.isDestroyed()) popup.setAlwaysOnTop(true, 'floating')
+        }
+        keepOnTop()
+        popup.on('show', keepOnTop)
+        popup.on('restore', keepOnTop)
+        if (process.platform === 'linux') popup.setVisibleOnAllWorkspaces(true)
+        view.webContents.setBackgroundThrottling(false)
+        // A PiP document must never navigate away from its inherited origin.
+        contents.on('will-navigate', (event) => event.preventDefault())
+        contents.on('will-redirect', (event) => event.preventDefault())
+        if (!disallowReturn)
+          contents.on('context-menu', () => {
+            Menu.buildFromTemplate([
+              {
+                label: 'Return to tab',
+                click: () => {
+                  focusTab(created)
+                  popup.close()
+                },
+              },
+            ]).popup({ window: popup })
+          })
+      }
+      created.popups.add(popup)
+      popup.once('closed', () => {
+        created.popups.delete(popup)
+        if (created.documentPip === popup) {
+          created.documentPip = undefined
+          if (!view.webContents.isDestroyed()) syncBackgroundThrottling(created)
+        }
+      })
+      httpOnly(contents)
+      contents.setIgnoreMenuShortcuts(true)
+      contents.on('before-input-event', (_event, input) => syncMenuShortcuts(contents, input))
+      contents.setWindowOpenHandler((details) => {
+        if (details.postBody) created.navigationError = POST_REFUSED
+        else queueLink(created, details.url)
+        return { action: 'deny' }
+      })
+    }
     view.webContents.setWindowOpenHandler((details) => {
       if (
         !created.workspace ||
@@ -922,7 +982,20 @@ export function registerBrowser(
       if (pipOptions) {
         for (const entry of views.values())
           if (entry.documentPip && !entry.documentPip.isDestroyed()) entry.documentPip.close()
-        return { action: 'allow', overrideBrowserWindowOptions: pipOptions }
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: pipOptions,
+          createWindow: (options) => {
+            const disallowReturn = /(?:^|,)dovo-disallow-return=1(?:,|$)/.test(details.features)
+            const pip = createDocumentPipWindow(
+              options,
+              view.webContents.getURL(),
+              disallowReturn ? undefined : () => focusTab(created),
+            )
+            trackPopup(pip.window, pip.contents, true, disallowReturn)
+            return pip.contents
+          },
+        }
       }
       if (details.frameName?.startsWith(DOCUMENT_PIP_NAME)) return { action: 'deny' }
       if (details.postBody) {
@@ -997,66 +1070,7 @@ export function registerBrowser(
       }
       return { action: 'deny' }
     })
-    view.webContents.on('did-create-window', (popup, details) => {
-      if (
-        views.get(JSON.stringify([created.windowId, created.key])) !== created ||
-        !created.workspace
-      ) {
-        popup.close()
-        return
-      }
-      const documentPip = details?.frameName?.startsWith(`${DOCUMENT_PIP_NAME}:`)
-      if (documentPip) {
-        created.documentPip = popup
-        attachDocumentPipControls(
-          popup,
-          String(Reflect.get(details.options ?? {}, 'dovo-disallow-return')) === '1'
-            ? undefined
-            : () => focusTab(created),
-        )
-        const keepOnTop = () => {
-          if (!popup.isDestroyed()) popup.setAlwaysOnTop(true, 'floating')
-        }
-        keepOnTop()
-        popup.on('show', keepOnTop)
-        popup.on('restore', keepOnTop)
-        if (process.platform === 'linux') popup.setVisibleOnAllWorkspaces(true)
-        view.webContents.setBackgroundThrottling(false)
-        // A PiP document must never navigate away from its inherited origin.
-        popup.webContents.on('will-navigate', (event) => event.preventDefault())
-        popup.webContents.on('will-redirect', (event) => event.preventDefault())
-        if (String(Reflect.get(details.options ?? {}, 'dovo-disallow-return')) !== '1')
-          popup.webContents.on('context-menu', () => {
-            Menu.buildFromTemplate([
-              {
-                label: 'Return to tab',
-                click: () => {
-                  focusTab(created)
-                  popup.close()
-                },
-              },
-            ]).popup({ window: popup })
-          })
-      }
-      created.popups.add(popup)
-      popup.once('closed', () => {
-        created.popups.delete(popup)
-        if (created.documentPip === popup) {
-          created.documentPip = undefined
-          if (!view.webContents.isDestroyed()) syncBackgroundThrottling(created)
-        }
-      })
-      httpOnly(popup.webContents)
-      popup.webContents.setIgnoreMenuShortcuts(true)
-      popup.webContents.on('before-input-event', (_event, input) =>
-        syncMenuShortcuts(popup.webContents, input),
-      )
-      popup.webContents.setWindowOpenHandler((details) => {
-        if (details.postBody) created.navigationError = POST_REFUSED
-        else queueLink(created, details.url)
-        return { action: 'deny' }
-      })
-    })
+    view.webContents.on('did-create-window', (popup) => trackPopup(popup, popup.webContents))
     view.webContents.on('before-mouse-event', (_event, input) => {
       // A site-isolated redirect or extension popup may leave keyboard focus in another
       // renderer. Give the page focus on deliberate clicks, never on polling or resizing.
@@ -1340,8 +1354,8 @@ export function registerBrowser(
         // Studio must receive Escape while the native page is hidden. Remember page
         // focus and return it only if the user has not interacted with Studio meanwhile.
         focusStudio(entry)
-        entry.inactiveAt ??= Date.now()
-        setVisible(entry, false)
+        setVisible(entry, false, command.occluded)
+        if (!entry.foreground) entry.inactiveAt ??= Date.now()
         prune()
       }
       return
@@ -1388,6 +1402,10 @@ export function registerBrowser(
         entry = undefined
       }
       entry ??= createEntry(window, viewKey, command.key, profileId, workspace)
+      // Selection precedes loading/painting. A selected page must not auto-pop out
+      // merely because its new renderer is not ready to be displayed yet.
+      entry.foreground = true
+      reportVisibility(entry)
       prune()
       if (entry.workspace) extensions.selectTab(profileId, entry.view.webContents)
       entry.agentAccess = !!(command.agentAccess && command.taskId && directory)

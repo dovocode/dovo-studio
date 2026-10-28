@@ -65,7 +65,7 @@ const manifest = {
   version: '1.0.0',
   action: { default_popup: 'popup.html', default_title: 'Smoke' },
   background: { service_worker: 'sw.js' },
-  permissions: ['storage', 'tabs'],
+  permissions: ['storage', 'tabs', 'downloads', 'history', 'identity'],
   optional_permissions: ['bookmarks', 'nativeMessaging'],
   content_scripts: [{ matches: ['http://127.0.0.1/*'], js: ['cs.js'] }],
 }
@@ -74,6 +74,10 @@ write(
   join(fixture, 'sw.js'),
   `chrome.runtime.onMessage.addListener((message, sender, reply) => {
   ;(async () => {
+    if (message.browserAPI) {
+      const { namespace, method, args = [] } = message.browserAPI
+      return reply({ value: await chrome[namespace][method](...args) })
+    }
     const result = { from: message.from, workerHasCurrentTab: (await chrome.tabs.getCurrent()) !== undefined }
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     result.activeTab = tab && tab.url
@@ -178,6 +182,9 @@ const server = createServer((request, response) => {
     response.end('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="'+color+'"/></svg>')
     return
   }
+  if(request.url?.startsWith('/auth?')) { const id = new URL(request.url,'http://localhost').searchParams.get('id'); response.writeHead(302,{location:'https://'+id+'.chromiumapp.org/callback#code=native-smoke'});response.end();return }
+  if(request.url==='/slow-download') { response.setHeader('content-type','application/octet-stream');response.setHeader('content-length',1024*1024);response.write(Buffer.alloc(16384));const timer=setInterval(()=>response.write(Buffer.alloc(16384)),50);request.on('close',()=>clearInterval(timer));return }
+  if(request.url==='/download') { response.setHeader('content-type','text/plain'); response.setHeader('content-disposition','attachment; filename=smoke.txt'); response.end('Dovo browser download'); return }
   if(request.url==='/language') { response.end(request.headers['accept-language']||''); return }
   response.setHeader('content-type', 'text/html')
   response.end('<title>page</title><link rel="icon" href="/profile-icon.svg">hello')
@@ -186,6 +193,8 @@ const server = createServer((request, response) => {
 app.whenReady().then(async () => {
   try {
     setBrowser(true)
+    app.setPath('downloads', join(work, 'downloads'))
+    mkdirSync(app.getPath('downloads'), {recursive:true})
     // No person answers these during the smoke; everything else is production code.
     Object.assign(dialog, {
       showOpenDialog: async () => ({ canceled: false, filePaths: [join(work, 'fixture')] }),
@@ -562,6 +571,63 @@ app.whenReady().then(async () => {
       const adopted = await call('browser', { action: 'status', key: created.key })
       assert.equal(adopted.url, created.url)
       assert.equal(adopted.title, 'extension page')
+      stage('browser extension APIs')
+      const extensionContents = webContents.getAllWebContents().find(contents => contents.getURL() === created.url)!
+      const api = (source: string) => extensionContents.executeJavaScript(source, true)
+      const workerAPI = (namespace: string, method: string, args: unknown[] = []) => api('chrome.runtime.sendMessage('+JSON.stringify({browserAPI:{namespace,method,args}})+')')
+      assert.equal(await api('chrome.identity.getRedirectURL("callback")'), 'https://'+extension.id+'.chromiumapp.org/callback')
+      assert.equal(await api('typeof chrome.identity.getAuthToken'), 'undefined')
+      const auth = await workerAPI('identity','launchWebAuthFlow',[{url:page+'auth?id='+extension.id,interactive:false}])
+      assert.equal(auth.value,'https://'+extension.id+'.chromiumapp.org/callback#code=native-smoke')
+      const interaction = await workerAPI('identity','launchWebAuthFlow',[{url:page,interactive:false}])
+      assert.match(interaction.error,/requires interaction/)
+      await workerAPI('history','addUrl',[{url:page+'history-proof'}])
+      const history = await api('chrome.history.search({text:"history-proof",startTime:0})')
+      assert.equal(history.length,1)
+      assert.equal(history[0].visitCount,1)
+      assert.equal((await workerAPI('history','getVisits',[{url:page+'history-proof'}])).value.length,1)
+      await workerAPI('history','deleteUrl',[{url:page+'history-proof'}])
+      assert.deepEqual(await api('chrome.history.search({text:"history-proof",startTime:0})'),[])
+      assert.ok((await api('chrome.history.search({text:'+JSON.stringify(page)+',startTime:0})')).length > 0,'Real web tab visits must be recorded.')
+      await api('window.createdDownloads=[];window.downloadChanges=[];chrome.downloads.onCreated.addListener(item=>createdDownloads.push(item));chrome.downloads.onChanged.addListener(delta=>downloadChanges.push(delta));true')
+      const downloaded = await workerAPI('downloads','download',[{url:page+'download',filename:'native-smoke-'+run+'.txt'}])
+      assert.equal(typeof downloaded.value,'number')
+      let download: any
+      for(let i=0;i<80;i++) {
+        download=(await api('chrome.downloads.search({id:'+downloaded.value+'})'))[0]
+        if(download?.state==='complete')break
+        await wait(50)
+      }
+      assert.equal(download.state,'complete')
+      assert.equal(readFileSync(download.filename,'utf8'),'Dovo browser download')
+      assert.equal(download.byExtensionId,extension.id)
+      assert.ok((await api('window.createdDownloads')).some((item:any)=>item.id===download.id))
+      assert.ok((await api('window.downloadChanges')).some((item:any)=>item.id===download.id&&item.state?.current==='complete'))
+      assert.match((await workerAPI('downloads','download',[{url:page+'download',filename:'../escape.txt'}])).error,/filename/)
+      assert.match(await api('new Promise(resolve=>chrome.downloads.pause(999999,()=>resolve(chrome.runtime.lastError?.message)))'),/Invalid download ID/)
+      assert.equal(await api('chrome.runtime.lastError === undefined'),true)
+      assert.match(await api('chrome.downloads.pause(999999).then(()=>"bad",error=>error.message)'),/Invalid download ID/)
+      await workerAPI('downloads','removeFile',[download.id])
+      assert.equal((await api('chrome.downloads.search({id:'+download.id+'})'))[0].exists,false)
+      assert.deepEqual((await workerAPI('downloads','erase',[{id:download.id}])).value,[download.id])
+      const concurrent = await Promise.all([1,2].map(()=>workerAPI('downloads','download',[{url:page+'slow-download',filename:'concurrent.bin'}])))
+      const ids = concurrent.map(result=>result.value)
+      assert.equal(new Set(ids).size,2)
+      const records = await api('chrome.downloads.search({state:"in_progress"})')
+      assert.equal(new Set(records.map((item:any)=>item.filename)).size,2)
+      await workerAPI('downloads','pause',[ids[0]])
+      await wait(50)
+      assert.equal((await api('chrome.downloads.search({id:'+ids[0]+'})'))[0].paused,true)
+      await workerAPI('downloads','resume',[ids[0]])
+      await Promise.all(ids.map(id=>workerAPI('downloads','cancel',[id])))
+      await wait(50)
+      for (const id of ids) assert.equal((await api('chrome.downloads.search({id:'+id+'})'))[0].error,'USER_CANCELED')
+
+      await api('chrome.permissions.remove({permissions:["history"]})')
+      assert.equal(await api('chrome.permissions.contains({permissions:["history"]})'),false)
+      assert.match(await api('chrome.history.search({text:""}).then(()=>"bad",error=>error.message)'),/permission/)
+      // Reload restores required manifest permissions, as in Chrome.
+      report.browserAPIs=true
 
       await show('studio:browser:tab-personal', 'personal')
       const personal = await call('extensions', { action: 'list', profileId: 'personal' })

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { DOCUMENT_PIP_HEADER_HEIGHT } from './browser-document-pip-controls.js'
+export { createDocumentPipWindow } from './browser-document-pip-controls.js'
 
 /** A regular same-origin window avoids Electron's broken native Document PiP owner. */
 export const DOCUMENT_PIP_NAME = '__dovo_document_picture_in_picture__'
@@ -64,9 +66,9 @@ export function documentPipWindowOptions(
     useContentSize: true,
     autoHideMenuBar: true,
     width: dimension('width', 480, 240, 1920),
-    height: dimension('height', 320, 160, 1080),
+    height: dimension('height', 320, 160, 1080) + DOCUMENT_PIP_HEADER_HEIGHT,
     minWidth: 240,
-    minHeight: 160,
+    minHeight: 160 + DOCUMENT_PIP_HEADER_HEIGHT,
     webPreferences: {
       backgroundThrottling: false,
       sandbox: true,
@@ -77,73 +79,6 @@ export function documentPipWindowOptions(
       disableBlinkFeatures: 'DocumentPictureInPictureAPI',
     },
   }
-}
-
-export function attachDocumentPipControls(popup: Electron.BrowserWindow, returnToTab?: () => void) {
-  const contents = popup.webContents
-  contents.ipc.handle('browser:document-pip-controls', (event) =>
-    event.senderFrame === contents.mainFrame ? { returnToTab: !!returnToTab } : null,
-  )
-  contents.ipc.on('browser:document-pip-control', (event, action: unknown) => {
-    if (event.senderFrame !== contents.mainFrame || popup.isDestroyed()) return
-    if (action === 'return' && returnToTab) returnToTab()
-    else if (action !== 'close') return
-    popup.close()
-  })
-}
-
-/** Isolated-world chrome, separate from the call page's styles and JavaScript. */
-function installDocumentPipControls(
-  action: (action: 'close' | 'return') => void,
-  returnToTab: boolean,
-) {
-  const host = document.createElement('div')
-  host.setAttribute('data-dovo-pip-controls', '')
-  host.style.cssText =
-    'all:initial!important;position:fixed!important;inset:0 0 auto!important;height:36px!important;z-index:2147483647!important;pointer-events:none!important;display:block!important;'
-  const root = host.attachShadow({ mode: 'closed' })
-  const sheet = new CSSStyleSheet()
-  sheet.replaceSync(`
-    .bar {display:flex;height:36px;align-items:center;justify-content:flex-end;padding:0 4px;gap:2px;background:linear-gradient(#0008,transparent);pointer-events:auto;-webkit-app-region:drag;color:white}
-    button {display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:50%;background:#202124b3;color:inherit;cursor:pointer;-webkit-app-region:no-drag}
-    button:hover {background:#ffffff40} button:focus-visible {outline:2px solid white;outline-offset:-2px}
-    svg {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-  `)
-  root.adoptedStyleSheets = [sheet]
-  const bar = document.createElement('div')
-  bar.className = 'bar'
-  bar.setAttribute('role', 'toolbar')
-  bar.setAttribute('aria-label', 'Picture-in-picture controls')
-  const button = (label: string, command: 'close' | 'return', paths: string[]) => {
-    const control = document.createElement('button')
-    control.type = 'button'
-    control.title = label
-    control.setAttribute('aria-label', label)
-    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    icon.setAttribute('viewBox', '0 0 24 24')
-    icon.setAttribute('aria-hidden', 'true')
-    for (const d of paths) {
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-      path.setAttribute('d', d)
-      icon.append(path)
-    }
-    control.append(icon)
-    control.addEventListener('click', (event) => {
-      if (event.isTrusted) action(command)
-    })
-    bar.append(control)
-  }
-  if (returnToTab) button('Back to tab', 'return', ['M14 4h6v16H4v-6', 'M4 4h7v7', 'M11 4 3 12'])
-  button('Close picture-in-picture', 'close', ['m6 6 12 12', 'M18 6 6 18'])
-  root.append(bar)
-  const mount = () => {
-    if (document.documentElement && host.parentNode !== document.documentElement)
-      document.documentElement.append(host)
-  }
-  mount()
-  const observer = new MutationObserver(mount)
-  observer.observe(document, { childList: true, subtree: true })
-  window.addEventListener('pagehide', () => observer.disconnect(), { once: true })
 }
 
 /** Runs before website scripts in the main world. Keep this function self-contained. */
@@ -177,6 +112,7 @@ export function installDocumentPictureInPicture(
   )
   let current: Window | null = null
   let hostVisible = true
+  let selectionRevision = 0
   const visibility = Object.getOwnPropertyDescriptor(
     Document.prototype,
     'visibilityState',
@@ -189,8 +125,13 @@ export function installDocumentPictureInPicture(
   const controller = {
     visibility: (visible: boolean) => {
       const previous = effectiveVisibility()
+      const selectionChanged = hostVisible !== visible
       hostVisible = visible
-      if (previous !== effectiveVisibility()) dispatch(document, new Event('visibilitychange'))
+      if (selectionChanged) selectionRevision++
+      // Chromium may already report hidden by the time Studio's selection IPC arrives.
+      // Deliver that transition even when background throttling changed the native getter first.
+      if (selectionChanged || previous !== effectiveVisibility())
+        dispatch(document, new Event('visibilitychange'))
     },
   }
   let automatic = false
@@ -278,7 +219,7 @@ export function installDocumentPictureInPicture(
   // Studio invokes it only when the site has an explicit automatic-PiP approval.
   if (!navigator.mediaSession) return controller
   const nativeSet = navigator.mediaSession.setActionHandler.bind(navigator.mediaSession)
-  let handler: ((details: { reason: string }) => void) | null = null
+  let handler: ((details: { reason: string }) => unknown) | null = null
   navigator.mediaSession.setActionHandler = (action, callback) => {
     if (String(action) === 'enterpictureinpicture') {
       handler = callback ? (details) => callback({ action, ...details }) : null
@@ -287,8 +228,16 @@ export function installDocumentPictureInPicture(
     nativeSet(action, callback)
   }
   let entering = false
+  let wasHidden = document.hidden
+  let seenSelection = selectionRevision
   add(document, 'visibilitychange', async () => {
-    if (document.visibilityState !== 'hidden' || !handler || current || entering) return
+    const hidden = document.hidden
+    const changed = hidden !== wasHidden || seenSelection !== selectionRevision
+    wasHidden = hidden
+    seenSelection = selectionRevision
+    // Native occlusion events can repeat while Studio already considers this page hidden.
+    // Closing a PiP should not immediately reopen it without another leave transition.
+    if (!changed || !hidden || !handler || current || entering) return
     entering = true
     try {
       if (
@@ -299,7 +248,7 @@ export function installDocumentPictureInPicture(
       )
         return
       automatic = true
-      handler({ reason: 'contentoccluded' })
+      await handler({ reason: 'contentoccluded' })
     } finally {
       automatic = false
       entering = false
@@ -309,13 +258,6 @@ export function installDocumentPictureInPicture(
 }
 
 export const DOCUMENT_PIP_PRELOAD = `
-if (process.isMainFrame && window.name.startsWith(${JSON.stringify(DOCUMENT_PIP_NAME + ':')})) {
-  ipcRenderer.invoke('browser:document-pip-controls').then(options => {
-    if (options) (${installDocumentPipControls.toString()})(
-      action => ipcRenderer.send('browser:document-pip-control', action), options.returnToTab,
-    )
-  }).catch(error => console.error('Could not show picture-in-picture controls.', error))
-}
 if (process.isMainFrame) {
 const pip = contextBridge.executeInMainWorld({
   func: ${installDocumentPictureInPicture.toString()},

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
+import { EventEmitter } from 'node:events'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -19,6 +20,8 @@ const f = vi.hoisted(() => {
     const loaded = new Map<string, Loaded>()
     return {
       partition,
+      on: vi.fn<(...args: unknown[]) => void>(),
+      off: vi.fn<(...args: unknown[]) => void>(),
       loaded,
       fail: undefined as string | undefined,
       registerPreloadScript: vi.fn<(script: unknown) => void>(),
@@ -92,7 +95,12 @@ vi.mock('electron-chrome-extensions', () => ({
     addTab = vi.fn<(...args: unknown[]) => void>()
     selectTab = vi.fn<(...args: unknown[]) => void>()
     removeTab = vi.fn<(...args: unknown[]) => void>()
-    ctx = { router: { apiHandler: () => vi.fn<(...args: unknown[]) => void>() } }
+    ctx = {
+      router: {
+        apiHandler: () => vi.fn<(...args: unknown[]) => void>(),
+        sendEvent: vi.fn<(...args: unknown[]) => void>(),
+      },
+    }
     api = {
       permissions: { getAll: vi.fn<() => undefined>() },
       browserAction: { activateClick: vi.fn<(details: unknown) => void>() },
@@ -210,7 +218,7 @@ it('reviews and preserves nativeMessaging in a managed copy, leaving the chosen 
         title: 'Fixture',
         popup: true,
         icon: `data:image/png;base64,${PNG.toString('base64')}`,
-        unsupportedPermissions: ['downloads'],
+        unsupportedPermissions: [],
         removedPermissions: [],
       },
     ],
@@ -417,7 +425,7 @@ it('connects library tab and window requests to Dovo tabs, refusing extension wi
   const { options } = f.instances[0]!
   await options.createTab({ url: 'https://example.com/' })
   expect(tabs.create).toHaveBeenCalledWith('work', { url: 'https://example.com/' })
-  const contents = { isDestroyed: () => false }
+  const contents = Object.assign(new EventEmitter(), { isDestroyed: () => false })
   options.removeTab(contents)
   expect(tabs.close).toHaveBeenCalledWith(contents)
   await expect(options.createWindow({ url: 'https://example.com/' })).rejects.toThrow(
@@ -585,7 +593,7 @@ it('shows permissions for review before anything from the copy loads, and cancel
   expect(options.buttons).toEqual(['Add extension', 'Cancel'])
   expect(options.detail).toContain('Permissions: storage, tabs, nativeMessaging, downloads')
   expect(options.detail).toContain('Site access: https://example.com/*, https://docs.example.com/*')
-  expect(options.detail).toContain('Not available in Dovo: downloads')
+  expect(options.detail).not.toContain('Not available in Dovo: downloads')
   expect(options.detail).toContain(
     'Desktop app access: can connect to installed Chrome native helpers',
   )

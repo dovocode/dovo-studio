@@ -332,3 +332,13 @@ it('merges desktop updates with the latest settings from another window', async 
   updateAppPreferences({ textSize: 'large' })
   expect(saved).toMatchObject({ browserWorkspaceEnabled: true, textSize: 'large' })
 })
+
+it('defaults to activity sorting and remembers manual sorting across reloads', async () => {
+  vi.stubGlobal('localStorage', storage())
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().browserSortByActivity).toBe(true)
+  updateAppPreferences({ browserSortByActivity: false })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences().browserSortByActivity).toBe(false)
+})

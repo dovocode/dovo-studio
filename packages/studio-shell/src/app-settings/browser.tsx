@@ -393,6 +393,21 @@ export default function BrowserSettings() {
       description="Preview defaults and local profiles stay on this device. Remote profiles and logins stay on the selected computer."
     >
       <DefaultBrowser />
+      <SettingsGroup title="Tab order">
+        <SettingRow
+          label="Order tabs by activity"
+          description="Pinned tabs always keep their manual order. Turn this off to drag other tabs into order."
+        >
+          <input
+            type="checkbox"
+            aria-label="Order tabs by activity"
+            checked={preferences.browserSortByActivity}
+            onChange={(event) =>
+              updateAppPreferences({ browserSortByActivity: event.target.checked })
+            }
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Browser previews">
         <SettingRow
           label="Open links in"

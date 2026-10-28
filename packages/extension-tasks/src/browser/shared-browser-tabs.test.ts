@@ -9,6 +9,7 @@ import {
   rememberBrowserVisit,
   readSharedBrowserTabs,
   recentBrowserTabs,
+  reorderBrowserTabs,
   saveSharedBrowserTabs,
   visitBrowserTab,
   type BrowserTab,
@@ -285,4 +286,57 @@ it('rejects embedded credentials, unsupported schemes and oversized final addres
     )
   const maximum = `https://example.com/${'x'.repeat(4096 - 'https://example.com/'.length)}`
   expect(browserAddress(maximum)).toBe(maximum)
+})
+
+it('keeps pinned order independent of activity and restores manual order after activity sorting', () => {
+  const pinned = [
+    { ...local, id: 'pin-a', pinned: true },
+    { ...remote, id: 'pin-b', pinned: true },
+  ]
+  const tabs = [...pinned, local, remote]
+  const visited = visitBrowserTab(tabs, 'pin-b', 100)
+  expect(recentBrowserTabs(visited).map((tab) => tab.id)).toEqual([
+    'pin-a',
+    'pin-b',
+    'remote',
+    'local',
+  ])
+  expect(recentBrowserTabs(visited, false).map((tab) => tab.id)).toEqual([
+    'pin-a',
+    'pin-b',
+    'local',
+    'remote',
+  ])
+  expect(tabs.map((tab) => tab.id)).toEqual(['pin-a', 'pin-b', 'local', 'remote'])
+})
+it('persists manual drags without altering identity, lifecycle or the active tab', () => {
+  storage()
+  const preview = { ...remote, id: 'preview', previewOf: local.id }
+  const tabs = [local, preview, remote]
+  const reordered = reorderBrowserTabs(tabs, 'remote', 'local', 'before', false)
+  expect(reordered).toEqual([remote, local, preview])
+  expect(reordered[0]).toBe(remote)
+  saveSharedBrowserTabs({ tabs: reordered.filter((tab) => !tab.previewOf), active: local.id })
+  expect(readSharedBrowserTabs().state?.tabs.map((tab) => tab.id)).toEqual(['remote', 'local'])
+  expect(readSharedBrowserTabs().state?.active).toBe(local.id)
+  expect(tabs).toEqual([local, preview, remote])
+})
+it('reorders pinned tabs even in activity mode and rejects cross-group, hidden and automatic moves', () => {
+  const first = { ...local, id: 'pin-a', pinned: true },
+    second = { ...remote, id: 'pin-b', pinned: true }
+  const snoozed = { ...remote, id: 'sleep', snoozedUntil: 1000 }
+  const preview = { ...remote, id: 'preview', previewOf: local.id }
+  const tabs = [first, local, second, remote, snoozed, preview]
+  expect(
+    recentBrowserTabs(reorderBrowserTabs(tabs, second.id, first.id, 'before', true, 0)).slice(0, 2),
+  ).toEqual([second, first])
+  for (const [source, target, activity] of [
+    [local.id, remote.id, true],
+    [first.id, local.id, false],
+    [remote.id, snoozed.id, false],
+    [preview.id, local.id, false],
+    ['missing', local.id, false],
+  ] as const) {
+    expect(reorderBrowserTabs(tabs, source, target, 'after', activity, 0)).toBe(tabs)
+  }
 })

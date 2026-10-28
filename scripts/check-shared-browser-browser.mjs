@@ -16,7 +16,7 @@ if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},
 });</script></body></html>`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {TooltipProvider} from '@dovo/studio-ui';window.renderBrowser=()=>root.render(<TooltipProvider>{window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink}/>}</TooltipProvider>);const root=createRoot(document.getElementById('app'));window.renderBrowser();`,
+    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {TooltipProvider} from '@dovo/studio-ui';window.renderBrowser=()=>root.render(<TooltipProvider>{window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink}/>}</TooltipProvider>);const root=createRoot(document.getElementById('app'));window.renderBrowser();`,
     resolveDir: root + 'packages/extension-tasks',
     loader: 'tsx',
   },
@@ -82,7 +82,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -671,8 +671,8 @@ try {
     await recent
       .locator('button[aria-current], button[title]')
       .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('title'))),
-    rowOrder,
-    'Selecting a tab keeps navigation order stable',
+    rowOrder.toReversed(),
+    'Activity sorting puts the selected tab first',
   )
   await page.reload()
   await loadStyles()
@@ -2170,6 +2170,17 @@ try {
   )
   await controlsPage.getByRole('combobox', { name: 'Camera permission' }).selectOption('block')
   await controlsPage
+    .getByRole('combobox', { name: 'Device presence permission' })
+    .selectOption('allow')
+  await controlsPage.waitForFunction(() =>
+    window.calls.some(
+      (command) =>
+        command.action === 'set-site-permission' &&
+        command.permission === 'idle-detection' &&
+        command.setting === 'allow',
+    ),
+  )
+  await controlsPage
     .getByRole('combobox', { name: 'Automatic call PiP permission' })
     .selectOption('allow')
   await controlsPage
@@ -2183,6 +2194,10 @@ try {
     ),
   )
   await controlsPage.getByRole('button', { name: 'Website permissions and site data' }).click()
+  assert.equal(
+    await controlsPage.getByRole('combobox', { name: 'Device presence permission' }).inputValue(),
+    'allow',
+  )
   assert.equal(
     await controlsPage.getByRole('combobox', { name: 'Camera permission' }).inputValue(),
     'block',
@@ -2312,6 +2327,142 @@ try {
     'A definitive missing icon clears the remote favicon',
   )
   await controlsPage.close()
+
+  const orderPage = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  orderPage.on('pageerror', (error) => errors.push(error.message))
+  await orderPage.route('http://localhost/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app" style="height:800px"></div>' }),
+  )
+  const loadOrderPage = async () => {
+    await orderPage.goto('http://localhost/tab-order')
+    for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+      file.endsWith('.css'),
+    ))
+      await orderPage.addStyleTag({
+        content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+      })
+    await orderPage.addScriptTag({ content: built.outputFiles[0].text })
+  }
+  await orderPage.goto('http://localhost/tab-order')
+  await orderPage.evaluate(() => {
+    const base = {
+      kind: 'web',
+      profileId: 'default',
+      url: 'http://localhost/order',
+      runtimeId: 'runtime',
+    }
+    localStorage.setItem(
+      'dovo.shared-browser-tabs.v1',
+      JSON.stringify({
+        active: 'normal-a',
+        tabs: [
+          { ...base, id: 'pin-a', title: 'Pin A', pinned: true, visitedAt: 1 },
+          { ...base, id: 'pin-b', title: 'Pin B', pinned: true, visitedAt: 50 },
+          { ...base, id: 'normal-a', title: 'Normal A', visitedAt: 100 },
+          { ...base, id: 'normal-b', title: 'Normal B', visitedAt: 20 },
+          { ...base, id: 'normal-c', title: 'Normal C', visitedAt: 30 },
+        ],
+      }),
+    )
+  })
+  await loadOrderPage()
+  const row = (id) => orderPage.locator(`[data-browser-tab-id="${id}"]`)
+  const visibleOrder = () =>
+    orderPage
+      .locator('[data-browser-tab-id]')
+      .evaluateAll((rows) => rows.map((row) => row.dataset.browserTabId))
+  await row('pin-a').waitFor()
+  assert.deepEqual((await visibleOrder()).slice(0, 2), ['pin-a', 'pin-b'], 'Pins ignore activity')
+  assert.equal(await row('pin-a').getAttribute('draggable'), 'true')
+  assert.equal(await row('normal-b').getAttribute('draggable'), 'false')
+  await row('pin-b').dragTo(row('pin-a'), { targetPosition: { x: 4, y: 20 } })
+  await orderPage.waitForFunction(
+    () => document.querySelector('[data-browser-tab-id]')?.dataset.browserTabId === 'pin-b',
+  )
+  await row('pin-a').getByRole('button').first().click()
+  assert.deepEqual(
+    (await visibleOrder()).slice(0, 2),
+    ['pin-b', 'pin-a'],
+    'Selecting a pin must not reorder it',
+  )
+  await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
+  await orderPage.keyboard.press('Escape')
+  assert.equal(await row('normal-b').getAttribute('draggable'), 'true')
+  await row('normal-c').dragTo(row('normal-a'), { targetPosition: { x: 30, y: 3 } })
+  assert.deepEqual(await visibleOrder(), ['pin-b', 'pin-a', 'normal-c', 'normal-a', 'normal-b'])
+  await row('normal-a').getByRole('button').first().click()
+  assert.deepEqual(
+    await visibleOrder(),
+    ['pin-b', 'pin-a', 'normal-c', 'normal-a', 'normal-b'],
+    'Selecting a normal tab preserves manual order',
+  )
+  await row('normal-b').getByRole('button').first().focus()
+  await orderPage.keyboard.press('Alt+ArrowUp')
+  assert.deepEqual(await visibleOrder(), ['pin-b', 'pin-a', 'normal-c', 'normal-b', 'normal-a'])
+  const savedOrder = await orderPage.evaluate(() =>
+    JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.map((tab) => tab.id),
+  )
+  await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).check()
+  await orderPage.keyboard.press('Escape')
+  await row('normal-b').getByRole('button').first().click()
+  assert.equal((await visibleOrder())[2], 'normal-b', 'Activity mode follows selection')
+  await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
+  await orderPage.keyboard.press('Escape')
+  assert.deepEqual(await visibleOrder(), savedOrder, 'Returning to manual mode restores its order')
+  await loadOrderPage()
+  // The harness preference store is recreated on reload; the production preference reload is unit-tested.
+  await orderPage.evaluate(() => window.setCleanup({ browserSortByActivity: false }))
+  assert.deepEqual(await visibleOrder(), savedOrder, 'Manual order survives reload')
+  const lastShownKey = await orderPage.evaluate(
+    () => window.calls.findLast((call) => call.action === 'show').key,
+  )
+  const nextTab = (await row('normal-c').getByRole('button').first().getAttribute('aria-current'))
+    ? 'normal-b'
+    : 'normal-c'
+  await row(nextTab).getByRole('button').first().click()
+  await orderPage.waitForFunction(
+    (key) =>
+      window.calls.some((call) => call.action === 'hide' && call.key === key && !call.occluded),
+    lastShownKey,
+  )
+  await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await orderPage.waitForFunction(
+    () => window.calls.findLast((call) => call.action === 'hide')?.occluded === true,
+  )
+  await orderPage.keyboard.press('Escape')
+  await orderPage.waitForFunction(
+    () =>
+      window.calls.findLast((call) => ['show', 'hide'].includes(call.action))?.action === 'show',
+  )
+  const beforeViewport = await orderPage.evaluate(() => window.calls.length)
+  await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await orderPage.getByRole('combobox', { name: 'Viewport', exact: true }).selectOption('phone')
+  await orderPage.keyboard.press('Escape')
+  await orderPage.waitForFunction(
+    (start) => window.calls.slice(start).some((call) => call.action === 'show' && call.viewport),
+    beforeViewport,
+  )
+  assert.equal(
+    await orderPage.evaluate(
+      (start) => window.calls.slice(start).some((call) => call.action === 'hide' && !call.occluded),
+      beforeViewport,
+    ),
+    false,
+    'Viewport reconfiguration must not leave the page',
+  )
+  const beforeLeave = await orderPage.evaluate(() => window.calls.length)
+  await orderPage.evaluate(() => {
+    window.fixtureNavigatedAway = true
+    window.renderBrowser()
+  })
+  await orderPage.waitForFunction(
+    (start) => window.calls.slice(start).some((call) => call.action === 'hide' && !call.occluded),
+    beforeLeave,
+  )
+  await orderPage.close()
 
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(

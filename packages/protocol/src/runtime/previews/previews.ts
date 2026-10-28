@@ -147,8 +147,21 @@ export const browserSitePermissionSchema = Schema.Literals([
   'clipboard-sanitized-write',
   'speaker-selection',
   'screen-wake-lock',
+  'idle-detection',
   'persistent-storage',
   'automatic-pip',
+  'geolocation',
+  'geolocation-approximate',
+  'fileSystem',
+  'local-fonts',
+  'usb',
+  'hid',
+  'serial',
+  'bluetooth',
+  'midi',
+  'pointerLock',
+  'keyboardLock',
+  'window-management',
 ])
 export const browserPermissionSettingSchema = Schema.Literals(['ask', 'allow', 'block'])
 export type BrowserSitePermission = typeof browserSitePermissionSchema.Type
@@ -319,6 +332,8 @@ export const browserCommandSchema = Schema.Union([
   mutableStruct({
     action: Schema.Literal('hide'),
     key: maxValue(minValue(Schema.String, 1), 500),
+    /** A temporary Studio overlay covers the selected page; this is not leaving its tab. */
+    occluded: Schema.optional(Schema.Boolean),
     /** Return keyboard focus to the page after a passive overlay, unless Studio receives input. */
     preserveFocus: Schema.optional(Schema.Boolean),
   }),

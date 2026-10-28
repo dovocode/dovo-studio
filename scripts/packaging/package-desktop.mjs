@@ -228,6 +228,9 @@ try {
           NSMicrophoneUsageDescription:
             'Use the microphone for local dictation or calls in browser pages you approve.',
           NSCameraUsageDescription: 'Use the camera in browser pages you approve.',
+          NSLocationUsageDescription: 'Share your location with browser pages you approve.',
+          NSBluetoothAlwaysUsageDescription:
+            'Connect to Bluetooth devices you choose in browser pages.',
         },
         notarize: !!(
           process.env.APPLE_API_KEY ||

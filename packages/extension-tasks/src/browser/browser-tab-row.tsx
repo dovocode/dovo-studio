@@ -15,6 +15,7 @@ import { useWorkspace } from '@dovo/studio-core'
 import { browserTabCategory, runtimeComputerName } from '@dovo/protocol'
 import { BrowserFavicon } from './browser-favicon'
 import { useBrowserProfileDetails } from './browser-profile-label'
+import type { DragEventHandler } from 'react'
 import type { BrowserTab } from './shared-browser-tabs'
 
 export function BrowserTabRow({
@@ -32,6 +33,7 @@ export function BrowserTabRow({
   onMove,
   onMenuOpen,
   onKeepAwake,
+  reorder,
 }: {
   tab: BrowserTab
   active: boolean
@@ -47,6 +49,15 @@ export function BrowserTabRow({
   onMove?: (windowId?: number) => void
   onMenuOpen: () => void
   onKeepAwake?: () => void
+  reorder?: {
+    dragging: boolean
+    edge?: 'before' | 'after'
+    onDragStart: DragEventHandler<HTMLDivElement>
+    onDragOver: DragEventHandler<HTMLDivElement>
+    onDrop: DragEventHandler<HTMLDivElement>
+    onDragEnd: DragEventHandler<HTMLDivElement>
+    onMove: (direction: 'previous' | 'next') => void
+  }
 }) {
   const { runtimes } = useWorkspace()
   const { name: profile, emoji } = useBrowserProfileDetails(tab)
@@ -78,8 +89,24 @@ export function BrowserTabRow({
     >
       <ContextMenu.Trigger asChild>
         <div
+          data-browser-tab-id={tab.id}
+          draggable={!!reorder}
+          onDragStart={reorder?.onDragStart}
+          onDragOver={reorder?.onDragOver}
+          onDrop={reorder?.onDrop}
+          onDragEnd={reorder?.onDragEnd}
           className={cn(
             'group relative flex min-w-0 items-center rounded-lg transition-colors',
+            reorder?.dragging && 'opacity-40',
+            reorder?.edge &&
+              (tab.pinned
+                ? reorder.edge === 'before'
+                  ? 'before:pointer-events-none before:absolute before:inset-y-1 before:left-0 before:border-l-2 before:border-primary'
+                  : 'after:pointer-events-none after:absolute after:inset-y-1 after:right-0 after:border-r-2 after:border-primary'
+                : reorder.edge === 'before'
+                  ? 'before:pointer-events-none before:absolute before:inset-x-1 before:top-0 before:border-t-2 before:border-primary'
+                  : 'after:pointer-events-none after:absolute after:inset-x-1 after:bottom-0 after:border-b-2 after:border-primary'),
+
             tab.pinned
               ? cn(
                   'overflow-hidden rounded-xl border',
@@ -94,6 +121,24 @@ export function BrowserTabRow({
         >
           <button
             type="button"
+            data-browser-tab-select
+            aria-keyshortcuts={
+              reorder ? 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight' : undefined
+            }
+            onKeyDown={(event) => {
+              if (
+                !reorder ||
+                !event.altKey ||
+                event.ctrlKey ||
+                event.metaKey ||
+                !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)
+              )
+                return
+              event.preventDefault()
+              reorder.onMove(
+                event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? 'previous' : 'next',
+              )
+            }}
             aria-current={active ? 'page' : undefined}
             aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}`}
             onClick={onSelect}
