@@ -104,6 +104,20 @@ try {
   })
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const chevron = async (summary, open) => {
+    await page.waitForFunction(
+      ({ element, open }) => {
+        const icon = element.querySelector('.studio-list-section-chevron')
+        if (!icon) return false
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(icon).transform)
+        return (
+          Math.abs(matrix.a - (open ? 1 : 0)) < 0.001 &&
+          Math.abs(matrix.b - (open ? 0 : -1)) < 0.001
+        )
+      },
+      { element: await summary.elementHandle(), open },
+    )
+  }
   const headings = () => page.locator('summary').allTextContents()
   const names = async () => (await headings()).map((text) => text.replace(/\d+$/, '').trim())
   await page.getByText('Active thread', { exact: true }).waitFor()
@@ -145,12 +159,15 @@ try {
   assert.deepEqual(await page.evaluate(() => window.collapsedSections()), savedCollapse)
   // Keyboard activation is a user toggle and must persist, just like a pointer click.
   const workingSummary = page.locator('summary').filter({ hasText: 'Working' })
+  await chevron(workingSummary, false)
   await workingSummary.focus()
   await page.keyboard.press('Enter')
   await page.getByText('Working thread', { exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.collapsedSections().includes('working')), false)
+  await chevron(workingSummary, true)
   await page.keyboard.press('Enter')
   await page.waitForFunction(() => window.collapsedSections().includes('working'))
+  await chevron(workingSummary, false)
   await page.getByRole('button', { name: 'Organize sections', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
@@ -167,6 +184,7 @@ try {
   await page.keyboard.press('Escape')
   await page.locator('summary').filter({ hasText: 'Waiting' }).click()
   await page.getByText('Waiting thread', { exact: true }).waitFor()
+  await chevron(page.locator('summary').filter({ hasText: 'Waiting' }), true)
   await page.waitForFunction(() => window.keyboardOrder[0] === 'waiting')
   const savedTasks = await page.evaluate(() => window.source.workspace.tasks)
   await page.evaluate(async () => {

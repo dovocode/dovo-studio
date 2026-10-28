@@ -53,6 +53,7 @@ import {
 } from 'react'
 import {
   Home,
+  ChevronDown,
   ArrowLeft,
   ArrowRight,
   RotateCw,
@@ -2987,9 +2988,13 @@ function BrowserTabGroup({
       </div>
     )
   return (
-    <details className="shrink-0 border-t">
-      <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground">
-        {category === 'snoozed' ? 'Snoozed tabs' : 'Settled tabs'} ({count})
+    <details className="studio-list-section mb-1 shrink-0">
+      <summary className="studio-list-section-header">
+        <ChevronDown size={11} className="studio-list-section-chevron" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate">
+          {category === 'snoozed' ? 'Snoozed tabs' : 'Settled tabs'}
+        </span>
+        <span>{count}</span>
       </summary>
       <div className="max-h-[35vh] overflow-y-auto p-2">{children}</div>
     </details>

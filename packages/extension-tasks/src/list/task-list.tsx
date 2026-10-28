@@ -962,7 +962,7 @@ export function TaskList({
               <details
                 key={group.id}
                 open={group.open}
-                className={`group mb-1 shrink-0 ${!group.open && displayed.findIndex((item) => !item.open) === index ? 'mt-auto' : ''}`}
+                className={`group studio-list-section mb-1 shrink-0 ${!group.open && displayed.findIndex((item) => !item.open) === index ? 'mt-auto' : ''}`}
               >
                 <summary
                   onClick={(event) => {
@@ -985,9 +985,13 @@ export function TaskList({
                       setExpanded((current) => ({ ...current, [group.id]: open }))
                     }
                   }}
-                  className="flex cursor-pointer list-none items-center gap-1 px-2 py-1 text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground"
+                  className="studio-list-section-header"
                 >
-                  <ChevronDown size={11} />
+                  <ChevronDown
+                    size={11}
+                    className="studio-list-section-chevron"
+                    aria-hidden="true"
+                  />
                   <span className="min-w-0 flex-1 truncate">{group.name}</span>
                   <span>{group.total ?? group.tasks.length}</span>
                 </summary>

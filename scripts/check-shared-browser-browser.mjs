@@ -1805,7 +1805,36 @@ try {
         (t) => t.id === 'current',
       )?.settledAt,
   )
-  await lifecycle.locator('summary').filter({ hasText: 'Settled tabs' }).click()
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+    file.endsWith('.css'),
+  ))
+    await lifecycle.addStyleTag({
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+    })
+  await lifecycle.emulateMedia({ reducedMotion: 'reduce' })
+  const settledSummary = lifecycle.locator('summary').filter({ hasText: 'Settled tabs' })
+  const tabChevron = async (open) => {
+    await lifecycle.waitForFunction(
+      ({ element, open }) => {
+        const icon = element.querySelector('.studio-list-section-chevron')
+        if (!icon) return false
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(icon).transform)
+        return (
+          Math.abs(matrix.a - (open ? 1 : 0)) < 0.001 &&
+          Math.abs(matrix.b - (open ? 0 : -1)) < 0.001
+        )
+      },
+      { element: await settledSummary.elementHandle(), open },
+    )
+  }
+  await tabChevron(false)
+  await settledSummary.focus()
+  await lifecycle.keyboard.press('Enter')
+  await tabChevron(true)
+  await lifecycle.keyboard.press('Space')
+  await tabChevron(false)
+  await settledSummary.click()
+  await tabChevron(true)
   await lifecycle
     .getByRole('button', { name: /Current/ })
     .first()
