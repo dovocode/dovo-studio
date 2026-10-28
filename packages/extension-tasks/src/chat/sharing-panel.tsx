@@ -57,7 +57,8 @@ export function SharingPanel({
   const [notice, setNotice] = useState(''),
     [copyError, setCopyError] = useState(''),
     [removing, setRemoving] = useState<string>(),
-    [confirmDelete, setConfirmDelete] = useState(false)
+    [confirmDelete, setConfirmDelete] = useState(false),
+    [confirmReset, setConfirmReset] = useState(false)
   const id = useId(),
     account = client.snapshot()
   const links =
@@ -65,7 +66,8 @@ export function SharingPanel({
   const people =
     sharing.share?.record.grants.filter((grant) => !!grant.userId || !!grant.organizationId) ?? []
   const activeLink = links.find((grant) => (grant.expiresAt ?? 0) > Date.now())
-  const needsRecovery = sharing.loaded && !sharing.hasKey && sharing.hasShares
+  const needsRecovery =
+    sharing.loaded && !sharing.hasKey && (sharing.hasShares || sharing.recoveryState === 'missing')
   const unavailable =
     sharing.busy ||
     !sharing.loaded ||
@@ -110,13 +112,60 @@ export function SharingPanel({
         <>
           {!sharing.loaded && !sharing.error && <p role="status">Loading sharing settings…</p>}
           {needsRecovery && (
-            <section className="space-y-3 rounded-xl border p-3" aria-label="Sharing device sync">
-              <h2 className="font-medium">Syncing sharing access</h2>
+            <section className="space-y-3 rounded-xl border p-3" aria-label="Sharing recovery">
+              <h2 className="font-medium">Recover sharing access</h2>
               <p className="text-muted-foreground">
-                Keep Studio open on another device signed in to this account where sharing already
-                works. Access restores automatically while both devices are online.
+                Signing in restores sharing automatically once your key is saved with your account.
+                For older sharing, open Studio on a device where sharing works to save its key,
+                restore a backup, or reset below if the key is lost.
               </p>
               {sharing.syncError && <p role="status">{sharing.syncError}</p>}
+              <Button
+                variant="outline"
+                disabled={sharing.busy}
+                onClick={() => void sharing.refresh()}
+              >
+                Retry account recovery
+              </Button>
+              {sharing.recoveryState !== 'unavailable' &&
+                (confirmReset ? (
+                  <div className="space-y-3" role="group" aria-label="Confirm reset sharing">
+                    <p>
+                      This deletes all your existing hosted thread and artifact copies, invitations
+                      and links for this account. Your local content stays intact. New sharing will
+                      recover automatically when you sign in.
+                    </p>
+                    <Button
+                      variant="destructive"
+                      disabled={sharing.busy}
+                      onClick={() => {
+                        void sharing.resetLegacySharing().then((ok) => {
+                          if (ok) {
+                            setConfirmReset(false)
+                            setNotice('Sharing is ready with account recovery')
+                          }
+                        })
+                      }}
+                    >
+                      Delete old hosted copies and reset sharing
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={sharing.busy}
+                      onClick={() => setConfirmReset(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    disabled={sharing.busy}
+                    onClick={() => setConfirmReset(true)}
+                  >
+                    I no longer have the key
+                  </Button>
+                ))}
               <details>
                 <summary className={disclosure}>Restore from a backup</summary>
                 <form
@@ -340,7 +389,7 @@ export function SharingPanel({
             </Button>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <LockKeyhole aria-hidden="true" className="size-3.5" />
-              End-to-end encrypted
+              Encrypted
             </p>
           </div>
           {!activeLink && (
@@ -524,10 +573,11 @@ export function SharingPanel({
                   <summary className={disclosure}>Recovery and another device</summary>
                   <div className="space-y-3 pt-3">
                     <p className="text-xs text-muted-foreground">
-                      Sharing access syncs automatically between your signed-in devices while Studio
-                      is open. Your key stays on your devices. An optional backup in a password
-                      manager lets you restore access if every device is lost.
+                      {sharing.recoveryState === 'ready'
+                        ? 'Your sharing key is saved with your account. Signing in restores access even if every device is lost. Connect can recover this key. A manual backup is optional.'
+                        : 'Account recovery is not ready yet. Keep this device signed in and connected so Studio can save your key with your account.'}
                     </p>
+                    {sharing.syncError && <p role="status">{sharing.syncError}</p>}
                     {sharing.recovery ? (
                       <>
                         <Textarea

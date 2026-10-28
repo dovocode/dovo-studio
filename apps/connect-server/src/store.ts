@@ -36,6 +36,9 @@ export class AccountStore {
       CREATE TABLE IF NOT EXISTS servers(user TEXT NOT NULL,id TEXT NOT NULL,name TEXT NOT NULL,address TEXT NOT NULL,PRIMARY KEY(user,id));
       CREATE TABLE IF NOT EXISTS artifact_sessions(token TEXT PRIMARY KEY,audience TEXT NOT NULL,parent TEXT);
       CREATE TABLE IF NOT EXISTS artifact_feed_grants(token TEXT PRIMARY KEY,publication TEXT NOT NULL);`)
+    this.db.exec(
+      'CREATE TABLE IF NOT EXISTS sharing_key_recovery(user TEXT PRIMARY KEY,sealed TEXT NOT NULL)',
+    )
     if (
       !this.db
         .prepare('PRAGMA table_info(deleted_accounts)')
@@ -336,6 +339,7 @@ export class AccountStore {
         'internet_blocks',
         'sharing_key_sync',
         'sharing_key_identity',
+        'sharing_key_recovery',
       ]) {
         if (
           this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)

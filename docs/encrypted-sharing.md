@@ -9,9 +9,9 @@ and links. Local runtime access still supports HTTP LAN/VPN addresses, pairing c
 tokens without an account.
 
 **Advanced** holds optional content previews, link expiry, update controls, recovery and deletion.
-The usual sharing flow needs no repeated setup. Sharing access syncs automatically from another
-online Studio device signed into the same Connect account. Keep Studio open on that device while the
-new device is syncing.
+The usual sharing flow needs no repeated setup or manual backup key. Studio saves an encrypted
+recovery copy with your Connect account. Signing in restores sharing even when your other devices
+are offline or lost. Connect is trusted to recover this key.
 
 Threads automatically publish new user and assistant message text while the source runtime is
 online. Tools, attachments and unsent drafts are excluded. Readers see updates without refreshing.
@@ -63,33 +63,52 @@ local thread or artifact. Deleting local content alone does not delete its hoste
 
 ## Keys and recovery
 
-Content is encrypted and signed on the source device. The service stores encrypted content and owner
-vaults; suggestions use the owner's public encryption key. The host cannot decrypt message text,
-artifact files, feed values or prompt suggestions. It can see account and recipient IDs, publication
-kind, sizes, timestamps, access metadata and request traffic.
+Content is encrypted and signed on the source device. The sharing host stores encrypted content and
+owner vaults; suggestions use the owner's public encryption key. Connect keeps an account-managed
+recovery copy of the owner's sharing key. **Connect can recover that key and therefore decrypt the
+account's shared content, owner vaults and suggestions.** This is encryption with account recovery,
+not an end-to-end guarantee against Connect or its operator. A compromised Connect account, server,
+reader application or device can expose shared content. The services can also see account and
+recipient IDs, publication kind, sizes, timestamps, access metadata and traffic.
 
-Studio creates the sharing key once and stores it in platform credential storage. Signed-in Studio
-devices automatically exchange it while both devices are online, including when no sharing panel is
-open. Existing shares and invitation URLs are preserved. Sync waits for a device holding the key; it
-never silently replaces the key for existing publications. Concurrent first-time sharing devices
-coordinate a fingerprint before publishing so they use the same key.
+Studio stores the key in platform credential storage and automatically saves a recovery copy to
+Connect. New devices authenticate to Connect and restore it without an online source device. Every
+recovered key is checked against the canonical fingerprint and existing owner vaults before
+replacing local storage. Concurrent first-time devices converge on the same saved key. The previous
+encrypted device-to-device transfer protocol remains available for older devices.
 
-Connect authenticates both sessions and relays an authenticated encrypted key transfer, bound to the
-Connect origin, account and receiving device. Only devices hold the transfer secrets and raw sharing
-key. The broker keeps the account's key fingerprint and short-lived public-key mailboxes with
-encrypted replies. Mailboxes expire after five minutes without a heartbeat or when their sessions
-are revoked. Account deletion removes this metadata. Device authorization trusts Connect's account
-directory; this does not protect against a compromised account or a malicious authorization broker.
+An existing signed-in device with a valid key migrates it automatically; its shares and invitation
+URLs stay unchanged. A key lost **before** it was saved with Connect cannot be reconstructed. Open
+Studio on an old device or use **Restore from a backup** to migrate it. If neither exists, choose
+**I no longer have the key** and explicitly confirm **Delete old hosted copies and reset sharing**.
+This deletes all encrypted hosted thread/artifact copies, invitations, links, suggestions and
+writers for this account on its sharing service. Local content and legacy unencrypted publications
+stay intact. A new key is then saved with the account before new sharing is enabled. Deletion
+failures stop the reset; retrying continues from the remaining copies. Background recovery never
+deletes copies or rotates an existing key. The reset is refused if an account recovery copy now
+exists.
 
-Under **Advanced → Recovery and another device**, optionally save a backup in your password manager.
-On a device waiting for sync, **Restore from a backup** accepts that key. If all devices holding the
-key are lost, sign-in alone cannot recover encrypted publications; a backup is required. Anyone
-holding the recovery key and owner access can unlock all that account's publications for that
-Connect origin.
+**Advanced → Recovery and another device** reports whether account recovery is ready. An optional
+manual backup is still available; it is not required for normal recovery after migration. Anyone
+holding the key and owner access can unlock the account's publications for that Connect origin.
 
-End-to-end encryption relies on the reader application delivered by the host, as with other web
-cryptography. A compromised reader application or recipient device can expose decrypted content.
-Keep hosting, application updates and device access protected.
+### Connect recovery storage
+
+Connect provisions `sharing-recovery.key` automatically in `DOVO_CONNECT_DATA`, beside
+`accounts.sqlite`, with file mode `0600` in the private persistent directory. No user-provided key
+or new environment variable is required. Recovery records are sealed with Node's AES-256-GCM, random
+nonces and associated data binding them to the Connect origin, account and protocol version. Only
+full authenticated account sessions can read/write them; artifact/writer grants cannot. Account
+deletion removes recovery records. Database-only copies do not contain plaintext sharing keys;
+access to both the server sealing key and database allows recovery.
+
+Back up the **whole private data directory**, including the SQLite database and sealing key, and
+preserve its volume when redeploying Connect. Never rotate or delete the sealing key independently
+of its records. Startup refuses to generate a replacement if recovery records exist but the file is
+missing; restore the server backup. Moving to a different Connect origin requires an explicit server
+migration because the ciphertext is origin-bound. Existing brokers must be upgraded as well as the
+Nightly desktop/mobile clients. An unsupported/unavailable endpoint is shown as a Connect recovery
+problem; Studio does not silently create a device-only key in its place.
 
 ## Existing hosted artifacts
 

@@ -26,3 +26,14 @@ export const sharingKeyTransferSchema = mutableStruct({
   recipient: internetKeySchema,
   key: sharingKeySchema,
 })
+
+/** Account-managed recovery is separate from the device-only transfer protocol. */
+export const sharingRecoverySchema = mutableStruct({
+  keyHash: Schema.NullOr(internetKeySchema),
+  key: Schema.NullOr(sharingKeySchema),
+})
+export const sharingRecoverySaveSchema = mutableStruct({
+  key: sharingKeySchema,
+  /** Reset is only available for legacy identities with no recovery copy. */
+  reset: Schema.optional(mutableStruct({ keyHash: Schema.NullOr(internetKeySchema) })),
+})

@@ -296,7 +296,7 @@ function App() {
         <div className="artifact-title">
           <h1>{title ?? 'Encrypted sharing'}</h1>
           <Badge variant="outline" className="sharing-encryption">
-            End-to-end encrypted
+            Encrypted
           </Badge>
         </div>
       </header>

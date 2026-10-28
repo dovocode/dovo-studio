@@ -17,7 +17,7 @@ const built = await bundleBrowser(
   const request=fixture.client.sharing.request.bind(fixture.client.sharing);
   fixture.client.sharing.request=(...args)=>{window.sharingRequests.push(args[1]);return request(...args)};
   function Inline(){const [source,setSource]=useState(fixture.sourceId),[active,setActive]=useState(true),[draft,setDraft]=useState('Existing draft');window.setSource=setSource;window.setActive=setActive;return <><ThreadSuggestions client={fixture.client} sourceId={source} active={active} onUseSuggestion={text=>setDraft(previous=>previous+'\\n\\n'+text)}/><textarea aria-label="Draft" value={draft} readOnly/></>}
-  function Manager(){const [shown,setShown]=useState(true);window.showManager=setShown;return shown?<SharingPanel client={fixture.client} sourceId={fixture.sourceId} kind={kind} content={kind==='artifact'?fixture.content:undefined} runtime={window.offline?undefined:fixture.runtime}/>:null}fixture.ready(window.published!==false).then(async()=>{if(window.forgetKey){window.recoveryKey=await fixture.client.sharing.key();fixture.forgetKey();}window.sharingRequests=[];return createRoot(document.getElementById('app')).render(window.inline ? <Inline/> : <Manager/>)});
+  function Manager(){const [shown,setShown]=useState(true);window.showManager=setShown;return shown?<SharingPanel client={fixture.client} sourceId={fixture.sourceId} kind={kind} content={kind==='artifact'?fixture.content:undefined} runtime={window.offline?undefined:fixture.runtime}/>:null}fixture.ready(window.published!==false).then(async()=>{if(window.forgetKey){window.recoveryKey=await fixture.client.sharing.key();fixture.forgetKey(!!window.legacyKey);}window.sharingRequests=[];return createRoot(document.getElementById('app')).render(window.inline ? <Inline/> : <Manager/>)});
 `,
       loader: 'tsx',
       resolveDir: root + '/apps/web',
@@ -298,7 +298,9 @@ try {
     )
     // Reopening retains the publication and link without key setup, review or a new grant.
     await first.evaluate(() => window.showManager(false))
-    await first.getByRole('combobox').waitFor({ state: 'hidden' })
+    await first
+      .getByRole('combobox', { name: 'General access', exact: true })
+      .waitFor({ state: 'hidden' })
     await first.evaluate(() => window.showManager(true))
     await first.waitForFunction(
       () =>
@@ -348,8 +350,32 @@ try {
     }
     await first.close()
   }
-  const restored = await manager({ forgetKey: true })
-  await restored.getByRole('heading', { name: 'Syncing sharing access' }).waitFor()
+  const recovered = await manager({ forgetKey: true })
+  await recovered.getByRole('button', { name: 'Copy link', exact: true }).waitFor()
+  assert.equal(await recovered.getByRole('heading', { name: 'Recover sharing access' }).count(), 0)
+  assert.equal(await recovered.evaluate(() => window.fixture.client.sharing.recoveryState), 'ready')
+  await recovered.close()
+  const reset = await manager({ forgetKey: true, legacyKey: true })
+  await reset.getByRole('heading', { name: 'Recover sharing access' }).waitFor()
+  await reset.getByRole('button', { name: 'I no longer have the key', exact: true }).click()
+  assert.equal(await reset.evaluate(() => window.fixture.records.size), 1)
+  await reset.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(await reset.evaluate(() => window.fixture.records.size), 1)
+  await reset.getByRole('button', { name: 'I no longer have the key', exact: true }).click()
+  await reset.setViewportSize({ width: 360, height: 780 })
+  assert.equal(await reset.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await reset.screenshot({
+    path: root + '/work/sharing-settings/account-recovery-reset.png',
+    fullPage: true,
+  })
+  await reset
+    .getByRole('button', { name: 'Delete old hosted copies and reset sharing', exact: true })
+    .click()
+  await reset.getByText('Sharing is ready with account recovery', { exact: true }).waitFor()
+  assert.equal(await reset.evaluate(() => window.fixture.records.size), 0)
+  await reset.close()
+  const restored = await manager({ forgetKey: true, legacyKey: true })
+  await restored.getByRole('heading', { name: 'Recover sharing access' }).waitFor()
   assert.equal(await restored.getByLabel('Recovery key', { exact: true }).isVisible(), false)
   await restored.getByText('Restore from a backup', { exact: true }).click()
   await restored.getByRole('heading', { name: 'Restore sharing on this device' }).waitFor()

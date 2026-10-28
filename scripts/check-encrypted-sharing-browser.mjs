@@ -43,6 +43,7 @@ try {
   }).server
   broker = createConnectServer({
     store: accounts,
+    sharingRecoverySecret: randomBytes(32),
     origin: connectOrigin,
     sharing: { origin, key: serviceKey },
     authorizationOrigin: connectOrigin,
@@ -325,12 +326,12 @@ try {
   await otherDevice.load()
   await assert.rejects(() => otherDevice.sharing.restoreKey('0'.repeat(64), origin))
   assert.equal(restored, null)
-  // An empty device requests access; an online owner answers without any human-entered key.
-  assert.equal(await otherDevice.sharing.syncKey(), false)
-  await assert.rejects(() => otherDevice.sharing.recoveryKey(true), /syncing/)
-  await client.sharing.syncKey()
+  // An empty device recovers from its account without the original device or a manual key.
   assert.equal(await otherDevice.sharing.syncKey(), true)
+  assert.equal(otherDevice.sharing.recoveryState, 'ready')
   assert.equal(await otherDevice.sharing.recoveryKey(), recovery)
+  const recoveries = JSON.stringify(accounts.db.prepare('SELECT * FROM sharing_key_recovery').all())
+  assert.ok(!recoveries.includes(recovery), 'Account recovery must be sealed at rest')
   const syncRows = JSON.stringify(accounts.db.prepare('SELECT * FROM sharing_key_sync').all())
   assert.ok(!syncRows.includes(recovery), 'Connect must not store the raw sharing key')
   assert.ok(

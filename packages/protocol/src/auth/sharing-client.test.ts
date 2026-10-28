@@ -8,7 +8,11 @@ import {
   sharingUUID,
 } from '../conversation/encrypted-sharing.js'
 import { internetBytes, internetPublicKey, sealInternet } from './account-internet.js'
-import { sharingKeyPresenceSchema, sharingKeyAnswerSchema } from './sharing-key-sync.js'
+import {
+  sharingKeyPresenceSchema,
+  sharingKeyAnswerSchema,
+  sharingRecoverySaveSchema,
+} from './sharing-key-sync.js'
 import type { AccountStorage } from './account.js'
 
 it('creates one recovery key when sharing panels initialize concurrently', async () => {
@@ -255,4 +259,204 @@ it('shares one background timer across account consumers and stops after the las
   second()
   await vi.advanceTimersByTimeAsync(20_000)
   expect(request).toHaveBeenCalledTimes(2)
+})
+
+function recoveryBroker(
+  key: string | null = null,
+  keyHash: string | null = key ? sharingHash(key) : null,
+) {
+  const state = { key, keyHash }
+  const recovery = vi.fn<(method: 'GET' | 'PUT', body?: unknown) => Promise<unknown>>(
+    async (method, body) => {
+      if (method === 'PUT') {
+        const input = decode(sharingRecoverySaveSchema, body)
+        if (input.reset) {
+          if (state.key || input.reset.keyHash !== state.keyHash)
+            throw new Error('Sharing recovery changed')
+        } else if (!state.key && state.keyHash && state.keyHash !== sharingHash(input.key)) {
+          throw new Error('Restore the original sharing key')
+        }
+        state.key ??= input.key
+        state.keyHash = sharingHash(state.key)
+      }
+      return { ...state }
+    },
+  )
+  const request = vi.fn<SyncRequest>(async (_method, body) => {
+    const presence = decode(sharingKeyPresenceSchema, body)
+    return { keyHash: state.keyHash ?? presence.keyHash, requests: [], answer: null }
+  })
+  return { state, recovery, request }
+}
+function managedClient(
+  target: ReturnType<typeof device>,
+  broker: ReturnType<typeof recoveryBroker>,
+) {
+  const client = new SharingClient(
+    target.storage,
+    connectOrigin,
+    () => target.state.session,
+    async () => '',
+    {
+      request: broker.request,
+      recovery: broker.recovery,
+      origin: async () => sharingOrigin,
+    },
+  )
+  vi.spyOn(client, 'list').mockResolvedValue([])
+  return client
+}
+function existingShare(key: string) {
+  return {
+    id: sharingUUID(),
+    source: 'opaque',
+    kind: 'thread' as const,
+    version: 1,
+    updatedAt: 1,
+    ownerBox: encryptSharing(
+      {
+        contentKey: newSharingKey(),
+        signingSeed: newSharingKey(),
+        suggestionSecret: newSharingKey(),
+        grants: [],
+      },
+      key,
+    ),
+  }
+}
+
+it('migrates an existing valid key and restores it without the original device or a backup', async () => {
+  const key = newSharingKey(),
+    broker = recoveryBroker(null, sharingHash(key))
+  const source = managedClient(device(key), broker)
+  vi.spyOn(source, 'list').mockResolvedValue([existingShare(key)])
+  await source.syncKey()
+  expect(broker.state.key).toBe(key)
+  expect(source.recoveryState).toBe('ready')
+  const target = device(),
+    receiver = managedClient(target, broker)
+  vi.spyOn(receiver, 'list').mockResolvedValue([existingShare(key)])
+  expect(await receiver.syncKey()).toBe(true)
+  expect(target.state.saved).toBe(key)
+  expect(receiver.recoveryState).toBe('ready')
+  expect(await receiver.syncKey()).toBe(false)
+  expect(target.write).toHaveBeenCalledTimes(1)
+})
+
+it('converges first account-managed shares without publishing a key that cannot be recovered', async () => {
+  const broker = recoveryBroker(),
+    first = device(),
+    second = device()
+  const source = managedClient(first, broker),
+    receiver = managedClient(second, broker)
+  const results = await Promise.all([source.recoveryKey(true), receiver.recoveryKey(true)])
+  expect(results).toEqual([broker.state.key, broker.state.key])
+  expect(first.state.saved).toBe(second.state.saved)
+  expect(broker.state.key).not.toBeNull()
+})
+
+it.each(['fingerprint', 'vault'] as const)(
+  'rejects invalid managed recovery %s without overwriting a device key',
+  async (failure) => {
+    const old = newSharingKey(),
+      key = newSharingKey(),
+      broker = recoveryBroker(key)
+    if (failure === 'fingerprint') broker.state.keyHash = sharingHash(newSharingKey())
+    const target = device(old),
+      client = managedClient(target, broker)
+    vi.spyOn(client, 'list').mockResolvedValue([existingShare(old)])
+    await expect(client.syncKey()).rejects.toThrow(/fingerprint|decrypt|Encrypted/)
+    expect(target.state.saved).toBe(old)
+    expect(target.write).not.toHaveBeenCalled()
+  },
+)
+
+it('requires an explicit legacy reset, removes old hosted copies first and saves the new key with the account', async () => {
+  const broker = recoveryBroker(null, sharingHash(newSharingKey())),
+    target = device()
+  const client = managedClient(target, broker),
+    record = existingShare(newSharingKey())
+  vi.spyOn(client, 'list').mockResolvedValue([record])
+  const remove = vi.spyOn(client, 'remove').mockImplementation(async () => {
+    vi.spyOn(client, 'list').mockResolvedValue([])
+  })
+  await client.syncKey()
+  expect(client.recoveryState).toBe('missing')
+  expect(remove).not.toHaveBeenCalled()
+  await expect(client.recoveryKey(true)).rejects.toThrow('predates account recovery')
+  await client.resetLegacySharing(sharingOrigin)
+  expect(remove).toHaveBeenCalledExactlyOnceWith(sharingOrigin, record.id)
+  expect(target.state.saved).toBe(broker.state.key)
+  expect(client.recoveryState).toBe('ready')
+  expect(broker.recovery).toHaveBeenCalledWith(
+    'PUT',
+    expect.objectContaining({ reset: expect.any(Object) }),
+  )
+})
+
+it('does not rotate a legacy key when deleting hosted copies fails', async () => {
+  const broker = recoveryBroker(null, sharingHash(newSharingKey())),
+    target = device(),
+    client = managedClient(target, broker)
+  vi.spyOn(client, 'list').mockResolvedValue([existingShare(newSharingKey())])
+  vi.spyOn(client, 'remove').mockRejectedValue(new Error('Offline'))
+  await expect(client.resetLegacySharing(sharingOrigin)).rejects.toThrow('Offline')
+  expect(broker.state.key).toBeNull()
+  expect(target.write).not.toHaveBeenCalled()
+})
+
+it('refuses resetting recoverable sharing and exposes unavailable recovery instead of creating an unbacked key', async () => {
+  const broker = recoveryBroker(newSharingKey()),
+    target = device(),
+    client = managedClient(target, broker)
+  const remove = vi.spyOn(client, 'remove')
+  await expect(client.resetLegacySharing(sharingOrigin)).rejects.toThrow('recoverable')
+  expect(remove).not.toHaveBeenCalled()
+  const unavailable = recoveryBroker(),
+    empty = device(),
+    offline = managedClient(empty, unavailable)
+  unavailable.recovery.mockRejectedValue(
+    new Error('Update Connect to enable account-managed sharing recovery.'),
+  )
+  await expect(offline.syncKey()).rejects.toThrow('Update Connect')
+  expect(offline.syncError).toContain('Update Connect')
+  expect(offline.recoveryState).toBe('unavailable')
+  await expect(offline.recoveryKey(true)).rejects.toThrow('Update Connect')
+  expect(empty.write).not.toHaveBeenCalled()
+})
+
+it('rejects managed recovery responses after a session change', async () => {
+  const broker = recoveryBroker(newSharingKey()),
+    target = device(),
+    client = managedClient(target, broker)
+  broker.recovery.mockImplementation(async () => {
+    target.state.session = { userId: 'other', sessionId: 'other' }
+    return { ...broker.state }
+  })
+  await expect(client.syncKey()).rejects.toThrow('account changed')
+  expect(target.write).not.toHaveBeenCalled()
+})
+
+it('does not publish new content when a device key cannot be saved with the account', async () => {
+  const broker = recoveryBroker(),
+    target = device(newSharingKey()),
+    client = managedClient(target, broker)
+  broker.recovery.mockRejectedValue(new Error('Connect unavailable'))
+  const request = vi.spyOn(client, 'request')
+  await expect(
+    client.publish(sharingOrigin, 'source', { kind: 'thread', title: 'Private', messages: [] }),
+  ).rejects.toThrow('Connect unavailable')
+  expect(request).not.toHaveBeenCalled()
+})
+
+it('rejects a backup with a different account fingerprint even before any publication exists', async () => {
+  const key = newSharingKey(),
+    broker = recoveryBroker(key),
+    target = device(key),
+    client = managedClient(target, broker)
+  await expect(client.restoreKey(newSharingKey(), sharingOrigin)).rejects.toThrow(
+    'different sharing key',
+  )
+  expect(target.state.saved).toBe(key)
+  expect(target.write).not.toHaveBeenCalled()
 })

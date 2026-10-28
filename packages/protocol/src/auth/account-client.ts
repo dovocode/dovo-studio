@@ -105,6 +105,7 @@ export class AccountClient {
       {
         request: (method, body) => this.request('/v1/sharing-keys', method, body),
         origin: () => this.sharingService(),
+        recovery: (method, body) => this.request('/v1/sharing-recovery', method, body),
       },
     )
   }
@@ -553,15 +554,23 @@ export class AccountClient {
       if (!response.ok)
         throw new AccountError(
           response.status,
-          /^\/v1\/(?:artifacts|sharing)\//.test(path)
-            ? response.status === 401
-              ? 'Sign in to use hosted artifact sharing.'
-              : 'Hosted artifact sharing is not configured or is unavailable on this Connect broker.'
-            : response.status === 401
-              ? 'Sign in again to see your computers.'
-              : response.status === 409
-                ? 'Account deletion has started. Retry to finish deleting your account.'
-                : 'Account service is unavailable. Please try again.',
+          path === '/v1/sharing-recovery'
+            ? response.status === 404 || response.status === 405
+              ? 'Update Connect to enable account-managed sharing recovery.'
+              : response.status === 401
+                ? 'Sign in again to restore sharing access.'
+                : response.status === 409
+                  ? 'Sharing recovery changed. Refresh and try again.'
+                  : 'Account sharing recovery is unavailable. Check Connect and try again.'
+            : /^\/v1\/(?:artifacts|sharing)\//.test(path)
+              ? response.status === 401
+                ? 'Sign in to use hosted artifact sharing.'
+                : 'Hosted artifact sharing is not configured or is unavailable on this Connect broker.'
+              : response.status === 401
+                ? 'Sign in again to see your computers.'
+                : response.status === 409
+                  ? 'Account deletion has started. Retry to finish deleting your account.'
+                  : 'Account service is unavailable. Please try again.',
         )
       const value: unknown = response.status === 204 ? null : await response.json()
       return value

@@ -62,6 +62,13 @@ export function useEncryptedSharing({
       setLoaded(true)
       return
     }
+    try {
+      await client.sharing.syncKey()
+    } catch (cause) {
+      check(captured)
+      setError(cause instanceof Error ? cause.message : 'Sharing recovery is unavailable')
+    }
+    check(captured)
     const key = await client.sharing.recoveryKey(),
       records = await client.sharing.list(destination)
     check(captured)
@@ -184,6 +191,7 @@ export function useEncryptedSharing({
     loaded,
     hasKey,
     hasShares,
+    recoveryState: client.sharing.recoveryState,
     syncError: client.sharing.syncError,
     recovery,
     preview,
@@ -205,6 +213,14 @@ export function useEncryptedSharing({
     restore: (key: string) =>
       act(async () => {
         await client.sharing.restoreKey(key, origin)
+        await client.sharing.syncKey()
+        await load()
+      }),
+    resetLegacySharing: () =>
+      act(async () => {
+        await client.sharing.resetLegacySharing(origin)
+        setShare(null)
+        setRecovery('')
         await load()
       }),
     review: () =>

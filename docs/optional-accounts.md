@@ -7,10 +7,13 @@ Organization-owned OIDC and automatic relay distribution are documented in
 [Custom TURN and organization SSO](custom-turn-and-sso.md).
 
 Connect stores account profiles, linked computer metadata and scoped access grants. It does not
-receive runtime/device credentials, workspace content or LLM provider credentials. Account-based
-runtime setup requires explicit owner or paired-device consent and installation identity proofs.
-Optional TURN carries encrypted traffic; it does not replace those checks. Hosted artifacts use
-separate, restricted grants; signing in to artifacts never authorizes access to computers.
+receive paired runtime/device credentials or LLM provider credentials. When sharing is used, it
+stores an encrypted account recovery copy of the sharing key and can recover shared content; see
+[encrypted sharing and account recovery](encrypted-sharing.md). Unshared workspace content stays on
+your runtime. Account-based runtime setup requires explicit owner or paired-device consent and
+installation identity proofs. Optional TURN carries encrypted traffic; it does not replace those
+checks. Hosted artifacts use separate, restricted grants; signing in to artifacts never authorizes
+access to computers.
 
 ## Sign in on desktop and mobile
 

@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from 'vite-plus/test'
 import { generateKeyPairSync, randomBytes, sign } from 'node:crypto'
-import { internetPublicKey, internetRegistrationPayload } from '@dovo/protocol'
+import {
+  internetPublicKey,
+  internetRegistrationPayload,
+  decode,
+  sharingRecoverySchema,
+} from '@dovo/protocol'
 import { once } from 'node:events'
 import { AccountStore, hash } from './store.js'
 import { createConnectServer } from './server.js'
@@ -18,6 +23,7 @@ async function fixture(trustedProxies: string[] = []) {
     store,
     origin,
     trustedProxies,
+    sharingRecoverySecret: randomBytes(32),
     authorizationOrigin: 'https://auth.test',
     authorize: async (login) => {
       login.state = 'verified-state'
@@ -483,4 +489,80 @@ it('relays sharing keys only between active sessions of one account and removes 
   expect(f.store.db.prepare('SELECT * FROM sharing_key_identity').all()).toHaveLength(1)
   f.store.deleteAccount('owner')
   expect(f.store.db.prepare('SELECT * FROM sharing_key_identity').all()).toEqual([])
+})
+
+it('recovers one account key across sessions, seals database values, converges first saves and refuses silent replacement', async () => {
+  const f = await fixture()
+  const session = (user: string) => {
+    const login = f.store.createLogin()
+    f.store.approve(login.login, { id: user, name: user })
+    return login.token
+  }
+  const first = session('owner'),
+    second = session('owner'),
+    other = session('other')
+  const call = (token: string, body?: unknown) =>
+    f.request('/v1/sharing-recovery', {
+      method: body ? 'PUT' : 'GET',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    })
+  expect((await call('')).status).toBe(401)
+  const key = 'a'.repeat(64),
+    candidate = 'b'.repeat(64)
+  expect(await (await call(first)).json()).toEqual({ key: null, keyHash: null })
+  const initial = decode(sharingRecoverySchema, await (await call(first, { key })).json())
+  expect(initial).toMatchObject({ key })
+  expect(await (await call(second, { key: candidate })).json()).toEqual(initial)
+  expect(await (await call(second)).json()).toEqual(initial)
+  expect(await (await call(other)).json()).toEqual({ key: null, keyHash: null })
+  expect((await call(first, { key: 'invalid' })).status).toBe(400)
+  expect((await call(first, { key: candidate, reset: { keyHash: initial.keyHash } })).status).toBe(
+    409,
+  )
+  const rows = JSON.stringify(f.store.db.prepare('SELECT * FROM sharing_key_recovery').all())
+  expect(rows).not.toContain(key)
+  // A copied ciphertext must not decrypt under another account's associated data.
+  f.store.db
+    .prepare(
+      'INSERT INTO sharing_key_recovery SELECT ?,sealed FROM sharing_key_recovery WHERE user=?',
+    )
+    .run('other', 'owner')
+  expect((await call(other)).status).toBe(502)
+  // Scoped artifact tokens and revoked sessions cannot recover keys.
+  const grant = f.store.artifactGrant(first, 'https://share.test')!
+  expect((await call(grant.token)).status).toBe(401)
+  f.store.db.prepare('DELETE FROM sessions WHERE token=?').run(hash(first))
+  expect((await call(first)).status).toBe(401)
+  expect((await call(second)).status).toBe(200)
+  f.store.deleteAccount('owner')
+  expect(
+    f.store.db.prepare('SELECT * FROM sharing_key_recovery WHERE user=?').get('owner'),
+  ).toBeUndefined()
+})
+
+it('only resets legacy sharing with the expected fingerprint and invalidates old transfer mailboxes', async () => {
+  const f = await fixture(),
+    login = f.store.createLogin()
+  f.store.approve(login.login, { id: 'owner', name: 'Owner' })
+  const headers = { Authorization: `Bearer ${login.token}`, 'Content-Type': 'application/json' }
+  const fingerprint = '1'.repeat(64),
+    key = '2'.repeat(64)
+  f.store.db.prepare('INSERT INTO sharing_key_identity VALUES(?,?)').run('owner', fingerprint)
+  await f.request('/v1/sharing-keys', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ publicKey: '3'.repeat(64), hasKey: false, keyHash: null }),
+  })
+  const save = (body: unknown) =>
+    f.request('/v1/sharing-recovery', { method: 'PUT', headers, body: JSON.stringify(body) })
+  expect((await save({ key })).status).toBe(409)
+  expect((await save({ key, reset: { keyHash: null } })).status).toBe(409)
+  expect(await (await f.request('/v1/sharing-recovery', { headers })).json()).toEqual({
+    key: null,
+    keyHash: fingerprint,
+  })
+  expect((await save({ key, reset: { keyHash: fingerprint } })).status).toBe(200)
+  expect(f.store.db.prepare('SELECT * FROM sharing_key_sync').all()).toEqual([])
+  expect((await save({ key, reset: { keyHash: fingerprint } })).status).toBe(409)
 })

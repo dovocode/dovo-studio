@@ -21,12 +21,17 @@ import {
 } from '../conversation/encrypted-sharing.js'
 import type { AccountStorage } from './account.js'
 import { internetBytes, internetPublicKey, openInternet, sealInternet } from './account-internet.js'
-import { sharingKeyInboxSchema, sharingKeyTransferSchema } from './sharing-key-sync.js'
+import {
+  sharingKeyInboxSchema,
+  sharingKeyTransferSchema,
+  sharingRecoverySchema,
+} from './sharing-key-sync.js'
 
 export type OpenShare = { record: ShareRecord; vault: SharingVault; content: SharedContent }
 export type SharingSession = { userId: string; sessionId: string }
 export class SharingClient {
   syncError = ''
+  recoveryState: 'checking' | 'ready' | 'missing' | 'empty' | 'unavailable' = 'checking'
   private syncUsers = 0
   private syncTimer?: ReturnType<typeof setInterval>
   private exchange?: { sessionId: string; secret: Uint8Array; publicKey: string }
@@ -53,6 +58,7 @@ export class SharingClient {
     private sync?: {
       request: (method: 'POST' | 'PUT', body: unknown) => Promise<unknown>
       origin: () => Promise<string>
+      recovery?: (method: 'GET' | 'PUT', body?: unknown) => Promise<unknown>
     },
   ) {}
   /** Shared by every account consumer; sync never generates a replacement sharing key. */
@@ -92,7 +98,10 @@ export class SharingClient {
     } catch (error) {
       if (this.session()?.sessionId === session.sessionId) {
         const message =
-          'Sharing access could not sync. Check your connection; Studio will retry automatically.'
+          this.sync.recovery && error instanceof Error
+            ? error.message
+            : 'Sharing access could not sync. Check your connection; Studio will retry automatically.'
+        if (this.sync.recovery) this.recoveryState = 'unavailable'
         if (this.syncError !== message) {
           this.syncError = message
           this.changed()
@@ -107,7 +116,8 @@ export class SharingClient {
     const sync = this.sync
     if (!sync) return false
     const exchange = this.exchangeFor(session)
-    let key = await this.recoveryKey()
+    let accountRestored = false
+    let key = await this.readRecoveryKey(false)
     this.check(session)
     if (key) {
       const hash = sharingHash(key)
@@ -126,6 +136,28 @@ export class SharingClient {
         this.verifiedKey = { sessionId: session.sessionId, hash, valid }
       }
       if (!this.verifiedKey.valid) key = null
+    }
+    if (sync.recovery) {
+      let recovery = decode(sharingRecoverySchema, await sync.recovery('GET'))
+      this.check(session)
+      if (!recovery.key && key && (!recovery.keyHash || recovery.keyHash === sharingHash(key))) {
+        recovery = decode(sharingRecoverySchema, await sync.recovery('PUT', { key }))
+        this.check(session)
+      }
+      if (recovery.key) {
+        if (sharingHash(recovery.key) !== recovery.keyHash)
+          throw new Error('Account sharing recovery fingerprint changed')
+        const restored = key !== recovery.key
+        if (restored) await this.restoreKey(recovery.key, await sync.origin())
+        this.check(session)
+        this.setRecoveryState('ready')
+        accountRestored = restored
+        key = recovery.key
+      } else {
+        this.setRecoveryState(
+          recovery.keyHash || this.verifiedKey?.valid === false ? 'missing' : 'empty',
+        )
+      }
     }
     const inbox = decode(
       sharingKeyInboxSchema,
@@ -156,9 +188,9 @@ export class SharingClient {
         })
         this.check(session)
       }
-      return false
+      return accountRestored
     }
-    if (!inbox.answer) return false
+    if (!inbox.answer) return accountRestored
     try {
       if (inbox.answer.recipient !== exchange.publicKey)
         throw new Error('Sharing recipient changed')
@@ -179,6 +211,16 @@ export class SharingClient {
       // Validate every existing owner vault before persisting a transferred key.
       await this.restoreKey(transfer.key, origin)
       this.check(session)
+      if (sync.recovery) {
+        const recovery = decode(
+          sharingRecoverySchema,
+          await sync.recovery('PUT', { key: transfer.key }),
+        )
+        this.check(session)
+        if (recovery.key !== transfer.key)
+          throw new Error('Account sharing recovery changed. Try again.')
+        this.setRecoveryState('ready')
+      }
       await sync.request('POST', {
         publicKey: exchange.publicKey,
         hasKey: true,
@@ -204,6 +246,12 @@ export class SharingClient {
       this.exchange = { sessionId: session.sessionId, secret, publicKey: internetPublicKey(secret) }
     }
     return this.exchange
+  }
+  private setRecoveryState(state: SharingClient['recoveryState']) {
+    if (state !== this.recoveryState) {
+      this.recoveryState = state
+      this.changed()
+    }
   }
   private current() {
     const session = this.session()
@@ -268,12 +316,39 @@ export class SharingClient {
       throw new Error('Secure sharing key storage is unavailable')
     const saved = await this.storage.readSharingKey(this.connectOrigin, session.userId)
     this.check(session)
-    if (saved) return decode(sharingKeySchema, saved)
+    if (
+      saved &&
+      !(
+        this.verifiedKey?.sessionId === session.sessionId &&
+        this.verifiedKey.hash === sharingHash(saved) &&
+        !this.verifiedKey.valid
+      )
+    )
+      return decode(sharingKeySchema, saved)
     if (!create) return null
     const key = newSharingKey()
     if (this.sync) {
       const origin = await this.sync.origin()
       this.check(session)
+      if (this.sync.recovery) {
+        let recovery = decode(sharingRecoverySchema, await this.sync.recovery('GET'))
+        this.check(session)
+        if (!recovery.key) {
+          if ((await this.list(origin)).length || recovery.keyHash)
+            throw new Error(
+              'This sharing key predates account recovery. Restore it from another device or reset legacy sharing.',
+            )
+          this.check(session)
+          recovery = decode(sharingRecoverySchema, await this.sync.recovery('PUT', { key }))
+          this.check(session)
+        }
+        if (!recovery.key || sharingHash(recovery.key) !== recovery.keyHash)
+          throw new Error('Account sharing recovery is invalid')
+        await this.restoreKey(recovery.key, origin)
+        this.check(session)
+        this.setRecoveryState('ready')
+        return recovery.key
+      }
       if ((await this.list(origin)).length)
         throw new Error('Sharing access is syncing from your other devices')
       this.check(session)
@@ -304,10 +379,52 @@ export class SharingClient {
     for (const record of shares)
       decode(sharingVaultSchema, decryptSharing(record.ownerBox, checked))
     this.check(session)
+    if (this.sync?.recovery) {
+      const recovery = decode(sharingRecoverySchema, await this.sync.recovery('GET'))
+      this.check(session)
+      if (recovery.keyHash && recovery.keyHash !== sharingHash(checked))
+        throw new Error(
+          'This backup belongs to a different sharing key. Use account recovery instead.',
+        )
+    }
     if (!this.storage.writeSharingKey) throw new Error('Secure sharing key storage is unavailable')
     await this.storage.writeSharingKey(checked, this.connectOrigin, session.userId)
     this.check(session)
+    this.verifiedKey = undefined
     this.changed()
+  }
+  /** Explicitly confirmed by the UI; never runs during background recovery. */
+  async resetLegacySharing(origin: string) {
+    const session = this.current(),
+      recoveryRequest = this.sync?.recovery
+    if (!recoveryRequest)
+      throw new Error('Update Connect to enable account-managed sharing recovery.')
+    // Wait for a running recovery before deciding a reset is necessary.
+    await this.syncKey()
+    this.check(session)
+    const previous = decode(sharingRecoverySchema, await recoveryRequest('GET'))
+    this.check(session)
+    if (previous.key)
+      throw new Error('Sharing access is recoverable. Refresh instead of resetting.')
+    const records = await this.list(origin)
+    this.check(session)
+    for (const record of records) {
+      await this.remove(origin, record.id)
+      this.check(session)
+    }
+    const recovery = decode(
+      sharingRecoverySchema,
+      await recoveryRequest('PUT', {
+        key: newSharingKey(),
+        reset: { keyHash: previous.keyHash },
+      }),
+    )
+    this.check(session)
+    if (!recovery.key || sharingHash(recovery.key) !== recovery.keyHash)
+      throw new Error('Account sharing recovery is invalid')
+    await this.restoreKey(recovery.key, origin)
+    this.check(session)
+    this.setRecoveryState('ready')
   }
   async list(origin: string) {
     return decode(
@@ -331,6 +448,9 @@ export class SharingClient {
     return this.open(decode(shareRecordSchema, await this.request(origin, '/v2/shares/' + id)))
   }
   async publish(origin: string, sourceId: string, content: SharedContent): Promise<OpenShare> {
+    if (this.sync?.recovery && this.recoveryState !== 'ready') await this.syncKey()
+    if (this.sync?.recovery && this.recoveryState !== 'ready')
+      throw new Error('Save or recover your sharing key with your account before publishing.')
     const key = await this.key(),
       source = this.source(content.kind, sourceId, key)
     const existing = (await this.list(origin)).find((record) => record.source === source)

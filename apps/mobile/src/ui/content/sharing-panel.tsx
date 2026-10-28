@@ -55,7 +55,8 @@ export function SharingPanel({
   const people =
     sharing.share?.record.grants.filter((grant) => !!grant.userId || !!grant.organizationId) ?? []
   const activeLink = links.find((grant) => (grant.expiresAt ?? 0) > Date.now())
-  const needsRecovery = sharing.loaded && !sharing.hasKey && sharing.hasShares
+  const needsRecovery =
+    sharing.loaded && !sharing.hasKey && (sharing.hasShares || sharing.recoveryState === 'missing')
   const unavailable =
     sharing.busy ||
     !sharing.loaded ||
@@ -125,13 +126,45 @@ export function SharingPanel({
           {needsRecovery && (
             <View style={{ ...styles.card, gap: 12 }}>
               <Text accessibilityRole="header" style={heading}>
-                Syncing sharing access
+                Recover sharing access
               </Text>
               <Text style={styles.muted}>
-                Keep Studio open on another device signed in to this account where sharing already
-                works. Access restores automatically while both devices are online.
+                Signing in restores sharing once your key is saved with your account. For older
+                sharing, open Studio on a device where sharing works, restore a backup, or reset
+                below if the key is lost.
               </Text>
               {!!sharing.syncError && <Text style={styles.muted}>{sharing.syncError}</Text>}
+              <Action
+                secondary
+                label="Retry account recovery"
+                disabled={sharing.busy}
+                onPress={() => void sharing.refresh()}
+              />
+              {sharing.recoveryState !== 'unavailable' && (
+                <Action
+                  secondary
+                  label="I no longer have the key"
+                  disabled={sharing.busy}
+                  onPress={() =>
+                    Alert.alert(
+                      'Reset legacy sharing?',
+                      'This deletes all your hosted thread and artifact copies, invitations and links for this account. Local content stays intact. New sharing will recover automatically when you sign in.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete old copies and reset',
+                          style: 'destructive',
+                          onPress: () => {
+                            void sharing.resetLegacySharing().then((ok) => {
+                              if (ok) setNotice('Sharing is ready with account recovery')
+                            })
+                          },
+                        },
+                      ],
+                    )
+                  }
+                />
+              )}
               <Action
                 secondary
                 label="Restore from a backup"
@@ -339,9 +372,7 @@ export function SharingPanel({
                 above.
               </Text>
             )}
-            <Text style={[styles.muted, { fontSize: 12, textAlign: 'center' }]}>
-              End-to-end encrypted
-            </Text>
+            <Text style={[styles.muted, { fontSize: 12, textAlign: 'center' }]}>Encrypted</Text>
           </View>
           {!!legacy.length && (
             <Text style={styles.muted}>
@@ -498,10 +529,11 @@ export function SharingPanel({
                 }}
               >
                 <Text style={styles.muted}>
-                  Your key syncs automatically while another signed-in Studio device is online. An
-                  optional backup in your password manager can restore access if every device is
-                  lost. It unlocks all your shared content.
+                  {sharing.recoveryState === 'ready'
+                    ? 'Your sharing key is saved with your account. Signing in restores access even if every device is lost. Connect can recover this key. A manual backup is optional.'
+                    : 'Account recovery is not ready yet. Keep this device signed in and connected so Studio can save your key with your account.'}
                 </Text>
+                {!!sharing.syncError && <Text style={styles.muted}>{sharing.syncError}</Text>}
                 {sharing.recovery ? (
                   <>
                     <Text selectable accessibilityLabel="Sharing recovery key" style={styles.text}>

@@ -11,7 +11,7 @@ export default function Privacy() {
     <article className="wrap page-content docs-page">
       <p className="eyebrow">DOVO STUDIO</p>
       <h1>Privacy</h1>
-      <p className="page-intro">Last updated: 19 October 2026</p>
+      <p className="page-intro">Last updated: 28 October 2026</p>
       <div className="docs-steps">
         <section>
           <h2>Your workspace and connected computers</h2>
@@ -37,6 +37,24 @@ export default function Privacy() {
             Account sessions expire after 30 days. Signing out revokes that device’s account
             session; it does not delete your account, unlink all computers or revoke separate
             runtime pairings. You can unlink computers from the account directory in the app.
+          </p>
+        </section>
+        <section>
+          <h2>Sharing and account recovery</h2>
+          <p>
+            Sharing uploads an encrypted copy of the thread or artifact you select. The sharing
+            service stores encrypted content, invitations, access metadata and encrypted prompt
+            suggestions. Connect saves an encrypted recovery copy of your sharing key so signing in
+            can restore access without a backup key or another device. Connect can recover this key
+            and decrypt your shared content; sharing does not provide end-to-end encryption against
+            Connect or its operator. Unshared workspace content stays on your paired computer.
+          </p>
+          <p>
+            Anyone holding a public sharing link can read its content until it expires or is
+            revoked. You can delete hosted copies in sharing settings. Deleting your Dovo account
+            also removes its recovery records. A key lost before account recovery was enabled cannot
+            be reconstructed; resetting legacy sharing requires confirming deletion of its old
+            hosted copies and links and leaves local content intact.
           </p>
         </section>
         <section>

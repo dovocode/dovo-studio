@@ -9,6 +9,7 @@ import { approvedRelayInstallations } from './relay-admission.js'
 import { organizations } from './organizations.js'
 import { artifactService } from './artifact-api.js'
 import { RequestError } from './http.js'
+import { sharingRecoverySecret } from './sharing-recovery.js'
 const root = process.env.DOVO_CONNECT_DATA ?? '/data'
 mkdirSync(root, { recursive: true, mode: 0o700 })
 chmodSync(root, 0o700)
@@ -29,6 +30,10 @@ const unconfiguredSignIn = async () => {
 const server = createConnectServer({
   store,
   origin,
+  sharingRecoverySecret: sharingRecoverySecret(
+    join(root, 'sharing-recovery.key'),
+    !!store.db.prepare('SELECT user FROM sharing_key_recovery LIMIT 1').get(),
+  ),
   artifacts: artifactService(
     process.env.DOVO_ARTIFACTS_ORIGIN,
     process.env.DOVO_ARTIFACTS_SERVICE_KEY,

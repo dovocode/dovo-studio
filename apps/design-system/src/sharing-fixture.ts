@@ -5,6 +5,8 @@ import {
   shareWriteSchema,
   newSharingKey,
   sharingUUID,
+  sharingHash,
+  sharingRecoverySaveSchema,
   encryptSuggestion,
   sharingReaderKeys,
   type AccountState,
@@ -21,6 +23,8 @@ export function createSharingFixture({
   withKey = true,
 }: { kind?: 'thread' | 'artifact'; withKey?: boolean } = {}) {
   let key: string | null = withKey ? newSharingKey() : null
+  let recoveryCopy = key,
+    recoveryHash = key ? sharingHash(key) : null
   const storage: AccountStorage = {
     read: async () => null,
     write: async () => {
@@ -192,6 +196,25 @@ export function createSharingFixture({
       async () => {
         throw new Error('Network access is disabled in the catalog')
       },
+      {
+        origin: async () => origin,
+        request: async () => ({ keyHash: recoveryHash, requests: [], answer: null }),
+        recovery: async (method, body) => {
+          if (fail) throw new Error('Simulated connection failure. Try again.')
+          if (method === 'PUT') {
+            const input = decode(sharingRecoverySaveSchema, body)
+            if (input.reset && (recoveryCopy || input.reset.keyHash !== recoveryHash))
+              throw new Error('Sharing recovery changed')
+            if (!recoveryCopy) {
+              if (!input.reset && recoveryHash && recoveryHash !== sharingHash(input.key))
+                throw new Error('Restore the original sharing key')
+              recoveryCopy = input.key
+              recoveryHash = sharingHash(input.key)
+            }
+          }
+          return { key: recoveryCopy, keyHash: recoveryHash }
+        },
+      },
     )
     override sharingService = async () => origin
     override sessionId = () => 'catalog-session'
@@ -257,8 +280,9 @@ export function createSharingFixture({
       fail = value
     },
     records,
-    forgetKey: () => {
+    forgetKey: (legacy = false) => {
       key = null
+      if (legacy) recoveryCopy = null
     },
   }
 }
