@@ -59,6 +59,7 @@ export function documentPipWindowOptions(
     return Math.max(min, Math.min(max, value || fallback))
   }
   return {
+    frame: false,
     alwaysOnTop: true,
     useContentSize: true,
     autoHideMenuBar: true,
@@ -76,6 +77,73 @@ export function documentPipWindowOptions(
       disableBlinkFeatures: 'DocumentPictureInPictureAPI',
     },
   }
+}
+
+export function attachDocumentPipControls(popup: Electron.BrowserWindow, returnToTab?: () => void) {
+  const contents = popup.webContents
+  contents.ipc.handle('browser:document-pip-controls', (event) =>
+    event.senderFrame === contents.mainFrame ? { returnToTab: !!returnToTab } : null,
+  )
+  contents.ipc.on('browser:document-pip-control', (event, action: unknown) => {
+    if (event.senderFrame !== contents.mainFrame || popup.isDestroyed()) return
+    if (action === 'return' && returnToTab) returnToTab()
+    else if (action !== 'close') return
+    popup.close()
+  })
+}
+
+/** Isolated-world chrome, separate from the call page's styles and JavaScript. */
+function installDocumentPipControls(
+  action: (action: 'close' | 'return') => void,
+  returnToTab: boolean,
+) {
+  const host = document.createElement('div')
+  host.setAttribute('data-dovo-pip-controls', '')
+  host.style.cssText =
+    'all:initial!important;position:fixed!important;inset:0 0 auto!important;height:36px!important;z-index:2147483647!important;pointer-events:none!important;display:block!important;'
+  const root = host.attachShadow({ mode: 'closed' })
+  const sheet = new CSSStyleSheet()
+  sheet.replaceSync(`
+    .bar {display:flex;height:36px;align-items:center;justify-content:flex-end;padding:0 4px;gap:2px;background:linear-gradient(#0008,transparent);pointer-events:auto;-webkit-app-region:drag;color:white}
+    button {display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:50%;background:#202124b3;color:inherit;cursor:pointer;-webkit-app-region:no-drag}
+    button:hover {background:#ffffff40} button:focus-visible {outline:2px solid white;outline-offset:-2px}
+    svg {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  `)
+  root.adoptedStyleSheets = [sheet]
+  const bar = document.createElement('div')
+  bar.className = 'bar'
+  bar.setAttribute('role', 'toolbar')
+  bar.setAttribute('aria-label', 'Picture-in-picture controls')
+  const button = (label: string, command: 'close' | 'return', paths: string[]) => {
+    const control = document.createElement('button')
+    control.type = 'button'
+    control.title = label
+    control.setAttribute('aria-label', label)
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    icon.setAttribute('viewBox', '0 0 24 24')
+    icon.setAttribute('aria-hidden', 'true')
+    for (const d of paths) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      path.setAttribute('d', d)
+      icon.append(path)
+    }
+    control.append(icon)
+    control.addEventListener('click', (event) => {
+      if (event.isTrusted) action(command)
+    })
+    bar.append(control)
+  }
+  if (returnToTab) button('Back to tab', 'return', ['M14 4h6v16H4v-6', 'M4 4h7v7', 'M11 4 3 12'])
+  button('Close picture-in-picture', 'close', ['m6 6 12 12', 'M18 6 6 18'])
+  root.append(bar)
+  const mount = () => {
+    if (document.documentElement && host.parentNode !== document.documentElement)
+      document.documentElement.append(host)
+  }
+  mount()
+  const observer = new MutationObserver(mount)
+  observer.observe(document, { childList: true, subtree: true })
+  window.addEventListener('pagehide', () => observer.disconnect(), { once: true })
 }
 
 /** Runs before website scripts in the main world. Keep this function self-contained. */
@@ -241,6 +309,13 @@ export function installDocumentPictureInPicture(
 }
 
 export const DOCUMENT_PIP_PRELOAD = `
+if (process.isMainFrame && window.name.startsWith(${JSON.stringify(DOCUMENT_PIP_NAME + ':')})) {
+  ipcRenderer.invoke('browser:document-pip-controls').then(options => {
+    if (options) (${installDocumentPipControls.toString()})(
+      action => ipcRenderer.send('browser:document-pip-control', action), options.returnToTab,
+    )
+  }).catch(error => console.error('Could not show picture-in-picture controls.', error))
+}
 if (process.isMainFrame) {
 const pip = contextBridge.executeInMainWorld({
   func: ${installDocumentPictureInPicture.toString()},

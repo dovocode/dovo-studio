@@ -17,6 +17,7 @@ interface Window {
     onBrowserWorkspaceFocus: (listener: () => void) => () => void
     defaultBrowser: import('@dovo/protocol').DefaultBrowserBridge
     browser: import('@dovo/protocol').BrowserBridge
+    browserFrames: import('@dovo/protocol').BrowserFrameBridge
     onBrowserContextAction: NonNullable<
       import('@dovo/studio-core').StudioHostApi['onBrowserContextAction']
     >

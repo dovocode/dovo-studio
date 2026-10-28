@@ -1,4 +1,8 @@
-import { DOCUMENT_PIP_NAME, authorizeDocumentPip } from './browser-document-pip.js'
+import {
+  DOCUMENT_PIP_NAME,
+  authorizeDocumentPip,
+  attachDocumentPipControls,
+} from './browser-document-pip.js'
 import { loadBrowserFaviconModule } from './browser-favicon.js'
 import {
   selectedBrowserText,
@@ -51,6 +55,9 @@ type Entry = {
   pageCreated?: boolean
   /** Navigation readiness, without waiting for page subresources. */
   loading?: Promise<void>
+  stopFrames?: () => void
+  /** Applied device metrics; ordinary layout changes must not reset Chromium's input viewport. */
+  emulation?: string
   /** Restore page focus after a passive tooltip, unless Studio receives deliberate input. */
   restoreFocus?: boolean
   keepAwake?: boolean
@@ -193,7 +200,9 @@ export function registerBrowser(
     if (entry.workspace && !entry.contents.isDestroyed())
       entry.contents.send(
         'browser:document-pip-visibility',
-        entry.view.getVisible() && !entry.window.isMinimized() && entry.window.isVisible(),
+        (entry.view.getVisible() || !!entry.stopFrames) &&
+          !entry.window.isMinimized() &&
+          entry.window.isVisible(),
       )
   }
   const syncBackgroundThrottling = (entry: Entry) => {
@@ -203,6 +212,7 @@ export function registerBrowser(
           entry.keepAwake ||
           entry.videoPictureInPicture ||
           entry.documentPip ||
+          entry.stopFrames ||
           (entry.workspace && media.keepAlive(entry.contents))
         ),
       )
@@ -210,7 +220,7 @@ export function registerBrowser(
   const setVisible = (entry: Entry, visible: boolean) => {
     const changed = entry.view.getVisible() !== visible
     syncBackgroundThrottling(entry)
-    entry.view.setVisible(visible)
+    if (changed) entry.view.setVisible(visible)
     if (changed) reportVisibility(entry)
   }
   const focusTab = (entry: Entry) => {
@@ -430,6 +440,7 @@ export function registerBrowser(
   const releaseView = (key: string) => {
     const entry = views.get(key)
     if (!entry) return
+    entry.stopFrames?.()
     exitFullscreen(entry, true)
     focusStudio(entry)
     views.delete(key)
@@ -482,6 +493,7 @@ export function registerBrowser(
       if (owner.window === window) profileWindows.delete(profileId)
     for (const [key, current] of views) {
       if (current.windowId !== window.id) continue
+      current.stopFrames?.()
       exitFullscreen(current, true)
       views.delete(key)
       awakeRequests.delete(key)
@@ -718,6 +730,16 @@ export function registerBrowser(
     view.webContents.on('dom-ready', () => {
       const contents = view.webContents
       reportVisibility(created)
+      // Sites such as Teams define Electron drag regions before redirecting to sign-in.
+      // Electron retains those regions across navigation, swallowing clicks on the next page.
+      // Embedded pages must never define Studio's window chrome; user-origin CSS also wins
+      // over a site's !important rules while leaving Studio's own draggable header intact.
+      void contents
+        .insertCSS('* { -webkit-app-region: no-drag !important; }', { cssOrigin: 'user' })
+        .catch((error: unknown) => {
+          if (!contents.isDestroyed())
+            console.error('Could not disable website drag regions', error)
+        })
       if (!/^https?:\/\//i.test(contents.getURL())) return
       void contents
         .executeJavaScriptInIsolatedWorld(1001, [
@@ -915,6 +937,9 @@ export function registerBrowser(
           })
         return { action: 'deny' }
       }
+      // Explicit link-domain preferences also apply to window.open popup requests.
+      if (openableUrl(details.url) && routeProfileLink(created, details.url))
+        return { action: 'deny' }
       if (popupRequest(details) && openableUrl(details.url)) {
         if (created.popups.size >= MAX_POPUPS) return { action: 'deny' }
         // The popup keeps the opener's session (profile) and sandbox; it never gets Node.
@@ -934,8 +959,6 @@ export function registerBrowser(
           },
         }
       }
-      if (openableUrl(details.url) && routeProfileLink(created, details.url))
-        return { action: 'deny' }
       if (
         details.disposition !== 'other' &&
         (openableUrl(details.url) || details.url === 'about:blank' || details.url === '')
@@ -985,6 +1008,12 @@ export function registerBrowser(
       const documentPip = details?.frameName?.startsWith(`${DOCUMENT_PIP_NAME}:`)
       if (documentPip) {
         created.documentPip = popup
+        attachDocumentPipControls(
+          popup,
+          String(Reflect.get(details.options ?? {}, 'dovo-disallow-return')) === '1'
+            ? undefined
+            : () => focusTab(created),
+        )
         const keepOnTop = () => {
           if (!popup.isDestroyed()) popup.setAlwaysOnTop(true, 'floating')
         }
@@ -1253,6 +1282,7 @@ export function registerBrowser(
       registerWindow(target)
       awakeRequests.delete(viewKey)
       if (entry) {
+        entry.stopFrames?.()
         for (const popup of entry.popups)
           if (!popup.isDestroyed() && popup.getParentWindow() === window)
             popup.setParentWindow(target)
@@ -1353,6 +1383,8 @@ export function registerBrowser(
       // Shared-browser and thread-preview storage never mix, so a mode change needs a new view.
       if (entry && (entry.profileId !== profileId || entry.workspace !== workspace)) {
         releaseView(viewKey)
+        // Releasing the old profile clears this key; this show still owns the replacement.
+        activeViews.set(window.id, showing)
         entry = undefined
       }
       entry ??= createEntry(window, viewKey, command.key, profileId, workspace)
@@ -1401,7 +1433,16 @@ export function registerBrowser(
         height: Math.min(requested.height, height - y),
       }
       if (entry.fullscreenBounds) entry.fullscreenBounds = bounds
-      else entry.view.setBounds(bounds)
+      else {
+        const previous = entry.view.getBounds()
+        if (
+          previous.x !== bounds.x ||
+          previous.y !== bounds.y ||
+          previous.width !== bounds.width ||
+          previous.height !== bounds.height
+        )
+          entry.view.setBounds(bounds)
+      }
       if (entry.url !== url) {
         entry.url = url
         entry.loading =
@@ -1432,8 +1473,8 @@ export function registerBrowser(
       // Every concurrent show waits for DOM readiness, including resize commands.
       if (command.viewport) {
         const { width: vw, height: vh } = command.viewport
-        entry.view.webContents.enableDeviceEmulation({
-          screenPosition: 'mobile',
+        const emulation = {
+          screenPosition: 'mobile' as const,
           screenSize: {
             width: vw,
             height: vh,
@@ -1448,10 +1489,19 @@ export function registerBrowser(
             x: 0,
             y: 0,
           },
-        })
-      } else entry.view.webContents.disableDeviceEmulation()
-      // Reinsert the selected page above retained sibling views for native hit testing.
-      window.contentView.addChildView(entry.view)
+        }
+        const signature = JSON.stringify(emulation)
+        if (entry.emulation !== signature) {
+          entry.view.webContents.enableDeviceEmulation(emulation)
+          entry.emulation = signature
+        }
+      } else if (entry.emulation !== undefined) {
+        entry.view.webContents.disableDeviceEmulation()
+        entry.emulation = undefined
+      }
+      // Keep the selected page above retained siblings without reattaching it on every resize.
+      if (window.contentView.children.at(-1) !== entry.view)
+        window.contentView.addChildView(entry.view)
       setVisible(entry, true)
       if (entry.restoreFocus) {
         entry.restoreFocus = false
@@ -1504,6 +1554,47 @@ export function registerBrowser(
       return Object.keys(events).length
         ? { url: '', back: false, forward: false, ...events }
         : undefined
+    }
+    if (command.action === 'watch-frames') {
+      const source = entry
+      if (!command.enabled) {
+        source.stopFrames?.()
+        return
+      }
+      if (source.stopFrames) return
+      const contents = source.contents
+      let last = -Infinity
+      source.stopFrames = () => {
+        source.stopFrames = undefined
+        if (!contents.isDestroyed()) contents.endFrameSubscription()
+        syncBackgroundThrottling(source)
+        reportVisibility(source)
+      }
+      syncBackgroundThrottling(source)
+      reportVisibility(source)
+      try {
+        contents.beginFrameSubscription(false, (image) => {
+          if (
+            !source.stopFrames ||
+            window.isDestroyed() ||
+            window.isMinimized() ||
+            !window.isVisible()
+          )
+            return
+          const now = performance.now()
+          if (now - last < 1000 / 30 || image.isEmpty()) return
+          last = now
+          window.webContents.send('browser:frame', {
+            key: source.key,
+            url: contents.getURL() || source.url,
+            image: `data:image/jpeg;base64,${image.toJPEG(80).toString('base64')}`,
+          })
+        })
+      } catch (error) {
+        source.stopFrames()
+        throw error
+      }
+      return
     }
     if (command.action === 'focus-tab') {
       if (!entry.workspace) throw new Error('Only Browser workspace tabs can be focused.')
@@ -1597,7 +1688,8 @@ export function registerBrowser(
       const focusedTabKey = command.tabCount !== undefined ? focusedTabs.get(window.id) : undefined
       if (command.tabCount !== undefined) focusedTabs.delete(window.id)
       return {
-        url: entry.view.webContents.getURL(),
+        // A replacement profile's renderer can be polled before its first URL commits.
+        url: entry.view.webContents.getURL() || entry.url,
         title: entry.view.webContents.getTitle(),
         favicon: entry.favicon,
         cdp: entry.cdp,

@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+const browserFrameListeners = new Map<string, number>()
+
 const runtimeSyncListeners = new Map<
   string,
   (event: import('@dovo/protocol').DesktopSyncEvent) => void
@@ -156,6 +158,36 @@ contextBridge.exposeInMainWorld('dovo', {
     ipcRenderer.on('browser:context-action', handler)
     return () => ipcRenderer.removeListener('browser:context-action', handler)
   },
+  browserFrames: ((key, listener) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      frame: import('@dovo/protocol').BrowserFrame,
+    ) => {
+      if (frame.key === key) listener(frame)
+    }
+    ipcRenderer.on('browser:frame', handler)
+    const watch = (enabled: boolean) =>
+      ipcRenderer
+        .invoke('preview:browser', { action: 'watch-frames', key, enabled })
+        .catch((error: unknown) =>
+          console.error('Could not update browser frame subscription.', error),
+        )
+    const count = browserFrameListeners.get(key) ?? 0
+    browserFrameListeners.set(key, count + 1)
+    if (!count) void watch(true)
+    let active = true
+    return () => {
+      if (!active) return
+      active = false
+      ipcRenderer.removeListener('browser:frame', handler)
+      const remaining = (browserFrameListeners.get(key) ?? 1) - 1
+      if (remaining) browserFrameListeners.set(key, remaining)
+      else {
+        browserFrameListeners.delete(key)
+        void watch(false)
+      }
+    }
+  }) satisfies import('@dovo/protocol').BrowserFrameBridge,
   onOpenLink: (listener: (url: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url)
     ipcRenderer.on('links:open', handler)

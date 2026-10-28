@@ -9,6 +9,14 @@ const mocks = vi.hoisted(() => {
       url: 'https://example.com/',
       executeJavaScript: vi.fn<(script: string) => Promise<void>>(async () => {}),
     },
+    beginFrameSubscription:
+      vi.fn<
+        (
+          dirtyOnly: boolean,
+          listener: (image: Pick<Electron.NativeImage, 'isEmpty' | 'toJPEG'>) => void,
+        ) => void
+      >(),
+    endFrameSubscription: vi.fn<() => void>(),
     reload: vi.fn<() => void>(),
     stop: vi.fn<() => void>(),
     send: vi.fn<(...args: unknown[]) => void>(),
@@ -45,6 +53,10 @@ const mocks = vi.hoisted(() => {
     navigationHistory: { canGoBack: () => false, canGoForward: () => false },
     getURL: () => 'https://example.com/',
     getTitle: () => 'Example',
+    insertCSS: vi.fn<(...args: unknown[]) => Promise<string>>().mockResolvedValue('drag-guard'),
+    executeJavaScriptInIsolatedWorld: vi
+      .fn<(...args: unknown[]) => Promise<void>>()
+      .mockResolvedValue(),
     executeJavaScript: vi.fn<(script: string) => Promise<unknown>>(async () => 'Selected text'),
     capturePage: vi.fn<
       (...args: unknown[]) => Promise<{ isEmpty: () => boolean; toDataURL: () => string }>
@@ -63,6 +75,7 @@ const mocks = vi.hoisted(() => {
   const window = {
     id: 1,
     contentView: {
+      children: [] as unknown[],
       on: vi.fn<(...args: unknown[]) => void>(),
       getBounds: vi.fn<() => Electron.Rectangle>(() => ({ x: 0, y: 0, width: 900, height: 700 })),
       addChildView: vi.fn<(...args: unknown[]) => void>(),
@@ -161,6 +174,7 @@ vi.mock('./browser-extensions.js', async () => {
 })
 vi.mock('./browser-cdp.js', () => ({ createBrowserCdp: mocks.cdpCreate }))
 vi.mock('./browser-language.js', () => ({
+  websiteCustomization: () => '',
   websiteLinkProfile: mocks.linkProfile,
   configureBrowserLanguage: (
     session: typeof mocks.contents.session,
@@ -192,6 +206,17 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.linkProfile.mockReturnValue(undefined)
   mocks.windowFor = undefined
+  mocks.view.getVisible.mockReturnValue(true)
+  mocks.view.setVisible.mockImplementation((visible) => {
+    mocks.view.getVisible.mockReturnValue(Boolean(visible))
+  })
+  mocks.window.contentView.children = []
+  mocks.window.contentView.addChildView.mockImplementation((view) => {
+    mocks.window.contentView.children = [
+      ...mocks.window.contentView.children.filter((child) => child !== view),
+      view,
+    ]
+  })
   mocks.media.snapshot.mockReturnValue({})
   mocks.media.keepAlive.mockReturnValue(false)
   mocks.window.isFullScreen.mockReturnValue(false)
@@ -546,7 +571,7 @@ it('can retry the same URL after its navigation fails', async () => {
   expect(mocks.contents.disableDeviceEmulation).not.toHaveBeenCalled()
   await call(event, command)
   expect(mocks.contents.loadURL).toHaveBeenCalledTimes(2)
-  expect(mocks.contents.disableDeviceEmulation).toHaveBeenCalledOnce()
+  expect(mocks.contents.disableDeviceEmulation).not.toHaveBeenCalled()
 })
 
 it('replaces the native view when its profile changes, keeping separate persistent partitions', async () => {
@@ -766,6 +791,63 @@ it('captures only the requested browser view and rejects empty images', async ()
   expect(mocks.contents.capturePage).toHaveBeenCalledWith(undefined, { stayHidden: true })
   mocks.contents.capturePage.mockResolvedValueOnce({ isEmpty: () => true, toDataURL: () => '' })
   await expect(call(event, { action: 'screenshot', key: 'capture' })).rejects.toThrow('no image')
+})
+
+it('streams hidden pages only to their owner and restores throttling on unsubscribe and close', async () => {
+  const call = handler()
+  await call(event, {
+    action: 'show',
+    key: 'live',
+    url: 'https://example.com/',
+    workspaceBrowser: true,
+    bounds: { x: 0, y: 40, width: 400, height: 300 },
+  })
+  await call(event, { action: 'watch-frames', key: 'missing', enabled: true })
+  expect(mocks.contents.beginFrameSubscription).not.toHaveBeenCalled()
+  await call(event, { action: 'watch-frames', key: 'live', enabled: true })
+  await call(event, { action: 'watch-frames', key: 'live', enabled: true })
+  expect(mocks.contents.beginFrameSubscription).toHaveBeenCalledOnce()
+  await call(event, { action: 'hide', key: 'live' })
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', true)
+  const deliver = mocks.contents.beginFrameSubscription.mock.calls[0]![1]
+  const image = { isEmpty: () => false, toJPEG: () => Buffer.from('frame') }
+  mocks.window.webContents.send.mockClear()
+  deliver(image)
+  deliver(image)
+  expect(mocks.window.webContents.send).toHaveBeenCalledExactlyOnceWith('browser:frame', {
+    key: 'live',
+    url: 'https://example.com/',
+    image: 'data:image/jpeg;base64,ZnJhbWU=',
+  })
+  await call(event, { action: 'watch-frames', key: 'live', enabled: false })
+  expect(mocks.contents.endFrameSubscription).toHaveBeenCalledOnce()
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', false)
+  deliver(image)
+  expect(mocks.window.webContents.send).toHaveBeenCalledTimes(1)
+  await call(event, { action: 'watch-frames', key: 'live', enabled: true })
+  await call(event, { action: 'close', key: 'live' })
+  expect(mocks.contents.endFrameSubscription).toHaveBeenCalledTimes(2)
+})
+
+it('cleans up a failed frame subscription', async () => {
+  const call = handler()
+  await call(event, {
+    action: 'show',
+    key: 'failed',
+    url: 'https://example.com/',
+    bounds: { x: 0, y: 40, width: 400, height: 300 },
+  })
+  mocks.contents.beginFrameSubscription.mockImplementationOnce(() => {
+    throw new Error('Renderer unavailable')
+  })
+  await expect(
+    call(event, { action: 'watch-frames', key: 'failed', enabled: true }),
+  ).rejects.toThrow('Renderer unavailable')
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  await call(event, { action: 'watch-frames', key: 'failed', enabled: true })
+  expect(mocks.contents.beginFrameSubscription).toHaveBeenCalledTimes(2)
 })
 
 it('reads a bounded literal selection only from the requested browser view', async () => {
@@ -1010,12 +1092,13 @@ it('does not navigate a concurrently restored tab in another profile', async () 
   await expect(restoring).rejects.toThrow('tab changed')
   expect(mocks.contents.loadURL).not.toHaveBeenCalled()
 })
-it('routes ordinary new links into another profile while preserving OAuth and form sessions', async () => {
+it('routes links and new-window popups into their linked profile', async () => {
   const call = handler()
   await call(event, workspaceShow)
   mocks.linkProfile.mockReturnValue('work')
+  const open = openHandler()
   const target = 'https://routed.example/'
-  expect(openHandler()({ url: target, disposition: 'foreground-tab', features: '' })).toEqual({
+  expect(open({ url: target, disposition: 'foreground-tab', features: '' })).toEqual({
     action: 'deny',
   })
   await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2))
@@ -1024,8 +1107,25 @@ it('routes ordinary new links into another profile while preserving OAuth and fo
     expect.objectContaining({ url: target, profileId: 'work', openerKey: 'shared' }),
   ])
   expect(
-    openHandler()({ url: target, disposition: 'new-window', features: 'width=500,height=400' }),
-  ).toMatchObject({ action: 'allow' })
+    open({ url: target, disposition: 'new-window', features: 'width=500,height=400' }),
+  ).toMatchObject({ action: 'deny' })
+  await vi.waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(3))
+  await expect(
+    call(event, { action: 'status', key: 'shared', tabCount: 1 }),
+  ).resolves.toMatchObject({
+    createdTabs: [expect.objectContaining({ url: target, profileId: 'work', openerKey: 'shared' })],
+  })
+})
+it('keeps the target URL available while a replacement profile has not committed a page', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const target = 'https://example.com/current?query=kept#section'
+  await call(event, { ...workspaceShow, profileId: 'work', url: target })
+  expect(mocks.contents.loadURL).toHaveBeenLastCalledWith(target)
+  vi.spyOn(mocks.contents, 'getURL').mockReturnValueOnce('')
+  await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
+    url: target,
+  })
 })
 it('routes only page-initiated main-frame GET requests and leaves form bodies and browser loads intact', async () => {
   const call = handler()
@@ -1111,6 +1211,11 @@ function popupWindow() {
     isDestroyed: () => false,
     once: vi.fn<(event: string, callback: () => void) => void>(),
     webContents: {
+      mainFrame: {},
+      ipc: {
+        handle: vi.fn<(name: string, handler: (...args: unknown[]) => unknown) => void>(),
+        on: vi.fn<(name: string, handler: (...args: unknown[]) => unknown) => void>(),
+      },
       on: vi.fn<(event: string, callback: (...args: unknown[]) => void) => void>(),
       setWindowOpenHandler: vi.fn<(handler: OpenHandler) => void>(),
       setIgnoreMenuShortcuts: vi.fn<(ignore: boolean) => void>(),
@@ -2099,6 +2204,49 @@ it('raises the selected native view and returns input focus on a deliberate page
   expect(mocks.contents.focus).toHaveBeenCalledOnce()
 })
 
+it('prevents embedded sites from retaining window drag regions across navigation', async () => {
+  await handler()(event, workspaceShow)
+  const ready = mocks.contents.on.mock.calls.find(([name]) => name === 'dom-ready')?.[1]
+  if (typeof ready !== 'function') throw new Error('Missing page readiness listener')
+  ready()
+  ready()
+  expect(mocks.contents.insertCSS.mock.calls).toEqual([
+    ['* { -webkit-app-region: no-drag !important; }', { cssOrigin: 'user' }],
+    ['* { -webkit-app-region: no-drag !important; }', { cssOrigin: 'user' }],
+  ])
+})
+
+it('resizes the selected page without reattaching it or resetting its input viewport', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  mocks.window.contentView.addChildView.mockClear()
+  mocks.view.setVisible.mockClear()
+  mocks.contents.disableDeviceEmulation.mockClear()
+  const bounds = { x: 20, y: 100, width: 600, height: 400 }
+  await call(event, { ...workspaceShow, bounds })
+  expect(mocks.view.setBounds).toHaveBeenLastCalledWith(bounds)
+  mocks.view.getBounds.mockReturnValueOnce(bounds)
+  mocks.view.setBounds.mockClear()
+  await call(event, { ...workspaceShow, bounds })
+  expect(mocks.view.setBounds).not.toHaveBeenCalled()
+  expect(mocks.window.contentView.addChildView).not.toHaveBeenCalled()
+  expect(mocks.view.setVisible).not.toHaveBeenCalled()
+  expect(mocks.contents.disableDeviceEmulation).not.toHaveBeenCalled()
+})
+
+it('updates device emulation only when metrics change and clears it when returning to fill', async () => {
+  const call = handler()
+  const viewport = { width: 390, height: 844 }
+  await call(event, { ...workspaceShow, viewport })
+  await call(event, { ...workspaceShow, viewport })
+  expect(mocks.contents.enableDeviceEmulation).toHaveBeenCalledOnce()
+  await call(event, { ...workspaceShow, viewport: { width: 800, height: 600 } })
+  expect(mocks.contents.enableDeviceEmulation).toHaveBeenCalledTimes(2)
+  await call(event, workspaceShow)
+  await call(event, workspaceShow)
+  expect(mocks.contents.disableDeviceEmulation).toHaveBeenCalledOnce()
+})
+
 it.each(['window', 'page'] as const)(
   'moves an active call with shortcuts and cleanup in its new window (%s close)',
   async (close) => {
@@ -2107,6 +2255,7 @@ it.each(['window', 'page'] as const)(
       id: 2,
       once: vi.fn<typeof mocks.window.once>(),
       contentView: {
+        children: [] as unknown[],
         on: vi.fn<typeof mocks.window.contentView.on>(),
         getBounds: mocks.window.contentView.getBounds,
         addChildView: vi.fn<typeof mocks.window.contentView.addChildView>(),
@@ -2388,6 +2537,7 @@ it('accepts one-use PiP tickets only from the owning main frame and protects the
     action: 'allow',
     overrideBrowserWindowOptions: {
       alwaysOnTop: true,
+      frame: false,
       width: 420,
       height: 280,
       webPreferences: { sandbox: true, nodeIntegration: false },

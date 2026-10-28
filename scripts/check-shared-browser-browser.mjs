@@ -108,7 +108,8 @@ export const useSettingsTarget=()=>{
   const [target,setTarget]=useState({environmentId:'',projectId:''});
   return {target,setTarget,sources,...resolveSettingsTarget(sources,target,workspace.activeRuntimeId)};
 };
-export const useStudioHost=()=>({browser,browserExtensions,onBrowserContextAction:listener=>{window.contextAction=listener;return ()=>{window.contextAction=null}},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
+const frameListeners=new Map();window.frameSubscriptions=()=>[...frameListeners.keys()];window.emitBrowserFrame=(key,image)=>{for(const listener of frameListeners.get(key)||[])listener({key,url:nativePages.get(key)?.url||'',image})};const browserFrames=(key,listener)=>{const listeners=frameListeners.get(key)||new Set();listeners.add(listener);frameListeners.set(key,listeners);return ()=>{listeners.delete(listener);if(!listeners.size)frameListeners.delete(key)}};
+export const useStudioHost=()=>({browser,browserFrames,browserExtensions,onBrowserContextAction:listener=>{window.contextAction=listener;return ()=>{window.contextAction=null}},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
 const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
@@ -766,17 +767,60 @@ try {
   )
   await page.keyboard.press('Control+r')
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'reload'))
-  // Keep a screenshot in the DOM while native views are hidden beneath the menu.
+  const liveFrame =
+    'data:image/svg+xml,' +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="blue"/></svg>',
+    )
+  const assertLiveFrame = async (image, key) => {
+    await page.waitForFunction((key) => window.frameSubscriptions().includes(key), key)
+    await page.evaluate(({ key, image }) => window.emitBrowserFrame(key, image), {
+      key,
+      image: liveFrame,
+    })
+    assert.equal(
+      await image.getAttribute('src'),
+      liveFrame,
+      'Overlay underlay must update while open',
+    )
+  }
+  // Keep the compositor stream live while native views are hidden beneath the menu.
   await page.getByRole('button', { name: 'Browser options', exact: true }).click()
   await page.locator('img[aria-hidden][src^="data:image/png"]').waitFor()
+  const liveKey = await page.evaluate(
+    () => window.calls.findLast((call) => call.action === 'show').key,
+  )
+  await assertLiveFrame(page.locator('img[aria-hidden]'), liveKey)
   await page.getByRole('button', { name: 'Browser options', exact: true }).click()
-  await page.locator('img[aria-hidden][src^="data:image/png"]').waitFor({ state: 'detached' })
+  await page.locator('img[aria-hidden]').waitFor({ state: 'detached' })
+  assert.equal(
+    await page.evaluate(() => window.frameSubscriptions().length),
+    0,
+    'Closing menus stops frame subscriptions',
+  )
+  // Profile replacement must preserve the current committed address, including redirects.
+  await page.evaluate(async () => {
+    const show = window.calls.findLast((call) => call.action === 'show')
+    window.setNativePage(show.key, {
+      profileId: show.profileId,
+      url: 'https://example.com/redirected?keep=1',
+      title: 'Redirected',
+      back: false,
+      forward: false,
+    })
+    await window.pollBrowser()
+  })
   // Simulate the native status queue consumed by production BrowserPane.
   await page.getByRole('button', { name: 'Browser options', exact: true }).click()
   await page.getByRole('combobox', { name: 'Profile for this tab' }).selectOption('local-work')
   await page.getByRole('button', { name: 'Browser options', exact: true }).click()
   await page.waitForFunction(() =>
     window.calls.some((call) => call.action === 'show' && call.profileId === 'local-work'),
+  )
+  assert.equal(
+    await page.evaluate(() => window.calls.findLast((call) => call.action === 'show').url),
+    'https://example.com/redirected?keep=1',
+    'Changing profiles loads the current redirected URL',
   )
   const sourceBeforeOpen = await selected()
   await page.evaluate(async () => {
@@ -786,6 +830,7 @@ try {
   await preview.getByRole('button', { name: 'Open in new tab', exact: true }).waitFor()
   const background = page.locator('[data-browser-preview-background]')
   await background.locator('img').waitFor()
+  await assertLiveFrame(background.locator('img'), liveKey)
   assert(
     (await background.textContent()).includes(sourceBeforeOpen.url),
     'The opener remains visible beneath the link',

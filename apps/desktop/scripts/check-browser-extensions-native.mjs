@@ -74,7 +74,7 @@ write(
   join(fixture, 'sw.js'),
   `chrome.runtime.onMessage.addListener((message, sender, reply) => {
   ;(async () => {
-    const result = { from: message.from }
+    const result = { from: message.from, workerHasCurrentTab: (await chrome.tabs.getCurrent()) !== undefined }
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     result.activeTab = tab && tab.url
     result.window = (await chrome.windows.getCurrent()).id
@@ -100,6 +100,7 @@ write(
 write(
   join(fixture, 'popup.js'),
   `chrome.runtime.sendMessage({ from: 'popup', openTab: true }, async (result) => {
+  result.popupHasCurrentTab = (await chrome.tabs.getCurrent()) !== undefined
   const request = async (name, permissions) => {
     try { result[name] = await chrome.permissions.request(permissions) }
     catch (error) { result[name] = 'error: ' + String(error.message || error) }
@@ -129,6 +130,13 @@ contextBridge.exposeInMainWorld('bridge', {
   browser: (command) => ipcRenderer.invoke('preview:browser', command),
   extensions: (command) => ipcRenderer.invoke('browser:extensions', command),
   settingsWritten: () => ipcRenderer.send('app:settings-write', '{}'),
+  collectFrames: () => {
+    window.nativeFrames = []
+    ipcRenderer.removeAllListeners('browser:frame')
+    ipcRenderer.on('browser:frame', (_event, frame) => window.nativeFrames.push(frame))
+  },
+  frames: () => window.nativeFrames,
+
 })
 `,
 )
@@ -228,6 +236,25 @@ app.whenReady().then(async () => {
       await show(tab, 'work')
       const contents = () => studio.contentView.children.map((view: any) => view.webContents).find((contents: any) => contents?.getURL() === page)
       const main = contents()!
+      stage('live frames behind overlays')
+      await main.executeJavaScript("window.frameCounter=0;window.frameAnimation=setInterval(()=>{document.body.style.backgroundColor=(++window.frameCounter%2)?'red':'blue'},70)")
+      await studio.webContents.executeJavaScript('window.bridge.collectFrames()')
+      await call('browser',{action:'watch-frames',key:tab,enabled:true})
+      await call('browser',{action:'hide',key:tab})
+      await wait(800)
+      const frames = await studio.webContents.executeJavaScript('window.bridge.frames()')
+      assert.ok(frames.length >= 4, 'Hidden pages must keep sending compositor frames.')
+      assert.ok(new Set(frames.map((frame:any)=>frame.image)).size > 1, 'Hidden animations must remain live.')
+      assert.ok(frames.every((frame:any)=>frame.key===tab&&frame.url===page), 'Frames stay scoped to their owning tab.')
+      await call('browser',{action:'watch-frames',key:tab,enabled:false})
+      // Drain any IPC queued before unsubscribe, then confirm it stays stopped.
+      await wait(100)
+      const stoppedCount=(await studio.webContents.executeJavaScript('window.bridge.frames()')).length
+      await wait(200)
+      assert.equal((await studio.webContents.executeJavaScript('window.bridge.frames()')).length,stoppedCount)
+      await main.executeJavaScript("clearInterval(window.frameAnimation);document.body.style.backgroundColor='white'")
+      await show(tab,'work')
+      report.liveFrames=true
       stage('profile-scoped favicons')
       const readFavicon=async(key:string)=>{
         for(let attempt=0;attempt<60;attempt++) {
@@ -427,6 +454,7 @@ app.whenReady().then(async () => {
       stage('content script')
       const content = await contentTitle()
       assert.equal(content.activeTab, page)
+      assert.equal(content.workerHasCurrentTab, false, 'A service worker has no current tab.')
       assert.equal(typeof content.window, 'number')
       assert.equal(content.badge, 'ok')
       report.contentRuns = content.runs
@@ -507,6 +535,8 @@ app.whenReady().then(async () => {
       }
       assert.ok(popup, 'The action popup never reported back.')
       assert.equal(popup.tabCreated, true)
+      assert.equal(popup.popupHasCurrentTab, false, 'An action popup has no current tab.')
+      assert.equal(popup.workerHasCurrentTab, false, 'A service worker has no current tab.')
       assert.equal(popup.bookmarks, true)
       assert.equal(popup.undeclaredSite, false)
       // The library refuses it as undeclared (no grant, no prompt); how it reports that varies.
@@ -668,6 +698,15 @@ app.whenReady().then(async () => {
       assert.match(body,/Sign in|Log in|Create.*account/i,'Real Proton Pass popup must reach its signed-out screen.')
       assert.doesNotMatch(body,/Grant permissions/,'Required broad web grants must cover Proton sign-in hosts.')
       assert.ok(popup)
+      assert.notEqual(await popup.webContents.executeJavaScript('document.documentElement.style.getPropertyValue("--popup-width")'), '100%', 'An action popup must not be treated as a full browser tab.')
+      const popupSize = await popup.webContents.executeJavaScript(\`(() => {
+        const defaults = [...document.querySelector('style').sheet.cssRules].find(rule => rule.selectorText === ':root').style
+        return { width: parseFloat(defaults.getPropertyValue('--popup-width')), height: parseFloat(defaults.getPropertyValue('--popup-height')) }
+      })()\`)
+      report.proton.size = { requested: popupSize, actual: popup.getContentBounds() }
+      writeFileSync(join(work,'result-'+run+'.json'),JSON.stringify(report,null,2))
+      assert.ok(popup.getContentBounds().width >= popupSize.width, 'Proton popup must fit its requested width.')
+      assert.ok(popup.getContentBounds().height >= popupSize.height, 'Proton popup must fit its requested height.')
       await popup.webContents.executeJavaScript(\`[...document.querySelectorAll('button')].find(button=>button.innerText==='Sign in with Proton')?.click()\`)
       let signIn:any
       for(let i=0;i<60&&!signIn;i++) {

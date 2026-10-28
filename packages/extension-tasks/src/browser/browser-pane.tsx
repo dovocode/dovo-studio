@@ -40,7 +40,7 @@ import {
 } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef, useId, type ReactNode } from 'react'
+import { useEffect, useRef, useId, type ReactNode, type RefObject } from 'react'
 import {
   Home,
   ArrowLeft,
@@ -200,7 +200,7 @@ function BrowserContent({
 }) {
   const store = useWorkspace()
   const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = store,
-    { browser, openBrowserWindow } = useStudioHost()
+    { browser, browserFrames, openBrowserWindow } = useStudioHost()
   const screenshots = useScreenshotAttachment(taskId)
   const runtimesRef = useRef(runtimes)
   runtimesRef.current = runtimes
@@ -290,6 +290,7 @@ function BrowserContent({
   const [previewPlacement, setPreviewPlacement] = useApplicationState<PreviewPlacement>('floating')
   const [previewBackground, setPreviewBackground] =
     useApplicationState<BrowserPreviewBackground | null>(null)
+  const previewImage = useRef<HTMLImageElement>(null)
   const previewRequest = useRef(0)
   const [pendingPreview, setPendingPreview] = useApplicationState<string | undefined>(undefined)
   useEffect(() => {
@@ -372,6 +373,19 @@ function BrowserContent({
     url: string
     image: string
   } | null>(null)
+  const frozenImage = useRef<HTMLImageElement>(null)
+  const previewSource = tabs.find((tab) => tab.id === previewBackground?.tabId)
+  const previewSourceKey = previewSource?.kind === 'web' ? nativeKey(previewSource.id) : undefined
+  useEffect(() => {
+    if (!selectedTab.previewOf || !previewSourceKey || !browserFrames) return
+    return browserFrames(previewSourceKey, (frame) => {
+      if (previewImage.current) previewImage.current.src = frame.image
+      else
+        setPreviewBackground((previous) =>
+          previous ? { ...previous, image: frame.image } : previous,
+        )
+    })
+  }, [browserFrames, selectedTab.previewOf, previewSourceKey])
   const remote = useRef<RemoteBrowserControls>(null)
   const adoptedRemoteTabs = useRef(new Set<string>())
   const [remoteOnline, setRemoteOnline] = useApplicationState(false)
@@ -1010,6 +1024,7 @@ function BrowserContent({
     let frame: number | undefined
     let previousCommand = ''
     let revision = 0
+    let stopFrames: (() => void) | undefined
     const update = () => {
       frame = undefined
       if (!alive) return
@@ -1051,6 +1066,12 @@ function BrowserContent({
       const attempt = ++revision
       void (async () => {
         if (command.action === 'hide' && obscured && rect?.width && rect.height) {
+          // Native views sit above HTML menus. Keep their replacement live while occluded.
+          stopFrames ??= browserFrames?.(browserKey, (frame) => {
+            if (!alive) return
+            if (frozenImage.current) frozenImage.current.src = frame.image
+            else flushSync(() => setFrozenPage({ key: browserKey, url, image: frame.image }))
+          })
           // Keep the live page until its replacement has decoded and committed. Hiding first
           // exposes the empty native slot for at least one frame whenever a menu opens.
           let timeout: ReturnType<typeof setTimeout> | undefined
@@ -1076,6 +1097,13 @@ function BrowserContent({
         }
         if (!alive || revision !== attempt) return
         await browser(command)
+        if (!alive || revision !== attempt) return
+        if (command.action === 'show' || !obscured) {
+          // Restore native visibility before ending the underlay; a false hidden transition
+          // here could trigger the site's automatic picture-in-picture when a menu closes.
+          stopFrames?.()
+          stopFrames = undefined
+        }
         // Keep the fallback behind the native page while its compositor resumes painting.
         if (command.action === 'show')
           requestAnimationFrame(() =>
@@ -1115,6 +1143,7 @@ function BrowserContent({
     update()
     return () => {
       alive = false
+      stopFrames?.()
       if (frame !== undefined) cancelAnimationFrame(frame)
       resize.disconnect()
       mutations.disconnect()
@@ -1127,6 +1156,7 @@ function BrowserContent({
     }
   }, [
     browser,
+    browserFrames,
     url,
     mode,
     scope,
@@ -1707,12 +1737,14 @@ function BrowserContent({
                 }
                 onChange={(event) => {
                   const next = event.target.value
-                  setUrl(selectedTab.url)
-                  setInput(selectedTab.url)
+                  const target = history.url || selectedTab.url || url
+                  setUrl(target)
+                  setInput(target)
+                  addresses.set(scope, target)
                   setHistory({ url: '', title: '', cdp: undefined, back: false, forward: false })
                   setTabs((previous) =>
                     previous.map((tab) =>
-                      tab.id === activeTab ? { ...tab, profileId: next } : tab,
+                      tab.id === activeTab ? { ...tab, url: target, profileId: next } : tab,
                     ),
                   )
                   if (mode === 'remote')
@@ -2245,6 +2277,7 @@ function BrowserContent({
               title: selectedTab.url.replace(/^https?:\/\//, '').split('/')[0] || 'Link',
               placement: previewPlacement,
               background: previewBackground,
+              imageRef: previewImage,
               onPlacementChange: (placement) =>
                 placement === 'inline' ? closeTab(selectedTab) : setPreviewPlacement(placement),
               onClose: () => closeTab(selectedTab),
@@ -2681,6 +2714,7 @@ function BrowserContent({
                   <img
                     aria-hidden
                     alt=""
+                    ref={frozenImage}
                     src={frozenPage.image}
                     className="pointer-events-none absolute inset-0 size-full object-fill"
                   />
@@ -2845,6 +2879,7 @@ function BrowserLayout({
     title: string
     placement: PreviewPlacement
     background: BrowserPreviewBackground | null
+    imageRef: RefObject<HTMLImageElement | null>
     onPlacementChange: (placement: PreviewPlacement) => void
     onClose: () => void
     onReturnToOpener: () => void
@@ -2879,6 +2914,7 @@ function BrowserLayout({
             {preview.background?.image && (
               <img
                 alt=""
+                ref={preview.imageRef}
                 src={preview.background.image}
                 className="min-h-0 w-full flex-1 object-fill"
               />

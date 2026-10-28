@@ -1,0 +1,60 @@
+diff --git a/dist/cjs/index.js b/dist/cjs/index.js
+index a91ca8fd07194abb081e9bb35fad0060fefddf91..21c87256c10145543b8a5d3b4f149872a538d0de 100644
+--- a/dist/cjs/index.js
++++ b/dist/cjs/index.js
+@@ -223,9 +223,9 @@ var _PopupView = class _PopupView extends import_node_events.EventEmitter {
+       console.error(e);
+     }
+     if (this.destroyed) return;
+-    if (this.usingPreferredSize) {
+-      this.setSize({ width: _PopupView.BOUNDS.minWidth, height: _PopupView.BOUNDS.minHeight });
+-    } else {
++    // Preferred-size events own the viewport. Resetting it to 25px after load
++    // makes responsive extensions adopt that tiny size as their own dimensions.
++    if (!this.usingPreferredSize) {
+       this.setSize({ width: _PopupView.BOUNDS.maxWidth, height: _PopupView.BOUNDS.maxHeight });
+       await new Promise((resolve) => setTimeout(resolve, 100));
+       if (this.destroyed) return;
+@@ -969,8 +969,10 @@ var _TabsAPI = class _TabsAPI {
+     return tabs.map(this.getTabDetails.bind(this));
+   }
+   getCurrent(event) {
+-    const tab = this.ctx.store.getActiveTabOfCurrentWindow();
+-    return tab ? this.getTabDetails(tab) : void 0;
++    // Popups and background workers have no current tab; this is not tabs.query.
++    if (event.type !== "frame") return void 0;
++    const tab = this.ctx.store.getTabById(event.sender.id);
++    return tab === event.sender ? this.getTabDetails(tab) : void 0;
+   }
+   async create(event, details = {}) {
+     const url = details.url ? validateExtensionUrl(details.url, event.extension) : void 0;
+diff --git a/dist/esm/index.mjs b/dist/esm/index.mjs
+index 43929222572e4d6875cc192aca0750da79d8ff14..34fa2ec5c775aee22c47576e4f00bb327019466d 100644
+--- a/dist/esm/index.mjs
++++ b/dist/esm/index.mjs
+@@ -186,9 +186,9 @@ var _PopupView = class _PopupView extends EventEmitter {
+       console.error(e);
+     }
+     if (this.destroyed) return;
+-    if (this.usingPreferredSize) {
+-      this.setSize({ width: _PopupView.BOUNDS.minWidth, height: _PopupView.BOUNDS.minHeight });
+-    } else {
++    // Preferred-size events own the viewport. Resetting it to 25px after load
++    // makes responsive extensions adopt that tiny size as their own dimensions.
++    if (!this.usingPreferredSize) {
+       this.setSize({ width: _PopupView.BOUNDS.maxWidth, height: _PopupView.BOUNDS.maxHeight });
+       await new Promise((resolve) => setTimeout(resolve, 100));
+       if (this.destroyed) return;
+@@ -932,8 +932,10 @@ var _TabsAPI = class _TabsAPI {
+     return tabs.map(this.getTabDetails.bind(this));
+   }
+   getCurrent(event) {
+-    const tab = this.ctx.store.getActiveTabOfCurrentWindow();
+-    return tab ? this.getTabDetails(tab) : void 0;
++    // Popups and background workers have no current tab; this is not tabs.query.
++    if (event.type !== "frame") return void 0;
++    const tab = this.ctx.store.getTabById(event.sender.id);
++    return tab === event.sender ? this.getTabDetails(tab) : void 0;
+   }
+   async create(event, details = {}) {
+     const url = details.url ? validateExtensionUrl(details.url, event.extension) : void 0;

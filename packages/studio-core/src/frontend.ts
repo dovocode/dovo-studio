@@ -88,6 +88,7 @@ export interface StudioHostApi {
   openBrowserWindow?: () => Promise<void>
   defaultBrowser?: import('@dovo/protocol').DefaultBrowserBridge
   browser?: import('@dovo/protocol').BrowserBridge
+  browserFrames?: import('@dovo/protocol').BrowserFrameBridge
   onBrowserContextAction?: (
     listener: (action: import('@dovo/protocol').BrowserContextAction) => void,
   ) => () => void

@@ -312,6 +312,11 @@ export const browserCommandSchema = Schema.Union([
     }),
   }),
   mutableStruct({
+    action: Schema.Literal('watch-frames'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    enabled: Schema.Boolean,
+  }),
+  mutableStruct({
     action: Schema.Literal('hide'),
     key: maxValue(minValue(Schema.String, 1), 500),
     /** Return keyboard focus to the page after a passive overlay, unless Studio receives input. */
@@ -438,6 +443,11 @@ export type BrowserCallTab = {
   teams: boolean
   pictureInPicture: boolean
 }
+export type BrowserFrame = { key: string; url: string; image: string }
+export type BrowserFrameBridge = (
+  key: string,
+  listener: (frame: BrowserFrame) => void,
+) => () => void
 export type BrowserBridge = (command: BrowserCommand) => Promise<
   | {
       url: string

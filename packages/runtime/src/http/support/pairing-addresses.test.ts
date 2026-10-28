@@ -25,3 +25,19 @@ it('advertises only reachable listener interfaces, retaining HTTP for VPN', () =
     pairingAddresses({ address: '0.0.0.0', family: 'IPv4', port: 8787 }, interfaces),
   ).toHaveLength(2)
 })
+
+it('excludes bridge subnet and broadcast addresses without rejecting valid VPN hosts', () => {
+  const interfaces = {
+    bridge: [entry('192.168.97.0'), entry('192.168.97.255')],
+    vpn: [
+      { ...entry('100.101.60.0'), netmask: '255.0.0.0' },
+      { ...entry('10.0.0.0'), netmask: '255.255.255.254' },
+      { ...entry('10.0.1.0'), netmask: '255.255.255.255' },
+    ],
+  }
+  expect(pairingAddresses({ address: '0.0.0.0', family: 'IPv4', port: 8787 }, interfaces)).toEqual([
+    { name: 'vpn', address: 'http://100.101.60.0:8787' },
+    { name: 'vpn', address: 'http://10.0.0.0:8787' },
+    { name: 'vpn', address: 'http://10.0.1.0:8787' },
+  ])
+})

@@ -118,6 +118,7 @@ mocks['../chat/composer/composer-workspace'] = `
 `
 
 const built = await build({
+  conditions: ['development'],
   stdin: {
     contents: `
       import {useState} from 'react';import {createRoot} from 'react-dom/client';
@@ -170,13 +171,17 @@ const built = await build({
   format: 'iife',
   platform: 'browser',
   jsx: 'automatic',
-  define: { 'process.env.NODE_ENV': '"production"' },
+  define: { 'process.env.NODE_ENV': '"development"' },
 })
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
   page.setDefaultTimeout(10000)
   const errors = []
+  page.on('console', (message) => {
+    if (message.type() === 'error' && message.text().includes('same key'))
+      errors.push(message.text())
+  })
   page.on('pageerror', (error) => {
     errors.push(error.message)
     console.error(error.message)

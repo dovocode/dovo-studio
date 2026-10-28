@@ -57,6 +57,7 @@ createRoot(root).render(
           pickDirectory={window.dovo?.pickDirectory}
           defaultBrowser={window.dovo?.defaultBrowser}
           browser={window.dovo?.browser}
+          browserFrames={window.dovo?.browserFrames}
           browserExtensions={window.dovo?.browserExtensions}
           onBrowserContextAction={window.dovo?.onBrowserContextAction}
           onOpenLink={window.dovo?.onOpenLink}

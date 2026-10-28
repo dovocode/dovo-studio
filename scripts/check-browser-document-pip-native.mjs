@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -38,10 +38,10 @@ try {
       contents: `import { app, BrowserWindow } from 'electron';
 import { createBrowserMedia } from './electron/browser-media';
 import { browserPermissions } from './electron/browser-permissions';
-import { authorizeDocumentPip } from './electron/browser-document-pip';
+import { authorizeDocumentPip, attachDocumentPipControls } from './electron/browser-document-pip';
 app.setPath('userData', ${JSON.stringify(join(directory, 'profile'))});
 app.whenReady().then(async () => {
-  const owner = new BrowserWindow({show:true, webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,disableBlinkFeatures:'DocumentPictureInPictureAPI'}});
+  const owner = new BrowserWindow({show:true, webPreferences:{backgroundThrottling:false,sandbox:true,contextIsolation:true,nodeIntegration:false,disableBlinkFeatures:'DocumentPictureInPictureAPI'}});
   const tab = {key:'call',profileId:'work',windowId:owner.id,contents:owner.webContents};
   const media = createBrowserMedia({tabFor: contents => contents.id === owner.webContents.id ? tab : undefined, tabs: () => [tab], canFullscreen: () => false, prepareFullscreen: () => {}});
   media.attachSession(owner.webContents.session, 'work');
@@ -55,6 +55,7 @@ app.whenReady().then(async () => {
     return options ? {action:'allow',overrideBrowserWindowOptions:options} : {action:'deny'};
   });
   owner.webContents.on('did-create-window', child => {
+    attachDocumentPipControls(child, () => { globalThis.pipReturned = true; owner.show(); owner.focus() });
     child.webContents.on('will-navigate', event => event.preventDefault());
     owner.webContents.once('did-navigate', () => {if (!child.isDestroyed()) child.close()});
     owner.once('closed', () => {if (!child.isDestroyed()) child.destroy()});
@@ -128,7 +129,10 @@ app.whenReady().then(async () => {
     await popup.evaluate(() => !!window.opener && !window.documentPictureInPicture),
     true,
   )
-  await popup.evaluate(() => window.close())
+  await popup.locator('[data-dovo-pip-controls]').waitFor()
+  await mkdir(join(root, 'work/browser-pip'), { recursive: true })
+  await popup.screenshot({ path: join(root, 'work/browser-pip/compact-controls.png') })
+  await popup.mouse.click(402, 18)
   await owner.waitForFunction(
     () => !documentPictureInPicture.window && !!document.getElementById('call'),
   )
@@ -142,11 +146,19 @@ app.whenReady().then(async () => {
   )
   await owner.click('#open')
   await owner.waitForFunction(() => window.entered === 2)
+  const returned = app.windows().find((page) => page !== owner)
+  assert.ok(returned)
+  await returned.locator('[data-dovo-pip-controls]').waitFor()
+  await returned.mouse.click(372, 18)
+  await owner.waitForFunction(() => !documentPictureInPicture.window)
+  assert.equal(await app.evaluate(() => globalThis.pipReturned), true)
+  await owner.click('#open')
+  await owner.waitForFunction(() => window.entered === 3)
   await owner.reload({ waitUntil: 'domcontentloaded' })
   await owner.waitForFunction(() => !!documentPictureInPicture)
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1)
   await cdp.send('Runtime.evaluate', {
-    expression: `navigator.mediaSession.setActionHandler('enterpictureinpicture', details => {window.autoReason = details.reason; documentPictureInPicture.requestWindow().then(child => {window.autoWindow = child})})`,
+    expression: `navigator.mediaSession.setActionHandler('enterpictureinpicture', details => {window.autoReason = details.reason; documentPictureInPicture.requestWindow().then(child => {window.autoWindow = child}).catch(error => {window.autoError = error.message})})`,
     userGesture: false,
   })
   await new Promise((resolve) => setTimeout(resolve, 5500))
@@ -170,7 +182,10 @@ app.whenReady().then(async () => {
     owner.hide()
     owner.webContents.send('browser:document-pip-visibility', false)
   })
-  await owner.waitForFunction(() => !!window.autoWindow, null, { polling: 100 })
+  await owner.waitForFunction(() => !!window.autoWindow || !!window.autoError, null, {
+    polling: 100,
+  })
+  assert.equal(await owner.evaluate(() => window.autoError), undefined)
   assert.equal(await owner.evaluate(() => window.autoReason), 'contentoccluded')
   console.log(
     'Document PiP native fixture passed: activation, real Window/DOM/media, events, always-on-top, close/restore, owner navigation and automatic-PiP opt-in.',

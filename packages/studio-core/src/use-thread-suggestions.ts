@@ -29,11 +29,7 @@ export function useThreadSuggestions(client: AccountClient, sourceId: string, ac
         const inbox = await client.sharing.suggestionInbox(origin, sourceId)
         if (!stopped) setState({ scope, origin, inbox, error: '' })
       } catch {
-        if (!stopped)
-          setState((previous) => ({
-            ...(previous.scope === scope ? previous : { scope, origin: '', inbox: null }),
-            error: 'Could not refresh suggested prompts. Retrying automatically.',
-          }))
+        // Background suggestions are optional; retain the last inbox and retry quietly.
       } finally {
         if (!stopped) timer = setTimeout(() => void refresh(), 30000)
       }

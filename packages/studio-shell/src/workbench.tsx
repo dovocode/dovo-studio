@@ -70,6 +70,7 @@ type WorkbenchProps = {
   onBrowserWorkspaceFocus?: (listener: () => void) => () => void
   defaultBrowser?: StudioHostApi['defaultBrowser']
   browser?: StudioHostApi['browser']
+  browserFrames?: StudioHostApi['browserFrames']
   browserExtensions?: StudioHostApi['browserExtensions']
   onBrowserContextAction?: StudioHostApi['onBrowserContextAction']
   onOpenLink?: (listener: (url: string) => void) => () => void
@@ -196,6 +197,7 @@ function WorkbenchContent({
   defaultBrowser,
   browserExtensions,
   onBrowserContextAction,
+  browserFrames,
   browserWindowId,
   openBrowserWindow,
   onBrowserWorkspaceFocus,
@@ -641,6 +643,7 @@ function WorkbenchContent({
       repositoryOpener,
       pickDirectory,
       browser,
+      browserFrames,
       defaultBrowser,
       browserExtensions,
       onBrowserContextAction,
@@ -668,6 +671,7 @@ function WorkbenchContent({
       repositoryOpener,
       pickDirectory,
       browser,
+      browserFrames,
       defaultBrowser,
       browserExtensions,
       onBrowserContextAction,

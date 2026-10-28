@@ -769,7 +769,7 @@ export function Composer({
             <ContextMeter task={task} />
             {!pendingQuestion && (
               <DraftStash
-                key={JSON.stringify([activeRuntimeId ?? connection?.address, task.id])}
+                key={JSON.stringify(['draft-stash', stashRuntimeId, task.id])}
                 scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
                 getText={() => composerDraft.controller.text}
                 onChange={(value) => {
@@ -785,7 +785,7 @@ export function Composer({
             )}
             {!pendingQuestion && (
               <ThreadContextPicker
-                key={JSON.stringify([stashRuntimeId, task.id])}
+                key={JSON.stringify(['thread-context', stashRuntimeId, task.id])}
                 taskId={task.id}
                 attachmentBusy={attachments.busy}
                 disabled={
