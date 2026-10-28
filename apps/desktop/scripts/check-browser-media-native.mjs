@@ -64,7 +64,7 @@ const browserModule = join(desktop, 'electron', 'browser.ts')
 write(
   join(work, 'harness', 'main.ts'),
   `import assert from 'node:assert/strict'
-import { app, BrowserWindow, session, webContents, nativeImage } from 'electron'
+import { app, BrowserWindow, WebContentsView, session, webContents, nativeImage } from 'electron'
 import { createServer } from 'node:http'
 import { WebSocketServer } from ${JSON.stringify(require.resolve('ws'))}
 import { writeFileSync } from 'node:fs'
@@ -473,8 +473,15 @@ app.whenReady().then(async () => {
       documentPip.document.body.append(documentPipVideo);await documentPipVideo.play();
       window.documentPipFrames=0;const next=()=>{documentPipFrames++;documentPipVideo.requestVideoFrameCallback(next)};next();
     })()\`)
-    const pipWindow=BrowserWindow.getAllWindows().find(window=>window.webContents.getURL()==='about:blank')!
+    // The website is a child view below the trusted header, not the window's main contents.
+    const pipContents=webContents.getAllWebContents().find(contents=>contents.getURL()==='about:blank' && contents.session===session.fromPartition(WORK))!
+    assert.ok(pipContents, 'Document PiP retains its website in the requesting profile.')
+    const pipWindow=BrowserWindow.getAllWindows().find(window=>window.contentView.children.some(child=>child instanceof WebContentsView && child.webContents===pipContents))!
     assert.ok(pipWindow, 'Document PiP has a real native window.')
+    assert.deepEqual(await pipContents.executeJavaScript('({width:innerWidth,height:innerHeight})'), {width:420,height:280},
+      'The requested dimensions describe the website viewport below the header.')
+    assert.equal(await pipWindow.webContents.executeJavaScript('document.querySelector(".domain")?.textContent'), new URL(url('')).hostname,
+      'The separate native header identifies the website.')
     const pipFramesBefore = await run('/requester', 'documentPipFrames', false)
     await show('studio:browser:pip-background', '/plain', 'work')
     await wait(700)
@@ -488,11 +495,13 @@ app.whenReady().then(async () => {
       assert.ok(state.includes('4294967295'),'PiP remains visible across Linux workspaces: '+state);
       report.linuxPipWindowState=state.trim();
     }
-    const firstPipImage=(await pipWindow.capturePage()).toPNG()
+    const pipImage=await pipContents.capturePage()
+    assert.equal(pipImage.isEmpty(),false,'The website produces a real video surface.')
+    const firstPipImage=pipImage.toPNG()
     writeFileSync(join(process.env.SMOKE_SCREENSHOT_DIR!, 'pip-webrtc-background.png'),firstPipImage)
     assert.ok(await run('/requester', 'window.audioLevel()', false) > 0.05,
       'Audio stays live with participant video in Document PiP.')
-    const nextPipImage=(await pipWindow.capturePage()).toPNG()
+    const nextPipImage=(await pipContents.capturePage()).toPNG()
     assert.equal(firstPipImage.equals(nextPipImage),false,'Visible PiP pixels change as received WebRTC video plays.')
     writeFileSync(join(process.env.SMOKE_SCREENSHOT_DIR!, 'pip-webrtc-next-frame.png'),nextPipImage)
     const receivedBefore = await run('/requester', 'documentPipFrames', false)
