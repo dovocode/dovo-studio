@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     },
     reload: vi.fn<() => void>(),
     stop: vi.fn<() => void>(),
+    send: vi.fn<(...args: unknown[]) => void>(),
     getUserAgent: () =>
       'Mozilla/5.0 Chrome/148.0.0.0 Safari/537.36 DovoStudio/0.0.9 Electron/45.0.0',
     setUserAgent: vi.fn<(value: string) => void>(),
@@ -28,7 +29,10 @@ const mocks = vi.hoisted(() => {
       closeAllConnections: vi.fn<() => Promise<void>>(async () => {}),
     },
     on: vi.fn<(...args: unknown[]) => void>(),
-    ipc: { on: vi.fn<(...args: unknown[]) => void>() },
+    ipc: {
+      on: vi.fn<(...args: unknown[]) => void>(),
+      handle: vi.fn<(...args: unknown[]) => void>(),
+    },
     once: vi.fn<(...args: unknown[]) => void>(),
     removeListener: vi.fn<(...args: unknown[]) => void>(),
     close: vi.fn<(...args: unknown[]) => void>(),
@@ -67,6 +71,7 @@ const mocks = vi.hoisted(() => {
     getContentSize: () => [900, 700],
     getTitle: () => 'Studio',
     isMinimized: () => false,
+    isVisible: () => true,
     isFullScreen: vi.fn<() => boolean>(() => false),
     setFullScreen: vi.fn<(value: boolean) => void>(),
     restore: vi.fn<() => void>(),
@@ -1052,7 +1057,7 @@ it('protects website-native video PiP and leaves it open when focusing the origi
     [],
   )
 })
-it('does not advertise unsupported Document PiP or allow its blank popup', async () => {
+it('keeps native Document PiP disabled and denies unticketed blank popups', async () => {
   const call = handler()
   await call(event, workspaceShow)
   expect(mocks.create).toHaveBeenCalledWith(
@@ -2318,4 +2323,50 @@ it('retains an external tab and reports its background navigation failure when s
     'net::ERR_CONNECTION_REFUSED',
   )
   expect(mocks.contents.close).not.toHaveBeenCalled()
+})
+
+it('accepts one-use PiP tickets only from the owning main frame and protects their call tab', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const authorize = mocks.contents.ipc.handle.mock.calls.find(
+    ([name]) => name === 'browser:document-pip-authorize',
+  )?.[1]
+  if (typeof authorize !== 'function') throw new Error('Missing Document PiP authorization')
+  expect(authorize({ senderFrame: {} }, true, false)).toBeNull()
+  const name = authorize({ senderFrame: mocks.contents.mainFrame }, true, false)
+  const details = {
+    url: 'about:blank',
+    frameName: name,
+    disposition: 'new-window',
+    features: 'popup,width=420,height=280',
+  }
+  const result = openHandler()(details)
+  expect(result).toMatchObject({
+    action: 'allow',
+    overrideBrowserWindowOptions: {
+      alwaysOnTop: true,
+      width: 420,
+      height: 280,
+      webPreferences: { sandbox: true, nodeIntegration: false },
+    },
+  })
+  expect(openHandler()(details)).toEqual({ action: 'deny' })
+  const created = mocks.contents.on.mock.calls.find(([name]) => name === 'did-create-window')?.[1]
+  if (typeof created !== 'function') throw new Error('Missing popup lifecycle')
+  const popup = popupWindow()
+  created(popup, details)
+  expect(await call(event, { action: 'tab-activity', key: 'activity' })).toHaveProperty(
+    'protectedKeys',
+    ['shared'],
+  )
+  expect(await call(event, { action: 'media-status', key: 'activity' })).toHaveProperty(
+    'callTabs.0.pictureInPicture',
+    true,
+  )
+  const closed = popup.once.mock.calls.find(([name]) => name === 'closed')?.[1]
+  closed?.()
+  expect(await call(event, { action: 'tab-activity', key: 'activity' })).toHaveProperty(
+    'protectedKeys',
+    [],
+  )
 })

@@ -1996,6 +1996,12 @@ try {
     ),
   )
   await controlsPage.getByRole('combobox', { name: 'Camera permission' }).selectOption('block')
+  await controlsPage
+    .getByRole('combobox', { name: 'Automatic call PiP permission' })
+    .selectOption('allow')
+  await controlsPage
+    .getByRole('combobox', { name: 'Read clipboard permission' })
+    .selectOption('block')
   await controlsPage.getByRole('button', { name: 'Request notifications permission' }).click()
   await controlsPage.waitForFunction(() =>
     window.calls.some(
@@ -2006,6 +2012,16 @@ try {
   await controlsPage.getByRole('button', { name: 'Website permissions and site data' }).click()
   assert.equal(
     await controlsPage.getByRole('combobox', { name: 'Camera permission' }).inputValue(),
+    'block',
+  )
+  assert.equal(
+    await controlsPage
+      .getByRole('combobox', { name: 'Automatic call PiP permission' })
+      .inputValue(),
+    'allow',
+  )
+  assert.equal(
+    await controlsPage.getByRole('combobox', { name: 'Read clipboard permission' }).inputValue(),
     'block',
   )
   await controlsPage.getByRole('button', { name: 'Cookies and site data…' }).click()

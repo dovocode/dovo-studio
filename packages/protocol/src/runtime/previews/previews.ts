@@ -142,6 +142,12 @@ export const browserSitePermissionSchema = Schema.Literals([
   'notifications',
   'microphone',
   'camera',
+  'clipboard-read',
+  'clipboard-sanitized-write',
+  'speaker-selection',
+  'screen-wake-lock',
+  'persistent-storage',
+  'automatic-pip',
 ])
 export const browserPermissionSettingSchema = Schema.Literals(['ask', 'allow', 'block'])
 export type BrowserSitePermission = typeof browserSitePermissionSchema.Type
@@ -195,7 +201,7 @@ export const browserCommandSchema = Schema.Union([
     action: Schema.Literal('request-site-permission'),
     origin: maxValue(minValue(Schema.String, 1), 8192),
     key: maxValue(minValue(Schema.String, 1), 500),
-    permission: browserSitePermissionSchema,
+    permission: Schema.Literals(['notifications', 'microphone', 'camera']),
   }),
   mutableStruct({
     action: Schema.Literal('external'),

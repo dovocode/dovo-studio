@@ -1,3 +1,4 @@
+import { DOCUMENT_PIP_NAME, authorizeDocumentPip } from './browser-document-pip.js'
 import { loadBrowserFaviconModule } from './browser-favicon.js'
 import {
   selectedBrowserText,
@@ -37,6 +38,7 @@ type Entry = {
   /** Reported once by the next `status`; native POST loads have no other channel to the UI. */
   navigationError?: string
   popups: Set<BrowserWindow>
+  documentPip?: BrowserWindow
   taskId?: string
   cdp?: string
   view: WebContentsView
@@ -187,6 +189,18 @@ export function registerBrowser(
   const focusedTabs = new Map<number, string>()
   const awakeRequests = new Map<string, object>()
   let disposed = false
+  const reportVisibility = (entry: Entry) => {
+    if (entry.workspace && !entry.contents.isDestroyed())
+      entry.contents.send(
+        'browser:document-pip-visibility',
+        entry.view.getVisible() && !entry.window.isMinimized() && entry.window.isVisible(),
+      )
+  }
+  const setVisible = (entry: Entry, visible: boolean) => {
+    const changed = entry.view.getVisible() !== visible
+    entry.view.setVisible(visible)
+    if (changed) reportVisibility(entry)
+  }
   const focusTab = (entry: Entry) => {
     if (
       entry.window.isDestroyed() ||
@@ -209,7 +223,7 @@ export function registerBrowser(
       const teams = ['teams.microsoft.com', 'teams.cloud.microsoft', 'teams.live.com'].includes(
         host,
       )
-      const pictureInPicture = !!entry.videoPictureInPicture
+      const pictureInPicture = !!(entry.videoPictureInPicture || entry.documentPip)
       return teams || pictureInPicture || captures.some((capture) => capture.key === entry.key)
         ? [
             {
@@ -423,6 +437,7 @@ export function registerBrowser(
         !cdp?.connected(key) &&
         !entry.keepAwake &&
         !entry.videoPictureInPicture &&
+        !entry.documentPip &&
         !(entry.workspace && media.keepAlive(entry.view.webContents)),
     )
     inactive.sort((a, b) => a[1].inactiveAt! - b[1].inactiveAt!)
@@ -471,6 +486,13 @@ export function registerBrowser(
       const resizeFullscreen = () => {
         for (const entry of views.values()) if (entry.window === window) fitFullscreen(entry)
       }
+      const visibilityChanged = () => {
+        for (const entry of views.values()) if (entry.window === window) reportVisibility(entry)
+      }
+      window.on('minimize', visibilityChanged)
+      window.on('restore', visibilityChanged)
+      window.on('hide', visibilityChanged)
+      window.on('show', visibilityChanged)
       window.on('resize', resizeFullscreen)
       window.on('enter-full-screen', resizeFullscreen)
       window.contentView.on('bounds-changed', resizeFullscreen)
@@ -517,7 +539,7 @@ export function registerBrowser(
     const key = `routed:${randomUUID()}`
     const child = createEntry(window, JSON.stringify([window.id, key]), key, profileId, true)
     child.inactiveAt = Date.now()
-    child.view.setVisible(false)
+    setVisible(child, false)
     child.url = url
     child.loading = loadUntilReady(child, url).catch((cause: unknown) => {
       if (!isAborted(cause))
@@ -555,8 +577,8 @@ export function registerBrowser(
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
-        // Electron exposes Document PiP but closes its window immediately (electron#39633).
-        // Let websites detect its absence and use native video PiP or their popup fallback.
+        // The session preload supplies Document PiP through a same-origin native popup.
+        // Keep Electron's broken native implementation disabled (electron#39633).
         disableBlinkFeatures: 'DocumentPictureInPictureAPI',
         partition: workspace
           ? workspacePartition(profileId)
@@ -631,7 +653,9 @@ export function registerBrowser(
     view.webContents.ipc.on('browser:video-pip', (event, active: unknown) => {
       if (!created.workspace || !event.senderFrame || typeof active !== 'boolean') return
       created.videoPictureInPicture = active
-      view.webContents.setBackgroundThrottling(!active && !created.keepAwake)
+      view.webContents.setBackgroundThrottling(
+        !active && !created.keepAwake && !created.documentPip,
+      )
     })
     view.webContents.on('enter-html-full-screen', () => {
       if (
@@ -655,6 +679,7 @@ export function registerBrowser(
       created.fullscreenWindowWasFullscreen = undefined
     })
     view.webContents.on('did-navigate', () => {
+      if (created.documentPip && !created.documentPip.isDestroyed()) created.documentPip.close()
       created.videoPictureInPicture = false
       view.webContents.setBackgroundThrottling(!created.keepAwake)
     })
@@ -677,6 +702,7 @@ export function registerBrowser(
     configureBrowserLanguage(view.webContents.session, profileId, userAgent)
     view.webContents.on('dom-ready', () => {
       const contents = view.webContents
+      reportVisibility(created)
       if (!/^https?:\/\//i.test(contents.getURL())) return
       void contents
         .executeJavaScriptInIsolatedWorld(1001, [
@@ -840,12 +866,28 @@ export function registerBrowser(
       Menu.buildFromTemplate(items).popup({ window: created.window })
     })
     view.webContents.setIgnoreMenuShortcuts(workspace)
+    const pipWindowOptions = workspace
+      ? authorizeDocumentPip(
+          view.webContents,
+          () =>
+            (!view.getVisible() || created.window.isMinimized() || !created.window.isVisible()) &&
+            browserPermissions(profileId).site(new URL(view.webContents.getURL()).origin)
+              .permissions['automatic-pip'] === 'allow',
+        )
+      : () => undefined
     view.webContents.setWindowOpenHandler((details) => {
       if (
         !created.workspace ||
         views.get(JSON.stringify([created.windowId, created.key])) !== created
       )
         return { action: 'deny' }
+      const pipOptions = pipWindowOptions(details)
+      if (pipOptions) {
+        for (const entry of views.values())
+          if (entry.documentPip && !entry.documentPip.isDestroyed()) entry.documentPip.close()
+        return { action: 'allow', overrideBrowserWindowOptions: pipOptions }
+      }
+      if (details.frameName?.startsWith(DOCUMENT_PIP_NAME)) return { action: 'deny' }
       if (details.postBody) {
         // Never replay a form POST as a GET tab; load it here, or refuse it visibly.
         const url = openableUrl(details.url)
@@ -917,7 +959,7 @@ export function registerBrowser(
       }
       return { action: 'deny' }
     })
-    view.webContents.on('did-create-window', (popup) => {
+    view.webContents.on('did-create-window', (popup, details) => {
       if (
         views.get(JSON.stringify([created.windowId, created.key])) !== created ||
         !created.workspace
@@ -925,8 +967,37 @@ export function registerBrowser(
         popup.close()
         return
       }
+      const documentPip = details?.frameName?.startsWith(`${DOCUMENT_PIP_NAME}:`)
+      if (documentPip) {
+        created.documentPip = popup
+        view.webContents.setBackgroundThrottling(false)
+        // A PiP document must never navigate away from its inherited origin.
+        popup.webContents.on('will-navigate', (event) => event.preventDefault())
+        popup.webContents.on('will-redirect', (event) => event.preventDefault())
+        if (String(Reflect.get(details.options ?? {}, 'dovo-disallow-return')) !== '1')
+          popup.webContents.on('context-menu', () => {
+            Menu.buildFromTemplate([
+              {
+                label: 'Return to tab',
+                click: () => {
+                  focusTab(created)
+                  popup.close()
+                },
+              },
+            ]).popup({ window: popup })
+          })
+      }
       created.popups.add(popup)
-      popup.once('closed', () => created.popups.delete(popup))
+      popup.once('closed', () => {
+        created.popups.delete(popup)
+        if (created.documentPip === popup) {
+          created.documentPip = undefined
+          if (!view.webContents.isDestroyed())
+            view.webContents.setBackgroundThrottling(
+              !created.keepAwake && !created.videoPictureInPicture,
+            )
+        }
+      })
       httpOnly(popup.webContents)
       popup.webContents.setIgnoreMenuShortcuts(true)
       popup.webContents.on('before-input-event', (_event, input) =>
@@ -1074,7 +1145,7 @@ export function registerBrowser(
       if (views.has(viewKey)) throw new Error('This browser tab is already open.')
       const page = createEntry(window, viewKey, key, tab.profileId, true)
       page.inactiveAt = Date.now()
-      page.view.setVisible(false)
+      setVisible(page, false)
       page.url = tab.url
       page.loading = loadUntilReady(page, tab.url).catch((cause: unknown) => {
         if (!isAborted(cause))
@@ -1106,7 +1177,7 @@ export function registerBrowser(
         if (!entry) {
           entry = createEntry(window, viewKey, command.key, command.profileId, true)
           entry.inactiveAt = Date.now()
-          entry.view.setVisible(false)
+          setVisible(entry, false)
           entry.url = url
           entry.loading = loadUntilReady(entry, url)
         }
@@ -1115,7 +1186,9 @@ export function registerBrowser(
       if (!entry.workspace || entry.profileId !== command.profileId)
         throw new Error('The tab changed before Keep awake could be updated.')
       entry.keepAwake = command.enabled
-      entry.contents.setBackgroundThrottling(!command.enabled && !entry.videoPictureInPicture)
+      entry.contents.setBackgroundThrottling(
+        !command.enabled && !entry.videoPictureInPicture && !entry.documentPip,
+      )
       await entry.loading
       return
     }
@@ -1143,7 +1216,12 @@ export function registerBrowser(
               entry.view.webContents.isDestroyed()))
         )
           throw new Error('The browser tab changed before it could be moved.')
-        if (entry && (media.keepAlive(entry.view.webContents) || entry.videoPictureInPicture))
+        if (
+          entry &&
+          (media.keepAlive(entry.view.webContents) ||
+            entry.videoPictureInPicture ||
+            entry.documentPip)
+        )
           throw new Error(
             'Stop this tab’s active media or sharing before moving it to another window.',
           )
@@ -1169,7 +1247,7 @@ export function registerBrowser(
       if (entry) {
         closePopups(entry)
         if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
-        entry.view.setVisible(false)
+        setVisible(entry, false)
         window.contentView.removeChildView(entry.view)
         views.delete(viewKey)
         extensions.removeTab(entry.profileId, entry.view.webContents)
@@ -1222,7 +1300,7 @@ export function registerBrowser(
         // focus and return it only if the user has not interacted with Studio meanwhile.
         focusStudio(entry)
         entry.inactiveAt ??= Date.now()
-        entry.view.setVisible(false)
+        setVisible(entry, false)
         prune()
       }
       return
@@ -1253,7 +1331,7 @@ export function registerBrowser(
         if (other.windowId !== window.id || other === entry) continue
         exitFullscreen(other)
         other.restoreFocus = false
-        other.view.setVisible(false)
+        setVisible(other, false)
         other.inactiveAt ??= Date.now()
         if (other.taskId === command.taskId && !command.agentAccess) {
           other.agentAccess = false
@@ -1303,7 +1381,7 @@ export function registerBrowser(
       const { x, y } = requested
       if (x >= width || y >= height) {
         entry.inactiveAt ??= Date.now()
-        entry.view.setVisible(false)
+        setVisible(entry, false)
         return
       }
       const bounds = {
@@ -1363,7 +1441,7 @@ export function registerBrowser(
       } else entry.view.webContents.disableDeviceEmulation()
       // Reinsert the selected page above retained sibling views for native hit testing.
       window.contentView.addChildView(entry.view)
-      entry.view.setVisible(true)
+      setVisible(entry, true)
       if (entry.restoreFocus) {
         entry.restoreFocus = false
         entry.view.webContents.focus()
@@ -1392,7 +1470,8 @@ export function registerBrowser(
             entry.workspace &&
             (media.keepAlive(entry.view.webContents) ||
               entry.keepAwake ||
-              entry.videoPictureInPicture),
+              entry.videoPictureInPicture ||
+              entry.documentPip),
         )
         .map((entry) => entry.key)
       for (const capture of snapshot.captures ?? [])

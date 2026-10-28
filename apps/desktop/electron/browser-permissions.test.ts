@@ -66,7 +66,7 @@ it('resets legacy grants to ask and blocks each device without affecting another
   permissions.allowMedia(origin, { audio: true, video: true })
   permissions.setNotification(origin, true)
   permissions.setSite(origin, 'camera', 'block')
-  expect(browserPermissions('work').site(origin).permissions).toEqual({
+  expect(browserPermissions('work').site(origin).permissions).toMatchObject({
     notifications: 'allow',
     microphone: 'allow',
     camera: 'block',
@@ -76,12 +76,12 @@ it('resets legacy grants to ask and blocks each device without affecting another
   permissions.setSite(origin, 'notifications', 'ask')
   expect(permissions.notification(origin)).toBeUndefined()
   expect(permissions.media(origin)).toEqual({ audio: false, video: false })
-  expect(browserPermissions('personal').site(origin).permissions).toEqual({
+  expect(browserPermissions('personal').site(origin).permissions).toMatchObject({
     notifications: 'ask',
     microphone: 'ask',
     camera: 'ask',
   })
-  expect(permissions.site('http://lan.example:3000').permissions).toEqual({
+  expect(permissions.site('http://lan.example:3000').permissions).toMatchObject({
     notifications: 'ask',
     microphone: 'ask',
     camera: 'ask',
@@ -89,4 +89,17 @@ it('resets legacy grants to ask and blocks each device without affecting another
   permissions.allowMedia(origin, { audio: false, video: true })
   expect(permissions.site(origin).permissions.camera).toBe('allow')
   expect(permissions.site(origin).permissions.microphone).toBe('ask')
+})
+
+it('persists common API settings by origin and profile with explicit automatic PiP opt-in', () => {
+  const origin = 'https://teams.microsoft.com'
+  const work = browserPermissions('work')
+  expect(work.site(origin).permissions['automatic-pip']).toBe('block')
+  expect(work.site(origin).permissions['screen-wake-lock']).toBe('allow')
+  work.setSite(origin, 'clipboard-read', 'block')
+  work.setSite(origin, 'automatic-pip', 'allow')
+  expect(browserPermissions('work').site(origin).permissions['clipboard-read']).toBe('block')
+  expect(browserPermissions('work').site(origin).permissions['automatic-pip']).toBe('allow')
+  expect(browserPermissions('personal').site(origin).permissions['automatic-pip']).toBe('block')
+  expect(work.site('https://other.example').permissions['clipboard-read']).toBe('ask')
 })

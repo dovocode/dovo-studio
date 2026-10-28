@@ -20,6 +20,12 @@ const schema = Schema.Struct({
         notifications: Schema.optional(browserPermissionSettingSchema),
         microphone: Schema.optional(browserPermissionSettingSchema),
         camera: Schema.optional(browserPermissionSettingSchema),
+        'clipboard-read': Schema.optional(browserPermissionSettingSchema),
+        'clipboard-sanitized-write': Schema.optional(browserPermissionSettingSchema),
+        'speaker-selection': Schema.optional(browserPermissionSettingSchema),
+        'screen-wake-lock': Schema.optional(browserPermissionSettingSchema),
+        'persistent-storage': Schema.optional(browserPermissionSettingSchema),
+        'automatic-pip': Schema.optional(browserPermissionSettingSchema),
       }),
     ),
   ),
@@ -76,6 +82,10 @@ export function browserPermissions(profileId: string) {
       const saved = current.notifications[origin]
       return saved === undefined ? 'ask' : saved ? 'allow' : 'block'
     }
+    if (permission === 'automatic-pip') return 'block'
+    if (permission === 'clipboard-sanitized-write' || permission === 'screen-wake-lock')
+      return 'allow'
+    if (permission !== 'camera' && permission !== 'microphone') return 'ask'
     return current.media?.[origin]?.[permission === 'camera' ? 'video' : 'audio'] ? 'allow' : 'ask'
   }
   return {
@@ -99,6 +109,12 @@ export function browserPermissions(profileId: string) {
           notifications: setting(current, origin, 'notifications'),
           microphone: setting(current, origin, 'microphone'),
           camera: setting(current, origin, 'camera'),
+          'clipboard-read': setting(current, origin, 'clipboard-read'),
+          'clipboard-sanitized-write': setting(current, origin, 'clipboard-sanitized-write'),
+          'speaker-selection': setting(current, origin, 'speaker-selection'),
+          'screen-wake-lock': setting(current, origin, 'screen-wake-lock'),
+          'persistent-storage': setting(current, origin, 'persistent-storage'),
+          'automatic-pip': setting(current, origin, 'automatic-pip'),
         },
       }
     },

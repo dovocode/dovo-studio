@@ -1,5 +1,17 @@
 import { useRef, useState } from 'react'
-import { SlidersHorizontal, LockKeyhole, Globe2, Mic, Camera, Bell } from 'lucide-react'
+import {
+  SlidersHorizontal,
+  LockKeyhole,
+  Globe2,
+  Mic,
+  Camera,
+  Bell,
+  Clipboard,
+  Volume2,
+  Monitor,
+  Database,
+  PictureInPicture2,
+} from 'lucide-react'
 import { useStudioHost } from '@dovo/studio-core'
 import { Button, IconButton, Popover } from '@dovo/studio-ui'
 import type { BrowserCommand, BrowserSitePermissions } from '@dovo/protocol'
@@ -8,6 +20,12 @@ const controls = [
   { permission: 'notifications', label: 'Notifications', Icon: Bell },
   { permission: 'microphone', label: 'Microphone', Icon: Mic },
   { permission: 'camera', label: 'Camera', Icon: Camera },
+  { permission: 'clipboard-read', label: 'Read clipboard', Icon: Clipboard },
+  { permission: 'clipboard-sanitized-write', label: 'Write clipboard', Icon: Clipboard },
+  { permission: 'speaker-selection', label: 'Speaker selection', Icon: Volume2 },
+  { permission: 'screen-wake-lock', label: 'Keep screen awake', Icon: Monitor },
+  { permission: 'persistent-storage', label: 'Persistent storage', Icon: Database },
+  { permission: 'automatic-pip', label: 'Automatic call PiP', Icon: PictureInPicture2 },
 ] as const
 
 /** Every command is resolved against the native page's current origin and profile. */
@@ -76,7 +94,7 @@ export function BrowserSiteControls({
           align="start"
           sideOffset={8}
           aria-label="Website permissions"
-          className="z-50 w-80 max-w-[calc(100vw-1rem)] space-y-4 rounded-xl border bg-popover p-4 text-popover-foreground shadow-xl"
+          className="z-50 max-h-[calc(100vh-6rem)] overflow-y-auto w-80 max-w-[calc(100vw-1rem)] space-y-4 rounded-xl border bg-popover p-4 text-popover-foreground shadow-xl"
         >
           <div>
             <h2 className="truncate text-sm font-medium">{page?.host}</h2>
@@ -111,34 +129,39 @@ export function BrowserSiteControls({
                       })
                   }}
                 >
-                  <option value="ask">Ask every time</option>
+                  {permission !== 'automatic-pip' && <option value="ask">Ask every time</option>}
                   <option value="allow">Allow</option>
                   <option value="block">Block</option>
                 </select>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={busy || !state || !page}
-                  aria-label={`Request ${label.toLowerCase()} permission`}
-                  onClick={() => {
-                    setOpen(false)
-                    void call({
-                      action: 'request-site-permission',
-                      origin: page!.origin,
-                      key: tabKey,
-                      permission,
-                    })
-                  }}
-                >
-                  Ask
-                </Button>
+                {(permission === 'camera' ||
+                  permission === 'microphone' ||
+                  permission === 'notifications') && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy || !state || !page}
+                    aria-label={`Request ${label.toLowerCase()} permission`}
+                    onClick={() => {
+                      setOpen(false)
+                      void call({
+                        action: 'request-site-permission',
+                        origin: page!.origin,
+                        key: tabKey,
+                        permission,
+                      })
+                    }}
+                  >
+                    Ask
+                  </Button>
+                )}
               </div>
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
             Saved for this website in {profileName}. Ask opens a new permission prompt. Changes
-            apply to future requests; reload to stop existing access.
+            apply to future requests; reload to stop existing access. Automatic call PiP requires
+            Allow; the website supplies the call window.
           </p>
           <div className="border-t pt-3">
             {confirmClear ? (

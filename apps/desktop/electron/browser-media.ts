@@ -1,5 +1,10 @@
 import type { BrowserCapture, BrowserMediaRequest } from '@dovo/protocol'
 import { app, desktopCapturer, systemPreferences, webContents as allContents } from 'electron'
+import { DOCUMENT_PIP_PRELOAD } from './browser-document-pip.js'
+import {
+  commonBrowserPermission,
+  requestCommonBrowserPermission,
+} from './browser-common-permissions.js'
 import { browserPermissions } from './browser-permissions.js'
 import { openRemoteMedia } from './browser-remote-media.js'
 import { prepareScreenRecording } from './browser-screen-permission.js'
@@ -290,7 +295,7 @@ export function createBrowserMedia(host: MediaHost) {
     const directory = join(app.getPath('userData'), 'browser-media')
     mkdirSync(directory, { recursive: true })
     const path = join(directory, 'capture.preload.js')
-    writeFileSync(path, PRELOAD)
+    writeFileSync(path, PRELOAD + DOCUMENT_PIP_PRELOAD)
     return (preload = path)
   }
 
@@ -390,6 +395,19 @@ export function createBrowserMedia(host: MediaHost) {
         }
         if (!details.isMainFrame) return callback(false)
         if (!origin || webOrigin(contents.mainFrame.url) !== origin) return callback(false)
+        if (commonBrowserPermission(permission)) {
+          void requestCommonBrowserPermission(
+            contents,
+            profileId,
+            origin,
+            permission,
+            tab.windowId,
+          ).then(callback, (error: unknown) => {
+            console.error('Could not request website permission.', error)
+            callback(false)
+          })
+          return
+        }
         if (permission === 'notifications') {
           const saved = browserPermissions(profileId).notification(origin)
           if (saved !== undefined) return callback(saved)
@@ -452,6 +470,12 @@ export function createBrowserMedia(host: MediaHost) {
           return (
             webOrigin(contents.mainFrame.url) === page &&
             browserPermissions(profileId).notification(page) === true
+          )
+        if (commonBrowserPermission(permission))
+          return (
+            webOrigin(contents.mainFrame.url) === page &&
+            details.isMainFrame &&
+            browserPermissions(profileId).site(page).permissions[permission] === 'allow'
           )
         if (permission !== 'media') return false
         if (webOrigin(contents.mainFrame.url) !== page) return false

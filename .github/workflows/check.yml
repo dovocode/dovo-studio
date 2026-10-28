@@ -50,6 +50,7 @@ jobs:
             for attempt in {1..50}; do
               if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id"; then
                 pnpm test:browser-media:native
+                pnpm test:browser-apis:native
                 exit 0
               fi
               sleep 0.1

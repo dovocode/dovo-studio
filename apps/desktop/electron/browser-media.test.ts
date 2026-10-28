@@ -831,3 +831,44 @@ it('applies saved website blocks and revocation before document grants and promp
   expect(audio).toHaveBeenCalledWith(false)
   expect(media.snapshot(1).mediaRequests).toBeUndefined()
 })
+
+it.each([
+  'clipboard-read',
+  'clipboard-sanitized-write',
+  'speaker-selection',
+  'screen-wake-lock',
+  'persistent-storage',
+])('limits native %s access to the owned profile and top-level origin', async (permission) => {
+  const { session, call, personal } = setup()
+  const { browserPermissions } = await import('./browser-permissions')
+  // Native permission names are also validated website-control names.
+  const settings = browserPermissions('work')
+  const known = [
+    'clipboard-read',
+    'clipboard-sanitized-write',
+    'speaker-selection',
+    'screen-wake-lock',
+    'persistent-storage',
+  ] as const
+  const checked = known.find((name) => name === permission)
+  if (!checked) throw new Error('Unknown fixture permission')
+  settings.setSite('https://meet.example', checked, 'allow')
+  expect(session.check?.(call, permission, 'https://meet.example', { isMainFrame: true })).toBe(
+    true,
+  )
+  expect(session.check?.(call, permission, 'https://meet.example', { isMainFrame: false })).toBe(
+    false,
+  )
+  expect(session.check?.(call, permission, 'https://evil.example', { isMainFrame: true })).toBe(
+    false,
+  )
+  expect(
+    session.check?.(personal, permission, 'https://other.example', { isMainFrame: true }),
+  ).toBe(false)
+  const callback = vi.fn<(allowed: boolean) => void>()
+  session.request?.(call, permission, callback, {
+    requestingUrl: 'https://evil.example',
+    isMainFrame: true,
+  })
+  expect(callback).toHaveBeenCalledWith(false)
+})
