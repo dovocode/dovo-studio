@@ -63,6 +63,7 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
       '@dovo/studio-core/state': root + 'packages/studio-core/src/runtime/application-state.ts',
       '@dovo/studio-ui/clipboard': root + 'packages/studio-ui/src/clipboard.ts',
       '@dovo/studio-ui/code-themes': root + 'packages/studio-ui/src/code-themes.ts',
+      '@dovo/studio-ui/search-field': root + 'packages/studio-ui/src/search-field.tsx',
       '@dovo/studio-ui/runtime-icon': root + 'packages/studio-ui/src/runtime-icon.tsx',
       '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts',
     },

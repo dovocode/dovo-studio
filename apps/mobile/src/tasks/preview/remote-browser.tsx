@@ -1,3 +1,4 @@
+import type { BrowserSearchEngine } from '@dovo/protocol'
 import { useScreenshotAttachment } from './screenshot-attachment'
 import { Text } from '../../ui/content/text'
 import {
@@ -36,6 +37,8 @@ type RemoteBrowserProps = {
   taskId: string
   tabId?: string
   profileId?: string
+  searchEngine?: BrowserSearchEngine
+  searchReady?: boolean
   deviceId?: string
   devicePlatform?: 'ios' | 'android'
   expanded?: boolean
@@ -72,6 +75,8 @@ function RemoteBrowserContent({
   taskId,
   tabId,
   profileId = 'default',
+  searchEngine,
+  searchReady = true,
   deviceId,
   devicePlatform,
   expanded = false,
@@ -449,9 +454,14 @@ function RemoteBrowserContent({
           forward={browserState?.forward ?? false}
           onNavigate={() => {
             try {
+              if (tabId && !searchReady)
+                throw new Error('Browser profiles are still loading on this computer.')
               post({
                 type: 'input',
-                input: { type: 'navigate', url: tabId ? browserAddress(address) : address },
+                input: {
+                  type: 'navigate',
+                  url: tabId ? browserAddress(address, searchEngine) : address,
+                },
               })
             } catch (cause) {
               Alert.alert(

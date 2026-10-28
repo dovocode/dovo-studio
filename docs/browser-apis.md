@@ -1,5 +1,30 @@
 # Shared-browser APIs
 
+## Page visibility
+
+Shared-browser tabs and thread previews report tab selection through `document.visibilityState`,
+`document.hidden` and `visibilitychange`. Switching tabs or leaving Browser for another Studio
+section marks the old page hidden. Window hiding/minimizing also marks its pages hidden; restoring
+it makes only the selected page visible. Losing keyboard focus alone does not hide a visible tab.
+Menus, tooltips and live preview underlays preserve the selected page's visibility. Media playback,
+PiP and Keep awake can keep rendering/timers alive without falsely reporting a background tab as
+visible.
+
+A dedicated sandboxed preload supplies this behavior before website scripts in HTTP and HTTPS pages,
+same-origin and cross-origin frames, including documents loaded while their tab is hidden. This is
+independent of Document PiP support and permissions. Untracked native popups keep their native
+lifecycle. Website scripts never receive Node.js or IPC access. Electron's native view visibility
+does not reliably update the Page Visibility API, so Studio bridges the getters and emits synthetic,
+deduplicated events. This does not change browser-internal lifecycle state or create trusted
+Chromium events. Window events update immediately; a 250ms native-state check covers macOS
+visibility/occlusion changes that emit no window event.
+
+`pnpm test:browser-apis:native` checks visibility with real Electron, isolated temporary profiles,
+plain HTTP, cross-origin frames, initial hidden loads, hidden reloads/frame creation, overlays and
+window hiding/restoring while background throttling is disabled. It also runs the PiP checks below.
+
+## Picture-in-picture
+
 Studio supplies Document Picture-in-Picture in shared-browser website tabs. Electron's broken native
 Document PiP feature remains disabled; a session preload supplies `requestWindow()`, `window`,
 `enter`/`onenter`, and the Document PiP event and interface constructors. The returned object is a
@@ -46,6 +71,19 @@ local media fixture. It checks actual DOM/stream transfer, activation, events, a
 close/restore, navigation, automatic-entry consent and native common API grants. It opens temporary
 desktop windows and requires an installed Electron binary and a desktop session. Browser UI coverage
 is in `scripts/check-shared-browser-browser.mjs`.
+
+## Address-bar search
+
+Each browser profile has a **Default search engine** in Settings → Browser. Choose Google (the
+default), DuckDuckGo, Kagi, or a custom HTTP/HTTPS URL containing `%s`. Search terms are URL-encoded
+before replacing each `%s`, including in path-based search URLs. Templates without a placeholder,
+credential-bearing URLs and non-web schemes are rejected. Kagi uses the profile's existing website
+login.
+
+Desktop local/remote tabs and mobile local/remote tabs use the selected profile's engine. On mobile,
+Browser options also lets you save the search engine for that tab's profile. Private tabs use the
+default profile's engine. Explicit addresses keep their existing navigation behavior, including HTTP
+LAN/VPN addresses; only search terms go to the search provider.
 
 ## Tab order
 

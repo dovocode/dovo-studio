@@ -111,29 +111,6 @@ export function installDocumentPictureInPicture(
     EventTarget.prototype.addEventListener,
   )
   let current: Window | null = null
-  let hostVisible = true
-  let selectionRevision = 0
-  const visibility = Object.getOwnPropertyDescriptor(
-    Document.prototype,
-    'visibilityState',
-  )!.get!.bind(document)
-  const effectiveVisibility = () => (hostVisible ? visibility() : 'hidden')
-  Object.defineProperties(document, {
-    visibilityState: { get: effectiveVisibility, configurable: true },
-    hidden: { get: () => effectiveVisibility() === 'hidden', configurable: true },
-  })
-  const controller = {
-    visibility: (visible: boolean) => {
-      const previous = effectiveVisibility()
-      const selectionChanged = hostVisible !== visible
-      hostVisible = visible
-      if (selectionChanged) selectionRevision++
-      // Chromium may already report hidden by the time Studio's selection IPC arrives.
-      // Deliver that transition even when background throttling changed the native getter first.
-      if (selectionChanged || previous !== effectiveVisibility())
-        dispatch(document, new Event('visibilitychange'))
-    },
-  }
   let automatic = false
   let enterHandler: ((event: Event) => void) | null = null
   const token = Symbol()
@@ -217,7 +194,7 @@ export function installDocumentPictureInPicture(
   })
   // Electron lacks Chrome's automatic Media Session action. Sites still own their call UI;
   // Studio invokes it only when the site has an explicit automatic-PiP approval.
-  if (!navigator.mediaSession) return controller
+  if (!navigator.mediaSession) return
   const nativeSet = navigator.mediaSession.setActionHandler.bind(navigator.mediaSession)
   let handler: ((details: { reason: string }) => unknown) | null = null
   navigator.mediaSession.setActionHandler = (action, callback) => {
@@ -229,12 +206,10 @@ export function installDocumentPictureInPicture(
   }
   let entering = false
   let wasHidden = document.hidden
-  let seenSelection = selectionRevision
   add(document, 'visibilitychange', async () => {
     const hidden = document.hidden
-    const changed = hidden !== wasHidden || seenSelection !== selectionRevision
+    const changed = hidden !== wasHidden
     wasHidden = hidden
-    seenSelection = selectionRevision
     // Native occlusion events can repeat while Studio already considers this page hidden.
     // Closing a PiP should not immediately reopen it without another leave transition.
     if (!changed || !hidden || !handler || current || entering) return
@@ -254,18 +229,16 @@ export function installDocumentPictureInPicture(
       entering = false
     }
   })
-  return controller
 }
 
 export const DOCUMENT_PIP_PRELOAD = `
 if (process.isMainFrame) {
-const pip = contextBridge.executeInMainWorld({
+contextBridge.executeInMainWorld({
   func: ${installDocumentPictureInPicture.toString()},
   args: [
     () => ipcRenderer.invoke('browser:document-pip-auto'),
     (automatic) => ipcRenderer.invoke('browser:document-pip-authorize', navigator.userActivation.isActive, automatic),
   ],
 })
-ipcRenderer.on('browser:document-pip-visibility', (_event, visible) => pip?.visibility(visible === true))
 }
 `

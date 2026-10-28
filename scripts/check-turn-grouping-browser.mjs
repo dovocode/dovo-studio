@@ -31,6 +31,7 @@ export const ConversationRail=()=>null,ConversationScrollButton=()=>null;
 `
 async function bundle(mobile) {
   const mocks = {
+    '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
     './components/failed-task-retry': 'export const FailedTaskRetry=()=>null;',
 
     'fixture-projection': `export * from '@dovo/protocol';export {conversationMessages} from '${root}/apps/mobile/src/tasks/conversation/state/messages.ts';`,

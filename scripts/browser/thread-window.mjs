@@ -7,6 +7,7 @@ import { checkPinRemoval } from './pin-removal.mjs'
 // Real ChatThread, DeferredTurn and studio-ui Conversation: only leaf presentation is stubbed.
 const studioUi = fileURLToPath(new URL('../../packages/studio-ui/', import.meta.url))
 const mocks = {
+  '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
   './pull-link-actions': `export const PullLinkActions=()=>null;`,
   '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';const store={workspace:{tasks:[]},connected:true,connection:{address:'http://lan-host:4317',token:'paired'},request:async()=>({ok:true})};export const useWorkspace=()=>store;export const useStudioHost=()=>({});export const formatDateTime=()=>'';export const useAppPreferences=()=>({responseStreaming:'tokens',themePalette:'dovo'});export const useResolvedTheme=()=> 'dark';export const completedStreamingText=text=>text;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
@@ -269,8 +270,9 @@ try {
   }, scroller)
   await page.keyboard.press('Escape')
 
+  // Use the real follow action: restoring virtualized turns can change the total height.
   // Following a stream at the live end keeps the window bounded.
-  await scrollTo((await state()).height)
+  await page.getByRole('button', { name: 'Scroll to latest message' }).click()
   await page.waitForFunction((selector) => {
     const root = document.querySelector(selector)
     return root.scrollHeight - root.clientHeight - root.scrollTop < 3

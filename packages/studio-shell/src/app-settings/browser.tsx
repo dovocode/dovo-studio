@@ -4,6 +4,9 @@ import {
   decodeResult,
   normalizeBrowserLinkDomain,
   browserProfilesSchema,
+  browserSearchProviders,
+  browserSearchEngineSchema,
+  type BrowserSearchEngine,
 } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useCallback, useEffect, useState } from 'react'
@@ -118,12 +121,23 @@ function ProfileName({
   profile: BrowserProfile
   disabled: boolean
   routing: boolean
-  onSave: (name: string, language: string, linkDomains: string[], emoji?: string) => void
+  onSave: (profile: BrowserProfile) => void
   onRemove: () => void
 }) {
   const [name, setName] = useState(profile.name)
   const [emoji, setEmoji] = useState(profile.emoji ?? '')
   const [language, setLanguage] = useState(profile.language ?? 'en-US')
+  const [engine, setEngine] = useState<BrowserSearchEngine['engine']>(
+    profile.search?.engine ?? 'google',
+  )
+  const [searchUrl, setSearchUrl] = useState(
+    profile.search?.engine === 'custom' ? profile.search.url : '',
+  )
+  const search: BrowserSearchEngine =
+    engine === 'custom' ? { engine, url: searchUrl.trim() } : { engine }
+  const validSearch = decodeResult(browserSearchEngineSchema, search).success
+  const unchangedSearch =
+    JSON.stringify(search) === JSON.stringify(profile.search ?? { engine: 'google' })
   const [domains, setDomains] = useState((profile.linkDomains ?? []).join(', '))
   const linkDomains = domains
     .split(',')
@@ -140,13 +154,15 @@ function ProfileName({
       className="flex flex-wrap items-center gap-2"
       onSubmit={(event) => {
         event.preventDefault()
-        if (validLanguage && validDomains)
-          onSave(
-            name.trim(),
-            Intl.getCanonicalLocales(language)[0]!,
+        if (validLanguage && validDomains && validSearch)
+          onSave({
+            ...profile,
+            name: name.trim(),
+            language: Intl.getCanonicalLocales(language)[0]!,
             linkDomains,
-            emoji || undefined,
-          )
+            emoji: emoji || undefined,
+            search,
+          })
       }}
     >
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -189,6 +205,45 @@ function ProfileName({
           onChange={(event) => setLanguage(event.target.value)}
         />
       </label>
+      <label className="flex min-w-0 flex-1 basis-36 flex-col gap-1 text-xs text-muted-foreground">
+        Default search engine
+        <ChoicePicker
+          aria-label={`Search engine for ${profile.name}`}
+          value={engine}
+          disabled={disabled}
+          onValueChange={(value) => {
+            if (value === 'custom') setEngine(value)
+            else {
+              const provider = browserSearchProviders.find((provider) => provider.id === value)
+              if (provider) setEngine(provider.id)
+            }
+          }}
+        >
+          {browserSearchProviders.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.name}
+            </option>
+          ))}
+          <option value="custom">Custom URL</option>
+        </ChoicePicker>
+      </label>
+      {engine === 'custom' && (
+        <label className="flex min-w-0 basis-full flex-col gap-1 text-xs text-muted-foreground">
+          Search URL · use %s for the search term
+          <Input
+            aria-label={`Search URL for ${profile.name}`}
+            value={searchUrl}
+            onChange={(event) => setSearchUrl(event.target.value)}
+            placeholder="https://example.com/search?q=%s"
+            maxLength={4096}
+            disabled={disabled}
+            aria-invalid={!validSearch}
+          />
+          {!validSearch && (
+            <span role="alert">Enter an HTTP or HTTPS URL containing %s, without credentials.</span>
+          )}
+        </label>
+      )}
       {routing && (
         <label className="flex min-w-0 basis-full flex-col gap-1 text-xs text-muted-foreground">
           Open links in this profile
@@ -211,10 +266,12 @@ function ProfileName({
           !name.trim() ||
           !validLanguage ||
           !validDomains ||
+          !validSearch ||
           (name.trim() === profile.name &&
             emoji === (profile.emoji ?? '') &&
             language === (profile.language ?? 'en-US') &&
-            domains === (profile.linkDomains ?? []).join(', '))
+            domains === (profile.linkDomains ?? []).join(', ') &&
+            unchangedSearch)
         }
       >
         Save
@@ -275,16 +332,12 @@ function Profiles({
       )}
       {profiles.map((profile) => (
         <ProfileName
-          key={`${profile.id}:${profile.name}:${profile.emoji}:${profile.language}:${profile.linkDomains?.join()}`}
+          key={`${profile.id}:${profile.name}:${profile.emoji}:${profile.language}:${profile.linkDomains?.join()}:${JSON.stringify(profile.search)}`}
           profile={profile}
           routing={routing}
           disabled={disabled || busy}
-          onSave={(name, language, linkDomains, emoji) =>
-            void update(
-              profiles.map((item) =>
-                item.id === profile.id ? { ...item, name, emoji, language, linkDomains } : item,
-              ),
-            )
+          onSave={(updated) =>
+            void update(profiles.map((item) => (item.id === profile.id ? updated : item)))
           }
           onRemove={() => {
             if (

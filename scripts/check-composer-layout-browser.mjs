@@ -378,9 +378,9 @@ try {
     await page.getByRole('button', { name: 'Expand composer activity', exact: true }).click()
     const queuedRow = page.locator('[aria-label="Queued follow-ups"] li').first()
     const rowBounds = await queuedRow.boundingBox()
-    // Queued rows have a source line above their single-line message preview.
+    // Own queued messages omit the redundant source line above their preview.
     assert.ok(rowBounds.height <= 56, JSON.stringify(rowBounds))
-    await queuedRow.getByText('You', { exact: true }).waitFor()
+    assert.equal(await queuedRow.getByText('You', { exact: true }).count(), 0)
     const preview = queuedRow.locator('span[title]').first()
     assert.equal(
       await preview.evaluate((element) => getComputedStyle(element).whiteSpace),

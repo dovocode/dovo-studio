@@ -167,6 +167,40 @@ try {
     ),
     '💼',
   )
+  const searchForm = local.getByRole('form', { name: 'Browser profile Local Work' })
+  const selectSearch = async (name) => {
+    await local.getByRole('button', { name: 'Search engine for Local Work', exact: true }).click()
+    await page.getByRole('option', { name, exact: true }).click()
+  }
+  await selectSearch('DuckDuckGo')
+  await searchForm.getByRole('button', { name: 'Save', exact: true }).click()
+  assert.deepEqual(
+    await page.evaluate(
+      () =>
+        window.preferences.browserProfiles.find((profile) => profile.name === 'Local Work').search,
+    ),
+    { engine: 'duckduckgo' },
+  )
+  await selectSearch('Custom URL')
+  const searchUrl = local.getByRole('textbox', { name: 'Search URL for Local Work' })
+  await searchUrl.fill('https://example.com/search')
+  assert.equal(
+    await searchForm.getByRole('button', { name: 'Save', exact: true }).isDisabled(),
+    true,
+  )
+  await searchUrl.fill('http://search.lan/find?q=%s')
+  await searchForm.getByRole('button', { name: 'Save', exact: true }).click()
+  assert.deepEqual(
+    await page.evaluate(
+      () =>
+        window.preferences.browserProfiles.find((profile) => profile.name === 'Local Work').search,
+    ),
+    { engine: 'custom', url: 'http://search.lan/find?q=%s' },
+  )
+  await page.screenshot({
+    path: root + 'work/shared-browser/search-engine-settings.png',
+    fullPage: true,
+  })
   const domains = local.getByRole('textbox', { name: 'Link domains for Local Work' })
   await domains.fill('https://invalid.example/path')
   assert.equal(await domains.getAttribute('aria-invalid'), 'true')
@@ -232,6 +266,29 @@ try {
     ),
     '🏠',
   )
+  await remote
+    .getByRole('button', { name: 'Search engine for Remote Personal', exact: true })
+    .click()
+  await page.getByRole('option', { name: 'Kagi', exact: true }).click()
+  await remote
+    .getByRole('form', { name: 'Browser profile Remote Personal' })
+    .getByRole('button', { name: 'Save', exact: true })
+    .click()
+  await page.waitForFunction(
+    () =>
+      window.calls
+        .filter((call) => call.path.endsWith('/save'))
+        .at(-1)
+        .input.profiles.find((profile) => profile.name === 'Remote Personal')?.search?.engine ===
+      'kagi',
+  )
+  assert.equal(
+    await page.evaluate(() => window.calls.filter((call) => call.path.endsWith('/save')).at(-1).id),
+    'one',
+  )
+  const savesBeforeRemoval = await page.evaluate(
+    () => window.calls.filter((call) => call.path.endsWith('/save')).length,
+  )
   await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).fill('Unsaved rename')
   cancelRemoval = true
   await remote.getByRole('button', { name: 'Remove', exact: true }).click()
@@ -241,12 +298,13 @@ try {
   )
   assert.equal(
     await page.evaluate(() => window.calls.filter((c) => c.path.endsWith('/save')).length),
-    2,
+    savesBeforeRemoval,
   )
   cancelRemoval = false
   await remote.getByRole('button', { name: 'Remove', exact: true }).click()
   await page.waitForFunction(
-    () => window.calls.filter((c) => c.path.endsWith('/save')).length === 3,
+    (count) => window.calls.filter((c) => c.path.endsWith('/save')).length === count + 1,
+    savesBeforeRemoval,
   )
   await remote.getByRole('button', { name: 'Computer for browser profiles' }).click()
   await page.getByRole('option', { name: 'Server', exact: true }).click()

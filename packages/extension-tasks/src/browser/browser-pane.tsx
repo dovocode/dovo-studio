@@ -764,8 +764,15 @@ function BrowserContent({
   }, [initialMode, connected])
   const navigate = (address = input) => {
     try {
+      if (shared && mode === 'remote' && !remoteProfiles.profiles)
+        throw new Error(
+          remoteProfiles.error || 'Browser profiles are still loading on this computer.',
+        )
       const target = shared
-        ? browserAddress(address)
+        ? browserAddress(
+            address,
+            (websiteProfile ?? tabProfiles.find((profile) => profile.id === 'default'))?.search,
+          )
         : previewUrl(address, mode === 'remote' ? undefined : connection?.address)
       if (mode === 'remote') remote.current?.input({ type: 'navigate', url: target })
       else if (target === url) {
@@ -2495,7 +2502,11 @@ function BrowserContent({
               onSubmit={(event) => {
                 event.preventDefault()
                 try {
-                  const homeUrl = browserAddress(homeEditor.url)
+                  const homeUrl = browserAddress(
+                    homeEditor.url,
+                    (websiteProfile ?? tabProfiles.find((profile) => profile.id === 'default'))
+                      ?.search,
+                  )
                   if (!homeUrl) throw new Error('Enter a home URL.')
                   setTabs((previous) =>
                     previous.map((tab) =>

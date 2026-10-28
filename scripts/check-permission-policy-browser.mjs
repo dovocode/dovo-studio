@@ -544,7 +544,7 @@ try {
     if (kind === 'native-agent') await nativeChoice(page, 'Provider', 'Claude Code')
     else {
       await page.getByRole('button', { name: 'Back to models', exact: true }).click()
-      await page.getByRole('button', { name: 'Choose provider', exact: true }).click()
+      await page.getByRole('button', { name: 'Filter models', exact: true }).click()
       await page.getByRole('button', { name: 'Claude', exact: true }).click()
       assert.equal(
         await page.getByRole('button', { name: 'Provider default', exact: true }).count(),

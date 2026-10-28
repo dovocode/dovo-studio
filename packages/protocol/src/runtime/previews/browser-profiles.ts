@@ -1,3 +1,4 @@
+import { browserSearchEngineSchema } from './browser-search.js'
 import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../../shared/schema.js'
 export const browserProfileIdSchema = Schema.String.pipe(
@@ -87,6 +88,7 @@ export const browserProfileSchema = mutableStruct({
   ),
   emoji: Schema.optional(browserProfileEmojiSchema),
   language: Schema.optional(browserLanguageSchema),
+  search: Schema.optional(browserSearchEngineSchema),
   linkDomains: Schema.optional(
     mutableArray(browserLinkDomainSchema).pipe(
       Schema.check(Schema.isMaxLength(64)),

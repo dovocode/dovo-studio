@@ -340,3 +340,18 @@ it('reorders pinned tabs even in activity mode and rejects cross-group, hidden a
     expect(reorderBrowserTabs(tabs, source, target, 'after', activity, 0)).toBe(tabs)
   }
 })
+
+it('uses the selected search engine while preserving explicit web and LAN addresses', () => {
+  expect(browserAddress('react hooks', { engine: 'duckduckgo' })).toBe(
+    'https://duckduckgo.com/?q=react%20hooks',
+  )
+  expect(browserAddress('react hooks', { engine: 'kagi' })).toBe(
+    'https://kagi.com/search?q=react%20hooks',
+  )
+  const search = { engine: 'custom' as const, url: 'http://search.lan/?q=%s' }
+  expect(browserAddress('a&b café', search)).toBe('http://search.lan/?q=a%26b%20caf%C3%A9')
+  expect(browserAddress('http://dev.netbird.local:3000/path', search)).toBe(
+    'http://dev.netbird.local:3000/path',
+  )
+  expect(browserAddress('example.com/docs', search)).toBe('https://example.com/docs')
+})

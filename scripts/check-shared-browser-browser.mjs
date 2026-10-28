@@ -765,6 +765,38 @@ try {
         call.action === 'show' && call.url === 'https://www.google.com/search?q=react%20hooks',
     ),
   )
+  for (const [search, expected] of [
+    [{ engine: 'duckduckgo' }, 'https://duckduckgo.com/?q=caf%C3%A9%20%26%20tabs'],
+    [
+      { engine: 'custom', url: 'http://search.lan/find?q=%s' },
+      'http://search.lan/find?q=caf%C3%A9%20%26%20tabs',
+    ],
+  ]) {
+    await page.evaluate(
+      (search) =>
+        window.setCleanup({
+          browserProfiles: [
+            { id: 'default', name: 'Local Default', search },
+            { id: 'local-work', name: 'Local Work' },
+          ],
+        }),
+      search,
+    )
+    await url.fill('café & tabs')
+    await page.keyboard.press('Enter')
+    await page.waitForFunction(
+      (expected) => window.calls.some((call) => call.action === 'show' && call.url === expected),
+      expected,
+    )
+  }
+  await page.evaluate(() =>
+    window.setCleanup({
+      browserProfiles: [
+        { id: 'default', name: 'Local Default' },
+        { id: 'local-work', name: 'Local Work' },
+      ],
+    }),
+  )
   await page.keyboard.press('Control+r')
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'reload'))
   const liveFrame =

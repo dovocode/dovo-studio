@@ -27,6 +27,7 @@ return <Context.Provider value={value}>CHOOSER_DIALOG CONTENT</Context.Provider>
 `
 async function bundle(mobile) {
   const mocks = {
+    '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
     // Native syntax rendering is covered by check-mobile-review-browser.
     './code-block': 'export const CodeBlock=({content})=><pre>{content}</pre>;',
     // File previews are exercised by check-chat-files-browser; this suite verifies PR links.

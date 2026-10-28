@@ -1,3 +1,4 @@
+import { browserSearchUrl, type BrowserSearchEngine } from '@dovo/protocol'
 import {
   decodeResult,
   isPrivateBrowserProfile,
@@ -196,7 +197,7 @@ export function browserQuote(selection: { text: string; url: string; title: stri
 }
 
 /** Resolve address-bar input without upgrading explicitly supplied HTTP addresses. */
-export function browserAddress(input: string): string {
+export function browserAddress(input: string, search?: BrowserSearchEngine): string {
   const value = input.trim()
   if (!value) return ''
   const checked = (url: URL) => {
@@ -238,7 +239,7 @@ export function browserAddress(input: string): string {
     }
     if (url) return checked(url)
   }
-  return checked(new URL(`https://www.google.com/search?q=${encodeURIComponent(value)}`))
+  return checked(new URL(browserSearchUrl(value, search)))
 }
 
 export function browserPageKey(tab: BrowserTab): string {

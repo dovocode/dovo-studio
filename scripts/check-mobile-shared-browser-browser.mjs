@@ -29,7 +29,7 @@ let prefs={browserProfiles:[{id:'default',name:'Default'},{id:'device',name:'Dev
 const profiles=[{id:'lan',name:'LAN computer'},{id:'mac',name:'Mac computer'}];
 const scope=createContext('lan');export const RuntimeScope=({runtimeId,children})=><scope.Provider value={runtimeId}>{children}</scope.Provider>;
 const overviews=profiles.map(profile=>({profile,connected:true,snapshot:{workspace:{tasks:[{id:'target',title:'Destination',messages:[],draft:'Server fallback'}]}}}));
-const readRuntime=async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('profiles/read'))return {profiles:[{id:'default',name:'Default'},{id:'work',name:'Work'}]};if(path.endsWith('selection'))return {text:'  remote exact\\ntext ',url:'http://localhost:4000',title:'Remote page'};return {ok:true,ticket:'fixture-ticket',tabId:body.tabId,profileId:body.profileId}};
+const websiteProfilesByOwner={};const readRuntime=async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('profiles/read')){if(window.holdProfileReads)await new Promise(resolve=>(window.profileResumes??=[]).push(resolve));return {profiles:websiteProfilesByOwner[owner.id]??[{id:'default',name:'Default'},{id:'work',name:'Work'}]}};if(path.endsWith('profiles/save')){websiteProfilesByOwner[owner.id]=body.profiles;return {profiles:body.profiles}};if(path.endsWith('selection'))return {text:'  remote exact\\ntext ',url:'http://localhost:4000',title:'Remote page'};return {ok:true,ticket:'fixture-ticket',tabId:body.tabId,profileId:body.profileId}};
 export const useRuntime=()=>{const id=useContext(scope);return {activeId:id,snapshot:overviews.find(entry=>entry.profile.id===id)?.snapshot,connection:{address:'http://'+id+'.fixture',token:'paired'},profiles,overviews,readRuntime,readEffect:(path,body)=>Effect.tryPromise(()=>readRuntime(profiles.find(p=>p.id===id),path,body))}};export const useNavigation=()=>({navigate:(...args)=>window.navigation.push(args)});let previewActive=true;const focusListeners=new Set();window.setPreviewActive=value=>{previewActive=value;focusListeners.forEach(f=>f())};export const usePreviewActive=()=>useSyncExternalStore(f=>{focusListeners.add(f);return ()=>focusListeners.delete(f)},()=>previewActive);
 export const WebView=forwardRef(({source,onMessage,onError},ref)=>{const frame=useRef();const owner=useContext(scope);useImperativeHandle(ref,()=>({reload:()=>window.calls.push({reload:true}),goBack:()=>{},goForward:()=>{},injectJavaScript:code=>frame.current.contentWindow.eval(code)}));window.webError=()=>onError?.({nativeEvent:{description:'Fixture page failed'}});return <iframe title={source.html?'Remote page':'Device page'} ref={frame} data-url={source.uri} onLoad={()=>{const w=frame.current.contentWindow;w.ReactNativeWebView={postMessage:data=>onMessage({nativeEvent:{data}})};if(source.html){let url='about:blank';const emit=m=>w.ReactNativeWebView.postMessage(JSON.stringify({channel:'dovo-browser',...m}));const state=()=>emit({type:'state',url,title:'Remote page',back:false,forward:false,loading:false,editable:false});w.addEventListener('message',e=>{const m=e.data;if(m.type==='connect'){const call=window.calls.findLast(c=>c.owner===owner&&c.path?.endsWith('/open'));url=call?.body.url||'about:blank';emit({type:'connection',online:true});state()}if(m.type==='input'&&m.input.type==='navigate'){url=m.input.url;setTimeout(state,25)}});emit({type:'ready'})}}} srcDoc={source.html?'Remote viewer fixture':'<title>Local fixture</title><pre id="selection">  Keep  spaces\\nSecond line </pre>'}/>});
 export const Glass=View;export const Icon=()=>null;export const IconButton=Action;export const TextInput=({accessibilityLabel,value,onChangeText,onSubmitEditing,onFocus,onBlur,style})=><input aria-label={accessibilityLabel} value={value} onChange={e=>onChangeText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSubmitEditing?.()}} onFocus={onFocus} onBlur={onBlur} style={css(style)}/>;export const Keyboard={dismiss:()=>{}};export const KeyboardAvoidingView=View;export const Platform={OS:'ios'};export const Share={share:async value=>window.calls.push({share:value})};export const StyleSheet={hairlineWidth:1};export const AppState={currentState:'active'};export const Alert={alert:(...args)=>window.calls.push({alert:args})};export const useOpenAppLink=()=>()=>{throw Error('Unexpected external navigation')};export const remoteBrowserHtml='fixture';export const deviceHostMessage=message=>message;export const useScreenshotAttachment=()=>{throw Error('Shared browser must not create screenshot attachment')};
@@ -194,17 +194,71 @@ try {
   await address.fill('useful browser search')
   await button('Go').click()
   assert.match((await state()).tabs[0].url, /google.com\/search\?q=useful/)
+  await button('Browser options').click()
+  await page.getByLabel('Default search engine', { exact: true }).selectOption('duckduckgo')
+  await button('Save search engine').click()
+  await button('Save search engine').waitFor({ state: 'detached' })
+  await button('Dismiss sheet').click()
+  await address.fill('café & tabs')
+  await button('Go').click()
+  assert.equal((await state()).tabs[0].url, 'https://duckduckgo.com/?q=caf%C3%A9%20%26%20tabs')
+  await button('Browser options').click()
+  await page.getByLabel('Default search engine', { exact: true }).selectOption('custom')
+  await page.getByLabel('Search URL', { exact: true }).fill('https://example.com/no-placeholder')
+  assert.equal(await button('Save search engine').isDisabled(), true)
+  await page.getByLabel('Search URL', { exact: true }).fill('http://search.lan/find?q=%s')
+  await button('Save search engine').click()
+  await button('Save search engine').waitFor({ state: 'detached' })
+  await button('Dismiss sheet').click()
+  await address.fill('a&b')
+  await button('Go').click()
+  assert.equal((await state()).tabs[0].url, 'http://search.lan/find?q=a%26b')
   await button('Tabs (1)').click()
   await page.getByLabel('Computer for new tab').selectOption('lan')
+  await page.evaluate(() => (window.holdProfileReads = true))
   await button('New tab').click()
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('button')].some(
+      (button) => button.textContent === 'Keyboard' && !button.disabled,
+    ),
+  )
+  await page.getByLabel('Preview URL', { exact: true }).fill('wait for my configured provider')
+  await button('Go to address').click()
+  assert.match(
+    await page.evaluate(() => window.calls.filter((call) => call.alert).at(-1).alert[1]),
+    /profiles are still loading/,
+  )
+  assert.ok(!(await state()).tabs.some((tab) => tab.url.includes('wait%20for%20my')))
+  await page.evaluate(() => {
+    window.holdProfileReads = false
+    for (const resume of window.profileResumes ?? []) resume()
+  })
   await button('Browser options').click()
   await page.getByLabel('Profile for this tab').selectOption('work')
+  await page.getByLabel('Default search engine', { exact: true }).selectOption('kagi')
+  await button('Save search engine').click()
+  await button('Save search engine').waitFor({ state: 'detached' })
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((call) => call.path?.endsWith('profiles/save')).at(-1).owner,
+    ),
+    'lan',
+  )
   await page.getByRole('button', { name: 'Dismiss sheet', exact: true }).click()
   await page.waitForFunction(() =>
     [...document.querySelectorAll('button')].some(
       (button) => button.textContent === 'Keyboard' && !button.disabled,
     ),
   )
+  await page.getByLabel('Preview URL', { exact: true }).fill('remote search')
+  await button('Go to address').click()
+  await page.waitForFunction(() => {
+    const state = JSON.parse(localStorage.getItem('dovo.mobile-browser.v1'))
+    return (
+      state.tabs.find((tab) => tab.id === state.active).url ===
+      'https://kagi.com/search?q=remote%20search'
+    )
+  })
   await page.getByLabel('Preview URL', { exact: true }).fill('http://localhost:4000')
   await button('Go to address').click()
   await page.waitForFunction(() => {

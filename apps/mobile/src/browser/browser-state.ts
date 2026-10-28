@@ -1,3 +1,4 @@
+import { browserSearchUrl, type BrowserSearchEngine } from '@dovo/protocol'
 import { Schema } from 'effect'
 import {
   decode,
@@ -238,7 +239,7 @@ export function toggleBookmark(state: BrowserState, tab: BrowserTab): BrowserSta
   }
 }
 /** Explicit HTTP and localhost retain their meaning on the selected computer. */
-export function browserAddress(input: string): string {
+export function browserAddress(input: string, search?: BrowserSearchEngine): string {
   const value = input.trim()
   if (!value) throw new Error('Enter an address or search terms.')
   if (value.length > 4096) throw new Error('Address or search is too long.')
@@ -262,9 +263,7 @@ export function browserAddress(input: string): string {
       hostPort
     return previewUrl(`${local ? 'http' : 'https'}://${value}`)
   }
-  const search = `https://www.google.com/search?q=${encodeURIComponent(value)}`
-  if (search.length > 4096) throw new Error('Search is too long.')
-  return search
+  return browserSearchUrl(value, search)
 }
 export type BrowserSelection = { text: string; url: string; title: string }
 export function appendBrowserDraft(draft: string, selection: BrowserSelection) {

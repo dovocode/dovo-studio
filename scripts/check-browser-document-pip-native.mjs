@@ -37,6 +37,7 @@ try {
       resolveDir: root + '/apps/desktop',
       contents: `import { app, BrowserWindow } from 'electron';
 import { createBrowserMedia } from './electron/browser-media';
+import { createBrowserVisibility } from './electron/browser-visibility';
 import { browserPermissions } from './electron/browser-permissions';
 import { authorizeDocumentPip, createDocumentPipWindow } from './electron/browser-document-pip';
 app.setPath('userData', ${JSON.stringify(join(directory, 'profile'))});
@@ -44,13 +45,16 @@ app.whenReady().then(async () => {
   const owner = new BrowserWindow({show:true, webPreferences:{backgroundThrottling:false,sandbox:true,contextIsolation:true,nodeIntegration:false,disableBlinkFeatures:'DocumentPictureInPictureAPI'}});
   const tab = {key:'call',profileId:'work',windowId:owner.id,contents:owner.webContents};
   const media = createBrowserMedia({tabFor: contents => contents.id === owner.webContents.id ? tab : undefined, tabs: () => [tab], canFullscreen: () => false, prepareFullscreen: () => {}});
+  globalThis.pipHostVisible = true;
+  const visibility = createBrowserVisibility(contents => contents === owner.webContents ? globalThis.pipHostVisible : undefined);
+  visibility.attachSession(owner.webContents.session);
   media.attachSession(owner.webContents.session, 'work');
   media.attachTab(owner.webContents);
   for (const permission of ['clipboard-read','speaker-selection','persistent-storage'])
     browserPermissions('work').setSite(${JSON.stringify(origin)}, permission, 'allow');
   globalThis.pipAutoAllowed = false;
   globalThis.pipHostVisible = true;
-  globalThis.reportPipVisibility = visible => {globalThis.pipHostVisible=visible;owner.webContents.send('browser:document-pip-visibility', visible)};
+  globalThis.reportPipVisibility = visible => {globalThis.pipHostVisible=visible;visibility.report(owner.webContents)};
   const pipOptions = authorizeDocumentPip(owner.webContents, () => globalThis.pipAutoAllowed && !globalThis.pipHostVisible);
   owner.webContents.setWindowOpenHandler(details => {
     if (details.frameName === 'consume-activation') return {action:'allow',overrideBrowserWindowOptions:{show:false}};

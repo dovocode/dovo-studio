@@ -1,3 +1,4 @@
+import { createBrowserVisibility } from './browser-visibility.js'
 import {
   DOCUMENT_PIP_NAME,
   authorizeDocumentPip,
@@ -200,10 +201,11 @@ export function registerBrowser(
   let disposed = false
   const pageVisible = (entry: Entry) =>
     entry.foreground && !entry.window.isMinimized() && entry.window.isVisible()
-  const reportVisibility = (entry: Entry) => {
-    if (entry.workspace && !entry.contents.isDestroyed())
-      entry.contents.send('browser:document-pip-visibility', pageVisible(entry))
-  }
+  const visibility = createBrowserVisibility((contents) => {
+    const entry = [...views.values()].find((entry) => entry.contents === contents)
+    return entry ? pageVisible(entry) : undefined
+  })
+  const reportVisibility = (entry: Entry) => visibility.report(entry.contents)
   const syncBackgroundThrottling = (entry: Entry) => {
     if (!entry.contents.isDestroyed())
       entry.contents.setBackgroundThrottling(
@@ -607,6 +609,8 @@ export function registerBrowser(
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        // Run sandboxed lifecycle preloads in subframes, without exposing Node to websites.
+        nodeIntegrationInSubFrames: true,
         // The session preload supplies Document PiP through a same-origin native popup.
         // Keep Electron's broken native implementation disabled (electron#39633).
         disableBlinkFeatures: 'DocumentPictureInPictureAPI',
@@ -1098,6 +1102,7 @@ export function registerBrowser(
       main.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
       main.sendInputEvent({ type: 'keyUp', keyCode, modifiers })
     })
+    visibility.attachSession(view.webContents.session)
     if (workspace) {
       // Shared-browser pages may ask to share a tab or use the camera/microphone, never silently.
       media.attachSession(view.webContents.session, profileId)
@@ -1747,6 +1752,7 @@ export function registerBrowser(
     },
     dispose: async () => {
       disposed = true
+      visibility.dispose()
       for (const browserSession of routingSessions) browserSession.webRequest.onBeforeRequest(null)
       routingSessions.clear()
       awakeRequests.clear()

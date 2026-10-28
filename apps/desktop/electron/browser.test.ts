@@ -1,9 +1,15 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
+import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+const visibilityDirectory = mkdtempSync(join(tmpdir(), 'dovo-browser-unit-'))
+afterAll(() => rmSync(visibilityDirectory, { recursive: true, force: true }))
 const registrations: Array<ReturnType<typeof registerBrowser>> = []
 const mocks = vi.hoisted(() => {
   const contents = {
     id: 42,
     mainFrame: {
+      framesInSubtree: [] as Array<Pick<Electron.WebFrameMain, 'send' | 'detached'>>,
       processId: 10,
       routingId: 1,
       url: 'https://example.com/',
@@ -27,6 +33,8 @@ const mocks = vi.hoisted(() => {
     setWindowOpenHandler: vi.fn<(...args: unknown[]) => void>(),
     setIgnoreMenuShortcuts: vi.fn<(ignore: boolean) => void>(),
     session: {
+      registerPreloadScript: vi.fn<(...args: unknown[]) => string>(() => 'visibility'),
+      unregisterPreloadScript: vi.fn<(...args: unknown[]) => void>(),
       webRequest: { onBeforeRequest: vi.fn<(...args: unknown[]) => void>() },
       fetch: vi.fn<(url: string, options?: unknown) => Promise<Response>>(),
       setUserAgent: vi.fn<(value: string) => void>(),
@@ -190,7 +198,7 @@ vi.mock('./browser-language.js', () => ({
   ) => session.setUserAgent(userAgent),
 }))
 vi.mock('electron', () => ({
-  app: { isPackaged: false },
+  app: { isPackaged: false, getPath: () => visibilityDirectory },
   Menu: { buildFromTemplate: mocks.menu },
   clipboard: { writeText: mocks.clipboard },
   BrowserWindow: { fromWebContents: () => mocks.windowFor ?? mocks.window },
@@ -200,7 +208,11 @@ vi.mock('electron', () => ({
       return mocks.view
     }
   },
-  ipcMain: { handle: mocks.handle, on: mocks.on },
+  ipcMain: {
+    handle: mocks.handle,
+    on: mocks.on,
+    removeListener: vi.fn<(name: string, listener: unknown) => void>(),
+  },
   shell: { openExternal: vi.fn<(url: string) => Promise<void>>() },
 }))
 import { registerBrowser } from './browser'
@@ -300,6 +312,7 @@ it('isolates tabs, clamps their bounds, ignores unknown hides and retains inacti
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      nodeIntegrationInSubFrames: true,
       disableBlinkFeatures: 'DocumentPictureInPictureAPI',
       partition: 'persist:dovo-preview:default',
     },
@@ -600,6 +613,7 @@ it('replaces the native view when its profile changes, keeping separate persiste
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        nodeIntegrationInSubFrames: true,
         disableBlinkFeatures: 'DocumentPictureInPictureAPI',
         partition: 'persist:dovo-preview:work',
       },
@@ -609,6 +623,7 @@ it('replaces the native view when its profile changes, keeping separate persiste
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        nodeIntegrationInSubFrames: true,
         disableBlinkFeatures: 'DocumentPictureInPictureAPI',
         partition: 'persist:dovo-preview:personal',
       },
@@ -817,7 +832,7 @@ it('streams hidden pages only to their owner and restores throttling on unsubscr
   expect(mocks.contents.beginFrameSubscription).toHaveBeenCalledOnce()
   await call(event, { action: 'hide', key: 'live', occluded: true })
   expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
-  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', true)
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:visibility', true)
   const deliver = mocks.contents.beginFrameSubscription.mock.calls[0]![1]
   const image = { isEmpty: () => false, toJPEG: () => Buffer.from('frame') }
   mocks.window.webContents.send.mockClear()
@@ -831,7 +846,7 @@ it('streams hidden pages only to their owner and restores throttling on unsubscr
   await call(event, { action: 'watch-frames', key: 'live', enabled: false })
   expect(mocks.contents.endFrameSubscription).toHaveBeenCalledOnce()
   expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
-  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', true)
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:visibility', true)
   deliver(image)
   expect(mocks.window.webContents.send).toHaveBeenCalledTimes(1)
   await call(event, { action: 'watch-frames', key: 'live', enabled: true })
@@ -850,18 +865,18 @@ it('activates automatic PiP when leaving an occluded tab even with a live previe
   const mainFrame = { senderFrame: mocks.contents.mainFrame }
   await call(event, { action: 'watch-frames', key: 'shared', enabled: true })
   await call(event, { action: 'hide', key: 'shared', occluded: true })
-  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', true)
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:visibility', true)
   expect(allowed(mainFrame)).toBe(false)
   mocks.contents.send.mockClear()
   // Navigating to another Studio section can leave the native view already hidden.
   await call(event, { action: 'hide', key: 'shared' })
-  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', false)
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:visibility', false)
   expect(allowed(mainFrame)).toBe(true)
   expect(allowed({ senderFrame: {} })).toBe(false)
   mocks.automaticPip = false
   expect(allowed(mainFrame)).toBe(false)
   await call(event, workspaceShow)
-  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', true)
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:visibility', true)
   expect(allowed(mainFrame)).toBe(false)
 })
 
@@ -871,11 +886,87 @@ it('reports a background page on tab switching and after its document reloads', 
   await call(event, { action: 'watch-frames', key: 'shared', enabled: true })
   mocks.contents.send.mockClear()
   await call(event, { ...workspaceShow, key: 'next' })
-  expect(mocks.contents.send).toHaveBeenCalledWith('browser:document-pip-visibility', false)
+  expect(mocks.contents.send).toHaveBeenCalledWith('browser:visibility', false)
   await call(event, { action: 'hide', key: 'next' })
   mocks.contents.send.mockClear()
   listener('dom-ready')?.()
-  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:document-pip-visibility', false)
+  expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:visibility', false)
+})
+
+it('reports visibility for thread previews and gives untracked session popups a native fallback', async () => {
+  const call = handler()
+  await call(event, { ...workspaceShow, workspaceBrowser: false })
+  expect(mocks.contents.session.registerPreloadScript).toHaveBeenCalledWith(
+    expect.objectContaining({ id: 'dovo-browser-visibility', type: 'frame' }),
+  )
+  const initial = mocks.on.mock.calls.find(([name]) => name === 'browser:visibility-state')?.[1]
+  if (!initial) throw new Error('Missing initial visibility handler')
+  const request = { sender: mocks.contents, returnValue: null as boolean | null }
+  initial(request)
+  expect(request.returnValue).toBe(true)
+  await call(event, { action: 'hide', key: 'shared' })
+  initial(request)
+  expect(request.returnValue).toBe(false)
+  const popup = { sender: {}, returnValue: undefined }
+  initial(popup)
+  expect(popup.returnValue).toBe(null)
+})
+
+it('updates child frames and reports window hide/minimize/restore without treating blur as hidden', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const child = { detached: false, send: vi.fn<Electron.WebFrameMain['send']>() }
+  mocks.contents.mainFrame.framesInSubtree.push(child)
+  try {
+    const hidden = vi.spyOn(mocks.window, 'isVisible').mockReturnValue(false)
+    const emit = (name: string) => {
+      const callback = mocks.window.on.mock.calls.find(([event]) => event === name)?.[1]
+      if (typeof callback !== 'function') throw new Error(`Missing ${name} handler`)
+      callback()
+    }
+    emit('hide')
+    expect(child.send).toHaveBeenLastCalledWith('browser:visibility', false)
+    hidden.mockReturnValue(true)
+    emit('show')
+    expect(child.send).toHaveBeenLastCalledWith('browser:visibility', true)
+    const minimized = vi.spyOn(mocks.window, 'isMinimized').mockReturnValue(true)
+    emit('minimize')
+    expect(child.send).toHaveBeenLastCalledWith('browser:visibility', false)
+    minimized.mockReturnValue(false)
+    emit('restore')
+    expect(child.send).toHaveBeenLastCalledWith('browser:visibility', true)
+    expect(mocks.window.on.mock.calls.some(([event]) => event === 'blur')).toBe(false)
+    child.detached = true
+    child.send.mockClear()
+    emit('hide')
+    expect(child.send).not.toHaveBeenCalled()
+  } finally {
+    mocks.contents.mainFrame.framesInSubtree.length = 0
+    vi.restoreAllMocks()
+  }
+})
+
+it('detects native window visibility changes even when the platform emits no window event', async () => {
+  vi.useFakeTimers()
+  const call = handler()
+  await call(event, workspaceShow)
+  mocks.contents.send.mockClear()
+  const hidden = vi.spyOn(mocks.window, 'isVisible').mockReturnValue(false)
+  try {
+    // A newly loading child frame must not consume a transition still owed to its parent.
+    const initial = mocks.on.mock.calls.find(([name]) => name === 'browser:visibility-state')?.[1]
+    if (!initial) throw new Error('Missing visibility handler')
+    initial({ sender: mocks.contents })
+    vi.advanceTimersByTime(250)
+    expect(mocks.contents.send).toHaveBeenCalledExactlyOnceWith('browser:visibility', false)
+    vi.advanceTimersByTime(500)
+    expect(mocks.contents.send).toHaveBeenCalledOnce()
+    hidden.mockReturnValue(true)
+    vi.advanceTimersByTime(250)
+    expect(mocks.contents.send).toHaveBeenLastCalledWith('browser:visibility', true)
+  } finally {
+    hidden.mockRestore()
+  }
 })
 
 it('cleans up a failed frame subscription', async () => {

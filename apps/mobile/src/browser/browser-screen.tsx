@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native'
 import { WebView } from 'react-native-webview'
+import { BrowserSearchSettings } from './browser-search-settings'
 import { WebsiteCustomizationEditor } from './website-customization-editor'
 import { BrowserThreadPanel } from './browser-thread-panel'
 import {
@@ -28,6 +29,7 @@ import {
   browserTabActivitySchema,
   type BrowserTabCategory,
   type BrowserProfile,
+  type BrowserSearchEngine,
   type BrowserWebsiteCustomization,
   browserWebsiteCustomizationScript,
   websiteCustomizationPrompt,
@@ -118,6 +120,7 @@ export function BrowserScreen() {
   const [clock, setClock] = useState(() => Date.now())
   const [tabCategory, setTabCategory] = useState<BrowserTabCategory>('active')
   const [profiles, setProfiles] = useState<BrowserProfile[]>([{ id: 'default', name: 'Default' }])
+  const [profilesOwner, setProfilesOwner] = useState<string | null>(null)
   const [customization, setCustomization] = useState<BrowserWebsiteCustomization | null>(null)
   const [threadOpen, setThreadOpen] = useState(false)
   const [customizationRequest, setCustomizationRequest] = useState<{
@@ -165,6 +168,44 @@ export function BrowserScreen() {
   useEffect(() => setCustomization(null), [websiteOrigin])
   const websiteProfiles = active.kind === 'local' ? preferences.browserProfiles : profiles
   const websiteProfile = websiteProfiles.find((profile) => profile.id === active.profileId)
+  const searchProfile =
+    websiteProfile ?? websiteProfiles.find((profile) => profile.id === 'default')
+  const saveSearchEngine = async (search: BrowserSearchEngine) => {
+    // Read the destination before saving so loading or switching computers cannot replace its profiles.
+    const existing =
+      active.kind === 'remote'
+        ? owner?.connected
+          ? (
+              await runtime.readRuntime(
+                owner.profile,
+                '/api/previews/browser/profiles/read',
+                {},
+                browserProfilesResultSchema,
+              )
+            ).profiles
+          : undefined
+        : preferences.browserProfiles
+    if (!existing) throw new Error('This computer is offline.')
+    const target =
+      existing.find((profile) => profile.id === active.profileId) ??
+      (active.kind === 'local' ? existing.find((profile) => profile.id === 'default') : undefined)
+    if (!target) throw new Error('This browser profile is unavailable.')
+    const next = existing.map((profile) =>
+      profile.id === target.id ? { ...profile, search } : profile,
+    )
+    if (active.kind === 'remote') {
+      if (!owner?.connected) throw new Error('This computer is offline.')
+      const result = await runtime.readRuntime(
+        owner.profile,
+        '/api/previews/browser/profiles/save',
+        { profiles: next },
+        browserProfilesResultSchema,
+      )
+      const currentTab = current.current.tabs.find((tab) => tab.id === current.current.active)
+      if (currentTab?.kind === 'remote' && currentTab.runtimeId === active.runtimeId)
+        setProfiles(result.profiles)
+    } else updateMobilePreferences({ browserProfiles: next })
+  }
   const websiteScripts = useMemo(
     () => (websiteProfile?.websites ?? []).map((site) => browserWebsiteCustomizationScript([site])),
     [websiteProfile?.websites],
@@ -276,6 +317,7 @@ export function BrowserScreen() {
   useEffect(() => {
     let alive = true
     setProfiles([{ id: 'default', name: 'Default' }])
+    setProfilesOwner(null)
     if (owner?.connected)
       void runtime
         .readRuntime(
@@ -286,7 +328,10 @@ export function BrowserScreen() {
         )
         .then(
           (result) => {
-            if (alive) setProfiles(result.profiles)
+            if (alive) {
+              setProfiles(result.profiles)
+              setProfilesOwner(owner.profile.id)
+            }
           },
           (cause) => {
             if (alive) setError(`Could not load browser profiles: ${String(cause)}`)
@@ -668,7 +713,7 @@ export function BrowserScreen() {
         throw new Error('This tab requires its native WebKit profile.')
       if (DovoWebKitBrowser && !native.status)
         throw new Error(native.error || 'Native browser is still starting.')
-      const url = browserAddress(address)
+      const url = browserAddress(address, searchProfile?.search)
       if (nativeAvailable && DovoWebKitBrowser) {
         if (url === active.url) await DovoWebKitBrowser.reload(active.id)
         else await DovoWebKitBrowser.navigate(active.id, url)
@@ -894,6 +939,8 @@ export function BrowserScreen() {
                 taskId={STUDIO_BROWSER_SCOPE}
                 tabId={active.id}
                 profileId={active.profileId}
+                searchEngine={searchProfile?.search}
+                searchReady={profilesOwner === active.runtimeId}
                 initialUrl={active.url}
                 reloadToken={websiteReload}
                 onClosed={() => change((state) => closeTab(state, active.id, randomUUID()))}
@@ -1374,6 +1421,22 @@ export function BrowserScreen() {
               })
             }}
           />
+          {!isPrivateBrowserProfile(active.profileId) && (
+            <BrowserSearchSettings
+              key={JSON.stringify([
+                active.kind === 'remote' ? active.runtimeId : 'local',
+                active.profileId,
+                searchProfile?.search,
+              ])}
+              value={searchProfile?.search}
+              disabled={
+                busy ||
+                (active.kind === 'remote' &&
+                  (!owner?.connected || profilesOwner !== active.runtimeId))
+              }
+              onSave={saveSearchEngine}
+            />
+          )}
           <Text style={styles.title}>Tab profile</Text>
           {isPrivateBrowserProfile(active.profileId) ? (
             <Text style={styles.muted}>
