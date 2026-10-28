@@ -14,7 +14,7 @@ export const Alert={alert:(title,message)=>window.alerts.push({title,message})};
 export const AccessibilityInfo={announceForAccessibility:message=>window.announcements.push(message)};
 `
 const controls = `
-export const useTheme=()=>({colors:{text:'#fff',muted:'#aaa',accent:'#09f',success:'#0f0',warning:'#ff0',error:'#f00',elevated:'#222',border:'#555',surface:'#111'},styles:{muted:{},error:{}}});
+export const useTheme=()=>({colors:{text:'#fff',muted:'#aaa',accent:'#09f',success:'#0f0',done:'#a0f',warning:'#ff0',error:'#f00',elevated:'#222',border:'#555',surface:'#111'},styles:{muted:{},error:{}}});
 export const Icon=()=>null;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 `
@@ -23,7 +23,7 @@ const stubs = [
   { path: 'react-native-gesture-handler', contents: native },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=()=>null;export {Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as Pin,Icon as Network,Icon as Save};`,
+    contents: `const Icon=()=>null;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Network,Icon as Save};`,
   },
   {
     path: './nested-threads',
@@ -52,9 +52,9 @@ const stubs = [
   },
   { path: '../../ui/content/text', importer: mobile + 'tasks/list/', contents: controls },
   {
-    path: '../../ui/content/pull-request-icon',
-    importer: mobile + 'tasks/list/task-list-row.tsx',
-    contents: `export const PullRequestIcon=()=>null;`,
+    path: '../theme',
+    importer: mobile + 'ui/content/pull-request-icon.tsx',
+    contents: controls,
   },
   {
     path: './device-label',
