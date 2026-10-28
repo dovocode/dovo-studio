@@ -91,7 +91,23 @@ export const Image=({source,accessibilityLabel,style})=><img src={source?.uri} a
     },
     {
       path: 'expo-file-system',
-      contents: `export const Paths={cache:'cache'};export class File{constructor(path,name){this.uri=path+'/'+name}write(data,options){this.exists=true;window.writes.push({uri:this.uri,data,options})}delete(){this.exists=false;window.deleted=(window.deleted||[]).concat(this.uri)}}`,
+      contents: `export const Paths={cache:'cache'};
+const entries=new Map();window.shareExports=entries;
+const uri=(parent,name)=>[typeof parent==='string'?parent:parent.uri,name].filter(value=>value!==undefined).join('/');
+export class Directory{
+  constructor(parent,name){this.uri=uri(parent,name)}
+  get exists(){return entries.has(this.uri)}
+  create({intermediates}={}){if(intermediates){const parts=this.uri.split('/');for(let i=1;i<parts.length;i++){const parent=new Directory(parts.slice(0,i).join('/'));if(!parent.exists)parent.create()}}entries.set(this.uri,{entry:this,modificationTime:Date.now()})}
+  list(){return [...entries.values()].map(value=>value.entry).filter(entry=>entry.uri.slice(0,entry.uri.lastIndexOf('/'))===this.uri)}
+  info(){return entries.get(this.uri)}
+  delete(){for(const path of entries.keys())if(path===this.uri||path.startsWith(this.uri+'/'))entries.delete(path);window.deleted=(window.deleted||[]).concat(this.uri)}
+}
+export class File{
+  constructor(parent,name){this.uri=uri(parent,name)}
+  get exists(){return entries.has(this.uri)}
+  async write(data,options){await Promise.resolve();entries.set(this.uri,{entry:this,modificationTime:Date.now()});window.writes.push({uri:this.uri,data,options})}
+  info(){return entries.get(this.uri)}
+}`,
     },
     {
       path: 'expo-sharing',
@@ -201,12 +217,13 @@ try {
   await page.waitForFunction(() => !!window.finishShare)
   assert.equal(await share.isDisabled(), true)
   assert.equal(await close.isEnabled(), true)
-  assert.deepEqual(await page.evaluate(() => window.shared), [
-    {
-      uri: 'cache/photo-Schermafbeelding 2026-10-24 om 09.01 — a very long filename.jpg',
-      options: { mimeType: 'image/jpeg' },
-    },
-  ])
+  const sharedImage = await page.evaluate(() => window.shared)
+  assert.equal(sharedImage.length, 1)
+  assert.match(
+    sharedImage[0].uri,
+    /^cache\/attachment-share-exports\/[^/]+\/Schermafbeelding 2026-10-24 om 09\.01 — a very long filename\.jpg$/,
+  )
+  assert.deepEqual(sharedImage[0].options, { mimeType: 'image/jpeg' })
   assert.deepEqual(await page.evaluate(() => window.writes[0].options), { encoding: 'base64' })
   assert.equal(await page.evaluate(() => window.writes[0].data === window.png.split(',')[1]), true)
   await close.click()
@@ -216,6 +233,10 @@ try {
     window.holdShare = false
   })
   await page.waitForFunction(() => !document.querySelector('[aria-label^="Preview "]').disabled)
+  await page.waitForFunction(() =>
+    window.shareExports.has(window.shared[0].uri.replace(/[^/]+$/, '.shared')),
+  )
+  assert.equal(await page.evaluate(() => window.shareExports.has(window.shared[0].uri)), true)
   await page.evaluate(() => window.setFiles(window.files.slice(0, 2)))
   await rows.getByRole('button', { name: 'Preview Notes for the release.txt' }).click()
   await dialog.getByText('Release notes').waitFor()
@@ -229,6 +250,7 @@ try {
     .getByText(/Share cancelled by system/)
     .waitFor()
   assert.equal(await share.isEnabled(), true)
+  assert.equal(await page.evaluate(() => window.shareExports.has(window.shared.at(-1).uri)), false)
   await close.click()
   await page.evaluate(() => {
     window.fail = true
@@ -326,9 +348,14 @@ try {
   assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Keep my draft')
   await archive.getByRole('button', { name: 'Share selected file' }).click()
   await page.waitForFunction(() =>
-    window.shared.some((share) => share.uri.endsWith('-results.txt')),
+    window.shared.some((share) => share.uri.endsWith('/results.txt')),
   )
-  await page.waitForFunction(() => window.deleted?.some((uri) => uri.endsWith('-results.txt')))
+  await page.waitForFunction(() =>
+    window.writes.some(
+      (write) => write.uri === window.shared.at(-1).uri.replace(/[^/]+$/, '.shared'),
+    ),
+  )
+  assert.equal(await page.evaluate(() => window.shareExports.has(window.shared.at(-1).uri)), true)
   await archive.getByRole('button', { name: 'Back to archive folder' }).click()
   await archive.getByRole('button', { name: 'Parent archive folder' }).click()
   await archive.getByRole('button', { name: 'Preview file other.txt' }).waitFor()
@@ -367,7 +394,7 @@ try {
   await archive.getByRole('button', { name: 'Share ZIP' }).click()
   await page.waitForFunction(() =>
     window.shared.some((share) =>
-      share.uri.endsWith('-Build artifacts and supporting reports.zip'),
+      share.uri.endsWith('/Build artifacts and supporting reports.zip'),
     ),
   )
   await page.evaluate(() => (window.archiveFail = false))
