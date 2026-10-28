@@ -56,6 +56,7 @@ async function setup() {
   broker = createConnectServer({
     store: accounts,
     origin: connectOrigin,
+    sharingRecoverySecret: randomBytes(32),
     artifacts: { origin, key: serviceKey },
     authorizationOrigin: 'https://sso.test',
     authorize: async () => 'https://sso.test',
