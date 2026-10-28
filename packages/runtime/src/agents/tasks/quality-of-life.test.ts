@@ -3,8 +3,11 @@ import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
+import { runtimeIntegration } from '../../testing/integration'
 import { exec } from '../../process'
 import { randomUUID } from 'node:crypto'
+
+vi.setConfig(runtimeIntegration)
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
