@@ -10,13 +10,21 @@ const built = await bundleBrowser(
   import {useState} from 'react';
   import {ThreadSuggestions} from '${root}/packages/extension-tasks/src/chat/thread-suggestions';
   import {createRoot} from 'react-dom/client';
+  import {flushSync} from 'react-dom';
   import {SharingPanel} from '${root}/packages/extension-tasks/src/chat/sharing-panel';
   import {createSharingFixture} from '${root}/apps/design-system/src/sharing-fixture';
   const kind=window.kind??'thread';const fixture=createSharingFixture({kind,withKey:window.withKey!==false});window.fixture=fixture;
   window.sharingRequests=[];
+  window.inboxFailures=[];window.inboxRefreshes=0;
+  const suggestionInbox=fixture.client.sharing.suggestionInbox.bind(fixture.client.sharing);
+  fixture.client.sharing.suggestionInbox=async(origin,sourceId)=>{
+    window.inboxRefreshes++;
+    try{return await suggestionInbox(origin,sourceId)}
+    catch(error){window.inboxFailures.push(sourceId);throw error}
+  };
   const request=fixture.client.sharing.request.bind(fixture.client.sharing);
   fixture.client.sharing.request=(...args)=>{window.sharingRequests.push(args[1]);return request(...args)};
-  function Inline(){const [source,setSource]=useState(fixture.sourceId),[active,setActive]=useState(true),[draft,setDraft]=useState('Existing draft');window.setSource=setSource;window.setActive=setActive;return <><ThreadSuggestions client={fixture.client} sourceId={source} active={active} onUseSuggestion={text=>setDraft(previous=>previous+'\\n\\n'+text)}/><textarea aria-label="Draft" value={draft} readOnly/></>}
+  function Inline(){const [source,setSource]=useState(fixture.sourceId),[active,setActive]=useState(true),[draft,setDraft]=useState('Existing draft');window.setSource=setSource;window.setActive=value=>flushSync(()=>setActive(value));return <><ThreadSuggestions client={fixture.client} sourceId={source} active={active} onUseSuggestion={text=>setDraft(previous=>previous+'\\n\\n'+text)}/><textarea aria-label="Draft" value={draft} readOnly/></>}
   function Manager(){const [shown,setShown]=useState(true);window.showManager=setShown;return shown?<SharingPanel client={fixture.client} sourceId={fixture.sourceId} kind={kind} content={kind==='artifact'?fixture.content:undefined} runtime={window.offline?undefined:fixture.runtime}/>:null}fixture.ready(window.published!==false).then(async()=>{if(window.forgetKey){window.recoveryKey=await fixture.client.sharing.key();fixture.forgetKey(!!window.legacyKey);}window.sharingRequests=[];return createRoot(document.getElementById('app')).render(window.inline ? <Inline/> : <Manager/>)});
 `,
       loader: 'tsx',
@@ -132,11 +140,16 @@ try {
   await inline.evaluate(() => window.setSource('another-thread'))
   await inline.getByRole('heading').waitFor({ state: 'hidden' })
   assert.equal(await inline.getByRole('region', { name: 'Suggested next prompts' }).count(), 0)
+  await inline.clock.install()
   await inline.evaluate(() => {
     window.fixture.fail(true)
     window.setSource('empty-inbox-with-error')
   })
-  await inline.getByRole('alert').waitFor()
+  await inline.waitForFunction(() => window.inboxFailures.includes('empty-inbox-with-error'))
+  assert.equal(await inline.getByRole('alert').count(), 0, 'background refresh failure stays quiet')
+  await inline.clock.fastForward(30000)
+  await inline.waitForFunction(() => window.inboxFailures.length === 2)
+  assert.equal(await inline.getByRole('alert').count(), 0, 'automatic retry failure stays quiet')
   assert.equal(await inline.getByRole('heading', { name: 'Suggested next prompts' }).count(), 0)
   assert.equal(await inline.getByRole('region', { name: 'Suggested next prompts' }).count(), 0)
   await inline.evaluate(() => {
@@ -144,25 +157,35 @@ try {
     window.setSource(window.fixture.sourceId)
   })
   await inline.getByRole('heading').waitFor()
-  await inline.evaluate(() => window.fixture.fail(true))
+  await inline.evaluate(() => {
+    window.inboxFailures = []
+    window.fixture.fail(true)
+  })
+  await inline.clock.fastForward(30000)
+  await inline.waitForFunction(() => window.inboxFailures.includes(window.fixture.sourceId))
+  assert.equal(await inline.getByRole('alert').count(), 0)
+  assert.equal(
+    await inline.getByRole('button', { name: 'Use in composer' }).count(),
+    1,
+    'refresh failures retain the last inbox',
+  )
   await inline.getByRole('button', { name: 'Dismiss', exact: true }).click()
   await inline.getByRole('alert').waitFor()
   assert.equal(await inline.getByRole('button', { name: 'Use in composer' }).count(), 1)
   await inline.evaluate(() => window.fixture.fail(false))
   await inline.getByRole('button', { name: 'Dismiss', exact: true }).click()
   await inline.getByRole('heading').waitFor({ state: 'hidden' })
-  await inline.clock.install()
-  const before = await inline.evaluate(() => window.sharingRequests.length)
   await inline.evaluate(() => window.setActive(false))
+  const before = await inline.evaluate(() => window.inboxRefreshes)
   await inline.clock.fastForward(60000)
   assert.equal(
-    await inline.evaluate(() => window.sharingRequests.length),
+    await inline.evaluate(() => window.inboxRefreshes),
     before,
     'hidden thread stops polling',
   )
   await inline.close()
   console.log(
-    'Inline suggestions: encrypted inbox, draft preservation, thread isolation, dismissal failure and inactive cleanup passed',
+    'Inline suggestions: encrypted inbox, draft preservation, thread isolation, quiet refresh retries, retained inbox, dismissal failure and inactive cleanup passed',
   )
   const assets = root + '/apps/web/dist/client/assets/'
   const css = (
