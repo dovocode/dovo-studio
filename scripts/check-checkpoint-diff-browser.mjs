@@ -11,17 +11,18 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';
-import {TurnCheckpoint} from './src/chat/thread/turn-checkpoint';
+import {TurnCheckpoint,CheckpointDiff} from './src/chat/thread/turn-checkpoint';
 import {MessageAttachments} from './src/chat/composer/message-attachments';
+import {SavedFilePreview} from './src/files/saved-file-preview';
 const image={id:'image',name:'A very long screenshot attachment filename.png',mime:'image/png',size:2048};
 const text={id:'text',name:'notes.txt',mime:'text/plain',size:32};
 window.imageData='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=';
 window.calls=[];window.failSyntax=false;
-window.store={connected:true,request:async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return {attachment:input.id==='image'?image:text,data:input.id==='image'?window.imageData:btoa('Attachment preview text')};if(path==='/api/tasks/file/restore')return {ok:true};throw Error('Unexpected request '+path)}};
+window.store={connected:true,request:async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return {attachment:input.id==='image'?image:text,data:input.id==='image'?window.imageData:btoa('Attachment preview text')};if(path==='/api/tasks/file/restore')return {ok:true};if(path==='/api/tasks/file/preview'){if(window.failFull&&input.full)throw Error('Diff read failed');const prefix='same line\\n'.repeat(20000);return {before:{kind:'text',size:prefix.length+12,text:input.full?prefix+'old tail\\n':prefix.slice(0,65536),truncated:!input.full},after:{kind:'text',size:prefix.length+12,text:input.full?prefix+'new tail\\n':prefix.slice(0,65536),truncated:!input.full}}};throw Error('Unexpected request '+path)}};
 const before='export function greeting(name: string) {\\n  return "Hello " + name;\\n}\\n';
 const after='export function greeting(name: string) {\\n  return \\x60Hello, \\x24{name}!\\x60;\\n}\\n';
 const turn={id:'turn',status:'completed',checkpoint:{before:'a'.repeat(40),after:'b'.repeat(40),files:[{path:'src/greeting.ts',before,after,viewed:false},{path:'src/added.ts',before:'',after:'export const added = true;\\n',viewed:false},{path:'src/removed.ts',before:'export const old = true;\\n',after:'',viewed:false},{path:'src/mode.ts',before:'same\\n',after:'same\\n',viewed:false}],omitted:[]}};
-function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;const [files,setFiles]=useState([image,text]);return <main className="studio dark min-h-screen bg-background p-6 text-foreground"><h1 className="mb-6 text-sm">Turn complete</h1><TurnCheckpoint turn={current} taskId="task" checkoutId="linked"/><section className="mt-8 rounded-2xl border bg-card p-3" aria-label="Composer fixture"><MessageAttachments compact taskId="task" files={files} previews={new Map([['image','data:image/png;base64,'+window.imageData]])} remove={async id=>setFiles(current=>current.filter(file=>file.id!==id))}/><textarea aria-label="Message task" className="mt-2 w-full bg-transparent" defaultValue="Review these changes"/></section><section className="mt-8" aria-label="Sent message"><MessageAttachments taskId="task" files={[image]}/></section></main>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;const [files,setFiles]=useState([image,text]);return <main className="studio dark min-h-screen bg-background p-6 text-foreground"><h1 className="mb-6 text-sm">Turn complete</h1><TurnCheckpoint turn={current} taskId="task" checkoutId="linked"/><section className="mt-8 rounded-2xl border bg-card p-3" aria-label="Composer fixture"><MessageAttachments compact taskId="task" files={files} previews={new Map([['image','data:image/png;base64,'+window.imageData]])} remove={async id=>setFiles(current=>current.filter(file=>file.id!==id))}/><textarea aria-label="Message task" className="mt-2 w-full bg-transparent" defaultValue="Review these changes"/></section><section className="mt-8" aria-label="Sent message"><MessageAttachments taskId="task" files={[image]}/></section></main>};const root=createRoot(document.getElementById('app'));window.renderSaved=()=>root.render(<SavedFilePreview file={{path:'large.txt',before:'',after:'',viewed:false,preview:{kind:'large'}}} taskId="task" turnId="turn" checkoutId="linked"/>);window.renderComplex=()=>{const lines=Array.from({length:25000},(_,i)=>'line '+i+'\\n');root.render(<CheckpointDiff file={{path:'complex.txt',before:lines.join(''),after:lines.toReversed().join(''),viewed:false}}/>)};root.render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -278,6 +279,34 @@ try {
   assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
   assert.equal(await breakdown.isVisible(), true)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+  await page.evaluate(() => {
+    window.failSyntax = false
+    window.failFull = true
+    window.renderSaved()
+  })
+  await page.getByRole('button', { name: 'Load full diff', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Diff read failed' }).waitFor()
+  await page.evaluate(() => {
+    window.failFull = false
+  })
+  await page.getByRole('button', { name: 'Retry full diff', exact: true }).click()
+  await rendered('new tail')
+  assert.equal(await page.getByRole('button', { name: 'Split diff', exact: true }).count(), 1)
+  assert.ok(
+    await page.evaluate(() =>
+      window.calls.some(
+        (call) =>
+          call.path === '/api/tasks/file/preview' &&
+          call.input.full &&
+          call.input.id === 'task' &&
+          call.input.turnId === 'turn' &&
+          call.input.checkoutId === 'linked',
+      ),
+    ),
+  )
+  await page.evaluate(() => window.renderComplex())
+  await page.getByRole('alert').filter({ hasText: 'Complete contents are shown below' }).waitFor()
+  assert.ok((await page.locator('pre').first().innerText()).includes('line 24999'))
   assert.deepEqual(errors, [])
   console.log(
     'Checkpoint dialog: real highlighted diffs, layouts, wrapping, file selection, added/deleted/unchanged files, syntax retry and scoped restore; compact attachments: preview, removal and preserved draft passed.',

@@ -397,7 +397,10 @@ export const responses = {
     omitted: mutableArray(Schema.String),
     base: Schema.String,
   }),
-  projectFileList: mutableStruct({ files: mutableArray(Schema.String) }),
+  projectFileList: mutableStruct({
+    files: mutableArray(Schema.String),
+    truncated: Schema.optional(Schema.Boolean),
+  }),
   projectFile: mutableStruct({ path: Schema.String, contents: Schema.String }),
   gitActionState: mutableStruct({
     dirty: Schema.Boolean,

@@ -1022,11 +1022,19 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             turnId: Schema.optional(idSchema),
             checkoutId: Schema.optional(idSchema),
             working: Schema.optional(Schema.Boolean),
+            full: Schema.optional(Schema.Boolean),
           }),
           yield* serviceResult(body(request)),
         )
         return yield* serviceResult(
-          s.tasks.filePreview(input.id, input.path, input.turnId, input.checkoutId, input.working),
+          s.tasks.filePreview(
+            input.id,
+            input.path,
+            input.turnId,
+            input.checkoutId,
+            input.working,
+            input.full,
+          ),
         )
       }
       if (method === 'POST' && path === '/api/tasks/file/restore') {
@@ -1109,7 +1117,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             ? repo.path
             : yield* serviceResult(s.checkouts.directory(input.id))
         if (path === '/api/tasks/files/list')
-          return { files: yield* serviceResult(s.projectFiles.all(cwd, !!repo.kind, input.fresh)) }
+          return yield* serviceResult(s.projectFiles.all(cwd, !!repo.kind, input.fresh))
         if (!input.path) throw new HttpError(400, 'File path is required')
         const filename = yield* serviceResult(
           safeFile(yield* serviceResult(repositoryPath(cwd)), input.path),

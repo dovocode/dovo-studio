@@ -1,16 +1,15 @@
+import { CheckpointDiff } from '../../files/saved-file-diff'
+export { CheckpointDiff } from '../../files/saved-file-diff'
 import { whitespaceOnlyFile } from '@dovo/studio-core'
 import { SavedFilePreview } from '../../files/saved-file-preview'
 import { checkpointFiles, pullFileKind, type FileKind, filePreviewLabel } from '@dovo/protocol'
 import { fileStats, DiffAmounts } from '../../files/presentation'
 import { responses, useWorkspace, useAppPreferences } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useMemo } from 'react'
-import { getFiletypeFromFileName, parseDiffFromFile } from '@pierre/diffs'
-import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
-import { FileDiff } from '@pierre/diffs/react'
+import { useMemo } from 'react'
 import { BookmarkCheck, ChevronRight, Undo2 } from 'lucide-react'
 import { useTurnDisclosure } from './turn-window'
-import type { ChangedFile, TaskTurn } from '@dovo/studio-core'
+import type { TaskTurn } from '@dovo/studio-core'
 import {
   Button,
   ChangeTypeFilters,
@@ -22,119 +21,6 @@ import {
   ErrorBoundary,
   FileBrowserTree,
 } from '@dovo/studio-ui'
-export function CheckpointDiff({ file }: { file: ChangedFile }) {
-  const [ready, setReady] = useApplicationState(false)
-  const [error, setError] = useApplicationState('')
-  const [attempt, setAttempt] = useApplicationState(0)
-  const diffs = useDiffOptions()
-  const [split, setSplit] = useApplicationState(diffs.defaultSplit)
-  const [overflow, setOverflow] = useApplicationState(diffs.options.overflow)
-  const diff = useMemo(
-    () =>
-      parseDiffFromFile(
-        {
-          name: file.path,
-          contents: file.before,
-        },
-        {
-          name: file.path,
-          contents: file.after,
-        },
-      ),
-    [file.path, file.before, file.after],
-  )
-  const stats = useMemo(() => fileStats(file), [file])
-  useEffect(() => {
-    let active = true
-    setReady(false)
-    setError('')
-    void preloadStudioHighlighter(getFiletypeFromFileName(file.path))
-      .then(() => {
-        if (active) setReady(true)
-      })
-      .catch((error: unknown) => {
-        if (active) setError(String(error))
-      })
-    return () => {
-      active = false
-    }
-  }, [file.path, attempt])
-  return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/20 px-3 py-2">
-        <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
-          {file.path}
-        </span>
-        <DiffAmounts stats={stats} />
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 text-[0.6875rem]"
-          aria-label="Split diff"
-          aria-pressed={split}
-          onClick={() => setSplit((value) => !value)}
-        >
-          {split ? 'Split' : 'Unified'}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 text-[0.6875rem]"
-          aria-label="Wrap diff lines"
-          aria-pressed={overflow === 'wrap'}
-          onClick={() => setOverflow((value) => (value === 'wrap' ? 'scroll' : 'wrap'))}
-        >
-          Wrap
-        </Button>
-      </div>
-      <div
-        className="studio-code min-h-0 min-w-0 flex-1 overflow-auto"
-        aria-label="Saved file diff"
-      >
-        {error ? (
-          <div className="space-y-3 p-3 text-xs">
-            <p role="alert" className="break-words text-destructive">
-              Highlighting unavailable. {error}
-            </p>
-            <Button size="sm" variant="outline" onClick={() => setAttempt((value) => value + 1)}>
-              Retry highlighting
-            </Button>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {(['before', 'after'] as const).map((side) => (
-                <section key={side} className="min-w-0 rounded-md border">
-                  <h3 className="border-b px-3 py-2 font-medium">
-                    {side === 'before' ? 'Before' : 'After'}
-                  </h3>
-                  <pre className="overflow-auto whitespace-pre-wrap break-words p-3">
-                    {file[side] || '(empty file)'}
-                  </pre>
-                </section>
-              ))}
-            </div>
-          </div>
-        ) : file.before === file.after ? (
-          <p className="p-4 text-xs text-muted-foreground">
-            No text changes. This file was added, removed, or its file mode changed.
-          </p>
-        ) : ready ? (
-          <FileDiff
-            fileDiff={diff}
-            options={{
-              ...diffs.options,
-              overflow,
-              diffStyle: split ? 'split' : 'unified',
-              disableFileHeader: true,
-            }}
-          />
-        ) : (
-          <p role="status" className="p-4 text-xs text-muted-foreground">
-            Loading diff…
-          </p>
-        )}
-      </div>
-    </div>
-  )
-}
 export function TurnCheckpoint({
   turn,
   taskId,

@@ -11,7 +11,7 @@ const bundle = await bundleBrowser(
       loader: 'tsx',
       contents: `import {createRoot} from 'react-dom/client';import {TaskFiles} from '${detail}task-files.tsx';
 window.fail=true;window.requests=[];window.opened=[];
-const request=async(path,input)=>{window.requests.push({path,input});if(path.endsWith('/list')&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/list'))return {files:['small.txt','large.txt','binary.txt','preview.png','vector.svg']};if(path==='/api/tasks/images/read'){if(window.failImage)throw new Error('Image unavailable');return {uri:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHioAAAAASUVORK5CYII='}};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return {path:input.path,contents:input.path==='large.txt'?'é'.repeat(600000):'Small file'}};throw new Error('Unexpected request: '+path)};
+const request=async(path,input)=>{window.requests.push({path,input});if(path.endsWith('/list')&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/list'))return {files:['small.txt','large.txt','binary.txt','preview.png','vector.svg'],...(window.listingCompleteness===undefined?{}:{truncated:window.listingCompleteness})};if(path==='/api/tasks/images/read'){if(window.failImage)throw new Error('Image unavailable');return {uri:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHioAAAAASUVORK5CYII='}};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return {path:input.path,contents:input.path==='large.txt'?'é'.repeat(600000):'Small file'}};throw new Error('Unexpected request: '+path)};
 window.runtime={connected:true,connection:{address:'http://runtime.test:7777',token:'paired-token'},request};
 createRoot(document.getElementById('app')).render(<TaskFiles task={{id:'task',files:[]}}/>);`,
     },
@@ -208,6 +208,23 @@ try {
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   )
   assert.equal(await page.getByTestId('file-preview').textContent(), 'Fresh A')
+  await search.fill('missing-file')
+  for (const completeness of [true, undefined, false]) {
+    await page.evaluate((value) => {
+      window.listingCompleteness = value
+    }, completeness)
+    await page.getByRole('button', { name: 'Refresh files', exact: true }).click()
+    if (completeness === false) {
+      await page.getByText('No matching files.', { exact: true }).waitFor()
+      assert.equal(await page.getByText(/Some files are omitted/).count(), 0)
+      assert.equal(await page.getByText(/Listing completeness is unknown/).count(), 0)
+    } else {
+      await page
+        .getByText(completeness ? /Some files are omitted/ : /Listing completeness is unknown/)
+        .waitFor()
+      await page.getByText('No matching files in this listing.', { exact: true }).waitFor()
+    }
+  }
   assert.deepEqual(errors, [])
   console.log(
     'Project text/image previews, retry, format switching, external opening and read-only checks passed.',

@@ -2,6 +2,9 @@ import { Schema } from 'effect'
 import { mutableStruct } from '../../shared/schema.js'
 import type { ChangedFile, TaskTurn } from '../../workspace.js'
 
+/** Expanded text is loaded only on request, never embedded in workspace snapshots. */
+export const FULL_FILE_DIFF_LIMIT = 8 * 1024 * 1024
+
 const savedFileSchema = mutableStruct({
   hash: Schema.String,
   size: Schema.Number.pipe(

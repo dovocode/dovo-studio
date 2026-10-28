@@ -908,7 +908,10 @@ export class GitService {
     root: string,
     name: string,
     metadata?: Pick<FilePreviewMetadata, 'before' | 'after'>,
+    full = false,
   ) {
+    // Validate the requested working path before passing it to any Git command.
+    const after = metadata ? undefined : await this.workingFile(root, name)
     const sides = metadata ?? {
       before: (
         await this.treeFiles(root, 'HEAD', [name]).catch(async (error) => {
@@ -917,29 +920,49 @@ export class GitService {
           throw error
         })
       ).get(name),
-      after: await this.workingFile(root, name),
+      after,
     }
     if (!sides.before && !sides.after)
       throw new HttpError(404, 'File is unavailable in the working checkout.')
-    return createFilePreview(name, sides, async (hash, limit) => {
-      if (hash !== 'working') return this.blobPrefix(root, hash, limit)
-      // Revalidate before reading and never follow the final symlink as a regular file.
-      const parent = dirname(name)
-      const file =
-        parent === '.'
-          ? join(root, basename(name))
-          : join(await safeFile(root, parent), basename(name))
-      const info = await lstat(file)
-      if (info.isSymbolicLink()) return Buffer.from(await readlink(file)).subarray(0, limit)
-      const handle = await open(await safeFile(root, name), 'r')
-      try {
-        const bytes = Buffer.alloc(Math.min(limit, info.size))
-        const result = await handle.read(bytes, 0, bytes.length, 0)
-        return bytes.subarray(0, result.bytesRead)
-      } finally {
-        await handle.close()
-      }
-    })
+    return createFilePreview(
+      name,
+      sides,
+      async (hash, limit) => {
+        if (hash !== 'working') return this.blobPrefix(root, hash, limit)
+        // Revalidate before reading and never follow the final symlink as a regular file.
+        const parent = dirname(name)
+        const file =
+          parent === '.'
+            ? join(root, basename(name))
+            : join(await safeFile(root, parent), basename(name))
+        const info = await lstat(file)
+        if (full && info.size !== sides.after?.size)
+          throw new HttpError(409, 'The file changed while loading its diff. Reload and try again.')
+        if (info.isSymbolicLink()) return Buffer.from(await readlink(file)).subarray(0, limit)
+        const handle = await open(await safeFile(root, name), 'r')
+        try {
+          const bytes = Buffer.alloc(Math.min(limit, info.size))
+          let offset = 0
+          while (offset < bytes.length) {
+            const result = await handle.read(bytes, offset, bytes.length - offset, offset)
+            if (!result.bytesRead) break
+            offset += result.bytesRead
+          }
+          if (full) {
+            const current = await handle.stat()
+            if (current.size !== info.size || current.mtimeMs !== info.mtimeMs)
+              throw new HttpError(
+                409,
+                'The file changed while loading its diff. Reload and try again.',
+              )
+          }
+          return bytes.subarray(0, offset)
+        } finally {
+          await handle.close()
+        }
+      },
+      full,
+    )
   }
 
   // An alternate index captures staged and unstaged contents without touching the user's index.
@@ -1153,15 +1176,24 @@ export class GitService {
     }
     return files
   }
-  async checkpointFilePreview(cwd: string, before: string, after: string, path: string) {
+  async checkpointFilePreview(
+    cwd: string,
+    before: string,
+    after: string,
+    path: string,
+    full = false,
+  ) {
     const sides = await Promise.all(
       [before, after].map((tree) => this.treeFiles(cwd, tree, [path])),
     )
     const old = sides[0].get(path),
       next = sides[1].get(path)
     if (!old && !next) throw new HttpError(404, 'This file is not in the saved snapshots.')
-    return createFilePreview(path, { before: old, after: next }, (hash, limit) =>
-      this.blobPrefix(cwd, hash, limit),
+    return createFilePreview(
+      path,
+      { before: old, after: next },
+      (hash, limit) => this.blobPrefix(cwd, hash, limit),
+      full,
     )
   }
   /** Read a bounded prefix without buffering the rest of a potentially huge saved blob. */

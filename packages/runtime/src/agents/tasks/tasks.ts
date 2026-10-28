@@ -581,6 +581,7 @@ export class Tasks {
     turnId?: string,
     checkoutId?: string,
     working = false,
+    full = false,
   ) {
     const task = this.store.task(id)
     const saved = task.turns?.find((turn) => turn.id === turnId)?.checkpoint
@@ -599,11 +600,11 @@ export class Tasks {
         !checkpoint.omitted.includes(path)
       )
         throw new HttpError(404, 'This file was not changed in this turn.')
-      return this.git.checkpointFilePreview(cwd, checkpoint.before, checkpoint.after, path)
+      return this.git.checkpointFilePreview(cwd, checkpoint.before, checkpoint.after, path, full)
     }
-    if (working) return this.git.workingFilePreview(cwd, path)
+    if (working) return this.git.workingFilePreview(cwd, path, undefined, full)
     const trees = await this.git.branchTrees(cwd)
-    return this.git.checkpointFilePreview(cwd, trees.before, trees.after, path)
+    return this.git.checkpointFilePreview(cwd, trees.before, trees.after, path, full)
   }
   /** Runs the latest turn's request again, optionally with another model of the same
    * provider. That turn's file changes are undone first (saved to a ref, never lost). */

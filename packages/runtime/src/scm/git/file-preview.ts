@@ -1,4 +1,5 @@
-import type { FilePreview, FilePreviewMetadata } from '@dovo/protocol'
+import { FULL_FILE_DIFF_LIMIT, type FilePreview, type FilePreviewMetadata } from '@dovo/protocol'
+import { HttpError } from '../../errors.js'
 
 const TEXT_LIMIT = 64 * 1024
 const IMAGE_LIMIT = 16 * 1024 * 1024
@@ -7,6 +8,7 @@ export async function createFilePreview(
   path: string,
   metadata: Pick<FilePreviewMetadata, 'before' | 'after'>,
   read: (hash: string, limit: number) => Promise<Buffer>,
+  full = false,
 ): Promise<FilePreview> {
   const side = async (file: FilePreviewMetadata['before']): Promise<FilePreview['before']> => {
     if (!file) return undefined
@@ -51,7 +53,14 @@ export async function createFilePreview(
         }
       }
     }
-    const bytes = await read(file.hash, TEXT_LIMIT)
+    if (full && file.size > FULL_FILE_DIFF_LIMIT)
+      throw new HttpError(
+        413,
+        'This file exceeds the 8 MB per-side text diff limit. Compact previews remain available.',
+      )
+    const bytes = await read(file.hash, full ? FULL_FILE_DIFF_LIMIT : TEXT_LIMIT)
+    if (full && bytes.length !== file.size)
+      throw new HttpError(409, 'The file changed while loading its diff. Reload and try again.')
     if (bytes.includes(0)) return { kind: 'binary', size: file.size, truncated: false }
     // Streaming decoding keeps a UTF-8 character cut at the prefix boundary out of the preview.
     try {

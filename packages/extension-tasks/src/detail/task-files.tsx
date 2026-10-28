@@ -2,7 +2,14 @@ import { createRuntimeClient, taskFileShareSchema, markdownMediaKind } from '@do
 import { ProjectImagePreview } from './project-image-preview'
 import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useCallback, useEffect, useMemo, useRef, useDeferredValue } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useDeferredValue,
+  useSyncExternalStore,
+} from 'react'
 import { getFiletypeFromFileName } from '@pierre/diffs'
 import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { Editor } from '@pierre/diffs/edit'
@@ -20,38 +27,62 @@ import { useLiveRefresh } from './live-refresh'
 import { formatCodeReference } from './code-reference'
 const createEditor: EditorFactory<undefined, undefined> = (type, options, key) =>
   new Editor(type, options, key)
+let nextEditorOwner = 0
+
+type FileDraft = { contents: string; expectedContents: string; saving: boolean; error: string }
+const drafts = new Map<string, FileDraft>()
+const draftListeners = new Set<() => void>()
+function setDraft(key: string, draft: FileDraft | null) {
+  if (draft) drafts.set(key, draft)
+  else drafts.delete(key)
+  for (const listener of draftListeners) listener()
+}
+function subscribeDrafts(listener: () => void) {
+  draftListeners.add(listener)
+  return () => {
+    draftListeners.delete(listener)
+  }
+}
 
 function HighlightedFile({
-  taskId,
+  draftKey,
   path,
   contents,
   onReference,
   onSave,
+  onSavedElsewhere,
   onEditingChange,
   readOnly,
 }: {
   readOnly: boolean
-  taskId: string
+  draftKey: string
   path: string
   contents: string
   onReference?: (text: string) => void
-  onEditingChange?: (editing: boolean) => void
+  onEditingChange?: (path: string, editing: boolean) => void
   onSave: (contents: string, expectedContents: string) => Promise<void>
+  onSavedElsewhere: () => void
 }) {
   const [ready, setReady] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [selection, setSelection] = useApplicationState<{ start: number; end: number } | null>(null)
   const [editing, setEditing] = useApplicationState(false)
-  const [dirty, setDirty] = useApplicationState(false)
-  const [saving, setSaving] = useApplicationState(false)
-  const [saveError, setSaveError] = useApplicationState('')
-  const [pending, setPending] = useApplicationState<string | null>(null)
+  const draft = useSyncExternalStore(
+    subscribeDrafts,
+    () => drafts.get(draftKey),
+    () => undefined,
+  )
   const [editRevision, setEditRevision] = useApplicationState(0)
+  const [editorOwner] = useApplicationState(() => ++nextEditorOwner)
+  const wasSaving = useRef(false)
   useEffect(() => {
-    onEditingChange?.(editing || pending !== null || saving)
-    return () => onEditingChange?.(false)
-  }, [editing, pending, saving, onEditingChange])
-  const cancelEdit = useRef(false)
+    if (wasSaving.current && !draft) onSavedElsewhere()
+    wasSaving.current = !!draft?.saving
+  }, [draft, onSavedElsewhere])
+  useEffect(() => {
+    onEditingChange?.(path, editing)
+    return () => onEditingChange?.(path, false)
+  }, [editing, onEditingChange, path])
   const diffs = useDiffOptions()
   useEffect(() => {
     let active = true
@@ -87,18 +118,25 @@ function HighlightedFile({
     }),
     [diffs.options, editing],
   )
-  const file = useMemo(() => ({ name: path, contents }), [path, contents])
-  const persist = async (next: string) => {
-    setSaving(true)
-    setSaveError('')
+  const displayedContents = draft?.contents ?? contents
+  const file = useRef({ name: path, contents: displayedContents })
+  if (!editing && (file.current.name !== path || file.current.contents !== displayedContents))
+    file.current = { name: path, contents: displayedContents }
+  const persist = async () => {
+    const current = drafts.get(draftKey)
+    if (!current || current.saving) return
+    const saving = { ...current, saving: true, error: '' }
+    setDraft(draftKey, saving)
     try {
-      await onSave(next, contents)
-      setPending(null)
-      setDirty(false)
+      await onSave(saving.contents, saving.expectedContents)
+      if (drafts.get(draftKey) === saving) setDraft(draftKey, null)
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setSaving(false)
+      if (drafts.get(draftKey) === saving)
+        setDraft(draftKey, {
+          ...saving,
+          saving: false,
+          error: cause instanceof Error ? cause.message : String(cause),
+        })
     }
   }
   return (
@@ -106,7 +144,7 @@ function HighlightedFile({
       <div className="flex min-h-9 shrink-0 items-center gap-2 border-b bg-background px-4 text-xs text-muted-foreground">
         <span className="min-w-0 flex-1 truncate font-mono">
           {path}
-          {dirty ? ' •' : ''}
+          {draft ? ' •' : ''}
         </span>
         {selection && onReference && (
           <Button
@@ -122,17 +160,15 @@ function HighlightedFile({
             Add reference to composer
           </Button>
         )}
-        {pending !== null ? (
+        {!editing && draft ? (
           <>
             <Button
               size="sm"
               variant="ghost"
               className="h-6 px-2 text-[0.625rem]"
-              disabled={saving}
+              disabled={draft.saving}
               onClick={() => {
-                setPending(null)
-                setSaveError('')
-                setDirty(false)
+                setDraft(draftKey, null)
                 setEditRevision((value) => value + 1)
               }}
             >
@@ -142,10 +178,19 @@ function HighlightedFile({
               size="sm"
               variant="outline"
               className="h-6 px-2 text-[0.625rem]"
-              disabled={saving}
-              onClick={() => void persist(pending)}
+              disabled={draft.saving}
+              onClick={() => void persist()}
             >
-              {saving ? 'Saving…' : 'Retry save'}
+              {draft.saving ? 'Saving…' : draft.error ? 'Retry save' : 'Save draft'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-[0.625rem]"
+              disabled={draft.saving || readOnly}
+              onClick={() => setEditing(true)}
+            >
+              Resume editing
             </Button>
           </>
         ) : editing ? (
@@ -155,9 +200,9 @@ function HighlightedFile({
               variant="ghost"
               className="h-6 px-2 text-[0.625rem]"
               onClick={() => {
-                cancelEdit.current = true
+                setDraft(draftKey, null)
                 setEditing(false)
-                setDirty(false)
+                setEditRevision((value) => value + 1)
               }}
             >
               Cancel
@@ -166,7 +211,11 @@ function HighlightedFile({
               size="sm"
               variant="default"
               className="h-6 px-2 text-[0.625rem]"
-              onClick={() => setEditing(false)}
+              onClick={() => {
+                setEditing(false)
+                void persist()
+                setEditRevision((value) => value + 1)
+              }}
             >
               Save
             </Button>
@@ -176,16 +225,16 @@ function HighlightedFile({
             size="sm"
             variant="outline"
             className="h-6 px-2 text-[0.625rem]"
-            disabled={readOnly || !!selection || saving}
+            disabled={readOnly || !!selection}
             onClick={() => setEditing(true)}
           >
             Edit
           </Button>
         )}
       </div>
-      {saveError && (
+      {draft?.error && (
         <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">
-          {saveError}
+          {draft.error}
         </p>
       )}
       <div className="studio-code min-h-0 flex-1 overflow-auto">
@@ -197,25 +246,26 @@ function HighlightedFile({
           <EditProvider createEditor={createEditor}>
             <PierreFile
               key={editRevision}
-              file={file}
+              file={file.current}
               options={options}
               edit={editing}
-              editStateKey={`${taskId}:${path}`}
-              onEditChange={() => setDirty(true)}
-              onEditComplete={(event) => {
-                if (cancelEdit.current) {
-                  cancelEdit.current = false
-                  return 'reject'
-                }
-                const next = event.file.contents
-                if (next === contents) {
-                  setDirty(false)
-                  return 'reject'
-                }
-                setPending(next)
-                void persist(next)
-                return 'accept'
+              editStateKey={`project-file:${editorOwner}:${editRevision}`}
+              onEditChange={(event) => {
+                const current = drafts.get(draftKey)
+                const expectedContents = current?.expectedContents ?? contents
+                setDraft(
+                  draftKey,
+                  event.file.contents === expectedContents
+                    ? null
+                    : {
+                        contents: event.file.contents,
+                        expectedContents,
+                        saving: false,
+                        error: '',
+                      },
+                )
               }}
+              onEditComplete={() => 'reject'}
             />
           </EditProvider>
         ) : (
@@ -250,12 +300,25 @@ export function TaskFiles({
   const { openExternalLink } = useStudioHost()
   const [readError, setReadError] = useApplicationState('')
   const [paths, setPaths] = useApplicationState<string[]>([])
+  const [truncated, setTruncated] = useApplicationState<boolean | null | undefined>(undefined)
   const [selected, setSelected] = useApplicationState('')
+  const draftScope = JSON.stringify([
+    connection?.runtimeId,
+    connection?.address,
+    connection?.token,
+    task.id,
+    task.repositoryId,
+    task.execution,
+    task.checkoutBranch,
+    task.existingWorktreePath,
+    task.delegation?.checkoutId,
+  ])
+  const draftKey = JSON.stringify([draftScope, selected])
   const imageFile = markdownMediaKind(selected) === 'image'
   const selectedRef = useRef(selected)
   selectedRef.current = selected
-  const sourceRef = useRef({ request, taskId: task.id })
-  sourceRef.current = { request, taskId: task.id }
+  const sourceRef = useRef({ request, taskId: task.id, draftScope })
+  sourceRef.current = { request, taskId: task.id, draftScope }
   const reads = useRef(0)
   const listings = useRef(0)
   useEffect(
@@ -273,22 +336,44 @@ export function TaskFiles({
   const [loading, setLoading] = useApplicationState(false)
   const [revision, setRevision] = useApplicationState(0)
   const editing = useRef(false)
+  const editingPath = useRef('')
+  const editingScope = useRef('')
   const editGeneration = useRef(0)
+  if (
+    editingPath.current &&
+    (editingPath.current !== selected || editingScope.current !== draftScope)
+  ) {
+    editing.current = false
+    editingPath.current = ''
+    editGeneration.current += 1
+  }
   const changedEditing = useCallback(
-    (value: boolean) => {
-      if (editing.current !== value) editGeneration.current += 1
+    (path: string, value: boolean) => {
+      if (value && path !== selectedRef.current) return
+      if (!value && path !== editingPath.current) return
+      if (
+        path === selectedRef.current &&
+        (editing.current !== value || (value && editingPath.current !== path))
+      )
+        editGeneration.current += 1
       editing.current = value
+      editingPath.current = value ? path : ''
+      editingScope.current = value ? draftScope : ''
       onEditingChange?.(value)
     },
-    [onEditingChange],
+    [onEditingChange, draftScope],
   )
+  const refreshAfterSave = useCallback(() => setRevision((value) => value + 1), [])
   const [query, setQuery] = useApplicationState('')
   const filter = useDeferredValue(query.trim().toLowerCase())
   useEffect(() => {
     setContents('')
     setReadError('')
     setLoading(!!selected)
-  }, [selected])
+  }, [selected, draftScope])
+  useEffect(() => {
+    onEditingChange?.(false)
+  }, [selected, draftScope, onEditingChange])
   const refreshListing = useCallback(async () => {
     const attempt = ++listings.current
     const listing = await request(
@@ -308,16 +393,18 @@ export function TaskFiles({
         ? previous
         : listing.files,
     )
+    setTruncated(listing.truncated ?? null)
   }, [request, task.id, revision])
   const refresh = useCallback(async () => {
     const attempt = ++reads.current
-    if (!selected || editing.current) return
+    if (!selected || (editing.current && editingPath.current === selected)) return
     const generation = editGeneration.current
     const current = () =>
       attempt === reads.current &&
       selectedRef.current === selected &&
       sourceRef.current.request === request &&
-      sourceRef.current.taskId === task.id
+      sourceRef.current.taskId === task.id &&
+      sourceRef.current.draftScope === draftScope
     try {
       if (imageFile) {
         setReadError('')
@@ -328,17 +415,25 @@ export function TaskFiles({
         { id: task.id, path: selected },
         responses.projectFile,
       )
-      if (current() && !editing.current && generation === editGeneration.current) {
+      if (
+        current() &&
+        !(editing.current && editingPath.current === selected) &&
+        generation === editGeneration.current
+      ) {
         setContents(result.contents)
         setReadError('')
       }
     } catch (cause: unknown) {
-      if (current() && !editing.current && generation === editGeneration.current)
+      if (
+        current() &&
+        !(editing.current && editingPath.current === selected) &&
+        generation === editGeneration.current
+      )
         setReadError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       if (current()) setLoading(false)
     }
-  }, [request, task.id, selected, revision, imageFile])
+  }, [request, task.id, selected, revision, imageFile, draftScope])
   const listingError = useLiveRefresh(connected, refreshListing)
   useLiveRefresh(connected, refresh)
   const openOriginal = () => {
@@ -383,6 +478,13 @@ export function TaskFiles({
           {listingError}
         </p>
       )}
+      {!listingError && truncated !== undefined && truncated !== false && (
+        <p className="border-b px-3 py-2 text-xs text-muted-foreground">
+          {truncated
+            ? 'Some files are omitted. Folder listings skip directories at 50 levels; listings are limited to 200,000 files.'
+            : 'Listing completeness is unknown. Search covers the loaded files.'}
+        </p>
+      )}
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {selected ? (
@@ -413,20 +515,30 @@ export function TaskFiles({
                 />
               ) : (
                 <HighlightedFile
-                  key={selected}
+                  key={draftKey}
+                  draftKey={draftKey}
                   onEditingChange={changedEditing}
-                  taskId={task.id}
+                  onSavedElsewhere={refreshAfterSave}
                   path={selected}
                   contents={contents}
                   readOnly={readOnly}
                   onReference={onReference}
                   onSave={async (next, expectedContents) => {
-                    await request(
+                    const source = { request, taskId: task.id, draftScope }
+                    const readGeneration = reads.current
+                    await source.request(
                       '/api/tasks/files/write',
-                      { id: task.id, path: selected, contents: next, expectedContents },
+                      { id: source.taskId, path: selected, contents: next, expectedContents },
                       responses.projectFile,
                     )
-                    if (selectedRef.current === selected) setContents(next)
+                    if (
+                      selectedRef.current === selected &&
+                      sourceRef.current.draftScope === source.draftScope &&
+                      sourceRef.current.taskId === source.taskId &&
+                      sourceRef.current.request === source.request &&
+                      reads.current === readGeneration
+                    )
+                      setContents(next)
                   }}
                 />
               )}
@@ -457,7 +569,9 @@ export function TaskFiles({
           </div>
           <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-1.5">
             {filter && !root.length && (
-              <p className="px-2 py-1 text-xs text-muted-foreground">No matching files.</p>
+              <p className="px-2 py-1 text-xs text-muted-foreground">
+                {truncated === false ? 'No matching files.' : 'No matching files in this listing.'}
+              </p>
             )}
             <FileBrowserTree
               files={root}

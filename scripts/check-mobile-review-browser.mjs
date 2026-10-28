@@ -17,8 +17,11 @@ const built = await bundleBrowser(
       contents: `import {createRoot} from 'react-dom/client';
         import {DiffView} from './src/tasks/preview/diff-view.ios';
         import {CodeBlock} from './src/ui/content/code-block';
+        import {SavedFilePreview} from './src/tasks/files/saved-file-preview';
         const root=createRoot(document.getElementById('app'));
         window.renderDiff=()=>root.render(<DiffView {...window.diffOptions}/>);
+        window.renderSaved=()=>root.render(<SavedFilePreview taskId="task" turnId="turn" checkoutId="link" file={{path:'large.txt',before:'',after:'',viewed:false,preview:{kind:'large'}}}/>);
+        window.previewCalls=[];window.previewCall=async(path,input)=>{window.previewCalls.push({path,input});if(window.failFull&&input.full)throw Error('Full diff unavailable');const prefix='same line\\n'.repeat(12000);return {before:{kind:'text',size:prefix.length+10,text:input.full?prefix+'old tail\\n':prefix.slice(0,65536),truncated:!input.full},after:{kind:'text',size:prefix.length+10,text:input.full?prefix+'new tail\\n':prefix.slice(0,65536),truncated:!input.full}}};
         window.renderCode=()=>root.render(<CodeBlock content={window.source} language={window.language}/>);
         window.diffOptions={path:'Card.tsx',patch:'--- a/file\\n+++ b/file\\n@@ -1,2 +1,2 @@\\n-export const old = <span title="old" />;\\n+export const next = <span title="new" />;\\n context\\n',focusedLine:1,onLinePress:(line,side)=>window.comment={line,side},annotations:[{line:1,side:'additions',text:'Check persistence'}]};
         window.renderDiff();`,
@@ -28,10 +31,19 @@ const built = await bundleBrowser(
     format: 'iife',
     jsx: 'automatic',
     platform: 'browser',
-    alias: { react: mobile + '/node_modules/react' },
+    alias: {
+      react: mobile + '/node_modules/react',
+      '@dovo/protocol': root + '/packages/protocol/src/index.ts',
+    },
     nodePaths: [mobile + '/node_modules', root + '/node_modules'],
   },
   [
+    {
+      path: '../../runtime/connection/provider',
+      importer: mobile,
+      contents:
+        'export const useRuntime=()=>({call:window.previewCall,connection:{address:"http://computer.test",token:"paired-token"}});',
+    },
     {
       path: './syntax-engine',
       importer: mobile,
@@ -48,8 +60,10 @@ const built = await bundleBrowser(
     {
       path: 'react-native',
       contents: `import {forwardRef,useImperativeHandle} from 'react';
-        export const View=({children,style,...props})=><div style={style} role={props.accessibilityRole}>{children}</div>;
-        export const ScrollView=({children,contentContainerStyle,style})=><div style={style}><div style={contentContainerStyle}>{children}</div></div>;
+        const flatten=style=>Array.isArray(style)?Object.assign({},...style.flat(Infinity).filter(Boolean)):style;
+        export const Image=({source,accessibilityLabel,style})=><img src={source.uri} alt={accessibilityLabel} style={style}/>;
+        export const View=({children,style,...props})=><div style={flatten(style)} role={props.accessibilityRole}>{children}</div>;
+        export const ScrollView=({children,contentContainerStyle,style})=><div style={style}><div style={flatten(contentContainerStyle)}>{children}</div></div>;
         export const Pressable=({children,accessibilityLabel,onPress,disabled,style})=><button style={style} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;
         export const Switch=({value,onValueChange})=><input type="checkbox" checked={value} onChange={e=>onValueChange(e.target.checked)}/>;
         export const Platform={OS:'ios'};export const useWindowDimensions=()=>({width:360,fontScale:window.diffFontScale??1});
@@ -272,6 +286,45 @@ try {
   })
   await page.getByRole('alert').waitFor()
   assert.equal(await page.getByText('const readable = true;', { exact: true }).isVisible(), true)
+  await page.evaluate(() => {
+    window.failSyntax = false
+    window.failFull = true
+    window.renderSaved()
+  })
+  await page.getByRole('button', { name: 'Load full diff', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Full diff unavailable' }).waitFor()
+  await page.evaluate(() => {
+    window.failFull = false
+  })
+  await page.getByRole('button', { name: 'Retry full diff', exact: true }).click()
+  await page.waitForFunction(
+    () =>
+      document.body.textContent.includes('+new tail') &&
+      document.body.textContent.includes('−old tail'),
+  )
+  assert.match(await page.locator('body').innerText(), /12001/)
+  assert.ok(
+    await page.evaluate(() =>
+      window.previewCalls.some(
+        (call) =>
+          call.input.full &&
+          call.input.id === 'task' &&
+          call.input.turnId === 'turn' &&
+          call.input.checkoutId === 'link',
+      ),
+    ),
+  )
+  await page.evaluate(() => {
+    window.diffOptions = {
+      path: 'large.ts',
+      patch:
+        '--- a/large.ts\n+++ b/large.ts\n@@ -1 +1,2 @@\n-old\n+' +
+        'x'.repeat(70000) +
+        '\n+export const recoveredLargeDiff = true;\n',
+    }
+    window.renderDiff()
+  })
+  await page.waitForFunction(() => document.body.textContent.includes('recoveredLargeDiff'))
   assert.deepEqual(errors, [])
   console.log(
     'Mobile diff/code: real Shiki tokens, full themes/styles, Unicode/CRLF, wrapping, comments, annotations, scaling, renames, stale results and readable failure fallback passed.',

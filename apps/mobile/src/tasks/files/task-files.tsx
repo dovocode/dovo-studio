@@ -42,7 +42,12 @@ export function TaskFiles({
   const filter = useDeferredValue(query.trim().toLowerCase())
   const [revision, setRevision] = useState(0)
   const refreshOwner = useRef<string | null>(null)
-  const [listing, setListing] = useState<{ key: string; files: string[]; error?: string }>()
+  const [listing, setListing] = useState<{
+    key: string
+    files: string[]
+    truncated?: boolean
+    error?: string
+  }>()
   const [result, setResult] = useState<{ key: string; file: FileResult }>()
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -81,7 +86,7 @@ export function TaskFiles({
       (result) => {
         if (active) {
           if (refreshOwner.current === owner) refreshOwner.current = null
-          setListing({ key: listKey, files: result.files })
+          setListing({ key: listKey, files: result.files, truncated: result.truncated })
         }
       },
       (error) => {
@@ -230,6 +235,13 @@ export function TaskFiles({
             {listError}
           </Text>
         )}
+        {listing?.key === listKey && !listError && listing.truncated !== false && (
+          <Text style={styles.muted}>
+            {listing.truncated
+              ? 'Some files are omitted. Folder listings skip directories at 50 levels; listings are limited to 200,000 files.'
+              : 'Listing completeness is unknown. Search covers the loaded files.'}
+          </Text>
+        )}
         {!selected && <SearchField label="Search files" value={query} onChangeText={setQuery} />}
       </View>
       {!selected ? (
@@ -239,7 +251,13 @@ export function TaskFiles({
           )}
           {listing?.key === listKey && !listError && !entries.length && (
             <Text style={styles.content}>
-              {filter ? 'No matching files.' : 'No files in this folder.'}
+              {listing.truncated === false
+                ? filter
+                  ? 'No matching files.'
+                  : 'No files in this folder.'
+                : filter
+                  ? 'No matching files in this listing.'
+                  : 'No files in this listing.'}
             </Text>
           )}
           {!!entries.length && (

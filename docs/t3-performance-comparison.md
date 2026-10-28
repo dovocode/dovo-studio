@@ -856,3 +856,67 @@ revision-checked PR monitoring and mobile foreground hooks. Their updated assert
 behavior instead of removing those checks. Native Expo execution, live agent approvals and live
 forge API behavior were not exercised by this follow-up; browser adapters do not establish native
 mobile behavior. The larger feature proposals above remain separate from these fixes.
+
+## Current-source review: file browsing, editing and larger diffs
+
+Five Terra 6.1 reviewers compared navigation/product flows, mobile, agents/tools, PRs/pipelines, and
+browser/runtime reliability with T3
+[`c570c2cd5cdf433ea0e38914ba6d92f6df13715c`](https://github.com/pingdotgg/t3code/commit/c570c2cd5cdf433ea0e38914ba6d92f6df13715c),
+fetched on 2026-10-28. They read the preceding changes first. This round deliberately distinguishes
+T3 techniques from Dovo-specific correctness fixes; similar feature names alone are not evidence of
+missing functionality.
+
+- **Discover skills by purpose:** T3's `apps/web/src/providerSkillSearch.ts` includes descriptions.
+  Dovo's shared desktop/mobile skill suggestions now match descriptions after name matches,
+  retaining prefix, enabled-state and name ordering. Disabled skills still apply only to the
+  selected message; MCP matching is unchanged. Mobile suggestions also display the description.
+- **Fence mobile file suggestions:** Pending lookups and displayed results now belong to the current
+  mention query, thread and computer connection. Dismissal, disconnect, replacement credentials and
+  out-of-order replies cannot insert a stale file into a different draft. This is a Dovo race found
+  during the comparison, not a claim about T3's transport model.
+- **Report listing completeness:** T3's directory loading and truncated search reporting in
+  `apps/mobile/src/features/files/useFileTreeEntries.ts` informed a smaller improvement to Dovo's
+  existing hierarchical tree. Listings now distinguish complete, omitted and unknown results through
+  runtime caches, protocol and desktop/mobile views. Exact file-count boundaries and empty deep
+  folders do not automatically mean files were omitted. Probes for skipped subtrees remain bounded;
+  unprovable completeness and older runtimes remain unknown. Git read failures remain errors.
+- **Retain mobile share exports safely:** T3's `apps/mobile/src/lib/attachmentDownload.ts` retains
+  successful exports because Android recipients may read after the chooser returns. Dovo now gives
+  attachment/archive exports isolated unique directories, removes failed exports, and prunes old
+  successful exports on later shares while excluding active ones. Chooser return does not establish
+  whether the user shared or cancelled, so both retain the file conservatively. Native receiving-app
+  timing remains unverified.
+- **Keep PR discussion snapshots coherent:** A partial Forgejo/Gitea inline-comment fetch could
+  append cached copies of comments already returned fresh. A failed comment section now uses its
+  entire cached snapshot, including an empty snapshot, with the existing stale-data warning. Without
+  a cache, partial fresh results remain visible with their warning. A subsequent complete read
+  replaces the stale snapshot. Full-detail and section-cache tests exercise two provider reviews
+  with one failing request; this is a Dovo cache fix, not a direct port of T3's activity fetch.
+- **Make desktop file saves explicit:** The real Pierre editor invokes its completion callback when
+  it unmounts, which previously made navigation save a dirty file implicitly. Navigation now retains
+  an in-memory draft and its pending/error state; only explicit Save writes the file. Returning
+  offers resume, retry or discard, with expected-content conflict checks and isolated
+  computer/thread/checkout ownership. Editor cache identities reset after Cancel/Discard and across
+  remounts. These drafts survive navigation in the current app window, not an app restart. This is a
+  Dovo editor integration fix found during the comparison, not a port of T3's editing model.
+- **Load larger thread diffs:** Deferred files previously showed two 64 KB prefixes even when the
+  changed lines were beyond that prefix. Desktop and mobile now offer a full text diff on request,
+  up to 8 MB per side, using the original checkpoint or working-checkout authorization. Expanded
+  contents never enter workspace snapshots. Truncated responses from older runtimes never become a
+  purported full diff. Failed loads can retry or return to compact previews; complex comparisons
+  stop within a computation budget and retain readable contents. Binary/image/submodule previews
+  retain their existing behavior. This implements Dominic's additional request for larger diffs.
+- **Recover omitted PR patches:** On-demand GitHub and GitLab changes reads now try their
+  authenticated raw-diff APIs when the file API omits a large patch. Recovery matches file/rename
+  identity, checks complete hunk structure, and revalidates the PR head/base after the raw fetch,
+  including failures. GitHub additionally checks recovered line counts against its file metadata.
+  GitLab supplies no equivalent counts, so recovered patches retain an explicit
+  potentially-incomplete warning. Existing response limits, binary handling and checkout/account
+  routing remain in force. Provider regressions cover omissions, malformed/truncated patches, errors
+  and moving revisions; desktop/mobile viewers exercise patches beyond 64 KB. Live forge responses
+  were not tested.
+
+Literal project-content search and a directory-scoped replacement for the file-list API remain
+separate features. T3's command-palette content search is useful, but a complete Dovo implementation
+needs explicit Git-ignore/plain-folder semantics, bounded work and the existing linked-checkout
+permissions. This round retains the current path search rather than claiming content search exists.

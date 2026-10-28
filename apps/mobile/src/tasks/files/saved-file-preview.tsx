@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
-import { Image, ScrollView, View } from 'react-native'
+import { createTwoFilesPatch } from 'diff'
+import { DiffView } from '../preview/diff-view'
+import { useEffect, useMemo, useState } from 'react'
+import { Image, Pressable, ScrollView, View } from 'react-native'
 import {
   filePreviewLabel,
   filePreviewSchema,
@@ -28,29 +30,60 @@ export function SavedFilePreview({
 }) {
   const { styles } = useTheme()
 
-  const { call } = useRuntime()
-  const key = JSON.stringify([taskId, turnId, checkoutId, working, file.path])
+  const { call, connection } = useRuntime()
+  const [fullKey, setFullKey] = useState('')
+  const [attempt, setAttempt] = useState(0)
+  const ownerKey = JSON.stringify([
+    connection?.address,
+    connection?.token,
+    taskId,
+    turnId,
+    checkoutId,
+    working,
+    file.path,
+  ])
+  const full = fullKey === ownerKey
+  const key = JSON.stringify([ownerKey, full, attempt])
   const [result, setResult] = useState<{
     key: string
+    file: ChangedFile
     preview: FilePreview | null
     error: string
   } | null>(null)
-  const preview = result?.key === key ? result.preview : null
-  const error = result?.key === key ? result.error : ''
+  const preview = result?.key === key && result.file === file ? result.preview : null
+  const completeText =
+    preview &&
+    [preview.before, preview.after].every(
+      (side) => !side || (side.kind === 'text' && !side.truncated),
+    )
+  const diff = useMemo(
+    () =>
+      completeText
+        ? {
+            path: file.path,
+            before: preview.before?.text ?? '',
+            after: preview.after?.text ?? '',
+            viewed: false,
+          }
+        : null,
+    [completeText, preview, file.path],
+  )
+  const error = result?.key === key && result.file === file ? result.error : ''
   useEffect(() => {
     let active = true
     void call(
       '/api/tasks/file/preview',
-      { id: taskId, path: file.path, turnId, checkoutId, working },
+      { id: taskId, path: file.path, turnId, checkoutId, working, full },
       filePreviewSchema,
     ).then(
       (result) => {
-        if (active) setResult({ key, preview: result, error: '' })
+        if (active) setResult({ key, file, preview: result, error: '' })
       },
       (cause: unknown) => {
         if (active)
           setResult({
             key,
+            file,
             preview: null,
             error: cause instanceof Error ? cause.message : String(cause),
           })
@@ -59,7 +92,18 @@ export function SavedFilePreview({
     return () => {
       active = false
     }
-  }, [call, taskId, turnId, checkoutId, working, file.path, key])
+  }, [call, taskId, turnId, checkoutId, working, file.path, key, full, file])
+  const patch = useMemo(
+    () =>
+      diff
+        ? createTwoFilesPatch(diff.path, diff.path, diff.before, diff.after, undefined, undefined, {
+            timeout: 1000,
+          })
+        : '',
+    [diff],
+  )
+  if (diff && patch)
+    return <DiffView path={diff.path} before={diff.before} after={diff.after} patch={patch} />
   return (
     <ScrollView contentContainerStyle={[styles.content, { gap: 12 }]}>
       <Text style={styles.muted}>
@@ -72,13 +116,55 @@ export function SavedFilePreview({
             ? 'Submodule commit references saved in Git.'
             : 'Full contents saved in Git.'}
       </Text>
+      {diff && !patch && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          This diff could not be computed within the viewer limit. Complete contents are shown
+          below.
+        </Text>
+      )}
       {error ? (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
         </Text>
       ) : !preview ? (
-        <Text style={styles.muted}>Loading compact preview…</Text>
+        <Text style={styles.muted}>{full ? 'Loading full diff…' : 'Loading compact preview…'}</Text>
       ) : null}
+      {((preview &&
+        [preview.before, preview.after].some((side) => side?.kind === 'text' && side.truncated)) ||
+        error) && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={full ? 'Retry full diff' : 'Load full diff'}
+          onPress={() => {
+            setFullKey(ownerKey)
+            setAttempt((value) => value + 1)
+          }}
+          style={styles.card}
+        >
+          <Text>{full ? 'Retry full diff' : 'Load full diff'}</Text>
+        </Pressable>
+      )}
+      {full && (preview?.before?.truncated || preview?.after?.truncated) && (
+        <Text style={styles.muted}>
+          This computer returned only a compact preview. Update it to load larger text diffs.
+        </Text>
+      )}
+      {full && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Show compact preview"
+          onPress={() => setFullKey('')}
+          style={styles.card}
+        >
+          <Text>Show compact preview</Text>
+        </Pressable>
+      )}
+      {(full || preview?.before?.truncated || preview?.after?.truncated) && (
+        <Text style={styles.muted}>
+          Text diffs support up to 8 MB per side.{' '}
+          {working ? 'The working file is unchanged.' : 'Full snapshots remain saved.'}
+        </Text>
+      )}
       {(['before', 'after'] as const).map((name) => {
         const side = preview?.[name]
         const metadata = file.preview?.[name]
@@ -112,7 +198,7 @@ export function SavedFilePreview({
             ) : null}
             {side?.truncated && (
               <Text style={styles.muted}>
-                First 64 KB shown. Full contents remain in the snapshot.
+                First 64 KB shown. Load the full diff to compare changes beyond this preview.
               </Text>
             )}
           </View>

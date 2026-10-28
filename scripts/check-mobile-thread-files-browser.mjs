@@ -266,6 +266,34 @@ try {
   assert.equal(listRequests.at(-1).fresh, false, 'Changing checkout retains ordinary cached reads')
   await page.getByText('linked contents', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Edit file' }).isDisabled(), true)
+  await page.getByRole('button', { name: 'Browse files', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Search files', exact: true }).fill('missing-file')
+  for (const completeness of [true, undefined, false]) {
+    await page.route(
+      '**/api/tasks/files/list',
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            files: ['linked.txt'],
+            ...(completeness === undefined ? {} : { truncated: completeness }),
+          }),
+        }),
+      { times: 1 },
+    )
+    await page.getByRole('button', { name: 'Refresh files', exact: true }).click()
+    if (completeness === false) {
+      await page.getByText('No matching files.', { exact: true }).waitFor()
+      assert.equal(await page.getByText(/Some files are omitted/).count(), 0)
+      assert.equal(await page.getByText(/Listing completeness is unknown/).count(), 0)
+    } else {
+      await page
+        .getByText(completeness ? /Some files are omitted/ : /Listing completeness is unknown/)
+        .waitFor()
+      await page.getByText('No matching files in this listing.', { exact: true }).waitFor()
+    }
+  }
   assert.deepEqual(errors, [])
   console.log(
     'Mobile thread files: fresh directory refresh with stale-reply protection, folder tree/search, preview/image, saved edits, conflict protection, draft restoration and read-only linked projects passed.',

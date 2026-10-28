@@ -778,3 +778,30 @@ it.each([false, true])(
     expect(attempts).toBe(2)
   },
 )
+
+it('loads larger working diffs through the authenticated task route without expanding snapshots', async () => {
+  const { f, s, call } = await setup()
+  const task = s.tasks.create({
+    title: 'Large diff',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    execution: 'main',
+    objective: 'Inspect a larger file',
+  })
+  const contents = 'unchanged line\n'.repeat(20000) + 'changed tail\n'
+  await writeFile(join(f.directory, 'large.txt'), contents)
+  const input = { id: task.id, path: 'large.txt', working: true }
+  const compact = await call('/api/tasks/file/preview', input)
+  expect(compact).toMatchObject({ status: 200, body: { after: { truncated: true } } })
+  expect(await call('/api/tasks/file/preview', { ...input, full: true })).toMatchObject({
+    status: 200,
+    body: { after: { text: contents, truncated: false } },
+  })
+  expect(
+    await call('/api/tasks/file/preview', { ...input, path: '../outside', full: true }),
+  ).toMatchObject({ status: 400 })
+  expect(
+    await call('/api/tasks/file/preview', { ...input, turnId: 'missing', full: true }),
+  ).toMatchObject({ status: 404 })
+  expect(JSON.stringify(s.store.task(task.id))).not.toContain(contents)
+})

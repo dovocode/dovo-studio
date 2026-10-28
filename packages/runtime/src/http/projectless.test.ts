@@ -99,7 +99,7 @@ it('creates named Dovo projects with separate managed folders and shares files b
   expect(first).toBe(project.path)
   await writeFile(join(first, 'notes.txt'), 'Shared notes')
   const files = await f.request('/api/tasks/files/list', { id: 'notes-two' })
-  expect(await files.json()).toEqual({ files: ['notes.txt'] })
+  expect(await files.json()).toEqual({ files: ['notes.txt'], truncated: false })
   await f.runtime.close()
   const reopened = await startRuntime({ databasePath: f.databasePath, ownerToken: token, port: 0 })
   cleanups.push(reopened.close)
@@ -272,9 +272,10 @@ it('offers No project on an empty server and isolates files per thread, preservi
   expect(one.startsWith(join(await realpath(f.root), 'scratch') + '/')).toBe(true)
   await writeFile(join(one, 'hello.txt'), 'Preserved')
   const files = await f.request('/api/tasks/files/list', { id: '../../one' })
-  expect(await files.json()).toEqual({ files: ['hello.txt'] })
+  expect(await files.json()).toEqual({ files: ['hello.txt'], truncated: false })
   expect(await (await f.request('/api/tasks/files/list', { id: 'two' })).json()).toEqual({
     files: [],
+    truncated: false,
   })
   await f.runtime.close()
   const reopened = await startRuntime({ databasePath: f.databasePath, ownerToken: token, port: 0 })
@@ -333,6 +334,7 @@ it.each(['scratch', 'folder'] as const)(
     expect(s.store.task('task').turns?.every((turn) => !turn.checkpoint && !turn.branch)).toBe(true)
     expect(await (await f.request('/api/tasks/files/list', { id: 'task' })).json()).toEqual({
       files: ['output.txt'],
+      truncated: false,
     })
   },
 )
