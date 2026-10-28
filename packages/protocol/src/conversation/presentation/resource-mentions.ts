@@ -67,9 +67,15 @@ export function resourceSuggestions(
           enabled: skill.enabled,
         }))
   return items
-    .filter((item) => item.name.toLowerCase().includes(needle))
+    .filter(
+      (item) =>
+        item.name.toLowerCase().includes(needle) ||
+        (item.kind === 'skill' && item.description?.toLowerCase().includes(needle)),
+    )
     .sort(
       (a, b) =>
+        Number(b.name.toLowerCase().includes(needle)) -
+          Number(a.name.toLowerCase().includes(needle)) ||
         Number(b.name.toLowerCase().startsWith(needle)) -
           Number(a.name.toLowerCase().startsWith(needle)) ||
         Number(b.enabled) - Number(a.enabled) ||

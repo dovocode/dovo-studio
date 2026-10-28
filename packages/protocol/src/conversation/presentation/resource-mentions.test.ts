@@ -39,6 +39,35 @@ it('suggests skills for $ and / and only enabled MCP servers for @', () => {
   expect(resourceSuggestions(resources, '@', '').map((item) => item.name)).toEqual(['linear'])
 })
 
+it('searches skill descriptions after name matches, preserving ordering and limits', () => {
+  const searchable = {
+    ...resources,
+    skills: [
+      { name: 'z-review', description: '', enabled: true, content: '' },
+      { name: 'review-off', description: '', enabled: false, content: '' },
+      { name: 'review-on', description: '', enabled: true, content: '' },
+      { name: 'alpha', description: 'REVIEW changes', enabled: true, content: '' },
+      { name: 'beta', description: 'Review changes', enabled: false, content: '' },
+    ],
+  }
+  for (const trigger of ['$', '/'] as const) {
+    expect(resourceSuggestions(searchable, trigger, 'review').map((item) => item.name)).toEqual([
+      'review-on',
+      'review-off',
+      'z-review',
+      'alpha',
+      'beta',
+    ])
+    expect(resourceSuggestions(searchable, trigger, 'review', 4).map((item) => item.name)).toEqual([
+      'review-on',
+      'review-off',
+      'z-review',
+      'alpha',
+    ])
+  }
+  expect(resourceSuggestions(searchable, '@', 'review')).toEqual([])
+})
+
 it('finds the skills and servers a message names', () => {
   const found = mentionedResources(
     '/release-notes for v2, check with @linear. Not $reviewer',

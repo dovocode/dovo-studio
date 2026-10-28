@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Image, Pressable, ScrollView, View } from 'react-native'
-import { File, Paths } from 'expo-file-system'
-import * as Sharing from 'expo-sharing'
+import { shareAttachment } from './attachment-share'
 import { Effect } from 'effect'
 import { clientTaskScope } from '@dovo/client-runtime'
 import {
@@ -129,8 +128,6 @@ export function AttachmentArchive({
   const share = () =>
     act(() =>
       mobileWorkflow(function* () {
-        if (!(yield* nativeEffect(() => Sharing.isAvailableAsync())))
-          throw new Error('File sharing is unavailable on this device')
         const source =
           current ??
           (yield* callEffect(
@@ -140,17 +137,7 @@ export function AttachmentArchive({
           ))
         const name = 'attachment' in source ? source.attachment.name : source.name
         const mime = 'attachment' in source ? source.attachment.mime : source.mime
-        const file = new File(Paths.cache, `archive-share-${randomUUID()}-${name}`)
-        yield* mobileWorkflow(function* () {
-          yield* nativeEffect(() => file.write(source.data, { encoding: 'base64' }))
-          yield* nativeEffect(() => Sharing.shareAsync(file.uri, { mimeType: mime }))
-        }).pipe(
-          Effect.ensuring(
-            Effect.sync(() => {
-              if (file.exists) file.delete()
-            }),
-          ),
-        )
+        yield* nativeEffect(() => shareAttachment(name, mime, source.data))
       }),
     )
 

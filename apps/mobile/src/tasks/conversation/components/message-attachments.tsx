@@ -8,8 +8,7 @@ import { Effect } from 'effect'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { Image, Pressable, View, ScrollView } from 'react-native'
 import { Text } from '../../../ui/content/text'
-import { File, Paths } from 'expo-file-system'
-import * as Sharing from 'expo-sharing'
+import { shareAttachment } from './attachment-share'
 import {
   attachmentReadSchema,
   taskImageReadSchema,
@@ -253,19 +252,12 @@ export function MessageAttachments({
                     return runClientEffect(
                       mobileWorkflow(function* () {
                         if (!preview) return
-                        if (!(yield* nativeEffect(() => Sharing.isAvailableAsync())))
-                          return yield* Effect.fail(
-                            new Error('File sharing is unavailable on this device'),
-                          )
-                        const file = new File(
-                          Paths.cache,
-                          `${preview.attachment.id}-${preview.attachment.name}`,
-                        )
-                        yield* nativeEffect(() => file.write(preview.data, { encoding: 'base64' }))
                         yield* nativeEffect(() =>
-                          Sharing.shareAsync(file.uri, {
-                            mimeType: preview.attachment.mime,
-                          }),
+                          shareAttachment(
+                            preview.attachment.name,
+                            preview.attachment.mime,
+                            preview.data,
+                          ),
                         )
                       }),
                     )

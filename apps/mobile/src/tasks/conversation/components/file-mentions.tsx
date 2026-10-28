@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Pressable, ScrollView } from 'react-native'
 import { Schema } from 'effect'
 import {
@@ -50,30 +50,43 @@ export function FileMentions({
 }) {
   const { colors } = useTheme()
 
-  const { call, connected } = useRuntime()
-  const [files, setFiles] = useState<string[]>([])
+  const { call, connected, activeId, connection } = useRuntime()
+  const [lookup, setLookup] = useState<{ key: string; call: typeof call; files: string[] }>()
   const mention = composerMention(text, caret)
   const trigger = mention?.trigger
   const query = mention?.query
-  const generation = useRef(0)
+  const key = JSON.stringify([
+    taskId,
+    activeId,
+    connection?.address,
+    connection?.token,
+    trigger,
+    query,
+    connected,
+  ])
+  const files = lookup?.key === key && lookup.call === call ? lookup.files : []
   useEffect(() => {
     if (trigger !== '@' || query === undefined || !connected) {
-      setFiles([])
+      setLookup(undefined)
       return
     }
-    const current = ++generation.current
+    setLookup(undefined)
+    let disposed = false
     const timer = setTimeout(() => {
       void call('/api/tasks/files', { id: taskId, query }, filesSchema).then(
         (result) => {
-          if (generation.current === current) setFiles(result.files)
+          if (!disposed) setLookup({ key, call, files: result.files })
         },
         () => {
-          if (generation.current === current) setFiles([])
+          if (!disposed) setLookup({ key, call, files: [] })
         },
       )
     }, 150)
-    return () => clearTimeout(timer)
-  }, [trigger, query, taskId, connected, call])
+    return () => {
+      disposed = true
+      clearTimeout(timer)
+    }
+  }, [trigger, query, taskId, connected, call, key])
   if (!mention) return null
   const suggestions: Suggestion[] = [
     ...(mention.trigger === '#'
@@ -95,7 +108,9 @@ export function FileMentions({
       kind: item.kind,
       value: item.name,
       detail:
-        item.kind === 'mcp' ? 'MCP server' : item.enabled ? 'Skill' : 'Skill · this message only',
+        item.kind === 'mcp'
+          ? 'MCP server'
+          : `${item.enabled ? 'Skill' : 'Skill · this message only'}${item.description ? ` · ${item.description}` : ''}`,
       muted: !item.enabled,
     })),
     ...(mention.trigger === '@'
@@ -151,7 +166,7 @@ export function FileMentions({
                 onChange(
                   insertMention(text, mention.start, caret, item.value, mention.trigger).text,
                 )
-              setFiles([])
+              setLookup(undefined)
             }}
             style={({ pressed }) => ({
               maxWidth: 240,
