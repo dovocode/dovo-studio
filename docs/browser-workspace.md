@@ -77,10 +77,12 @@ prompt is not evidence that PiP permission was denied. Website fullscreen reques
 owned browser tabs, expand the page to the native window bounds, and restore Studio's browser layout
 when fullscreen ends or the tab is hidden.
 
-Electron currently exposes an unsupported Document Picture-in-Picture API: its window immediately
-closes ([electron#39633](https://github.com/electron/electron/issues/39633)). Website views disable
-that capability so sites can detect its absence and choose their video PiP or ordinary popup
-fallback. No replacement Document PiP API is injected.
+Electron's native Document Picture-in-Picture window immediately closes
+([electron#39633](https://github.com/electron/electron/issues/39633)), so Studio keeps that native
+feature disabled and supplies a compatibility API in shared-browser website tabs. Websites can move
+their live call interface into a real same-origin, always-on-top window. Automatic entry requires
+the site's **Automatic call PiP** permission and a Media Session handler. See
+[Shared-browser APIs](browser-apis.md) for behavior, permissions and compatibility limits.
 
 Website notification clicks select the original tab in its owning Studio window and profile;
 service-worker notifications that call `clients.focus()` follow the same path. This does not enable

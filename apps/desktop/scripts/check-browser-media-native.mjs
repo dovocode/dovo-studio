@@ -427,6 +427,19 @@ app.whenReady().then(async () => {
     assert.ok(level > 0.05, \`Tab audio peak was \${level}.\`)
     report.capture = { frame, level }
 
+    stage('document-picture-in-picture')
+    assert.equal(await run('/requester', 'typeof documentPictureInPicture.requestWindow', false), 'function',
+      'Shared-browser pages expose the Document PiP compatibility API.')
+    assert.equal(await run('/requester', '(async()=>{window.documentPip=await documentPictureInPicture.requestWindow({width:420,height:280});return documentPictureInPicture.window===documentPip && documentPip.opener===window})()'), true,
+      'The production browser integration opens a real same-origin Document PiP window.')
+    await run('/requester', 'documentPip.close()', false)
+    for (let attempt=0; attempt<20; attempt++) {
+      if (await run('/requester', 'documentPictureInPicture.window===null', false)) break
+      await wait(50)
+    }
+    assert.equal(await run('/requester', 'documentPictureInPicture.window===null', false), true)
+    report.documentPictureInPicture = 'same-origin-window-open-and-close'
+
     stage('fullscreen')
     const fullscreenPage = page('/requester', WORK)
     const fullscreenView = studio.contentView.children.find((child) => child.webContents === fullscreenPage)!
@@ -520,8 +533,6 @@ app.whenReady().then(async () => {
 
     stage('picture-in-picture')
     const pipKey = 'studio:browser:requester'
-    assert.equal(await run('/requester', 'typeof documentPictureInPicture', false), 'undefined',
-      'Do not advertise the unsupported Document PiP API: websites must choose their fallback.')
     assert.equal(await run('/requester', 'document.pictureInPictureEnabled', false), true)
 
     await run('/requester', '(async()=>{window.pipVideo=document.createElement("video");pipVideo.muted=true;pipVideo.srcObject=new MediaStream(window.stream.getVideoTracks());document.body.append(pipVideo);await pipVideo.play()})()')
@@ -572,7 +583,7 @@ app.whenReady().then(async () => {
     await call({action:'close',key:standaloneKey})
     await show(pipKey, '/requester', 'work')
 
-    report.pictureInPicture = 'website-native-video-api-with-live-call-retention-and-document-fallback'
+    report.pictureInPicture = 'website-native-video-api-with-live-call-retention-and-document-compatibility'
 
     stage('keep-awake')
     const beforeAwake = new Set(webContents.getAllWebContents().map(contents => contents.id))
