@@ -1,3 +1,4 @@
+import { Icon } from '../../ui/controls/icon'
 import type { ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -42,13 +43,14 @@ export function ThreadStartModes({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Start in General"
+          accessibilityLabel="Start without a project"
           accessibilityHint="Start without a project"
           accessibilityState={{ selected, disabled }}
           disabled={disabled}
           onPress={onGeneral}
           style={{
             flexDirection: 'row',
+            gap: 6,
             alignItems: 'center',
             justifyContent: 'center',
             minHeight: 44,
@@ -62,7 +64,8 @@ export function ThreadStartModes({
             opacity: disabled ? 0.4 : 1,
           }}
         >
-          <Text style={{ color: colors.text, fontSize: 14, fontWeight: '500' }}>General</Text>
+          <Icon name="noProject" size={16} color={colors.muted} />
+          <Text style={{ color: colors.text, fontSize: 14, fontWeight: '500' }}>No Project</Text>
         </Pressable>
         {project}
       </View>

@@ -12,7 +12,6 @@ import {
   SHARED_BROWSER_LIBRARY_KEY,
   saveSharedBrowserTabs,
   recentBrowserTabs,
-  visitBrowserTab,
   reorderBrowserTabs,
   browserTabDragGroup,
   browserAddress,
@@ -414,7 +413,7 @@ function BrowserContent({
     if (tab.id === activeTab) return
     const now = Date.now()
     setTabs((previous) =>
-      visitBrowserTab(previous, tab.id, now).map((item) =>
+      previous.map((item) =>
         item.id === tab.id
           ? wakeBrowserTab(item, now)
           : item.id === activeTab

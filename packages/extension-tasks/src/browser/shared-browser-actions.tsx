@@ -356,7 +356,7 @@ export function SharedBrowserActions({
               <SelectContent>
                 {store.workspace.repositories.map((repo) => (
                   <SelectItem key={repo.id} value={repo.id}>
-                    {repo.kind === 'scratch' ? 'General' : repo.name}
+                    {repo.kind === 'scratch' ? 'No Project' : repo.name}
                   </SelectItem>
                 ))}
               </SelectContent>

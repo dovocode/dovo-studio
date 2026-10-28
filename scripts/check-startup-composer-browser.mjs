@@ -207,7 +207,7 @@ try {
   )
   assert.equal(await page.evaluate(() => window.saved.length), 1)
   // Visible start modes switch the temporary draft directly, without opening a picker or sending.
-  const general = page.getByRole('button', { name: 'Start in General', exact: true })
+  const general = page.getByRole('button', { name: 'Start without a project', exact: true })
   const scope = page.getByRole('button', { name: 'Start in Scope', exact: true })
   assert.equal(await scope.getAttribute('aria-pressed'), 'true')
   await general.click()

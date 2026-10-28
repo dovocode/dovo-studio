@@ -324,7 +324,7 @@ try {
     window.releaseMessage()
   })
   await page.waitForFunction(() => window.params.draft === undefined)
-  await page.getByLabel('General · a', { exact: true }).waitFor()
+  await page.getByLabel('No Project · a', { exact: true }).waitFor()
   assert.ok(!(await page.locator('header').innerText()).includes('No project'))
   await page.waitForFunction(() => window.originalInput.value === '')
   assert.deepEqual(await page.evaluate(() => window.navigation.map((n) => n.kind)), [

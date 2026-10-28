@@ -117,7 +117,7 @@ export function TaskProjectSheet({
           </Text>
         </View>
         <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
-          {repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'No project')}
+          {repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? 'No Project')}
         </Text>
         <PullStatus task={task} inline onOpen={(url) => dismissThen(() => onPulls(url))} />
         {onBrowser && (

@@ -466,6 +466,7 @@ function Message() {
           // Keep rich assistant text, links and tool controls independently accessible.
           // Grouping this whole gesture target hides native Markdown descendants on iOS.
           accessible={user}
+          testID={user ? 'User message bubble' : undefined}
           onPress={() => setShowActions((value) => !value)}
           accessibilityHint="Tap to show message actions and time"
           style={
@@ -476,7 +477,9 @@ function Message() {
                   paddingHorizontal: 13,
                   paddingVertical: 9,
                   borderRadius: 18,
-                  backgroundColor: colors.elevated,
+                  backgroundColor: colors.selection,
+                  borderWidth: 1,
+                  borderColor: colors.border,
                   gap: 4,
                 }
               : {
@@ -755,7 +758,7 @@ export function Conversation({
               <View style={{ padding: 12, minHeight: 44, alignItems: 'center' }}>
                 {task.autoProjectFallback && (
                   <Text style={[styles.muted, { fontSize: 12 }]}>
-                    Scope found no matching project; continued in General.
+                    Scope found no matching project; continued without a project.
                   </Text>
                 )}
                 {history.busy && <ActivityIndicator size="small" color={colors.muted} />}

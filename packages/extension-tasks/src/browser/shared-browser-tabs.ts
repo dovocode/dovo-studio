@@ -182,10 +182,6 @@ export function reorderBrowserTabs(
   return next
 }
 
-export function visitBrowserTab(tabs: BrowserTab[], id: string, now = Date.now()) {
-  const visitedAt = Math.max(now, ...tabs.map((tab) => (tab.visitedAt ?? 0) + 1))
-  return tabs.map((tab) => (tab.id === id ? { ...tab, visitedAt } : tab))
-}
 export function browserQuote(selection: { text: string; url: string; title: string }) {
   const source = `${selection.title || 'Browser selection'}\n${selection.url}`
   if (selection.text === '') return source

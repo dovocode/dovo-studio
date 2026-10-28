@@ -144,7 +144,7 @@ export function RunningTaskPreferences() {
       <SettingsGroup advanced title="Project mode (experimental)">
         <SettingRow
           label="Scope mode (experimental)"
-          description="Find primary and linked projects from the first message on this computer. If no project matches, continue in General."
+          description="Find primary and linked projects from the first message on this computer. If no project matches, continue without a project."
         >
           <Toggle
             label="Scope mode (experimental)"

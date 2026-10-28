@@ -46,7 +46,7 @@ window.initialTasks=[running,parent,child,
   ...Array.from({length:300},(_,i)=>finished('task-'+i,'Thread '+i,(i+2)*60000)),
   ...Array.from({length:120},(_,i)=>finished('settled-'+i,'Settled thread '+i,(i+400)*60000,{archived:true}))];
 // Snapshot retention keeps unchanged collections identical; the fixture does the same.
-const repositories=[{id:'repo',name:'Project',path:'/project',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:'stale-branch'}],agents=[],automations=[];
+const repositories=[{id:'repo',name:'Project',path:'/project',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:'stale-branch'}],agents=[{id:'agent',name:'Agent',provider:'codex',model:'fixture',instructions:'',permission:'ask',endpoint:''}],automations=[];
 const baseSnapshot={revision:1,questions:[],approvals:[],terminals:[],runs:[],devices:[],pendingDevices:[],acpInstallations:[]};
 const fail=async()=>{throw new Error('The sidebar check does not send runtime requests')};
 const actions={request:fail,readRuntime:fail,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},previewTask:fail,setWorkspace:()=>{},activeRuntimeId:'local',connection:{address:'http://local',token:'token'},runtimeRegistry:{version:1,activeId:'local',profiles:[]}};
@@ -495,14 +495,14 @@ try {
   )
   const general = page.getByRole('button', { name: /General conversation/ }).first()
   await general.waitFor()
-  assert.ok((await general.textContent()).includes('General'))
-  assert.equal(await general.locator('svg.lucide-message-circle').count(), 1)
+  assert.ok((await general.textContent()).includes('No Project'))
+  assert.equal(await general.locator('svg.lucide-message-circle-dashed').count(), 1)
   assert.equal(await general.locator('svg.lucide-git-branch, svg.lucide-git-fork').count(), 0)
-  assert.ok(!/stale-branch|Local checkout|No project/.test(await general.textContent()))
+  assert.ok(!/stale-branch|Local checkout/.test(await general.textContent()))
   await general.hover()
   const tooltip = page.getByRole('tooltip')
   await tooltip.waitFor()
-  assert.ok(!/stale-branch|Unknown branch|No project/.test(await tooltip.textContent()))
+  assert.ok(!/stale-branch|Unknown branch/.test(await tooltip.textContent()))
   // The General filter includes scratch threads on every computer, with distinct IDs.
   await page.evaluate(() => {
     window.setRemoteTasks([
@@ -555,7 +555,7 @@ try {
     ),
   )
   assert.ok((await general.textContent()).includes('Project'))
-  assert.equal(await general.locator('svg.lucide-message-circle').count(), 0)
+  assert.equal(await general.locator('svg.lucide-message-circle-dashed').count(), 0)
   assert.equal(await general.locator('svg.lucide-git-branch, svg.lucide-git-fork').count(), 0)
   assert.ok(!/stale-branch|Local checkout/.test(await general.textContent()))
   await page.evaluate(() => window.setProject(''))
@@ -606,16 +606,22 @@ try {
     await unreadTitle.evaluate((el) => getComputedStyle(el).color),
     'Read titles are visibly dimmer than unread titles',
   )
-  assert.equal(await unreadTitle.locator('..').getAttribute('data-unread'), 'true')
-  assert.equal(await readTitle.locator('..').getAttribute('data-unread'), null)
+  assert.equal(
+    await unreadTitle.locator('xpath=ancestor::button[1]').getAttribute('data-unread'),
+    'true',
+  )
+  assert.equal(
+    await readTitle.locator('xpath=ancestor::button[1]').getAttribute('data-unread'),
+    null,
+  )
   const metadataColor = await readTitle
-    .locator('..')
+    .locator('xpath=ancestor::button[1]')
     .locator('.studio-thread-card-context')
     .first()
     .evaluate((el) => getComputedStyle(el).color)
   assert.equal(
     await unreadTitle
-      .locator('..')
+      .locator('xpath=ancestor::button[1]')
       .locator('.studio-thread-card-context')
       .first()
       .evaluate((el) => getComputedStyle(el).color),
@@ -624,7 +630,10 @@ try {
   )
   await readTitle.click()
   await page.mouse.move(800, 600)
-  assert.equal(await readTitle.locator('..').getAttribute('aria-current'), 'true')
+  assert.equal(
+    await readTitle.locator('xpath=ancestor::button[1]').getAttribute('aria-current'),
+    'true',
+  )
   assert.equal(
     await readTitle.evaluate((el) => getComputedStyle(el).color),
     await unreadTitle.evaluate((el) => getComputedStyle(el).color),
@@ -637,20 +646,104 @@ try {
     await settledDetails.locator('summary').click()
   const compactTitle = page.getByText('Compact settled appearance', { exact: true })
   await compactTitle.waitFor()
-  await compactTitle.locator('..').getByLabel('Settled', { exact: true }).waitFor()
+  await compactTitle
+    .locator('xpath=ancestor::button[1]')
+    .getByLabel('Settled', { exact: true })
+    .waitFor()
   assert.equal(
     await compactTitle
-      .locator('..')
+      .locator('xpath=ancestor::button[1]')
       .getByLabel('Settled', { exact: true })
       .evaluate((el) => el.classList.contains('text-status-success')),
     true,
   )
   if (process.env.DOVO_UI_SCREENSHOT)
     await page.screenshot({ path: process.env.DOVO_UI_SCREENSHOT })
-  const compactBox = await compactTitle.locator('..').boundingBox()
+  const compactBox = await compactTitle.locator('xpath=ancestor::button[1]').boundingBox()
   assert.ok(
     compactBox && compactBox.height <= 38,
     'Settled rows retain the original compact height',
+  )
+  await page.evaluate(() =>
+    window.publish([
+      {
+        ...window.tasks[0],
+        id: 'projectless-layout',
+        status: 'draft',
+        turns: [],
+        repositoryId: 'scratch',
+        linkedCheckouts: undefined,
+        title: 'Projectless layout',
+        archived: false,
+        archivedAt: undefined,
+        agentId: 'agent',
+      },
+    ]),
+  )
+  const projectless = page.getByRole('button', { name: /Projectless layout/ }).first()
+  await projectless.waitFor()
+  const draftGlyph = projectless.getByLabel('Draft', { exact: true })
+  await draftGlyph.waitFor()
+  assert.ok(
+    (await draftGlyph.boundingBox()).x <
+      (await projectless.getByText('No Project', { exact: true }).boundingBox()).x,
+  )
+  assert.notEqual(
+    await projectless.evaluate((el) => getComputedStyle(el).backgroundColor),
+    'rgba(0, 0, 0, 0)',
+  )
+  assert.equal(await projectless.locator('[data-thread-execution] > *').count(), 2)
+  const titleLine = await projectless.locator('[data-thread-title]').boundingBox()
+  const executionLine = await projectless.locator('[data-thread-execution]').boundingBox()
+  assert.ok(
+    Math.abs(titleLine.y + titleLine.height / 2 - executionLine.y - executionLine.height / 2) < 1,
+    'Projectless runtime and agent share the title line',
+  )
+  assert.equal(await projectless.locator('.lucide-git-fork').count(), 0)
+  const stateColors = []
+  for (const [state, draft] of [
+    ['open', false],
+    ['closed', false],
+    ['merged', false],
+    ['open', true],
+  ]) {
+    await page.evaluate(
+      ({ state, draft }) =>
+        window.publish([
+          {
+            ...window.tasks[0],
+            linkedPullRequests: [
+              {
+                number: 42,
+                url: 'https://github.com/o/r/pull/42',
+                repositoryUrl: 'https://github.com/o/r',
+                title: 'PR',
+              },
+            ],
+            pullStatus: {
+              number: 42,
+              url: 'https://github.com/o/r/pull/42',
+              state,
+              draft,
+              checkedAt: new Date().toISOString(),
+            },
+          },
+        ]),
+      { state, draft },
+    )
+    const badge = projectless.getByLabel('1 linked pull request', { exact: true })
+    await badge.waitFor()
+    const numberColor = await badge.evaluate((el) => getComputedStyle(el).color)
+    assert.equal(
+      await badge.locator('svg').evaluate((el) => getComputedStyle(el).color),
+      numberColor,
+    )
+    stateColors.push(numberColor)
+  }
+  assert.equal(
+    new Set(stateColors).size,
+    4,
+    'Open, closed, merged and draft PRs have distinct state colors',
   )
   assert.deepEqual(errors, [])
   console.log(

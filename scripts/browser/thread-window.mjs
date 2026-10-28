@@ -272,6 +272,16 @@ try {
 
   // Use the real follow action: restoring virtualized turns can change the total height.
   // Following a stream at the live end keeps the window bounded.
+  // A native smooth search/rail jump may still be in flight when follow is requested.
+  await page.evaluate((selector) => {
+    const root = document.querySelector(selector)
+    root.scrollTo({ top: root.scrollTop - 3000, behavior: 'smooth' })
+  }, scroller)
+  await page.waitForFunction((selector) => {
+    const root = document.querySelector(selector)
+    const top = root.scrollTop
+    return new Promise((resolve) => requestAnimationFrame(() => resolve(root.scrollTop < top)))
+  }, scroller)
   await page.getByRole('button', { name: 'Scroll to latest message' }).click()
   await page.waitForFunction((selector) => {
     const root = document.querySelector(selector)

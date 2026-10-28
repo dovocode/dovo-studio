@@ -952,7 +952,7 @@ a.studio-project-row:hover {
 
 /* Titles carry selection and unread emphasis; metadata stays secondary. */
 .studio-thread-card-context {
-  color: var(--muted-foreground);
+  color: color-mix(in srgb, var(--muted-foreground) 98%, var(--background));
 }
 
 /* Keep keyboard focus visible when the OS supplies its own high-contrast palette. */

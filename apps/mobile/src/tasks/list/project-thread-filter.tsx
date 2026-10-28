@@ -62,7 +62,7 @@ export function ProjectThreadFilter({
         })}
       >
         <Icon
-          name={selected?.entries[0].repository.kind === 'scratch' ? 'chat' : 'folder'}
+          name={selected?.entries[0].repository.kind === 'scratch' ? 'noProject' : 'folder'}
           size={compact ? 14 : 17}
           color={selected ? colors.text : colors.muted}
         />
@@ -129,7 +129,7 @@ export function ProjectThreadFilter({
                   })}
                 >
                   <Icon
-                    name={group.entries[0].repository.kind === 'scratch' ? 'chat' : 'folder'}
+                    name={group.entries[0].repository.kind === 'scratch' ? 'noProject' : 'folder'}
                     size={18}
                     color={colors.muted}
                   />
@@ -139,7 +139,7 @@ export function ProjectThreadFilter({
                     </Text>
                     <Text numberOfLines={1} style={styles.muted}>
                       {group.entries[0].repository.kind === 'scratch'
-                        ? 'General conversations'
+                        ? 'Conversations without a project'
                         : (group.identity ?? 'Local repository')}
                     </Text>
                   </View>

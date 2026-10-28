@@ -13,6 +13,7 @@ export const iconAssets = {
   add: require('../../../assets/icons/add.png'),
   web: require('../../../assets/icons/web.png'),
   chat: require('../../../assets/icons/chat.png'),
+  noProject: require('../../../assets/icons/noProject.png'),
   device: require('../../../assets/icons/device.png'),
   laptop: require('../../../assets/icons/laptop.png'),
   server: require('../../../assets/icons/server.png'),

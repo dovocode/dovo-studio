@@ -1004,7 +1004,7 @@ try {
     await start.waitFor()
     assert.equal(await start.getByText('Browse threads', { exact: true }).count(), 0)
     for (const label of [
-      'Start in General',
+      'Start without a project',
       'Start in Scope',
       'Choose project',
       'Task server',
@@ -1057,7 +1057,7 @@ try {
         path: screenshots + '/native-adapter-' + viewport.width + 'x' + viewport.height + '.png',
       })
   }
-  const general = page.getByRole('button', { name: 'Start in General', exact: true })
+  const general = page.getByRole('button', { name: 'Start without a project', exact: true })
   const scope = page.getByRole('button', { name: 'Start in Scope', exact: true })
   const projects = page.getByRole('button', { name: 'Choose project', exact: true })
   assert.equal(
@@ -1108,7 +1108,7 @@ try {
   )
   await page.evaluate(() => window.setConnected(false))
   await page.waitForFunction(
-    () => document.querySelector('[aria-label="Start in General"]').disabled,
+    () => document.querySelector('[aria-label="Start without a project"]').disabled,
   )
   assert.equal(await general.isDisabled(), true)
   assert.equal(await scope.isDisabled(), true)
@@ -1118,7 +1118,7 @@ try {
     window.setInputs({ questions: [], approvals: [], autoProjectSelectionEnabled: false })
   })
   await page.waitForFunction(
-    () => !document.querySelector('[aria-label="Start in General"]').disabled,
+    () => !document.querySelector('[aria-label="Start without a project"]').disabled,
   )
   assert.equal(await scope.count(), 0)
   assert.equal(await projects.textContent(), 'Choose project')

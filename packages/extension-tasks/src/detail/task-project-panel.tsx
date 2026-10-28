@@ -38,7 +38,7 @@ import {
 import {
   FolderOpen,
   FolderSymlink,
-  MessageCircle,
+  MessageCircleDashed,
   ChevronDown,
   Download,
   GitCommitHorizontal,
@@ -474,13 +474,13 @@ export function TaskProjectPanel({
               .join(' · ')}
           >
             {repo?.kind === 'scratch' ? (
-              <MessageCircle className="size-9 shrink-0 text-muted-foreground" />
+              <MessageCircleDashed className="size-9 shrink-0 text-muted-foreground" />
             ) : (
               <ProjectIcon repository={repo} className="size-9 shrink-0 rounded-lg" />
             )}
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-sm font-medium text-foreground">
-                {repo?.kind === 'scratch' ? 'General' : (repo?.name ?? 'Project')}
+                {repo?.kind === 'scratch' ? 'No Project' : (repo?.name ?? 'Project')}
               </h2>
               <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span

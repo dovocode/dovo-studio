@@ -64,7 +64,7 @@ export function FolderPicker({
   const [error, setError] = useApplicationState('')
   const selected = repositories.find((repository) => repository.id === value)
   const label = (repository: Repository) =>
-    repository.kind === 'scratch' ? 'General' : repository.name
+    repository.kind === 'scratch' ? 'No Project' : repository.name
   const sources = runtime.overviews.filter(
     (entry) => allowMachineChange || entry.profile.id === runtime.activeId,
   )
@@ -148,7 +148,7 @@ export function FolderPicker({
           },
         ]}
       >
-        <Icon name={group.key === 'scratch' ? 'chat' : 'folder'} size={18} />
+        <Icon name={group.key === 'scratch' ? 'noProject' : 'folder'} size={18} />
         <View style={{ flex: 1 }}>
           <Text style={styles.text}>{group.name}</Text>
           {!!identityError && <Text style={styles.error}>{identityError}</Text>}
@@ -309,7 +309,7 @@ export function FolderPicker({
         ]}
       >
         <Icon
-          name={autoProject ? 'scope' : selected?.kind === 'scratch' ? 'chat' : 'folder'}
+          name={autoProject ? 'scope' : selected?.kind === 'scratch' ? 'noProject' : 'folder'}
           size={18}
         />
         <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
@@ -348,7 +348,7 @@ export function FolderPicker({
         <RuntimeIcon icon={runtime.snapshot?.runtimeIcon} size={prominent ? 14 : 18} />
         <Text
           numberOfLines={1}
-          style={[styles.text, { flex: 1, fontSize: prominent ? 12 : undefined }]}
+          style={[styles.text, { flex: 1 }, prominent ? { fontSize: 12 } : undefined]}
         >
           {runtimeComputerName(runtime)}
         </Text>
@@ -456,7 +456,7 @@ export function FolderPicker({
               <Text style={styles.muted}>
                 {autoProject
                   ? 'Select projects automatically on'
-                  : `Run ${selected?.kind === 'scratch' ? 'General' : selected?.name} on`}
+                  : `Run ${selected?.kind === 'scratch' ? 'No Project' : selected?.name} on`}
               </Text>
               {sources.map((source) => {
                 const target = (

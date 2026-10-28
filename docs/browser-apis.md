@@ -87,11 +87,12 @@ LAN/VPN addresses; only search terms go to the search provider.
 
 ## Tab order
 
-**Order tabs by activity** in Browser settings or Browser options is on by default. Selecting or
-navigating a normal tab updates its activity. Turn it off to keep a manual order and drag rows
-within their Active, Snoozed or Settled group. Pinned tabs always keep manual order and can be
-dragged independently of this preference. Alt+arrow keys reorder a focused draggable tab. Manual
-order is saved across restarts and retained while activity sorting is enabled.
+**Order tabs by activity** in Browser settings or Browser options is on by default. Navigating a
+normal tab updates its activity; selecting it or changing its title keeps the current order. Turn it
+off to keep a manual order and drag rows within their Active, Snoozed or Settled group. Pinned tabs
+always keep manual order and can be dragged independently of this preference. Alt+arrow keys reorder
+a focused draggable tab. Manual order is saved across restarts and retained while activity sorting
+is enabled.
 
 ## Website permissions and devices
 

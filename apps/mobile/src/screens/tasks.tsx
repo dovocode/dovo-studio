@@ -422,7 +422,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             ({ runtimeId, repository }) =>
               [
                 runtimeResourceKey(runtimeId, repository.id),
-                { key: group.key, name: repository.kind === 'scratch' ? 'General' : group.name },
+                { key: group.key, name: repository.kind === 'scratch' ? 'No Project' : group.name },
               ] as const,
           ),
         ),

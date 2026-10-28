@@ -38,7 +38,7 @@ export function ConversationContent({
 }
 
 export function ConversationScrollButton({ reduceMotion }: { reduceMotion?: boolean }) {
-  const { isAtBottom, scrollToBottom } = useStickToBottomContext()
+  const { isAtBottom, scrollToBottom, scrollRef } = useStickToBottomContext()
   return (
     !isAtBottom && (
       <Button
@@ -46,14 +46,20 @@ export function ConversationScrollButton({ reduceMotion }: { reduceMotion?: bool
         className="absolute bottom-3 left-1/2 rounded-full"
         size="icon"
         variant="outline"
-        onClick={() =>
+        onClick={() => {
+          // A search/turn jump can still be animating upward. Cancel that native animation
+          // before the follow controller takes over, or its scroll events can escape the lock.
+          const root = scrollRef.current
+          root?.scrollTo({ top: root.scrollTop, behavior: 'instant' })
           void scrollToBottom({
+            // Pending scroll/resize events from that jump must not cancel this explicit action.
+            ignoreEscapes: true,
             animation:
               (reduceMotion ?? window.matchMedia('(prefers-reduced-motion: reduce)').matches)
                 ? 'instant'
                 : undefined,
           })
-        }
+        }}
       >
         <ArrowDown />
       </Button>

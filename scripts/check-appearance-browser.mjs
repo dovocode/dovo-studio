@@ -38,6 +38,7 @@ function App(){useAppearance();return <TooltipProvider><div className="flex h-sc
 <main className="flex min-h-0 flex-1"><Appearance/>
 <aside style={{width:400}} className="flex shrink-0 flex-col gap-4 overflow-auto border-l p-4">
 <Button>Start task</Button><div data-testid="pull-states"><PullRequestIcon state="open"/><PullRequestIcon state="closed"/><PullRequestIcon state="merged"/></div><Message from="user"><MessageContent>Build this interface.</MessageContent></Message>
+<div data-preserved-lines><MessageResponse preserveLineBreaks>{'First line\\nSecond line\\nThird line'}</MessageResponse></div>
 <MessageResponse>{'Read the [docs](https://dovocode.com).\\n\\n~~~typescript\\n'+sample+'\\n~~~'}</MessageResponse>
 <div data-testid="diff" className="studio-code"><Diff/></div>
 <div className="flex h-40 shrink-0 flex-col"><TerminalSession id="fixture" active/></div>
@@ -149,6 +150,21 @@ try {
   }
   await page.goto('http://appearance.local/')
   await ready()
+  const preserved = page.locator('[data-preserved-lines] p')
+  await preserved.waitFor()
+  const lineTops = await preserved.evaluate((el) => {
+    const node = el.firstChild
+    return [0, 11, 23].map((offset) => {
+      const range = document.createRange()
+      range.setStart(node, offset)
+      range.setEnd(node, offset + 1)
+      return range.getBoundingClientRect().top
+    })
+  })
+  assert.ok(
+    lineTops[1] > lineTops[0] && lineTops[2] > lineTops[1],
+    'Entered single line breaks remain visible in sent messages',
+  )
   await page.waitForFunction(() =>
     window.terminals?.[0]?.buffer.active
       .getLine(0)

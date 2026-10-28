@@ -10,7 +10,7 @@ const mocks = {
   '../../runtime/connection/provider': `export const useRuntime=()=>({activeId:window.runtimeId??'computer',legacyDraftRuntimeId:null});`,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../ui/theme': `export const useTheme=()=>({styles:{chatText:{}}});`,
-  '../../ui/controls/field': `import {useRef,useImperativeHandle,useEffect} from 'react';export function Field({value,defaultValue,inputRef,onChangeText,onSelectionChange,editable,label,style,scrollEnabled}){const input=useRef();useEffect(()=>{window.mounts++},[]);useImperativeHandle(inputRef,()=>({focus:()=>input.current.focus(),clear:()=>{window.clears++;window.writes.push('');input.current.value=''},setNativeProps:props=>{window.writes.push(props.text);if(props.text!==defaultValue)input.current.value=props.text}}),[]);window.composerLayout=style.at(-1);return <textarea style={{height:style.at(-1).height,minHeight:style.at(-1).minHeight,maxHeight:style.at(-1).maxHeight}} data-scroll-enabled={String(scrollEnabled)} ref={input} aria-label={label} value={value} defaultValue={defaultValue} disabled={!editable} onChange={e=>onChangeText(e.target.value)} onSelect={e=>onSelectionChange({nativeEvent:{selection:{start:e.target.selectionStart,end:e.target.selectionEnd}}})}/>;}`,
+  '../../ui/controls/field': `import {useRef,useImperativeHandle,useEffect} from 'react';export function Field({value,defaultValue,inputRef,onChangeText,onSelectionChange,editable,label,style,scrollEnabled,submitBehavior}){const input=useRef();useEffect(()=>{window.mounts++},[]);useImperativeHandle(inputRef,()=>({focus:()=>input.current.focus(),clear:()=>{window.clears++;window.writes.push('');input.current.value=''},setNativeProps:props=>{window.writes.push(props.text);if(props.text!==defaultValue)input.current.value=props.text}}),[]);window.composerLayout=style.at(-1);return <textarea style={{height:style.at(-1).height,minHeight:style.at(-1).minHeight,maxHeight:style.at(-1).maxHeight}} data-submit-behavior={submitBehavior} data-scroll-enabled={String(scrollEnabled)} ref={input} aria-label={label} value={value} defaultValue={defaultValue} disabled={!editable} onChange={e=>onChangeText(e.target.value)} onSelect={e=>onSelectionChange({nativeEvent:{selection:{start:e.target.selectionStart,end:e.target.selectionEnd}}})}/>;}`,
 }
 const built = await build({
   stdin: {
@@ -99,6 +99,12 @@ try {
     { height: null, minHeight: 44, maxHeight: 144 },
   )
   assert.equal(await input.getAttribute('data-scroll-enabled'), 'true')
+  assert.equal(await input.getAttribute('data-submit-behavior'), 'newline')
+  await input.fill('First line')
+  await input.press('Enter')
+  await input.pressSequentially('Second line')
+  assert.equal(await page.evaluate(() => window.draft.text), 'First line\nSecond line')
+  await page.evaluate(() => window.apply('Mention @src/file.ts and dictated words'))
   await page.evaluate(() => window.send())
   assert.equal(await input.inputValue(), '')
   assert.equal(await input.evaluate((e) => e.style.height), '')

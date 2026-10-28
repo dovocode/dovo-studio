@@ -222,7 +222,7 @@ export function TaskContextMenu({
             }}
           >
             <Menu.Label className="max-w-64 truncate px-2.5 py-1.5 text-[0.625rem] text-muted-foreground">
-              {repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'General')} ·{' '}
+              {repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? 'No Project')} ·{' '}
               {source.name}
             </Menu.Label>
             {toolsMenu}

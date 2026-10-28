@@ -4,6 +4,7 @@ import { chromium } from 'playwright'
 
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
+  './task-empty-state': 'export const TaskEmptyState=()=>null;',
   './section-order-dialog': 'export const SectionOrderDialog=()=>null;',
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]}`,
   '@dovo/studio-core': `

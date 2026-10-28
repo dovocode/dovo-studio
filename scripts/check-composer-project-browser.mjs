@@ -106,14 +106,17 @@ try {
       .getByRole('button')
       .first()
       .getAttribute('aria-label'),
-    'General',
+    'No Project',
   )
   assert.equal(
     await page.getByRole('button', { name: 'Invalid project', exact: true }).isDisabled(),
     true,
   )
   await search.fill('Other')
-  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).isVisible(), true)
+  assert.equal(
+    await page.getByRole('button', { name: 'No Project', exact: true }).isVisible(),
+    true,
+  )
   await search.press('ArrowDown')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
@@ -134,7 +137,7 @@ try {
 
   await trigger.click()
   assert.equal(await page.getByRole('button', { name: 'Shared project', exact: true }).count(), 1)
-  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).count(), 1)
+  assert.equal(await page.getByRole('button', { name: 'No Project', exact: true }).count(), 1)
   assert.equal(
     await page.getByRole('button', { name: 'Remote notes', exact: true }).isVisible(),
     true,
@@ -154,7 +157,10 @@ try {
   assert.equal(await search.inputValue(), '')
   await search.fill('Missing')
   assert.equal(await page.getByRole('status').textContent(), 'No matching projects.')
-  assert.equal(await page.getByRole('button', { name: 'General', exact: true }).isVisible(), true)
+  assert.equal(
+    await page.getByRole('button', { name: 'No Project', exact: true }).isVisible(),
+    true,
+  )
   await search.fill('')
   await page.getByRole('button', { name: 'Add project on local machine', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
@@ -213,7 +219,7 @@ try {
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'local')
   await trigger.click()
   await search.fill('Nothing matches')
-  await page.getByRole('button', { name: 'General', exact: true }).click()
+  await page.getByRole('button', { name: 'No Project', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].repositoryId), 'scratch')
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
@@ -245,9 +251,9 @@ try {
   assert.match(await trigger.textContent(), /Scope \(disabled\)/)
   await trigger.click()
   assert.equal(await page.getByRole('button', { name: 'Scope mode', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'General', exact: true }).click()
+  await page.getByRole('button', { name: 'No Project', exact: true }).click()
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].autoProject), undefined)
-  assert.match(await trigger.textContent(), /General/)
+  assert.match(await trigger.textContent(), /No Project/)
 
   await page.getByRole('button', { name: 'Link projects', exact: true }).click()
   const linking = page.getByRole('dialog', { name: 'Linked projects', exact: true })
@@ -292,7 +298,7 @@ try {
       autoEnabled: true,
     }),
   )
-  const generalStart = page.getByRole('button', { name: 'Start in General', exact: true })
+  const generalStart = page.getByRole('button', { name: 'Start without a project', exact: true })
   const scopeStart = page.getByRole('button', { name: 'Start in Scope', exact: true })
   const projectStart = page.getByRole('button', { name: 'Choose project', exact: true })
   await scopeStart.click()

@@ -671,8 +671,8 @@ try {
     await recent
       .locator('button[aria-current], button[title]')
       .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('title'))),
-    rowOrder.toReversed(),
-    'Activity sorting puts the selected tab first',
+    rowOrder,
+    'Activity sorting preserves order on selection',
   )
   await page.reload()
   await loadStyles()
@@ -2439,7 +2439,16 @@ try {
   await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).check()
   await orderPage.keyboard.press('Escape')
   await row('normal-b').getByRole('button').first().click()
-  assert.equal((await visibleOrder())[2], 'normal-b', 'Activity mode follows selection')
+  assert.equal((await visibleOrder())[2], 'normal-a', 'Activity mode ignores selection')
+  await orderPage
+    .getByRole('textbox', { name: 'Preview URL', exact: true })
+    .fill('http://navigation.lan/new')
+  await orderPage.keyboard.press('Enter')
+  await orderPage.waitForFunction(
+    () =>
+      document.querySelectorAll('[data-browser-tab-id]')[2]?.dataset.browserTabId === 'normal-b',
+  )
+  assert.equal((await visibleOrder())[2], 'normal-b', 'Activity mode follows navigation')
   await orderPage.getByRole('button', { name: 'Browser options', exact: true }).click()
   await orderPage.getByRole('checkbox', { name: 'Order tabs by activity' }).uncheck()
   await orderPage.keyboard.press('Escape')

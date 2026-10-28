@@ -11,7 +11,6 @@ import {
   recentBrowserTabs,
   reorderBrowserTabs,
   saveSharedBrowserTabs,
-  visitBrowserTab,
   type BrowserTab,
 } from './shared-browser-tabs'
 afterEach(() => vi.unstubAllGlobals())
@@ -34,10 +33,10 @@ const remote: BrowserTab = {
 }
 it('orders by visits without changing session IDs, computer/profile ownership or the source list', () => {
   const tabs = [local, remote]
-  const visited = visitBrowserTab(tabs, 'local', 20)
-  expect(recentBrowserTabs(visited).map((tab) => tab.id)).toEqual(['local', 'remote'])
-  expect(visited[0]).toEqual({ ...local, visitedAt: 21 })
-  expect(visited[1]).toBe(remote)
+  const sorted = recentBrowserTabs(tabs)
+  expect(sorted.map((tab) => tab.id)).toEqual(['remote', 'local'])
+  expect(sorted[0]).toBe(remote)
+  expect(sorted[1]).toBe(local)
   expect(tabs).toEqual([local, remote])
 })
 it('keeps temporary previews out of the tab list and visits until promotion', () => {
@@ -68,7 +67,7 @@ it('restores Keep awake without changing the tab computer or profile', () => {
 it('keeps pinned tabs ahead of recent visits and restores them in their original profile', () => {
   storage()
   const tabs = [{ ...local, pinned: true, homeUrl: 'http://localhost:3000/home' }, remote]
-  expect(recentBrowserTabs(visitBrowserTab(tabs, 'remote', 100))[0].id).toBe('local')
+  expect(recentBrowserTabs(tabs)[0].id).toBe('local')
   saveSharedBrowserTabs({ tabs, active: 'remote' })
   expect(readSharedBrowserTabs().state?.tabs).toEqual(tabs)
 })
@@ -294,14 +293,13 @@ it('keeps pinned order independent of activity and restores manual order after a
     { ...remote, id: 'pin-b', pinned: true },
   ]
   const tabs = [...pinned, local, remote]
-  const visited = visitBrowserTab(tabs, 'pin-b', 100)
-  expect(recentBrowserTabs(visited).map((tab) => tab.id)).toEqual([
+  expect(recentBrowserTabs(tabs).map((tab) => tab.id)).toEqual([
     'pin-a',
     'pin-b',
     'remote',
     'local',
   ])
-  expect(recentBrowserTabs(visited, false).map((tab) => tab.id)).toEqual([
+  expect(recentBrowserTabs(tabs, false).map((tab) => tab.id)).toEqual([
     'pin-a',
     'pin-b',
     'local',

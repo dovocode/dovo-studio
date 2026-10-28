@@ -185,7 +185,7 @@ it('pins one project-free choice and groups the same project across servers', ()
       },
     },
   ])
-  expect(groups.map((group) => group.name)).toEqual(['General', 'Project'])
+  expect(groups.map((group) => group.name)).toEqual(['No Project', 'Project'])
   expect(groups[0].entries).toHaveLength(2)
   expect(groups[1].entries).toHaveLength(2)
 })
@@ -319,17 +319,17 @@ it('groups General across computers without treating it as a Git project', () =>
   const groups = projectMachineGroups(entries)
   expect(groups).toHaveLength(2)
   expect(groups.find((group) => group.key === 'scratch')).toMatchObject({
-    name: 'General',
+    name: 'No Project',
     identity: undefined,
     entries: entries.slice(0, 2),
   })
   expect(
     projectMachineGroups([...entries].reverse()).find((group) => group.key === 'scratch')?.name,
-  ).toBe('General')
+  ).toBe('No Project')
   expect(projectMachineGroups(entries, false)).toHaveLength(3)
   expect(projectMachineGroups(entries, false).map((group) => group.name)).toEqual([
     'General',
-    'General',
-    'General',
+    'No Project',
+    'No Project',
   ])
 })

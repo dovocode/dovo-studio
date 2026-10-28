@@ -65,7 +65,7 @@ export function TaskAgents({
             task: item,
             needsInput: false,
             projectName:
-              repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'No project'),
+              repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? 'No Project'),
             source: {
               runtimeId: profile?.id ?? null,
               name: profile?.name ?? 'This computer',

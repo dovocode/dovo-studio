@@ -13,6 +13,13 @@ function store() {
 }
 
 describe('conversation send attempts across navigation', () => {
+  it('preserves entered line breaks and indentation in sent messages and retries', () => {
+    const attempts = store()
+    const text = 'First line\nSecond line\n\n  Indented line'
+    const first = attempts.begin(scope, { ...input, text })
+    expect(first.text).toBe(text)
+    expect(attempts.begin(scope, { ...input, text })).toBe(first)
+  })
   it('freezes the steering run through a lost response and only targets a new run after an edit', () => {
     const attempts = store()
     const first = attempts.begin(scope, { ...input, mode: 'steer', runId: 'old-run' })

@@ -201,7 +201,7 @@ try {
     window.runtime.snapshot.workspace.repositories[0].kind = 'scratch'
     window.show('project')
   })
-  await page.getByText('General', { exact: true }).waitFor()
+  await page.getByText('No Project', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Link projects', exact: true }).click()
   assert.equal(await page.evaluate(() => window.projectsLinked), true)
   assert.deepEqual(errors, [])

@@ -56,7 +56,7 @@ export function TaskAgentLineage({ task }: { task: Task }) {
           needsInput: false,
           projectName:
             source.workspace.repositories.find((repo) => repo.id === item.repositoryId)?.name ??
-            'General',
+            'No Project',
           source,
         })),
       ),

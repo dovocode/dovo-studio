@@ -155,7 +155,7 @@ try {
   await page.getByRole('button', { name: 'Linux workstation', exact: true }).click()
   await page.waitForFunction(() => typeof window.cancelSwitch === 'function')
   assert.equal(
-    await page.getByRole('button', { name: 'Start in General', exact: true }).isDisabled(),
+    await page.getByRole('button', { name: 'Start without a project', exact: true }).isDisabled(),
     true,
   )
   assert.equal(
@@ -170,7 +170,7 @@ try {
   await page.getByRole('alert').filter({ hasText: 'Transfer fixture failed' }).waitFor()
   await page.waitForFunction(() => !document.querySelector('[aria-label="Message task"]').disabled)
   assert.equal(
-    await page.getByRole('button', { name: 'Start in General', exact: true }).isDisabled(),
+    await page.getByRole('button', { name: 'Start without a project', exact: true }).isDisabled(),
     false,
   )
   await page.keyboard.press('Escape')
@@ -574,7 +574,9 @@ try {
       )
       await page.getByRole('textbox', { name: 'Search projects' }).fill('notes')
       assert.equal(
-        await page.getByRole('button', { name: 'Start in General', exact: true }).isVisible(),
+        await page
+          .getByRole('button', { name: 'Start without a project', exact: true })
+          .isVisible(),
         true,
       )
       await page.screenshot({ path: screenshots + '/' + device.name + '-searched-projects.png' })

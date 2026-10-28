@@ -52,7 +52,7 @@ async function bundle(mobile) {
     '../controls/icon': `export const Icon=({name})=><span data-file-icon={name}/>;`,
     '../theme': `export const useTheme=()=>({mode:'dark',colors:{},styles:{}});`,
     './text': `export {Text} from 'react-native';`,
-    '../../ui/theme': `export const styles={},colors={};export const useTheme=()=>({styles,colors,mode:'dark'});`,
+    '../../ui/theme': `export const styles={},colors={selection:'#29203e',border:'#403040'};export const useTheme=()=>({styles,colors,mode:'dark'});`,
     '../../../ui/content/server-image': `export const ServerImage=({label})=><div data-image>{label}</div>;`,
     '../../ui/content/text': `export {Text} from 'react-native';`,
     '../../ui/controls/icon': `export const Icon=()=>null;`,
@@ -80,7 +80,7 @@ const Component=components.Message;return <MessageContext.Provider value={messag
     'react-native': `
 import {useEffect} from 'react';
 export const View=({children,style,accessibilityRole,accessibilityLabel})=><div style={style} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel}>{children}</div>,Text=({children,style})=><span style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;export const SectionList=()=>null;export const ScrollView=View;
-export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>:<div onClick={onPress}>{children}</div>;
+export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState,style,testID})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>:<div data-testid={testID} style={Array.isArray(style)?Object.assign({},...style):typeof style==='function'?style({pressed:false}):style} onClick={onPress}>{children}</div>;
 export const Alert={alert:message=>{throw Error(message)}};export const ActivityIndicator=()=> <span data-loading-history style={{display:"block",width:20,height:20}}/>;
 export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout,contentContainerStyle,onScrollBeginDrag,onScrollEndDrag})=>{window.readEarlier=()=>{onScrollBeginDrag();onScrollEndDrag({nativeEvent:{contentOffset:{y:500},velocity:{y:0}}})};const padding=Object.assign({},...contentContainerStyle);useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[onLayout]);return <div data-conversation-list style={{display:'flex',flexDirection:'column-reverse',paddingTop:padding.paddingTop,paddingBottom:padding.paddingBottom}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
   }
@@ -195,7 +195,14 @@ try {
     const header = page.getByRole('button', { name: /Worked for/ })
     await header.waitFor()
     assert.equal(await page.getByText('Response', { exact: true }).count(), 0)
-    if (mobile) assert.equal(await page.evaluate(() => window.recentLayouts), 1)
+    if (mobile) {
+      assert.equal(await page.evaluate(() => window.recentLayouts), 1)
+      const bubble = page.getByTestId('User message bubble').first()
+      assert.equal(
+        await bubble.evaluate((el) => getComputedStyle(el).backgroundColor),
+        'rgb(41, 32, 62)',
+      )
+    }
     if (mobile) {
       const list = page.locator('[data-conversation-list]')
       const before = await list.boundingBox()
@@ -226,9 +233,12 @@ try {
       await page.evaluate(() => window.setHistoryBusy(false))
       await page.locator('[data-loading-history]').waitFor({ state: 'detached' })
     }
-    const fallback = page.getByText('Scope found no matching project; continued in General.', {
-      exact: true,
-    })
+    const fallback = page.getByText(
+      'Scope found no matching project; continued without a project.',
+      {
+        exact: true,
+      },
+    )
     assert.equal(await fallback.count(), 0)
     await page.evaluate(() => window.setTask((task) => ({ ...task, autoProjectFallback: true })))
     await fallback.waitFor()

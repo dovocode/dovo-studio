@@ -261,7 +261,7 @@ it('projects General parents, remote children and orphaned local children into t
   expect(tree.roots.map((entry) => entry.task.id)).toEqual(['general', 'orphan'])
   const root = tree.roots.find((entry) => entry.task.id === 'general')!
   expect(root.needsInput).toBe(true)
-  expect(root.projectName).toBe('General')
+  expect(root.projectName).toBe('No Project')
   expect(tree.nodes.get(root.key)?.children[0]).toMatchObject({
     title: 'Remote project child',
     projectName: 'Project',

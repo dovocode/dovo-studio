@@ -70,7 +70,7 @@ export function projectMachineGroups<
       // Choose a stable label regardless of which runtime is currently selected.
       name:
         group.entries[0].repository.kind === 'scratch'
-          ? 'General'
+          ? 'No Project'
           : [...new Set(group.entries.map((entry) => entry.repository.name))].sort(
               (a, b) => a.length - b.length || a.localeCompare(b),
             )[0],
@@ -88,7 +88,7 @@ export function taskProjectGroups<T extends { repository: Repository; runtimeId:
   const scratch = entries.filter((entry) => entry.repository.kind === 'scratch')
   return [
     ...(scratch.length
-      ? [{ key: 'scratch', name: 'General', entries: scratch, identity: undefined }]
+      ? [{ key: 'scratch', name: 'No Project', entries: scratch, identity: undefined }]
       : []),
     ...projectMachineGroups(entries.filter((entry) => entry.repository.kind !== 'scratch')),
   ]

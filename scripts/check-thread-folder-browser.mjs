@@ -67,7 +67,7 @@ try {
     await page.getByRole('button', { name: 'Broken folder', exact: true }).isDisabled(),
     true,
   )
-  await page.getByRole('button', { name: 'General', exact: true }).click()
+  await page.getByRole('button', { name: 'No Project', exact: true }).click()
   assert.equal(await page.evaluate(() => window.task.repositoryId), 'chat')
   await page.getByRole('button', { name: 'Task project', exact: true }).click()
   await page.getByRole('button', { name: 'Add project on Selected machine', exact: true }).click()

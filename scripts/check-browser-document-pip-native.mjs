@@ -204,7 +204,9 @@ app.whenReady().then(async () => {
   await popup.waitForFunction(() => innerWidth === 420 && innerHeight === 280)
   await mkdir(join(root, 'work/browser-pip'), { recursive: true })
   await header.screenshot({ path: join(root, 'work/browser-pip/compact-controls.png') })
-  await header.getByRole('button', { name: 'Close picture-in-picture', exact: true }).click()
+  await header
+    .getByRole('button', { name: 'Close picture-in-picture', exact: true })
+    .click({ noWaitAfter: true })
   await owner.waitForFunction(
     () => !documentPictureInPicture.window && !!document.getElementById('call'),
   )
@@ -221,7 +223,9 @@ app.whenReady().then(async () => {
   const returned = app.windows().find((page) => page !== owner && page.url() === 'about:blank')
   assert.ok(returned)
   const returnHeader = await headerPage()
-  await returnHeader.getByRole('button', { name: 'Back to tab', exact: true }).click()
+  await returnHeader
+    .getByRole('button', { name: 'Back to tab', exact: true })
+    .click({ noWaitAfter: true })
   await owner.waitForFunction(() => !documentPictureInPicture.window)
   assert.equal(await app.evaluate(() => globalThis.pipReturned), true)
   await owner.click('#open')

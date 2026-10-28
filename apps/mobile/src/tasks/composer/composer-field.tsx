@@ -73,6 +73,7 @@ export const ComposerField = memo(function ComposerField({
       autoComplete="off"
       textContentType="none"
       multiline
+      submitBehavior="newline"
       // Fabric measures native text as it changes. A fixed height prevents that layout
       // from growing and can leave iOS content-size notifications stuck at one line.
       scrollEnabled

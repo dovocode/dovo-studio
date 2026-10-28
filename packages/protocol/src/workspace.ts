@@ -976,9 +976,9 @@ export type Repository = Schema.Schema.Type<typeof repositorySchema>
 /** Keep managed General threads consistent with runtimes that still save the legacy name. */
 export function projectDisplayName(
   repository: Pick<Repository, 'kind' | 'name'> | undefined,
-  fallback = 'No project',
+  fallback = 'No Project',
 ) {
-  return repository?.kind === 'scratch' ? 'General' : (repository?.name ?? fallback)
+  return repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? fallback)
 }
 /** Display context only: a General thread keeps its original execution project. */
 export function taskDisplayProject(

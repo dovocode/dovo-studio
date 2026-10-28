@@ -247,7 +247,7 @@ it('selects one settings layer and shares project identity across computers with
     },
   }
   expect(settingsProjectChoices([generalSource], 'linux')).toEqual([
-    { id: settingsProjectId(local, 'linux'), name: 'General' },
+    { id: settingsProjectId(local, 'linux'), name: 'No Project' },
   ])
   expect(
     resolveSettingsTarget([localSource], {

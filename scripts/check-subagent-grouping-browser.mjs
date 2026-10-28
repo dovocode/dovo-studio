@@ -778,7 +778,7 @@ try {
     })
     if ((await generalToggle.getAttribute('aria-expanded')) === 'false') await generalToggle.click()
     await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).waitFor()
-    await page.getByText('General', { exact: true }).first().waitFor()
+    await page.getByText('No Project', { exact: true }).first().waitFor()
     assert.equal(
       await page.getByText(/\d+ (pipeline watch|PR watch|failed checks\/runs)/).count(),
       0,

@@ -23,7 +23,7 @@ import {
   Folder,
   LoaderCircle,
   Plus,
-  MessageCircle,
+  MessageCircleDashed,
   ScanSearch,
 } from 'lucide-react'
 import { useRef, useState, type ComponentProps } from 'react'
@@ -210,7 +210,7 @@ export function ComposerProject({
         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
       >
         {group.key === 'scratch' ? (
-          <MessageCircle className="size-4 shrink-0" />
+          <MessageCircleDashed className="size-4 shrink-0" />
         ) : (
           <Folder className="size-4 shrink-0" />
         )}
@@ -318,7 +318,7 @@ export function ComposerProject({
                 {task.autoProject ? (
                   <ScanSearch className="size-3.5" />
                 ) : repository?.kind === 'scratch' ? (
-                  <MessageCircle className="size-3.5" />
+                  <MessageCircleDashed className="size-3.5" />
                 ) : (
                   <Folder className="size-3.5" />
                 )}
@@ -328,7 +328,7 @@ export function ComposerProject({
                       ? 'Scope'
                       : 'Scope (disabled)'
                     : repository?.kind === 'scratch'
-                      ? 'General'
+                      ? 'No Project'
                       : (repository?.name ?? 'Choose project')}
                 </span>
               </>
@@ -486,7 +486,7 @@ export function ComposerProject({
               {task.autoProject ? (
                 'Select projects automatically on'
               ) : (
-                <>Run {repository?.kind === 'scratch' ? 'General' : repository?.name} on</>
+                <>Run {repository?.kind === 'scratch' ? 'No Project' : repository?.name} on</>
               )}
             </p>
             {sources
@@ -550,15 +550,16 @@ export function ComposerProject({
           <div className="flex max-w-full flex-wrap items-center justify-center gap-1.5">
             <button
               type="button"
-              aria-label="Start in General"
+              aria-label="Start without a project"
               aria-pressed={!task.autoProject && repository?.kind === 'scratch'}
               disabled={locked || !scratchRepository}
               onClick={() => {
                 if (current && scratchRepository) void choose(current, scratchRepository)
               }}
-              className={`min-h-11 min-w-20 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${!task.autoProject && repository?.kind === 'scratch' ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
+              className={`inline-flex items-center justify-center gap-1.5 min-h-11 min-w-20 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${!task.autoProject && repository?.kind === 'scratch' ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
             >
-              General
+              <MessageCircleDashed className="size-4" aria-hidden="true" />
+              No Project
             </button>
             {projectControl}
           </div>

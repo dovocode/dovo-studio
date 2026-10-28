@@ -102,7 +102,7 @@ export function collectTasks(sources: readonly TaskSource[]): TaskEntry[] {
           needsInput: input.has(task.id),
           projectKey: taskCollectionKey(source.runtimeId, task.repositoryId),
           projectName:
-            repository?.kind === 'scratch' ? 'General' : (repository?.name ?? 'No project'),
+            repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? 'No Project'),
         }
       })
   })

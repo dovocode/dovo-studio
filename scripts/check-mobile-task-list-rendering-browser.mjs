@@ -12,7 +12,7 @@ const controls = `
 import {createContext,useContext,forwardRef,useImperativeHandle} from 'react';
 const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
 const nativeStyle=style=>{const result={...flat(style)};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(key in result){for(const axis of axes)result[axis]=result[key];delete result[key]}};if(typeof result.lineHeight==='number')result.lineHeight+='px';return result};
-export const View=({children,accessibilityLabel,style})=><div aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity}}>{children}</div>;
+export const View=({children,accessibilityLabel,style,testID})=><div data-testid={testID} aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity}}>{children}</div>;
 export const Text=({children,accessibilityRole,numberOfLines,style})=>{const value=flat(style),scale=window.rowFontScale??1;return <span role={accessibilityRole} style={window.rowLayout?{display:'block',minWidth:0,...nativeStyle({...value,fontSize:(value.fontSize??13)*scale,...(value.lineHeight?{lineHeight:value.lineHeight*scale}:{})}),...(numberOfLines===1?{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}:{})}:value}>{children}</span>};
 export const Image=()=>null;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
@@ -49,7 +49,7 @@ const stubs = [
   { path: 'react-native', contents: controls },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=({color,accessibilityLabel,size=12})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as Pin,Icon as Save,Icon as Network};`,
+    contents: `const Icon=({color,accessibilityLabel,size=12})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Save,Icon as Network};`,
   },
   {
     path: '@dovo/protocol',
@@ -134,6 +134,11 @@ export const startRuntimeSync=(connection,options)=>{
   },
   { path: './settings-controls', importer: mobile + 'screens/tasks.tsx', contents: controls },
   {
+    path: '../../ui/content/runtime-icon',
+    importer: mobile + 'tasks/list/device-label.tsx',
+    contents: `export const RuntimeIcon=({size,color})=><svg width={size} height={size} style={{color,flexShrink:0}}/>;`,
+  },
+  {
     path: '../../agents/harness-icon',
     importer: mobile + 'tasks/list/task-list-row.tsx',
     contents: `export const HarnessIcon=({provider,size})=><span data-harness={provider} aria-hidden style={{display:'block',width:size,height:size,flexShrink:0}}/>;`,
@@ -142,11 +147,6 @@ export const startRuntimeSync=(connection,options)=>{
     path: '../../agents/use-model-catalog',
     importer: mobile + 'tasks/list/task-list-row.tsx',
     contents: `export const useCachedModelCatalog=()=>({modelName:'Fixture model',catalog:null});`,
-  },
-  {
-    path: './device-label',
-    importer: mobile + 'tasks/list/task-list-row.tsx',
-    contents: `export const DeviceLabel=()=>null;`,
   },
   {
     path: './task-row-menu',
@@ -276,6 +276,7 @@ try {
           muted: '#aaa',
           accent: '#69f',
           success: '#4b8',
+          warning: '#e6b450',
         },
       }
     })
@@ -320,7 +321,7 @@ try {
                 },
               ],
             },
-            'task-1': { title: 'General ' + scale, repositoryId: 'scratch', agentId: '' },
+            'task-1': { title: 'General ' + scale, repositoryId: 'scratch', agentId: 'agent' },
             'task-2': { title: 'Settled ' + scale, archived: true },
             'task-3': { title: 'Draft ' + scale, status: 'draft' },
           })
@@ -336,7 +337,7 @@ try {
           sizes.every(
             (size, index) =>
               size &&
-              (index === 4
+              (index === 4 || index === 3
                 ? size.height < sizes[0].height
                 : Math.abs(size.height - sizes[0].height) < 0.5),
           ),
@@ -366,8 +367,29 @@ try {
             assert.ok(Math.abs(title.y + title.height / 2 - sizes[4].y - sizes[4].height / 2) < 1)
             continue
           }
+          if (id === 'task-3') {
+            assert.equal(await row.getByLabel('Draft', { exact: true }).count(), 1)
+            assert.ok(
+              (await row.getByLabel('Draft', { exact: true }).boundingBox()).x <
+                (await row.getByText('Project', { exact: true }).boundingBox()).x,
+            )
+            assert.equal(
+              await row
+                .locator('xpath=../..')
+                .getByTestId('Draft highlight')
+                .evaluate((el) => getComputedStyle(el).opacity),
+              '0.06',
+            )
+          }
+          if (id === 'task-1') {
+            const execution = await row.getByTestId('thread-execution').boundingBox()
+            assert.ok(
+              Math.abs(title.y + title.height / 2 - execution.y - execution.height / 2) < 1,
+              'Runtime shares the projectless title line',
+            )
+          }
           const project = await row
-            .getByText(id === 'task-1' ? 'General' : 'Project', { exact: true })
+            .getByText(id === 'task-1' ? 'No Project' : 'Project', { exact: true })
             .boundingBox()
           assert.ok(
             project.y + project.height <= title.y,
@@ -613,7 +635,7 @@ try {
     await pullBadge
       .getByText('2 PRs', { exact: true })
       .evaluate((element) => getComputedStyle(element).color),
-    'rgb(119, 119, 119)',
+    'rgb(0, 238, 136)',
   )
   assert.equal(
     await pullBadge
@@ -883,14 +905,14 @@ try {
     }),
   )
   const general = page.getByTestId('Task task-5')
-  assert.ok((await general.textContent()).includes('General'))
-  assert.ok(!/stale-branch|Project checkout|No project/.test(await general.textContent()))
+  assert.ok((await general.textContent()).includes('No Project'))
+  assert.ok(!/stale-branch|Project checkout/.test(await general.textContent()))
   assert.ok(!/Local checkout|Worktree/.test(await general.getAttribute('aria-label')))
   await page.getByRole('button', { name: 'Details task-5', exact: true }).click()
   const generalDetails = page.getByRole('dialog', { name: 'Task details' })
   await generalDetails.waitFor()
-  assert.ok((await generalDetails.textContent()).includes('General'))
-  assert.ok(!/stale-branch|Project checkout|No project/.test(await generalDetails.textContent()))
+  assert.ok((await generalDetails.textContent()).includes('No Project'))
+  assert.ok(!/stale-branch|Project checkout/.test(await generalDetails.textContent()))
   await page.getByRole('button', { name: 'Close details', exact: true }).click()
   await page.evaluate(() =>
     window.publish(

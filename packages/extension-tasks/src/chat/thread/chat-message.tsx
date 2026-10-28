@@ -229,7 +229,11 @@ export const ChatMessage = memo(function ChatMessage({
                 </span>
               )}
               {message.text ? (
-                <TaskMessageResponse onUseTemplate={onUseTemplate} taskId={taskId}>
+                <TaskMessageResponse
+                  onUseTemplate={onUseTemplate}
+                  taskId={taskId}
+                  preserveLineBreaks
+                >
                   {message.text}
                 </TaskMessageResponse>
               ) : (

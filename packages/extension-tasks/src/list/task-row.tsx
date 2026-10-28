@@ -31,9 +31,8 @@ import {
   CircleX,
   CircleStop,
   FilePenLine,
-  GitFork,
   MessageCircleQuestion,
-  MessageCircle,
+  MessageCircleDashed,
   Save,
   type LucideIcon,
   CircleCheck,
@@ -59,7 +58,6 @@ const statusIcons: Record<string, LucideIcon> = {
   Waiting: AlarmClock,
   Settled: CircleCheck,
   Archived: Archive,
-  Draft: FilePenLine,
   'Needs input': MessageCircleQuestion,
   'Saving changes': Save,
 }
@@ -106,7 +104,7 @@ function TaskRowView({
   const displayProject = taskDisplayProject(task, owner.repositories)
   const general = repository?.kind === 'scratch'
   const projectName =
-    displayProject?.kind === 'scratch' ? 'General' : (displayProject?.name ?? 'No project')
+    displayProject?.kind === 'scratch' ? 'No Project' : (displayProject?.name ?? 'No Project')
   // The list retains this projection across transcript-only updates, including native agents.
   const rootThread = useMemo(
     () =>
@@ -137,6 +135,7 @@ function TaskRowView({
     [childRows, task.acknowledgedSubagentFailures],
   )
   const compact = task.archived || !!task.archivedAt
+  const draft = task.status === 'draft' && !compact
   const childCount = summary.total
   const childrenDetail = [
     `${childCount} subthread${childCount === 1 ? '' : 's'}`,
@@ -157,7 +156,7 @@ function TaskRowView({
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const projectIcon =
     displayProject?.kind === 'scratch' ? (
-      <MessageCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <MessageCircleDashed className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
     ) : (
       <ProjectIcon repository={displayProject} className="size-4 shrink-0" />
     )
@@ -196,7 +195,7 @@ function TaskRowView({
   const compactStatus = offline ? 'Offline' : presentation.compactLabel
   const StatusIcon = offline
     ? CloudOff
-    : ['Review', 'Finished'].includes(presentation.state)
+    : ['Review', 'Finished', 'Draft'].includes(presentation.state)
       ? undefined
       : (statusIcons[presentation.state] ?? CircleDashed)
   const statusTone = cn(
@@ -222,6 +221,18 @@ function TaskRowView({
     agent?.name ??
     (provider ? providers[provider].short : 'Unassigned agent')
   const agentDetail = `${agentName}${provider ? ` · ${providers[provider].name}` : ''}`
+  const executionIcons = (
+    <span className="inline-flex shrink-0 items-center gap-1" data-thread-execution>
+      <RuntimeIcon
+        icon={owner.runtimeIcon}
+        className="size-3 shrink-0"
+        aria-label={host ?? 'Unknown host'}
+      />
+      {provider && (
+        <AgentAvatar provider={provider} customIcon={customIcon} className="size-3 shrink-0" />
+      )}
+    </span>
+  )
   const grouped = compact && !!childCount && open
   const highlighted = selected || multiSelected || !!selectedChildId
   return (
@@ -247,12 +258,17 @@ function TaskRowView({
                 'mb-0.5 h-auto w-full min-w-0 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
                 compact
                   ? 'min-h-9 flex-row items-center gap-2 py-1.5'
-                  : 'min-h-[68px] flex-col items-stretch gap-0.5 py-1.5',
+                  : cn(
+                      'flex-col items-stretch gap-0.5 py-1.5',
+                      general && !linkedPulls.length ? 'min-h-[48px]' : 'min-h-[68px]',
+                    ),
                 grouped
                   ? 'mb-0 rounded-b-none border-0 bg-transparent hover:bg-accent/30'
                   : highlighted
                     ? 'border-transparent bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
-                    : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
+                    : draft
+                      ? 'bg-status-warning/5 hover:bg-status-warning/10 group-hover/task:bg-status-warning/10'
+                      : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
               )}
               onClick={onSelect}
               disabled={disabled}
@@ -262,12 +278,18 @@ function TaskRowView({
               ) : (
                 <span
                   className={cn(
-                    'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
+                    'studio-thread-card-context mb-1 flex min-w-0 items-center gap-1.5 text-xs leading-4',
                     !!childCount && 'pr-7',
                     editable &&
                       'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                   )}
                 >
+                  {draft && (
+                    <FilePenLine
+                      aria-label="Draft"
+                      className="size-3.5 shrink-0 text-status-warning"
+                    />
+                  )}
                   {projectIcon}
                   <span
                     className="min-w-0 flex-1 truncate"
@@ -276,9 +298,6 @@ function TaskRowView({
                     {projectName}
                   </span>
                   {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-                  {!general && task.execution === 'worktree' && (
-                    <GitFork className="size-3 shrink-0" aria-label="Worktree checkout" />
-                  )}
                   <span className={cn('flex shrink-0 items-center gap-1 text-xs', statusTone)}>
                     {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
                     {compactStatus}
@@ -287,7 +306,7 @@ function TaskRowView({
               )}
               <span
                 className={cn(
-                  'block min-w-0 truncate text-sm font-medium leading-5',
+                  'flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5',
                   compact ? 'flex-1' : 'w-full',
                   compact && !!childCount && 'pr-7',
                   highlighted || unread
@@ -297,7 +316,10 @@ function TaskRowView({
                     'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                 )}
               >
-                {task.title}
+                <span className="min-w-0 flex-1 truncate" data-thread-title>
+                  {task.title}
+                </span>
+                {general && executionIcons}
               </span>
               {compact && StatusIcon && (
                 <span
@@ -308,7 +330,7 @@ function TaskRowView({
                   <StatusIcon className="size-3.5" aria-hidden="true" />
                 </span>
               )}
-              {!compact && (
+              {!compact && (!general || !!linkedPulls.length) && (
                 <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
                   {!general && (
                     <>
@@ -319,7 +341,10 @@ function TaskRowView({
                   {general && <span className="min-w-0 flex-1" />}
                   {!!linkedPulls.length && (
                     <span
-                      className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground"
+                      className={cn(
+                        'inline-flex shrink-0 items-center gap-0.5',
+                        pullRequestIconTone(badgeStatus?.state, badgeStatus?.draft),
+                      )}
                       aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
                       title={linkedPulls
                         .map((pull) => `#${pull.number} · ${pull.title}`)
@@ -346,18 +371,7 @@ function TaskRowView({
                       )}
                     </span>
                   )}
-                  <RuntimeIcon
-                    icon={owner.runtimeIcon}
-                    className="size-3 shrink-0"
-                    aria-label={host ?? 'Unknown host'}
-                  />
-                  {provider && (
-                    <AgentAvatar
-                      provider={provider}
-                      customIcon={customIcon}
-                      className="size-3 shrink-0"
-                    />
-                  )}
+                  {!general && executionIcons}
                 </span>
               )}
             </Button>
@@ -372,7 +386,7 @@ function TaskRowView({
             <div className="space-y-2 text-xs text-muted-foreground">
               <p className="flex items-center gap-2">
                 {general ? (
-                  <MessageCircle className="size-3 shrink-0" />
+                  <MessageCircleDashed className="size-3 shrink-0" />
                 ) : (
                   <FolderGit2 className="size-3 shrink-0" />
                 )}

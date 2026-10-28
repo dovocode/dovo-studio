@@ -21,9 +21,8 @@ import {
   CloudOff,
   FilePenLine,
   GitBranch,
-  GitFork,
   MessageCircleQuestion,
-  MessageCircle,
+  MessageCircleDashed,
   Pin,
   Network,
   Save,
@@ -42,7 +41,7 @@ import {
   resolveTaskAgent,
   type RuntimeTask,
 } from '@dovo/protocol'
-import { PullRequestIcon } from '../../ui/content/pull-request-icon'
+import { PullRequestIcon, usePullRequestColor } from '../../ui/content/pull-request-icon'
 import { DeviceLabel } from './device-label'
 import { TaskRowMenu } from './task-row-menu'
 import { TaskSwipeActions } from './task-swipe-actions'
@@ -67,7 +66,6 @@ const statusIcons: Record<string, LucideIcon> = {
   Waiting: AlarmClock,
   Settled: CircleCheck,
   Archived: Archive,
-  Draft: FilePenLine,
   'Needs input': MessageCircleQuestion,
   'Saving changes': Save,
 }
@@ -120,9 +118,11 @@ function TaskListRowView({
   const task = row.task,
     repository = owner.repository,
     agent = resolveTaskAgent(task, owner.agents)
-  const pulls = taskPullLinks(task)
-  const pullStatus =
-    task.pullStatus ?? (pulls[0] ? taskPullStatusFor(task, pulls[0].url) : undefined)
+  const pulls = taskPullLinks(task).sort(
+    (a, b) => Number(b.url === task.pullStatus?.url) - Number(a.url === task.pullStatus?.url),
+  )
+  const pullStatus = pulls[0] ? taskPullStatusFor(task, pulls[0].url) : undefined
+  const pullColor = usePullRequestColor(pullStatus?.state, pullStatus?.draft)
   const executionDevice = row.runtimeName
   const { modelName, catalog } = useCachedModelCatalog(agent, owner.profile)
   const providerName = agent
@@ -151,7 +151,7 @@ function TaskListRowView({
   const displayProject = owner.displayProject ?? repository
   const general = repository?.kind === 'scratch'
   const projectName =
-    displayProject?.kind === 'scratch' ? 'General' : row.projectName || 'No project'
+    displayProject?.kind === 'scratch' ? 'No Project' : row.projectName || 'No Project'
   const worktree = !general && task.execution === 'worktree'
   // "Review · 23m" → state "Review" and a right-aligned age "23m".
   const [state, age] = /^(.*) · (now|\d+[mhd])$/.exec(status)?.slice(1) ?? [status, '']
@@ -172,6 +172,7 @@ function TaskListRowView({
   const icon = projectIcon(displayProject)
   const StatusIcon = statusIcons[state]
   const settled = task.archived || !!task.archivedAt
+  const draft = task.status === 'draft' && !settled
   const childRows = useMemo(() => (thread ? threadChildRows(thread) : []), [thread])
   const summary = useMemo(
     () => threadTreeSummary(childRows, task.acknowledgedSubagentFailures),
@@ -193,7 +194,9 @@ function TaskListRowView({
   const compactTitleHeight = Math.ceil(18 * fontScale)
   const compactContextHeight = Math.max(16, Math.ceil(16 * fontScale))
   const headerHeight = dense ? compactContextHeight : Math.max(26, Math.ceil(16 * fontScale))
-  const compactRowHeight = 12 + compactTitleHeight + 6 + compactContextHeight * 2
+  const hasFooter = !general || pulls.length > 0 || row.reachability === 'offline'
+  const compactRowHeight =
+    16 + compactTitleHeight + (hasFooter ? 6 : 3) + compactContextHeight * (hasFooter ? 2 : 1)
   const badgeSize = dense ? Math.max(16, Math.ceil(12 * fontScale)) : 20
   const contextSize = dense ? 11 : 12
   const contextText = { fontSize: contextSize, lineHeight: dense ? 14 : 16 }
@@ -207,7 +210,7 @@ function TaskListRowView({
           justifyContent: 'center',
         }}
       >
-        <MessageCircle size={dense ? 14 : 16} color={colors.muted} />
+        <MessageCircleDashed size={dense ? 14 : 16} color={colors.muted} />
       </View>
     ) : (
       <View
@@ -230,6 +233,21 @@ function TaskListRowView({
         )}
       </View>
     )
+  const executionIcons = (
+    <View
+      testID="thread-execution"
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '40%' }}
+    >
+      <DeviceLabel
+        runtimeIcon={owner.runtimeIcon}
+        task={task}
+        runtimeHost={row.runtimeName}
+        compact
+        fontSize={contextSize}
+      />
+      {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
+    </View>
+  )
   const title = (
     <Text
       numberOfLines={1}
@@ -270,6 +288,22 @@ function TaskListRowView({
         backgroundColor: selected || current ? colors.selection : colors.background,
       }}
     >
+      {draft && (
+        <View
+          pointerEvents="none"
+          testID="Draft highlight"
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            borderRadius: 12,
+            backgroundColor: colors.warning,
+            opacity: 0.06,
+          }}
+        />
+      )}
       <View style={{ flexDirection: 'row', alignItems: settled ? 'center' : 'flex-start' }}>
         {settled && (
           <Pressable
@@ -350,6 +384,7 @@ function TaskListRowView({
               style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}
             >
               {title}
+              {general && executionIcons}
               {statusIndicator}
             </View>
           ) : (
@@ -360,19 +395,22 @@ function TaskListRowView({
                   alignItems: 'center',
                   gap: 6,
                   minHeight: headerHeight,
+                  marginBottom: 4,
                   height: dense ? compactContextHeight : undefined,
                   paddingRight:
                     (car || dense || settled ? 0 : 32) + (!settled && childCount > 0 ? 44 : 0),
                 }}
               >
+                {draft && (
+                  <FilePenLine accessibilityLabel="Draft" size={14} color={colors.warning} />
+                )}
                 {!settled && projectBadge}
                 <Text numberOfLines={1} style={[styles.muted, { flex: 1, ...contextText }]}>
                   {projectName}
                 </Text>
                 {task.pinned && <Pin size={12} color={colors.muted} />}
-                {worktree && <GitFork size={12} color={colors.muted} />}
                 {statusIndicator}
-                {!!agent && (!showDevice || car) && (
+                {!general && !!agent && (!showDevice || car) && (
                   <HarnessIcon provider={agent.provider} size={12} />
                 )}
               </View>
@@ -388,77 +426,80 @@ function TaskListRowView({
                 }}
               >
                 {title}
+                {general && executionIcons}
               </View>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  flexWrap: 'nowrap',
-                  height: dense ? compactContextHeight : undefined,
-                  overflow: dense ? 'hidden' : undefined,
-                  gap: 6,
-                }}
-              >
-                {!general && (
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: dense ? 4 : 6,
-                      flex: 1,
-                      minWidth: 0,
-                    }}
-                  >
-                    <GitBranch size={12} color={colors.muted} />
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.muted, { flexShrink: 1, ...contextText }]}
+              {hasFooter && (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    flexWrap: 'nowrap',
+                    height: dense ? compactContextHeight : undefined,
+                    overflow: dense ? 'hidden' : undefined,
+                    gap: 6,
+                  }}
+                >
+                  {!general && (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: dense ? 4 : 6,
+                        flex: 1,
+                        minWidth: 0,
+                      }}
                     >
-                      {branch}
-                    </Text>
-                  </View>
-                )}
-                {general && !dense && <View style={{ flex: 1 }} />}
-                {showDevice && !car && (
-                  <DeviceLabel
-                    runtimeIcon={owner.runtimeIcon}
-                    task={task}
-                    runtimeHost={row.runtimeName}
-                    compact
-                    fontSize={contextSize}
-                    flexible={dense}
-                  />
-                )}
-                {showDevice && !car && !!agent && (
-                  <HarnessIcon provider={agent.provider} size={12} />
-                )}
-                {row.reachability === 'offline' &&
-                  (dense ? (
-                    <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
-                  ) : (
-                    <Text style={[styles.muted, contextText]}>Offline</Text>
-                  ))}
-                {pulls.length > 0 && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                    <PullRequestIcon
-                      state={pullStatus?.state}
-                      draft={pullStatus?.draft}
-                      size={12}
+                      <GitBranch size={12} color={colors.muted} />
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.muted, { flexShrink: 1, ...contextText }]}
+                      >
+                        {branch}
+                      </Text>
+                    </View>
+                  )}
+                  {general && !dense && <View style={{ flex: 1 }} />}
+                  {!general && showDevice && !car && (
+                    <DeviceLabel
+                      runtimeIcon={owner.runtimeIcon}
+                      task={task}
+                      runtimeHost={row.runtimeName}
+                      compact
+                      fontSize={contextSize}
+                      flexible={dense}
                     />
-                    <Text numberOfLines={1} style={{ color: colors.muted, ...contextText }}>
-                      {pulls.length > 1 ? `${pulls.length} PRs` : `#${pulls[0].number}`}
-                    </Text>
-                  </View>
-                )}
-                {pulls.length <= 1 && task.pullStatus?.stack && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                    <Icon name="stack" size={12} color={colors.accent} />
-                    <Text numberOfLines={1} style={{ color: colors.accent, ...contextText }}>
-                      {pullStackLabel(task.pullStatus.stack)}
-                    </Text>
-                  </View>
-                )}
-              </View>
+                  )}
+                  {!general && showDevice && !car && !!agent && (
+                    <HarnessIcon provider={agent.provider} size={12} />
+                  )}
+                  {row.reachability === 'offline' &&
+                    (dense ? (
+                      <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
+                    ) : (
+                      <Text style={[styles.muted, contextText]}>Offline</Text>
+                    ))}
+                  {pulls.length > 0 && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <PullRequestIcon
+                        state={pullStatus?.state}
+                        draft={pullStatus?.draft}
+                        size={12}
+                      />
+                      <Text numberOfLines={1} style={{ color: pullColor, ...contextText }}>
+                        {pulls.length > 1 ? `${pulls.length} PRs` : `#${pulls[0].number}`}
+                      </Text>
+                    </View>
+                  )}
+                  {pulls.length <= 1 && task.pullStatus?.stack && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <Icon name="stack" size={12} color={pullColor} />
+                      <Text numberOfLines={1} style={{ color: pullColor, ...contextText }}>
+                        {pullStackLabel(task.pullStatus.stack)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
           )}
         </Pressable>

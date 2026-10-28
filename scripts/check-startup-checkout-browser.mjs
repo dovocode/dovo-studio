@@ -72,7 +72,7 @@ try {
   await autoCheckout.click()
   await page.getByRole('option', { name: 'Local checkouts', exact: true }).click()
   await page.waitForFunction(() => window.saved[0]?.autoProjectExecution === 'main')
-  await page.getByRole('button', { name: 'Start in General', exact: true }).click()
+  await page.getByRole('button', { name: 'Start without a project', exact: true }).click()
   assert.equal(await page.evaluate(() => window.saved[0].autoProject), undefined)
   assert.equal(await page.evaluate(() => window.saved[0].autoProjectExecution), undefined)
   // Start the existing blank-draft checkout scenarios in a fresh startup composer.

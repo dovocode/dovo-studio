@@ -212,7 +212,7 @@ try {
         .getByRole('button', { name: 'Choose agent and model' })
         .filter({ hasText: 'Inherit' })
         .waitFor()
-      await projects.selectOption({ label: 'General' })
+      await projects.selectOption({ label: 'No Project' })
       assert.notEqual(await projects.inputValue(), 'auto-project')
       await projects.selectOption('auto-project')
       await projects.selectOption({ label: 'Project with Sonnet default' })

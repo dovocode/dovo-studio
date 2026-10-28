@@ -5,7 +5,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import {
   FolderGit2,
-  MessageCircle,
+  MessageCircleDashed,
   ChevronDown,
   Plus,
   Settings2,
@@ -105,10 +105,10 @@ export function ProjectsMenu({
       )
     : projects.map((repository) => ({
         key: repository.key,
-        name: repository.kind === 'scratch' ? 'General' : repository.name,
+        name: repository.kind === 'scratch' ? 'No Project' : repository.name,
         entries: [{ repository, runtimeId: repository.source.runtimeId }],
       }))
-  const projectName = project?.kind === 'scratch' ? 'General' : project?.name
+  const projectName = project?.kind === 'scratch' ? 'No Project' : project?.name
   projectGroups.sort((a, b) => {
     const activity = (group: typeof a) =>
       Math.max(
@@ -175,7 +175,7 @@ export function ProjectsMenu({
             disabled={busy || disabled}
           >
             {project?.kind === 'scratch' ? (
-              <MessageCircle className="size-3.5 shrink-0" />
+              <MessageCircleDashed className="size-3.5 shrink-0" />
             ) : (
               <FolderGit2 className="size-3.5 shrink-0" />
             )}
@@ -255,7 +255,7 @@ export function ProjectsMenu({
                       >
                         <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-[0.625rem] font-semibold text-muted-foreground">
                           {repo.kind === 'scratch' ? (
-                            <MessageCircle className="size-4" />
+                            <MessageCircleDashed className="size-4" />
                           ) : (
                             group.name
                               .split(/[^a-zA-Z0-9]+/)

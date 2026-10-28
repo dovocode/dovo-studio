@@ -217,6 +217,13 @@ try {
     window.finishClipboard('must not reach another computer')
   })
   await openMenu()
+  // macOS right-click can select the word under the pointer. Exercise the empty-selection
+  // state explicitly instead of depending on platform-specific pointer selection behavior.
+  await page.evaluate(() => window.terminals.at(-1).clearSelection())
+  await page
+    .getByRole('menuitem', { name: 'Copy', exact: true })
+    .and(page.locator('[data-disabled]'))
+    .waitFor()
   assert.equal(
     await page.getByRole('menuitem', { name: 'Copy', exact: true }).getAttribute('data-disabled'),
     '',

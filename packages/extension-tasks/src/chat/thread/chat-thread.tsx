@@ -500,7 +500,7 @@ export function ChatThread({
             >
               {liveTask.autoProjectFallback && (
                 <p role="note" className="text-xs text-muted-foreground">
-                  Scope found no matching project; continued in General.
+                  Scope found no matching project; continued without a project.
                 </p>
               )}
               {history.busy && (

@@ -344,7 +344,7 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
 
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
                 Find primary and linked projects from the first message on this computer. If no
-                project matches, continue in General.
+                project matches, continue without a project.
               </Text>
             </Section>
           )}
@@ -597,7 +597,7 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                   },
                   {
                     scope: 'projectless',
-                    label: 'Memory for General threads',
+                    label: 'Memory for threads without a project',
                     enabled: value?.memory.projectlessEnabled ?? false,
                   },
                 ] as const

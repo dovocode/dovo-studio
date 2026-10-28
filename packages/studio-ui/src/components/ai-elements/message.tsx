@@ -32,12 +32,14 @@ export { Message, MessageContent } from '@dovo/web-ui/message'
 export const MessageResponse = memo(function MessageResponse({
   children,
   isStreaming = false,
+  preserveLineBreaks = false,
   baseURL,
   fileBaseURL,
   localFiles,
 }: {
   children: string
   isStreaming?: boolean
+  preserveLineBreaks?: boolean
   baseURL?: string
   fileBaseURL?: string
   localFiles?: {
@@ -106,7 +108,10 @@ export const MessageResponse = memo(function MessageResponse({
     [localFiles],
   )
   const props = {
-    className: 'studio-markdown min-w-0 max-w-full',
+    className: cn(
+      'studio-markdown min-w-0 max-w-full',
+      preserveLineBreaks && '[&_p]:whitespace-pre-wrap',
+    ),
     plugins: markdownPlugins,
     controls: markdownControls,
     linkSafety: markdownLinkSafety,

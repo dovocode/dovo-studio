@@ -206,7 +206,7 @@ describe('Runtime dashboard', () => {
         },
       },
     ])
-    expect(entries.find((entry) => entry.task.id === task.id)?.projectName).toBe('General')
+    expect(entries.find((entry) => entry.task.id === task.id)?.projectName).toBe('No Project')
     expect(entries.find((entry) => entry.task.id === 'missing')?.projectName).toBe('No project')
     expect(entries.find((entry) => entry.task.id === 'ordinary')?.projectName).toBe('No project')
   })

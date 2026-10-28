@@ -591,7 +591,7 @@ try {
     await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1200, height: 900 })
     await page.evaluate(() => window.generalProject())
     const generalProject = page.getByRole('region', { name: 'Thread project', exact: true })
-    await generalProject.getByRole('heading', { name: 'General', exact: true }).waitFor()
+    await generalProject.getByRole('heading', { name: 'No Project', exact: true }).waitFor()
     assert.equal(await generalProject.locator('.studio-project-path').count(), 0)
     await generalProject.getByRole('button', { name: 'Link projects', exact: true }).click()
     await page.waitForFunction(() => window.surface === 'projects')
