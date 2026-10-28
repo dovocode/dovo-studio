@@ -820,6 +820,33 @@ try {
     await page.mouse.move(0, 0)
     await page.screenshot({ path: `${directory}/pr-generated-file-expanded.png` })
   }
+  await page.evaluate(() => {
+    window.blockedSections = []
+    window.failedSection = ''
+    window.highlightFailures = 0
+    window.detail.warnings = []
+    window.detail.pull.headSha = 'd'.repeat(40)
+    window.detail.files = [
+      {
+        path: 'src/large.ts',
+        status: 'modified',
+        additions: 2,
+        deletions: 1,
+        patch:
+          '@@ -1 +1,2 @@\n-old\n+' +
+          'x'.repeat(70000) +
+          '\n+export const recoveredLargeDiff = true;',
+      },
+    ]
+    window.showProbe()
+  })
+  await open()
+  await detail.getByRole('tab', { name: 'Changes (1)', exact: true }).click()
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('diffs-container')].some((element) =>
+      element.shadowRoot?.querySelector('pre')?.textContent.includes('recoveredLargeDiff'),
+    ),
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Real PR hook, Markdown and diff: lazy parsing in a 120-file PR, attribute collapse/binary handling, direct navigation, bounded layouts, preserved drafts/reviews, wrap preference, and syntax failure fallback/retry passed.',

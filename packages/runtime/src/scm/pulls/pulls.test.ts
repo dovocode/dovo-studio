@@ -279,6 +279,79 @@ it('loads file changes without waiting for comments, checks or merge settings', 
     'repos/team/project/pulls/7',
   ])
 })
+it.each([
+  'complete',
+  'truncated',
+  'incomplete-hunk',
+  'count-mismatch',
+  'binary',
+  'failure',
+  'failure-head-push',
+  'failure-base-push',
+  'push',
+  'base-push',
+] as const)('recovers omitted GitHub patches safely: %s', async (scenario) => {
+  const git = new GitService()
+  const longLine = 'x'.repeat(70_000)
+  let head = pull.head.sha
+  let base = pull.base.sha
+  const raw = `diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+${longLine}\n`
+  const run = vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
+    if (args[0] === 'repo')
+      return JSON.stringify({
+        nameWithOwner: 'team/project',
+        url: 'https://git.example.com/team/project',
+      })
+    if (args.includes('Accept: application/vnd.github.diff')) {
+      if (scenario === 'failure-head-push') head = 'c'.repeat(40)
+      if (scenario === 'failure-base-push') base = 'd'.repeat(40)
+      if (scenario === 'failure-head-push' || scenario === 'failure-base-push')
+        throw new Error('raw denied')
+      if (scenario === 'failure') throw new Error('raw denied')
+      if (scenario === 'push') head = 'c'.repeat(40)
+      if (scenario === 'base-push') base = 'd'.repeat(40)
+      if (scenario === 'binary')
+        return 'diff --git a/a.ts b/a.ts\nBinary files a/a.ts and b/a.ts differ\n'
+      if (scenario === 'incomplete-hunk') return raw.replace('@@ -1 +1 @@', '@@ -1,2 +1 @@')
+      return scenario === 'truncated' ? raw.slice(0, -20) : raw
+    }
+    if (args[3]?.includes('/files?'))
+      return JSON.stringify([
+        [
+          {
+            filename: 'a.ts',
+            status: 'modified',
+            additions: scenario === 'count-mismatch' ? 2 : 1,
+            deletions: 1,
+          },
+        ],
+      ])
+    return JSON.stringify({
+      ...pull,
+      head: { ...pull.head, sha: head },
+      base: { ...pull.base, sha: base },
+    })
+  })
+  const outcome = await new PullRequests(git).section('/project', 7, 'changes').then(
+    (detail) => ({ detail, error: undefined }),
+    (error: unknown) => ({ detail: undefined, error }),
+  )
+  const changed =
+    scenario === 'push' ||
+    scenario === 'base-push' ||
+    scenario === 'failure-head-push' ||
+    scenario === 'failure-base-push'
+  expect(outcome).toMatchObject(changed ? { error: { status: 409 } } : { error: undefined })
+  const detail = outcome.detail
+  if (!detail) return
+  expect(detail.files[0]?.patch?.includes(longLine) ?? false).toBe(scenario === 'complete')
+  expect(detail.warnings.some((warning) => /Raw diff|Some file patches/.test(warning))).toBe(
+    scenario !== 'complete',
+  )
+  expect(
+    run.mock.calls.some(([, args]) => args.includes('Accept: application/vnd.github.diff')),
+  ).toBe(true)
+})
 it('keeps a failed discussion section isolated from the overview and changes', async () => {
   const git = new GitService()
   vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {

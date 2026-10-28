@@ -21,6 +21,7 @@ import {
   type ForgeCapabilities,
 } from '@dovo/protocol'
 import { errorMessage } from '../../errors.js'
+import { completeForgeDiff } from '../forges/integration/forge-diff.js'
 import {
   restPull,
   restStack,
@@ -491,6 +492,47 @@ export class PullRequests {
       comments: PullComment[] = []
     const [conversation, reviews, inline, files, checks, threads, checkDetails, repository] =
       results
+    if (
+      changes &&
+      files.status === 'fulfilled' &&
+      files.value.some((file) => !file.patch && file.additions + file.deletions > 0)
+    ) {
+      try {
+        const raw = await this.run(
+          cwd,
+          [
+            'api',
+            '--hostname',
+            repo.host,
+            `${repo.path}/pulls/${number}`,
+            '-H',
+            'Accept: application/vnd.github.diff',
+          ],
+          background,
+        )
+        const patches = completeForgeDiff(raw)
+        for (const file of files.value) {
+          if (file.patch || file.additions + file.deletions === 0) continue
+          const matches = patches.filter(
+            (patch) =>
+              patch.path === file.filename && patch.previousPath === file.previous_filename,
+          )
+          const patch = matches.length === 1 ? matches[0] : undefined
+          if (
+            patch?.patch &&
+            patch.additions === file.additions &&
+            patch.deletions === file.deletions
+          )
+            file.patch = patch.patch
+        }
+        if (files.value.some((file) => !file.patch && file.additions + file.deletions > 0))
+          warnings.push(
+            'Some file patches are binary, unavailable, or incomplete. Open the PR on its server.',
+          )
+      } catch (error) {
+        warnings.push(`Raw diff unavailable: ${errorMessage(error)}`)
+      }
+    }
     // The rollup and paginated files follow the live PR; rich checks are head-pinned.
     // Reject a changed revision instead of combining results from different commits.
     if (checksRequested || (changes && files.status === 'fulfilled'))

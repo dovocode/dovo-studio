@@ -1,3 +1,7 @@
+import { Effect } from 'effect'
+import { openDatabase } from '../../../storage/database'
+import { WorkspaceStore } from '../../../storage/workspace'
+import { PullCache } from '../../pulls/pull-cache'
 import { describe, expect, it } from 'vite-plus/test'
 import type { ForgeConnection } from '@dovo/protocol'
 import { ForgeHttp } from '../integration/forge-http.js'
@@ -729,3 +733,74 @@ describe('Forgejo and Gitea', () => {
     })
   })
 })
+
+it.each(['detail', 'discussion'] as const)(
+  'retains one coherent inline snapshot after partial review failures in %s',
+  async (mode) => {
+    let phase: 'complete' | 'partial' | 'recovered' = 'complete'
+    const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status })
+    const { adapter } = fixture('forgejo', '11.0.0', (request) => {
+      const path = request.path.split('?')[0]
+      if (path.endsWith('/reviews'))
+        return json(request.path.includes('page=1') ? [review, { ...review, id: 31 }] : [])
+      if (path.endsWith('/reviews/30/comments'))
+        return json([{ ...inline, body: phase === 'complete' ? 'Original' : 'Fresh edit' }])
+      if (path.endsWith('/reviews/31/comments')) {
+        if (phase === 'partial') return json({ message: 'Temporarily unavailable' }, 404)
+        return json(
+          phase === 'complete' ? [{ ...inline, id: 43, body: 'Removed during refresh' }] : [],
+        )
+      }
+      return undefined
+    })
+    const db = openDatabase(':memory:')
+    const cache = new PullCache(
+      db,
+      {
+        list: async () => ({ pulls: [], page: 1, hasMore: false }),
+        detail: () => adapter.detail(7),
+      },
+      new WorkspaceStore(db),
+    )
+    const read = () =>
+      mode === 'detail'
+        ? cache.detail('/repo', 7, true)
+        : Effect.runPromise(cache.sectionEffect('/repo', 7, 'discussion', true))
+    try {
+      const complete = await read()
+      const cached = complete.comments.filter((comment) => comment.kind === 'inline')
+      expect(cached.map((comment) => comment.id)).toEqual(['inline-42', 'inline-43'])
+      phase = 'partial'
+      const partial = await read()
+      expect(partial.comments.filter((comment) => comment.kind === 'inline')).toEqual(cached)
+      expect(new Set(partial.comments.map((comment) => comment.id)).size).toBe(
+        partial.comments.length,
+      )
+      expect(partial.warnings).toContain('Unavailable sections are showing the last cached data.')
+      expect(partial.warnings.some((warning) => warning.startsWith('Inline comments:'))).toBe(true)
+      // Without a prior snapshot, successful partial reads remain visible with their warning.
+      const uncached = await cache.detail('/new-repo', 7, true)
+      expect(
+        uncached.comments
+          .filter((comment) => comment.kind === 'inline')
+          .map((comment) => comment.body),
+      ).toEqual(['Fresh edit'])
+      phase = 'recovered'
+      const recovered = await read()
+      expect(
+        recovered.comments
+          .filter((comment) => comment.kind === 'inline')
+          .map((comment) => comment.body),
+      ).toEqual(['Fresh edit'])
+      expect(recovered.warnings.some((warning) => warning.startsWith('Inline comments:'))).toBe(
+        false,
+      )
+      expect(recovered.warnings).not.toContain(
+        'Unavailable sections are showing the last cached data.',
+      )
+    } finally {
+      await cache.dispose()
+      db.close()
+    }
+  },
+)

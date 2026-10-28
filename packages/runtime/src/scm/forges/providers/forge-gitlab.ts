@@ -16,6 +16,7 @@ import {
   type pullLineCommentSchema,
 } from '@dovo/protocol'
 import type { ForgeHttp } from '../integration/forge-http.js'
+import { completeForgeDiff } from '../integration/forge-diff.js'
 import type { ForgeAdapter } from '../integration/forge-types.js'
 import { HttpError, errorMessage } from '../../../errors.js'
 import {
@@ -26,7 +27,7 @@ import {
   gitlabDiff,
 } from './forge-gitlab-schemas.js'
 
-type Transport = Pick<ForgeHttp, 'connection' | 'json'>
+type Transport = Pick<ForgeHttp, 'connection' | 'json' | 'text'>
 type MergeRequest = typeof gitlabMergeRequest.Type
 const SIZE = 50
 
@@ -181,21 +182,54 @@ export class GitLabForge implements ForgeAdapter {
                   : 'modified',
             additions: null,
             deletions: null,
-            patch: file.diff || undefined,
+            patch: file.collapsed || file.too_large ? undefined : file.diff || undefined,
           }))
         : []
-    if (
-      diffs.status === 'fulfilled' &&
-      diffs.value.some((file) => file.collapsed || file.too_large)
-    )
-      warnings.push(
-        'GitLab omitted some large diffs. Open the merge request on GitLab to see them.',
-      )
     if (!pull.diff_refs?.base_sha || !pull.sha)
       throw new HttpError(
         409,
         'GitLab has not prepared this merge request’s commits yet. Refresh shortly.',
       )
+    if (
+      diffs.status === 'fulfilled' &&
+      diffs.value.some((file) => file.collapsed || file.too_large)
+    ) {
+      try {
+        const patches = completeForgeDiff(await this.http.text(`${base}/raw_diffs`))
+        for (const [index, source] of diffs.value.entries()) {
+          const file = files[index]!
+          if ((!source.collapsed && !source.too_large) || file.patch) continue
+          const matches = patches.filter(
+            (patch) => patch.path === file.path && patch.previousPath === file.previousPath,
+          )
+          if (matches.length === 1 && matches[0]?.patch) file.patch = matches[0].patch
+        }
+        if (
+          diffs.value.some(
+            (source, index) => (source.collapsed || source.too_large) && !files[index]?.patch,
+          )
+        )
+          warnings.push(
+            'GitLab omitted some large or binary diffs. Open the merge request on GitLab to see them.',
+          )
+        if (
+          diffs.value.some(
+            (source, index) => (source.collapsed || source.too_large) && files[index]?.patch,
+          )
+        )
+          warnings.push(
+            'Recovered large diffs may be incomplete; open GitLab to verify the full change.',
+          )
+      } catch (error) {
+        warnings.push(`Raw diff unavailable or incomplete: ${errorMessage(error)}`)
+      }
+      const current = await this.pull(number)
+      if (current.sha !== pull.sha || current.diff_refs?.base_sha !== pull.diff_refs.base_sha)
+        throw new HttpError(
+          409,
+          'The merge request changed while loading its diff. Refresh and try again.',
+        )
+    }
     return decode(pullDetailSchema, {
       capabilities: {
         actions: ['create', 'edit', 'comment', 'merge', 'close', 'reopen'],

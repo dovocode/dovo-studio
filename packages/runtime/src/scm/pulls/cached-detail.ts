@@ -16,9 +16,13 @@ export function retainUnavailableSections(fresh: PullDetail, cached?: PullDetail
     checks = failed('Checks') && sameHead
   return {
     ...fresh,
-    comments: [...fresh.comments, ...cached.comments.filter((c) => missingKinds.has(c.kind))].sort(
-      (a, b) => a.date.localeCompare(b.date),
-    ),
+    // A failed section may still contain partial fresh results (one review can fail
+    // while another succeeds). Retain one coherent snapshot, including an empty one,
+    // rather than mixing deleted/changed comments with their cached versions.
+    comments: [
+      ...fresh.comments.filter((c) => !missingKinds.has(c.kind)),
+      ...cached.comments.filter((c) => missingKinds.has(c.kind)),
+    ].sort((a, b) => a.date.localeCompare(b.date)),
     files: files ? cached.files : fresh.files,
     checks: checks ? cached.checks : fresh.checks,
     warnings: [

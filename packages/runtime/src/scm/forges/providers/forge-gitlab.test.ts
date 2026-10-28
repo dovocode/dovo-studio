@@ -67,7 +67,8 @@ function setup(resolve: (url: URL, request?: RequestInit) => unknown) {
   const fetcher: typeof fetch = async (input, request) => {
     const url = new URL(input instanceof Request ? input.url : input)
     requests.push({ url, request })
-    return Response.json(resolve(url, request))
+    const result = resolve(url, request)
+    return result instanceof Response ? result : Response.json(result)
   }
   const http = new ForgeHttp(connection, () => 'Bearer secret', fetcher)
   return {
@@ -130,6 +131,81 @@ it('reads merge request details and all notes/diffs, preserving draft and accoun
   expect(detail.files[0]).toMatchObject({ path: 'file.ts', patch: '@@ -1 +1 @@\n-old\n+new' })
   expect(detail.capabilities?.actions).not.toContain('inline-comment')
   expect(requests.some(({ url }) => url.searchParams.get('page') === '2')).toBe(true)
+})
+it.each([
+  'complete',
+  'truncated',
+  'incomplete-hunk',
+  'binary',
+  'failure',
+  'oversize',
+  'failure-head-push',
+  'failure-base-push',
+  'push',
+  'base-push',
+] as const)('recovers omitted GitLab patches safely: %s', async (scenario) => {
+  const longLine = 'x'.repeat(70_000)
+  const raw = `diff --git a/file.ts b/file.ts\n--- a/file.ts\n+++ b/file.ts\n@@ -1 +1 @@\n-old\n+${longLine}\n`
+  let pushed = false
+  const { pulls, requests } = setup((url) => {
+    if (url.pathname === '/api/v4/user') return user
+    if (url.pathname === root) return project
+    if (url.pathname.endsWith('/notes')) return []
+    if (url.pathname.endsWith('/raw_diffs')) {
+      if (scenario === 'oversize') return new Response('x'.repeat(16 * 1024 * 1024 + 1))
+      if (scenario === 'failure-head-push' || scenario === 'failure-base-push') {
+        pushed = true
+        return new Response('', { status: 403 })
+      }
+      if (scenario === 'failure') return new Response('', { status: 403 })
+      if (scenario === 'push' || scenario === 'base-push') pushed = true
+      if (scenario === 'binary')
+        return new Response(
+          'diff --git a/file.ts b/file.ts\nBinary files a/file.ts and b/file.ts differ\n',
+        )
+      if (scenario === 'incomplete-hunk')
+        return new Response(raw.replace('@@ -1 +1 @@', '@@ -1,2 +1 @@'))
+      return new Response(scenario === 'truncated' ? raw.slice(0, -20) : raw)
+    }
+    if (url.pathname.endsWith('/diffs'))
+      return [
+        {
+          old_path: 'file.ts',
+          new_path: 'file.ts',
+          new_file: false,
+          deleted_file: false,
+          renamed_file: false,
+          diff: '@@ -1 +1 @@\n-old\n+partial',
+          collapsed: true,
+        },
+      ]
+    return pushed
+      ? scenario === 'base-push' || scenario === 'failure-base-push'
+        ? { ...mergeRequest, diff_refs: { ...mergeRequest.diff_refs, base_sha: 'd'.repeat(40) } }
+        : { ...mergeRequest, sha: 'd'.repeat(40) }
+      : mergeRequest
+  })
+  const outcome = await pulls.detail(42).then(
+    (detail) => ({ detail, error: undefined }),
+    (error: unknown) => ({ detail: undefined, error }),
+  )
+  const changed =
+    scenario === 'push' ||
+    scenario === 'base-push' ||
+    scenario === 'failure-head-push' ||
+    scenario === 'failure-base-push'
+  expect(outcome).toMatchObject(changed ? { error: { status: 409 } } : { error: undefined })
+  const detail = outcome.detail
+  if (!detail) return
+  expect(detail.files[0]?.patch?.includes(longLine) ?? false).toBe(scenario === 'complete')
+  expect(detail.warnings.length).toBeGreaterThan(0)
+  expect(detail.warnings.join(' ').includes('exceeds 16 MB')).toBe(scenario === 'oversize')
+  expect(
+    detail.warnings.includes(
+      'Recovered large diffs may be incomplete; open GitLab to verify the full change.',
+    ),
+  ).toBe(scenario === 'complete')
+  expect(requests.some(({ url }) => url.pathname.endsWith('/raw_diffs'))).toBe(true)
 })
 it('rejects changed commits before dispatch and sends the expected SHA to merge', async () => {
   const { pulls, requests } = setup((url, request) => {
