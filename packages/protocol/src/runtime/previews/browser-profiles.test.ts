@@ -2,6 +2,7 @@ import { expect, it } from 'vite-plus/test'
 import { decodeResult } from '../../shared/schema.js'
 import {
   browserProfilesSchema,
+  browserProfileEmojiSchema,
   browserLinkProfile,
   normalizeBrowserLinkDomain,
   browserLanguageSchema,
@@ -20,6 +21,17 @@ it('requires a default profile, unique safe IDs, and meaningful names', () => {
     [base, { id: 'work', name: '   ' }],
   ])
     expect(valid(profiles)).toBe(false)
+})
+
+it('preserves profile emojis and accepts a single emoji grapheme', () => {
+  for (const emoji of ['💼', '👩🏽‍💻', '🇳🇱', '1️⃣', '👨‍👩‍👧‍👦']) {
+    expect(decodeResult(browserProfileEmojiSchema, emoji).success).toBe(true)
+    expect(
+      decodeResult(browserProfilesSchema, [{ id: 'default', name: 'Default', emoji }]),
+    ).toMatchObject({ success: true, data: [{ emoji }] })
+  }
+  for (const value of ['', 'work', '1', 'ab', '💼🏠', ' 💼', '\n💼'])
+    expect(decodeResult(browserProfileEmojiSchema, value).success).toBe(false)
 })
 
 it('defaults to English, validates BCP47 and preserves locale/base preferences', () => {

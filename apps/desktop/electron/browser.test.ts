@@ -122,6 +122,7 @@ const mocks = vi.hoisted(() => {
       attachSession: vi.fn<(...args: unknown[]) => void>(),
       attachTab: vi.fn<(...args: unknown[]) => void>(),
       releaseTab: vi.fn<(...args: unknown[]) => void>(),
+      moveTab: vi.fn<(...args: unknown[]) => void>(),
       revokeSite: vi.fn<(...args: unknown[]) => void>(),
       decide: vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
       stop: vi.fn<(...args: unknown[]) => void>(),
@@ -854,6 +855,33 @@ it('does not move a tab until its fullscreen exit completes', async () => {
     'destination browser window is unavailable',
   )
 })
+it('keeps active calls unthrottled when hidden and when other keep-alive modes end', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  mocks.media.keepAlive.mockReturnValue(true)
+  mocks.media.host?.activityChanged?.(mocks.contents as never)
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+  await call(event, { action: 'hide', key: 'shared' })
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+  await call(event, {
+    action: 'keep-awake',
+    key: 'shared',
+    enabled: false,
+    profileId: 'default',
+    url: workspaceShow.url,
+  })
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+  const videoPip = mocks.contents.ipc.on.mock.calls.find(
+    ([name]) => name === 'browser:video-pip',
+  )?.[1]
+  if (typeof videoPip !== 'function') throw new Error('Missing video PiP listener')
+  videoPip({ senderFrame: mocks.contents.mainFrame }, false)
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+  mocks.media.keepAlive.mockReturnValue(false)
+  mocks.media.host?.activityChanged?.(mocks.contents as never)
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+})
+
 it('allows fullscreen only for the active visible workspace page', async () => {
   const call = handler()
   await call(event, workspaceShow)
@@ -1075,6 +1103,11 @@ it('keeps native Document PiP disabled and denies unticketed blank popups', asyn
 function popupWindow() {
   const popup = {
     close: vi.fn<() => void>(),
+    getParentWindow: () => mocks.window,
+    setParentWindow: vi.fn<(window: unknown) => void>(),
+    setAlwaysOnTop: vi.fn<(flag: boolean, level: string) => void>(),
+    setVisibleOnAllWorkspaces: vi.fn<(flag: boolean) => void>(),
+    on: vi.fn<(event: string, callback: () => void) => void>(),
     isDestroyed: () => false,
     once: vi.fn<(event: string, callback: () => void) => void>(),
     webContents: {
@@ -2067,7 +2100,7 @@ it('raises the selected native view and returns input focus on a deliberate page
 })
 
 it.each(['window', 'page'] as const)(
-  'moves a live page with shortcuts and cleanup in its new window (%s close)',
+  'moves an active call with shortcuts and cleanup in its new window (%s close)',
   async (close) => {
     const target = {
       ...mocks.window,
@@ -2109,7 +2142,25 @@ it.each(['window', 'page'] as const)(
       url: tab.url,
       bounds: { x: 0, y: 0, width: 800, height: 600 },
     })
+    const popup = popupWindow()
+    listener('did-create-window')?.(popup)
+    const pip = popupWindow()
+    listener('did-create-window')?.(pip, {
+      frameName: '__dovo_document_picture_in_picture__:moving',
+      options: {},
+    })
+    const videoPip = mocks.contents.ipc.on.mock.calls.find(
+      ([name]) => name === 'browser:video-pip',
+    )?.[1]
+    if (typeof videoPip !== 'function') throw new Error('Missing video PiP listener')
+    videoPip({ senderFrame: mocks.contents.mainFrame }, true)
+    mocks.media.keepAlive.mockReturnValue(true)
     await call(event, { action: 'move-tab', key: 'moving-key', tab, targetWindowId: 2 })
+    expect(mocks.media.moveTab).toHaveBeenCalledWith(mocks.contents, target.id)
+    expect(popup.close).not.toHaveBeenCalled()
+    expect(pip.close).not.toHaveBeenCalled()
+    expect(popup.setParentWindow).toHaveBeenCalledWith(target)
+    expect(mocks.media.releaseTab).not.toHaveBeenCalled()
     expect(mocks.create).toHaveBeenCalledOnce()
     expect(mocks.contents.close).not.toHaveBeenCalled()
     expect(target.contentView.addChildView).toHaveBeenCalledWith(mocks.view)
@@ -2168,7 +2219,7 @@ it.each(['window', 'page'] as const)(
   },
 )
 
-it('refuses moving active media and unavailable destinations without releasing the page', async () => {
+it('refuses unavailable destinations without releasing an active call', async () => {
   const target = { ...mocks.window, id: 2 }
   const createWindow = vi.fn<() => Promise<import('electron').BrowserWindow>>(
     async () => target as never,
@@ -2195,15 +2246,7 @@ it('refuses moving active media and unavailable destinations without releasing t
     url: tab.url,
     bounds: { x: 0, y: 0, width: 800, height: 600 },
   })
-  mocks.media.keepAlive.mockReturnValueOnce(true)
-  await expect(call(event, { action: 'move-tab', key: 'moving', tab })).rejects.toThrow(
-    'active media',
-  )
-  expect(createWindow).not.toHaveBeenCalled()
-  mocks.media.keepAlive.mockReturnValueOnce(true)
-  await expect(
-    call(event, { action: 'move-tab', key: 'moving', tab, targetWindowId: 2 }),
-  ).rejects.toThrow('active media')
+  mocks.media.keepAlive.mockReturnValue(true)
   await expect(
     call(event, { action: 'move-tab', key: 'moving', tab, targetWindowId: 999 }),
   ).rejects.toThrow('unavailable')
@@ -2355,6 +2398,13 @@ it('accepts one-use PiP tickets only from the owning main frame and protects the
   if (typeof created !== 'function') throw new Error('Missing popup lifecycle')
   const popup = popupWindow()
   created(popup, details)
+  expect(popup.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
+  expect(popup.setVisibleOnAllWorkspaces.mock.calls).toEqual(
+    process.platform === 'linux' ? [[true]] : [],
+  )
+  popup.setAlwaysOnTop.mockClear()
+  popup.on.mock.calls.find(([name]) => name === 'restore')?.[1]()
+  expect(popup.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
   expect(await call(event, { action: 'tab-activity', key: 'activity' })).toHaveProperty(
     'protectedKeys',
     ['shared'],

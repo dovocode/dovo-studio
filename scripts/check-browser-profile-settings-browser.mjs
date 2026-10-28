@@ -83,11 +83,11 @@ try {
     }),
   )
   await page.goto('http://localhost/')
-  for (const file of readdirSync(root + 'apps/web/dist/client/assets').filter((file) =>
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
     file.endsWith('.css'),
   ))
     await page.addStyleTag({
-      content: readFileSync(root + 'apps/web/dist/client/assets/' + file, 'utf8'),
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
     })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const makeDefault = page.getByRole('button', { name: 'Set as default browser', exact: true })
@@ -145,6 +145,28 @@ try {
     await local.getByRole('textbox', { name: 'Language for Local Work' }).inputValue(),
     'nl-NL',
   )
+  await local.getByRole('button', { name: 'Emoji for Local Work', exact: true }).click()
+  mkdirSync(root + 'work/shared-browser', { recursive: true })
+  await page
+    .getByRole('dialog', { name: 'Emoji for Local Work', exact: true })
+    .evaluate(async (element) => {
+      await Promise.all(
+        element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+      )
+    })
+  await page.screenshot({ path: root + 'work/shared-browser/profile-emoji-picker.png' })
+  await page.getByRole('option', { name: '💼 Work', exact: true }).click()
+  await local
+    .getByRole('form', { name: 'Browser profile Local Work' })
+    .getByRole('button', { name: 'Save', exact: true })
+    .click()
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.preferences.browserProfiles.find((profile) => profile.name === 'Local Work').emoji,
+    ),
+    '💼',
+  )
   const domains = local.getByRole('textbox', { name: 'Link domains for Local Work' })
   await domains.fill('https://invalid.example/path')
   assert.equal(await domains.getAttribute('aria-invalid'), 'true')
@@ -196,8 +218,20 @@ try {
   await remote.getByRole('button', { name: 'Add profile', exact: true }).click()
   await remote.getByRole('textbox', { name: 'Name for Remote Work' }).waitFor()
   await remote.getByRole('textbox', { name: 'Name for Remote Work' }).fill('Remote Personal')
+  await remote.getByRole('button', { name: 'Emoji for Remote Work', exact: true }).click()
+  await page.getByRole('option', { name: '🏠 Home', exact: true }).click()
   await remote.getByRole('button', { name: 'Save', exact: true }).last().click()
   await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls
+          .filter((call) => call.path.endsWith('/save'))
+          .at(-1)
+          .input.profiles.find((profile) => profile.name === 'Remote Personal').emoji,
+    ),
+    '🏠',
+  )
   await remote.getByRole('textbox', { name: 'Name for Remote Personal' }).fill('Unsaved rename')
   cancelRemoval = true
   await remote.getByRole('button', { name: 'Remove', exact: true }).click()

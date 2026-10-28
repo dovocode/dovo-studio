@@ -6,6 +6,11 @@ puts the most recently visited tab first. Add a tab on this computer or a paired
 address or search terms, and choose a browser profile in **Browser options** for a separate session.
 Tabs retain their computer and profile when you switch the active runtime.
 
+Pinned tabs show a compact profile badge. Choose its emoji in **Settings → Browser → Local browser
+profiles** or **Remote browser profiles**; profiles without an emoji show initials. Pinning saves
+the current URL as the tab's home. Use the address-bar home button to return there, or right-click
+the pin to edit its home URL. The pinned grid adapts to the sidebar width.
+
 **Thread for this tab** links only to threads on the tab's computer. On desktop, choose **Use
 {computer}** if that computer is not active before editing or creating its thread. The tab keeps its
 computer and profile. Restored links to another computer require choosing a matching thread.
@@ -83,6 +88,13 @@ feature disabled and supplies a compatibility API in shared-browser website tabs
 their live call interface into a real same-origin, always-on-top window. Automatic entry requires
 the site's **Automatic call PiP** permission and a Media Session handler. See
 [Shared-browser APIs](browser-apis.md) for behavior, permissions and compatibility limits.
+
+Call pages and PiP windows keep background rendering enabled. Opening another page preserves active
+call previews as regular tabs. Moving a call to another Studio window reparents its existing native
+view, preserving media tracks and sharing controls. On Linux, document PiP requests a floating
+window on every workspace and reasserts its floating state after show/restore. X11 window-manager
+flags are verified by the native fixture; native Wayland stacking remains controlled by the
+compositor.
 
 Website notification clicks select the original tab in its owning Studio window and profile;
 service-worker notifications that call `clients.focus()` follow the same path. This does not enable
@@ -162,10 +174,12 @@ authenticated vault, autofill, passkeys or desktop-app pairing.
 ## Website and call tab capture
 
 Website screen sharing (for example, a call's `getDisplayMedia` request) is separate from audio in
-Dovo's remote browser stream. On desktop, the consent picker offers HTTP/HTTPS tabs from the same
-Browser profile and window. Optional tab audio starts unchecked; camera and microphone access
-require separate approval. A visible global indicator shows active sharing, and Stop waits for
-native confirmation before reporting that capture has ended.
+Dovo's remote browser stream. On desktop, the consent picker offers local HTTP/HTTPS tabs, available
+remote tabs and threads, desktop windows, and screens. Linux X11 supports both screen and window
+sharing; Wayland uses the desktop's PipeWire/portal chooser and requires working desktop portal
+services. Optional local-tab audio starts unchecked; camera and microphone access require separate
+approval. A visible global indicator shows active sharing, and Stop waits for native confirmation
+before reporting that capture has ended.
 
 The production Linux fixture, `node apps/desktop/scripts/check-browser-media-native.mjs`, passed
 three runs (baseline, hardened and final), recorded in

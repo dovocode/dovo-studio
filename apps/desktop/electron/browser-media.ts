@@ -22,6 +22,7 @@ export type MediaTab = {
   contents: Electron.WebContents
 }
 export type MediaHost = {
+  activityChanged?(contents: Electron.WebContents): void
   tabFor(contents: Electron.WebContents): MediaTab | undefined
   canFullscreen(contents: Electron.WebContents): boolean
   prepareFullscreen(contents: Electron.WebContents): void
@@ -206,6 +207,10 @@ export function createBrowserMedia(host: MediaHost) {
     const capture = captures.get(id)
     captures.delete(id)
     capture?.closeSource?.()
+    if (capture) {
+      host.activityChanged?.(capture.contents)
+      if (capture.source) host.activityChanged?.(capture.source)
+    }
   }
   const tabsAttached = new WeakSet<Electron.WebContents>()
   let preload: string | undefined
@@ -220,10 +225,28 @@ export function createBrowserMedia(host: MediaHost) {
       : undefined
   }
 
+  const retainDevices = (
+    contents: Electron.WebContents,
+    profileId: string,
+    origin: string,
+    types: { audio: boolean; video: boolean },
+  ) => {
+    const previous = grantFor(contents, profileId, origin)
+    grants.set(contents.id, {
+      profileId,
+      origin,
+      processId: contents.mainFrame.processId,
+      routingId: contents.mainFrame.routingId,
+      audio: types.audio || !!previous?.audio,
+      video: types.video || !!previous?.video,
+    })
+    host.activityChanged?.(contents)
+  }
   const settle = (request: Pending, allow: false | Electron.Streams | true) => {
     if (!pending.delete(request.id)) return
     clearTimeout(request.timer)
     request.answer(allow)
+    host.activityChanged?.(request.contents)
   }
   const add = (request: Omit<Pending, 'id' | 'expiresAt' | 'timer'>): void => {
     // One open request of each kind per tab; a newer one replaces (and denies) the older.
@@ -243,6 +266,7 @@ export function createBrowserMedia(host: MediaHost) {
       timer: setTimeout(() => settle(entry, false), REQUEST_TIMEOUT),
     }
     pending.set(id, entry)
+    host.activityChanged?.(entry.contents)
   }
   /** The requesting page must still be the same document origin it was when it asked. */
   const unchanged = (request: Pending) => {
@@ -262,6 +286,7 @@ export function createBrowserMedia(host: MediaHost) {
       if (!capture.source && capture.contents.id === contents.id) removeCapture(id)
     for (const request of [...pending.values()])
       if (request.contents.id === contents.id) settle(request, false)
+    host.activityChanged?.(contents)
   }
   /**
    * Chromium's capturer count on the shared tab decides what is listed. Page reports can name a
@@ -436,8 +461,10 @@ export function createBrowserMedia(host: MediaHost) {
           return callback(false)
         const granted = grantFor(contents, profileId, origin)
         const saved = browserPermissions(profileId).media(origin)
-        if (saved && (!types.audio || saved.audio) && (!types.video || saved.video))
+        if (saved && (!types.audio || saved.audio) && (!types.video || saved.video)) {
+          retainDevices(contents, profileId, origin, types)
           return callback(true)
+        }
         if (granted && (!types.audio || granted.audio) && (!types.video || granted.video))
           return callback(true)
         add({
@@ -543,6 +570,13 @@ export function createBrowserMedia(host: MediaHost) {
         if (request.profileId === profileId && request.origin === origin) settle(request, false)
     },
     releaseTab: (contents: Electron.WebContents) => forgetContents(contents),
+    /** Reparenting preserves the document, its grants and tracks; only review ownership moves. */
+    moveTab: (contents: Electron.WebContents, windowId: number) => {
+      for (const request of pending.values())
+        if (request.contents.id === contents.id) request.windowId = windowId
+      for (const capture of captures.values())
+        if (capture.contents.id === contents.id) capture.windowId = windowId
+    },
     /** Answer a pending request from the Studio window that lists it. */
     decide: async (
       windowId: number,
@@ -593,15 +627,7 @@ export function createBrowserMedia(host: MediaHost) {
         }
         if (command.remember)
           browserPermissions(request.profileId).allowMedia(request.origin, request)
-        const previous = grantFor(request.contents, request.profileId, request.origin)
-        grants.set(request.contents.id, {
-          profileId: request.profileId,
-          origin: request.origin,
-          processId: request.contents.mainFrame.processId,
-          routingId: request.contents.mainFrame.routingId,
-          audio: request.audio || !!previous?.audio,
-          video: request.video || !!previous?.video,
-        })
+        retainDevices(request.contents, request.profileId, request.origin, request)
         return settle(request, true)
       }
       const source = host
@@ -689,6 +715,8 @@ export function createBrowserMedia(host: MediaHost) {
         approvedAt: Date.now(),
         seen: false,
       })
+      host.activityChanged?.(request.contents)
+      if (contents) host.activityChanged?.(contents)
     },
     /** Ask the capturing page to stop its real tracks; the capture stays listed until they end. */
     stop: (windowId: number, command: { key: string; captureId: string }) => {

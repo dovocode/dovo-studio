@@ -27,6 +27,8 @@ const require = createRequire(join(desktop, 'package.json'))
 const keep = process.argv.includes('--keep')
 const youtube = process.argv.includes('--youtube')
 const work = mkdtempSync(join(tmpdir(), 'dovo-browser-media-native-'))
+const screenshotDirectory = fileURLToPath(new URL('../../../work/shared-browser/', import.meta.url))
+mkdirSync(screenshotDirectory, { recursive: true })
 // Keep native image dependencies in their installed packages rather than bundling their loaders.
 symlinkSync(join(desktop, 'node_modules'), join(work, 'node_modules'), 'junction')
 const write = (path, contents) => {
@@ -203,13 +205,22 @@ app.whenReady().then(async () => {
     }
     const index = join(work, 'studio', 'index.html')
     registerConnectionStorage(index)
-    const bridge = registerBrowser(index, undefined, join(work, 'studio', 'preload.js'))
-    const studio = new BrowserWindow({
-      width: 1200,
-      height: 800,
-      webPreferences: { preload: join(work, 'studio', 'preload.js'), sandbox: true, contextIsolation: true },
+    const browserWindows: BrowserWindow[] = []
+    const createBrowserWindow = async () => {
+      const window = new BrowserWindow({
+        width: 1200,
+        height: 800,
+        webPreferences: { preload: join(work, 'studio', 'preload.js'), sandbox: true, contextIsolation: true },
+      })
+      browserWindows.push(window)
+      await window.loadFile(index)
+      return window
+    }
+    const bridge = registerBrowser(index, undefined, join(work, 'studio', 'preload.js'), {
+      create: createBrowserWindow,
+      list: () => browserWindows.filter(window => !window.isDestroyed()),
     })
-    await studio.loadFile(index)
+    const studio = await createBrowserWindow()
     const call = (command: object) =>
       studio.webContents.executeJavaScript(\`window.bridge.browser(\${JSON.stringify(command)})\`) as Promise<any>
     const port = (server.address() as { port: number }).port
@@ -420,6 +431,10 @@ app.whenReady().then(async () => {
       await show('studio:browser:idle-' + index, '/plain', 'work')
     assert.equal(page('/source', WORK), source)
     assert.equal(await run('/requester', 'window.marker', false), marker)
+    assert.equal(page('/requester', WORK).getBackgroundThrottling(), false, 'Hidden calls keep their rendering and timers active.')
+    assert.equal(source.getBackgroundThrottling(), false, 'Shared sources keep producing frames.')
+    const backgroundLevel = await run('/requester', 'window.audioLevel()', false)
+    assert.ok(backgroundLevel > 0.05, 'Call audio keeps flowing while another page is visible.')
     await show('studio:browser:requester', '/requester', 'work')
     const frame = await run('/requester', 'window.videoFrame()', false)
     assert.ok(frame.width > 0 && frame.height > 0 && frame.vibrant > 1000, JSON.stringify(frame))
@@ -432,13 +447,78 @@ app.whenReady().then(async () => {
       'Shared-browser pages expose the Document PiP compatibility API.')
     assert.equal(await run('/requester', '(async()=>{window.documentPip=await documentPictureInPicture.requestWindow({width:420,height:280});return documentPictureInPicture.window===documentPip && documentPip.opener===window})()'), true,
       'The production browser integration opens a real same-origin Document PiP window.')
-    await run('/requester', 'documentPip.close()', false)
+    await run('/requester', \`(async()=>{
+      // Real WebRTC receive/decode, including the DOM adoption used by meeting sites.
+      window.pipSender=new RTCPeerConnection({iceServers:[]});
+      window.pipReceiver=new RTCPeerConnection({iceServers:[]});
+      const gathered=async(peer)=>{
+        if(peer.iceGatheringState==='complete')return;
+        await new Promise((resolve,reject)=>{
+          const timer=setTimeout(()=>reject(new Error('WebRTC ICE gathering timed out')),10000);
+          const changed=()=>{if(peer.iceGatheringState==='complete'){clearTimeout(timer);peer.removeEventListener('icegatheringstatechange',changed);resolve()}};
+          peer.addEventListener('icegatheringstatechange',changed);changed();
+        });
+      };
+      const received=new Promise(resolve=>pipReceiver.ontrack=({track})=>resolve(new MediaStream([track])));
+      pipSender.addTrack(window.stream.getVideoTracks()[0]);
+      await pipSender.setLocalDescription(await pipSender.createOffer());
+      await gathered(pipSender);
+      await pipReceiver.setRemoteDescription(pipSender.localDescription);
+      await pipReceiver.setLocalDescription(await pipReceiver.createAnswer());
+      await gathered(pipReceiver);
+      await pipSender.setRemoteDescription(pipReceiver.localDescription);
+      window.documentPipVideo=document.createElement('video');
+      document.body.append(documentPipVideo);
+      documentPipVideo.muted=true;documentPipVideo.srcObject=await received;
+      documentPip.document.body.append(documentPipVideo);await documentPipVideo.play();
+      window.documentPipFrames=0;const next=()=>{documentPipFrames++;documentPipVideo.requestVideoFrameCallback(next)};next();
+    })()\`)
+    const pipWindow=BrowserWindow.getAllWindows().find(window=>window.webContents.getURL()==='about:blank')!
+    assert.ok(pipWindow, 'Document PiP has a real native window.')
+    const pipFramesBefore = await run('/requester', 'documentPipFrames', false)
+    await show('studio:browser:pip-background', '/plain', 'work')
+    await wait(700)
+    assert.ok(await run('/requester', 'documentPipFrames', false) > pipFramesBefore + 2,
+      'Document PiP keeps rendering live participant video while browsing another tab.')
+    assert.equal(pipWindow.isAlwaysOnTop(),true,'Document PiP floats above other application windows.')
+    if(process.platform==='linux' && !process.env.WAYLAND_DISPLAY) {
+      const xid=String(pipWindow.getNativeWindowHandle().readUInt32LE(0));
+      const state=execFileSync('xprop',['-id',xid,'_NET_WM_STATE','_NET_WM_DESKTOP'],{encoding:'utf8'});
+      assert.ok(state.includes('_NET_WM_STATE_ABOVE'),'The Linux window manager accepted always-on-top: '+state);
+      assert.ok(state.includes('4294967295'),'PiP remains visible across Linux workspaces: '+state);
+      report.linuxPipWindowState=state.trim();
+    }
+    const firstPipImage=(await pipWindow.capturePage()).toPNG()
+    writeFileSync(join(process.env.SMOKE_SCREENSHOT_DIR!, 'pip-webrtc-background.png'),firstPipImage)
+    assert.ok(await run('/requester', 'window.audioLevel()', false) > 0.05,
+      'Audio stays live with participant video in Document PiP.')
+    const nextPipImage=(await pipWindow.capturePage()).toPNG()
+    assert.equal(firstPipImage.equals(nextPipImage),false,'Visible PiP pixels change as received WebRTC video plays.')
+    writeFileSync(join(process.env.SMOKE_SCREENSHOT_DIR!, 'pip-webrtc-next-frame.png'),nextPipImage)
+    const receivedBefore = await run('/requester', 'documentPipFrames', false)
+    studio.minimize()
+    await wait(1200)
+    assert.ok(await run('/requester', 'documentPipFrames', false) > receivedBefore + 2,
+      'Decoded WebRTC participant video stays live when the owner window is minimized.')
+    studio.restore()
+    studio.show()
+    studio.focus()
+    await wait(300)
+    await show('studio:browser:requester', '/requester', 'work')
+    await run('/requester', 'document.body.append(documentPipVideo);documentPip.close()', false)
     for (let attempt=0; attempt<20; attempt++) {
       if (await run('/requester', 'documentPictureInPicture.window===null', false)) break
       await wait(50)
     }
     assert.equal(await run('/requester', 'documentPictureInPicture.window===null', false), true)
-    report.documentPictureInPicture = 'same-origin-window-open-and-close'
+    // Adoption replaces the media player and its frame callbacks; inspect actual playback time.
+    const beforeReturn = await run('/requester', 'documentPipVideo.currentTime', false)
+    await wait(1000)
+    const afterReturn = await run('/requester', 'documentPipVideo.currentTime', false)
+    report.pipReturnTimes={before:beforeReturn,after:afterReturn}
+    assert.ok(afterReturn > beforeReturn + 0.1, 'Returned WebRTC video keeps advancing in the original call.')
+    await run('/requester', 'pipSender.close();pipReceiver.close();documentPipVideo.remove()', false)
+    report.documentPictureInPicture = 'webrtc-receive-video-and-audio-while-browsing-and-minimized'
 
     stage('fullscreen')
     const fullscreenPage = page('/requester', WORK)
@@ -601,6 +681,30 @@ app.whenReady().then(async () => {
       "document.getElementById('note').value = 'unsent draft'; [location.href, window.marker]",
       false,
     )
+    stage('move-active-call')
+    const caller = page('/requester', WORK)
+    const callerId = caller.id
+    const movingTab = { id: 'call-tab', title: 'Call', url: url('/requester'), kind: 'web', profileId: 'work' }
+    await call({ action: 'move-tab', key: capture.key, tab: movingTab })
+    const destination = browserWindows.at(-1)!
+    assert.notEqual(destination.id, studio.id)
+    const targetCall = (command: object) => destination.webContents.executeJavaScript(\`window.bridge.browser(\${JSON.stringify(command)})\`) as Promise<any>
+    const moved = await targetCall({ action: 'status', key: capture.key, tabCount: 0 })
+    assert.equal(moved.movedTabs[0].key, capture.key)
+    assert.equal(moved.captures[0].id, capture.id, 'Capture controls follow the call to its new window.')
+    assert.equal((await call({ action: 'status', key: 'source-window' }))?.captures, undefined)
+    await targetCall({ action: 'show', key: capture.key, url: movingTab.url, profileId: 'work', workspaceBrowser: true, bounds })
+    assert.equal(page('/requester', WORK).id, callerId, 'Reparent the existing page rather than opening a replacement.')
+    assert.deepEqual(await caller.executeJavaScript("[location.href, window.marker, document.getElementById('note').value]"), [...before, 'unsent draft'])
+    assert.deepEqual(await caller.executeJavaScript('window.trackStates()'), ['live', 'live'])
+    assert.equal(source.isBeingCaptured(), true)
+    await targetCall({ action: 'move-tab', key: capture.key, tab: movingTab, targetWindowId: studio.id })
+    await call({ action: 'status', key: capture.key, tabCount: 0 })
+    await show(capture.key, '/requester', 'work')
+    destination.close()
+    assert.equal(caller.isDestroyed(), false, 'Closing the former owner leaves the moved call alive.')
+    assert.deepEqual(await caller.executeJavaScript('window.trackStates()'), ['live', 'live'])
+    report.moveActiveCall = 'same-webcontents-live-tracks-and-draft-across-new-window-and-return'
     await call({ action: 'stop-capture', key: capture.key, captureId: capture.id })
     await captures((list) => list.length === 0)
     assert.deepEqual(await run('/requester', 'window.trackStates()', false), ['ended', 'ended'])
@@ -831,6 +935,7 @@ const child = spawnSync(display ? 'xvfb-run' : args[0], display ? ['-a', ...args
     ...process.env,
     YOUTUBE_SMOKE: youtube ? '1' : '',
     SMOKE_DIR: work,
+    SMOKE_SCREENSHOT_DIR: screenshotDirectory,
     DOVO_SETTINGS_PATH: join(work, 'settings.json'),
     VITE_DEV_SERVER_URL: '',
   },

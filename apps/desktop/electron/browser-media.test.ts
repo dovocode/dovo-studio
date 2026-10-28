@@ -382,6 +382,64 @@ it('lists captures by Chromium’s count on the shared tab, never by page report
   expect(media.snapshot(1)).toEqual({})
 })
 
+it('moves capture controls with the calling tab without ending tracks or losing device grants', async () => {
+  const { media, session, call, shared } = setup()
+  const answer = vi.fn<(allowed: boolean) => void>()
+  session.request?.(call, 'media', answer, {
+    isMainFrame: true,
+    mediaTypes: ['audio'],
+    requestingUrl: call.mainFrame.url,
+  })
+  const [devices] = media.snapshot(1).mediaRequests!
+  await media.decide(1, { key: 'call', requestId: devices!.id, decision: 'allow' })
+  share(session, call.mainFrame)
+  const [request] = media.snapshot(1).mediaRequests!
+  await media.decide(1, { key: 'call', requestId: request!.id, decision: 'allow', source: 'docs' })
+  call.report({ phase: 'started', id: '1', kinds: ['video', 'audio'] })
+  shared.state.captured = true
+  const [capture] = media.snapshot(1).captures!
+  // Moving the shared source alone does not move the caller’s controls or stop its capture.
+  tabs[1]!.windowId = 2
+  media.moveTab(shared as never, 2)
+  expect(media.snapshot(1).captures![0]!.id).toBe(capture!.id)
+  expect(media.snapshot(2)).toEqual({})
+  tabs[0]!.windowId = 2
+  media.moveTab(call as never, 2)
+  media.releaseWindow(1)
+  expect(media.snapshot(1)).toEqual({})
+  expect(media.snapshot(2).captures).toEqual([capture])
+  expect(media.keepAlive(call as never)).toBe(true)
+  expect(call.send).not.toHaveBeenCalledWith('browser-media:stop', expect.anything())
+  session.request?.(call, 'media', answer, {
+    isMainFrame: true,
+    mediaTypes: ['audio'],
+    requestingUrl: call.mainFrame.url,
+  })
+  expect(answer).toHaveBeenLastCalledWith(true)
+  expect(media.snapshot(2).mediaRequests).toBeUndefined()
+  expect(() => media.stop(1, { key: 'call', captureId: capture!.id })).toThrow(
+    'no longer being shared',
+  )
+  media.stop(2, { key: 'call', captureId: capture!.id })
+  expect(call.send).toHaveBeenCalledWith('browser-media:stop', '1')
+})
+
+it('moves a waiting media prompt so only its new window can answer', async () => {
+  const { media, session, call } = setup()
+  const callback = share(session, call.mainFrame)
+  const [request] = media.snapshot(1).mediaRequests!
+  tabs[0]!.windowId = 2
+  media.moveTab(call as never, 2)
+  expect(media.snapshot(1).mediaRequests).toBeUndefined()
+  expect(media.snapshot(2).mediaRequests![0]!.id).toBe(request!.id)
+  await expect(
+    media.decide(1, { key: 'call', requestId: request!.id, decision: 'allow', source: 'docs' }),
+  ).rejects.toThrow('no longer waiting')
+  expect(callback).not.toHaveBeenCalled()
+  await media.decide(2, { key: 'call', requestId: request!.id, decision: 'allow', source: 'docs' })
+  expect(callback).toHaveBeenCalledWith(expect.objectContaining({ video: expect.anything() }))
+})
+
 it('cannot stop a page that bypassed the tracker, and says so instead of claiming it stopped', async () => {
   const { media, session, call, shared } = setup()
   share(session, call.mainFrame)
@@ -446,6 +504,7 @@ it('asks before camera or microphone use, remembers the live document, and reset
   await media.decide(1, { key: 'call', requestId: request!.id, decision: 'allow' })
   expect(camera).toHaveBeenCalledWith(true)
   expect(ask(call, ['audio'])).toHaveBeenCalledWith(true)
+  expect(media.keepAlive(call as never)).toBe(true)
   expect(session.check?.(call, 'media', 'https://meet.example/', { mediaType: 'video' })).toBe(true)
   expect(session.check?.(call, 'media', 'https://evil.example/', { mediaType: 'video' })).toBe(
     false,

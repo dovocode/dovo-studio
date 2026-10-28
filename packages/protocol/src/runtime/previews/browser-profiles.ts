@@ -67,6 +67,17 @@ export const browserLinkDomainSchema = Schema.String.pipe(
   Schema.check(Schema.isMaxLength(2048)),
   Schema.check(Schema.makeFilter((value) => normalizeBrowserLinkDomain(value) === value)),
 )
+/** One displayable emoji, including flags, skin tones and joined sequences. */
+export const browserProfileEmojiSchema = Schema.String.pipe(
+  Schema.check(Schema.isMaxLength(32)),
+  Schema.check(
+    Schema.makeFilter(
+      (value) =>
+        [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)].length ===
+          1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\uFE0F?\u20E3/u.test(value),
+    ),
+  ),
+)
 export const browserProfileSchema = mutableStruct({
   id: browserProfileIdSchema,
   name: Schema.String.pipe(
@@ -74,6 +85,7 @@ export const browserProfileSchema = mutableStruct({
     Schema.check(Schema.isMaxLength(100)),
     Schema.check(Schema.isPattern(/\S/)),
   ),
+  emoji: Schema.optional(browserProfileEmojiSchema),
   language: Schema.optional(browserLanguageSchema),
   linkDomains: Schema.optional(
     mutableArray(browserLinkDomainSchema).pipe(

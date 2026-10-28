@@ -1210,8 +1210,44 @@ function BrowserContent({
       void disposeTab(tab).catch((cause) => setError(`Could not close tab: ${String(cause)}`))
   }
   const closeTab = (tab: BrowserTab) => removeTab(tab)
-  // Only the active preview's return chain stays alive. Switching tabs or promoting it
-  // disposes hidden previews, without reloading the retained page.
+  const protectedTabIds = async (candidates: readonly BrowserTab[]) => {
+    const protectedIds = new Set<string>()
+    // Unknown activity must preserve a page rather than risk ending a call.
+    const activity = await browser?.({ action: 'tab-activity', key: 'studio-tab-cleanup' }).catch(
+      () => undefined,
+    )
+    for (const tab of candidates)
+      if (
+        tab.keepAwake ||
+        (tab.kind === 'web' &&
+          (!activity?.protectedKeys || activity.protectedKeys.includes(nativeKey(tab.id))))
+      )
+        protectedIds.add(tab.id)
+    await Promise.all(
+      candidates
+        .filter((tab) => tab.kind === 'remote')
+        .map(async (tab) => {
+          const owner = runtimesRef.current.find((entry) => entry.profile.id === tab.runtimeId)
+          if (!owner?.connected) {
+            protectedIds.add(tab.id)
+            return
+          }
+          try {
+            const status = await store.readRuntime(
+              owner.profile,
+              '/api/previews/browser/activity',
+              { taskId, tabId: tab.id, profileId: tab.profileId },
+              browserTabActivitySchema,
+            )
+            if (status.active) protectedIds.add(tab.id)
+          } catch {
+            protectedIds.add(tab.id)
+          }
+        }),
+    )
+    return protectedIds
+  }
+  // Unused previews close, but a call or shared page becomes a regular tab and stays alive.
   useEffect(() => {
     const retained = new Set<string>(pendingPreview ? [pendingPreview] : [])
     let tab = tabs.find((item) => item.id === activeTab)
@@ -1221,11 +1257,28 @@ function BrowserContent({
     }
     const discarded = tabs.filter((tab) => tab.previewOf && !retained.has(tab.id))
     if (!discarded.length) return
-    const ids = new Set(discarded.map((tab) => tab.id))
-    currentTabs.current = currentTabs.current.filter((tab) => !ids.has(tab.id))
-    setTabs((previous) => previous.filter((tab) => !ids.has(tab.id)))
-    for (const tab of discarded)
-      void disposeTab(tab).catch((cause) => setError(`Could not close preview: ${String(cause)}`))
+    let cancelled = false
+    void protectedTabIds(discarded).then((protectedIds) => {
+      if (cancelled) return
+      const ids = new Set(discarded.map((tab) => tab.id))
+      const updated = currentTabs.current.flatMap((tab) =>
+        !ids.has(tab.id)
+          ? [tab]
+          : protectedIds.has(tab.id)
+            ? [{ ...tab, previewOf: undefined }]
+            : [],
+      )
+      currentTabs.current = updated
+      setTabs(updated)
+      for (const tab of discarded)
+        if (!protectedIds.has(tab.id))
+          void disposeTab(tab).catch((cause) =>
+            setError(`Could not close preview: ${String(cause)}`),
+          )
+    })
+    return () => {
+      cancelled = true
+    }
   }, [tabs, activeTab, pendingPreview])
   useEffect(() => {
     if (!shared) return
@@ -1248,40 +1301,10 @@ function BrowserContent({
             planned.closeIds.includes(tab.id) ||
             planned.tabs.find((item) => item.id === tab.id)?.settledAt !== tab.settledAt,
         )
-        const protectedIds = new Set<string>()
+        const protectedIds = candidates.length
+          ? await protectedTabIds(candidates)
+          : new Set<string>()
         if (candidates.length) {
-          const activity = await browser?.({ action: 'tab-activity', key: 'studio-tab-cleanup' })
-          for (const tab of candidates) {
-            if (
-              (tab.kind === 'web' && !activity?.protectedKeys) ||
-              activity?.protectedKeys?.includes(nativeKey(tab.id))
-            )
-              protectedIds.add(tab.id)
-          }
-          await Promise.all(
-            candidates
-              .filter((tab) => tab.kind === 'remote')
-              .map(async (tab) => {
-                const owner = runtimesRef.current.find(
-                  (entry) => entry.profile.id === tab.runtimeId,
-                )
-                if (!owner?.connected) {
-                  protectedIds.add(tab.id)
-                  return
-                }
-                try {
-                  const status = await store.readRuntime(
-                    owner.profile,
-                    '/api/previews/browser/activity',
-                    { taskId, tabId: tab.id, profileId: tab.profileId },
-                    browserTabActivitySchema,
-                  )
-                  if (status.active) protectedIds.add(tab.id)
-                } catch {
-                  protectedIds.add(tab.id)
-                } // Unknown media state must never close a page.
-              }),
-          )
           for (const tab of currentTabs.current)
             if (!candidates.includes(tab)) protectedIds.add(tab.id)
         }
@@ -2280,7 +2303,10 @@ function BrowserContent({
                   }
                 >
                   {category === 'active' && (
-                    <div aria-label="Pinned browser tabs" className="mb-1 grid grid-cols-3 gap-1">
+                    <div
+                      aria-label="Pinned browser tabs"
+                      className="mb-2 grid grid-cols-[repeat(auto-fill,minmax(4rem,1fr))] gap-1.5"
+                    >
                       {recentBrowserTabs(tabs)
                         .filter((tab) => tab.pinned)
                         .map(renderTab)}

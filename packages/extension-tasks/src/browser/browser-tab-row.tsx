@@ -14,7 +14,7 @@ import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { useWorkspace } from '@dovo/studio-core'
 import { browserTabCategory, runtimeComputerName } from '@dovo/protocol'
 import { BrowserFavicon } from './browser-favicon'
-import { useBrowserProfileName } from './browser-profile-label'
+import { useBrowserProfileDetails } from './browser-profile-label'
 import type { BrowserTab } from './shared-browser-tabs'
 
 export function BrowserTabRow({
@@ -49,7 +49,16 @@ export function BrowserTabRow({
   onKeepAwake?: () => void
 }) {
   const { runtimes } = useWorkspace()
-  const profile = useBrowserProfileName(tab)
+  const { name: profile, emoji } = useBrowserProfileDetails(tab)
+  const words = profile.trim().split(/\s+/)
+  const initials = (
+    words.length > 1
+      ? words
+          .slice(0, 2)
+          .map((word) => word[0])
+          .join('')
+      : profile.slice(0, 2)
+  ).toUpperCase()
   const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
   const computer =
     tab.kind === 'web'
@@ -73,7 +82,7 @@ export function BrowserTabRow({
             'group relative flex min-w-0 items-center rounded-lg transition-colors',
             tab.pinned
               ? cn(
-                  'border',
+                  'overflow-hidden rounded-xl border',
                   active
                     ? 'border-primary/30 bg-accent text-foreground shadow-sm'
                     : 'border-border/50 bg-background/50 text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground',
@@ -89,21 +98,23 @@ export function BrowserTabRow({
             aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}`}
             onClick={onSelect}
             title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
-            className={`flex min-w-0 flex-1 items-center gap-2 text-left ${tab.pinned ? 'h-14 flex-col justify-center gap-1.5 px-2 text-[10px]' : 'h-9 px-2 text-xs'}`}
+            className={`flex min-w-0 flex-1 items-center gap-2 text-left ${tab.pinned ? 'h-16 flex-col justify-center gap-1.5 px-2 text-[11px]' : 'h-9 px-2 text-xs'}`}
           >
-            <BrowserFavicon tab={tab} />
-            {tab.keepAwake && (
-              <span
-                aria-label="Kept awake"
-                title="Keep awake is on"
-                className="shrink-0 text-status-success"
-              >
-                ●
-              </span>
-            )}
+            <span className="relative inline-flex shrink-0 items-center">
+              <BrowserFavicon tab={tab} />
+              {tab.keepAwake && (
+                <span
+                  aria-label="Kept awake"
+                  title="Keep awake is on"
+                  className="absolute -right-1 -bottom-1 size-1.5 rounded-full bg-status-success ring-2 ring-sidebar"
+                />
+              )}
+            </span>
             <span
               className={
-                tab.pinned ? 'w-full truncate text-center leading-none' : 'min-w-0 flex-1 truncate'
+                tab.pinned
+                  ? 'line-clamp-2 min-h-[2.5em] w-full text-center leading-tight break-words'
+                  : 'min-w-0 flex-1 truncate'
               }
             >
               {title}
@@ -111,32 +122,26 @@ export function BrowserTabRow({
             <span
               className={
                 tab.pinned
-                  ? 'sr-only'
+                  ? 'absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-background/80 px-0.5 text-[9px] leading-none text-muted-foreground'
                   : 'flex shrink-0 items-center gap-0.5 text-[9px] leading-none text-muted-foreground'
               }
               aria-label={`${computer} · ${profile}`}
             >
-              <RuntimeIcon
-                icon={tab.kind === 'remote' ? owner?.snapshot?.runtimeIcon : undefined}
-                className="size-2.5 shrink-0"
-                aria-hidden="true"
-              />
-              <span className="max-w-6 truncate" title={profile}>
-                {profile.slice(0, 2).toUpperCase()}
+              {!tab.pinned && (
+                <RuntimeIcon
+                  icon={tab.kind === 'remote' ? owner?.snapshot?.runtimeIcon : undefined}
+                  className="size-2.5 shrink-0"
+                  aria-hidden="true"
+                />
+              )}
+              <span
+                className={cn('max-w-6 truncate', emoji && 'text-xs')}
+                title={`${profile} · ${computer}`}
+              >
+                {emoji ?? initials}
               </span>
             </span>
           </button>
-          {tab.pinned && onHome && (
-            <IconButton
-              type="button"
-              label={`Return ${title} to home`}
-              disabled={busy}
-              onClick={onHome}
-              className="absolute right-0.5 top-0.5 size-5 bg-background/90 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
-            >
-              <Home size={11} />
-            </IconButton>
-          )}
           {!tab.pinned && (
             <div className="absolute right-0.5 flex items-center gap-0.5 rounded bg-sidebar opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:opacity-100">
               {category === 'active' && (

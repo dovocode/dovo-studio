@@ -67,6 +67,7 @@ export function documentPipWindowOptions(
     minWidth: 240,
     minHeight: 160,
     webPreferences: {
+      backgroundThrottling: false,
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,

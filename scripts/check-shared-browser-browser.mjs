@@ -1259,6 +1259,42 @@ try {
   await preview.waitFor({ state: 'hidden' })
   assert.equal((await persisted()).tabs.length, tabsBeforeFlood.length)
   assert.equal((await selected()).id, floodSource.id)
+  // A call started inside a temporary preview becomes a normal tab when browsing elsewhere.
+  const beforeCallLabel = await recent
+    .locator('button[aria-current="page"]')
+    .getAttribute('aria-label')
+  await page.evaluate(async () => {
+    window.createdTabs.push({
+      key: 'live-call-preview',
+      url: 'http://localhost:3000/live-call',
+      profileId: 'default',
+      active: true,
+      openerKey: 'studio:browser:main:local',
+    })
+    await window.pollBrowser()
+    window.protectedKeys = ['live-call-preview']
+  })
+  await preview.waitFor({ state: 'visible' })
+  await recent.getByRole('button', { name: beforeCallLabel, exact: true }).click()
+  await recent.getByRole('button', { name: /^localhost:3000\/live-call Local/ }).waitFor()
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some((call) => call.action === 'close' && call.key === 'live-call-preview'),
+    ),
+    false,
+    'Opening another page must not dispose a preview hosting an active call',
+  )
+  await recent.getByRole('button', { name: /^localhost:3000\/live-call Local/ }).click()
+  assert.equal(
+    (await selected()).previewOf,
+    undefined,
+    'Active calls are promoted out of temporary previews',
+  )
+  await page.keyboard.press('Control+w')
+  await recent.getByRole('button', { name: beforeCallLabel, exact: true }).click()
+  await page.evaluate(() => {
+    window.protectedKeys = []
+  })
   // Links can skip the overlay and stay as regular tabs without a second navigation.
   const directOpenerLabel = await recent
     .locator('button[aria-current="page"]')
@@ -1944,8 +1980,9 @@ try {
       title: 'Website ' + index,
       url: 'https://example.test/' + index,
       kind: 'web',
-      profileId: 'default',
+      profileId: index === 1 ? 'local-work' : 'default',
       pinned: index < 4,
+      keepAwake: index < 3,
       favicon:
         'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
     }))
@@ -2011,12 +2048,56 @@ try {
     1,
     'Pins show a favicon and a readable title',
   )
+  assert.equal(
+    await compactSidebar.getByRole('button', { name: /^Return .* to home$/ }).count(),
+    0,
+    'Home stays in the URL bar, not the pinned-tab panel',
+  )
+  await pins.first().getByLabel('This computer · Local Default').waitFor()
+  await controlsPage.evaluate(() =>
+    window.setCleanup({
+      browserProfiles: [
+        { id: 'default', name: 'Local Default', emoji: '💼' },
+        { id: 'local-work', name: 'Local Work', emoji: '🏠' },
+      ],
+    }),
+  )
+  assert.equal(
+    await pins.first().getByLabel('This computer · Local Default').textContent(),
+    '💼',
+    'Pinned tabs resolve the current profile emoji',
+  )
+  assert.equal(
+    await pins.nth(1).getByLabel('This computer · Local Work').textContent(),
+    '🏠',
+    'Each pin uses its own profile emoji',
+  )
+  await pins.first().hover()
+  await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-refined.png' })
+  const awakeIcon = await pins.first().getByLabel('Kept awake').boundingBox()
+  const faviconIcon = await pins.first().locator('img').boundingBox()
+  assert.ok(
+    Math.abs(awakeIcon.y - faviconIcon.y) < 20,
+    'Keep-awake sits on the favicon instead of taking a row',
+  )
   const separator = controlsPage.getByRole('separator', { name: 'Resize Browser tabs' })
   await separator.focus()
   await separator.press('ArrowRight')
   await separator.press('ArrowRight')
   await controlsPage.waitForFunction(() => window.preferences.at(-1)?.browserSidebarWidth === 244)
   assert.equal(Math.round((await compactSidebar.boundingBox()).width), 244)
+  await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-wide.png' })
+  for (let step = 0; step < 6; step++) await separator.press('ArrowLeft')
+  await controlsPage.waitForFunction(() => window.preferences.at(-1)?.browserSidebarWidth === 184)
+  const narrowPins = await Promise.all([0, 1, 2].map((index) => pins.nth(index).boundingBox()))
+  assert.equal(narrowPins[0].y, narrowPins[1].y)
+  assert.ok(
+    narrowPins[2].y > narrowPins[0].y,
+    'Narrow sidebars wrap pins before their contents are squeezed',
+  )
+  await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-narrow.png' })
+  for (let step = 0; step < 6; step++) await separator.press('ArrowRight')
+  await controlsPage.waitForFunction(() => window.preferences.at(-1)?.browserSidebarWidth === 244)
   const currentRow = compactSidebar.getByRole('button', { name: /^Website 4 Local/ })
   const close = compactSidebar.getByRole('button', { name: 'Close tab Website 4', exact: true })
   await controlsPage.mouse.move(1000, 750)

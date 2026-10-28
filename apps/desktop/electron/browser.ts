@@ -196,8 +196,20 @@ export function registerBrowser(
         entry.view.getVisible() && !entry.window.isMinimized() && entry.window.isVisible(),
       )
   }
+  const syncBackgroundThrottling = (entry: Entry) => {
+    if (!entry.contents.isDestroyed())
+      entry.contents.setBackgroundThrottling(
+        !(
+          entry.keepAwake ||
+          entry.videoPictureInPicture ||
+          entry.documentPip ||
+          (entry.workspace && media.keepAlive(entry.contents))
+        ),
+      )
+  }
   const setVisible = (entry: Entry, visible: boolean) => {
     const changed = entry.view.getVisible() !== visible
+    syncBackgroundThrottling(entry)
     entry.view.setVisible(visible)
     if (changed) reportVisibility(entry)
   }
@@ -317,6 +329,10 @@ export function registerBrowser(
     contents: entry.view.webContents,
   })
   const media = createBrowserMedia({
+    activityChanged: (contents) => {
+      const entry = [...views.values()].find((item) => item.contents.id === contents.id)
+      if (entry) syncBackgroundThrottling(entry)
+    },
     openThread: preload ? (target) => openThreadMedia(target, indexPath, preload) : undefined,
     tabFor: (contents) => {
       for (const entry of views.values())
@@ -653,9 +669,7 @@ export function registerBrowser(
     view.webContents.ipc.on('browser:video-pip', (event, active: unknown) => {
       if (!created.workspace || !event.senderFrame || typeof active !== 'boolean') return
       created.videoPictureInPicture = active
-      view.webContents.setBackgroundThrottling(
-        !active && !created.keepAwake && !created.documentPip,
-      )
+      syncBackgroundThrottling(created)
     })
     view.webContents.on('enter-html-full-screen', () => {
       if (
@@ -678,10 +692,11 @@ export function registerBrowser(
       created.fullscreenBounds = undefined
       created.fullscreenWindowWasFullscreen = undefined
     })
+    view.webContents.on('audio-state-changed', () => syncBackgroundThrottling(created))
     view.webContents.on('did-navigate', () => {
       if (created.documentPip && !created.documentPip.isDestroyed()) created.documentPip.close()
       created.videoPictureInPicture = false
-      view.webContents.setBackgroundThrottling(!created.keepAwake)
+      syncBackgroundThrottling(created)
     })
     // Service-worker clients.focus() and Chromium's native notification focus follow this path.
     view.webContents.on('focus', () => {
@@ -970,6 +985,13 @@ export function registerBrowser(
       const documentPip = details?.frameName?.startsWith(`${DOCUMENT_PIP_NAME}:`)
       if (documentPip) {
         created.documentPip = popup
+        const keepOnTop = () => {
+          if (!popup.isDestroyed()) popup.setAlwaysOnTop(true, 'floating')
+        }
+        keepOnTop()
+        popup.on('show', keepOnTop)
+        popup.on('restore', keepOnTop)
+        if (process.platform === 'linux') popup.setVisibleOnAllWorkspaces(true)
         view.webContents.setBackgroundThrottling(false)
         // A PiP document must never navigate away from its inherited origin.
         popup.webContents.on('will-navigate', (event) => event.preventDefault())
@@ -992,10 +1014,7 @@ export function registerBrowser(
         created.popups.delete(popup)
         if (created.documentPip === popup) {
           created.documentPip = undefined
-          if (!view.webContents.isDestroyed())
-            view.webContents.setBackgroundThrottling(
-              !created.keepAwake && !created.videoPictureInPicture,
-            )
+          if (!view.webContents.isDestroyed()) syncBackgroundThrottling(created)
         }
       })
       httpOnly(popup.webContents)
@@ -1186,9 +1205,7 @@ export function registerBrowser(
       if (!entry.workspace || entry.profileId !== command.profileId)
         throw new Error('The tab changed before Keep awake could be updated.')
       entry.keepAwake = command.enabled
-      entry.contents.setBackgroundThrottling(
-        !command.enabled && !entry.videoPictureInPicture && !entry.documentPip,
-      )
+      syncBackgroundThrottling(entry)
       await entry.loading
       return
     }
@@ -1216,19 +1233,10 @@ export function registerBrowser(
               entry.view.webContents.isDestroyed()))
         )
           throw new Error('The browser tab changed before it could be moved.')
-        if (
-          entry &&
-          (media.keepAlive(entry.view.webContents) ||
-            entry.videoPictureInPicture ||
-            entry.documentPip)
-        )
-          throw new Error(
-            'Stop this tab’s active media or sharing before moving it to another window.',
-          )
         if (entry?.fullscreenBounds)
           throw new Error('Exit website fullscreen before moving this tab to another window.')
       }
-      // Reject a busy or stale source before creating an otherwise empty destination.
+      // Reject a stale or fullscreen source before creating an otherwise empty destination.
       validateSource()
       const target =
         command.targetWindowId === undefined
@@ -1238,14 +1246,16 @@ export function registerBrowser(
             )
       if (!target || target === window || target.isDestroyed())
         throw new Error('The destination browser window is unavailable.')
-      // Loading a new window yields; the source may have closed or started sharing meanwhile.
+      // Loading a new window yields; the source may have closed or entered fullscreen meanwhile.
       validateSource()
       if ((tabCounts.get(target.id) ?? 1) + tabEvents(target.id).moved.length >= 100)
         throw new Error('The destination browser window has reached its 100-tab limit.')
       registerWindow(target)
       awakeRequests.delete(viewKey)
       if (entry) {
-        closePopups(entry)
+        for (const popup of entry.popups)
+          if (!popup.isDestroyed() && popup.getParentWindow() === window)
+            popup.setParentWindow(target)
         if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
         setVisible(entry, false)
         window.contentView.removeChildView(entry.view)
@@ -1253,6 +1263,7 @@ export function registerBrowser(
         extensions.removeTab(entry.profileId, entry.view.webContents)
         entry.windowId = target.id
         entry.window = target
+        media.moveTab(entry.contents, target.id)
         entry.inactiveAt = Date.now()
         entry.restoreFocus = false
         views.set(JSON.stringify([target.id, command.key]), entry)

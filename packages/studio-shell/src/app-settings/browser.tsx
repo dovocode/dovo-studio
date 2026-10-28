@@ -19,6 +19,30 @@ import type { BrowserProfile } from '@dovo/protocol'
 import { Button, Input, ChoicePicker } from '@dovo/studio-ui'
 import { SettingsPage, SettingsGroup, SettingRow } from './layout'
 import { SettingsSelect } from './settings-select'
+const profileEmojis = [
+  ['💼', 'Work'],
+  ['🏠', 'Home'],
+  ['👤', 'Personal'],
+  ['💻', 'Development'],
+  ['🧪', 'Testing'],
+  ['🚀', 'Launch'],
+  ['🎨', 'Design'],
+  ['📚', 'Learning'],
+  ['🌍', 'Travel'],
+  ['🎮', 'Gaming'],
+  ['💬', 'Social'],
+  ['🎵', 'Music'],
+  ['⭐', 'Favorite'],
+  ['🌱', 'Growth'],
+  ['🐱', 'Cat'],
+  ['🐶', 'Dog'],
+  ['🦊', 'Fox'],
+  ['☕', 'Coffee'],
+  ['❤️', 'Heart'],
+  ['🔵', 'Blue'],
+  ['🟢', 'Green'],
+  ['🟣', 'Purple'],
+] as const
 function DefaultBrowser() {
   const { defaultBrowser } = useStudioHost()
   const [status, setStatus] = useState<import('@dovo/protocol').DefaultBrowserStatus>()
@@ -94,10 +118,11 @@ function ProfileName({
   profile: BrowserProfile
   disabled: boolean
   routing: boolean
-  onSave: (name: string, language: string, linkDomains: string[]) => void
+  onSave: (name: string, language: string, linkDomains: string[], emoji?: string) => void
   onRemove: () => void
 }) {
   const [name, setName] = useState(profile.name)
+  const [emoji, setEmoji] = useState(profile.emoji ?? '')
   const [language, setLanguage] = useState(profile.language ?? 'en-US')
   const [domains, setDomains] = useState((profile.linkDomains ?? []).join(', '))
   const linkDomains = domains
@@ -116,9 +141,34 @@ function ProfileName({
       onSubmit={(event) => {
         event.preventDefault()
         if (validLanguage && validDomains)
-          onSave(name.trim(), Intl.getCanonicalLocales(language)[0]!, linkDomains)
+          onSave(
+            name.trim(),
+            Intl.getCanonicalLocales(language)[0]!,
+            linkDomains,
+            emoji || undefined,
+          )
       }}
     >
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Profile icon
+        <ChoicePicker
+          aria-label={`Emoji for ${profile.name}`}
+          value={emoji}
+          onValueChange={setEmoji}
+          disabled={disabled}
+          className="w-36"
+        >
+          <option value="">Initials</option>
+          {emoji && !profileEmojis.some(([value]) => value === emoji) && (
+            <option value={emoji}>{emoji}</option>
+          )}
+          {profileEmojis.map(([value, label]) => (
+            <option key={value} value={value}>
+              {value} {label}
+            </option>
+          ))}
+        </ChoicePicker>
+      </label>
       <Input
         className="min-w-0 flex-1 basis-36"
         aria-label={`Name for ${profile.name}`}
@@ -162,6 +212,7 @@ function ProfileName({
           !validLanguage ||
           !validDomains ||
           (name.trim() === profile.name &&
+            emoji === (profile.emoji ?? '') &&
             language === (profile.language ?? 'en-US') &&
             domains === (profile.linkDomains ?? []).join(', '))
         }
@@ -224,14 +275,14 @@ function Profiles({
       )}
       {profiles.map((profile) => (
         <ProfileName
-          key={`${profile.id}:${profile.name}:${profile.language}:${profile.linkDomains?.join()}`}
+          key={`${profile.id}:${profile.name}:${profile.emoji}:${profile.language}:${profile.linkDomains?.join()}`}
           profile={profile}
           routing={routing}
           disabled={disabled || busy}
-          onSave={(name, language, linkDomains) =>
+          onSave={(name, language, linkDomains, emoji) =>
             void update(
               profiles.map((item) =>
-                item.id === profile.id ? { ...item, name, language, linkDomains } : item,
+                item.id === profile.id ? { ...item, name, emoji, language, linkDomains } : item,
               ),
             )
           }
