@@ -55,7 +55,7 @@ export {
 export { PageHeader } from './page-header'
 
 export { ComposerModelPicker } from './composer-model-picker'
-export { ComposerSettingsControls } from './composer-settings-controls'
+export { ComposerSettingsControls, type ComposerControlSlots } from './composer-settings-controls'
 export { PermissionPolicyFields, permissionPolicyUIIssue } from './permission-policy-fields'
 export {
   ComposerSurface,

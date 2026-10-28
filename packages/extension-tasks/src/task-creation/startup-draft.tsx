@@ -1,3 +1,4 @@
+import type { WorkspaceControls } from '../chat/composer/composer-workspace'
 import { useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   createTask,
@@ -10,6 +11,7 @@ import {
 import { Button } from '@dovo/studio-ui'
 import { ComposerWorkspace } from '../chat/composer/composer-workspace'
 import { Composer } from '../chat/composer/composer'
+import type { SelectRemoteProject } from '../chat/composer/composer-project'
 import { TaskEmptyState } from './task-empty-state'
 import type { TaskSource } from '../list/task-collection'
 import type { Repository } from '@dovo/studio-core'
@@ -26,7 +28,12 @@ export function StartupDraft({
   onCommit: (task: Task) => void
   onBrowse?: () => void
   onDraftChange?: (task: Task | null, runtimeId: string | null) => void
-  renderThread?: (task: Task, workspaceControls: ReactNode, temporary: boolean) => ReactNode
+  renderThread?: (
+    task: Task,
+    workspaceControls: WorkspaceControls | undefined,
+    temporary: boolean,
+    onSelectRemote?: SelectRemoteProject,
+  ) => ReactNode
 }) {
   const store = useWorkspace()
   const [selection, setSelection] = useState<{
@@ -138,7 +145,12 @@ function StartupComposer({
 }: {
   taskId: string
   temporary: boolean
-  renderThread?: (task: Task, workspaceControls: ReactNode, temporary: boolean) => ReactNode
+  renderThread?: (
+    task: Task,
+    workspaceControls: WorkspaceControls | undefined,
+    temporary: boolean,
+    onSelectRemote?: SelectRemoteProject,
+  ) => ReactNode
   onDraftChange?: (task: Task | null, runtimeId: string | null) => void
   onBrowse?: () => void
   onSelectRemote: (
@@ -163,18 +175,25 @@ function StartupComposer({
     [store.activeRuntimeId, onDraftChange],
   )
   if (!task) return null
-  const workspaceControls = (
+  if (renderThread)
+    return renderThread(task, undefined, temporary, temporary ? onSelectRemote : undefined)
+  const workspaceControls: WorkspaceControls = (access) => (
     <ComposerWorkspace
       task={task}
       disabled={switching}
       onMachineMoving={setSwitching}
       onSelectRemote={temporary ? onSelectRemote : undefined}
-    />
+    >
+      {access}
+    </ComposerWorkspace>
   )
-  if (renderThread) return renderThread(task, workspaceControls, temporary)
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto">
       <TaskEmptyState
+        task={task}
+        disabled={switching}
+        onMoving={setSwitching}
+        onSelectRemote={temporary ? onSelectRemote : undefined}
         welcome
         onBrowse={onBrowse}
         projectName={
@@ -187,6 +206,7 @@ function StartupComposer({
         <Composer
           task={task}
           temporary={temporary}
+          workspaceMoving={switching}
           onPending={() => {}}
           workspaceControls={workspaceControls}
         />

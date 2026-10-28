@@ -19,6 +19,8 @@ const stash = createDraftStash({
 
 export function DraftStash(props: {
   scope?: string
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   getText: () => string
   onChange: (text: string) => void
   focus: () => void
@@ -26,7 +28,9 @@ export function DraftStash(props: {
   disabled?: boolean
 }) {
   const { styles } = useTheme()
-  const [open, setOpen] = useState(false)
+  const [localOpen, setLocalOpen] = useState(false)
+  const open = props.open ?? localOpen
+  const setOpen = props.onOpenChange ?? setLocalOpen
   useLayoutEffect(() => {
     if (open) return blockAccessibleNotificationInputs()
   }, [open])
@@ -43,19 +47,29 @@ export function DraftStash(props: {
       active.current = false
     }
   }, [])
-  const load = async () => {
-    if (!props.scope) return
+  useEffect(() => {
+    if (!open || !props.scope) return
+    let cancelled = false
     setError('')
     setBusy(true)
-    try {
-      const rows = await stash.list(props.scope)
-      if (active.current) setEntries(rows)
-    } catch {
-      if (active.current) setError('Could not read stashed drafts. Your saved data was kept.')
-    } finally {
-      if (active.current) setBusy(false)
+    void stash.list(props.scope).then(
+      (rows) => {
+        if (!cancelled) {
+          setEntries(rows)
+          setBusy(false)
+        }
+      },
+      () => {
+        if (!cancelled) {
+          setError('Could not read stashed drafts. Your saved data was kept.')
+          setBusy(false)
+        }
+      },
+    )
+    return () => {
+      cancelled = true
     }
-  }
+  }, [open, props.scope])
   const save = async () => {
     if (!props.scope || busy || props.disabled || props.hasAttachments) return
     const text = props.getText()
@@ -93,15 +107,16 @@ export function DraftStash(props: {
   }
   return (
     <>
-      <IconButton
-        icon="archive"
-        label="Stashed drafts"
-        disabled={props.disabled || !props.scope}
-        onPress={() => {
-          setOpen(true)
-          void load()
-        }}
-      />
+      {props.open === undefined && (
+        <IconButton
+          icon="archive"
+          label="Stashed drafts"
+          disabled={props.disabled || !props.scope}
+          onPress={() => {
+            setOpen(true)
+          }}
+        />
+      )}
       {open && (
         <Sheet ref={sheet} title="Stashed drafts" onClose={() => setOpen(false)}>
           <Text style={styles.muted}>

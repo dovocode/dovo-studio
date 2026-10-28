@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { ThreadContextPicker } from './thread-context-picker'
 import { DraftStash } from './draft-stash'
 import { draftStashScope } from '@dovo/protocol'
@@ -58,9 +59,11 @@ import {
   ComposerSubmit,
   DropdownMenu,
   cn,
+  type ComposerControlSlots,
 } from '@dovo/studio-ui'
 import { ComposerHarnessControls } from './composer-harness-controls'
-import { ComposerWorkspace } from './composer-workspace'
+import { ComposerWorkspace, type WorkspaceControls } from './composer-workspace'
+import type { SelectRemoteProject } from './composer-project'
 export function Composer({
   task,
   collapsed = false,
@@ -69,12 +72,18 @@ export function Composer({
   composerInsert,
   onComposerInsertApplied,
   workspaceControls,
+  workspaceMoving = false,
+  onWorkspaceMoving,
+  onSelectRemote,
   queuedMessages,
   temporary = false,
 }: {
   task: Task
   temporary?: boolean
-  workspaceControls?: import('react').ReactNode
+  workspaceControls?: WorkspaceControls
+  workspaceMoving?: boolean
+  onWorkspaceMoving?: (moving: boolean) => void
+  onSelectRemote?: SelectRemoteProject
   queuedMessages?: ReactNode
   collapsed?: boolean
   onPending: (pending: PendingMessage | null) => void
@@ -121,7 +130,12 @@ export function Composer({
   const [error, setError] = useApplicationState(''),
     [submitBusy, setSending] = useApplicationState(false),
     [stopping, setStopping] = useApplicationState(false)
-  const [machineMoving, setMachineMoving] = useApplicationState(false)
+  const [localMachineMoving, setLocalMachineMoving] = useApplicationState(false)
+  const setMachineMoving = (moving: boolean) => {
+    setLocalMachineMoving(moving)
+    onWorkspaceMoving?.(moving)
+  }
+  const machineMoving = workspaceMoving || localMachineMoving
   const [asideBusy, setAsideBusy] = useState(false)
   const [asideCreating, setAsideCreating] = useState(false)
   const asideRequest = useRef<'saving' | 'asking' | null>(null)
@@ -691,6 +705,22 @@ export function Composer({
       setSending(false)
     }
   }
+  const [accessContainer, setAccessContainer] = useState<HTMLSpanElement | null>(null)
+  const usesTurnSettings = !!(
+    snapshot?.queuedTurnSettingsSupported &&
+    agent &&
+    (!!editing || task.status === 'running' || !!task.queue?.length || !!turnSettings)
+  )
+  const renderControls = ({ model, access }: ComposerControlSlots) => (
+    <>
+      {model}
+      {accessContainer && createPortal(access, accessContainer)}
+    </>
+  )
+  const accessSlot =
+    !pendingQuestion && (!usesTurnSettings || snapshot?.fullTurnSettingsSupported) ? (
+      <span ref={setAccessContainer} className="contents" />
+    ) : null
   return (
     <div className="shrink-0 px-3 pb-2 pt-1">
       {meter && meter.level !== 'ok' && !pendingQuestion && (
@@ -747,20 +777,20 @@ export function Composer({
             <span className="text-xs text-muted-foreground">
               Answer the question above to continue.
             </span>
-          ) : snapshot?.queuedTurnSettingsSupported &&
-            agent &&
-            (!!editing || task.status === 'running' || !!task.queue?.length || !!turnSettings) ? (
+          ) : usesTurnSettings && agent ? (
             <TurnModelControls
               task={task}
               agent={agent}
               value={turnSettings}
               onChange={changeTurnSettings}
               disabled={sending || !!task.archived}
+              renderControls={renderControls}
             />
           ) : (
             <ComposerHarnessControls
               task={task}
               disabled={!!editing || sending || !!task.archived}
+              renderControls={renderControls}
             />
           )
         }
@@ -1137,13 +1167,16 @@ export function Composer({
         onClose={() => setCommand(null)}
         onConfirm={confirmCommand}
       />
-      <div className={pendingQuestion ? 'hidden' : undefined}>
-        {workspaceControls ?? (
+      <div className={pendingQuestion ? 'hidden' : undefined} inert={machineMoving || undefined}>
+        {workspaceControls?.(accessSlot) ?? (
           <ComposerWorkspace
             task={task}
             disabled={sending || !!task.archived}
             onMachineMoving={setMachineMoving}
-          />
+            onSelectRemote={onSelectRemote}
+          >
+            {accessSlot}
+          </ComposerWorkspace>
         )}
         <p className="mx-auto mt-1 hidden max-w-[var(--chat-max)] text-right text-[0.625rem] text-muted-foreground">
           {task.status === 'running'

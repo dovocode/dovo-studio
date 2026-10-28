@@ -26,7 +26,7 @@ import {
   MessageCircle,
   ScanSearch,
 } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useRef, useState, type ComponentProps } from 'react'
 import { taskSources, type TaskSource } from '../../list/task-collection'
 import { moveTaskDraft } from './task-machine-selector'
 import { changeTaskProject } from './task-project-selection'
@@ -36,8 +36,12 @@ export function ComposerProject({
   disabled,
   onMoving,
   onSelectRemote,
+  prominent = false,
+  controls = 'both',
 }: {
   task: Task
+  prominent?: boolean
+  controls?: 'project' | 'server' | 'both'
   disabled: boolean
   onMoving?: (moving: boolean) => void
   onSelectRemote?: (
@@ -68,7 +72,36 @@ export function ComposerProject({
   const repository = store.workspace.repositories.find((item) => item.id === task.repositoryId)
   const editable =
     canChangeTaskCheckout(task) && !task.archivedAt && !task.pullRequest && !task.workItem
-  const locked = disabled || busy || !editable || !!task.draftAttachments?.length
+  const locked =
+    disabled ||
+    busy ||
+    !editable ||
+    !!task.archived ||
+    !!task.example ||
+    !!task.draftAttachments?.length ||
+    (prominent && !store.connected)
+  const scratchRepository = store.workspace.repositories.find((item) => item.kind === 'scratch')
+  const selectedProject =
+    !task.autoProject && repository?.kind !== 'scratch' ? repository : undefined
+  const startLabel = selectedProject?.name ?? 'Scope'
+  const projectSelected = !!task.autoProject || !!selectedProject
+  const chooseScope = () => {
+    if (locked || !autoAvailable || !scratchRepository || !current?.online) return
+    if (!task.autoProject)
+      store.setWorkspace((workspace) =>
+        updateTask(workspace, task.id, (draft) =>
+          changeTaskAutoProject(
+            draft,
+            workspace.repositories.find((item) => item.id === draft.repositoryId),
+            scratchRepository,
+            store.snapshot?.defaults,
+            workspace.agents,
+            store.snapshot?.autoProjectModelSelection ?? 'inherit',
+          ),
+        ),
+      )
+    setOpen(false)
+  }
   const choose = async (source: TaskSource, target: Repository, preserveAuto = false) => {
     if (locked || !source.online || target.gitIdentityError) return
     if (
@@ -229,15 +262,194 @@ export function ComposerProject({
       onClose={() => setAdding(null)}
     />
   )
-  return (
-    <>
+  const projectControl = (
+    <Popover.Root
+      open={open}
+      onOpenChange={(value) => {
+        if (busy) return
+        setOpen(value)
+        if (value) {
+          setQuery('')
+          setError('')
+        }
+      }}
+    >
+      <div className={prominent ? 'inline-flex min-w-0 max-w-full items-stretch' : 'contents'}>
+        {prominent && autoAvailable && (
+          <button
+            type="button"
+            aria-label={selectedProject ? `Selected project: ${startLabel}` : 'Start in Scope'}
+            aria-pressed={projectSelected}
+            disabled={locked || (!selectedProject && (!autoAvailable || !scratchRepository))}
+            title={
+              selectedProject
+                ? 'Choose a different project or Scope'
+                : 'Find the right projects for your task'
+            }
+            onClick={() => {
+              if (selectedProject) {
+                setQuery('')
+                setError('')
+                setOpen(true)
+              } else chooseScope()
+            }}
+            className={`min-h-11 min-w-20 max-w-52 truncate rounded-l-lg border border-r-0 px-3 text-sm outline-none hover:bg-accent focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${projectSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
+          >
+            {startLabel}
+          </button>
+        )}
+        <Popover.Trigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={locked}
+            aria-label={prominent ? 'Choose project' : 'Task project'}
+            className={
+              prominent
+                ? `min-h-11 min-w-11 ${autoAvailable ? 'rounded-l-none rounded-r-lg' : 'gap-2 rounded-lg'} border px-3 shadow-none ${projectSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'}`
+                : 'h-6 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal'
+            }
+          >
+            {prominent && !autoAvailable && (
+              <span className="max-w-48 truncate">{selectedProject?.name ?? 'Choose project'}</span>
+            )}
+            {!prominent && (
+              <>
+                {task.autoProject ? (
+                  <ScanSearch className="size-3.5" />
+                ) : repository?.kind === 'scratch' ? (
+                  <MessageCircle className="size-3.5" />
+                ) : (
+                  <Folder className="size-3.5" />
+                )}
+                <span className="max-w-32 truncate">
+                  {task.autoProject
+                    ? autoAvailable
+                      ? 'Scope'
+                      : 'Scope (disabled)'
+                    : repository?.kind === 'scratch'
+                      ? 'General'
+                      : (repository?.name ?? 'Choose project')}
+                </span>
+              </>
+            )}
+            <ChevronDown className="size-3" />
+          </Button>
+        </Popover.Trigger>
+      </div>
+      <Popover.Portal>
+        <Popover.Content
+          side={prominent ? 'bottom' : 'top'}
+          align="start"
+          sideOffset={8}
+          aria-label="Choose a project"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            search.current?.focus()
+          }}
+          onEscapeKeyDown={(event) => {
+            if (busy) event.preventDefault()
+          }}
+          className="z-50 w-72 max-w-[calc(100vw-24px)] rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
+        >
+          <Input
+            ref={search}
+            aria-label="Search projects"
+            placeholder="Search projects"
+            value={query}
+            disabled={locked}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                projects.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+              }
+            }}
+            className="mb-2"
+          />
+          <div
+            ref={projects}
+            role="group"
+            aria-label="Projects"
+            onKeyDown={(event) => {
+              if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+              const buttons = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+              )
+              const index = buttons.findIndex((button) => button === event.target)
+              if (index < 0) return
+              event.preventDefault()
+              if (event.key === 'ArrowUp' && index === 0) {
+                search.current?.focus()
+                return
+              }
+              const next =
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? buttons.length - 1
+                    : (index + (event.key === 'ArrowDown' ? 1 : -1)) % buttons.length
+              buttons[next]?.focus()
+            }}
+          >
+            {!prominent && scratch && (
+              <div className="mb-1 border-b pb-1">{projectRow(scratch)}</div>
+            )}
+            {autoAvailable && scratchRepository && (
+              <button
+                type="button"
+                aria-label="Scope mode"
+                aria-pressed={!!task.autoProject}
+                disabled={locked || !autoAvailable || !scratchRepository}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent"
+                onClick={chooseScope}
+              >
+                <ScanSearch className="size-4" />
+                <span className="flex-1">Scope</span>
+                {task.autoProject && <Check className="size-4" />}
+              </button>
+            )}
+            <div className="max-h-64 overflow-y-auto">
+              {matches.map(projectRow)}
+              {!matches.length && (
+                <p role="status" className="p-2 text-xs text-muted-foreground">
+                  {query.trim() ? 'No matching projects.' : 'No projects yet.'}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="mt-2 border-t pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={locked || !current?.online}
+              onClick={() => {
+                if (!current) return
+                setOpen(false)
+                setAdding(current)
+              }}
+              className="w-full justify-start gap-2 px-2 text-sm font-normal"
+            >
+              <Plus className="size-4" />
+              {multipleMachines
+                ? `Add project on ${current?.name ?? 'this server'}`
+                : 'Add project'}
+            </Button>
+          </div>
+          {feedback}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+  const serverControl = controls !== 'project' &&
+    (multipleMachines || prominent || controls === 'server') && (
       <Popover.Root
-        open={open}
+        open={serverOpen}
         onOpenChange={(value) => {
           if (busy) return
-          setOpen(value)
+          setServerOpen(value)
           if (value) {
-            setQuery('')
+            setOpen(false)
             setError('')
           }
         }}
@@ -247,245 +459,116 @@ export function ComposerProject({
             type="button"
             variant="ghost"
             disabled={locked}
-            aria-label="Task project"
-            className="h-6 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
+            aria-label="Task server"
+            className={
+              prominent
+                ? 'min-h-11 min-w-0 max-w-56 gap-1.5 rounded-lg border border-border px-3 text-xs font-normal'
+                : 'h-6 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal'
+            }
           >
-            {task.autoProject ? (
-              <ScanSearch className="size-3.5" />
-            ) : repository?.kind === 'scratch' ? (
-              <MessageCircle className="size-3.5" />
-            ) : (
-              <Folder className="size-3.5" />
-            )}
-            <span className="max-w-32 truncate">
-              {task.autoProject
-                ? autoAvailable
-                  ? 'Scope'
-                  : 'Scope (disabled)'
-                : repository?.kind === 'scratch'
-                  ? 'General'
-                  : (repository?.name ?? 'Choose project')}
-            </span>
+            <RuntimeIcon icon={current?.snapshot?.runtimeIcon} className="size-3.5" />
+            <span className="max-w-28 truncate">{current?.name ?? 'This server'}</span>
             <ChevronDown className="size-3" />
           </Button>
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Content
-            side="top"
+            side={prominent ? 'bottom' : 'top'}
             align="start"
             sideOffset={8}
-            aria-label="Choose a project"
-            onOpenAutoFocus={(event) => {
-              event.preventDefault()
-              search.current?.focus()
-            }}
+            aria-label="Choose a server"
             onEscapeKeyDown={(event) => {
               if (busy) event.preventDefault()
             }}
             className="z-50 w-72 max-w-[calc(100vw-24px)] rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
           >
-            <Input
-              ref={search}
-              aria-label="Search projects"
-              placeholder="Search projects"
-              value={query}
-              disabled={locked}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'ArrowDown') {
-                  event.preventDefault()
-                  projects.current
-                    ?.querySelector<HTMLButtonElement>('button:not(:disabled)')
-                    ?.focus()
-                }
-              }}
-              className="mb-2"
-            />
-            <div
-              ref={projects}
-              role="group"
-              aria-label="Projects"
-              onKeyDown={(event) => {
-                if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-                const buttons = Array.from(
-                  event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
-                )
-                const index = buttons.findIndex((button) => button === event.target)
-                if (index < 0) return
-                event.preventDefault()
-                if (event.key === 'ArrowUp' && index === 0) {
-                  search.current?.focus()
-                  return
-                }
-                const next =
-                  event.key === 'Home'
-                    ? 0
-                    : event.key === 'End'
-                      ? buttons.length - 1
-                      : (index + (event.key === 'ArrowDown' ? 1 : -1)) % buttons.length
-                buttons[next]?.focus()
-              }}
-            >
-              {scratch && <div className="mb-1 border-b pb-1">{projectRow(scratch)}</div>}
-              {autoAvailable &&
-                current?.workspace.repositories.some((repo) => repo.kind === 'scratch') && (
+            <p className="px-2 pb-2 text-xs text-muted-foreground">
+              {task.autoProject ? (
+                'Select projects automatically on'
+              ) : (
+                <>Run {repository?.kind === 'scratch' ? 'General' : repository?.name} on</>
+              )}
+            </p>
+            {sources
+              .flatMap((source) => {
+                const target = serverRepository(source)
+                return target ? [{ source, target }] : []
+              })
+              .map(({ source, target }) => {
+                return (
                   <button
+                    key={source.runtimeId ?? 'local'}
                     type="button"
-                    aria-label="Scope mode"
-                    aria-pressed={!!task.autoProject}
-                    disabled={locked}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent"
-                    onClick={() => {
-                      const target = current.workspace.repositories.find(
-                        (repo) => repo.kind === 'scratch',
-                      )
-                      if (!target) return
-                      store.setWorkspace((workspace) =>
-                        updateTask(workspace, task.id, (draft) =>
-                          changeTaskAutoProject(
-                            draft,
-                            repository,
-                            target,
-                            store.snapshot?.defaults,
-                            workspace.agents,
-                            store.snapshot?.autoProjectModelSelection ?? 'inherit',
-                          ),
-                        ),
-                      )
-                      setOpen(false)
-                    }}
+                    aria-label={source.name}
+                    aria-pressed={source.runtimeId === store.activeRuntimeId}
+                    disabled={locked || !source.online || !!target.gitIdentityError}
+                    onClick={() => void choose(source, target, true)}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
                   >
-                    <ScanSearch className="size-4" />
-                    <span className="flex-1">Scope</span>
-                    {task.autoProject && <Check className="size-4" />}
+                    <RuntimeIcon icon={source.snapshot?.runtimeIcon} className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{source.name}</span>
+                      {(!source.online || target.gitIdentityError) && (
+                        <span className="block text-xs text-muted-foreground">
+                          {!source.online ? 'Offline' : target.gitIdentityError}
+                        </span>
+                      )}
+                    </span>
+                    {source.runtimeId === store.activeRuntimeId && (
+                      <Check className="size-4 shrink-0" />
+                    )}
                   </button>
-                )}
-              <div className="max-h-64 overflow-y-auto">
-                {matches.map(projectRow)}
-                {!matches.length && (
-                  <p role="status" className="p-2 text-xs text-muted-foreground">
-                    {query.trim() ? 'No matching projects.' : 'No projects yet.'}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="mt-2 border-t pt-2">
+                )
+              })}
+            {!task.autoProject && repository && repository.kind !== 'scratch' && (
               <Button
                 type="button"
                 variant="ghost"
-                disabled={locked || !current?.online}
+                disabled={locked || !store.connected}
+                className="mt-2 w-full justify-start gap-2 border-t px-2 text-sm font-normal"
                 onClick={() => {
-                  if (!current) return
-                  setOpen(false)
-                  setAdding(current)
+                  setServerOpen(false)
+                  setTransferring(true)
                 }}
-                className="w-full justify-start gap-2 px-2 text-sm font-normal"
               >
-                <Plus className="size-4" />
-                {multipleMachines
-                  ? `Add project on ${current?.name ?? 'this server'}`
-                  : 'Add project'}
+                <Plus className="size-4" /> Add to another machine
               </Button>
-            </div>
+            )}
             {feedback}
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
-      {multipleMachines && (
-        <Popover.Root
-          open={serverOpen}
-          onOpenChange={(value) => {
-            if (busy) return
-            setServerOpen(value)
-            if (value) {
-              setOpen(false)
-              setError('')
-            }
-          }}
+    )
+  return (
+    <>
+      {prominent ? (
+        <div
+          role="group"
+          aria-label="Start a thread"
+          className="mt-1 flex max-w-full flex-col items-center gap-1.5"
         >
-          <Popover.Trigger asChild>
-            <Button
+          <div className="flex max-w-full flex-wrap items-center justify-center gap-1.5">
+            <button
               type="button"
-              variant="ghost"
-              disabled={locked}
-              aria-label="Task server"
-              className="h-6 min-w-0 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal"
-            >
-              <RuntimeIcon icon={current?.snapshot?.runtimeIcon} className="size-3.5" />
-              <span className="max-w-28 truncate">{current?.name ?? 'This server'}</span>
-              <ChevronDown className="size-3" />
-            </Button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content
-              side="top"
-              align="start"
-              sideOffset={8}
-              aria-label="Choose a server"
-              onEscapeKeyDown={(event) => {
-                if (busy) event.preventDefault()
+              aria-label="Start in General"
+              aria-pressed={!task.autoProject && repository?.kind === 'scratch'}
+              disabled={locked || !scratchRepository}
+              onClick={() => {
+                if (current && scratchRepository) void choose(current, scratchRepository)
               }}
-              className="z-50 w-72 max-w-[calc(100vw-24px)] rounded-xl border bg-popover p-2 text-popover-foreground shadow-xl"
+              className={`min-h-11 min-w-20 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${!task.autoProject && repository?.kind === 'scratch' ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
             >
-              <p className="px-2 pb-2 text-xs text-muted-foreground">
-                {task.autoProject ? (
-                  'Select projects automatically on'
-                ) : (
-                  <>Run {repository?.kind === 'scratch' ? 'General' : repository?.name} on</>
-                )}
-              </p>
-              {sources
-                .flatMap((source) => {
-                  const target = serverRepository(source)
-                  return target ? [{ source, target }] : []
-                })
-                .map(({ source, target }) => {
-                  return (
-                    <button
-                      key={source.runtimeId ?? 'local'}
-                      type="button"
-                      aria-label={source.name}
-                      aria-pressed={source.runtimeId === store.activeRuntimeId}
-                      disabled={locked || !source.online || !!target.gitIdentityError}
-                      onClick={() => void choose(source, target, true)}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent disabled:opacity-40"
-                    >
-                      <RuntimeIcon
-                        icon={source.snapshot?.runtimeIcon}
-                        className="size-4 shrink-0"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate">{source.name}</span>
-                        {(!source.online || target.gitIdentityError) && (
-                          <span className="block text-xs text-muted-foreground">
-                            {!source.online ? 'Offline' : target.gitIdentityError}
-                          </span>
-                        )}
-                      </span>
-                      {source.runtimeId === store.activeRuntimeId && (
-                        <Check className="size-4 shrink-0" />
-                      )}
-                    </button>
-                  )
-                })}
-              {!task.autoProject && repository && repository.kind !== 'scratch' && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={locked || !store.connected}
-                  className="mt-2 w-full justify-start gap-2 border-t px-2 text-sm font-normal"
-                  onClick={() => {
-                    setServerOpen(false)
-                    setTransferring(true)
-                  }}
-                >
-                  <Plus className="size-4" /> Add to another machine
-                </Button>
-              )}
-              {feedback}
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
+              General
+            </button>
+            {projectControl}
+          </div>
+          {serverControl}
+        </div>
+      ) : (
+        <>
+          {controls !== 'server' && projectControl}
+          {serverControl}
+        </>
       )}
       {transferring && repository && (
         <ProjectTransferDialog repository={repository} onClose={() => setTransferring(false)} />
@@ -504,3 +587,7 @@ export function ComposerProject({
     </>
   )
 }
+
+export type SelectRemoteProject = NonNullable<
+  ComponentProps<typeof ComposerProject>['onSelectRemote']
+>

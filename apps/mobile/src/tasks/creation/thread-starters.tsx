@@ -17,7 +17,7 @@ export function ThreadStarters({
   return (
     <View
       accessibilityLabel="Start with a prompt"
-      style={{ width: '100%', maxWidth: 420, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}
+      style={{ width: '100%', maxWidth: 360, flexDirection: 'row', flexWrap: 'wrap', gap: 0 }}
     >
       {THREAD_STARTERS.map(({ id, label, prompt }) => (
         <Pressable
@@ -34,18 +34,16 @@ export function ThreadStarters({
             flexDirection: 'row',
             alignItems: 'center',
             gap: 8,
-            minHeight: 48,
-            paddingHorizontal: 12,
-            paddingVertical: 10,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: 14,
+            minHeight: 44,
+            paddingHorizontal: 10,
+            paddingVertical: 8,
+            borderRadius: 8,
             backgroundColor: pressed ? colors.surface : 'transparent',
             opacity: disabled ? 0.5 : 1,
           })}
         >
-          <Icon name={icons[id]} size={16} color={colors.muted} />
-          <Text style={{ color: colors.text, fontSize: 13, flexShrink: 1 }}>{label}</Text>
+          <Icon name={icons[id]} size={14} color={colors.muted} />
+          <Text style={{ color: colors.muted, fontSize: 12, flexShrink: 1 }}>{label}</Text>
         </Pressable>
       ))}
     </View>

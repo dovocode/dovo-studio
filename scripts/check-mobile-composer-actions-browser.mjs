@@ -13,7 +13,7 @@ import {useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';import
 const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(typeof s.lineHeight==='number')s.lineHeight=s.lineHeight+'px';if(Array.isArray(s.transform))s.transform=s.transform.map(t=>'translateY('+t.translateY+'px)').join(' ');return s};
 const useLayout=(ref,callback)=>{const current=useRef(callback);current.current=callback;const report=()=>{if(!ref.current||!current.current)return;const r=ref.current.getBoundingClientRect(),p=ref.current.parentElement.getBoundingClientRect();current.current({nativeEvent:{layout:{x:ref.current.offsetLeft-ref.current.parentElement.offsetLeft,y:ref.current.offsetTop-ref.current.parentElement.offsetTop,width:r.width,height:r.height}}})};useLayoutEffect(report);useLayoutEffect(()=>{const observer=new ResizeObserver(report);observer.observe(ref.current);return()=>observer.disconnect()},[])};
 export const View=({children,style,testID,accessibilityRole,accessibilityLabel,onLayout,ref:forwardedRef})=>{const ref=useRef(null);useLayout(ref,onLayout);useImperativeHandle(forwardedRef,()=>({measureInWindow:callback=>{const r=ref.current.getBoundingClientRect();callback(r.x,r.y,r.width,r.height)}}));return <div ref={ref} role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',borderStyle:'solid',borderWidth:0,...flat(style)}}>{children}</div>};
-export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,overflowY:scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:'column',...flat(contentContainerStyle)}}>{children}</div></div>};
+export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled,horizontal})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,minWidth:0,overflowX:horizontal?'auto':undefined,overflowY:horizontal||scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...flat(contentContainerStyle)}}>{children}</div></div>};
 export const Text=({children,style,numberOfLines,accessibilityRole,accessibilityLabel,accessibilityLiveRegion})=><span role={accessibilityRole} aria-label={accessibilityLabel} aria-live={accessibilityLiveRegion} style={{...flat(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
 export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=><button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
@@ -30,7 +30,7 @@ export const Glass=View;
 export const Choice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>;
-export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>({dismiss:callback=>{onClose();queueMicrotask(()=>callback?.())}}));return <div role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close</button></div>};
+export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>({dismiss:callback=>{onClose();queueMicrotask(()=>callback?.())}}));return createPortal(<div role="dialog" aria-label={title} style={{position:"fixed",inset:0,zIndex:1000,overflowY:"auto",background:"#202020",padding:12}}>{children}<button onClick={onClose}>Close</button></div>,document.body)};
 export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff'},styles:{content:{},muted:{color:'#999'}}});
 `
 const stubs = [
@@ -41,7 +41,8 @@ const stubs = [
   {
     path: '../../../runtime/connection/provider',
     importer: mobile,
-    contents: 'export const useRuntime=()=>window.runtime;',
+    contents:
+      'export const useRuntime=()=>window.runtime;export const RuntimeScope=({children})=>children;',
   },
   {
     path: '../../../ui/layout/sheet',
@@ -61,6 +62,25 @@ const stubs = [
     contents: 'export const useLinkOrigin=()=>({});',
   },
   { path: 'react-native', contents: controls },
+  {
+    path: '../../scm/connections/project-transfer',
+    importer: mobile,
+    contents: 'export const ProjectTransferDialog=()=>null;',
+  },
+  {
+    path: '../../screens/repositories',
+    importer: mobile,
+    contents: 'export const AddProject=()=>null;',
+  },
+  {
+    path: '../../ui/content/runtime-icon',
+    importer: mobile,
+    contents: 'export const RuntimeIcon=()=>null;',
+  },
+  {
+    path: '@react-native-async-storage/async-storage',
+    contents: `const data=new Map();export default {getAllKeys:async()=>[...data.keys()],getItem:async key=>data.get(key)??null,setItem:async(key,value)=>{data.set(key,value)},removeItem:async key=>{data.delete(key)}};`,
+  },
   {
     path: 'react-native-gesture-handler',
     contents: `
@@ -101,7 +121,8 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
   {
     path: '../../runtime/connection/provider',
     importer: mobile,
-    contents: 'export const useRuntime=()=>window.runtime;',
+    contents:
+      'export const useRuntime=()=>window.runtime;export const RuntimeScope=({children})=>children;',
   },
   {
     path: '../../shell/navigation',
@@ -143,7 +164,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
   {
     path: '../creation/task-machine-selector',
     importer: mobile,
-    contents: 'export const TaskMachineSelector=props=>{window.machineSelector=props;return null;}',
+    contents: `import {FolderPicker} from './src/tasks/creation/folder-picker';export const TaskMachineSelector=props=>{window.machineSelector=props;const runtime=window.runtime;return <FolderPicker stacked prominent={props.prominent} renderControls={props.renderControls} repositories={runtime.snapshot.workspace.repositories} value={props.task.repositoryId} autoProject={props.task.autoProject} onAuto={runtime.snapshot.autoProjectSelectionEnabled?props.onAuto:undefined} disabled={props.disabled} onMoving={props.onMoving} onChange={(_id,target)=>props.onProjectChange(target)}/>;}`,
   },
   ...[
     ['../creation/checkout-choice', 'CheckoutChoice'],
@@ -162,6 +183,7 @@ stubs.push({
   ...stubs.find((stub) => stub.path === '../../runtime/connection/provider'),
   path: '../runtime/connection/provider',
 })
+stubs.push({ path: '../ui/controls/choice', importer: mobile, contents: controls })
 const built = await bundleBrowser(
   {
     stdin: {
@@ -179,9 +201,9 @@ function App(){
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
   const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const [pendingFork,setPendingFork]=useState();window.setPendingFork=setPendingFork;const forkRef=useRef();const textRef=useRef(text);textRef.current=text;const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',pendingFork,stageForkEffect:fork=>Effect.sync(()=>{forkRef.current=fork;setPendingFork(fork);return fork}),confirmForkEffect:()=>Effect.sync(()=>{const fork={...forkRef.current,accepted:true};if(textRef.current===fork.draftText)setText('');forkRef.current=fork;setPendingFork(fork);return fork}),finishForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),discardForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
-  window.runtime={connected,snapshot,activeId:'runtime',profile:{connection:{address:'http://runtime.lan',token:'token'}},call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true}},catch:error=>error})};
-  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},attachmentPicker:{pick(){},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
-  return <Composer task={task} renderAbove={(setup,starters)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState starters={starters} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
+  window.runtime={connected,snapshot,overviews:[{profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan'}},connected,snapshot}],activeId:'runtime',profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan',token:'token'}},call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true}},catch:error=>error})};
+  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},act:work=>void work(),attachmentPicker:{pick(){window.calls.push({mode:'attach'})},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
+  return <Composer task={task} renderAbove={(setup,starters,startModes)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState starters={starters} startModes={startModes} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
     },
@@ -213,6 +235,26 @@ try {
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const initialQueued = page.getByRole('button', { name: /^View queued message 1:/ })
+  const queuedMessages = page.getByTestId('Queued messages')
+  await initialQueued.waitFor()
+  assert.equal(await queuedMessages.getByText('You', { exact: true }).count(), 0)
+  await page.evaluate(() =>
+    window.setTask({
+      queue: [{ ...window.currentTask.queue[0], source: { kind: 'user' } }],
+    }),
+  )
+  assert.equal(await queuedMessages.getByText('You', { exact: true }).count(), 0)
+  await page.evaluate(() =>
+    window.setTask({
+      queue: [
+        { ...window.currentTask.queue[0], source: { kind: 'system', label: 'Review update' } },
+      ],
+    }),
+  )
+  await queuedMessages.getByText('Review update', { exact: true }).waitFor()
+  await page.evaluate(() =>
+    window.setTask({ queue: [{ ...window.currentTask.queue[0], source: undefined }] }),
+  )
   assert.match(
     await initialQueued.getAttribute('aria-description'),
     /^Queued message 1 of 1, not sent/,
@@ -577,6 +619,9 @@ try {
   assert.equal(await defaults.count(), 0)
   await advanced.click()
   await page.evaluate(() => window.setTask({ repositoryId: 'repo', autoProject: false }))
+  await page
+    .getByRole('button', { name: 'Checkout & branch', exact: true })
+    .waitFor({ state: 'detached' })
   assert.equal(
     await page.getByRole('button', { name: 'Checkout & branch', exact: true }).count(),
     0,
@@ -908,6 +953,32 @@ try {
   assert.equal(await page.getByRole('dialog', { name: 'Queued messages', exact: true }).count(), 0)
   await page.evaluate(() => window.setTask({ queue: [] }))
   await page.getByTestId('Queued messages').waitFor({ state: 'detached' })
+  // The plus menu keeps draft tools available without a permanent toolbar row.
+  assert.equal(await page.getByLabel('Draft tools', { exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Stashed drafts', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Stashed drafts', exact: true }).click()
+  const stash = page.getByRole('dialog', { name: 'Stashed drafts', exact: true })
+  await stash.waitFor()
+  const originalDraft = await page
+    .getByRole('textbox', { name: 'Message', exact: true })
+    .inputValue()
+  await stash.getByRole('button', { name: 'Stash current text', exact: true }).click()
+  await page.waitForFunction(() => window.conversation.actions.draft.text === '')
+  await stash.getByRole('button', { name: 'Restore', exact: true }).click()
+  await stash.waitFor({ state: 'detached' })
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
+    originalDraft,
+  )
+  await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Attach thread context', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Search threads', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+  await page.getByRole('button', { name: 'Attach photos or files', exact: true }).click()
+  await page.waitForFunction(() => window.calls.at(-1)?.mode === 'attach')
+  assert.equal(await page.getByRole('dialog', { name: 'Add to draft', exact: true }).count(), 0)
   // Prompt-first native layout uses the production empty state and starter actions.
   await page.evaluate(() => {
     window.setDraftText('')
@@ -917,6 +988,8 @@ try {
       queue: [],
       nativeTodos: undefined,
       contextUsage: undefined,
+      repositoryId: 'scratch',
+      autoProject: false,
     })
     document.getElementById('app').style.height = '100dvh'
   })
@@ -929,14 +1002,25 @@ try {
     await page.setViewportSize(viewport)
     const start = page.getByTestId('Thread start')
     await start.waitFor()
-    for (const label of ['Build something', 'Fix a bug', 'Understand code', 'Plan a change']) {
+    assert.equal(await start.getByText('Browse threads', { exact: true }).count(), 0)
+    for (const label of [
+      'Start in General',
+      'Start in Scope',
+      'Choose project',
+      'Task server',
+      'Build something',
+      'Fix a bug',
+      'Understand code',
+      'Plan a change',
+    ]) {
       const button = page.getByRole('button', { name: label, exact: true })
       await button.scrollIntoViewIfNeeded()
       const box = await button.boundingBox()
       assert.ok(
         box &&
           box.width >= 44 &&
-          box.height >= 48 &&
+          box.height >= 44 &&
+          box.height <= 44 &&
           box.x >= 0 &&
           box.x + box.width <= viewport.width,
         JSON.stringify(box),
@@ -946,6 +1030,19 @@ try {
       await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
       false,
     )
+    const scopeBounds = await page
+      .getByRole('button', { name: 'Start in Scope', exact: true })
+      .boundingBox()
+    const dropdownBounds = await page
+      .getByRole('button', { name: 'Choose project', exact: true })
+      .boundingBox()
+    const deviceBounds = await page
+      .getByRole('button', { name: 'Task server', exact: true })
+      .boundingBox()
+    assert.ok(scopeBounds && dropdownBounds && deviceBounds)
+    assert.ok(Math.abs(scopeBounds.x + scopeBounds.width - dropdownBounds.x) < 1)
+    assert.equal(scopeBounds.y, dropdownBounds.y)
+    assert.ok(deviceBounds.y >= scopeBounds.y + scopeBounds.height)
     if (viewport.height >= 700) {
       await start.evaluate((node) => {
         node.parentElement.scrollTop = 0
@@ -960,6 +1057,84 @@ try {
         path: screenshots + '/native-adapter-' + viewport.width + 'x' + viewport.height + '.png',
       })
   }
+  const general = page.getByRole('button', { name: 'Start in General', exact: true })
+  const scope = page.getByRole('button', { name: 'Start in Scope', exact: true })
+  const projects = page.getByRole('button', { name: 'Choose project', exact: true })
+  assert.equal(
+    await page
+      .getByTestId('Task setup')
+      .getByRole('button', { name: 'Choose project', exact: true })
+      .count(),
+    0,
+  )
+  assert.equal(
+    await page
+      .getByTestId('Task setup')
+      .getByRole('button', { name: 'Task server', exact: true })
+      .count(),
+    0,
+  )
+  await scope.click()
+  await page.waitForFunction(() => window.currentTask.autoProject === true)
+  assert.equal(await page.getByRole('dialog', { name: 'Project', exact: true }).count(), 0)
+  assert.equal(await scope.getAttribute('aria-selected'), 'true')
+  assert.equal(await page.evaluate(() => window.currentTask.repositoryId), 'scratch')
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Keep this draft')
+  const beforeScopeReselect = await page.evaluate(() => window.calls.length)
+  await scope.click()
+  assert.equal(await page.evaluate(() => window.calls.length), beforeScopeReselect)
+  await projects.click()
+  assert.equal(await page.evaluate(() => window.currentTask.autoProject), true)
+  await page.getByRole('button', { name: 'Project', exact: true }).click()
+  await page.waitForFunction(() => window.currentTask.repositoryId === 'repo')
+  const selectedProject = page.getByRole('button', {
+    name: 'Selected project: Project',
+    exact: true,
+  })
+  assert.equal(await scope.count(), 0)
+  assert.equal(await selectedProject.getAttribute('aria-selected'), 'true')
+  assert.equal(await selectedProject.textContent(), 'Project')
+  await selectedProject.click()
+  assert.equal(await page.evaluate(() => window.currentTask.repositoryId), 'repo')
+  await page.getByRole('button', { name: 'Scope mode', exact: true }).click()
+  await page.waitForFunction(() => window.currentTask.autoProject === true)
+  assert.equal(await page.evaluate(() => window.currentTask.repositoryId), 'scratch')
+  await general.click()
+  await page.waitForFunction(() => !window.currentTask.autoProject)
+  assert.equal(await general.getAttribute('aria-selected'), 'true')
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
+    'Keep this draft',
+  )
+  await page.evaluate(() => window.setConnected(false))
+  await page.waitForFunction(
+    () => document.querySelector('[aria-label="Start in General"]').disabled,
+  )
+  assert.equal(await general.isDisabled(), true)
+  assert.equal(await scope.isDisabled(), true)
+  assert.equal(await projects.isDisabled(), true)
+  await page.evaluate(() => {
+    window.setConnected(true)
+    window.setInputs({ questions: [], approvals: [], autoProjectSelectionEnabled: false })
+  })
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Start in General"]').disabled,
+  )
+  assert.equal(await scope.count(), 0)
+  assert.equal(await projects.textContent(), 'Choose project')
+  assert.equal(await projects.isDisabled(), false)
+  assert.equal(await general.isDisabled(), false)
+  await projects.click()
+  await page.getByRole('button', { name: 'Project', exact: true }).click()
+  await page.waitForFunction(() => window.currentTask.repositoryId === 'repo')
+  assert.equal(await projects.textContent(), 'Project')
+  assert.equal(await projects.isDisabled(), false)
+  await general.click()
+  await page.waitForFunction(() => window.currentTask.repositoryId === 'scratch')
+  await page.evaluate(() => {
+    window.setInputs({ questions: [], approvals: [] })
+    window.setDraftText('')
+  })
   const calls = await page.evaluate(() => window.calls.length)
   const draftInput = page.getByRole('textbox', { name: 'Message', exact: true })
   await draftInput.evaluate((node) => {

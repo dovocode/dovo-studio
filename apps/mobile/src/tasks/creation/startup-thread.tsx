@@ -85,7 +85,6 @@ export function StartupThread({
               onBack={onBrowse}
               startup={{
                 temporary,
-                onBrowse,
                 onNewThread,
                 onSelectRemote: async (
                   targetId,

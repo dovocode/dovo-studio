@@ -5,6 +5,7 @@ import { chromium } from 'playwright'
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
   // Sharing is verified separately from draft, selection and route continuity.
+  '@dovo/extension-scm/repository-dialog': 'export const RepositoryDialog=()=>null;',
   '../chat/thread-sharing':
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
@@ -18,6 +19,7 @@ const mocks = {
     export {useCachedTask} from '../studio-core/src/workspace/use-cached-task';
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const useStudioHost=()=>window.host;
+    export const WorkspaceScope=({children})=>children;
     export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
     export const updateAppPreferences=()=>{};
@@ -42,7 +44,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     export const Dialog=({open,children})=>open?<div>{children}</div>:null;
     export const DialogContent=Box,DialogHeader=Box,DialogTitle=Box,DialogDescription=Box;
     export const ProjectIcon=()=>null;
-    export const Button=({children,onClick,disabled,type,...props})=><button aria-label={props['aria-label']} type={type} disabled={disabled} onClick={onClick}>{children}</button>;
+    export const Button=({children,onClick,disabled,type,variant,size,...props})=><button {...props} type={type} disabled={disabled} onClick={onClick}>{children}</button>;
     export const IconButton=({children,label,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;
     export const Input=props=><input {...props}/>;
     export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;
@@ -100,6 +102,11 @@ for (const [path, names] of [
 ])
   mocks[path] = names.map((name) => `export const ${name}=()=>null;`).join('\n')
 
+for (const name of ['ComposerHarnessControls', 'TurnModelControls'])
+  mocks[
+    name === 'ComposerHarnessControls' ? './composer-harness-controls' : './turn-model-controls'
+  ] = `export const ${name}=({renderControls})=>renderControls?.({model:null,access:null});`
+
 mocks['./review/review-pane'] =
   `export const ReviewPane=({onReference})=><button onClick={()=>onReference('Selected diff reference')}>Add diff reference to composer</button>;`
 mocks['./detail/task-files'] =
@@ -109,7 +116,7 @@ mocks['./chat/thread/side-question'] =
   `export const SideQuestion=({task,selectedChatId})=><div data-side-chat={selectedChatId??''} data-side-task={task.id}>Side question panel</div>;`
 
 // Exercise remote selection through the real TasksView/StartupDraft boundary.
-mocks['../chat/composer/composer-workspace'] = `
+mocks['../chat/composer/composer-workspace'] = mocks['./composer-workspace'] = `
   import {useWorkspace} from '@dovo/studio-core';
   export const ComposerWorkspace=({task,onSelectRemote})=>{
     const store=useWorkspace();
@@ -199,6 +206,25 @@ try {
     'smart',
   )
   assert.equal(await page.evaluate(() => window.saved.length), 1)
+  // Visible start modes switch the temporary draft directly, without opening a picker or sending.
+  const general = page.getByRole('button', { name: 'Start in General', exact: true })
+  const scope = page.getByRole('button', { name: 'Start in Scope', exact: true })
+  assert.equal(await scope.getAttribute('aria-pressed'), 'true')
+  await general.click()
+  assert.equal(await general.getAttribute('aria-pressed'), 'true')
+  assert.equal(
+    await page.locator('[data-composer-project]').getAttribute('data-auto-project'),
+    'false',
+  )
+  await scope.click()
+  assert.equal(await scope.getAttribute('aria-pressed'), 'true')
+  assert.equal(
+    await page.locator('[data-composer-project]').getAttribute('data-model-selection'),
+    'smart',
+  )
+  assert.equal(await page.evaluate(() => window.saved.length), 1)
+  assert.equal(await editor.inputValue(), '')
+
   await page.getByRole('button', { name: 'Switch project server' }).click()
   await page.waitForFunction(
     () =>

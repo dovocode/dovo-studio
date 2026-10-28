@@ -1,7 +1,6 @@
 import {
   watchMessage,
   watchMessagePreview,
-  messageSourceLabel,
   messageSourceFor,
   randomUUID,
   turnSettingsLabel,
@@ -273,13 +272,7 @@ export function MessageQueue({
                   </IconButton>
                 )}
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-1">
-                  {source ? (
-                    <MessageSource source={source} />
-                  ) : (
-                    <span className="text-[11px] text-muted-foreground">
-                      {messageSourceLabel()}
-                    </span>
-                  )}
+                  {source && source.kind !== 'user' && <MessageSource source={source} />}
                   <QueueItemContent
                     title={
                       watchMessagePreview(message) ||

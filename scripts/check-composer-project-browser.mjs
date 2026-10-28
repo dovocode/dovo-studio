@@ -12,6 +12,7 @@ const built = await build({
       import {createRoot} from 'react-dom/client';
       import {createTask} from '@dovo/studio-core';
       import {ComposerWorkspace} from '../extension-tasks/src/chat/composer/composer-workspace';
+      import {ComposerProject} from '../extension-tasks/src/chat/composer/composer-project';
       const repo=(id,name,gitIdentity)=>({id,name,path:'/'+id,branch:'main',gitIdentity});
       const scratch=id=>({...repo(id,'Private folder'),kind:'scratch'});
       const inventory={
@@ -25,22 +26,25 @@ const built = await build({
       window.selected=[];window.moving=[];window.fail=false;
       function App(){
         const [workspace,setWorkspace]=useState({tasks:[task],repositories:inventory.local,agents:[]});
+        const [prominent,setProminent]=useState(false),[moving,setMoving]=useState(false);
         const [multiple,setMultiple]=useState(false),[disabled,setDisabled]=useState(false),[online,setOnline]=useState(true),[active,setActive]=useState('local'),[remoteOnline,setRemoteOnline]=useState(true),[defaultServer,setDefaultServer]=useState(),[revision,setRevision]=useState(0),[autoEnabled,setAutoEnabled]=useState(false);
         const defaults={scopedSettings:{environment:{},shared:[{key:'project:github.com/team/project',updatedAt:1,changeId:'one',value:{taskDefaults:{defaultServerId:defaultServer}}}]}};
         const runtimes=multiple?profiles.map(profile=>({profile,connected:profile.id==='local'?online:profile.id==='remote'?remoteOnline:profile.id!=='offline',snapshot:{defaults,workspace:{repositories:inventory[profile.id],tasks:[],agents:[]}}})):[];
-        window.configure=changes=>{if('autoEnabled' in changes)setAutoEnabled(changes.autoEnabled);if('multiple' in changes)setMultiple(changes.multiple);if('disabled' in changes)setDisabled(changes.disabled);if('online' in changes)setOnline(changes.online);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('defaultServer' in changes)setDefaultServer(changes.defaultServer);setRevision(value=>value+1)};
+        window.configure=changes=>{if('prominent' in changes)setProminent(changes.prominent);if('autoEnabled' in changes)setAutoEnabled(changes.autoEnabled);if('multiple' in changes)setMultiple(changes.multiple);if('disabled' in changes)setDisabled(changes.disabled);if('online' in changes)setOnline(changes.online);if('remoteOnline' in changes)setRemoteOnline(changes.remoteOnline);if('defaultServer' in changes)setDefaultServer(changes.defaultServer);setRevision(value=>value+1)};
         window.store={workspace,setWorkspace,activeRuntimeId:active,connected:active==='local'?online:remoteOnline,runtimes,snapshot:{defaults,autoProjectSelectionEnabled:autoEnabled},runtimeRegistry:{profiles},connection:{address:'http://'+active}};
         window.workspace=workspace;window.active=active;
-        return <div data-revision={revision}><ComposerWorkspace task={workspace.tasks[0]} disabled={disabled}
-          onMachineMoving={value=>window.moving.push(value)}
-          onSelectRemote={(source,target)=>new Promise((resolve,reject)=>{
-            window.selected.push({runtimeId:source.runtimeId,repositoryId:target.id});
-            window.finish=()=>{
-              if(window.fail){reject(new Error('Could not move draft'));return}
-              setWorkspace(current=>({...current,repositories:inventory[source.runtimeId],tasks:[{...current.tasks[0],repositoryId:target.id}]}));
-              setActive(source.runtimeId);resolve();
-            };
-          })}/><button type="button">Outside</button></div>;
+        const onMoving=value=>{window.moving.push(value);setMoving(value)};
+        const onSelectRemote=(source,target,autoProject,autoProjectExecution)=>new Promise((resolve,reject)=>{
+          window.selected.push({runtimeId:source.runtimeId,repositoryId:target.id});
+          window.finish=()=>{
+            if(window.fail){reject(new Error('Could not move draft'));return}
+            setWorkspace(current=>({...current,repositories:inventory[source.runtimeId],tasks:[{...current.tasks[0],repositoryId:target.id,autoProject,autoProjectExecution}]}));
+            setActive(source.runtimeId);resolve();
+          };
+        });
+        const props={task:workspace.tasks[0],disabled:disabled||moving,onSelectRemote};
+        return <div data-revision={revision}><ComposerProject {...props} controls="project" prominent={prominent} onMoving={onMoving}/><ComposerWorkspace {...props} onMachineMoving={onMoving}/><button type="button">Outside</button></div>;
+
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -95,7 +99,7 @@ try {
   await trigger.click()
   await search.waitFor()
   assert.equal(await search.evaluate((input) => input === document.activeElement), true)
-  assert.equal(await server.count(), 0)
+  assert.equal(await server.count(), 1)
   assert.equal(
     await page
       .getByRole('group', { name: 'Projects' })
@@ -277,6 +281,58 @@ try {
   await page.evaluate(() => window.configure({ disabled: true }))
   await page.waitForFunction(() => document.querySelector('[aria-label="Task project"]').disabled)
   assert.equal(await trigger.isDisabled(), true)
+  // The start screen reuses selection/transfer logic with a joined Scope/project trigger.
+  await page.evaluate(() =>
+    window.configure({
+      prominent: true,
+      disabled: false,
+      online: true,
+      remoteOnline: true,
+      multiple: true,
+      autoEnabled: true,
+    }),
+  )
+  const generalStart = page.getByRole('button', { name: 'Start in General', exact: true })
+  const scopeStart = page.getByRole('button', { name: 'Start in Scope', exact: true })
+  const projectStart = page.getByRole('button', { name: 'Choose project', exact: true })
+  await scopeStart.click()
+  assert.equal(await scopeStart.getAttribute('aria-pressed'), 'true')
+  assert.equal(await panel.count(), 0)
+  assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
+  await scopeStart.click()
+  await generalStart.click()
+  assert.equal(await generalStart.getAttribute('aria-pressed'), 'true')
+  await projectStart.click()
+  await page.getByRole('button', { name: 'Other project', exact: true }).click()
+  const selectedProject = page.getByRole('button', {
+    name: 'Selected project: Other project',
+    exact: true,
+  })
+  await selectedProject.waitFor()
+  assert.equal(await selectedProject.textContent(), 'Other project')
+  assert.equal(await scopeStart.count(), 0)
+  await selectedProject.click()
+  await page.getByRole('button', { name: 'Scope mode', exact: true }).click()
+  await scopeStart.waitFor()
+  await server.click()
+  await page.getByRole('button', { name: 'remote machine', exact: true }).click()
+  await page.waitForFunction(() => window.moving.at(-1) === true)
+  assert.equal(await generalStart.isDisabled(), true)
+  assert.equal(await projectStart.isDisabled(), true)
+  await page.evaluate(() => window.finish())
+  await serverPanel.waitFor({ state: 'hidden' })
+  assert.equal(await page.evaluate(() => window.active), 'remote')
+  assert.equal(await page.evaluate(() => window.workspace.tasks[0].autoProject), true)
+  assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), 'Keep my draft')
+  assert.equal(await scopeStart.getAttribute('aria-pressed'), 'true')
+  await page.evaluate(() => window.configure({ autoEnabled: false }))
+  await scopeStart.waitFor({ state: 'detached' })
+  assert.equal(await projectStart.textContent(), 'Choose project')
+  assert.equal(await projectStart.isDisabled(), false)
+  await projectStart.click()
+  assert.equal(await page.getByRole('button', { name: 'Scope mode', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Remote notes', exact: true }).click()
+  await projectStart.filter({ hasText: 'Remote notes' }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Composer projects: all servers, grouped copies, pinned General during search, keyboard navigation, explicit server changes, saved defaults, offline fallback, draft preservation and move failure/retry passed.',

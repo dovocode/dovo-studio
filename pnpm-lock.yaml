@@ -144,9 +144,9 @@ overrides:
   vite@*: npm:@voidzero-dev/vite-plus-core@1.3.0
 
 patchedDependencies:
-  electron-chrome-extensions@4.10.0: b335250c197edbdc7c90ff7a3f20f759b13f66d48ec59057b5f284c849d0feab
   app-builder-lib@26.15.3: 4688f96749e3d76cf27bc535d874470bf264610a331db13644df7715d699acf1
   braces@3.0.3: de064a4d75e634c66eb99d727b5ba9bf2034053a255d342706578a7e2894abea
+  electron-chrome-extensions@4.10.0: b335250c197edbdc7c90ff7a3f20f759b13f66d48ec59057b5f284c849d0feab
   node-forge@1.4.0: 921ab7252db4f3a5bce2da71cba23c50f86eafee34392708f328de6b87158400
   node-pty@1.2.0-beta.15: 37fdac163ed4da76b410333015449ae5101dd110c1cff818ae62a379e7771bfa
   react-native-enriched-markdown@1.1.1: a94f682a05d83b8eeab8d2ab00a86118f2661059e44ef64569ef2c8226dc99c5
@@ -1258,10 +1258,16 @@ importers:
       react:
         specifier: ^19.3.1
         version: 19.3.1
+      react-dom:
+        specifier: ^19.3.1
+        version: 19.3.1(react@19.3.1)
     devDependencies:
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
 
   packages/studio-ui:
     dependencies:

@@ -264,7 +264,7 @@ try {
       ))
   )
     throw new Error('Model selection mode was not offered before the model picker')
-  await page.getByText('Codex models on one.', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Task Model', exact: true }).waitFor()
   // IDs that only restate the name are omitted; distinct ones remain.
   if (
     await page
@@ -280,30 +280,10 @@ try {
   const longModel = 'Claude Sonnet 4.6 Extended Thinking via OpenRouter'
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 700 })
-    for (const [role, label] of [
-      ['tab', 'Models'],
-      ['tab', 'Favorites'],
-      ['tab', 'Agents'],
-      ['button', 'Choose provider'],
-      ['button', longModel],
-    ]) {
-      const visible = await page
-        .getByRole(role, { name: label, exact: true })
-        .evaluate((button) => {
-          const text = Array.from(button.querySelectorAll('span')).find(
-            (node) =>
-              node.textContent ===
-              (button.getAttribute('aria-label') === 'Choose provider'
-                ? 'Codex'
-                : button.getAttribute('aria-label')),
-          )
-          return (
-            !!text &&
-            text.getBoundingClientRect().width > 20 &&
-            text.getBoundingClientRect().height > 8
-          )
-        })
-      if (!visible) throw new Error(`Picker navigation label ${label} collapsed at ${width}px`)
+    for (const label of ['Codex models', longModel]) {
+      const bounds = await page.getByRole('button', { name: label, exact: true }).boundingBox()
+      if (!bounds || bounds.width < 44 || bounds.height < 44)
+        throw new Error(`Picker row ${label} collapsed at ${width}px`)
     }
     if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth))
       throw new Error(`Picker overflowed at ${width}px`)
@@ -311,7 +291,7 @@ try {
     const row = await page
       .getByRole('button', { name: longModel, exact: true })
       .evaluate((button) => button.getBoundingClientRect().width)
-    if (row < width - 24 - 44 - 8)
+    if (row < width - 24 - 24 - 44 - 8)
       throw new Error(`Model rows were cramped to ${row}px at ${width}px`)
     const star = await page
       .getByRole('button', { name: 'Favorite Task Model', exact: true })
@@ -319,15 +299,12 @@ try {
     if (!star || star.width < 44 || star.height < 44)
       throw new Error(`Favorite target was smaller than 44px at ${width}px`)
   }
-  const providerControl = page.getByRole('button', { name: 'Choose provider', exact: true })
-  await providerControl.click()
-  await page.screenshot({ path: '/tmp/dovo-mobile-provider-picker.png', fullPage: true })
-  await page.getByRole('textbox', { name: 'Search providers', exact: true }).fill('not-a-provider')
-  await page.getByText('No matching providers.', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Back to models', exact: true }).click()
-  await page.getByRole('button', { name: 'Task Model', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Codex models', exact: true }).click()
+  if (await page.getByRole('button', { name: 'Task Model', exact: true }).count())
+    throw new Error('Provider section did not collapse')
+  await page.getByRole('button', { name: 'Codex models', exact: true }).click()
   if (await page.evaluate(() => !!window.saved))
-    throw new Error('Browsing providers changed the selected model')
+    throw new Error('Browsing provider groups changed the selection')
   // Identical catalogue names and descriptions stay distinguishable by model ID.
   for (const id of ['openai/shared-model', 'azure/shared-model'])
     if (
@@ -346,28 +323,27 @@ try {
   )
     throw new Error('Model list nested its own scroll area inside the sheet')
   if (
-    (await page.getByRole('tab', { name: 'Models', exact: true }).getAttribute('aria-selected')) !==
-    'true'
+    (await page
+      .getByRole('button', { name: 'Codex models', exact: true })
+      .getAttribute('aria-expanded')) !== 'true'
   )
-    throw new Error('Current picker tab was not exposed as selected')
+    throw new Error('Provider expansion was not exposed')
   await page.screenshot({ path: '/tmp/dovo-mobile-picker.png', fullPage: true })
-  await page.getByRole('tab', { name: 'Favorites', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Filter models', exact: true }).selectOption('favorites')
   await page.getByText('No favorite models for this harness.', { exact: true }).waitFor()
-  await page
-    .getByText('Codex favorites saved on one, shared by all its tasks.', { exact: true })
-    .waitFor()
-  await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+
+  await page.getByRole('combobox', { name: 'Filter models', exact: true }).selectOption('agents')
   await page.getByText('No saved agents. Create one in Settings.', { exact: true }).waitFor()
-  await page.getByRole('tab', { name: 'Models', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Filter models', exact: true }).selectOption('all')
   await page.getByRole('button', { name: 'Favorite Task Model', exact: true }).click()
   await page.getByRole('button', { name: 'Unfavorite Task Model', exact: true }).waitFor()
   if (await page.evaluate(() => !!window.saved))
     throw new Error('Favoriting changed the selected model')
-  await page.getByRole('tab', { name: 'Favorites', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Filter models', exact: true }).selectOption('favorites')
   await page.getByRole('button', { name: 'Task Model', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Unfavorite Task Model', exact: true }).click()
   await page.getByText('No favorite models for this harness.', { exact: true }).waitFor()
-  await page.getByRole('tab', { name: 'Models', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Filter models', exact: true }).selectOption('all')
   // An unknown ID can be used straight from search.
   await page.getByRole('textbox', { name: 'Search harnesses and models' }).fill('my-custom-id')
   await page.getByRole('button', { name: 'Use custom model my-custom-id', exact: true }).waitFor()
@@ -388,20 +364,20 @@ try {
   if (!(await page.getByRole('button', { name: 'Task Model', exact: true }).isDisabled()))
     throw new Error('A disabled picker still allowed changing the model')
   await page.getByRole('button', { name: 'Favorite Task Model', exact: true }).click()
-  await page.getByRole('tab', { name: 'Favorites', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Filter models', exact: true }).selectOption('favorites')
   await page.getByRole('button', { name: 'Unfavorite Task Model', exact: true }).click()
   await page.getByText('No favorite models for this harness.', { exact: true }).waitFor()
-  await page.getByRole('tab', { name: 'Models', exact: true }).click()
-  await page.getByRole('button', { name: 'Choose provider', exact: true }).click()
-  await page.getByRole('button', { name: 'Codex', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Filter models', exact: true }).selectOption('all')
+  await page.getByRole('button', { name: 'Codex models', exact: true }).click()
+  await page.getByRole('button', { name: 'Codex models', exact: true }).click()
   if (await page.evaluate(() => window.saved.input.changes.harness.after.model !== 'task-model'))
     throw new Error('Browsing a disabled picker changed the pending selection')
   if (await page.getByRole('button', { name: 'Save agent & model', exact: true }).count())
     throw new Error('Picker still requires manual save')
   await page.evaluate(() => window.finishSave(false))
   await page.getByRole('button', { name: 'More settings', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'More settings', exact: true }).click()
   await page.getByRole('combobox', { name: 'Reasoning level', exact: true }).selectOption('high')
+  await page.getByRole('button', { name: 'More settings', exact: true }).click()
   await page.waitForFunction(() => window.saved?.input.changes.harness?.after.reasoning === 'high')
   await page.waitForFunction(() => window.saved)
   const saved = await page.evaluate(() => window.saved)
@@ -565,7 +541,7 @@ try {
         ? { models: [{ id: 'task-model', name: 'Task Model' }], reasoning: [] }
         : [],
     )
-  await page.getByText('Codex models on two.', { exact: true }).waitFor()
+  await page.getByLabel(/^Selected on two:/).waitFor()
   await page.evaluate(() => window.finishPreference())
   await page.waitForTimeout(100)
   await page.getByRole('button', { name: 'Task Model', exact: true }).waitFor()

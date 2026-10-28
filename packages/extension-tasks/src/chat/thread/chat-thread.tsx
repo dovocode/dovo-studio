@@ -554,7 +554,7 @@ export function ChatThread({
                   ))}
                 </nav>
               )}
-              {emptyDraft && <TaskEmptyState />}
+              {emptyDraft && <TaskEmptyState task={fullTask} />}
               <div className="flex flex-col gap-5">
                 {groups.map((group, groupIndex) => (
                   <section

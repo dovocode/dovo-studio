@@ -30,6 +30,7 @@ mocks['../screens/settings-controls'] = mocks['../../ui/controls/choice'].replac
   'const Choice=',
   'const SettingsChoice=',
 )
+mocks['../ui/controls/choice'] = mocks['../../ui/controls/choice']
 mocks['../ui/content/text'] = mocks['../../ui/content/text']
 mocks['../ui/theme'] = mocks['../../ui/theme']
 const built = await build({
@@ -190,11 +191,12 @@ try {
   if (await page.getByRole('textbox', { name: 'Search harnesses and models' }).count())
     throw new Error('New-thread settings were appended below the picker')
   await page.getByRole('button', { name: 'Back to models', exact: true }).click()
-  await page.getByRole('button', { name: 'Choose provider', exact: true }).click()
   const harness = (name) => page.getByRole('button', { name, exact: true })
-  await harness('Claude').waitFor()
-  await absent(harness('Cursor'))
-  await harness('Vibe').click()
+  await harness('Claude models').waitFor()
+  await absent(harness('Cursor models'))
+  await page
+    .getByRole('textbox', { name: 'Search harnesses and models', exact: true })
+    .fill('vibe model')
   if (await page.evaluate(() => window.changes.length))
     throw new Error('Browsing a harness changed selection')
   await absent(harness('Provider default'))
@@ -202,8 +204,9 @@ try {
   await harness('vibe model').click()
   if (await page.evaluate(() => window.changes.at(-1)?.provider !== 'vibe'))
     throw new Error('Available mobile Vibe provider was not selectable')
-  await harness('Choose provider').click()
-  await harness('Claude').click()
+  await page
+    .getByRole('combobox', { name: 'Filter models', exact: true })
+    .selectOption('harness:claude')
   await absent(harness('Provider default'))
   await absent(harness('Default (recommended)'))
   await harness('claude model').click()
@@ -211,8 +214,7 @@ try {
     throw new Error('Available mobile provider was not selectable')
   await page.evaluate(() => window.host('four'))
   await waitRequests(8)
-  await harness('Choose provider').click()
-  await absent(harness('Claude'))
+  await absent(harness('Claude models'))
   await page.evaluate(() => window.pending[7].reject(new Error('Offline')))
   await page.getByText('Could not check available providers: Error: Offline').waitFor()
   await page.evaluate(() => {

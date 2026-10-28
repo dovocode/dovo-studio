@@ -1,16 +1,15 @@
 import type { ReactNode } from 'react'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { Action } from '../../ui/controls/action'
 import { useTheme } from '../../ui/theme'
 
 export function TaskEmptyState({
-  onBrowse,
   starters,
+  startModes,
   projectName,
 }: {
-  onBrowse?: () => void
   starters?: ReactNode
+  startModes?: ReactNode
   projectName?: string
 }) {
   const { colors, styles } = useTheme()
@@ -22,46 +21,33 @@ export function TaskEmptyState({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        gap: 12,
-        paddingVertical: 24,
+        gap: 8,
+        paddingVertical: 16,
         paddingHorizontal: 4,
       }}
     >
       <Text
-        style={{
-          color: colors.muted,
-          fontSize: 10,
-          fontWeight: '600',
-          letterSpacing: 1.8,
-          textTransform: 'uppercase',
-        }}
-      >
-        A fresh start
-      </Text>
-      <Text
         accessibilityRole="header"
         style={{
           color: colors.text,
-          fontSize: 28,
-          lineHeight: 34,
-          fontWeight: '600',
-          letterSpacing: -0.6,
+          fontSize: 24,
+          lineHeight: 29,
+          fontWeight: '500',
+          letterSpacing: -0.4,
           textAlign: 'center',
           maxWidth: 420,
         }}
       >
         What would you like to work on?
       </Text>
-      <Text style={[styles.muted, { textAlign: 'center', maxWidth: 420 }]}>
-        {projectName ? `In ${projectName}` : 'An idea, a tricky bug, or something to explore.'}
-      </Text>
-      {starters && (
-        <View style={{ width: '100%', alignItems: 'center', marginTop: 12 }}>{starters}</View>
+      {projectName && !startModes && (
+        <Text style={[styles.muted, { textAlign: 'center', maxWidth: 420, fontSize: 12 }]}>
+          In {projectName}
+        </Text>
       )}
-      {onBrowse && (
-        <View style={{ alignSelf: 'center' }}>
-          <Action label="Browse threads" secondary onPress={onBrowse} />
-        </View>
+      {startModes}
+      {starters && (
+        <View style={{ width: '100%', alignItems: 'center', marginTop: 4 }}>{starters}</View>
       )}
     </View>
   )

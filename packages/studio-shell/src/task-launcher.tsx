@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { permissionPolicyUIIssue } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { runtimeComputerName, taskProjectGroups, preferredProjectEntry } from '@dovo/protocol'
@@ -21,6 +22,7 @@ import {
   ComposerTextarea,
   ComposerSubmit,
   ComposerWorkspaceBar,
+  type ComposerControlSlots,
 } from '@dovo/studio-ui'
 import { ChevronDown, Folder, MessageCircle, ScanSearch } from 'lucide-react'
 import {
@@ -215,6 +217,13 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
   const selectedProfile = runtimeRegistry.profiles.find((profile) => profile.id === runtimeId)
   const selectClass =
     'h-7 min-w-0 max-w-48 appearance-none bg-transparent pr-5 text-[0.6875rem] outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50'
+  const [accessContainer, setAccessContainer] = useState<HTMLSpanElement | null>(null)
+  const renderControls = ({ model, access }: ComposerControlSlots) => (
+    <>
+      {model}
+      {accessContainer && createPortal(access, accessContainer)}
+    </>
+  )
   return (
     <Dialog
       open={open}
@@ -261,6 +270,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
                       setSelection(selection)
                     }}
                     disabled={locked || loading}
+                    renderControls={renderControls}
                   />
                 </WorkspaceScope>
               ) : (
@@ -301,6 +311,7 @@ export function TaskLauncherForm({ bridge }: { bridge: TaskLauncherBridge }) {
             />
           </ComposerSurface>
           <ComposerWorkspaceBar>
+            <span ref={setAccessContainer} className="contents" />
             <label className="relative flex min-w-0 items-center gap-1.5 px-2">
               {autoProject ? (
                 <ScanSearch className="size-3 shrink-0" aria-hidden="true" />

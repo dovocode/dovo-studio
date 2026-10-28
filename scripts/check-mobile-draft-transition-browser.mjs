@@ -106,9 +106,9 @@ const mocks = {
   '../conversation/view': `
     import {useConversation} from '../conversation/state/provider';
     import {TaskEmptyState} from '${root}apps/mobile/src/tasks/creation/task-empty-state';
-    export const Conversation=({onBrowse})=>{
+    export const Conversation=()=>{
       const task=useConversation();
-      return task.messages.length?task.messages.map(m=><p key={m.id}>{m.text}</p>):<TaskEmptyState onBrowse={onBrowse}/>;
+      return task.messages.length?task.messages.map(m=><p key={m.id}>{m.text}</p>):<TaskEmptyState/>;
     };
   `,
   '../composer/composer': `

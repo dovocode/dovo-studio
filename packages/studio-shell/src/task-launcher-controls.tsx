@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { useWorkspace } from '@dovo/studio-core'
 import {
   ComposerSettingsControls,
+  type ComposerControlSlots,
   ModelSettings,
   Dialog,
   DialogContent,
@@ -26,11 +27,13 @@ export function TaskLauncherControls({
   onChange,
   disabled,
   repository,
+  renderControls,
 }: {
   selection: LauncherAgent
   onChange: (selection: LauncherAgent) => void
   disabled: boolean
   repository: Repository
+  renderControls?: (controls: ComposerControlSlots) => ReactNode
 }) {
   const { workspace, snapshot, request } = useWorkspace()
   const agents = resolveScopedAgents(snapshot?.defaults, repository, workspace.agents)
@@ -63,6 +66,7 @@ export function TaskLauncherControls({
   return (
     <>
       <ComposerSettingsControls
+        renderControls={renderControls}
         automaticModesEnabled={snapshot?.smartModelSelectionEnabled === true}
         modelSelection={selection.modelSelection}
         modelSelectionDifficulty={selection.modelSelectionDifficulty}

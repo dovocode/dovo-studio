@@ -123,23 +123,24 @@ export function TurnModelControls({
           )}
         </>
       )}
-      <Choice
-        row={!!task}
-        label={task ? 'Reasoning level' : 'Turn reasoning level'}
-        disabled={disabled}
-        value={task || value ? (selected.reasoning ?? '') : '__inherit__'}
-        items={[
-          ...(!task && !value ? [{ id: '__inherit__', name: 'Thread defaults' }] : []),
-          { id: '', name: 'Provider default reasoning' },
-          ...efforts,
-          ...(selected.reasoning && !efforts.some((e) => e.id === selected.reasoning)
-            ? [{ id: selected.reasoning, name: `${selected.reasoning} (saved)` }]
-            : []),
-        ]}
-        onChange={(reasoning) =>
-          reasoning === '__inherit__' ? onChange(null) : update({ reasoning })
-        }
-      />
+      {!task && (
+        <Choice
+          label="Turn reasoning level"
+          disabled={disabled}
+          value={value ? (selected.reasoning ?? '') : '__inherit__'}
+          items={[
+            ...(!value ? [{ id: '__inherit__', name: 'Thread defaults' }] : []),
+            { id: '', name: 'Provider default reasoning' },
+            ...efforts,
+            ...(selected.reasoning && !efforts.some((e) => e.id === selected.reasoning)
+              ? [{ id: selected.reasoning, name: `${selected.reasoning} (saved)` }]
+              : []),
+          ]}
+          onChange={(reasoning) =>
+            reasoning === '__inherit__' ? onChange(null) : update({ reasoning })
+          }
+        />
+      )}
       {!!value && (
         <Action
           secondary

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { TaskSource } from '../../list/task-collection'
 import type { Repository } from '@dovo/studio-core'
 import { ComposerProject } from './composer-project'
@@ -25,12 +26,16 @@ import {
   Popover,
   LinkedCheckoutEditor,
 } from '@dovo/studio-ui'
+export type WorkspaceControls = (access: ReactNode) => ReactNode
+
 export function ComposerWorkspace({
   task,
   disabled,
   onMachineMoving,
   onSelectRemote,
+  children,
 }: {
+  children?: ReactNode
   task: Task
   disabled: boolean
   onMachineMoving: (moving: boolean) => void
@@ -46,6 +51,15 @@ export function ComposerWorkspace({
 }) {
   const { workspace, setWorkspace, request, connected, snapshot } = useWorkspace()
   const editable = canChangeTaskCheckout(task)
+  const machineControl = editable && (
+    <ComposerProject
+      task={task}
+      controls="server"
+      disabled={disabled}
+      onMoving={onMachineMoving}
+      onSelectRemote={onSelectRemote}
+    />
+  )
   const choosingBase =
     editable && task.execution === 'worktree' && !task.pullRequest && !task.existingWorktreePath
   const repository = workspace.repositories.find((repo) => repo.id === task.repositoryId)
@@ -88,12 +102,8 @@ export function ComposerWorkspace({
   if (task.autoProject && editable && snapshot?.autoProjectSelectionEnabled === true)
     return (
       <ComposerWorkspaceBar>
-        <ComposerProject
-          task={task}
-          disabled={disabled}
-          onMoving={onMachineMoving}
-          onSelectRemote={onSelectRemote}
-        />
+        {children}
+        {machineControl}
         <ChoicePicker
           aria-label="Scope checkout"
           className="h-6 w-auto gap-1.5 border-0 px-2 text-[0.6875rem] shadow-none"
@@ -115,15 +125,12 @@ export function ComposerWorkspace({
         </ChoicePicker>
       </ComposerWorkspaceBar>
     )
-  if (repository?.kind)
+  if (repository?.kind) {
+    if (!editable) return children ? <ComposerWorkspaceBar>{children}</ComposerWorkspaceBar> : null
     return (
       <ComposerWorkspaceBar>
-        <ComposerProject
-          task={task}
-          disabled={disabled}
-          onMoving={onMachineMoving}
-          onSelectRemote={onSelectRemote}
-        />
+        {children}
+        {machineControl}
         {repository.kind === 'scratch' ? (
           <>
             <Button
@@ -165,15 +172,12 @@ export function ComposerWorkspace({
         )}
       </ComposerWorkspaceBar>
     )
+  }
   return (
     <ComposerWorkspaceBar>
-      <ComposerProject
-        task={task}
-        disabled={disabled}
-        onMoving={onMachineMoving}
-        onSelectRemote={onSelectRemote}
-      />
-      <span className="h-4 border-l border-border/60" aria-hidden="true" />
+      {children}
+      {machineControl}
+      {editable && <span className="h-4 border-l border-border/60" aria-hidden="true" />}
       {editable ? (
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
@@ -288,20 +292,7 @@ export function ComposerWorkspace({
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
-      ) : (
-        <span
-          className="inline-flex h-6 items-center gap-1.5 px-2 text-[0.6875rem]"
-          aria-label={`Working directory: ${task.execution === 'worktree' ? 'Worktree' : 'Local checkout'}`}
-          title="Checkout cannot be changed after a task starts."
-        >
-          <Folder className="size-3" />
-          {task.execution === 'worktree'
-            ? task.checkoutBranch
-              ? 'Worktree'
-              : 'New worktree'
-            : 'Local checkout'}
-        </span>
-      )}
+      ) : null}
       <Popover.Root
         open={open}
         onOpenChange={(value) => {

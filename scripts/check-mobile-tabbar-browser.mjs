@@ -10,6 +10,7 @@ const workbench = root + 'apps/mobile/src/shell/workbench.tsx'
 // outside the native tab navigator even though they have no tab trigger.
 const mobileRequire = createRequire(root + 'apps/mobile/package.json')
 const { getRoutes } = mobileRequire('expo-router/build/getRoutesCore')
+const { getValidInitialRouteName } = mobileRequire('expo-router/build/RouteNode')
 const appRoot = root + 'apps/mobile/src/app/'
 const routeContext = () => ({ default: () => null })
 routeContext.keys = () =>
@@ -71,7 +72,7 @@ NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export
   {
     path: '../runtime/preferences/app-preferences',
     importer: workbench,
-    contents: `export const preferencesReady=Promise.resolve();export const readMobilePreferences=()=>({launchTab:'settings',carMode:false});export const useCarMode=()=>window.fixture.car;export const useMobilePreferences=()=>({browserWorkspaceEnabled:false});`,
+    contents: `export const preferencesReady=Promise.resolve();export const readMobilePreferences=()=>{window.launchReads=(window.launchReads??0)+1;return {launchTab:window.fixture.launchTab??'tasks',carMode:window.fixture.car}};export const useCarMode=()=>window.fixture.car;export const useMobilePreferences=()=>({browserWorkspaceEnabled:false});`,
   },
   {
     path: '../runtime/connection/provider',
@@ -139,9 +140,10 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {Workbench,WorkbenchScene,WorkbenchTabs} from './apps/mobile/src/shell/workbench.tsx';
+import {unstable_settings} from './apps/mobile/src/app/(tabs)/_layout.tsx';window.tabSettings=unstable_settings;
 window.WorkbenchScene=WorkbenchScene;window.WorkbenchTabs=WorkbenchTabs;window.routes=[];window.nativeSelections=[];window.keyboardListeners={};
 window.fixture={path:'/pulls',platform:'ios',car:false,runtime:{ready:true,activeId:'a',profiles:[{id:'a'}],overviews:[{profile:{id:'a'},connected:true,snapshot:{artifactsEnabled:true}}]}};
-function App(){const [version,setVersion]=useState(0);window.updateFixture=changes=>{window.fixture={...window.fixture,...changes};setVersion(v=>v+1)};return <Workbench key={window.fixture.platform}/>}
+function App(){const [version,setVersion]=useState(0);window.updateFixture=changes=>{window.fixture={...window.fixture,...changes};setVersion(v=>v+1)};return <Workbench key={window.fixture.platform+':'+(window.fixture.mount??0)}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -164,6 +166,21 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  const settings = await page.evaluate(() => window.tabSettings)
+  const configuredContext = (key) => ({
+    ...routeContext(key),
+    ...(key === './(tabs)/_layout.tsx' ? { unstable_settings: settings } : {}),
+  })
+  configuredContext.keys = routeContext.keys
+  const configuredTree = getRoutes(configuredContext, {
+    ignoreEntryPoints: true,
+    importMode: 'lazy',
+  })
+  assert.equal(
+    getValidInitialRouteName(configuredTree.children.find((route) => route.route === '(tabs)')),
+    '(tasks)',
+    'Native tabs must start on the thread list instead of the compose redirect',
+  )
   await page.getByText('Collection content', { exact: true }).waitFor()
   const plus = page.getByRole('button', { name: 'New thread', exact: true })
   assert.equal(await page.locator('nav').getAttribute('data-prominent'), 'compose')
@@ -243,6 +260,42 @@ try {
   await page.evaluate(() => window.updateFixture({ path: '/' }))
   await page.getByRole('button', { name: 'Open sidebar thread', exact: true }).click()
   assert.equal(await page.evaluate(() => window.routes.at(-1).method), 'navigate')
+  // Ordinary launches stay on the list. Explicit launch preferences and deep links retain routing.
+  let mount = 0
+  for (const scenario of [
+    { path: '/', launchTab: 'tasks', car: false, expected: [] },
+    {
+      path: '/',
+      launchTab: 'pulls',
+      car: false,
+      expected: [{ method: 'replace', args: ['/pulls'] }],
+    },
+    {
+      path: '/',
+      launchTab: 'issues',
+      car: false,
+      expected: [{ method: 'replace', args: ['/issues'] }],
+    },
+    {
+      path: '/',
+      launchTab: 'jobs',
+      car: false,
+      expected: [{ method: 'replace', args: ['/settings/automations'] }],
+    },
+    { path: '/', launchTab: 'pulls', car: true, expected: [] },
+    { path: '/thread/a/old', launchTab: 'pulls', car: false, expected: [] },
+  ]) {
+    const reads = await page.evaluate(() => window.launchReads)
+    await page.evaluate(
+      ({ scenario, mount }) => {
+        window.routes = []
+        window.updateFixture({ ...scenario, platform: 'ios', sidebar: false, mount })
+      },
+      { scenario, mount: ++mount },
+    )
+    await page.waitForFunction((reads) => window.launchReads > reads, reads)
+    assert.deepEqual(await page.evaluate(() => window.routes), scenario.expected)
+  }
   assert.deepEqual(errors, [])
   console.log(
     'Mobile New thread: trailing native action, preserved tab, offline guard, keyboard hiding, no More tab and Android floating action pass. Native controls use browser adapters.',

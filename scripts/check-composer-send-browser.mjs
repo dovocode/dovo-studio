@@ -25,6 +25,10 @@ for (const [path, name] of [
   ['./composer-workspace', 'ComposerWorkspace'],
 ])
   mocks[path] = `export const ${name}=()=>null;`
+mocks['./composer-harness-controls'] =
+  `export const ComposerHarnessControls=({renderControls})=>renderControls?.({model:null,access:null});`
+mocks['./composer-workspace'] =
+  `export const ComposerWorkspace=({children})=><div>{children}</div>;`
 const built = await build({
   stdin: {
     contents: `
@@ -300,7 +304,13 @@ try {
     throw new Error('First message was queued')
   await respond()
   await acknowledge('messages')
+  const editorBeforeTurnSettings = await input.elementHandle()
   await page.evaluate(() => window.setTask((task) => ({ ...task, status: 'running' })))
+  await page.getByRole('button', { name: 'Choose agent and model', exact: true }).waitFor()
+  assert(
+    await input.evaluate((element, original) => element === original, editorBeforeTurnSettings),
+    'Switching from thread settings to turn settings remounted the editor',
+  )
   await submit('Later message')
   if ((await page.evaluate(() => window.pending.destination)) !== 'queue')
     throw new Error('Running follow-up was not queued')

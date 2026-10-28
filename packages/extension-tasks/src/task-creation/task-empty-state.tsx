@@ -1,33 +1,42 @@
 import { Button } from '@dovo/studio-ui'
+import type { Task } from '@dovo/studio-core'
+import { ComposerProject, type SelectRemoteProject } from '../chat/composer/composer-project'
 
 export function TaskEmptyState({
   onBrowse,
   projectName,
   welcome = false,
+  task,
+  disabled = false,
+  onMoving,
+  onSelectRemote,
 }: {
   onBrowse?: () => void
   projectName?: string
   welcome?: boolean
+  task?: Task
+  disabled?: boolean
+  onMoving?: (moving: boolean) => void
+  onSelectRemote?: SelectRemoteProject
 }) {
   return (
     <div
       data-thread-start=""
-      className={`flex min-h-0 flex-col items-center justify-center gap-3 px-5 text-center ${welcome ? 'mt-auto shrink-0 pb-6 pt-8' : 'flex-1 py-8'}`}
+      className={`flex min-h-0 flex-col items-center justify-center gap-2 px-5 text-center ${welcome ? 'mt-auto shrink-0 pb-4 pt-6' : 'flex-1 py-6'}`}
     >
-      <p className="text-[0.625rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-        A fresh start
-      </p>
-      <h2 className="max-w-xl text-balance text-2xl font-medium tracking-tight sm:text-3xl">
+      <h2 className="max-w-xl text-balance text-xl font-medium tracking-tight sm:text-2xl">
         What would you like to work on?
       </h2>
-      {projectName ? (
-        <p className="max-w-full break-words text-sm text-muted-foreground">
-          In <span className="font-medium text-foreground">{projectName}</span>
-        </p>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          An idea, a tricky bug, or something to explore.
-        </p>
+      {projectName && !task && <p className="text-xs text-muted-foreground">In {projectName}</p>}
+      {task && (
+        <ComposerProject
+          task={task}
+          prominent
+          controls="project"
+          disabled={disabled}
+          onMoving={onMoving}
+          onSelectRemote={onSelectRemote}
+        />
       )}
       {onBrowse && (
         <Button variant="ghost" size="sm" onClick={onBrowse} className="text-muted-foreground">

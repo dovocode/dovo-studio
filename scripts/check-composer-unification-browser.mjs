@@ -136,6 +136,13 @@ try {
     'Launcher did not focus the editor',
   )
   await input.fill('Make it uniform and use this one and the styling')
+  const originalEditor = await input.elementHandle()
+  const assertEditorRetained = async () => {
+    assert(
+      await input.evaluate((element, original) => element === original, originalEditor),
+      'Switching launcher settings remounted the editor',
+    )
+  }
 
   const screenshot = async (name, width) => {
     if (!screenshotDirectory) return
@@ -196,6 +203,7 @@ try {
   await page.evaluate(() => (window.holdSnapshots = true))
   await server.selectOption('two')
   await page.waitForFunction(() => window.pendingSnapshots.length === 1)
+  await assertEditorRetained()
   assert(await send.isDisabled(), 'Dispatch remained enabled while switching computers')
   await server.selectOption('one')
   await page.waitForFunction(() => window.pendingSnapshots.length === 2)
@@ -206,6 +214,7 @@ try {
     window.holdSnapshots = false
   })
   await reasoning.waitFor()
+  await assertEditorRetained()
   await server.selectOption('two')
   await page.waitForFunction(
     () =>
@@ -220,6 +229,7 @@ try {
   await page.evaluate(() => (window.failNextSnapshot = true))
   await server.selectOption('one')
   await page.getByRole('alert').filter({ hasText: 'Computer unavailable' }).waitFor()
+  await assertEditorRetained()
   assert(await send.isDisabled(), 'Unavailable computer enabled dispatch')
   assert(
     (await input.inputValue()).startsWith('Make it uniform'),

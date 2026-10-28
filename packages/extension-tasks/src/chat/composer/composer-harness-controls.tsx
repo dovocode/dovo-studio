@@ -6,7 +6,7 @@ import {
   canChangeTaskCheckout,
   changeTaskModelSelection,
 } from '@dovo/protocol'
-import { memo, useMemo, useRef } from 'react'
+import { memo, useMemo, useRef, type ReactNode } from 'react'
 import {
   defaultTaskHarness,
   lockedTaskProvider,
@@ -18,15 +18,21 @@ import {
   type Task,
   type TaskHarness,
 } from '@dovo/studio-core'
-import { ComposerSettingsControls, permissionPolicyUIIssue } from '@dovo/studio-ui'
+import {
+  ComposerSettingsControls,
+  permissionPolicyUIIssue,
+  type ComposerControlSlots,
+} from '@dovo/studio-ui'
 import { HarnessDialog } from '../../dialogs/harness-dialog'
 import { changeTaskHarness, chooseTaskAgent } from './task-harness-selection'
 export const ComposerHarnessControls = memo(function ComposerHarnessControls({
   task,
   disabled,
+  renderControls,
 }: {
   task: Task
   disabled: boolean
+  renderControls?: (controls: ComposerControlSlots) => ReactNode
 }) {
   const { workspace, setWorkspace, flush, snapshot } = useWorkspace()
   const agents = useMemo(
@@ -90,6 +96,7 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
   return (
     <>
       <ComposerSettingsControls
+        renderControls={renderControls}
         automaticModesEnabled={snapshot?.smartModelSelectionEnabled === true}
         modelSelection={task.modelSelection}
         modelSelectionDifficulty={task.modelSelectionDifficulty}

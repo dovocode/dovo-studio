@@ -1,4 +1,5 @@
 import { RuntimeIcon } from '../../ui/content/runtime-icon'
+import type { ReactNode } from 'react'
 import {
   runtimeComputerName,
   taskProjectGroups,
@@ -30,7 +31,11 @@ export function FolderPicker({
   stacked = false,
   autoProject = false,
   onAuto,
+  prominent = false,
+  renderControls,
 }: {
+  prominent?: boolean
+  renderControls?: (project: ReactNode, server: ReactNode) => ReactNode
   autoProject?: boolean
   onAuto?: () => Promise<void>
   stacked?: boolean
@@ -167,81 +172,199 @@ export function FolderPicker({
     setError('')
     setOpen(true)
   }
-  return (
-    <>
-      <View style={stacked ? { gap: 8 } : [styles.row, { gap: 8 }]}>
+  const chooseAuto = async () => {
+    if (locked || !onAuto) return
+    if (autoProject) {
+      setOpen(false)
+      return
+    }
+    setBusy(true)
+    onMoving?.(true)
+    setError('')
+    try {
+      await onAuto()
+      setOpen(false)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+      onMoving?.(false)
+    }
+  }
+  const projectSelected = autoProject || (!!selected && selected.kind !== 'scratch')
+  const selectedProject = !autoProject && selected?.kind !== 'scratch' ? selected : undefined
+  const prominentLabel = selectedProject?.name ?? 'Scope'
+  const scopeDisabled = locked || (!selectedProject && !onAuto)
+  const projectLabel = autoProject
+    ? onAuto
+      ? 'Scope'
+      : 'Scope (disabled)'
+    : selected
+      ? label(selected)
+      : 'Choose project'
+  const projectControl =
+    prominent && onAuto ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%' }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Folder"
+          accessibilityLabel={
+            selectedProject ? `Selected project: ${prominentLabel}` : 'Start in Scope'
+          }
+          accessibilityState={{ selected: projectSelected, disabled: scopeDisabled }}
+          accessibilityHint={
+            selectedProject
+              ? 'Choose a different project or Scope'
+              : 'Find the right projects for your task'
+          }
+          disabled={scopeDisabled}
+          onPress={() => (selectedProject ? show('projects') : void chooseAuto())}
+          style={[
+            styles.row,
+            {
+              justifyContent: 'center',
+              flexWrap: 'nowrap',
+              minWidth: 76,
+              maxWidth: 180,
+              flexShrink: 1,
+              minHeight: 44,
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+              borderWidth: 1,
+              borderRightWidth: 0,
+              borderTopLeftRadius: 10,
+              borderBottomLeftRadius: 10,
+              borderColor: projectSelected ? colors.accent : colors.border,
+              backgroundColor: projectSelected ? colors.selection : colors.surface,
+              opacity: scopeDisabled ? 0.45 : 1,
+            },
+          ]}
+        >
+          <Text
+            numberOfLines={1}
+            style={{ color: colors.text, fontSize: 14, fontWeight: '500', flexShrink: 1 }}
+          >
+            {prominentLabel}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Choose project"
           accessibilityValue={{
-            text: autoProject
-              ? onAuto
-                ? 'Scope'
-                : 'Scope (disabled)'
-              : selected
-                ? label(selected)
-                : 'Choose project',
+            text: prominentLabel,
           }}
-          accessibilityState={{ disabled: locked, expanded: open && mode === 'projects' }}
+          accessibilityState={{
+            disabled: locked,
+            expanded: open && mode === 'projects',
+          }}
           disabled={locked}
           onPress={() => show('projects')}
           style={[
             styles.row,
             {
-              flex: stacked ? undefined : 1,
+              justifyContent: 'center',
               flexWrap: 'nowrap',
-              padding: 12,
+              gap: 4,
+              minWidth: 44,
+              flexShrink: 0,
               minHeight: 44,
-              borderRadius: 12,
-              backgroundColor: colors.surface,
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+              borderWidth: 1,
+              borderTopRightRadius: 10,
+              borderBottomRightRadius: 10,
+              borderColor: projectSelected ? colors.accent : colors.border,
+              backgroundColor: projectSelected ? colors.selection : colors.surface,
               opacity: locked ? 0.45 : 1,
             },
           ]}
         >
-          <Icon
-            name={autoProject ? 'scope' : selected?.kind === 'scratch' ? 'chat' : 'folder'}
-            size={18}
-          />
-          <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
-            {autoProject
-              ? onAuto
-                ? 'Scope'
-                : 'Scope (disabled)'
-              : selected
-                ? label(selected)
-                : 'Choose project'}
-          </Text>
           <Icon name="down" size={14} />
         </Pressable>
-        {(multipleMachines || (stacked && !!runtime.profile)) && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Task server"
-            accessibilityValue={{ text: runtimeComputerName(runtime) }}
-            accessibilityState={{ disabled: locked, expanded: open && mode === 'servers' }}
-            disabled={locked}
-            onPress={() => show('servers')}
-            style={[
-              styles.row,
-              {
-                flex: stacked ? undefined : 1,
-                flexWrap: 'nowrap',
-                padding: 12,
-                minHeight: 44,
-                borderRadius: 12,
-                backgroundColor: colors.surface,
-                opacity: locked ? 0.45 : 1,
-              },
-            ]}
-          >
-            <RuntimeIcon icon={runtime.snapshot?.runtimeIcon} size={18} />
-            <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
-              {runtimeComputerName(runtime)}
-            </Text>
-            <Icon name="down" size={14} />
-          </Pressable>
-        )}
       </View>
+    ) : (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={prominent ? 'Choose project' : 'Folder'}
+        accessibilityValue={{ text: projectLabel }}
+        accessibilityState={{
+          disabled: locked,
+          expanded: open && mode === 'projects',
+        }}
+        disabled={locked}
+        onPress={() => show('projects')}
+        style={[
+          styles.row,
+          {
+            flex: prominent || stacked ? undefined : 1,
+            maxWidth: prominent ? 240 : undefined,
+            flexWrap: 'nowrap',
+            padding: 12,
+            minHeight: 44,
+            borderWidth: prominent ? 1 : 0,
+            borderColor: projectSelected ? colors.accent : colors.border,
+            borderRadius: 12,
+            backgroundColor: colors.surface,
+            opacity: locked ? 0.45 : 1,
+          },
+        ]}
+      >
+        <Icon
+          name={autoProject ? 'scope' : selected?.kind === 'scratch' ? 'chat' : 'folder'}
+          size={18}
+        />
+        <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
+          {prominent ? (selectedProject?.name ?? 'Choose project') : projectLabel}
+        </Text>
+        <Icon name="down" size={14} />
+      </Pressable>
+    )
+  const serverControl =
+    multipleMachines || (stacked && !!runtime.profile) ? (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Task server"
+        accessibilityValue={{ text: runtimeComputerName(runtime) }}
+        accessibilityState={{ disabled: locked, expanded: open && mode === 'servers' }}
+        disabled={locked}
+        onPress={() => show('servers')}
+        style={[
+          styles.row,
+          {
+            flex: prominent || stacked ? undefined : 1,
+            minWidth: prominent ? 0 : undefined,
+            maxWidth: prominent ? 220 : undefined,
+            flexWrap: 'nowrap',
+            padding: prominent ? 8 : 12,
+            gap: prominent ? 4 : 6,
+            minHeight: 44,
+            borderWidth: prominent ? 1 : 0,
+            borderColor: colors.border,
+            borderRadius: prominent ? 10 : 12,
+            backgroundColor: colors.surface,
+            opacity: locked ? 0.45 : 1,
+          },
+        ]}
+      >
+        <RuntimeIcon icon={runtime.snapshot?.runtimeIcon} size={prominent ? 14 : 18} />
+        <Text
+          numberOfLines={1}
+          style={[styles.text, { flex: 1, fontSize: prominent ? 12 : undefined }]}
+        >
+          {runtimeComputerName(runtime)}
+        </Text>
+        <Icon name="down" size={14} />
+      </Pressable>
+    ) : null
+  return (
+    <>
+      {renderControls ? (
+        renderControls(projectControl, serverControl)
+      ) : (
+        <View style={stacked ? { gap: 8 } : [styles.row, { gap: 8 }]}>
+          {projectControl}
+          {serverControl}
+        </View>
+      )}
       {open && !adding && !transferring && (
         <Sheet
           title={
@@ -263,22 +386,19 @@ export function FolderPicker({
         >
           {mode === 'projects' ? (
             <>
-              {scratch && projectRow(scratch)}
+              {!prominent && scratch && projectRow(scratch)}
               {onAuto && (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Scope mode"
-                  accessibilityState={{ selected: autoProject, disabled: locked }}
-                  disabled={locked}
-                  onPress={() => {
-                    setBusy(true)
-                    void onAuto()
-                      .then(() => setOpen(false))
-                      .catch((cause: unknown) =>
-                        setError(cause instanceof Error ? cause.message : String(cause)),
-                      )
-                      .finally(() => setBusy(false))
-                  }}
+                  accessibilityState={{ selected: autoProject, disabled: locked || !onAuto }}
+                  accessibilityHint={
+                    !onAuto
+                      ? 'Enable Scope on this computer to select projects automatically.'
+                      : undefined
+                  }
+                  disabled={locked || !onAuto}
+                  onPress={() => void chooseAuto()}
                   style={[styles.row, { padding: 12, minHeight: 48 }]}
                 >
                   <Icon name="scope" size={18} />

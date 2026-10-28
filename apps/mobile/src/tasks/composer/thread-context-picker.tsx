@@ -21,21 +21,30 @@ export function ThreadContextPicker({
   disabled,
   attachmentBusy = false,
   upload,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   taskId: string
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   disabled: boolean
   attachmentBusy?: boolean
   upload: (assets: AttachmentAsset[], signal: AbortSignal) => Promise<void>
 }) {
   const { snapshot, profile, activeId, connected } = useRuntime()
   const { colors } = useTheme()
-  const [open, setOpen] = useState(false)
+  const [localOpen, setLocalOpen] = useState(false)
+  const open = controlledOpen ?? localOpen
+  const setOpen = onOpenChange ?? setLocalOpen
   useLayoutEffect(() => {
     if (open) return blockAccessibleNotificationInputs()
   }, [open])
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  useLayoutEffect(() => {
+    if (open) setError('')
+  }, [open])
   const operation = useRef<AbortController | null>(null)
   useLayoutEffect(
     () => () => {
@@ -87,24 +96,23 @@ export function ThreadContextPicker({
   }
   return (
     <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Attach thread context"
-        disabled={disabled || attachmentBusy || !connected}
-        onPress={() => {
-          setError('')
-          setOpen(true)
-        }}
-        style={{
-          width: 44,
-          height: 44,
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: disabled || attachmentBusy || !connected ? 0.5 : 1,
-        }}
-      >
-        <Icon name="newChat" size={20} color={colors.muted} />
-      </Pressable>
+      {controlledOpen === undefined && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Attach thread context"
+          disabled={disabled || attachmentBusy || !connected}
+          onPress={() => setOpen(true)}
+          style={{
+            width: 44,
+            height: 44,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: disabled || attachmentBusy || !connected ? 0.5 : 1,
+          }}
+        >
+          <Icon name="newChat" size={20} color={colors.muted} />
+        </Pressable>
+      )}
       <SafeModal visible={open} animationType="slide" onRequestClose={close}>
         <View style={{ flex: 1, padding: 16, gap: 12 }}>
           <Text accessibilityRole="header" style={{ color: colors.text, fontSize: 20 }}>

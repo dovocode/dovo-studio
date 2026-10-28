@@ -145,6 +145,7 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
         keyboardShouldPersistTaps="handled"
       >
         {queue.map((message, index) => {
+          const source = messageSourceFor(message)
           const pendingMessage = pendingMessages.find((item) => item.message.id === message.id)
           const paused = message.paused || task.queuePaused
           const blockedBy = firstPaused >= 0 && firstPaused < index ? firstPaused + 1 : undefined
@@ -254,9 +255,11 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                   }}
                 >
                   <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                    <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
-                      {messageSourceLabel(messageSourceFor(message))}
-                    </Text>
+                    {source && source.kind !== 'user' && (
+                      <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
+                        {messageSourceLabel(source)}
+                      </Text>
+                    )}
                     <Text
                       numberOfLines={1}
                       ellipsizeMode="tail"
@@ -339,7 +342,9 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
       </ScrollView>
       {selected && (
         <Sheet title={`Queued message ${selectedIndex + 1}`} onClose={() => setSelectedId(null)}>
-          {selectedSource && <MessageSource source={selectedSource} taskId={task.id} />}
+          {selectedSource && selectedSource.kind !== 'user' && (
+            <MessageSource source={selectedSource} taskId={task.id} />
+          )}
           {(task.queuePaused ||
             selected.paused ||
             (firstPaused >= 0 && firstPaused < selectedIndex)) && (

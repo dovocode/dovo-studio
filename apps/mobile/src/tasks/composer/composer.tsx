@@ -5,6 +5,7 @@ import { ThreadContextPicker } from './thread-context-picker'
 import { DraftStash } from './draft-stash'
 import { draftStashScope } from '@dovo/protocol'
 import { contentColumn } from '../../ui/layout/content-column'
+import { ThreadStartModes } from '../creation/thread-start-modes'
 import { ThreadStarters } from '../creation/thread-starters'
 import { TurnModelControls } from './turn-model-controls'
 import { applyTurnSettings } from '@dovo/protocol'
@@ -39,7 +40,7 @@ import { mutableStruct } from '@dovo/protocol'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
-import { Sheet } from '../../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -61,7 +62,7 @@ export function Composer({
 }: {
   task: Task
   queuedMessages?: ReactNode
-  renderAbove?: (setup: ReactNode, starters?: ReactNode) => ReactNode
+  renderAbove?: (setup: ReactNode, starters?: ReactNode, startModes?: ReactNode) => ReactNode
   onAsk?: (chatId?: string) => void
   onSelectRemote?: (
     runtimeId: string,
@@ -150,6 +151,9 @@ export function Composer({
   const [focused, setFocused] = useApplicationState(false),
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
+  const [draftTools, setDraftTools] = useState<'menu' | 'stash' | 'context'>()
+  const toolsSheet = useRef<SheetHandle>(null)
+  useEffect(() => setDraftTools(undefined), [task.id, stashRuntimeId])
   const [starterFocus, setStarterFocus] = useState<string>()
   const selection = useRef<DraftSelection | undefined>(undefined)
   const [caret, setCaret] = useState(0)
@@ -235,6 +239,7 @@ export function Composer({
     checkout ||
     settings ||
     linkingProjects ||
+    draftTools === 'menu' ||
     attachmentPicker.editor
   )
   useLayoutEffect(() => {
@@ -398,41 +403,77 @@ export function Composer({
       ),
     )
   }
+  const showStartModes =
+    !!renderAbove && firstMessage && task.status === 'draft' && checkoutEditable
+  const startModeDisabled =
+    !connected ||
+    busy ||
+    !draft.ready ||
+    attaching ||
+    dictation.active ||
+    !!draft.pendingFork ||
+    !!task.archivedAt ||
+    !!task.archived ||
+    !!task.example ||
+    !!task.pullRequest ||
+    !!task.workItem ||
+    !!actions.draftAttachments?.length
+  const machineSelector = (
+    <TaskMachineSelector
+      prominent={showStartModes}
+      renderControls={
+        showStartModes
+          ? (project, server) => (
+              <ThreadStartModes
+                selected={!task.autoProject && repository?.kind === 'scratch'}
+                disabled={
+                  startModeDisabled ||
+                  !snapshot?.workspace.repositories.some((repo) => repo.kind === 'scratch')
+                }
+                project={project}
+                server={server}
+                onGeneral={() => {
+                  const target = snapshot?.workspace.repositories.find(
+                    (repo) => repo.kind === 'scratch',
+                  )
+                  if (!target || (task.repositoryId === target.id && !task.autoProject)) return
+                  act(() => selectProject(target))
+                }}
+              />
+            )
+          : undefined
+      }
+      task={task}
+      text={draft.text}
+      disabled={startModeDisabled}
+      onMoving={setMachineMoving}
+      onSelectRemote={
+        onSelectRemote
+          ? async (...args) => {
+              if (latestDraft.current.pendingFork)
+                throw new Error('Resolve the pending fork before changing its computer')
+              return onSelectRemote(...args)
+            }
+          : undefined
+      }
+      onAuto={async () => {
+        const repository = snapshot?.workspace.repositories.find((repo) => repo.kind === 'scratch')
+        if (!repository) throw new Error('The private thread folder is unavailable.')
+        await selectProject(repository, true)
+      }}
+      onProjectChange={async (repository, preserveAuto) => {
+        if (repository.id === task.repositoryId && (preserveAuto || !task.autoProject)) return
+        await selectProject(repository, preserveAuto ? task.autoProject : undefined)
+      }}
+    />
+  )
   const setup =
     checkoutEditable ||
     (task.execution === 'worktree' && task.pullRequest && !task.checkoutBranch) ? (
       <>
         {checkoutEditable && (
           <View testID="Task setup" style={{ gap: 8, width: '100%' }}>
-            <TaskMachineSelector
-              task={task}
-              text={draft.text}
-              disabled={
-                busy || !draft.ready || attaching || dictation.active || !!draft.pendingFork
-              }
-              onMoving={setMachineMoving}
-              onSelectRemote={
-                onSelectRemote
-                  ? async (...args) => {
-                      if (latestDraft.current.pendingFork)
-                        throw new Error('Resolve the pending fork before changing its computer')
-                      return onSelectRemote(...args)
-                    }
-                  : undefined
-              }
-              onAuto={async () => {
-                const repository = snapshot?.workspace.repositories.find(
-                  (repo) => repo.kind === 'scratch',
-                )
-                if (!repository) throw new Error('The private thread folder is unavailable.')
-                await selectProject(repository, true)
-              }}
-              onProjectChange={async (repository, preserveAuto) => {
-                if (repository.id === task.repositoryId && (preserveAuto || !task.autoProject))
-                  return
-                await selectProject(repository, preserveAuto ? task.autoProject : undefined)
-              }}
-            />
+            {!showStartModes && machineSelector}
             {repository?.kind === 'scratch' && !task.autoProject && (
               <Action
                 secondary
@@ -809,16 +850,14 @@ export function Composer({
             <IconButton
               variant="plain"
               icon="add"
-              label="Attach photos or files"
+              label="Add to draft"
               disabled={
-                (!!editing && !snapshot?.fullTurnSettingsSupported) ||
-                !connected ||
-                busy ||
-                attaching ||
-                dictation.active ||
-                !!task.archivedAt
+                busy || dictation.active || !!task.archivedAt || !!task.archived || !!task.example
               }
-              onPress={attachmentPicker.pick}
+              onPress={() => {
+                Keyboard.dismiss()
+                setDraftTools('menu')
+              }}
             />
             <View
               pointerEvents="box-none"
@@ -999,20 +1038,26 @@ export function Composer({
               onPress={!editing && task.status === 'running' ? stop : () => send()}
             />
           </View>
-          {showOptions && !dictation.active && (
-            <View
-              accessibilityLabel="Draft tools"
-              style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}
-            >
-              <Text style={[styles.muted, { flex: 1, minWidth: 0 }]}>Draft tools</Text>
-              <DraftStash
-                key={JSON.stringify([stashRuntimeId, task.id])}
-                scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
-                getText={() => latestDraft.current.text}
-                onChange={(value) => draft.update(value)}
-                focus={() => setStarterFocus(randomUUID())}
-                hasAttachments={!!actions.draftAttachments?.length || attaching}
+          {draftTools === 'menu' && (
+            <Sheet ref={toolsSheet} title="Add to draft" onClose={() => setDraftTools(undefined)}>
+              <Action
+                label="Attach photos or files"
+                secondary
                 disabled={
+                  (!!editing && !snapshot?.fullTurnSettingsSupported) ||
+                  !connected ||
+                  busy ||
+                  attaching ||
+                  dictation.active ||
+                  !!task.archivedAt
+                }
+                onPress={() => toolsSheet.current?.dismiss(attachmentPicker.pick)}
+              />
+              <Action
+                label="Stashed drafts"
+                secondary
+                disabled={
+                  !stashRuntimeId ||
                   !!editing ||
                   busy ||
                   !draft.ready ||
@@ -1021,23 +1066,60 @@ export function Composer({
                   !!task.archived ||
                   !!task.example
                 }
+                onPress={() => toolsSheet.current?.dismiss(() => setDraftTools('stash'))}
               />
-              <ThreadContextPicker
-                key={JSON.stringify([stashRuntimeId, task.id])}
-                taskId={task.id}
-                attachmentBusy={attaching}
+              <Action
+                label="Attach thread context"
+                secondary
                 disabled={
+                  !connected ||
                   !!editing ||
                   busy ||
                   !draft.ready ||
+                  attaching ||
                   !!task.archivedAt ||
                   !!task.archived ||
                   !!task.example
                 }
-                upload={attachmentPicker.uploadContext}
+                onPress={() => toolsSheet.current?.dismiss(() => setDraftTools('context'))}
               />
-            </View>
+            </Sheet>
           )}
+          <DraftStash
+            open={draftTools === 'stash'}
+            onOpenChange={(open) => setDraftTools(open ? 'stash' : undefined)}
+            key={JSON.stringify(['stash', stashRuntimeId, task.id])}
+            scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
+            getText={() => latestDraft.current.text}
+            onChange={(value) => draft.update(value)}
+            focus={() => setStarterFocus(randomUUID())}
+            hasAttachments={!!actions.draftAttachments?.length || attaching}
+            disabled={
+              !!editing ||
+              busy ||
+              !draft.ready ||
+              dictation.active ||
+              !!task.archivedAt ||
+              !!task.archived ||
+              !!task.example
+            }
+          />
+          <ThreadContextPicker
+            open={draftTools === 'context'}
+            onOpenChange={(open) => setDraftTools(open ? 'context' : undefined)}
+            key={JSON.stringify(['context', stashRuntimeId, task.id])}
+            taskId={task.id}
+            attachmentBusy={attaching}
+            disabled={
+              !!editing ||
+              busy ||
+              !draft.ready ||
+              !!task.archivedAt ||
+              !!task.archived ||
+              !!task.example
+            }
+            upload={attachmentPicker.uploadContext}
+          />
         </View>
         {!!dictationStatus && (
           <View
@@ -1324,6 +1406,7 @@ export function Composer({
             }}
           />
         ) : null,
+        showStartModes ? machineSelector : null,
       )}
       {input}
     </>

@@ -6,7 +6,7 @@ const mocks = {
   '@dovo/studio-core': `export const useStudioHost=()=>({navigate:()=>{}});export const WorkspaceScope=({children})=>children;export * from '@dovo/protocol';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export {WorkspaceContext as Context,useWorkspace} from '../studio-core/src/workspace/context';export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {LinkedCheckoutEditor} from './src/linked-checkouts';export {ChoicePicker} from './src/choice-picker';export const ComposerWorkspaceBar=({children})=><div>{children}</div>;export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {Dialog,DialogContent,DialogTitle} from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';`,
-  '../chat/composer/composer': `import {useWorkspace,updateTask} from '@dovo/studio-core';export const Composer=({task,workspaceControls})=>{const store=useWorkspace();return <><input aria-label="Message" value={task.draft} onChange={e=>store.setWorkspace(w=>updateTask(w,task.id,t=>({...t,draft:e.target.value})))}/>{workspaceControls}</>};`,
+  '../chat/composer/composer': `import {useWorkspace,updateTask} from '@dovo/studio-core';export const Composer=({task,workspaceControls})=>{const store=useWorkspace();return <><input aria-label="Message" value={task.draft} onChange={e=>store.setWorkspace(w=>updateTask(w,task.id,t=>({...t,draft:e.target.value})))}/>{workspaceControls?.(null)}</>};`,
   '../list/task-collection': `export const taskSources=store=>[{runtimeId:'machine',name:'Selected machine',online:true,workspace:store.workspace}];`,
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=()=>null;`,
@@ -56,7 +56,7 @@ try {
     0,
   )
   const chooseFolder = async (name) => {
-    await page.getByRole('button', { name: 'Task project', exact: true }).click()
+    await page.getByRole('button', { name: 'Choose project', exact: true }).click()
     await page.getByRole('button', { name, exact: true }).click()
   }
   await chooseFolder('Scope mode')
@@ -72,7 +72,7 @@ try {
   await autoCheckout.click()
   await page.getByRole('option', { name: 'Local checkouts', exact: true }).click()
   await page.waitForFunction(() => window.saved[0]?.autoProjectExecution === 'main')
-  await chooseFolder('General')
+  await page.getByRole('button', { name: 'Start in General', exact: true }).click()
   assert.equal(await page.evaluate(() => window.saved[0].autoProject), undefined)
   assert.equal(await page.evaluate(() => window.saved[0].autoProjectExecution), undefined)
   // Start the existing blank-draft checkout scenarios in a fresh startup composer.
@@ -147,7 +147,7 @@ try {
   )
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  await page.getByRole('button', { name: 'Task project', exact: true }).click()
+  await page.getByRole('button', { name: 'Choose project', exact: true }).click()
   await page.getByRole('button', { name: 'Remote Git project', exact: true }).click()
   await page.getByRole('button', { name: 'Working directory', exact: true }).waitFor()
   assert.deepEqual(
@@ -165,7 +165,7 @@ try {
   await page.getByRole('button', { name: 'Task server', exact: true }).click()
   await page.getByRole('button', { name: 'Remote machine', exact: true }).click()
   assert.match(
-    await page.getByRole('button', { name: 'Task project', exact: true }).innerText(),
+    await page.getByRole('button', { name: 'Start in Scope', exact: true }).innerText(),
     /Scope/,
   )
   assert.match(await autoCheckout.innerText(), /New worktrees/)

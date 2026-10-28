@@ -6,9 +6,14 @@ import {
   type TurnSettings,
   type TaskHarness,
 } from '@dovo/protocol'
-import { Button, ComposerSettingsControls, permissionPolicyUIIssue } from '@dovo/studio-ui'
+import {
+  Button,
+  ComposerSettingsControls,
+  permissionPolicyUIIssue,
+  type ComposerControlSlots,
+} from '@dovo/studio-ui'
 import { useWorkspace } from '@dovo/studio-core'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { HarnessDialog } from '../../dialogs/harness-dialog'
 import type { Task } from '@dovo/protocol'
 
@@ -19,12 +24,14 @@ export function TurnModelControls({
   onChange,
   disabled,
   task,
+  renderControls,
 }: {
   agent: Agent
   value?: TurnSettings | null
   onChange: (value: TurnSettings | null) => void
   disabled?: boolean
   task: Task
+  renderControls?: (controls: ComposerControlSlots) => ReactNode
 }) {
   const { workspace, snapshot } = useWorkspace()
   const [configure, setConfigure] = useState(false)
@@ -55,6 +62,29 @@ export function TurnModelControls({
   return (
     <>
       <ComposerSettingsControls
+        renderControls={
+          renderControls
+            ? ({ model, access }) =>
+                renderControls({
+                  model: (
+                    <>
+                      {model}
+                      {value && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={disabled}
+                          onClick={() => onChange(null)}
+                        >
+                          Use thread defaults
+                        </Button>
+                      )}
+                    </>
+                  ),
+                  access,
+                })
+            : undefined
+        }
         modelOnly={!full}
         value={selected}
         disabled={!!disabled}
@@ -72,7 +102,7 @@ export function TurnModelControls({
         }}
         onConfigure={() => setConfigure(true)}
       />
-      {value && (
+      {!renderControls && value && (
         <Button size="sm" variant="ghost" disabled={disabled} onClick={() => onChange(null)}>
           Use thread defaults
         </Button>

@@ -67,7 +67,7 @@ const built = await build({
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
         const [id,setId]=useState(null);
         const [pending,setPending]=useState(null);
-        const [multiple,setMultiple]=useState(false);window.setMultiple=setMultiple;
+        const [multiple,setMultiple]=useState(false);window.setMultiple=setMultiple;const [scopeEnabled,setScopeEnabled]=useState(false);window.setScopeEnabled=setScopeEnabled;
         const [activity,setActivity]=useState(false);window.setActivity=setActivity;const [activityPaused,setActivityPaused]=useState(true);window.setActivityPaused=setActivityPaused;
         const [settings,setSettings]=useState(false);window.showSettings=()=>setSettings(true);window.hideSettings=()=>setSettings(false);
         const task=workspace.tasks.find(task=>task.id===id);
@@ -87,8 +87,8 @@ const built = await build({
           }
           throw Error('Unexpected request '+path);
         };
-        const value={workspace,setWorkspace,snapshot:{workspace,defaults,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{}};
-        const renderThread=(task,workspaceControls,temporary)=><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} visible onReview={()=>{}}/>;
+        const value={workspace,setWorkspace,snapshot:{workspace,defaults,autoProjectSelectionEnabled:scopeEnabled,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{},switchRuntime:async()=>new Promise((_resolve,reject)=>{window.cancelSwitch=()=>reject(new Error('Transfer fixture failed'))})};
+        const renderThread=(task,workspaceControls,temporary,onSelectRemote)=><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}}/>;
         return <Context.Provider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
       }
       createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
@@ -146,10 +146,37 @@ try {
         heroY: hero.y + hero.height / 2,
         composerY: composer.y,
         composerHeight: composer.height,
-        subtitleSize: getComputedStyle(document.querySelector('h2+p')).fontSize,
         overflow: document.documentElement.scrollWidth > innerWidth,
       }
     })
+  // The composer machine selector and header share transfer state, including recovery.
+  await page.evaluate(() => window.setMultiple(true))
+  await page.getByRole('button', { name: 'Task server', exact: true }).click()
+  await page.getByRole('button', { name: 'Linux workstation', exact: true }).click()
+  await page.waitForFunction(() => typeof window.cancelSwitch === 'function')
+  assert.equal(
+    await page.getByRole('button', { name: 'Start in General', exact: true }).isDisabled(),
+    true,
+  )
+  assert.equal(
+    await page.getByRole('button', { name: 'Choose project', exact: true }).isDisabled(),
+    true,
+  )
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message task', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => window.cancelSwitch())
+  await page.getByRole('alert').filter({ hasText: 'Transfer fixture failed' }).waitFor()
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Message task"]').disabled)
+  assert.equal(
+    await page.getByRole('button', { name: 'Start in General', exact: true }).isDisabled(),
+    false,
+  )
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Task server', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => window.setMultiple(false))
   for (const device of [
     { name: 'desktop', width: 1440, height: 900 },
     { name: 'mobile', width: 390, height: 844 },
@@ -158,10 +185,18 @@ try {
   ]) {
     await page.setViewportSize(device)
     for (const project of ['No project', 'dovo-studio', 'Design notes']) {
-      await page.evaluate(() => window.reset())
+      await page.evaluate(() => {
+        window.setScopeEnabled(false)
+        window.reset()
+      })
       await page.locator('[data-saved="false"]').waitFor()
+      assert.equal(
+        await page.getByRole('button', { name: 'Start in Scope', exact: true }).count(),
+        0,
+      )
+      await page.evaluate(() => window.setScopeEnabled(true))
       if (project !== 'No project') {
-        await page.getByRole('button', { name: 'Task project', exact: true }).click()
+        await page.getByRole('button', { name: 'Choose project', exact: true }).click()
         await page.getByRole('button', { name: project, exact: true }).click()
       }
       await page.waitForFunction(() =>
@@ -171,6 +206,49 @@ try {
       )
       if (screenshots && device.name === 'desktop' && project === 'No project')
         await page.screenshot({ path: screenshots + '/desktop-empty.png' })
+      const start = page.getByRole('group', { name: 'Start a thread', exact: true })
+      const primary = start.getByRole('button', {
+        name: project === 'No project' ? 'Start in Scope' : `Selected project: ${project}`,
+        exact: true,
+      })
+      const projectBounds = await primary.boundingBox()
+      const dropdownBounds = await start
+        .getByRole('button', { name: 'Choose project', exact: true })
+        .boundingBox()
+      const workspaceBar = page.getByRole('group', { name: 'Project and checkout', exact: true })
+      const deviceBounds = await workspaceBar
+        .getByRole('button', { name: 'Task server', exact: true })
+        .boundingBox()
+      assert.ok(projectBounds && dropdownBounds && deviceBounds)
+      assert.ok(Math.abs(projectBounds.x + projectBounds.width - dropdownBounds.x) < 1)
+      assert.equal(projectBounds.y, dropdownBounds.y)
+      assert.equal(await start.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+      assert.ok(deviceBounds.y >= (await page.locator('.studio-composer').boundingBox()).y)
+      assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
+      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 1)
+      const modelGroup = page.getByRole('group', { name: 'Model and reasoning', exact: true })
+      assert.equal(
+        await modelGroup
+          .getByRole('button', { name: 'Choose agent and model', exact: true })
+          .count(),
+        1,
+      )
+      assert.equal(
+        await modelGroup.getByRole('button', { name: 'Reasoning and speed', exact: true }).count(),
+        1,
+      )
+      assert.equal(
+        await modelGroup
+          .getByRole('button', { name: 'Configure task permissions', exact: true })
+          .count(),
+        0,
+      )
+      assert.equal(
+        await workspaceBar
+          .getByRole('button', { name: 'Configure task permissions', exact: true })
+          .count(),
+        1,
+      )
       const before = await geometry()
       const input = page.getByRole('textbox', { name: 'Message task' })
       if (device.name === 'desktop' && project === 'No project') {
@@ -193,7 +271,6 @@ try {
           Math.abs(before[key] - after[key]) < 2,
           project + ' ' + device.name + ' moved ' + key + ': ' + JSON.stringify({ before, after }),
         )
-      assert.equal(after.subtitleSize, '14px')
       assert.equal(after.overflow, false)
       assert(after.heroY > 48)
       assert(after.composerY > after.heroY)
@@ -228,7 +305,17 @@ try {
         await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
         0,
       )
-      assert(await page.getByRole('button', { name: 'Task project', exact: true }).isDisabled())
+      assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
+      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+      assert.equal(
+        await page.getByRole('button', { name: 'Working directory', exact: true }).count(),
+        0,
+      )
+      assert.equal(await page.getByLabel(/^Working directory:/).count(), 0)
+      assert.equal(
+        await page.getByRole('button', { name: 'Scope checkout', exact: true }).count(),
+        0,
+      )
       assert.equal(await input.inputValue(), '')
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
@@ -456,6 +543,7 @@ try {
     await page.getByRole('heading', { name: 'What would you like to work on?' }).count(),
     0,
   )
+  assert.equal(await page.getByRole('button', { name: 'Task project', exact: true }).count(), 0)
   if (screenshots) {
     for (const device of [
       { name: 'desktop', width: 1440, height: 900 },
@@ -467,15 +555,15 @@ try {
         window.setMultiple(false)
       })
       await page.locator('[data-saved="false"]').waitFor()
-      await page.getByRole('button', { name: 'Task project', exact: true }).click()
+      await page.getByRole('button', { name: 'Choose project', exact: true }).click()
       await page.getByRole('textbox', { name: 'Search projects' }).waitFor()
-      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
+      assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 1)
       await page.screenshot({
         path: screenshots + '/' + device.name + '-single-server-projects.png',
       })
       await page.keyboard.press('Escape')
       await page.evaluate(() => window.setMultiple(true))
-      await page.getByRole('button', { name: 'Task project', exact: true }).click()
+      await page.getByRole('button', { name: 'Choose project', exact: true }).click()
       await page.getByRole('button', { name: 'Project notes', exact: true }).waitFor()
       await page.screenshot({
         path: screenshots + '/' + device.name + '-all-projects.png',
@@ -486,7 +574,7 @@ try {
       )
       await page.getByRole('textbox', { name: 'Search projects' }).fill('notes')
       assert.equal(
-        await page.getByRole('button', { name: 'General', exact: true }).isVisible(),
+        await page.getByRole('button', { name: 'Start in General', exact: true }).isVisible(),
         true,
       )
       await page.screenshot({ path: screenshots + '/' + device.name + '-searched-projects.png' })

@@ -59,9 +59,11 @@ export function ComposerModelPicker({
   onSelectMode,
   automaticModesEnabled = false,
   modelsOnly = false,
+  joined = false,
 }: {
   automaticModesEnabled?: boolean
   modelsOnly?: boolean
+  joined?: boolean
   modelSelection?: 'inherit' | 'auto' | 'smart'
   onSelectMode?: (mode: 'inherit' | 'auto' | 'smart') => Promise<boolean>
   agents: readonly Agent[]
@@ -327,7 +329,10 @@ export function ComposerModelPicker({
           variant="ghost"
           disabled={disabled}
           aria-label="Choose agent and model"
-          className="h-8 min-w-0 max-w-64 gap-1.5 rounded-lg px-2 text-xs font-normal"
+          className={cn(
+            'h-8 min-w-0 max-w-64 gap-1.5 rounded-lg px-2 text-xs font-normal',
+            joined && 'max-w-48 rounded-r-none pr-1',
+          )}
         >
           {ModeIcon ? (
             <ModeIcon className="size-4 shrink-0" aria-hidden="true" />
@@ -350,12 +355,12 @@ export function ComposerModelPicker({
               </>
             )}
           </span>
-          <ChevronDown className="size-3 text-muted-foreground" />
+          {!joined && <ChevronDown className="size-3 text-muted-foreground" />}
         </Button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
-          side="top"
+          side={joined ? 'bottom' : 'top'}
           align="start"
           sideOffset={8}
           collisionPadding={12}

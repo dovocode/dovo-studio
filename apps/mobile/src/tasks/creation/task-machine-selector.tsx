@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import type { ReactNode } from 'react'
 import { View } from 'react-native'
 import {
   canChangeTaskCheckout,
@@ -21,10 +22,14 @@ export function TaskMachineSelector({
   onProjectChange,
   onAuto,
   onSelectRemote,
+  prominent,
+  renderControls,
 }: {
   task: Task
   text: string
   disabled: boolean
+  prominent?: boolean
+  renderControls?: (project: ReactNode, server: ReactNode) => ReactNode
   onMoving: (moving: boolean) => void
   onAuto: () => Promise<void>
   onProjectChange: (repository: Repository, preserveAuto?: boolean) => Promise<void>
@@ -42,9 +47,11 @@ export function TaskMachineSelector({
     (repo) => repo.id === task.repositoryId,
   )
   return (
-    <View style={{ gap: 4 }}>
+    <View style={{ gap: 4, width: prominent ? '100%' : undefined }}>
       <FolderPicker
         stacked
+        prominent={prominent}
+        renderControls={renderControls}
         autoProject={task.autoProject}
         onAuto={runtime.snapshot?.autoProjectSelectionEnabled === true ? onAuto : undefined}
         value={task.repositoryId}

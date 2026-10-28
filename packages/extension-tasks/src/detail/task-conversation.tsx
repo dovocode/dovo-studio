@@ -1,7 +1,8 @@
+import type { WorkspaceControls } from '../chat/composer/composer-workspace'
 import { ThreadSharing, InlineThreadSuggestions } from '../chat/thread-sharing'
 import { CodeReviewCard } from '../review/code-review-card'
 import type { CodeFinding } from '@dovo/protocol'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LoaderCircle, GitFork, Folder } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -25,6 +26,7 @@ import {
 } from '@dovo/studio-core'
 import { ChatThread } from '../chat/thread/chat-thread'
 import { Composer } from '../chat/composer/composer'
+import type { SelectRemoteProject } from '../chat/composer/composer-project'
 import { TaskEmptyState } from '../task-creation/task-empty-state'
 import { PreparationProgress } from '../chat/thread/preparation-progress'
 import { ReviewCommentsTray } from '../chat/thread/review-comments-tray'
@@ -53,10 +55,12 @@ export function TaskConversation({
   onComposerInsertApplied,
   temporary,
   workspaceControls,
+  onSelectRemote,
 }: {
   task: Task
   temporary?: boolean
-  workspaceControls?: ReactNode
+  workspaceControls?: WorkspaceControls
+  onSelectRemote?: SelectRemoteProject
   historyLoaded?: boolean
   historyError?: string
   onReview: () => void
@@ -81,6 +85,7 @@ export function TaskConversation({
   } | null>(null)
   const pendingTemplate = templateInsert?.taskId === task.id ? templateInsert : null
   const [composerCollapsed, setComposerCollapsed] = useState(false)
+  const [projectMoving, setProjectMoving] = useState(false)
   const composer = useRef<HTMLDivElement>(null)
   const readingHistory = useCallback(() => {
     // Typing and focus expansion resize the viewport; they must never collapse the editor.
@@ -223,6 +228,10 @@ export function TaskConversation({
         )}
         {temporary ? (
           <TaskEmptyState
+            task={task}
+            disabled={projectMoving}
+            onMoving={setProjectMoving}
+            onSelectRemote={onSelectRemote}
             welcome
             projectName={project?.kind !== 'scratch' ? project?.name : undefined}
           />
@@ -232,6 +241,10 @@ export function TaskConversation({
               emptyState={
                 welcome ? (
                   <TaskEmptyState
+                    task={task}
+                    disabled={projectMoving}
+                    onMoving={setProjectMoving}
+                    onSelectRemote={onSelectRemote}
                     welcome
                     projectName={project?.kind !== 'scratch' ? project?.name : undefined}
                   />
@@ -347,6 +360,9 @@ export function TaskConversation({
             task={task}
             temporary={temporary}
             workspaceControls={workspaceControls}
+            workspaceMoving={projectMoving}
+            onWorkspaceMoving={setProjectMoving}
+            onSelectRemote={onSelectRemote}
             queuedMessages={
               <ComposerActivity key={task.id} task={queueTask} pending={visiblePending} />
             }

@@ -172,7 +172,8 @@ try {
       await page.getByRole('button', { name: 'Checkout branch', exact: true }).isDisabled(),
       true,
     )
-    assert.equal(await page.getByText('New worktree', { exact: true }).isVisible(), true)
+    assert.equal(await page.getByText('New worktree', { exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Task server', exact: true }).count(), 0)
   }
   assert.deepEqual(errors, [])
   console.log(

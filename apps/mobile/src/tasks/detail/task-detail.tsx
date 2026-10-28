@@ -97,7 +97,6 @@ import { randomUUID } from 'expo-crypto'
 import { ArtifactBrowser } from '../../ui/content/artifacts'
 type StartupControls = {
   temporary: boolean
-  onBrowse: () => void
   onNewThread: () => void
   onSelectRemote: NonNullable<ComponentProps<typeof Composer>['onSelectRemote']>
 }
@@ -1046,8 +1045,8 @@ function TaskDetailContent({
           >
             <Composer
               queuedMessages={<ComposerActivity task={task} />}
-              renderAbove={(setup, starters) => (
-                <Conversation onBrowse={startup?.onBrowse} setup={setup} starters={starters}>
+              renderAbove={(setup, starters, startModes) => (
+                <Conversation setup={setup} starters={starters} startModes={startModes}>
                   {preparation ? (
                     <PreparationProgress
                       preparation={preparation}

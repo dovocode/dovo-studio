@@ -527,14 +527,14 @@ const renderConversationMessage = ({ item }: { item: string }) => (
 )
 const messageKey = (id: string) => id
 export function Conversation({
-  onBrowse,
   setup,
   starters,
+  startModes,
   children,
 }: {
-  onBrowse?: () => void
   setup?: ReactNode
   starters?: ReactNode
+  startModes?: ReactNode
   children?: ReactNode
 }) {
   const { colors, styles, reduceMotion } = useTheme()
@@ -744,8 +744,8 @@ export function Conversation({
                 // FlatList applies its inversion and measurement props to this native view.
                 <View style={{ flex: 1 }}>
                   <TaskEmptyState
-                    onBrowse={onBrowse}
                     starters={starters}
+                    startModes={startModes}
                     projectName={project?.kind !== 'scratch' ? project?.name : undefined}
                   />
                 </View>

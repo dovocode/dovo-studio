@@ -4,7 +4,7 @@ import {
   permissionPolicyLabel,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
-import { useState, type ComponentProps } from 'react'
+import { useState, type ComponentProps, type ReactNode } from 'react'
 import {
   Check,
   LockKeyhole,
@@ -62,6 +62,8 @@ const accessIcon = {
   'full-access': LockKeyholeOpen,
   'read-only': Eye,
 }
+export type ComposerControlSlots = { model: ReactNode; access: ReactNode }
+
 export function ComposerSettingsControls({
   value,
   disabled,
@@ -69,9 +71,11 @@ export function ComposerSettingsControls({
   modelSelectionDifficulty,
   onSelectDifficulty,
   modelOnly = false,
+  renderControls,
   ...pickerProps
 }: ComponentProps<typeof ComposerModelPicker> & {
   modelOnly?: boolean
+  renderControls?: (controls: ComposerControlSlots) => ReactNode
   modelSelectionDifficulty?: string
   onSelectDifficulty?: (reasoning: string) => Promise<boolean>
 }) {
@@ -100,16 +104,20 @@ export function ComposerSettingsControls({
   const locked = disabled
   const itemClass =
     'relative flex cursor-default select-none items-center rounded-md py-1.5 pl-3 pr-8 text-sm outline-none transition-colors duration-150 focus:bg-accent/50 data-[state=checked]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40'
-  return (
-    <>
+  const model = (
+    <div
+      role="group"
+      aria-label="Model and reasoning"
+      className="inline-flex max-w-full min-w-0 items-center rounded-lg hover:bg-accent/50 focus-within:bg-accent/50"
+    >
       <ComposerModelPicker
         {...pickerProps}
         modelsOnly={modelOnly}
+        joined
         value={value}
         disabled={disabled}
         onChange={onChange}
       />
-      <span className="mx-1 h-4 border-l border-border/60" />
       <DropdownMenu.Root open={reasoningOpen} onOpenChange={setReasoningOpen}>
         <DropdownMenu.Trigger asChild>
           <Button
@@ -117,16 +125,15 @@ export function ComposerSettingsControls({
             variant="ghost"
             disabled={locked}
             aria-label={automatic ? 'Difficulty' : 'Reasoning and speed'}
-            className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
+            className="h-8 shrink-0 gap-1 rounded-l-none rounded-r-lg pl-1 pr-2 text-xs font-normal text-muted-foreground"
           >
             {fast && <Zap className="size-3.5 fill-current" />}
             {effectiveReasoning ? effortName(effectiveReasoning) : 'Default'}
-            <ChevronDown size={12} />
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content
-            side="top"
+            side="bottom"
             align="start"
             sideOffset={8}
             collisionPadding={12}
@@ -311,228 +318,234 @@ export function ComposerSettingsControls({
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
-      {!modelOnly && (
-        <>
-          <span className="mx-1 h-4 border-l border-border/60" />
-          <DropdownMenu.Root open={open} onOpenChange={setOpen}>
-            <DropdownMenu.Trigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-8 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal text-muted-foreground"
-                disabled={locked}
-                aria-label="Configure task permissions"
-                title="Agent access"
+    </div>
+  )
+  const access = !modelOnly && (
+    <>
+      <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+        <DropdownMenu.Trigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-6 gap-1.5 rounded-lg px-2 text-[0.6875rem] font-normal text-muted-foreground"
+            disabled={locked}
+            aria-label="Configure task permissions"
+            title="Agent access"
+          >
+            <AccessIcon className="size-3.5" />
+            {permissionPolicyLabel(value)}
+            <ChevronDown size={12} />
+          </Button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            side="top"
+            align="start"
+            sideOffset={8}
+            collisionPadding={12}
+            className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+          >
+            <DropdownMenu.Label className="px-3 py-2 text-xs text-muted-foreground">
+              Access mode
+            </DropdownMenu.Label>
+            <DropdownMenu.RadioGroup
+              aria-label="Harness access"
+              value={permissionPolicyLabel(value) === 'Custom' ? 'custom' : value.permission}
+              onValueChange={(permission) =>
+                void onChange(
+                  selectPermissionPreset(
+                    value,
+                    decode(taskHarnessSchema.fields.permission, permission),
+                  ),
+                )
+              }
+            >
+              {selectableAccessModes(value.permission)
+                .filter(
+                  (mode) => supportsAccess(value.provider, mode.id) || mode.id === value.permission,
+                )
+                .map((mode) => {
+                  const ModeIcon = accessIcon[mode.id]
+                  return (
+                    <DropdownMenu.RadioItem
+                      key={mode.id}
+                      value={mode.id}
+                      data-value={mode.id}
+                      disabled={!supportsAccess(value.provider, mode.id)}
+                      className={itemClass}
+                    >
+                      <span>
+                        <span className="flex items-center gap-2">
+                          <ModeIcon className="size-3.5 text-muted-foreground" />
+                          {mode.name}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {mode.description}
+                        </span>
+                      </span>
+                      <DropdownMenu.ItemIndicator className="absolute right-3">
+                        <Check className="size-3.5" />
+                      </DropdownMenu.ItemIndicator>
+                    </DropdownMenu.RadioItem>
+                  )
+                })}
+            </DropdownMenu.RadioGroup>
+            <DropdownMenu.Separator className="mx-2 my-2 border-t" />
+            <DropdownMenu.Label className="px-3 py-2 text-xs text-muted-foreground">
+              Advanced
+            </DropdownMenu.Label>
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              {permissionPolicySummary(value)}
+            </p>
+            {(value.approvalPolicy || value.sandboxMode) && (
+              <DropdownMenu.Item
+                className={itemClass}
+                disabled={!policySupported}
+                onSelect={() => void onChange(selectPermissionPreset(value, value.permission))}
               >
-                <AccessIcon className="size-3.5" />
-                {permissionPolicyLabel(value)}
-                <ChevronDown size={12} />
-              </Button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                side="top"
-                align="start"
-                sideOffset={8}
-                collisionPadding={12}
-                className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+                Reset to access mode
+              </DropdownMenu.Item>
+            )}
+            <DropdownMenu.Sub>
+              <DropdownMenu.SubTrigger
+                aria-label="Approval policy"
+                disabled={!policySupported}
+                className={itemClass}
               >
-                <DropdownMenu.Label className="px-3 py-2 text-xs text-muted-foreground">
-                  Access mode
-                </DropdownMenu.Label>
-                <DropdownMenu.RadioGroup
-                  aria-label="Harness access"
-                  value={permissionPolicyLabel(value) === 'Custom' ? 'custom' : value.permission}
-                  onValueChange={(permission) =>
-                    void onChange(
-                      selectPermissionPreset(
-                        value,
-                        decode(taskHarnessSchema.fields.permission, permission),
-                      ),
-                    )
-                  }
+                Approval policy
+                <span className="ml-auto pl-3 text-xs text-muted-foreground">
+                  {value.approvalPolicy ? approvalPolicyNames[value.approvalPolicy] : 'Inherit'}
+                </span>
+                <ChevronRight className="absolute right-2 size-3" />
+              </DropdownMenu.SubTrigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.SubContent
+                  sideOffset={8}
+                  collisionPadding={12}
+                  className="z-50 w-80 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
                 >
-                  {selectableAccessModes(value.permission)
-                    .filter(
-                      (mode) =>
-                        supportsAccess(value.provider, mode.id) || mode.id === value.permission,
-                    )
-                    .map((mode) => {
-                      const ModeIcon = accessIcon[mode.id]
-                      return (
-                        <DropdownMenu.RadioItem
-                          key={mode.id}
-                          value={mode.id}
-                          data-value={mode.id}
-                          disabled={!supportsAccess(value.provider, mode.id)}
-                          className={itemClass}
-                        >
-                          <span>
-                            <span className="flex items-center gap-2">
-                              <ModeIcon className="size-3.5 text-muted-foreground" />
-                              {mode.name}
-                            </span>
-                            <span className="mt-0.5 block text-xs text-muted-foreground">
-                              {mode.description}
-                            </span>
-                          </span>
-                          <DropdownMenu.ItemIndicator className="absolute right-3">
-                            <Check className="size-3.5" />
-                          </DropdownMenu.ItemIndicator>
-                        </DropdownMenu.RadioItem>
-                      )
-                    })}
-                </DropdownMenu.RadioGroup>
-                <DropdownMenu.Separator className="mx-2 my-2 border-t" />
-                <DropdownMenu.Label className="px-3 py-2 text-xs text-muted-foreground">
-                  Advanced
-                </DropdownMenu.Label>
-                <p className="px-3 py-2 text-xs text-muted-foreground">
-                  {permissionPolicySummary(value)}
-                </p>
-                {(value.approvalPolicy || value.sandboxMode) && (
-                  <DropdownMenu.Item
-                    className={itemClass}
-                    disabled={!policySupported}
-                    onSelect={() => void onChange(selectPermissionPreset(value, value.permission))}
-                  >
-                    Reset to access mode
-                  </DropdownMenu.Item>
-                )}
-                <DropdownMenu.Sub>
-                  <DropdownMenu.SubTrigger
+                  <DropdownMenu.RadioGroup
                     aria-label="Approval policy"
-                    disabled={!policySupported}
-                    className={itemClass}
+                    value={value.approvalPolicy ?? ''}
+                    onValueChange={(approvalPolicy) =>
+                      void onChange({
+                        ...value,
+                        approvalPolicy: approvalPolicy
+                          ? decode(approvalPolicySchema, approvalPolicy)
+                          : undefined,
+                      })
+                    }
                   >
-                    Approval policy
-                    <span className="ml-auto pl-3 text-xs text-muted-foreground">
-                      {value.approvalPolicy ? approvalPolicyNames[value.approvalPolicy] : 'Inherit'}
-                    </span>
-                    <ChevronRight className="absolute right-2 size-3" />
-                  </DropdownMenu.SubTrigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.SubContent
-                      sideOffset={8}
-                      collisionPadding={12}
-                      className="z-50 w-80 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
-                    >
-                      <DropdownMenu.RadioGroup
-                        aria-label="Approval policy"
-                        value={value.approvalPolicy ?? ''}
-                        onValueChange={(approvalPolicy) =>
-                          void onChange({
-                            ...value,
-                            approvalPolicy: approvalPolicy
-                              ? decode(approvalPolicySchema, approvalPolicy)
-                              : undefined,
-                          })
-                        }
+                    <DropdownMenu.RadioItem value="" className={itemClass}>
+                      Inherit from access mode
+                      <DropdownMenu.ItemIndicator className="absolute right-3">
+                        <Check size={14} />
+                      </DropdownMenu.ItemIndicator>
+                    </DropdownMenu.RadioItem>
+                    {approvalPolicySchema.literals.map((id) => (
+                      <DropdownMenu.RadioItem
+                        key={id}
+                        value={id}
+                        disabled={!capabilities.approvalPolicies.includes(id)}
+                        className={itemClass}
                       >
-                        <DropdownMenu.RadioItem value="" className={itemClass}>
-                          Inherit from access mode
-                          <DropdownMenu.ItemIndicator className="absolute right-3">
-                            <Check size={14} />
-                          </DropdownMenu.ItemIndicator>
-                        </DropdownMenu.RadioItem>
-                        {approvalPolicySchema.literals.map((id) => (
-                          <DropdownMenu.RadioItem
-                            key={id}
-                            value={id}
-                            disabled={!capabilities.approvalPolicies.includes(id)}
-                            className={itemClass}
-                          >
-                            {approvalPolicyNames[id]}
-                            {capabilities.approvalPolicies.includes(id) ? '' : ' · Not supported'}
-                            <DropdownMenu.ItemIndicator className="absolute right-3">
-                              <Check size={14} />
-                            </DropdownMenu.ItemIndicator>
-                          </DropdownMenu.RadioItem>
-                        ))}
-                      </DropdownMenu.RadioGroup>
-                      <p className="px-3 py-2 text-xs text-muted-foreground">
-                        {capabilities.approvalDescription}
-                      </p>
-                    </DropdownMenu.SubContent>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Sub>
-                <DropdownMenu.Sub>
-                  <DropdownMenu.SubTrigger
-                    aria-label="Sandbox"
-                    disabled={!policySupported}
-                    className={itemClass}
-                  >
-                    Sandbox
-                    <span className="ml-auto pl-3 text-xs text-muted-foreground">
-                      {value.sandboxMode ? sandboxModeNames[value.sandboxMode] : 'Inherit'}
-                    </span>
-                    <ChevronRight className="absolute right-2 size-3" />
-                  </DropdownMenu.SubTrigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.SubContent
-                      sideOffset={8}
-                      collisionPadding={12}
-                      className="z-50 w-80 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
-                    >
-                      <DropdownMenu.RadioGroup
-                        aria-label="Sandbox"
-                        value={value.sandboxMode ?? ''}
-                        onValueChange={(sandboxMode) =>
-                          void onChange({
-                            ...value,
-                            sandboxMode: sandboxMode
-                              ? decode(sandboxModeSchema, sandboxMode)
-                              : undefined,
-                          })
-                        }
-                      >
-                        <DropdownMenu.RadioItem value="" className={itemClass}>
-                          Inherit from access mode
-                          <DropdownMenu.ItemIndicator className="absolute right-3">
-                            <Check size={14} />
-                          </DropdownMenu.ItemIndicator>
-                        </DropdownMenu.RadioItem>
-                        {sandboxModeSchema.literals.map((id) => (
-                          <DropdownMenu.RadioItem
-                            key={id}
-                            value={id}
-                            disabled={!capabilities.sandboxModes.includes(id)}
-                            className={itemClass}
-                          >
-                            {sandboxModeNames[id]}
-                            {capabilities.sandboxModes.includes(id) ? '' : ' · Not supported'}
-                            <DropdownMenu.ItemIndicator className="absolute right-3">
-                              <Check size={14} />
-                            </DropdownMenu.ItemIndicator>
-                          </DropdownMenu.RadioItem>
-                        ))}
-                      </DropdownMenu.RadioGroup>
-                      <p className="px-3 py-2 text-xs text-muted-foreground">
-                        {capabilities.sandboxDescription}
-                      </p>
-                    </DropdownMenu.SubContent>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Sub>
-                {!policySupported && (
-                  <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
-                    {permissionPolicyUpdateMessage}
-                  </p>
-                )}
-                {policyIssue && (
-                  <p role="alert" className="px-3 py-2 text-xs text-destructive">
-                    {policyIssue}. Clear the override to inherit.
-                  </p>
-                )}
-                {policySupported && policy.readOnly && (
+                        {approvalPolicyNames[id]}
+                        {capabilities.approvalPolicies.includes(id) ? '' : ' · Not supported'}
+                        <DropdownMenu.ItemIndicator className="absolute right-3">
+                          <Check size={14} />
+                        </DropdownMenu.ItemIndicator>
+                      </DropdownMenu.RadioItem>
+                    ))}
+                  </DropdownMenu.RadioGroup>
                   <p className="px-3 py-2 text-xs text-muted-foreground">
-                    Read-only access takes precedence over approval and sandbox overrides.
+                    {capabilities.approvalDescription}
                   </p>
-                )}
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        </>
-      )}
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Sub>
+            <DropdownMenu.Sub>
+              <DropdownMenu.SubTrigger
+                aria-label="Sandbox"
+                disabled={!policySupported}
+                className={itemClass}
+              >
+                Sandbox
+                <span className="ml-auto pl-3 text-xs text-muted-foreground">
+                  {value.sandboxMode ? sandboxModeNames[value.sandboxMode] : 'Inherit'}
+                </span>
+                <ChevronRight className="absolute right-2 size-3" />
+              </DropdownMenu.SubTrigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.SubContent
+                  sideOffset={8}
+                  collisionPadding={12}
+                  className="z-50 w-80 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+                >
+                  <DropdownMenu.RadioGroup
+                    aria-label="Sandbox"
+                    value={value.sandboxMode ?? ''}
+                    onValueChange={(sandboxMode) =>
+                      void onChange({
+                        ...value,
+                        sandboxMode: sandboxMode
+                          ? decode(sandboxModeSchema, sandboxMode)
+                          : undefined,
+                      })
+                    }
+                  >
+                    <DropdownMenu.RadioItem value="" className={itemClass}>
+                      Inherit from access mode
+                      <DropdownMenu.ItemIndicator className="absolute right-3">
+                        <Check size={14} />
+                      </DropdownMenu.ItemIndicator>
+                    </DropdownMenu.RadioItem>
+                    {sandboxModeSchema.literals.map((id) => (
+                      <DropdownMenu.RadioItem
+                        key={id}
+                        value={id}
+                        disabled={!capabilities.sandboxModes.includes(id)}
+                        className={itemClass}
+                      >
+                        {sandboxModeNames[id]}
+                        {capabilities.sandboxModes.includes(id) ? '' : ' · Not supported'}
+                        <DropdownMenu.ItemIndicator className="absolute right-3">
+                          <Check size={14} />
+                        </DropdownMenu.ItemIndicator>
+                      </DropdownMenu.RadioItem>
+                    ))}
+                  </DropdownMenu.RadioGroup>
+                  <p className="px-3 py-2 text-xs text-muted-foreground">
+                    {capabilities.sandboxDescription}
+                  </p>
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Sub>
+            {!policySupported && (
+              <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
+                {permissionPolicyUpdateMessage}
+              </p>
+            )}
+            {policyIssue && (
+              <p role="alert" className="px-3 py-2 text-xs text-destructive">
+                {policyIssue}. Clear the override to inherit.
+              </p>
+            )}
+            {policySupported && policy.readOnly && (
+              <p className="px-3 py-2 text-xs text-muted-foreground">
+                Read-only access takes precedence over approval and sandbox overrides.
+              </p>
+            )}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </>
+  )
+  return renderControls ? (
+    renderControls({ model, access })
+  ) : (
+    <>
+      {model}
+      {access}
     </>
   )
 }

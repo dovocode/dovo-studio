@@ -164,13 +164,23 @@ export function Icon({
   name,
   size = 20,
   color,
+  filled = false,
 }: {
   name: IconName
   size?: number
   color?: string
+  filled?: boolean
 }) {
   const { colors } = useTheme()
 
   const Glyph = icons[name]
-  return <Glyph size={size} color={color ?? colors.text} strokeWidth={2} accessible={false} />
+  return (
+    <Glyph
+      size={size}
+      color={color ?? colors.text}
+      fill={filled ? (color ?? colors.text) : 'none'}
+      strokeWidth={2}
+      accessible={false}
+    />
+  )
 }

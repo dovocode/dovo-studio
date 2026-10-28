@@ -1,3 +1,5 @@
+import type { WorkspaceControls } from './chat/composer/composer-workspace'
+import type { SelectRemoteProject } from './chat/composer/composer-project'
 import type { CodeFinding } from '@dovo/protocol'
 import { TaskWaitingPanel } from './detail/task-waiting-panel'
 import { fileStats } from './files/presentation'
@@ -22,15 +24,7 @@ import { NativeAgentThread } from './detail/native-agent-thread'
 import { LinkedProjects } from './detail/linked-projects'
 import { ThreadArtifacts } from './chat/artifacts'
 import { BrowserPane, DevicesPane } from './browser/browser-pane'
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { X, Maximize2, Minimize2 } from 'lucide-react'
 import { templateTaskFields } from '@dovo/protocol'
 import {
@@ -849,7 +843,12 @@ export default function TasksView({
   const selectedKey = task
     ? taskCollectionKey(activeRuntimeId, task.id)
     : (temporaryEntry?.key ?? '')
-  const renderThread = (currentTask: Task, workspaceControls?: ReactNode, temporary = false) => {
+  const renderThread = (
+    currentTask: Task,
+    workspaceControls?: WorkspaceControls,
+    temporary = false,
+    onSelectRemote?: SelectRemoteProject,
+  ) => {
     const task = storedTask?.id === currentTask.id ? storedTask : currentTask
     const native =
       nativeThread?.parentKey === taskCollectionKey(activeRuntimeId, task.id)
@@ -1016,6 +1015,7 @@ export default function TasksView({
                     task={task}
                     temporary={temporary}
                     workspaceControls={workspaceControls}
+                    onSelectRemote={onSelectRemote}
                     revealMessage={revealMessage}
                     onRevealHandled={revealHandled}
                     visible={!native && !listOpen && (!compact || surface === 'chat')}
