@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
+import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { chromium } from './browser/harness.mjs'
 const catalogMock = `export const useHarnessCatalog=()=>({modelName:'',catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model',serviceTiers:[{id:'priority',name:'Fast'}]}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});`
 const mocks = {
@@ -1076,9 +1077,84 @@ try {
     window.setTask((task) => ({ ...task, status: 'running', error: undefined }))
   })
   await page.getByRole('button', { name: 'Retry', exact: true }).waitFor({ state: 'hidden' })
+  // Use production CSS to check action visibility and geometry, beyond queue dispatch behavior.
+  const assets = fileURLToPath(new URL('../apps/desktop/dist/assets/', import.meta.url))
+  await page.addStyleTag({
+    content: readdirSync(assets)
+      .filter((file) => file.endsWith('.css'))
+      .map((file) => readFileSync(assets + file, 'utf8'))
+      .join('\n'),
+  })
+  await page.evaluate(() => {
+    document.documentElement.classList.add('dark')
+    window.setTask((task) => ({
+      ...task,
+      activeRunId: 'run',
+      queue: [
+        { id: 'compact-1', role: 'user', text: 'Verify the queue and checklist layout' },
+        { id: 'compact-2', role: 'user', text: 'Keep Steer in the same place on hover' },
+      ],
+      nativeTodos: [
+        { text: 'Match the reference card', status: 'completed' },
+        { text: 'Verify hover controls', status: 'in-progress' },
+        { text: 'Ship the update', status: 'pending' },
+      ],
+    }))
+  })
+  const screenshotPath = process.env.DOVO_COMPOSER_SCREENSHOTS
+  if (screenshotPath) mkdirSync(screenshotPath, { recursive: true })
+  await page.getByRole('tab', { name: 'Queue · 2', exact: true }).click()
+  for (const width of [900, 480, 320]) {
+    await page.setViewportSize({ width, height: 800 })
+    await input.focus()
+    await page.mouse.move(width - 1, 799)
+    const row = queued.getByRole('listitem').first()
+    const steer = row.getByRole('button', { name: 'Steer with queued message 1', exact: true })
+    const edit = row.getByRole('button', { name: 'Edit queued message 1', exact: true })
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector('[data-queue-actions]')).opacity === '0',
+    )
+    const preview = await row.locator('span[title]').last().boundingBox()
+    assert.ok(preview.width > 40, 'Hidden queue controls consumed the message preview')
+    const before = await steer.boundingBox()
+    assert.equal(await steer.evaluate((el) => getComputedStyle(el).opacity), '1')
+    await row.hover()
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector('[data-queue-actions]')).opacity === '1',
+    )
+    assert.deepEqual(await steer.boundingBox(), before, 'Steer moved when queue actions appeared')
+    const rowBounds = await row.boundingBox()
+    assert.ok(
+      before.x + before.width <= rowBounds.x + rowBounds.width,
+      'Steer overflowed the queue row',
+    )
+    await page.mouse.move(width - 1, 799)
+    await edit.focus()
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector('[data-queue-actions]')).opacity === '1',
+    )
+    assert.deepEqual(
+      await steer.boundingBox(),
+      before,
+      'Steer moved when queue actions received keyboard focus',
+    )
+    await input.focus()
+    await page.mouse.move(width - 1, 799)
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector('[data-queue-actions]')).opacity === '0',
+    )
+    if (screenshotPath)
+      await page.screenshot({ path: screenshotPath + '/desktop-queue-' + width + '.png' })
+  }
+  await page.getByRole('tab', { name: 'Checklist · 1/3', exact: true }).click()
+  if (screenshotPath) await page.screenshot({ path: screenshotPath + '/desktop-checklist.png' })
+  await page.getByRole('tab', { name: 'Queue · 2', exact: true }).click()
+  await queued.getByRole('listitem').first().hover()
+  await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
+  assert.equal(await input.inputValue(), 'Verify the queue and checklist layout')
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch and immediate side-chat sending via icon and shortcut passed.',
+    'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch, immediate side-chat sending, hover/focus queue actions, readable previews and fixed Steer geometry at 320/480/900px passed.',
   )
 } finally {
   await browser.close()

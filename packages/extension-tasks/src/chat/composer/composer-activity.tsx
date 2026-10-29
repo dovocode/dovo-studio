@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Pause, CircleAlert } from 'lucide-react'
+import { ChevronDown, ChevronUp, Pause, CircleAlert } from 'lucide-react'
 import { useWorkspace } from '@dovo/studio-core'
 import { nativeTodoSummary, responses, type PendingMessage, type Task } from '@dovo/protocol'
 import { MessageQueue } from '../thread/message-queue'
@@ -41,16 +41,18 @@ export function ComposerActivity({
   return (
     <section
       aria-label="Composer activity"
-      className="relative mx-auto -mb-3 w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] rounded-t-xl border border-b-0 bg-muted/15 pb-3 text-xs"
+      className="relative mx-auto mb-2 w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] overflow-hidden rounded-xl border border-border/70 bg-muted/10 text-xs"
     >
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {`${task.queue?.length ?? 0} queued ${(task.queue?.length ?? 0) === 1 ? 'message' : 'messages'}${pausedCount ? `, ${pausedCount} paused` : ''}`}
       </span>
-      <div className="flex min-w-0 items-center px-2 py-1">
+      <div
+        className={`flex min-w-0 items-center gap-1 px-2 py-1.5 ${collapsed ? '' : 'border-b border-border/50'}`}
+      >
         <div
           role={both ? 'tablist' : undefined}
           aria-label={both ? 'Queue and checklist' : undefined}
-          className="flex min-w-0 items-center gap-1"
+          className="flex min-w-0 flex-1 items-center gap-1"
         >
           {[
             ...(hasQueue
@@ -78,7 +80,7 @@ export function ComposerActivity({
           ].map(({ value, label, title, count, notice }) => {
             const content = (
               <>
-                <span className="min-w-0 truncate">{title}</span>
+                <span className="shrink-0">{title}</span>
                 <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium tabular-nums text-foreground">
                   {count}
                 </span>
@@ -103,7 +105,7 @@ export function ComposerActivity({
                 aria-controls={`${id}-${value}-panel`}
                 aria-selected={active === value}
                 tabIndex={active === value ? 0 : -1}
-                className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring aria-selected:bg-muted aria-selected:text-foreground"
+                className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring aria-selected:bg-muted aria-selected:text-foreground"
                 onClick={() => {
                   setSelected(value)
                   setCollapsed(false)
@@ -148,9 +150,9 @@ export function ComposerActivity({
           onClick={() => setCollapsed((value) => !value)}
         >
           {collapsed ? (
-            <ChevronRight aria-hidden="true" className="size-4" />
-          ) : (
             <ChevronDown aria-hidden="true" className="size-4" />
+          ) : (
+            <ChevronUp aria-hidden="true" className="size-4" />
           )}
         </button>
       </div>

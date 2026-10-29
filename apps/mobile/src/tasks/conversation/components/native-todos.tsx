@@ -29,7 +29,7 @@ export function NativeTodos({
     <View
       style={
         embedded
-          ? { padding: 10, gap: 8 }
+          ? { padding: 14, gap: 8 }
           : [styles.card, { marginHorizontal: 16, marginBottom: 6, gap: 8 }]
       }
     >
@@ -58,7 +58,7 @@ export function NativeTodos({
         accessibilityLabel="Checklist completion"
         accessibilityValue={{ min: 0, max: summary.total, now: summary.completed }}
         style={{
-          height: 4,
+          ...(embedded ? { position: 'absolute', width: 1, height: 1, opacity: 0 } : { height: 4 }),
           backgroundColor: colors.selection,
           borderRadius: 2,
           overflow: 'hidden',
@@ -95,7 +95,7 @@ export function NativeTodos({
                 size={14}
                 color={
                   todo.status === 'completed'
-                    ? colors.success
+                    ? colors.muted
                     : todo.status === 'in-progress'
                       ? colors.accent
                       : colors.muted

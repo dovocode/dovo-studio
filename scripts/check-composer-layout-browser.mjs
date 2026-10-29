@@ -202,7 +202,7 @@ try {
       await page.waitForFunction(() =>
         document
           .querySelector('[aria-label="Choose agent and model"]')
-          .textContent.includes('GPT-6.1-Sol'),
+          .textContent.includes('6.1 Sol'),
       )
       if (screenshots && device.name === 'desktop' && project === 'No project')
         await page.screenshot({ path: screenshots + '/desktop-empty.png' })
@@ -368,7 +368,7 @@ try {
       Math.abs(queueStrip.x - project.x) < 1 && Math.abs(queueStrip.width - project.width) < 1,
     )
     assert.ok(
-      Math.abs(queueStrip.y + queueStrip.height - 12 - composer.y) < 2,
+      Math.abs(queueStrip.y + queueStrip.height + 8 - composer.y) < 2,
       JSON.stringify({ queue, composer }),
     )
     assert.equal(
@@ -427,10 +427,10 @@ try {
         await sourceControl.evaluate((element) => getComputedStyle(element).whiteSpace),
         'nowrap',
       )
-      const editBounds = await queuedRow
-        .getByRole('button', { name: 'Edit queued message 1' })
+      const steerBounds = await queuedRow
+        .getByRole('button', { name: 'Steer with queued message 1' })
         .boundingBox()
-      assert.ok(previewBounds.x + previewBounds.width <= editBounds.x)
+      assert.ok(previewBounds.x + previewBounds.width <= steerBounds.x)
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
         false,

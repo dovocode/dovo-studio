@@ -44,20 +44,27 @@ export function ComposerActivity({ task }: { task: Task }) {
       accessibilityLabel="Composer activity"
       style={{
         marginHorizontal: 12,
-        marginBottom: -16,
-        paddingBottom: 16,
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
+        marginBottom: 8,
+        borderRadius: 16,
+        overflow: 'hidden',
         borderWidth: 1,
-        borderBottomWidth: 0,
         borderColor: colors.border,
         backgroundColor: colors.surface,
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          borderBottomWidth: collapsed ? 0 : 1,
+          borderBottomColor: colors.border,
+        }}
+      >
         <View
           accessibilityRole={both ? 'tablist' : undefined}
-          style={{ flexDirection: 'row', minWidth: 0, flexShrink: 1 }}
+          style={{ flexDirection: 'row', minWidth: 0, flexShrink: 1, flex: 1, gap: 4 }}
         >
           {[
             ...(hasQueue
@@ -90,7 +97,7 @@ export function ComposerActivity({ task }: { task: Task }) {
                   style={[
                     styles.muted,
                     {
-                      fontSize: 12,
+                      fontSize: 13,
                       flexShrink: 1,
                       color: active === value ? colors.text : colors.muted,
                     },
@@ -111,7 +118,7 @@ export function ComposerActivity({ task }: { task: Task }) {
                     style={[
                       styles.muted,
                       {
-                        fontSize: 10,
+                        fontSize: 11,
                         fontWeight: '600',
                         fontVariant: ['tabular-nums'],
                         color: colors.text,
@@ -172,8 +179,8 @@ export function ComposerActivity({ task }: { task: Task }) {
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 5,
-                  borderBottomWidth: 2,
-                  borderBottomColor: active === value ? colors.accent : 'transparent',
+                  borderRadius: 8,
+                  backgroundColor: active === value ? colors.selection : 'transparent',
                 }}
               >
                 {content}
@@ -215,7 +222,9 @@ export function ComposerActivity({ task }: { task: Task }) {
             opacity: pressed ? 0.6 : 1,
           })}
         >
-          <Icon name={collapsed ? 'next' : 'down'} size={20} color={colors.text} />
+          <View style={{ transform: [{ rotate: collapsed ? '0deg' : '180deg' }] }}>
+            <Icon name="down" size={18} color={colors.text} />
+          </View>
         </Pressable>
       </View>
       {collapsed && summary && (

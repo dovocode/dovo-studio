@@ -28,7 +28,7 @@ export function NativeTodos({
     >
       <div
         className={
-          embedded ? 'px-3 py-2' : 'rounded-lg border border-border/70 bg-card/60 px-3 py-2'
+          embedded ? 'px-4 py-3' : 'rounded-lg border border-border/70 bg-card/60 px-3 py-2'
         }
       >
         {!embedded && (
@@ -56,7 +56,7 @@ export function NativeTodos({
           aria-valuemin={0}
           aria-valuemax={summary.total}
           aria-valuenow={summary.completed}
-          className="mt-2 h-1 overflow-hidden rounded-full bg-muted"
+          className={embedded ? 'sr-only' : 'mt-2 h-1 overflow-hidden rounded-full bg-muted'}
         >
           <div
             className="h-full rounded-full bg-status-success"
@@ -72,7 +72,7 @@ export function NativeTodos({
               <li key={todo.id ?? index} className="flex min-w-0 items-start gap-2 text-xs">
                 {todo.status === 'completed' ? (
                   <CheckCircle2
-                    className="mt-px size-3.5 shrink-0 text-status-success"
+                    className="mt-px size-3.5 shrink-0 text-muted-foreground"
                     aria-hidden
                   />
                 ) : todo.status === 'in-progress' && !summary.unfinished ? (

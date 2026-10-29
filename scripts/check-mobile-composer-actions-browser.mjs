@@ -10,7 +10,7 @@ const screenshots = process.env.DOVO_COMPOSER_SCREENSHOTS
 if (screenshots) mkdirSync(screenshots, { recursive: true })
 const controls = `
 import {useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';
-const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(typeof s.lineHeight==='number')s.lineHeight=s.lineHeight+'px';if(Array.isArray(s.transform))s.transform=s.transform.map(t=>'translateY('+t.translateY+'px)').join(' ');return s};
+const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(typeof s.lineHeight==='number')s.lineHeight=s.lineHeight+'px';if(Array.isArray(s.transform))s.transform=s.transform.map(t=>t.rotate?'rotate('+t.rotate+')':'translateY('+t.translateY+'px)').join(' ');return s};
 const useLayout=(ref,callback)=>{const current=useRef(callback);current.current=callback;const report=()=>{if(!ref.current||!current.current)return;const r=ref.current.getBoundingClientRect(),p=ref.current.parentElement.getBoundingClientRect();current.current({nativeEvent:{layout:{x:ref.current.offsetLeft-ref.current.parentElement.offsetLeft,y:ref.current.offsetTop-ref.current.parentElement.offsetTop,width:r.width,height:r.height}}})};useLayoutEffect(report);useLayoutEffect(()=>{const observer=new ResizeObserver(report);observer.observe(ref.current);return()=>observer.disconnect()},[])};
 export const View=({children,style,testID,accessibilityRole,accessibilityLabel,onLayout,ref:forwardedRef})=>{const ref=useRef(null);useLayout(ref,onLayout);useImperativeHandle(forwardedRef,()=>({measureInWindow:callback=>{const r=ref.current.getBoundingClientRect();callback(r.x,r.y,r.width,r.height)}}));return <div ref={ref} role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',borderStyle:'solid',borderWidth:0,...flat(style)}}>{children}</div>};
 export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled,horizontal})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,minWidth:0,overflowX:horizontal?'auto':undefined,overflowY:horizontal||scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...flat(contentContainerStyle)}}>{children}</div></div>};
@@ -458,13 +458,15 @@ try {
   }
   assert.equal(await page.getByRole('button', { name: 'Pause queue', exact: true }).count(), 0)
   assert.equal(await page.getByText('After this turn', { exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Pause queued message 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Pause queued message 1', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'pause-message')
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queued')
   await page.evaluate(() =>
     window.setTask({ queue: window.currentTask.queue.map((item) => ({ ...item, paused: true })) }),
   )
-  await page.getByRole('button', { name: 'Resume queued message 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Resume queued message 1', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'resume-message')
   await page.evaluate(() =>
     window.setTask({ queue: window.currentTask.queue.map((item) => ({ ...item, paused: false })) }),
@@ -476,14 +478,23 @@ try {
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queued')
   assert.equal(await page.getByRole('dialog', { name: 'Queued message 1', exact: true }).count(), 0)
   const queueBeforeMenu = await page.getByTestId('Queued messages').boundingBox()
+  const steerBeforeMenu = await page
+    .getByRole('button', { name: 'Steer with queued message 1', exact: true })
+    .boundingBox()
   await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
   const menu = page.getByRole('menu', { name: 'Actions for queued message 1', exact: true })
   const menuBox = await menu.boundingBox()
-  assert.ok(menuBox.width <= 264 && menuBox.height < 200, JSON.stringify(menuBox))
+  assert.ok(menuBox.width <= 264 && menuBox.height <= 230, JSON.stringify(menuBox))
   assert.ok(menuBox.x >= 0 && menuBox.x + menuBox.width <= 320)
   assert.ok(menuBox.y >= 0 && menuBox.y + menuBox.height <= 900)
   assert.equal(await page.getByRole('dialog').count(), 0)
   assert.deepEqual(await page.getByTestId('Queued messages').boundingBox(), queueBeforeMenu)
+  assert.deepEqual(
+    await page
+      .getByRole('button', { name: 'Steer with queued message 1', exact: true })
+      .boundingBox(),
+    steerBeforeMenu,
+  )
   await page.getByRole('button', { name: 'Dismiss queued message actions', exact: true }).click()
   assert.equal(await page.getByRole('menu').count(), 0)
   // Lost responses keep the same duplicate id; a successful new click gets a fresh id.
@@ -690,10 +701,10 @@ try {
   ]) {
     assert.equal(
       await page
-        .getByRole(
-          name.startsWith('Pause ') || name.startsWith('Steer with queued') ? 'button' : 'menuitem',
-          { name, exact: true },
-        )
+        .getByRole(name.startsWith('Steer with queued') ? 'button' : 'menuitem', {
+          name,
+          exact: true,
+        })
         .isDisabled(),
       true,
     )

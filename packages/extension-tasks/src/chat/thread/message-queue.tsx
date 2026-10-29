@@ -35,6 +35,8 @@ import {
   QueueItem,
   QueueItemContent,
 } from '@dovo/studio-ui'
+const rowActionClass =
+  'opacity-0 transition-opacity group-hover/queue-row:opacity-100 group-focus-within/queue-row:opacity-100 [@media(hover:none)]:opacity-100'
 export function MessageQueue({
   task,
   pending,
@@ -175,7 +177,7 @@ export function MessageQueue({
                 key={message.id}
                 aria-label={`Queued message ${index + 1} of ${queue.length}, ${message.steering ? 'being delivered' : 'not sent'}`}
                 className={[
-                  'relative ml-2 min-w-0 gap-1 rounded-none border-l border-border/60 sm:gap-2',
+                  'group/queue-row relative min-h-11 min-w-0 gap-2 rounded-none px-3 py-1.5 focus-within:bg-muted [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border/40',
                   draggingHere && dragging.messageId === message.id ? 'opacity-40' : '',
                   draggingHere && dropTarget?.messageId === message.id
                     ? dropTarget.edge === 'before'
@@ -214,7 +216,7 @@ export function MessageQueue({
               >
                 <span
                   aria-hidden="true"
-                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] tabular-nums"
+                  className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] tabular-nums"
                 >
                   {index + 1}
                 </span>
@@ -234,7 +236,7 @@ export function MessageQueue({
                   <IconButton
                     type="button"
                     label={`Drag queued message ${index + 1} to reorder`}
-                    className="size-5 cursor-grab text-muted-foreground/60 active:cursor-grabbing"
+                    className={`size-5 cursor-grab text-muted-foreground/60 active:cursor-grabbing ${rowActionClass}`}
                     disabled={!canMove(message.id)}
                     draggable={canMove(message.id)}
                     onDragStart={(event) => {
@@ -272,7 +274,11 @@ export function MessageQueue({
                   </IconButton>
                 )}
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-1">
-                  {source && source.kind !== 'user' && <MessageSource source={source} />}
+                  {source && source.kind !== 'user' && (
+                    <div className="min-w-0 [&>*]:font-medium [&>*]:text-foreground">
+                      <MessageSource source={source} />
+                    </div>
+                  )}
                   <QueueItemContent
                     title={
                       watchMessagePreview(message) ||
@@ -286,15 +292,6 @@ export function MessageQueue({
                       : ''}
                   </QueueItemContent>
                 </div>
-                {watchMessage(message) && (
-                  <IconButton
-                    label={`View queued update ${index + 1}`}
-                    className="size-6"
-                    onClick={() => setSelectedId(message.id)}
-                  >
-                    <Eye size={12} />
-                  </IconButton>
-                )}
                 {message.turnSettings && (
                   <span
                     className="flex size-3 shrink-0 items-center text-muted-foreground"
@@ -320,59 +317,90 @@ export function MessageQueue({
                       : 'Waiting for confirmation'}
                   </span>
                 )}
-                <IconButton
-                  label={`${message.paused || task.queuePaused ? 'Resume' : 'Pause'} queued message ${index + 1}`}
-                  className={`size-6 ${message.paused || task.queuePaused ? 'text-primary' : ''}`}
-                  disabled={
-                    !connected ||
-                    busy ||
-                    task.archived ||
-                    !!task.archivedAt ||
-                    !!message.steering ||
-                    pendingIds.has(message.id)
-                  }
-                  onClick={() =>
-                    void act(
-                      message.paused || task.queuePaused ? 'resume-message' : 'pause-message',
-                      message.id,
-                    )
-                  }
+                <div
+                  data-queue-actions
+                  className={`pointer-events-none absolute right-11 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 rounded-md bg-muted p-1 group-hover/queue-row:pointer-events-auto group-focus-within/queue-row:pointer-events-auto [@media(hover:none)]:pointer-events-auto ${rowActionClass}`}
                 >
-                  {message.paused || task.queuePaused ? <Play size={12} /> : <Pause size={12} />}
-                </IconButton>
-                <IconButton
-                  label={`Edit queued message ${index + 1}`}
-                  className="size-6"
-                  disabled={
-                    !connected ||
-                    busy ||
-                    task.archived ||
-                    !!task.archivedAt ||
-                    !!message.steering ||
-                    !editor ||
-                    !!editor.editingId ||
-                    pending?.some((item) => item.message.id === message.id)
-                  }
-                  onClick={() => editor?.begin(message)}
-                >
-                  <Pencil size={12} />
-                </IconButton>
-                <IconButton
-                  label={`Duplicate queued message ${index + 1}`}
-                  className="size-6"
-                  disabled={
-                    !connected ||
-                    busy ||
-                    task.archived ||
-                    !!task.archivedAt ||
-                    !!message.steering ||
-                    pendingIds.has(message.id) ||
-                    queue.length >= 50
-                  }
-                  onClick={() => void act('duplicate', message.id)}
-                >
-                  <Copy size={12} />
-                </IconButton>
+                  {watchMessage(message) && (
+                    <IconButton
+                      label={`View queued update ${index + 1}`}
+                      className="size-6"
+                      onClick={() => setSelectedId(message.id)}
+                    >
+                      <Eye size={12} />
+                    </IconButton>
+                  )}
+                  <IconButton
+                    label={`${message.paused || task.queuePaused ? 'Resume' : 'Pause'} queued message ${index + 1}`}
+                    className={`size-6 ${message.paused || task.queuePaused ? 'text-primary' : ''}`}
+                    disabled={
+                      !connected ||
+                      busy ||
+                      task.archived ||
+                      !!task.archivedAt ||
+                      !!message.steering ||
+                      pendingIds.has(message.id)
+                    }
+                    onClick={() =>
+                      void act(
+                        message.paused || task.queuePaused ? 'resume-message' : 'pause-message',
+                        message.id,
+                      )
+                    }
+                  >
+                    {message.paused || task.queuePaused ? <Play size={12} /> : <Pause size={12} />}
+                  </IconButton>
+                  <IconButton
+                    label={`Edit queued message ${index + 1}`}
+                    className="size-6"
+                    disabled={
+                      !connected ||
+                      busy ||
+                      task.archived ||
+                      !!task.archivedAt ||
+                      !!message.steering ||
+                      !editor ||
+                      !!editor.editingId ||
+                      pending?.some((item) => item.message.id === message.id)
+                    }
+                    onClick={() => editor?.begin(message)}
+                  >
+                    <Pencil size={12} />
+                  </IconButton>
+                  <IconButton
+                    label={`Duplicate queued message ${index + 1}`}
+                    className="size-6"
+                    disabled={
+                      !connected ||
+                      busy ||
+                      task.archived ||
+                      !!task.archivedAt ||
+                      !!message.steering ||
+                      pendingIds.has(message.id) ||
+                      queue.length >= 50
+                    }
+                    onClick={() => void act('duplicate', message.id)}
+                  >
+                    <Copy size={12} />
+                  </IconButton>
+
+                  <IconButton
+                    label={`Cancel queued message ${index + 1} and return it to the composer`}
+                    className="size-6"
+                    disabled={
+                      !connected ||
+                      busy ||
+                      task.archived ||
+                      !!task.archivedAt ||
+                      !!message.steering ||
+                      !!editor?.editingId ||
+                      pending?.some((item) => item.message.id === message.id)
+                    }
+                    onClick={() => void act('restore', message.id)}
+                  >
+                    <X size={12} />
+                  </IconButton>
+                </div>
                 <IconButton
                   label={`Steer with queued message ${index + 1}`}
                   title={
@@ -380,7 +408,7 @@ export function MessageQueue({
                       ? 'Edit this message to use thread defaults before steering'
                       : undefined
                   }
-                  className="size-6"
+                  className="size-6 shrink-0"
                   disabled={
                     !connected ||
                     busy ||
@@ -396,22 +424,6 @@ export function MessageQueue({
                   onClick={() => void act('steer', message.id)}
                 >
                   <CornerUpRight size={12} />
-                </IconButton>
-                <IconButton
-                  label={`Cancel queued message ${index + 1} and return it to the composer`}
-                  className="size-6"
-                  disabled={
-                    !connected ||
-                    busy ||
-                    task.archived ||
-                    !!task.archivedAt ||
-                    !!message.steering ||
-                    !!editor?.editingId ||
-                    pending?.some((item) => item.message.id === message.id)
-                  }
-                  onClick={() => void act('restore', message.id)}
-                >
-                  <X size={12} />
                 </IconButton>
               </QueueItem>
             )

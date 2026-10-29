@@ -191,7 +191,19 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                       : 'Waiting for confirmation'
                     : `Message ${index + 1}${state ? `, ${state}` : ''}`
                 }
-                style={[styles.muted, { minWidth: 20, textAlign: 'center', fontSize: 12 }]}
+                style={[
+                  styles.muted,
+                  {
+                    width: 24,
+                    height: 24,
+                    lineHeight: 24,
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                    backgroundColor: colors.selection,
+                    textAlign: 'center',
+                    fontSize: 12,
+                  },
+                ]}
               >
                 {pendingMessage ? (pendingMessage.state === 'failed' ? '!' : '…') : index + 1}
               </Text>
@@ -256,7 +268,10 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                 >
                   <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                     {source && source.kind !== 'user' && (
-                      <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.text, { fontSize: 12, fontWeight: '500' }]}
+                      >
                         {messageSourceLabel(source)}
                       </Text>
                     )}
@@ -274,29 +289,23 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                   {message.turnSettings && <Icon name="tune" size={12} color={colors.muted} />}
                 </Pressable>
               </QueueDragTarget>
-              <IconButton
-                icon={paused ? 'play' : 'pause'}
-                label={`${paused ? 'Resume' : 'Pause'} queued message ${index + 1}`}
-                color={paused ? colors.accent : colors.muted}
-                disabled={
-                  !connected ||
-                  busy ||
-                  task.archived ||
-                  !!task.archivedAt ||
-                  !!pendingMessage ||
-                  !!message.steering
-                }
-                onPress={() => change(paused ? 'resume-message' : 'pause-message', message.id)}
-              />
-              <IconButton
-                icon="steer"
-                label={`Steer with queued message ${index + 1}`}
-                disabled={!canSteer(message)}
-                onPress={() => change('steer', message.id)}
-              />
+
               <QueueMenu
                 label={`Actions for queued message ${index + 1}`}
                 actions={[
+                  {
+                    title: paused ? 'Resume' : 'Pause',
+                    label: `${paused ? 'Resume' : 'Pause'} queued message ${index + 1}`,
+                    icon: paused ? 'play' : 'pause',
+                    disabled:
+                      !connected ||
+                      busy ||
+                      task.archived ||
+                      !!task.archivedAt ||
+                      !!pendingMessage ||
+                      !!message.steering,
+                    onPress: () => change(paused ? 'resume-message' : 'pause-message', message.id),
+                  },
                   {
                     title: 'Edit',
                     label: `Edit queued message ${index + 1}`,
@@ -335,6 +344,12 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                     },
                   },
                 ]}
+              />
+              <IconButton
+                icon="steer"
+                label={`Steer with queued message ${index + 1}`}
+                disabled={!canSteer(message)}
+                onPress={() => change('steer', message.id)}
               />
             </View>
           )
