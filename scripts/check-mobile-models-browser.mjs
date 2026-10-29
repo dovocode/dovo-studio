@@ -112,7 +112,7 @@ try {
   await page.evaluate(() => window.harness('opencode'))
   await waitRequests(2)
   await finish(0, catalog('gpt-5.1-sol', 'GPT-5.1 Sol'))
-  if (await page.getByRole('option', { name: 'GPT-5.1 Sol', exact: true }).count())
+  if (await page.getByRole('option', { name: '5.1 Sol', exact: true }).count())
     throw new Error('Late Codex response leaked into OpenCode')
   await finish(
     1,
@@ -159,9 +159,7 @@ try {
     throw new Error('Persistent model cache contains credentials or is missing')
   await page.reload()
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  await page
-    .getByRole('option', { name: 'GPT-5.1 Sol', exact: true })
-    .waitFor({ state: 'attached' })
+  await page.getByRole('option', { name: '5.1 Sol', exact: true }).waitFor({ state: 'attached' })
   await page.evaluate(() => window.harness('opencode'))
   await page
     .getByRole('option', { name: 'Updated Host Model', exact: true })

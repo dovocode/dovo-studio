@@ -253,7 +253,7 @@ try {
   await page.getByRole('button', { name: 'Refresh providers and models', exact: true }).click()
   await waitRequests(10)
   await finish(9, ['harness:codex', 'harness:claude'])
-  await page.getByRole('option', { name: 'GPT-6.1 Terra' }).waitFor()
+  await page.getByRole('option', { name: '6.1 Terra' }).waitFor()
   if (!(await page.evaluate(() => window.modelRequests.at(-1).input.refresh)))
     throw new Error('Picker refresh did not bypass the cached model list')
   if (errors.length) throw new Error(errors.join('\n'))
