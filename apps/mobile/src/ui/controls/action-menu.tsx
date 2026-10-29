@@ -64,7 +64,7 @@ export function ActionMenu({
   const width = Math.min(264, viewport.width - insets.left - insets.right - 24)
   const bottom = Math.min(
     viewport.height - insets.bottom,
-    Keyboard.metrics()?.screenY ?? viewport.height,
+    Platform.OS === 'web' ? viewport.height : (Keyboard.metrics()?.screenY ?? viewport.height),
   )
   const height = Math.min(actions.length * 44 + 10, Math.max(44, bottom - insets.top - 16))
   const left = anchor
