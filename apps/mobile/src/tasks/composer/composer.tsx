@@ -20,7 +20,13 @@ import { LinkedCheckoutEditor } from '../detail/linked-projects'
 import { TaskMachineSelector } from '../creation/task-machine-selector'
 import { WorktreeBasePicker } from '../creation/worktree-base-picker'
 import { useApplicationState } from '../../runtime/state/application-state'
-import Animated, { LinearTransition, ReduceMotion } from 'react-native-reanimated'
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  ReduceMotion,
+} from 'react-native-reanimated'
 import { HarnessIcon } from '../../agents/harness-icon'
 import { Glass } from '../../ui/layout/glass'
 import { MessageAttachments } from '../conversation/components/message-attachments'
@@ -91,10 +97,13 @@ export function Composer({
   ) => Promise<void>
 }) {
   const { colors, styles, reduceMotion } = useTheme()
-  const { showContextUsage } = useMobilePreferences()
-  const transition = LinearTransition.duration(220).reduceMotion(
-    reduceMotion ? ReduceMotion.Always : ReduceMotion.System,
-  )
+  const { showContextUsage, minimalComposer } = useMobilePreferences()
+  const motion = reduceMotion ? ReduceMotion.Always : ReduceMotion.System
+  const transition = LinearTransition.duration(280)
+    .easing(Easing.bezier(0.22, 1, 0.36, 1))
+    .reduceMotion(motion)
+  const reveal = FadeIn.duration(180).delay(60).reduceMotion(motion)
+  const conceal = FadeOut.duration(120).reduceMotion(motion)
 
   const insets = useSafeAreaInsets()
   const { actions, send, stop } = useTaskConversation()
@@ -379,7 +388,7 @@ export function Composer({
   const car = useCarMode()
   // Car mode starts with speech; the regular composer is one tap away for a passenger.
   const [typing, setTyping] = useApplicationState(false)
-  const showOptions = focused || hasInput || dictation.active
+  const showOptions = !minimalComposer || focused || hasInput || dictation.active
   const canAskAside =
     !editing &&
     !!onAsk &&
@@ -944,13 +953,11 @@ export function Composer({
                           ? 'Restore this archived thread to continue'
                           : task.archived
                             ? 'Send a message to reopen this thread…'
-                            : !showOptions
+                            : firstMessage
                               ? 'Send a message…'
-                              : firstMessage
-                                ? 'What would you like to work on?'
-                                : task.status === 'running'
-                                  ? 'Add a follow-up…'
-                                  : 'Ask a follow-up…'
+                              : task.status === 'running'
+                                ? 'Add a follow-up…'
+                                : 'Ask a follow-up…'
                   }
                   value={draft.text}
                   revision={draft.revision}
@@ -962,16 +969,23 @@ export function Composer({
               </View>
               {showOptions && (
                 // Keep a draft's line width unchanged when the keyboard is dismissed.
-                <View style={{ width: 44, minHeight: 44, flexShrink: 0 }}>
+                <Animated.View
+                  entering={reveal}
+                  exiting={conceal}
+                  layout={transition}
+                  style={{ width: 44, minHeight: 44, flexShrink: 0 }}
+                >
                   {focused && (
-                    <IconButton
-                      label="Dismiss keyboard"
-                      variant="plain"
-                      icon="keyboard"
-                      onPress={() => Keyboard.dismiss()}
-                    />
+                    <Animated.View entering={reveal} exiting={conceal}>
+                      <IconButton
+                        label="Dismiss keyboard"
+                        variant="plain"
+                        icon="keyboard"
+                        onPress={() => Keyboard.dismiss()}
+                      />
+                    </Animated.View>
                   )}
-                </View>
+                </Animated.View>
               )}
               {/* Stay at the row's trailing edge when the keyboard button disappears on blur. */}
             </Animated.View>
@@ -1087,91 +1101,102 @@ export function Composer({
                   </Sheet>
                 )}
                 {showOptions && !dictation.active && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Agent & model"
-                    accessibilityValue={{
-                      text: `${nextTurnControls ? 'Next turn: ' : ''}${modelLabel}, ${reasoningLabel} ${automaticModel ? 'difficulty' : 'reasoning'}${fastMode ? ', Fast mode' : ''}`,
-                    }}
-                    accessibilityState={{
-                      disabled:
-                        busy ||
-                        ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                        !!task.archived,
-                    }}
-                    disabled={
-                      busy ||
-                      ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                      task.archived
-                    }
-                    onPress={() => {
-                      if (dictation.active) dictation.stop()
-                      Keyboard.dismiss()
-                      if (nextTurnControls) setTurnModelOpen(true)
-                      else setSettings(true)
-                    }}
-                    style={({ pressed }) => ({
-                      flex: 1,
-                      minWidth: 44,
-                      minHeight: 44,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 3,
-                      opacity:
-                        pressed ||
+                  <Animated.View
+                    entering={reveal}
+                    exiting={conceal}
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Agent & model"
+                      accessibilityValue={{
+                        text: `${nextTurnControls ? 'Next turn: ' : ''}${modelLabel}, ${reasoningLabel} ${automaticModel ? 'difficulty' : 'reasoning'}${fastMode ? ', Fast mode' : ''}`,
+                      }}
+                      accessibilityState={{
+                        disabled:
+                          busy ||
+                          ((!!editing || task.status === 'running') && !nextTurnControls) ||
+                          !!task.archived,
+                      }}
+                      disabled={
                         busy ||
                         ((!!editing || task.status === 'running') && !nextTurnControls) ||
                         task.archived
-                          ? 0.5
-                          : 1,
-                    })}
-                  >
-                    {automaticModel ? (
-                      <Icon
-                        name={task.modelSelection === 'auto' ? 'tune' : 'maestro'}
-                        size={15}
-                        color={colors.muted}
-                      />
-                    ) : (
-                      <>
-                        {composerAgent && (
-                          <HarnessIcon provider={composerAgent.provider} size={15} />
-                        )}
-                        <Text
-                          numberOfLines={1}
-                          style={[styles.muted, { flexShrink: 1, fontSize: 13 }]}
-                        >
-                          {modelLabel}
-                        </Text>
-                      </>
-                    )}
-                    {fastMode && <Icon name="fast" size={12} color={colors.muted} filled />}
-                    <Text numberOfLines={1} style={[styles.muted, { fontSize: 11, flexShrink: 0 }]}>
-                      {reasoningLabel}
-                    </Text>
-                    <Icon name="down" size={10} color={colors.muted} />
-                  </Pressable>
+                      }
+                      onPress={() => {
+                        if (dictation.active) dictation.stop()
+                        Keyboard.dismiss()
+                        if (nextTurnControls) setTurnModelOpen(true)
+                        else setSettings(true)
+                      }}
+                      style={({ pressed }) => ({
+                        flex: 1,
+                        minWidth: 44,
+                        minHeight: 44,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 3,
+                        opacity:
+                          pressed ||
+                          busy ||
+                          ((!!editing || task.status === 'running') && !nextTurnControls) ||
+                          task.archived
+                            ? 0.5
+                            : 1,
+                      })}
+                    >
+                      {automaticModel ? (
+                        <Icon
+                          name={task.modelSelection === 'auto' ? 'tune' : 'maestro'}
+                          size={15}
+                          color={colors.muted}
+                        />
+                      ) : (
+                        <>
+                          {composerAgent && (
+                            <HarnessIcon provider={composerAgent.provider} size={15} />
+                          )}
+                          <Text
+                            numberOfLines={1}
+                            style={[styles.muted, { flexShrink: 1, fontSize: 13 }]}
+                          >
+                            {modelLabel}
+                          </Text>
+                        </>
+                      )}
+                      {fastMode && <Icon name="fast" size={12} color={colors.muted} filled />}
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.muted, { fontSize: 11, flexShrink: 0 }]}
+                      >
+                        {reasoningLabel}
+                      </Text>
+                      <Icon name="down" size={10} color={colors.muted} />
+                    </Pressable>
+                  </Animated.View>
                 )}
                 {showOptions &&
                   !dictation.active &&
                   !(task.status === 'running' && hasInput) &&
                   showContextUsage &&
                   !!meter && (
-                    <Text
-                      accessibilityLabel={meter.label}
-                      style={{
-                        fontSize: 12,
-                        fontVariant: ['tabular-nums'],
-                        color:
-                          meter.level === 'full'
-                            ? colors.error
-                            : meter.level === 'warn'
-                              ? colors.warning
-                              : colors.muted,
-                      }}
-                    >
-                      {meter.short}
-                    </Text>
+                    <Animated.View entering={reveal} exiting={conceal}>
+                      <Text
+                        accessibilityLabel={meter.label}
+                        style={{
+                          fontSize: 12,
+                          fontVariant: ['tabular-nums'],
+                          color:
+                            meter.level === 'full'
+                              ? colors.error
+                              : meter.level === 'warn'
+                                ? colors.warning
+                                : colors.muted,
+                        }}
+                      >
+                        {meter.short}
+                      </Text>
+                    </Animated.View>
                   )}
               </View>
               <IconButton

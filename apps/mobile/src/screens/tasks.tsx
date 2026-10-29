@@ -884,7 +884,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             )}
           </View>
         }
-        renderItem={({ item }) =>
+        renderItem={({ item, index }) =>
           item.kind === 'history' ? (
             <Action
               label={
@@ -911,7 +911,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             renderSectionHeader(item)
           ) : (
             <View
-              style={
+              style={[
+                !archived &&
+                  (index === 0 || expandedItems[index - 1]?.kind === 'group') && { paddingTop: 4 },
                 archived
                   ? {
                       backgroundColor:
@@ -925,8 +927,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                     }
                   : selecting && selected.has(item.entry.key)
                     ? { backgroundColor: colors.elevated, borderRadius: 10 }
-                    : undefined
-              }
+                    : undefined,
+              ]}
             >
               <TaskListRow
                 density={preferences.threadDensity ?? 'compact'}

@@ -17,9 +17,10 @@ const mocks = {
     export {WorkspaceContext as Context,useWorkspace} from '../studio-core/src/workspace/context';
     export const useStudioHost=()=>({navigate:()=>{}});
     export const useResolvedTheme=()=> 'dark';
-    const preferences={sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false,dictationEnabled:true,showContextUsage:true,showSkillsInSlashMenu:true};
+    const preferences={sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false,dictationEnabled:true,showContextUsage:true,minimalComposer:true,showSkillsInSlashMenu:true};
     window.setFollowUp=value=>{preferences.followUp=value};
     window.setContextVisible=value=>{preferences.showContextUsage=value};
+    window.setMinimalComposer=value=>{preferences.minimalComposer=value};
     export const useAppPreferences=()=>preferences;
     export const readAppPreferences=()=>preferences;
   `,
@@ -177,7 +178,7 @@ try {
       () =>
         !document
           .querySelector('.studio-composer')
-          .getAnimations()
+          .getAnimations({ subtree: true })
           .some((a) => a.playState === 'running'),
     )
   const checkIdle = async (screenshot) => {
@@ -208,19 +209,112 @@ try {
       return new Promise((resolve) =>
         requestAnimationFrame(() => {
           const surface = element.closest('.studio-composer')
+          const animations = surface.getAnimations({ subtree: true })
+          animations.forEach((animation) => {
+            animation.pause()
+            animation.currentTime = 0
+          })
+          const firstEditorHeight = element.getBoundingClientRect().height
+          const firstHeight = surface.getBoundingClientRect().height
+          animations.forEach((animation) => {
+            animation.currentTime = 140
+          })
+          const middleHeight = surface.getBoundingClientRect().height
+          animations.forEach((animation) => {
+            animation.currentTime = 280
+          })
+          const finalHeight = surface.getBoundingClientRect().height
+          animations.forEach((animation) => animation.finish())
           resolve({
+            firstEditorHeight,
+            firstHeight,
+            middleHeight,
+            finalHeight,
+            clipped: getComputedStyle(surface).overflow === 'clip',
             height: surface.getBoundingClientRect().height,
-            animations: surface
-              .getAnimations()
-              .filter((animation) => animation.playState === 'running').length,
+            animations: animations.length,
           })
         }),
       )
     })
     assert.ok(motion.animations > 0, 'Focusing smoothly animates the compact layout')
+    assert.ok(
+      Math.abs(motion.firstEditorHeight - editor.height) < 1,
+      'The input does not jump to its expanded height on the first frame',
+    )
+    assert.ok(
+      motion.firstHeight < motion.middleHeight && motion.middleHeight < motion.finalHeight,
+      'The surface grows continuously through the transition',
+    )
+    assert.ok(motion.clipped, 'Moving controls stay clipped inside the resizing surface')
     await settleComposer()
     assert.equal(await input.evaluate((element) => getComputedStyle(element).fontSize), idleFont)
     assert.ok((await page.locator('.studio-composer').boundingBox()).height > surface.height + 40)
+    const reversal = await input.evaluate(async (element) => {
+      const surface = element.closest('.studio-composer')
+      const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+      element.blur()
+      await frame()
+      await frame()
+      const before = surface.getBoundingClientRect().height
+      element.focus()
+      await frame()
+      const animations = surface.getAnimations({ subtree: true })
+      animations.forEach((animation) => {
+        animation.pause()
+        animation.currentTime = 0
+      })
+      const after = surface.getBoundingClientRect().height
+      animations.forEach((animation) => animation.finish())
+      return { before, after }
+    })
+    assert.ok(
+      Math.abs(reversal.after - reversal.before) < 3,
+      'Refocusing during collapse continues from the current height instead of jumping: ' +
+        JSON.stringify(reversal),
+    )
+    await settleComposer()
+  }
+  const checkFullComposer = async () => {
+    const input = page.getByRole('textbox', { name: 'Message task', exact: true })
+    await input.evaluate((element) => element.blur())
+    await settleComposer()
+    const compact = await page.locator('.studio-composer').boundingBox()
+    await page.evaluate(() => {
+      window.setMinimalComposer(false)
+      window.setTask({})
+    })
+    await page.locator('.studio-composer:not([data-idle])').waitFor()
+    await settleComposer()
+    assert.equal(await page.locator('.studio-composer').getAttribute('data-idle'), null)
+    const expanded = await page.locator('.studio-composer').boundingBox()
+    assert.ok(
+      expanded.height > compact.height + 40,
+      'Full mode expands an empty unfocused composer',
+    )
+    await input.focus()
+    await input.fill('Keep the full composer')
+    await input.fill('')
+    await input.evaluate((element) => element.blur())
+    await settleComposer()
+    assert.equal(
+      (await page.locator('.studio-composer').boundingBox()).height,
+      expanded.height,
+      'Full mode stays expanded after clearing and blurring',
+    )
+    await page.evaluate(() => {
+      window.setMinimalComposer(true)
+      window.setTask({})
+    })
+    await page.locator('.studio-composer[data-idle]').waitFor()
+    await settleComposer()
+    assert.equal(
+      (await page.locator('.studio-composer').boundingBox()).height,
+      compact.height,
+      'Re-enabling minimal restores the single row',
+    )
+    await input.focus()
+    await settleComposer()
   }
   // The composer machine selector and header share transfer state, including recovery.
   await page.evaluate(() => window.setMultiple(true))
@@ -279,6 +373,7 @@ try {
           .textContent.includes('6.1 Sol'),
       )
       await checkIdle(project === 'No project' ? device.name + '-idle-start.png' : undefined)
+      if (project === 'No project') await checkFullComposer()
       if (screenshots && device.name === 'desktop' && project === 'No project')
         await page.screenshot({ path: screenshots + '/desktop-empty.png' })
       const start = page.getByRole('group', { name: 'Start a thread', exact: true })
@@ -441,6 +536,7 @@ try {
       await closeInfo()
       assert.equal(await input.inputValue(), '')
       await checkIdle(project === 'dovo-studio' ? device.name + '-idle-thread.png' : undefined)
+      if (project === 'dovo-studio') await checkFullComposer()
       const startedSurface = await page.locator('.studio-composer').boundingBox()
       assert.ok(
         device.height - startedSurface.y - startedSurface.height >= 19,

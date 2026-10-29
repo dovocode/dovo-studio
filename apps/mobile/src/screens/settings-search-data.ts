@@ -23,6 +23,7 @@ export const mobileSettingsFields: Readonly<Record<string, readonly string[]>> =
     'Tool activity',
     'Show tool call details',
     'Show context usage',
+    'Minimal composer',
     'Keep the screen on while a task runs',
   ],
   '/settings/speech': [

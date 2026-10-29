@@ -417,19 +417,22 @@ it('defaults both cleanup timers off and persists each timer independently on th
   })
 })
 
-it('shows context usage by default and persists hiding it on this phone', async () => {
-  storage.getItem = async () => null
-  const writes: string[] = []
-  storage.setItem = async (value) => {
-    writes.push(value)
-  }
-  const preferences = await loadPreferences()
-  await preferences.preferencesReady
-  expect(preferences.readMobilePreferences().showContextUsage).toBe(true)
-  preferences.updateMobilePreferences({ showContextUsage: false })
-  await vi.waitFor(() => expect(writes.length).toBeGreaterThan(0))
-  storage.getItem = async () => writes.at(-1) ?? null
-  const reopened = await loadPreferences()
-  await reopened.preferencesReady
-  expect(reopened.readMobilePreferences().showContextUsage).toBe(false)
-})
+it.each(['showContextUsage', 'minimalComposer'] as const)(
+  'defaults %s on and saves opting out on this phone',
+  async (key) => {
+    storage.getItem = async () => null
+    const writes: string[] = []
+    storage.setItem = async (value) => {
+      writes.push(value)
+    }
+    const preferences = await loadPreferences()
+    await preferences.preferencesReady
+    expect(preferences.readMobilePreferences()[key]).toBe(true)
+    preferences.updateMobilePreferences({ [key]: false })
+    await vi.waitFor(() => expect(writes.length).toBeGreaterThan(0))
+    storage.getItem = async () => writes.at(-1) ?? null
+    const reopened = await loadPreferences()
+    await reopened.preferencesReady
+    expect(reopened.readMobilePreferences()[key]).toBe(false)
+  },
+)

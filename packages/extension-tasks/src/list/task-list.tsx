@@ -958,7 +958,7 @@ export function TaskList({
             })
           if (groups[0]?.id === 'active' && group.id === 'active')
             return (
-              <div key={group.id} className="shrink-0">
+              <div key={group.id} className="shrink-0 pt-1">
                 {rows}
               </div>
             )
@@ -999,7 +999,7 @@ export function TaskList({
                 <span className="min-w-0 flex-1 truncate">{group.name}</span>
                 <span>{group.total ?? group.tasks.length}</span>
               </summary>
-              {rows}
+              {rows && <div className="pt-1">{rows}</div>}
               {group.open &&
                 group.id === 'settled' &&
                 (group.total ?? 0) > settledThreadPreviewLimit &&

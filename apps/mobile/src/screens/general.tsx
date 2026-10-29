@@ -290,7 +290,7 @@ export function ConversationSettingsScreen() {
     <LocalSettingsPage title="Conversation">
       <SettingsGroup
         title="Conversation"
-        footer="Whether commands, edits and searches in each turn start open or folded. Tool call details show output and full inputs only when enabled. The screen stays on only while you have a running task open."
+        footer="Turn off Minimal composer to always show the full composer. Tool activity controls whether commands, edits and searches start open or folded. Tool call details show output and full inputs only when enabled. The screen stays on only while you have a running task open."
       >
         <SettingsSwitchRow
           first
@@ -318,6 +318,11 @@ export function ConversationSettingsScreen() {
           label="Show tool call details"
           value={preferences.showToolDetails}
           onValueChange={(showToolDetails) => updateMobilePreferences({ showToolDetails })}
+        />
+        <SettingsSwitchRow
+          label="Minimal composer"
+          value={preferences.minimalComposer}
+          onValueChange={(minimalComposer) => updateMobilePreferences({ minimalComposer })}
         />
         <SettingsSwitchRow
           label="Show context usage"

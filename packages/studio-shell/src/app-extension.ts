@@ -59,6 +59,7 @@ export const appSettingsExtension = defineStudioExtension(
         'Show tool call details',
         'Show skills in the / menu',
         'Formatted composer preview',
+        'Minimal composer',
         'Show context usage',
       ],
       navigationGroup: 'settings',
@@ -68,7 +69,7 @@ export const appSettingsExtension = defineStudioExtension(
       order: 0.3,
       settingsSection: 'app',
       keywords:
-        'send enter composer conversation chat follow up queue steer streaming paragraphs markdown preview collapse context usage percentage tools skills slash menu speech microphone dictation language download',
+        'send enter composer minimal full compact conversation chat follow up queue steer streaming paragraphs markdown preview collapse context usage percentage tools skills slash menu speech microphone dictation language download',
       load: () => import('./app-settings/conversation'),
     },
     {

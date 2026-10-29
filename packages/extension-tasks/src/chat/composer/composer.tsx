@@ -848,7 +848,12 @@ export function Composer({
       )}
       <ComposerSurface
         collapsed={collapsed}
-        compact={!editorFocused && !composerDraft.hasText && !pendingQuestion}
+        compact={
+          preferences.minimalComposer &&
+          !editorFocused &&
+          !composerDraft.hasText &&
+          !pendingQuestion
+        }
         leadingActions={
           !pendingQuestion && (
             <>

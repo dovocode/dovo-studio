@@ -1,3 +1,4 @@
+import { documentPipDisallowsReturn, isTeamsBrowserUrl } from './browser-document-pip-policy.js'
 import { createBrowserZoom, nextBrowserZoom } from './browser-zoom.js'
 import { browserDownloads, disposeBrowserDownloads } from './browser-downloads.js'
 import { writeFile } from 'node:fs/promises'
@@ -313,10 +314,7 @@ export function registerBrowser(
     return [...views.values()].flatMap((entry) => {
       if (entry.windowId !== windowId || !entry.workspace || entry.contents.isDestroyed()) return []
       const url = openableUrl(entry.contents.getURL())
-      const host = url ? new URL(url).hostname : ''
-      const teams = ['teams.microsoft.com', 'teams.cloud.microsoft', 'teams.live.com'].includes(
-        host,
-      )
+      const teams = url ? isTeamsBrowserUrl(new URL(url)) : false
       const pictureInPicture = !!(entry.videoPictureInPicture || entry.documentPip)
       return teams || pictureInPicture || captures.some((capture) => capture.key === entry.key)
         ? [
@@ -1148,7 +1146,10 @@ export function registerBrowser(
           action: 'allow',
           overrideBrowserWindowOptions: pipOptions,
           createWindow: (options) => {
-            const disallowReturn = /(?:^|,)dovo-disallow-return=1(?:,|$)/.test(details.features)
+            const disallowReturn = documentPipDisallowsReturn(
+              details.features,
+              new URL(view.webContents.getURL()),
+            )
             const pip = createDocumentPipWindow(
               options,
               view.webContents.getURL(),

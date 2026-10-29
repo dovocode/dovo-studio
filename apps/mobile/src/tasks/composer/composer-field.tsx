@@ -1,5 +1,6 @@
 import { type ComponentRef, memo, useCallback, useLayoutEffect, useRef, useEffect } from 'react'
 import { Platform, type TextInput, type TextInputProps } from 'react-native'
+import Animated, { Easing, LinearTransition, ReduceMotion } from 'react-native-reanimated'
 import { Field } from '../../ui/controls/field'
 import { useTheme } from '../../ui/theme'
 import type { DraftSelection } from './dictation-draft'
@@ -24,7 +25,7 @@ export const ComposerField = memo(function ComposerField({
   revision: string
   onSelectionChange: (selection: DraftSelection) => void
 }) {
-  const { styles } = useTheme()
+  const { styles, reduceMotion } = useTheme()
 
   const input = useRef<ComponentRef<typeof TextInput>>(null)
   useEffect(() => {
@@ -57,43 +58,53 @@ export const ComposerField = memo(function ComposerField({
     [onSelectionChange],
   )
   return (
-    <Field
-      key={Platform.OS === 'web' ? revision : undefined}
-      {...props}
-      inputRef={input}
-      defaultValue={Platform.OS === 'web' ? value : initial.current}
-      onChangeText={type}
-      label="Message"
-      hideLabel
-      // iOS can still revise text/selection through spellcheck and smart spacing
-      // with autocorrect off. Keep this command composer free of keyboard rewrites.
-      autoCorrect={false}
-      spellCheck={false}
-      smartInsertDelete={false}
-      autoComplete="off"
-      textContentType="none"
-      multiline
-      submitBehavior="newline"
-      // Fabric measures native text as it changes. A fixed height prevents that layout
-      // from growing and can leave iOS content-size notifications stuck at one line.
-      scrollEnabled
-      textAlignVertical="top"
-      autoCapitalize="sentences"
-      onSelectionChange={select}
-      style={[
-        styles.chatText,
-        {
-          maxHeight: 144,
-          minHeight: showOptions ? 64 : 44,
-          borderWidth: 0,
-          paddingLeft: showOptions ? 12 : 44,
-          paddingRight: showOptions ? 12 : trailingControlCount * 44,
-          lineHeight: 22,
-          paddingTop: 11,
-          paddingBottom: 11,
-          backgroundColor: 'transparent',
-        },
-      ]}
-    />
+    <Animated.View
+      layout={LinearTransition.duration(280)
+        .easing(Easing.bezier(0.22, 1, 0.36, 1))
+        .reduceMotion(reduceMotion ? ReduceMotion.Always : ReduceMotion.System)}
+      style={{
+        marginLeft: showOptions ? 0 : 32,
+        marginRight: showOptions ? 0 : trailingControlCount * 44 - 12,
+      }}
+    >
+      <Field
+        key={Platform.OS === 'web' ? revision : undefined}
+        {...props}
+        inputRef={input}
+        defaultValue={Platform.OS === 'web' ? value : initial.current}
+        onChangeText={type}
+        label="Message"
+        hideLabel
+        // iOS can still revise text/selection through spellcheck and smart spacing
+        // with autocorrect off. Keep this command composer free of keyboard rewrites.
+        autoCorrect={false}
+        spellCheck={false}
+        smartInsertDelete={false}
+        autoComplete="off"
+        textContentType="none"
+        multiline
+        submitBehavior="newline"
+        // Fabric measures native text as it changes. A fixed height prevents that layout
+        // from growing and can leave iOS content-size notifications stuck at one line.
+        scrollEnabled
+        textAlignVertical="top"
+        autoCapitalize="sentences"
+        onSelectionChange={select}
+        style={[
+          styles.chatText,
+          {
+            maxHeight: 144,
+            minHeight: showOptions ? 64 : 44,
+            borderWidth: 0,
+            paddingLeft: 12,
+            paddingRight: 12,
+            lineHeight: 22,
+            paddingTop: 11,
+            paddingBottom: 11,
+            backgroundColor: 'transparent',
+          },
+        ]}
+      />
+    </Animated.View>
   )
 })

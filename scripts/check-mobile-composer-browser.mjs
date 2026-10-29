@@ -5,6 +5,7 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 // Exercise native input identity and imperative updates; RN Web replacements are covered by Storybook.
 const mocks = {
+  'react-native-reanimated': `const transition={duration:()=>transition,easing:()=>transition,reduceMotion:()=>transition};export const Easing={bezier:()=>undefined},LinearTransition=transition,ReduceMotion={Always:'always',System:'system'};export default {View:({children,style})=><div style={style}>{children}</div>};`,
   'react-native': `export const Platform={OS:'ios'};export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};`,
   '@react-native-async-storage/async-storage': `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value),removeItem:async key=>localStorage.removeItem(key)};`,
   '../../runtime/connection/provider': `export const useRuntime=()=>({activeId:window.runtimeId??'computer',legacyDraftRuntimeId:null});`,

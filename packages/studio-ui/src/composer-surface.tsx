@@ -39,12 +39,17 @@ export function ComposerSurface({
       [
         form,
         ...form.querySelectorAll<HTMLElement>(
-          ':scope > textarea, [data-composer-leading], [data-composer-controls], [data-composer-actions]',
+          ':scope > textarea, [data-composer-leading], [data-composer-controls], [data-composer-actions], [data-composer-footer] button',
         ),
       ].map((element) => ({
         element,
         bounds: element.getBoundingClientRect(),
         padding: element.tagName === 'TEXTAREA' ? getComputedStyle(element).padding : undefined,
+        parent: element.matches('button')
+          ? element.closest<HTMLElement>(
+              '[data-composer-leading], [data-composer-controls], [data-composer-actions]',
+            )
+          : form,
       }))
     const isIdle = () => form.hasAttribute('data-idle')
     let idle = isIdle()
@@ -56,13 +61,17 @@ export function ComposerSurface({
       const nextIdle = isIdle()
       if (idle !== nextIdle) {
         idle = nextIdle
+        // Read the current visual frame before cancelling an in-flight transition.
+        // ResizeObserver may still hold the previous frame when focus changes again.
+        if (animations.some((animation) => animation.playState === 'running')) previous = measure()
         animations.forEach((animation) => animation.cancel())
         const next = measure()
         if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          const timing = { duration: 220, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }
+          const timing = { duration: 280, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
           const previousSurface = previous[0].bounds
           const nextSurface = next[0].bounds
-          animations = next.map(({ element, bounds, padding }, index) => {
+          form.setAttribute('data-layout-animating', '')
+          animations = next.map(({ element, bounds, padding, parent }, index) => {
             if (index === 0)
               return element.animate(
                 [{ height: `${previousSurface.height}px` }, { height: `${nextSurface.height}px` }],
@@ -71,17 +80,48 @@ export function ComposerSurface({
             const previousElement = previous.find((entry) => entry.element === element)
             const before = previousElement?.bounds
             if (!before?.width || !bounds.width)
-              return element.animate([{ opacity: 0 }, { opacity: 1 }], timing)
-            const x = before.x - previousSurface.x - (bounds.x - nextSurface.x)
-            const y = before.y - previousSurface.y - (bounds.y - nextSurface.y)
+              return element.animate(
+                [
+                  { opacity: 0, transform: 'translateY(6px)' },
+                  { opacity: 1, transform: 'translateY(0)' },
+                ],
+                timing,
+              )
+            // Children move relative to their animated toolbar group, so model/effort and
+            // wrapped actions do not jump inside a group that is itself moving.
+            const previousParent =
+              previous.find((entry) => entry.element === parent)?.bounds ?? previousSurface
+            const nextParent = next.find((entry) => entry.element === parent)?.bounds ?? nextSurface
+            const x = before.x - previousParent.x - (bounds.x - nextParent.x)
+            const y = before.y - previousParent.y - (bounds.y - nextParent.y)
             return element.animate(
               [
-                { transform: `translate(${x}px, ${y}px)`, padding: previousElement?.padding },
-                { transform: 'translate(0, 0)', padding },
+                {
+                  transform: `translate(${x}px, ${y}px)`,
+                  padding: previousElement?.padding,
+                  height: padding ? `${before.height}px` : undefined,
+                  minHeight: padding ? `${before.height}px` : undefined,
+                  maxHeight: padding ? `${Math.max(before.height, bounds.height)}px` : undefined,
+                },
+                {
+                  transform: 'translate(0, 0)',
+                  padding,
+                  height: padding ? `${bounds.height}px` : undefined,
+                  minHeight: padding ? `${bounds.height}px` : undefined,
+                  maxHeight: padding ? `${Math.max(before.height, bounds.height)}px` : undefined,
+                },
               ],
               timing,
             )
           })
+          const surfaceAnimation = animations[0]
+          surfaceAnimation.onfinish = () => {
+            if (animations[0] !== surfaceAnimation) return
+            form.removeAttribute('data-layout-animating')
+            previous = measure()
+          }
+        } else {
+          form.removeAttribute('data-layout-animating')
         }
       }
       previous = measure()
@@ -91,6 +131,7 @@ export function ComposerSurface({
     observer.observe(form)
     return () => {
       observer.disconnect()
+      form.removeAttribute('data-layout-animating')
       animations.forEach((animation) => animation.cancel())
       animateLayout.current = undefined
     }

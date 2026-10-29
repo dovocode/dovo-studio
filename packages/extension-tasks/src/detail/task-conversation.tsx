@@ -77,7 +77,7 @@ export function TaskConversation({
   composerInsert?: { id: string; text: string } | null
   onComposerInsertApplied?: () => void
 }) {
-  const { collapseComposerOnScroll } = useAppPreferences()
+  const { collapseComposerOnScroll, minimalComposer } = useAppPreferences()
   const [templateInsert, setTemplateInsert] = useState<{
     id: string
     text: string
@@ -89,9 +89,13 @@ export function TaskConversation({
   const composer = useRef<HTMLDivElement>(null)
   const readingHistory = useCallback(() => {
     // Typing and focus expansion resize the viewport; they must never collapse the editor.
-    if (collapseComposerOnScroll && !composer.current?.contains(document.activeElement))
+    if (
+      minimalComposer &&
+      collapseComposerOnScroll &&
+      !composer.current?.contains(document.activeElement)
+    )
       setComposerCollapsed(true)
-  }, [collapseComposerOnScroll])
+  }, [collapseComposerOnScroll, minimalComposer])
   const [managePullTask, setManagePullTask] = useState<string | null>(null)
   const [pending, setPending] = useApplicationState<(PendingMessage & { scope: string })[]>([])
   const { pendingMessages: savedMessages, connection, workspace } = useWorkspace()
@@ -357,7 +361,7 @@ export function TaskConversation({
         >
           <Composer
             startup={welcome}
-            collapsed={collapseComposerOnScroll && composerCollapsed}
+            collapsed={minimalComposer && collapseComposerOnScroll && composerCollapsed}
             key={task.id}
             task={task}
             temporary={temporary}

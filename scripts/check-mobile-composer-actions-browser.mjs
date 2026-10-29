@@ -88,7 +88,7 @@ const stubs = [
   },
   {
     path: 'react-native-reanimated',
-    contents: `import {View} from 'react-native';const transition={duration:()=>transition,reduceMotion:()=>transition};export const LinearTransition=transition,ReduceMotion={Always:'always',System:'system'};export default {View};`,
+    contents: `import {View} from 'react-native';const transition={duration:()=>transition,delay:()=>transition,easing:()=>transition,reduceMotion:()=>transition};export const Easing={bezier:()=>undefined},FadeIn=transition,FadeOut=transition,LinearTransition=transition,ReduceMotion={Always:'always',System:'system'};export default {View};`,
   },
   {
     path: '../../agents/harness-icon',
@@ -171,7 +171,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
     path: '../../runtime/preferences/app-preferences',
     importer: mobile,
     contents:
-      'export const useCarMode=()=>false;export const useMobilePreferences=()=>({showContextUsage:window.showContextUsage!==false});',
+      'export const useCarMode=()=>false;export const useMobilePreferences=()=>({showContextUsage:window.showContextUsage!==false,minimalComposer:window.minimalComposer!==false});',
   },
   { path: './harness-icon', importer: mobile, contents: 'export const HarnessIcon=()=>null;' },
   {
@@ -401,6 +401,37 @@ try {
   await messageMenu.getByRole('menuitem', { name: 'Stop', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stop' })
   await page.evaluate(() => window.setDraftText(''))
+  await page.getByRole('textbox', { name: 'Message', exact: true }).focus()
+  const checkFullComposer = async () => {
+    const field = page.getByRole('textbox', { name: 'Message', exact: true })
+    await field.evaluate((node) => node.blur())
+    assert.equal((await field.boundingBox()).height, 44)
+    await page.evaluate(() => {
+      window.minimalComposer = false
+      window.setTask({})
+    })
+    await page.getByRole('button', { name: 'Agent & model', exact: true }).waitFor()
+    assert.ok(
+      (await field.boundingBox()).height > 44,
+      'Full mode shows the expanded composer while empty and unfocused',
+    )
+    await field.fill('A message')
+    await field.fill('')
+    await field.evaluate((node) => node.blur())
+    assert.ok(
+      (await field.boundingBox()).height > 44,
+      'Clearing and blurring keeps full mode expanded',
+    )
+    await page.evaluate(() => {
+      window.minimalComposer = true
+      window.setTask({})
+    })
+    await page
+      .getByRole('button', { name: 'Agent & model', exact: true })
+      .waitFor({ state: 'detached' })
+    assert.equal((await field.boundingBox()).height, 44)
+  }
+  await checkFullComposer()
   await page.getByRole('textbox', { name: 'Message', exact: true }).focus()
   const contextUsage = page.getByText('95%', { exact: true })
   await contextUsage.waitFor()
@@ -1241,6 +1272,7 @@ try {
       0,
       'Empty start stays one line',
     )
+    await checkFullComposer()
     const compact = await field.boundingBox()
     assert.equal(compact.height, 44)
     await field.focus()

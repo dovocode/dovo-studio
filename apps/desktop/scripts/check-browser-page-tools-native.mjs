@@ -23,7 +23,7 @@ writeFileSync(
   join(work, 'main.ts'),
   String.raw`
 import assert from 'node:assert/strict'
-import { app, BrowserWindow, WebContentsView, dialog } from 'electron'
+import { app, BrowserWindow, WebContentsView, clipboard, dialog } from 'electron'
 import { createServer } from 'node:http'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -58,6 +58,7 @@ await app.whenReady()
 const index = join(work,'studio','index.html')
 const bridge = registerBrowser(index)
 const studio = new BrowserWindow({width:1000,height:800,webPreferences:{preload:join(work,'studio','preload.cjs'),sandbox:true,contextIsolation:true}})
+const previousClipboard = await clipboard.readText()
 try {
   await studio.loadFile(index)
   const call = (command: object) => studio.webContents.executeJavaScript('window.bridge.browser('+JSON.stringify(command)+')')
@@ -158,10 +159,39 @@ try {
   assert.equal(await page.executeJavaScript('new Set([...document.querySelectorAll("code span")].map(node=>getComputedStyle(node).color)).size>1'),true,'Token colors must survive strict CSP')
   writeFileSync(join(process.env.SMOKE_SCREENSHOT_DIR!, 'json.png'), (await page.capturePage()).toPNG())
   assert.equal((await find('900719925474099312345')).find.total,1)
-  await page.executeJavaScript('document.querySelector("button").click()')
+  await page.executeJavaScript("document.querySelector('[aria-label=\"Show raw JSON\"]').click()")
   assert.equal(await page.executeJavaScript('document.querySelector("code").textContent'),payload)
-  await page.executeJavaScript('document.querySelector("button").click()')
+  await page.executeJavaScript("document.querySelector('[aria-label=\"Show formatted JSON\"]').click()")
   assert.equal((await find('"ok"')).find.total,1)
+  const filterJson = (path: string) => page.executeJavaScript('(() => {const input=document.querySelector("input");input.value='+JSON.stringify(path)+';input.closest("form").requestSubmit()})()')
+  await filterJson('$.items[*]')
+  assert.equal(await page.executeJavaScript('document.querySelector("code").textContent'),'[\n  1,\n  2\n]')
+  assert.equal(await page.executeJavaScript('document.querySelector("[role=status]").textContent'),'2 matches')
+  assert.ok(await page.executeJavaScript('document.querySelectorAll("code span").length>0'))
+  await filterJson('$.id')
+  assert.equal(await page.executeJavaScript('document.querySelector("code").textContent'),'900719925474099312345')
+  page.focus()
+  await page.executeJavaScript("document.querySelector('[aria-label=\"Copy JSON\"]').click()", true)
+  for(let i=0;i<50 && (await page.executeJavaScript('document.querySelector("[aria-label=\\"Copy JSON\\"]").textContent'))!=='Copied';i++) await wait(20)
+  assert.equal(await clipboard.readText(),'900719925474099312345','Copy uses the filtered result, preserving the original number')
+  await filterJson('$.items[')
+  assert.equal(await page.executeJavaScript('document.querySelector("input").getAttribute("aria-invalid")'),'true')
+  assert.equal(await page.executeJavaScript('document.querySelector("code").textContent'),'900719925474099312345')
+  await filterJson('$.missing')
+  assert.equal(await page.executeJavaScript('document.querySelector("code").textContent'),'[]')
+  assert.equal(await page.executeJavaScript('document.querySelector("[role=status]").textContent'),'No matches')
+  await filterJson('$.html')
+  assert.equal(await page.executeJavaScript('!!window.pwned'),false,'Filtered strings remain escaped')
+  assert.equal(await page.executeJavaScript('document.querySelector("code").textContent'),'"<script>window.pwned=true</script>"')
+  const fullBounds = view.getBounds()
+  view.setBounds({...fullBounds,width:320})
+  await wait(30)
+  assert.equal(await page.executeJavaScript('document.querySelector("header").scrollWidth<=document.querySelector("header").clientWidth'),true,'JSONPath toolbar fits narrow tabs')
+  view.setBounds(fullBounds)
+  await page.executeJavaScript("document.querySelector('[aria-label=\"Clear JSONPath filter\"]').click()")
+  assert.equal(await page.executeJavaScript('document.querySelector("input").value'),'')
+  assert.equal(await page.executeJavaScript('document.querySelector("input").getAttribute("aria-invalid")'),null)
+  assert.equal(jsonRequests,1,'Filtering never repeats the original request')
   await page.loadURL(origin+'/invalid')
   await wait(100)
   assert.equal(await page.executeJavaScript('document.documentElement.hasAttribute("data-dovo-json")'),false)
@@ -184,7 +214,7 @@ try {
   console.log('Native browser page tools: literal/regex/case, next/previous/wrap, hidden text, open shadow DOM, cross-origin frames, native Cmd/Ctrl+F, cleanup, strict-CSP JSON highlighting, raw toggle, safe markup, original POST response, remembered/profile-scoped zoom, native print shortcut, real PDF output and shared native download tracking/pause/cancel/retry passed.')
 } catch(error) {
   writeFileSync(join(work,'result.json'),JSON.stringify({ok:false,error:error instanceof Error?error.stack:String(error)}))
-} finally { await bridge.dispose();studio.destroy();server.close();app.exit() }
+} finally { await clipboard.writeText(previousClipboard);await bridge.dispose();studio.destroy();server.close();app.exit() }
 })().catch(error=>{console.error(error);app.exit(1)})
 `,
 )

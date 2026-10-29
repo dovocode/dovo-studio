@@ -101,7 +101,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           group: 'Chat & voice',
           local: true,
           keywords:
-            'collapse changed files tool call details output full inputs commands edits searches collapsed expanded keep screen awake on sleep',
+            'collapse changed files tool call details output full inputs commands edits searches collapsed expanded minimal full compact composer context usage keep screen awake on sleep',
         },
         {
           title: 'Speech & driving',

@@ -50,6 +50,11 @@ export default function ConversationSettings() {
         {(
           [
             [
+              'minimalComposer',
+              'Minimal composer',
+              'Use one line when empty and unfocused. Turn off to always show the full composer.',
+            ],
+            [
               'showSkillsInSlashMenu',
               'Show skills in the / menu',
               'Include skills in the / menu. Skills always appear when you type $.',
@@ -75,6 +80,7 @@ export default function ConversationSettings() {
             <Toggle
               label={label}
               checked={preferences[key]}
+              disabled={key === 'collapseComposerOnScroll' && !preferences.minimalComposer}
               onChange={(value) => updateAppPreferences({ [key]: value })}
             />
           </SettingRow>

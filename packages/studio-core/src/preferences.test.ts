@@ -118,23 +118,26 @@ it('falls back from an unknown palette without losing other saved preferences', 
   })
 })
 
-it('persists the context usage visibility preference', async () => {
-  vi.stubGlobal('localStorage', storage())
-  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
-  expect(readAppPreferences().showContextUsage).toBe(true)
-  updateAppPreferences({ showContextUsage: false })
-  vi.resetModules()
-  const reopened = await import('./preferences')
-  expect(reopened.readAppPreferences().showContextUsage).toBe(false)
-  reopened.updateAppPreferences({ showContextUsage: true })
-  expect(reopened.readAppPreferences().showContextUsage).toBe(true)
-})
+it.each(['showContextUsage', 'minimalComposer'] as const)(
+  'persists %s independently',
+  async (key) => {
+    vi.stubGlobal('localStorage', storage())
+    const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+    expect(readAppPreferences()[key]).toBe(true)
+    updateAppPreferences({ [key]: false })
+    vi.resetModules()
+    const reopened = await import('./preferences')
+    expect(reopened.readAppPreferences()[key]).toBe(false)
+    reopened.updateAppPreferences({ [key]: true })
+    expect(reopened.readAppPreferences()[key]).toBe(true)
+  },
+)
 
 it('persists glow intensity and gradients independently of the palette', async () => {
   const local = storage()
   vi.stubGlobal('localStorage', local)
   const { readAppPreferences, updateAppPreferences } = await import('./preferences')
-  expect(readAppPreferences()).toMatchObject({ themeGlow: 1, themeGradients: true })
+  expect(readAppPreferences()).toMatchObject({ themeGlow: 0.5, themeGradients: true })
   updateAppPreferences({ themeGlow: 0.35, themeGradients: false, themePalette: 'iris' })
   vi.resetModules()
   const reopened = await import('./preferences')
@@ -155,7 +158,7 @@ it.each([0, 1, -0.1, 1.1])('validates saved glow intensity %s', async (themeGlow
     }),
   )
   const { readAppPreferences } = await import('./preferences')
-  expect(readAppPreferences().themeGlow).toBe(themeGlow < 0 || themeGlow > 1 ? 1 : themeGlow)
+  expect(readAppPreferences().themeGlow).toBe(themeGlow < 0 || themeGlow > 1 ? 0.5 : themeGlow)
 })
 
 it('preserves the previous effects-off preference', async () => {

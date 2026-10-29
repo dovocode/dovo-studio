@@ -544,6 +544,17 @@ try {
   await page.getByText('Dovo on MacBook Pro', { exact: true }).waitFor()
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Conversation', exact: true }).click()
+  const minimalComposer = page.getByRole('switch', { name: 'Minimal composer', exact: true })
+  assert.equal(await minimalComposer.getAttribute('aria-checked'), 'true')
+  await minimalComposer.click()
+  assert.equal(await minimalComposer.getAttribute('aria-checked'), 'false')
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.app-preferences.v1')).minimalComposer,
+    ),
+    false,
+  )
+  await minimalComposer.click()
   await page.getByRole('switch', { name: 'Formatted composer preview', exact: true }).click()
   assert.equal(
     await page

@@ -57,7 +57,7 @@
   }
 }
 :root {
-  --studio-glow-strength: 1;
+  --studio-glow-strength: 0.5;
   color-scheme: dark;
   --background: var(--dovo-background);
   --foreground: var(--dovo-foreground);
