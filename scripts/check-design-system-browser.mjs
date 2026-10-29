@@ -522,6 +522,7 @@ try {
     await page.locator('summary').filter({ hasText: '2 queued' }).click()
     const queueComposer = page.getByRole('textbox', { name: 'Message task', exact: true })
     await queueComposer.fill('Keep my ordinary draft')
+    await page.getByRole('listitem', { name: /^Queued message 1 of/ }).hover()
     await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
     assert.equal(
       await queueComposer.inputValue(),
@@ -533,6 +534,7 @@ try {
     await page
       .getByTitle('Keep the existing blue accent, but soften the background.', { exact: true })
       .waitFor()
+    await page.getByRole('listitem', { name: /^Queued message 1 of/ }).hover()
     await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
     await queueComposer.fill('Edited local follow-up')
     await page.getByRole('button', { name: 'Save changes', exact: true }).click()
@@ -542,6 +544,7 @@ try {
       .getByRole('button', { name: 'Drag queued message 2 to reorder', exact: true })
       .focus()
     await page.keyboard.press('ArrowUp')
+    await page.getByRole('listitem', { name: /^Queued message 1 of/ }).hover()
     await page.getByRole('button', { name: 'Pause queued message 1', exact: true }).click()
     await page.getByRole('button', { name: 'Resume queued message 1', exact: true }).click()
     await page.getByRole('button', { name: 'Steer with queued message 1', exact: true }).click()
