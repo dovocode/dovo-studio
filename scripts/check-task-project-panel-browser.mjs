@@ -648,11 +648,11 @@ try {
         await page.getByRole('button', { name: 'Open child thread Review implementation' }).count(),
         0,
       )
-      const statusRow = page.locator('.studio-thread-card-context').first()
+      const executionRow = page.locator('[data-thread-execution]').first()
       const toggleBounds = await toggle.boundingBox()
-      const rowBounds = await statusRow.boundingBox()
+      const rowBounds = await executionRow.boundingBox()
       assert.ok(
-        toggleBounds.y >= rowBounds.y - 4 && toggleBounds.y < rowBounds.y + rowBounds.height,
+        Math.abs(toggleBounds.y + toggleBounds.height / 2 - rowBounds.y - rowBounds.height / 2) < 1,
       )
       await page.screenshot({ path: `/tmp/dovo-thread-cards-${scheme}.png` })
       await toggle.click()

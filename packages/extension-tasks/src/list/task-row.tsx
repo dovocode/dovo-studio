@@ -221,8 +221,38 @@ function TaskRowView({
     agent?.name ??
     (provider ? providers[provider].short : 'Unassigned agent')
   const agentDetail = `${agentName}${provider ? ` · ${providers[provider].name}` : ''}`
+  const pullIndicators = !!linkedPulls.length && (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-0.5',
+        pullRequestIconTone(badgeStatus?.state, badgeStatus?.draft),
+      )}
+      aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
+      title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
+    >
+      {stack ? (
+        <Layers
+          className={cn(
+            'size-3',
+            pullRequestIconTone(task.pullStatus?.state, task.pullStatus?.draft),
+          )}
+          aria-label={pullStackLabel(stack)}
+        />
+      ) : (
+        <PullRequestIcon state={badgeStatus?.state} draft={badgeStatus?.draft} />
+      )}
+      {linkedPulls.length > 1 ? `${linkedPulls.length} PRs` : linkedPulls[0]!.number}
+      {stack && linkedPulls.length === 1 && (
+        <span className="text-[0.625rem]">
+          {stack.complete ? `${stack.position}/${stack.size}` : 'Stack'}
+        </span>
+      )}
+    </span>
+  )
   const executionIcons = (
     <span className="inline-flex shrink-0 items-center gap-1" data-thread-execution>
+      {(general || compact) && pullIndicators}
+      {!!childCount && <span className="studio-subthread-anchor block h-3.5 w-5 shrink-0" />}
       <RuntimeIcon
         icon={owner.runtimeIcon}
         className="size-3 shrink-0"
@@ -239,7 +269,7 @@ function TaskRowView({
     <div
       onMouseLeave={() => setHovered(false)}
       className={cn(
-        'group/task relative w-full min-w-0',
+        'studio-thread-row group/task relative w-full min-w-0',
         grouped && 'mb-[3px] rounded-xl border transition-colors',
         grouped &&
           (highlighted
@@ -260,7 +290,7 @@ function TaskRowView({
                   ? 'min-h-9 flex-row items-center gap-2 py-1.5'
                   : cn(
                       'flex-col items-stretch gap-0.5 py-1.5',
-                      general && !linkedPulls.length ? 'min-h-[48px]' : 'min-h-[68px]',
+                      general ? 'min-h-[48px]' : 'min-h-[68px]',
                     ),
                 grouped
                   ? 'mb-0 rounded-b-none border-0 bg-transparent hover:bg-accent/30'
@@ -279,7 +309,6 @@ function TaskRowView({
                 <span
                   className={cn(
                     'studio-thread-card-context mb-1 flex min-w-0 items-center gap-1.5 text-xs leading-4',
-                    !!childCount && 'pr-7',
                     editable &&
                       'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                   )}
@@ -308,7 +337,6 @@ function TaskRowView({
                 className={cn(
                   'flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5',
                   compact ? 'flex-1' : 'w-full',
-                  compact && !!childCount && 'pr-7',
                   highlighted || unread
                     ? 'text-foreground'
                     : 'text-foreground/75 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
@@ -319,7 +347,7 @@ function TaskRowView({
                 <span className="min-w-0 flex-1 truncate" data-thread-title>
                   {task.title}
                 </span>
-                {general && executionIcons}
+                {(general || (compact && !!childCount)) && executionIcons}
               </span>
               {compact && StatusIcon && (
                 <span
@@ -330,48 +358,12 @@ function TaskRowView({
                   <StatusIcon className="size-3.5" aria-hidden="true" />
                 </span>
               )}
-              {!compact && (!general || !!linkedPulls.length) && (
+              {!compact && !general && (
                 <span className="studio-thread-card-context mt-0.5 flex min-w-0 items-center gap-1 text-xs leading-4">
-                  {!general && (
-                    <>
-                      <GitBranch className="size-3 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
-                    </>
-                  )}
-                  {general && <span className="min-w-0 flex-1" />}
-                  {!!linkedPulls.length && (
-                    <span
-                      className={cn(
-                        'inline-flex shrink-0 items-center gap-0.5',
-                        pullRequestIconTone(badgeStatus?.state, badgeStatus?.draft),
-                      )}
-                      aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
-                      title={linkedPulls
-                        .map((pull) => `#${pull.number} · ${pull.title}`)
-                        .join(' · ')}
-                    >
-                      {stack ? (
-                        <Layers
-                          className={cn(
-                            'size-3',
-                            pullRequestIconTone(task.pullStatus?.state, task.pullStatus?.draft),
-                          )}
-                          aria-label={pullStackLabel(stack)}
-                        />
-                      ) : (
-                        <PullRequestIcon state={badgeStatus?.state} draft={badgeStatus?.draft} />
-                      )}
-                      {linkedPulls.length > 1
-                        ? `${linkedPulls.length} PRs`
-                        : linkedPulls[0]!.number}
-                      {stack && linkedPulls.length === 1 && (
-                        <span className="text-[0.625rem]">
-                          {stack.complete ? `${stack.position}/${stack.size}` : 'Stack'}
-                        </span>
-                      )}
-                    </span>
-                  )}
-                  {!general && executionIcons}
+                  <GitBranch className="size-3 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
+                  {pullIndicators}
+                  {executionIcons}
                 </span>
               )}
             </Button>
@@ -449,7 +441,7 @@ function TaskRowView({
           <button
             type="button"
             className={cn(
-              'absolute top-1 right-2.5 flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground',
+              'studio-subthread-control flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground',
               open && 'bg-accent text-foreground',
               summary.attention > 0 && 'text-status-warning',
               summary.failed > 0 && 'text-destructive',
@@ -502,8 +494,9 @@ function TaskRowView({
       {editable && (
         <div
           className={cn(
-            'pointer-events-none absolute top-1.5 flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none',
-            childCount ? 'right-9' : 'right-2',
+            'pointer-events-none absolute flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none',
+            compact ? 'top-1.5' : 'top-0.5',
+            'right-2',
           )}
         >
           <TaskLifecycleActions key={owner.runtimeId ?? 'local'} task={task} owner={owner} />

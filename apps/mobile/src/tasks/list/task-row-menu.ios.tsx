@@ -6,6 +6,7 @@ import {
   contentShape,
   disabled as disabledModifier,
   frame,
+  offset,
   shapes,
 } from '@expo/ui/swift-ui/modifiers'
 import { isSnoozed, latestCompletedTaskTurn } from '@dovo/protocol'
@@ -20,6 +21,7 @@ export function TaskRowMenu({
   disabled,
   onOpen,
   onDetails,
+  contentOffsetY = 0,
 }: TaskRowMenuProps) {
   const { colors, mode: appearanceMode } = useTheme()
 
@@ -37,7 +39,7 @@ export function TaskRowMenu({
             name="more"
             size={18}
             color={colors.muted}
-            modifiers={[frame({ width: 20, height: 20 })]}
+            modifiers={[frame({ width: 20, height: 20 }), offset({ y: contentOffsetY })]}
           />
         }
         modifiers={[

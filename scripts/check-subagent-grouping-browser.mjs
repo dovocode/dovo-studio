@@ -6,7 +6,7 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const state = `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,set]=useState(initial);const ref=useRef(value);ref.current=value;return [value,set,ref]}`
 const controls = `
-import {useImperativeHandle} from 'react';
+import {useImperativeHandle,useLayoutEffect} from 'react';
 export const EmptyState=({title,description,action})=><div>{title}{description}{action}</div>;export const SidebarHeader=()=>null;export const HeaderContent=({children})=>children;
 export const Conversation=({children,...props})=><div role="log" {...props}>{children}</div>;export const ConversationContent=({children,...props})=><div {...props}>{children}</div>;export const ConversationScrollButton=()=>null;
 export const Message=({children,from})=><div data-native-role={from}>{children}</div>;export const MessageContent=({children})=><div>{children}</div>;
@@ -22,7 +22,7 @@ export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=T
 export const PageHeader=({title})=><h1>{title}</h1>;
 export const ContextMenu={Label:({children})=><span>{children}</span>,Item:Tooltip,Sub:Tooltip,SubTrigger:Tooltip,Portal:Tooltip,SubContent:Tooltip};
 export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;
-export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;
+export const View=({children,accessibilityLabel,ref,onLayout})=>{useImperativeHandle(ref,()=>({measureLayout:(_parent,done)=>done(0,0)}));useLayoutEffect(()=>{onLayout?.({nativeEvent:{layout:{height:44}}})},[onLayout]);return <div aria-label={accessibilityLabel}>{children}</div>};
 export const ScrollView=View;export const Image=()=>null;export const useWindowDimensions=()=>({width:390,height:844,fontScale:1,scale:3});
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID})=><button data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} disabled={disabled} onClick={onPress} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</button>;
 export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent,ListFooterComponent})=><div>{ListHeaderComponent}{data.length?data.map((item,i)=><div key={i}>{renderItem({item})}</div>):ListEmptyComponent}{ListFooterComponent}</div>;
@@ -204,6 +204,19 @@ try {
       assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
     }
     if (!mobile) {
+      assert.equal(
+        await subthreads.evaluate((control) => {
+          const execution = control
+            .closest('.studio-thread-row')
+            .querySelector('[data-thread-execution]')
+          return (
+            execution.firstElementChild.classList.contains('studio-subthread-anchor') &&
+            !control.parentElement.closest('button')
+          )
+        }),
+        true,
+        'Subthreads precede runtime indicators without nesting interactive controls',
+      )
       const toggle = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
       assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)

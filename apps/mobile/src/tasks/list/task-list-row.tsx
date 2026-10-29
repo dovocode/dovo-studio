@@ -49,7 +49,7 @@ import { isSnoozed, taskIsWorking } from '@dovo/protocol'
 import { chooseSnoozeDuration, useTaskLifecycle } from '../detail/use-task-lifecycle'
 import { useTheme } from '../../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useRef, useState, type ComponentRef } from 'react'
 import type { TaskListOwner } from './task-list-projection'
 import type { MobilePreferences } from '../../runtime/preferences/app-preferences'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
@@ -107,8 +107,30 @@ function TaskListRowView({
   selected?: boolean
   current?: boolean
 }) {
-  const { colors, styles } = useTheme()
+  const { colors, styles, highContrast } = useTheme()
   const { fontScale } = useWindowDimensions()
+  const rowElement = useRef<ComponentRef<typeof View>>(null)
+  const subthreadAnchorElement = useRef<ComponentRef<typeof View>>(null)
+  const rowHeight = useRef(0)
+  const [subthreadPosition, setSubthreadPosition] = useState<{
+    left: number
+    top: number
+    offsetY: number
+  } | null>(null)
+  // Keep the independent 44-point control aligned with the inline metadata slot.
+  const positionSubthreadControl = useCallback(() => {
+    const row = rowElement.current
+    if (!row) return
+    subthreadAnchorElement.current?.measureLayout(row, (x, y) => {
+      const top = Math.max(0, Math.min(y - 12, rowHeight.current - 44))
+      const next = { left: Math.max(0, x - 12), top, offsetY: y + 10 - top - 22 }
+      setSubthreadPosition((current) =>
+        current?.left === next.left && current.top === next.top && current.offsetY === next.offsetY
+          ? current
+          : next,
+      )
+    })
+  }, [])
   const [expanded, setExpanded] = useState(false)
   const open = !!searching || expanded
   const onOpen = useCallback(() => commands.open(row.key), [commands, row.key])
@@ -194,12 +216,13 @@ function TaskListRowView({
   const compactTitleHeight = Math.ceil(18 * fontScale)
   const compactContextHeight = Math.max(16, Math.ceil(16 * fontScale))
   const headerHeight = dense ? compactContextHeight : Math.max(26, Math.ceil(16 * fontScale))
-  const hasFooter = !general || pulls.length > 0 || row.reachability === 'offline'
+  const hasFooter = !general || row.reachability === 'offline'
   const compactRowHeight =
     16 + compactTitleHeight + (hasFooter ? 8 : 3) + compactContextHeight * (hasFooter ? 2 : 1)
-  const badgeSize = dense ? Math.max(16, Math.ceil(12 * fontScale)) : 20
+  const badgeSize = dense ? Math.max(14, Math.ceil(10 * fontScale)) : 16
   const contextSize = dense ? 11 : 12
   const contextText = { fontSize: contextSize, lineHeight: dense ? 14 : 16 }
+  const metadataText = { ...contextText, opacity: highContrast ? 1 : 0.94 }
   const projectBadge =
     displayProject?.kind === 'scratch' ? (
       <View
@@ -210,14 +233,14 @@ function TaskListRowView({
           justifyContent: 'center',
         }}
       >
-        <MessageCircleDashed size={dense ? 14 : 16} color={colors.muted} />
+        <MessageCircleDashed size={dense ? 12 : 14} color={colors.muted} />
       </View>
     ) : (
       <View
         style={{
           width: badgeSize,
           height: badgeSize,
-          borderRadius: 5,
+          borderRadius: 4,
           overflow: 'hidden',
           backgroundColor: icon ? 'transparent' : projectIconColor(displayProject),
           alignItems: 'center',
@@ -227,23 +250,90 @@ function TaskListRowView({
         {icon ? (
           <Image source={{ uri: icon }} style={{ width: badgeSize, height: badgeSize }} />
         ) : (
-          <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
+          <Text style={{ color: '#fff', fontSize: 8, fontWeight: '700' }}>
             {projectIconInitials(displayProject, row.projectName || 'P')}
           </Text>
         )}
       </View>
     )
+  const subthreadControl = childCount > 0 && (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Subthreads for ${task.title}`}
+      accessibilityHint={childrenDetail}
+      accessibilityState={{
+        expanded: open,
+        disabled: disabled || selectionActive || !!searching,
+      }}
+      disabled={disabled || selectionActive || !!searching}
+      onPress={() => setExpanded(!open)}
+      style={{
+        position: 'absolute',
+        left: subthreadPosition?.left ?? 0,
+        top: subthreadPosition?.top ?? 0,
+        width: 44,
+        height: 44,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: subthreadPosition ? 1 : 0,
+      }}
+    >
+      <Network
+        style={{ transform: [{ translateY: subthreadPosition?.offsetY ?? 0 }] }}
+        size={16}
+        color={
+          summary.failed
+            ? colors.error
+            : summary.attention
+              ? colors.warning
+              : open
+                ? colors.accent
+                : colors.muted
+        }
+      />
+    </Pressable>
+  )
+  const subthreadAnchor = childCount > 0 && (
+    <View
+      ref={subthreadAnchorElement}
+      testID="Subthread anchor"
+      collapsable={false}
+      onLayout={positionSubthreadControl}
+      style={{ width: 20, height: 20 }}
+    />
+  )
+  const pullIndicators = (
+    <>
+      {pulls.length > 0 && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <PullRequestIcon state={pullStatus?.state} draft={pullStatus?.draft} size={12} />
+          <Text numberOfLines={1} style={{ color: pullColor, ...contextText }}>
+            {pulls.length > 1 ? `${pulls.length} PRs` : `#${pulls[0].number}`}
+          </Text>
+        </View>
+      )}
+      {pulls.length <= 1 && task.pullStatus?.stack && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <Icon name="stack" size={12} color={pullColor} />
+          <Text numberOfLines={1} style={{ color: pullColor, ...contextText }}>
+            {pullStackLabel(task.pullStatus.stack)}
+          </Text>
+        </View>
+      )}
+    </>
+  )
   const executionIcons = (
     <View
       testID="thread-execution"
       style={{ flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '40%' }}
     >
+      {pullIndicators}
+      {subthreadAnchor}
       <DeviceLabel
         runtimeIcon={owner.runtimeIcon}
         task={task}
         runtimeHost={row.runtimeName}
-        compact
-        fontSize={contextSize}
+        size={contextSize}
       />
       {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
     </View>
@@ -265,6 +355,7 @@ function TaskListRowView({
 
   const statusIndicator = (
     <View
+      testID="Thread status"
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -274,7 +365,15 @@ function TaskListRowView({
       }}
     >
       {StatusIcon && <StatusIcon size={12} color={stateColor} />}
-      <Text numberOfLines={1} style={{ color: stateColor, flexShrink: 1, ...contextText }}>
+      <Text
+        numberOfLines={1}
+        style={{
+          color: stateColor,
+          flexShrink: 1,
+          ...contextText,
+          opacity: stateColor === colors.muted ? metadataText.opacity : 1,
+        }}
+      >
         {working || needsInput || done || failed ? `${state}${age ? ` ${age}` : ''}` : age || state}
       </Text>
     </View>
@@ -283,7 +382,7 @@ function TaskListRowView({
   const content = (
     <View
       style={{
-        marginVertical: dense ? 1.5 : 3,
+        marginVertical: dense ? 2.25 : 4.5,
         borderRadius: 12,
         backgroundColor: selected || current ? colors.selection : colors.background,
       }}
@@ -304,7 +403,15 @@ function TaskListRowView({
           }}
         />
       )}
-      <View style={{ flexDirection: 'row', alignItems: settled ? 'center' : 'flex-start' }}>
+      <View
+        ref={rowElement}
+        collapsable={false}
+        onLayout={(event) => {
+          rowHeight.current = event.nativeEvent.layout.height
+          positionSubthreadControl()
+        }}
+        style={{ flexDirection: 'row', alignItems: settled ? 'center' : 'flex-start' }}
+      >
         {settled && (
           <Pressable
             accessibilityRole="button"
@@ -357,7 +464,7 @@ function TaskListRowView({
             alignItems: settled || dense ? 'center' : undefined,
             paddingVertical: 6,
             paddingLeft: settled ? 0 : 12,
-            paddingRight: (dense && !settled) || (settled && childCount > 0) ? 44 : 12,
+            paddingRight: !car && !settled ? 44 : 12,
             opacity: pressed ? 0.55 : 1,
           })}
         >
@@ -384,7 +491,14 @@ function TaskListRowView({
               style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}
             >
               {title}
-              {general && executionIcons}
+              {general ? (
+                executionIcons
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {pullIndicators}
+                  {subthreadAnchor}
+                </View>
+              )}
               {statusIndicator}
             </View>
           ) : (
@@ -397,22 +511,17 @@ function TaskListRowView({
                   minHeight: headerHeight,
                   marginBottom: 4,
                   height: dense ? compactContextHeight : undefined,
-                  paddingRight:
-                    (car || dense || settled ? 0 : 32) + (!settled && childCount > 0 ? 44 : 0),
                 }}
               >
                 {draft && (
                   <FilePenLine accessibilityLabel="Draft" size={14} color={colors.warning} />
                 )}
                 {!settled && projectBadge}
-                <Text numberOfLines={1} style={[styles.muted, { flex: 1, ...contextText }]}>
+                <Text numberOfLines={1} style={[styles.muted, { flex: 1, ...metadataText }]}>
                   {projectName}
                 </Text>
                 {task.pinned && <Pin size={12} color={colors.muted} />}
                 {statusIndicator}
-                {!general && !!agent && (!showDevice || car) && (
-                  <HarnessIcon provider={agent.provider} size={12} />
-                )}
               </View>
               <View
                 style={{
@@ -420,9 +529,6 @@ function TaskListRowView({
                   alignItems: 'center',
                   gap: 6,
                   height: dense ? compactTitleHeight : undefined,
-                  // Comfortable titles start within the menu’s 44-point target.
-                  paddingRight:
-                    (!car && !dense && !settled ? 32 : 0) + (!settled && childCount > 0 ? 44 : 0),
                 }}
               >
                 {title}
@@ -435,6 +541,8 @@ function TaskListRowView({
                     alignItems: 'center',
                     flexWrap: 'nowrap',
                     marginTop: 2,
+                    // Leave the disclosure's touch target clear of the header menu.
+                    paddingRight: !car && !showDevice && !agent && childCount > 0 ? 12 : 0,
                     height: dense ? compactContextHeight : undefined,
                     overflow: dense ? 'hidden' : undefined,
                     gap: 6,
@@ -453,99 +561,41 @@ function TaskListRowView({
                       <GitBranch size={12} color={colors.muted} />
                       <Text
                         numberOfLines={1}
-                        style={[styles.muted, { flexShrink: 1, ...contextText }]}
+                        style={[styles.muted, { flexShrink: 1, ...metadataText }]}
                       >
                         {branch}
                       </Text>
                     </View>
                   )}
                   {general && !dense && <View style={{ flex: 1 }} />}
+                  {!general && pullIndicators}
+                  {!general && subthreadAnchor}
                   {!general && showDevice && !car && (
                     <DeviceLabel
                       runtimeIcon={owner.runtimeIcon}
                       task={task}
                       runtimeHost={row.runtimeName}
-                      compact
-                      fontSize={contextSize}
-                      flexible={dense}
+                      size={contextSize}
                     />
                   )}
-                  {!general && showDevice && !car && !!agent && (
-                    <HarnessIcon provider={agent.provider} size={12} />
-                  )}
+                  {!general && !!agent && <HarnessIcon provider={agent.provider} size={12} />}
                   {row.reachability === 'offline' &&
                     (dense ? (
                       <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
                     ) : (
                       <Text style={[styles.muted, contextText]}>Offline</Text>
                     ))}
-                  {pulls.length > 0 && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                      <PullRequestIcon
-                        state={pullStatus?.state}
-                        draft={pullStatus?.draft}
-                        size={12}
-                      />
-                      <Text numberOfLines={1} style={{ color: pullColor, ...contextText }}>
-                        {pulls.length > 1 ? `${pulls.length} PRs` : `#${pulls[0].number}`}
-                      </Text>
-                    </View>
-                  )}
-                  {pulls.length <= 1 && task.pullStatus?.stack && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                      <Icon name="stack" size={12} color={pullColor} />
-                      <Text numberOfLines={1} style={{ color: pullColor, ...contextText }}>
-                        {pullStackLabel(task.pullStatus.stack)}
-                      </Text>
-                    </View>
-                  )}
                 </View>
               )}
             </View>
           )}
         </Pressable>
-        {childCount > 0 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Subthreads for ${task.title}`}
-            accessibilityHint={childrenDetail}
-            accessibilityState={{
-              expanded: open,
-              disabled: disabled || selectionActive || !!searching,
-            }}
-            disabled={disabled || selectionActive || !!searching}
-            onPress={() => setExpanded(!open)}
-            style={{
-              position: 'absolute',
-              right: !car && !settled ? 44 : 0,
-              top: 0,
-              width: 44,
-              height: 44,
-              alignItems: 'center',
-              justifyContent: 'center',
-              // Align the glyph with the header while keeping its touch target 44 points high.
-              paddingTop: Math.max(0, 12 + headerHeight - 44),
-              paddingBottom: Math.max(0, 44 - 12 - headerHeight),
-            }}
-          >
-            <Network
-              size={16}
-              color={
-                summary.failed
-                  ? colors.error
-                  : summary.attention
-                    ? colors.warning
-                    : open
-                      ? colors.accent
-                      : colors.muted
-              }
-            />
-          </Pressable>
-        )}
+        {subthreadControl}
         {!car && !settled && (
           <View style={{ position: 'absolute', right: 0, top: 0 }}>
             <TaskRowMenu
               testID={`${testID} actions`}
+              contentOffsetY={6 + headerHeight / 2 - 22}
               task={task}
               actions={actions}
               disabled={disabled}

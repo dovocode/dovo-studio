@@ -9,10 +9,10 @@ import { checkMobileTaskSearch } from './browser/mobile-task-search.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
 const controls = `
-import {createContext,useContext,forwardRef,useImperativeHandle} from 'react';
+import {createContext,useContext,forwardRef,useImperativeHandle,useLayoutEffect,useRef} from 'react';
 const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
 const nativeStyle=style=>{const result={...flat(style)};for(const [key,axes] of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(key in result){for(const axis of axes)result[axis]=result[key];delete result[key]}};if(typeof result.lineHeight==='number')result.lineHeight+='px';return result};
-export const View=({children,accessibilityLabel,style,testID})=><div data-testid={testID} aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity}}>{children}</div>;
+export const View=({children,accessibilityLabel,style,testID,ref,onLayout})=>{const node=useRef(null);useImperativeHandle(ref,()=>({nativeElement:node.current,measureLayout:(parent,done)=>{const bounds=node.current.getBoundingClientRect(),origin=parent.nativeElement.getBoundingClientRect();done(bounds.x-origin.x,bounds.y-origin.y,bounds.width,bounds.height)}}));useLayoutEffect(()=>{if(!onLayout)return;const measure=()=>onLayout({nativeEvent:{layout:{height:node.current.getBoundingClientRect().height}}});measure();const observer=new ResizeObserver(measure);observer.observe(node.current);return ()=>observer.disconnect()},[onLayout]);return <div ref={node} data-testid={testID} aria-label={accessibilityLabel} style={window.rowLayout?{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,...nativeStyle(style)}:{opacity:flat(style).opacity}}>{children}</div>};
 export const Text=({children,accessibilityRole,numberOfLines,style})=>{const value=flat(style),scale=window.rowFontScale??1;return <span role={accessibilityRole} style={window.rowLayout?{display:'block',minWidth:0,...nativeStyle({...value,fontSize:(value.fontSize??13)*scale,...(value.lineHeight?{lineHeight:value.lineHeight*scale}:{})}),...(numberOfLines===1?{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}:{})}:value}>{children}</span>};
 export const Image=()=>null;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
@@ -49,7 +49,7 @@ const stubs = [
   { path: 'react-native', contents: controls },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=({color,accessibilityLabel,size=12})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Save,Icon as Network};`,
+    contents: `const Icon=({color,accessibilityLabel,size=12,style})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0,transform:style?.transform?.map(value=>'translateY('+value.translateY+'px)').join(' ')}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Save,Icon as Network};`,
   },
   {
     path: '@dovo/protocol',
@@ -136,7 +136,7 @@ export const startRuntimeSync=(connection,options)=>{
   {
     path: '../../ui/content/runtime-icon',
     importer: mobile + 'tasks/list/device-label.tsx',
-    contents: `export const RuntimeIcon=({size,color})=><svg width={size} height={size} style={{color,flexShrink:0}}/>;`,
+    contents: `export const RuntimeIcon=({size,color})=><svg data-runtime-icon width={size} height={size} style={{color,flexShrink:0}}/>;`,
   },
   {
     path: '../../agents/harness-icon',
@@ -152,7 +152,7 @@ export const startRuntimeSync=(connection,options)=>{
     path: './task-row-menu',
     importer: mobile + 'tasks/list/task-list-row.tsx',
     contents: `
-export const TaskRowMenu=({testID,task,actions,onDetails})=>{window.rowRenders[task.id]=(window.rowRenders[task.id]??0)+1;if(window.rowLayout)return <div data-testid={testID} style={{width:44,height:44}}/>;return <div data-testid={testID}><button onClick={onDetails}>Details {task.id}</button><button disabled={!actions.enabled||actions.busy} onClick={actions.togglePinned}>{task.pinned?'Unpin':'Pin'} {task.id}</button></div>};`,
+export const TaskRowMenu=({testID,task,actions,onDetails,contentOffsetY=0})=>{window.rowRenders[task.id]=(window.rowRenders[task.id]??0)+1;if(window.rowLayout)return <div data-testid={testID} style={{width:44,height:44,display:'flex',alignItems:'center',justifyContent:'center'}}><span data-menu-glyph style={{lineHeight:'20px',transform:'translateY('+contentOffsetY+'px)'}}>•••</span></div>;return <div data-testid={testID}><button onClick={onDetails}>Details {task.id}</button><button disabled={!actions.enabled||actions.busy} onClick={actions.togglePinned}>{task.pinned?'Unpin':'Pin'} {task.id}</button></div>};`,
   },
   {
     path: './task-swipe-actions',
@@ -202,7 +202,7 @@ import {studioThemes} from './packages/studio-core/src/themes.ts';
 import {accessibleThemeColors} from './packages/studio-core/src/accessibility.ts';
 window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['light','dark'].map(mode=>({name:name+'/'+mode,...accessibleThemeColors(theme[mode],mode,false)})));
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
-import {RuntimeProvider,useRuntime} from './apps/mobile/src/runtime/connection/provider.tsx';
+import {RuntimeProvider,RuntimeContext,useRuntime} from './apps/mobile/src/runtime/connection/provider.tsx';
 import {TaskListViewProvider} from './apps/mobile/src/tasks/list/task-list-view.tsx';
 import TasksScreen from './apps/mobile/src/screens/tasks.tsx';
 const now=Date.now(),iso=age=>new Date(now-age).toISOString();
@@ -228,7 +228,7 @@ window.publish=changes=>flushSync(()=>{
   window.pushSnapshot(window.snapshot);
 });
 function Probe(){window.runtime=useRuntime();return null}
-function PaneProbe({children}){const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider>}
+function PaneProbe({children}){const runtime=useRuntime();const[showDevice,setShowDevice]=useState(false);window.showDevices=value=>flushSync(()=>setShowDevice(value));const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <RuntimeContext.Provider value={showDevice?{...runtime,profiles:[...runtime.profiles,{...runtime.profiles[0],id:'other-device'}]}:runtime}><TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider></RuntimeContext.Provider>}
 createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><PaneProbe><TasksScreen/></PaneProbe></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider>);
 `,
     },
@@ -404,13 +404,23 @@ try {
           .boundingBox()
         const menu = await page.getByTestId('Task parent actions').boundingBox()
         const parentRow = page.getByTestId('Task parent')
+        const statusBounds = await parentRow.getByTestId('Thread status').boundingBox()
+        const menuGlyph = await page
+          .getByTestId('Task parent actions')
+          .locator('[data-menu-glyph]')
+          .boundingBox()
+        assert.ok(
+          Math.abs(statusBounds.y + statusBounds.height / 2 - menuGlyph.y - menuGlyph.height / 2) <
+            1,
+          'Menu glyph aligns with status/time',
+        )
         assert.equal(await parentRow.locator('[data-harness]').count(), 1)
         assert.equal(
           await parentRow
             .locator('[data-harness]')
-            .evaluate((icon) => icon.parentElement.textContent.includes('Project')),
+            .evaluate((icon) => icon.parentElement.textContent.includes('main')),
           true,
-          'Provider belongs beside project and status in the header',
+          'Provider belongs beside branch and PRs in the footer',
         )
         const provider = await parentRow.locator('[data-harness]').boundingBox()
         const glyph = await page
@@ -422,7 +432,7 @@ try {
           .boundingBox()
         assert.ok(
           Math.abs(provider.y + provider.height / 2 - glyph.y - glyph.height / 2) < 1,
-          'Subthread icon aligns with header indicators',
+          'Subthread icon aligns with footer indicators',
         )
         assert.ok(toggle && menu && toggle.width === 44 && toggle.height === 44)
         assert.ok(toggle.x + toggle.width <= menu.x, 'Subthread and menu touch targets overlap')
@@ -463,13 +473,160 @@ try {
         const menu = await page.getByTestId('Task parent actions').boundingBox()
         const touch = await toggle.boundingBox()
         assert.ok(Math.abs(provider.y + provider.height / 2 - icon.y - icon.height / 2) < 1)
-        assert.ok(provider.y >= project.y - 1 && provider.y <= project.y + project.height)
+        assert.ok(
+          provider.y >= project.y + project.height,
+          'Execution indicators follow the header',
+        )
         assert.equal(touch.width, 44)
         assert.equal(touch.height, 44)
         assert.ok(touch.x + touch.width <= menu.x)
-        assert.ok(provider.x + provider.width <= touch.x)
+        assert.ok(icon.x + icon.width <= provider.x, 'Subthreads precede execution indicators')
+        const statusBounds = await row.getByTestId('Thread status').boundingBox()
+        const menuGlyph = await page
+          .getByTestId('Task parent actions')
+          .locator('[data-menu-glyph]')
+          .boundingBox()
+        assert.ok(
+          Math.abs(statusBounds.y + statusBounds.height / 2 - menuGlyph.y - menuGlyph.height / 2) <
+            1,
+          'Comfortable menu aligns at larger text sizes',
+        )
       }
     }
+    await page.evaluate(() => {
+      window.showDevices(true)
+      window.publish({
+        parent: {
+          linkedPullRequests: [
+            {
+              number: 42,
+              url: 'https://github.com/o/r/pull/42',
+              repositoryUrl: 'https://github.com/o/r',
+              title: 'PR',
+            },
+          ],
+          pullStatus: {
+            number: 42,
+            url: 'https://github.com/o/r/pull/42',
+            state: 'open',
+            draft: false,
+            checkedAt: new Date().toISOString(),
+          },
+        },
+      })
+    })
+    for (const repositoryId of ['repo', 'scratch']) {
+      for (const showDevice of [false, true]) {
+        await page.evaluate(
+          ({ repositoryId, showDevice }) => {
+            window.showDevices(showDevice)
+            window.publish({ parent: { repositoryId } })
+          },
+          { repositoryId, showDevice },
+        )
+        for (const density of ['compact', 'comfortable']) {
+          for (const width of [320, 390, 768]) {
+            await page.setViewportSize({ width, height: 844 })
+            await page.evaluate((density) => {
+              window.rowFontScale = 1
+              window.setListPreferences({ threadDensity: density })
+            }, density)
+            const row = page.getByRole('button', {
+              name: /^(Project|No Project), Has several subagents/,
+            })
+            const toggle = page.getByRole('button', {
+              name: /^Subthreads for Has several subagents/,
+            })
+            const indicator = await row.locator('[data-harness]').boundingBox()
+            const anchor = await row.getByTestId('Subthread anchor').boundingBox()
+            const pull = await row.getByText('#42', { exact: true }).boundingBox()
+            await page.waitForFunction(
+              ({ selector, anchor }) => {
+                const glyph = document
+                  .querySelector(selector)
+                  .querySelector('svg')
+                  .getBoundingClientRect()
+                return (
+                  Math.abs(glyph.y + glyph.height / 2 - anchor.y - anchor.height / 2) < 1 &&
+                  Math.abs(glyph.x + glyph.width / 2 - anchor.x - anchor.width / 2) < 1
+                )
+              },
+              { selector: 'button[aria-label^="Subthreads for Has several subagents"]', anchor },
+            )
+            const icon = await toggle.locator('svg').boundingBox()
+            assert.ok(
+              pull.x + pull.width <= icon.x,
+              JSON.stringify({
+                message: 'PRs precede subthreads',
+                repositoryId,
+                showDevice,
+                density,
+                width,
+                pull,
+                icon,
+                indicator,
+              }),
+            )
+            assert.ok(
+              Math.abs(pull.y + pull.height / 2 - icon.y - icon.height / 2) < 1,
+              'PRs and subthreads share a line',
+            )
+            assert.ok(icon.x + icon.width <= indicator.x, 'Subthreads precede harness')
+            const runtimeIcon = row.locator('[data-runtime-icon]')
+            assert.equal(
+              await runtimeIcon.count(),
+              Number(repositoryId === 'scratch' || showDevice),
+            )
+            if (await runtimeIcon.count()) {
+              const runtime = await runtimeIcon.boundingBox()
+              assert.ok(icon.x + icon.width <= runtime.x, 'Subthreads precede runtime')
+              assert.ok(runtime.x + runtime.width <= indicator.x, 'Runtime precedes harness')
+            }
+            const touch = await toggle.boundingBox()
+            const menu = await page.getByTestId(/Task .*parent.* actions/).boundingBox()
+            assert.equal(touch.width, 44)
+            assert.equal(touch.height, 44)
+            assert.ok(
+              touch.x + touch.width <= menu.x || touch.y >= menu.y + menu.height,
+              'Independent controls do not overlap',
+            )
+            const status = await row.getByTestId('Thread status').boundingBox()
+            const menuGlyph = await page
+              .getByTestId(/Task .*parent.* actions/)
+              .locator('[data-menu-glyph]')
+              .boundingBox()
+            assert.ok(
+              Math.abs(status.y + status.height / 2 - menuGlyph.y - menuGlyph.height / 2) < 1,
+              'Menu aligns with status/time',
+            )
+          }
+        }
+      }
+    }
+    await page.evaluate(() => {
+      window.showDevices(false)
+      window.setListPreferences({ threadDensity: 'comfortable' })
+      window.publish({ parent: { repositoryId: 'repo', agentId: '' } })
+    })
+    const noAgentRow = page.getByTestId('Task parent')
+    const noAgentToggle = page.getByRole('button', {
+      name: /^Subthreads for Has several subagents/,
+    })
+    const noAgentAnchor = await noAgentRow.getByTestId('Subthread anchor').boundingBox()
+    await page.waitForFunction((anchor) => {
+      const glyph = document
+        .querySelector('button[aria-label^="Subthreads for Has several subagents"] svg')
+        .getBoundingClientRect()
+      return Math.abs(glyph.x + glyph.width / 2 - anchor.x - anchor.width / 2) < 1
+    }, noAgentAnchor)
+    const noAgentTouch = await noAgentToggle.boundingBox()
+    const noAgentMenu = await page.getByTestId('Task parent actions').boundingBox()
+    assert.ok(
+      noAgentTouch.x + noAgentTouch.width <= noAgentMenu.x ||
+        noAgentTouch.y >= noAgentMenu.y + noAgentMenu.height,
+      'Disclosure remains clear of menu without a harness/runtime icon',
+    )
+    await page.evaluate(() => window.publish({ parent: { agentId: 'agent' } }))
     await page.screenshot({ path: '/tmp/dovo-compact-uniform-rows.png' })
     assert.deepEqual(errors, [])
     console.log(

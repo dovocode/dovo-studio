@@ -950,6 +950,20 @@ a.studio-project-row:hover {
   display: none;
 }
 
+/* The disclosure stays outside the thread button while following its metadata slot. */
+.studio-thread-row {
+  anchor-scope: --studio-subthread;
+}
+.studio-subthread-anchor {
+  anchor-name: --studio-subthread;
+}
+.studio-subthread-control {
+  position: absolute;
+  left: anchor(--studio-subthread center);
+  top: anchor(--studio-subthread center);
+  transform: translate(-50%, -50%);
+}
+
 /* Shared disclosure headers keep thread and browser-tab sections aligned. */
 .studio-list-section-header {
   display: flex;
@@ -987,7 +1001,10 @@ a.studio-project-row:hover {
 
 /* Titles carry selection and unread emphasis; metadata stays secondary. */
 .studio-thread-card-context {
-  color: color-mix(in srgb, var(--muted-foreground) 98%, var(--background));
+  color: color-mix(in srgb, var(--muted-foreground) 94%, var(--background));
+}
+[data-high-contrast='true'] .studio-thread-card-context {
+  color: var(--muted-foreground);
 }
 
 /* Keep keyboard focus visible when the OS supplies its own high-contrast palette. */
