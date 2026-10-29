@@ -1,3 +1,5 @@
+import { BrowserAddressInput } from './browser-address-input'
+import { BrowserDownloadsPanel } from './browser-downloads-panel'
 import { browserPageFavicon } from '@dovo/protocol'
 import { flushSync } from 'react-dom'
 import { nativeBrowserBounds, nativeBrowserOcclusion } from './native-browser-layout'
@@ -361,6 +363,7 @@ function BrowserContent({
   const [findOpen, setFindOpen] = useState(false)
   const [findRequest, setFindRequest] = useState(0)
   const [pageRevision, setPageRevision] = useState(0)
+  const [zoomFactor, setZoomFactor] = useState(1)
   useEffect(
     () =>
       onBrowserContextAction?.((action) => {
@@ -849,6 +852,7 @@ function BrowserContent({
       Effect.tap((state) =>
         Effect.sync(() => {
           if (!alive || !state) return
+          if (state.zoomFactor !== undefined) setZoomFactor(state.zoomFactor)
           setPageRevision(state.documentRevision ?? 0)
           if (shared) {
             if (state.tabStates) setTabStates(state.tabStates)
@@ -1492,6 +1496,20 @@ function BrowserContent({
       )
         return
       const key = event.key.toLowerCase()
+      if (mode === 'web' && browser && url && ['+', '=', '-', '0', 'p'].includes(key)) {
+        event.preventDefault()
+        if (key === 'p') void act(() => browser({ action: 'print', key: browserKey }))
+        else
+          void act(async () => {
+            const result = await browser({
+              action: 'zoom',
+              key: browserKey,
+              direction: key === '0' ? 'reset' : key === '-' ? 'out' : 'in',
+            })
+            if (result?.zoomFactor !== undefined) setZoomFactor(result.zoomFactor)
+          })
+        return
+      }
       if (!['l', 't', 'w', 'd', 'r', 'n'].includes(key)) return
       if (key === 'n' && !openBrowserWindow) return
       event.preventDefault()
@@ -2094,6 +2112,71 @@ function BrowserContent({
               )}
             </div>
           )}
+          {mode === 'web' && browser && url && (
+            <div className="space-y-2 border-t pt-2">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span>Zoom</span>
+                <div className="flex items-center gap-1">
+                  {(['out', 'reset', 'in'] as const).map((direction) => (
+                    <Button
+                      key={direction}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={
+                        direction === 'out'
+                          ? 'Zoom out'
+                          : direction === 'in'
+                            ? 'Zoom in'
+                            : 'Reset zoom'
+                      }
+                      disabled={
+                        busy ||
+                        (direction === 'out' && zoomFactor <= 0.25) ||
+                        (direction === 'in' && zoomFactor >= 5)
+                      }
+                      onClick={() =>
+                        void act(async () => {
+                          const result = await browser({
+                            action: 'zoom',
+                            key: browserKey,
+                            direction,
+                          })
+                          if (result?.zoomFactor !== undefined) setZoomFactor(result.zoomFactor)
+                        })
+                      }
+                    >
+                      {direction === 'out'
+                        ? '−'
+                        : direction === 'in'
+                          ? '+'
+                          : `${Math.round(zoomFactor * 100)}%`}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="w-full justify-start text-xs"
+                disabled={busy}
+                onClick={() => void act(() => browser({ action: 'print', key: browserKey }))}
+              >
+                Print…
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="w-full justify-start text-xs"
+                disabled={busy}
+                onClick={() => void act(() => browser({ action: 'save-pdf', key: browserKey }))}
+              >
+                Save as PDF…
+              </Button>
+            </div>
+          )}
           {pageActions}
           {shared && (
             <>
@@ -2224,7 +2307,7 @@ function BrowserContent({
           <Home size={15} />
         </IconButton>
       )}
-      <div className="studio-browser-address flex h-9 min-w-0 flex-1 items-center @max-[480px]/browser:order-first @max-[480px]/browser:basis-full [@media(pointer:coarse)]:h-12">
+      <div className="studio-browser-address relative z-20 flex h-9 min-w-0 flex-1 items-center @max-[480px]/browser:order-first @max-[480px]/browser:basis-full [@media(pointer:coarse)]:h-12">
         <span className="flex w-9 shrink-0 justify-center [@media(pointer:coarse)]:w-11">
           {shared && mode === 'web' ? (
             <BrowserSiteControls
@@ -2240,25 +2323,20 @@ function BrowserContent({
             <Globe2 size={15} className="text-muted-foreground" aria-hidden="true" />
           )}
         </span>
-        <Input
-          type="text"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          onFocus={(event) => {
-            editing.current = true
-            event.currentTarget.select()
-          }}
-          onBlur={() => {
-            editing.current = false
-          }}
-          ref={addressField}
-          aria-label="Preview URL"
-          disabled={mode === 'remote' && !remoteOnline}
+        <BrowserAddressInput
           value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder={shared ? 'Search or enter address' : 'Enter website address'}
-          className="h-full min-w-0 flex-1 border-0 bg-transparent px-0 text-center text-[13px] shadow-none focus:text-left focus-visible:outline-none focus-visible:ring-0 [@media(pointer:coarse)]:text-base"
+          onChange={setInput}
+          inputRef={addressField}
+          disabled={mode === 'remote' && !remoteOnline}
+          shared={shared}
+          tabs={tabs}
+          bookmarks={bookmarks}
+          visits={visits}
+          profileId={profileId}
+          onChoose={openSavedPage}
+          onEditing={(value) => {
+            editing.current = value
+          }}
         />
         <IconButton
           label="Go to address"
@@ -2291,6 +2369,9 @@ function BrowserContent({
         >
           <Star size={15} fill={bookmarked ? 'currentColor' : 'none'} />
         </IconButton>
+      )}
+      {shared && mode === 'web' && browser && (
+        <BrowserDownloadsPanel key={profileId} profileId={profileId} tabKey={browserKey} />
       )}
       {shared && mode === 'web' && !isPrivateBrowserProfile(profileId) && (
         <BrowserExtensions
@@ -3097,7 +3178,7 @@ function BrowserLayout({
     >
       {!sidebarState?.collapsed && sidebar}
       <div
-        className="relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden"
+        className="@container/browser relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden"
         data-browser-viewport
       >
         {preview && (

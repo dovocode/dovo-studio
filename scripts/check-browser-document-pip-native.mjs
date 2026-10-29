@@ -23,7 +23,7 @@ document.getElementById('open').onclick = async () => {
   const child = await documentPictureInPicture.requestWindow({width: 420, height: 280, disallowReturnToOpener: !!window.disallowReturn});
   const video = document.getElementById('call');
   child.document.body.append(video);
-  child.addEventListener('pagehide', () => document.body.append(video), {once: true});
+  child.addEventListener('pagehide', () => {window.callClosedWhileHidden=document.hidden;if(!document.hidden)document.body.append(video)}, {once: true});
 };
 </script>`)
 })
@@ -61,7 +61,7 @@ app.whenReady().then(async () => {
     const options = pipOptions(details);
     if (!options) return {action:'deny'};
     return {action:'allow',overrideBrowserWindowOptions:options,createWindow: options => {
-      const pip = createDocumentPipWindow(options, owner.webContents.getURL(), details.features.includes('dovo-disallow-return=1') ? undefined : () => { globalThis.pipReturned = true; owner.show(); owner.focus(); globalThis.reportPipVisibility(true) });
+      const pip = createDocumentPipWindow(options, owner.webContents.getURL(), details.features.includes('dovo-disallow-return=1') ? undefined : async () => { globalThis.pipReturned = true; owner.show(); owner.focus(); globalThis.reportPipVisibility(true); if (!(await owner.webContents.executeJavaScript('document.visibilityState === "visible"'))) throw Error('Call tab still hidden') });
       const child = pip.window;
       pip.contents.on('will-navigate', event => event.preventDefault());
       owner.webContents.once('did-navigate', () => {if (!child.isDestroyed()) child.close()});
@@ -263,7 +263,7 @@ app.whenReady().then(async () => {
         child.document.open(); child.document.write('<!doctype html><title>Floating call</title>'); child.document.close();
         const video = document.getElementById('call');
         child.document.body.append(video);
-        child.addEventListener('pagehide', () => document.body.append(video), {once: true});
+        child.addEventListener('pagehide', () => {window.callClosedWhileHidden=document.hidden;document.body.append(video)}, {once: true});
         window.autoWindow = child;
       } catch(error) {window.autoError = error.message}
     })`,
@@ -348,6 +348,11 @@ app.whenReady().then(async () => {
         !!document.getElementById('call'),
       null,
       { polling: 100 },
+    )
+    assert.equal(
+      await owner.evaluate(() => window.callClosedWhileHidden),
+      false,
+      'Back to tab restores Teams visibility before its PiP pagehide',
     )
     assert.equal(
       await owner.evaluate(
@@ -463,9 +468,56 @@ app.whenReady().then(async () => {
     false,
     'Paused videos do not enter automatic PiP',
   )
+  await app.evaluate(() => globalThis.reportPipVisibility(true))
+  await owner.waitForFunction(() => !document.hidden)
+  await owner.evaluate(() => document.getElementById('call').play())
+  await app.evaluate(() => globalThis.reportPipVisibility(false))
+  await owner.waitForFunction(() => !!document.pictureInPictureElement)
+  await app.evaluate(() => globalThis.reportPipVisibility(true))
+  await owner.waitForFunction(() => !document.pictureInPictureElement)
+  // A delayed site's handler must not open after return, or swallow a newer leave.
+  await owner.evaluate(() => {
+    window.raceAttempts = 0
+    window.raceOpened = 0
+    navigator.mediaSession.setActionHandler('enterpictureinpicture', async () => {
+      window.raceAttempts++
+      await new Promise((resolve) => {
+        window.releasePip = resolve
+      })
+      const child = await documentPictureInPicture.requestWindow({ width: 420, height: 280 })
+      window.raceOpened++
+      child.document.body.innerHTML =
+        '<div style="position:fixed;inset:0;background:rgb(30,150,60)">Live call</div>'
+    })
+  })
+  await app.evaluate(() => globalThis.reportPipVisibility(false))
+  await owner.waitForFunction(() => window.raceAttempts === 1)
+  await app.evaluate(() => globalThis.reportPipVisibility(true))
+  await owner.waitForFunction(() => !document.hidden)
+  await owner.evaluate(() => window.releasePip())
+  await owner.waitForFunction(() => !document.hidden && !documentPictureInPicture.window)
+  await app.evaluate(() => globalThis.reportPipVisibility(false))
+  await owner.waitForFunction(() => window.raceAttempts === 2)
+  await app.evaluate(() => {
+    globalThis.reportPipVisibility(true)
+    globalThis.reportPipVisibility(false)
+  })
+  await owner.evaluate(() => window.releasePip())
+  await owner.waitForFunction(() => window.raceAttempts === 3)
+  assert.equal(await owner.evaluate(() => window.raceOpened), 0, 'Stale handlers cannot open PiP')
+  await owner.evaluate(() => window.releasePip())
+  await owner.waitForFunction(() => !!documentPictureInPicture.window)
+  assert.equal(
+    await owner.evaluate(() => window.raceOpened),
+    1,
+    'A new leave survives the canceled handler',
+  )
+  await headerPage()
+  await app.evaluate(() => globalThis.reportPipVisibility(true))
+  await owner.waitForFunction(() => !documentPictureInPicture.window)
   await owner.evaluate(() => clearInterval(window.drawVideo))
   console.log(
-    'Document PiP native fixture passed: activation, real Window/DOM/media, separate header, hostname, resize, close/restore, owner navigation, in-app visibility transitions, async automatic-PiP opt-in, repeated Back-to-tab cycles after document replacement and automatic native video PiP without a site handler.',
+    'Document PiP native fixture passed: activation, real Window/DOM/media, separate header, hostname, resize, close/restore, owner navigation, in-app visibility transitions, async automatic-PiP opt-in, repeated Back-to-tab cycles after document replacement and automatic native video PiP without a site handler, automatic return cleanup, canceled delayed handlers and fast leave/return/leave races.',
   )
 } catch (error) {
   console.error('Native test failure:', error)

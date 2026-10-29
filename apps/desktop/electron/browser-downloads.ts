@@ -125,7 +125,7 @@ export function createBrowserDownloads(
     Electron.WebContents,
     {
       options: DownloadOptions
-      extension: { id: string; name: string }
+      extension?: { id: string; name: string }
       resolve: (id: number) => void
       reject: (error: Error) => void
       close: () => void
@@ -218,7 +218,7 @@ export function createBrowserDownloads(
         fileSize: -1,
         exists: false,
         incognito: privateProfile,
-        ...(request
+        ...(request?.extension
           ? { byExtensionId: request.extension.id, byExtensionName: request.extension.name }
           : {}),
       }
@@ -342,7 +342,7 @@ export function createBrowserDownloads(
   }
   return {
     search,
-    download(options: DownloadOptions, extension: { id: string; name: string }) {
+    download(options: DownloadOptions, extension?: { id: string; name: string }) {
       const url = new URL(options.url)
       if (
         !['http:', 'https:', 'data:', 'blob:'].includes(url.protocol) ||
@@ -439,4 +439,36 @@ export function createBrowserDownloads(
       save()
     },
   }
+}
+
+// One authoritative tracker per session, shared by native chrome and extension APIs.
+const trackers = new Map<
+  Electron.Session,
+  {
+    downloads: ReturnType<typeof createBrowserDownloads>
+    listeners: Set<(event: string, value: unknown) => void>
+  }
+>()
+export function browserDownloads(session: Electron.Session, profileId: string) {
+  let tracker = trackers.get(session)
+  if (!tracker) {
+    const listeners = new Set<(event: string, value: unknown) => void>()
+    const downloads = createBrowserDownloads(session, profileId, (event, value) => {
+      for (const listener of listeners) listener(event, value)
+    })
+    tracker = { downloads, listeners }
+    trackers.set(session, tracker)
+  }
+  const { downloads, listeners } = tracker
+  return {
+    ...downloads,
+    subscribe(listener: (event: string, value: unknown) => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+}
+export function disposeBrowserDownloads(session: Electron.Session) {
+  trackers.get(session)?.downloads.dispose()
+  trackers.delete(session)
 }

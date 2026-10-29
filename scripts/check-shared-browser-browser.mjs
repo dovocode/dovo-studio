@@ -16,7 +16,7 @@ if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},
 });</script></body></html>`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {TooltipProvider} from '@dovo/studio-ui';window.renderBrowser=()=>root.render(<TooltipProvider>{window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink}/>}</TooltipProvider>);const root=createRoot(document.getElementById('app'));window.renderBrowser();`,
+    contents: `import {createRoot} from 'react-dom/client';import {BrowserPane} from './src/browser/browser-pane.tsx';import BrowserView from './src/browser/browser-view.tsx';import {selectedBrowserText} from '@dovo/protocol';window.selectedBrowserText=selectedBrowserText;import {browserAddressSuggestions} from './src/browser/browser-address-input';window.addressSuggestions=browserAddressSuggestions;import {TooltipProvider} from '@dovo/studio-ui';window.renderBrowser=()=>root.render(<TooltipProvider>{window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink}/>}</TooltipProvider>);const root=createRoot(document.getElementById('app'));window.renderBrowser();`,
     resolveDir: root + 'packages/extension-tasks',
     loader: 'tsx',
   },
@@ -82,7 +82,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:window.tabActivityStates||[]}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:window.tabActivityStates||[],focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:window.tabActivityStates||[]}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:window.tabActivityStates||[],focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -150,7 +150,7 @@ try {
   const recent = page.getByRole('complementary', { name: 'Recent browser tabs' })
   const preview = page.getByRole('region', { name: 'Link preview', exact: true })
   if (!(await recent.isVisible())) throw new Error('Missing vertical tab list')
-  const url = page.getByRole('textbox', { name: 'Preview URL' })
+  const url = page.getByLabel('Preview URL', { exact: true })
   await url.fill('http://localhost:3000')
   await url.press('Enter')
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'show'))
@@ -174,6 +174,170 @@ try {
         action,
       action,
     )
+  assert.deepEqual(
+    await page.evaluate(() => {
+      const tab = {
+        id: 'one',
+        url: 'https://example.test',
+        title: 'Example',
+        profileId: 'default',
+        kind: 'web',
+      }
+      const privateTab = {
+        ...tab,
+        id: 'secret',
+        profileId: 'private-00000000-0000-4000-8000-000000000009',
+        url: 'https://secret.test',
+      }
+      const other = { ...tab, id: 'other-profile', profileId: 'work' }
+      const saved = { ...tab, id: 'saved', url: 'https://saved.test' }
+      return {
+        normal: window
+          .addressSuggestions('', [tab, privateTab, other], [tab, saved], [saved], 'default')
+          .map((s) => [s.tab.id, s.source]),
+        private: window
+          .addressSuggestions(
+            '',
+            [tab, privateTab],
+            [saved],
+            [saved],
+            'private-00000000-0000-4000-8000-000000000009',
+          )
+          .map((s) => s.tab.id),
+        search: window.addressSuggestions('saved', [], [saved], [], 'default').map((s) => s.source),
+      }
+    }),
+    {
+      normal: [
+        ['one', 'Tab'],
+        ['other-profile', 'Tab'],
+        ['saved', 'Bookmark'],
+      ],
+      private: ['secret'],
+      search: ['Bookmark'],
+    },
+  )
+  // Native page utilities remain reachable from chrome and keyboard.
+  await page.keyboard.press('Control+=')
+  await page.waitForFunction(() =>
+    window.calls.some((call) => call.action === 'zoom' && call.direction === 'in'),
+  )
+  await page.keyboard.press('Control+0')
+  await page.keyboard.press('Control+p')
+  await page.waitForFunction(() => window.calls.some((call) => call.action === 'print'))
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Reset zoom', exact: true }).innerText(),
+    '125%',
+  )
+  await page.getByRole('button', { name: 'Save as PDF…', exact: true }).click()
+  await page.waitForFunction(() => window.calls.some((call) => call.action === 'save-pdf'))
+  await page.screenshot({ path: root + 'work/browser-page-tools/browser-settings.png' })
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => {
+    window.fixtureDownloads = [
+      {
+        id: 1,
+        url: 'https://example.test/file.zip',
+        filename: '/Downloads/file.zip',
+        state: 'in_progress',
+        paused: false,
+        canResume: true,
+        bytesReceived: 1024,
+        totalBytes: 4096,
+        exists: false,
+      },
+      {
+        id: 2,
+        url: 'https://example.test/done.pdf',
+        filename: '/Downloads/done.pdf',
+        state: 'complete',
+        paused: false,
+        canResume: false,
+        bytesReceived: 4096,
+        totalBytes: 4096,
+        exists: true,
+      },
+      {
+        id: 3,
+        url: 'https://example.test/failed.zip',
+        filename: '/Downloads/failed.zip',
+        state: 'interrupted',
+        paused: false,
+        canResume: false,
+        bytesReceived: 0,
+        totalBytes: 4096,
+        exists: false,
+      },
+    ]
+  })
+  await page.getByRole('button', { name: 'Downloads', exact: true }).click()
+  const downloadsDialog = page.getByRole('dialog', { name: 'Downloads', exact: true })
+  await downloadsDialog.waitFor()
+  await page.evaluate(() => window.pollBrowser())
+  await downloadsDialog.getByText('file.zip', { exact: true }).waitFor()
+  await page.screenshot({ path: root + 'work/browser-page-tools/downloads.png' })
+  for (const name of [
+    'Pause',
+    'Cancel',
+    'Open',
+    'Show in folder',
+    'Retry',
+    'Open Downloads folder',
+  ]) {
+    await downloadsDialog.getByRole('button', { name, exact: true }).click()
+    const operation = {
+      Pause: 'pause',
+      Cancel: 'cancel',
+      Open: 'open',
+      'Show in folder': 'reveal',
+      Retry: 'retry',
+      'Open Downloads folder': 'folder',
+    }[name]
+    await page.waitForFunction(
+      (operation) =>
+        window.calls.some((call) => call.action === 'downloads' && call.operation === operation),
+      operation,
+    )
+  }
+  await page.keyboard.press('Escape')
+  await url.focus()
+  await url.fill('localhost')
+  const suggestions = page.getByRole('listbox', { name: 'Address suggestions' })
+  await suggestions.waitFor()
+  await nativeAction('hide')
+  await page.setViewportSize({ width: 480, height: 800 })
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="Address suggestions"]').getBoundingClientRect().width >
+      150,
+  )
+  const suggestionBounds = await suggestions.boundingBox()
+  assert.ok(
+    suggestionBounds.x >= 0 && suggestionBounds.x + suggestionBounds.width <= 480,
+    'Address suggestions fit a narrow browser',
+  )
+  await page.screenshot({ path: root + 'work/browser-page-tools/address-suggestions.png' })
+  await page.setViewportSize({ width: 1200, height: 800 })
+  await page.keyboard.press('ArrowDown')
+  assert.equal(await suggestions.getByRole('option', { selected: true }).count(), 1)
+  const tabCountBeforeSuggestion = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length,
+  )
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length,
+    ),
+    tabCountBeforeSuggestion,
+    'Choosing an open page switches tab without duplicating it',
+  )
+  await url.focus()
+  await url.fill('no-such-suggestion-xyz')
+  assert.equal(await page.getByRole('listbox', { name: 'Address suggestions' }).count(), 0)
+  await page.keyboard.press('Escape')
+  await url.blur()
   // The find bar owns keyboard focus without hiding/replacing the native page.
   await page.keyboard.press('Control+f')
   const findField = page.getByRole('textbox', { name: 'Find on page', exact: true })
@@ -345,6 +509,7 @@ try {
   await page.keyboard.press('Escape')
   await page.mouse.move(1190, 790)
   await url.focus()
+  await page.keyboard.press('Escape')
   await nativeAction('show')
   await page.evaluate(() => {
     window.holdCapture = false
@@ -1521,7 +1686,7 @@ try {
     .getByRole('complementary', { name: 'Recent browser tabs' })
     .waitFor({ state: 'visible' })
   assert.equal(await gateHeading.count(), 0, 'Enabling preference mounts BrowserPane')
-  const gateUrl = gatePage.getByRole('textbox', { name: 'Preview URL' })
+  const gateUrl = gatePage.getByLabel('Preview URL', { exact: true })
   await gateUrl.fill('http://localhost:3000/gated-page')
   await gateUrl.press('Enter')
   await gatePage.waitForFunction(() => window.calls.some((call) => call.action === 'show'))
@@ -1570,7 +1735,7 @@ try {
     window.fixtureThreadWindow = true
   }, mainSeed)
   await threadPage.addScriptTag({ content: built.outputFiles[0].text })
-  const threadUrl = threadPage.getByRole('textbox', { name: 'Preview URL' })
+  const threadUrl = threadPage.getByLabel('Preview URL', { exact: true })
   await threadUrl.waitFor({ state: 'visible' })
   assert.equal(await threadUrl.inputValue(), '', 'Pop-out does not restore main tabs')
   await threadUrl.fill('http://localhost:3000/thread-only')
@@ -1966,8 +2131,8 @@ try {
   await custom.getByRole('button', { name: /Destination thread/ }).click()
   assert.equal(await custom.getByTestId('tab-conversation').getAttribute('data-runtime'), 'runtime')
   await custom.getByRole('button', { name: 'Close tab thread panel' }).click()
-  await custom.getByRole('textbox', { name: 'Preview URL' }).fill('http://example.test/page')
-  await custom.getByRole('textbox', { name: 'Preview URL' }).press('Enter')
+  await custom.getByLabel('Preview URL', { exact: true }).fill('http://example.test/page')
+  await custom.getByLabel('Preview URL', { exact: true }).press('Enter')
   await custom.getByRole('button', { name: 'Customize website', exact: true }).click()
   await custom.getByRole('textbox', { name: 'Website JavaScript' }).fill('if (')
   await custom.getByRole('button', { name: 'Save and reload', exact: true }).click()
@@ -2500,9 +2665,9 @@ try {
   await compactSidebar.getByRole('button', { name: 'New browser tab', exact: true }).click()
   await controlsPage.getByRole('menuitem', { name: 'Mac Studio', exact: true }).click()
   await controlsPage
-    .getByRole('textbox', { name: 'Preview URL' })
+    .getByLabel('Preview URL', { exact: true })
     .fill('http://localhost:3000/remote-icon')
-  await controlsPage.getByRole('textbox', { name: 'Preview URL' }).press('Enter')
+  await controlsPage.getByLabel('Preview URL', { exact: true }).press('Enter')
   await controlsPage.getByRole('button', { name: /^Page .*Remote · Mac Studio/ }).waitFor()
   const icon = await compactSidebar
     .getByLabel('Pinned browser tabs')
@@ -2615,9 +2780,7 @@ try {
   await orderPage.keyboard.press('Escape')
   await row('normal-b').getByRole('button').first().click()
   assert.equal((await visibleOrder())[2], 'normal-a', 'Activity mode ignores selection')
-  await orderPage
-    .getByRole('textbox', { name: 'Preview URL', exact: true })
-    .fill('http://navigation.lan/new')
+  await orderPage.getByLabel('Preview URL', { exact: true }).fill('http://navigation.lan/new')
   await orderPage.keyboard.press('Enter')
   await orderPage.waitForFunction(
     () =>
@@ -2682,7 +2845,7 @@ try {
 
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    'Shared browser tabs, local/remote ownership and profiles, saved pages, private/pinned tabs, temporary link previews, native/remote promotion without page replacement, nested/deferred navigation, bounded cleanup, shortcuts, drafts, feature gate and pop-out isolation passed.',
+    'Shared browser page utilities (zoom, downloads, print/PDF and private-safe address suggestions), local/remote ownership and profiles, saved pages, private/pinned tabs, temporary link previews, native/remote promotion without page replacement, nested/deferred navigation, bounded cleanup, shortcuts, drafts, feature gate and pop-out isolation passed.',
   )
 } finally {
   await browser.close()

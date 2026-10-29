@@ -19,7 +19,7 @@ window.addEventListener('DOMContentLoaded', () => {
 export function createDocumentPipWindow(
   options: Electron.BrowserWindowConstructorOptions & { webContents?: Electron.WebContents },
   sourceURL: string,
-  returnToTab?: () => void,
+  returnToTab?: () => void | Promise<void>,
 ) {
   const hostname = new URL(sourceURL).hostname
   const directory = join(app.getPath('userData'), 'browser-media')
@@ -58,11 +58,24 @@ export function createDocumentPipWindow(
   contents.setWindowOpenHandler(() => ({ action: 'deny' }))
   contents.on('will-navigate', (event) => event.preventDefault())
   contents.on('will-redirect', (event) => event.preventDefault())
+  let returning = false
   contents.ipc.on('browser:document-pip-control', (event, action: unknown) => {
     if (event.senderFrame !== contents.mainFrame || popup.isDestroyed()) return
-    if (action === 'return' && returnToTab) returnToTab()
-    else if (action !== 'close') return
-    popup.close()
+    if (action === 'close') {
+      popup.close()
+      return
+    }
+    if (action !== 'return' || !returnToTab || returning) return
+    returning = true
+    void Promise.resolve()
+      .then(returnToTab)
+      .then(() => {
+        if (!popup.isDestroyed()) popup.close()
+      })
+      .catch((error) => console.error('Could not return the call to its tab.', error))
+      .finally(() => {
+        returning = false
+      })
   })
   popup.once('closed', () => {
     popup.removeListener('resize', layout)

@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => {
     getUserAgent: () =>
       'Mozilla/5.0 Chrome/148.0.0.0 Safari/537.36 DovoStudio/0.0.9 Electron/45.0.0',
     setUserAgent: vi.fn<(value: string) => void>(),
+    getZoomFactor: vi.fn<() => number>(() => 1),
+    setZoomFactor: vi.fn<(factor: number) => void>(),
     setBackgroundThrottling: vi.fn<(value: boolean) => void>(),
     isCurrentlyAudible: vi.fn<() => boolean>(() => false),
     isAudioMuted: vi.fn<() => boolean>(() => false),
@@ -36,6 +38,8 @@ const mocks = vi.hoisted(() => {
     setWindowOpenHandler: vi.fn<(...args: unknown[]) => void>(),
     setIgnoreMenuShortcuts: vi.fn<(ignore: boolean) => void>(),
     session: {
+      on: vi.fn<(...args: unknown[]) => void>(),
+      off: vi.fn<(...args: unknown[]) => void>(),
       registerPreloadScript: vi.fn<(...args: unknown[]) => string>(() => 'visibility'),
       unregisterPreloadScript: vi.fn<(...args: unknown[]) => void>(),
       webRequest: { onBeforeRequest: vi.fn<(...args: unknown[]) => void>() },
@@ -229,6 +233,7 @@ beforeEach(() => {
   mocks.linkProfile.mockReturnValue(undefined)
   mocks.windowFor = undefined
   mocks.automaticPip = false
+  mocks.contents.isDestroyed.mockReturnValue(false)
   mocks.contents.isCurrentlyAudible.mockReturnValue(false)
   mocks.contents.isAudioMuted.mockReturnValue(false)
   mocks.contents.setAudioMuted.mockImplementation((muted) =>
@@ -1806,8 +1811,12 @@ it.each([true, false])(
 it('releases a self-closed tab once and can recreate its native view', async () => {
   const call = handler()
   await call(event, workspaceShow)
-  const destroyed = mocks.contents.once.mock.calls.find(([name]) => name === 'destroyed')?.[1]
-  if (typeof destroyed !== 'function') throw new Error('Missing destruction listener')
+  const listeners = mocks.contents.once.mock.calls
+    .filter(([name]) => name === 'destroyed')
+    .map(([, listener]) => listener)
+  const destroyed = () => {
+    for (const listener of listeners) if (typeof listener === 'function') listener()
+  }
   mocks.contents.isDestroyed.mockReturnValue(true)
   Object.defineProperty(mocks.view, 'webContents', { value: undefined, configurable: true })
   try {
@@ -2533,8 +2542,12 @@ it.each(['window', 'page'] as const)(
     target.webContents.focus.mockClear()
     mocks.window.webContents.focus.mockClear()
     if (close === 'page') {
-      const destroyed = mocks.contents.once.mock.calls.find(([name]) => name === 'destroyed')?.[1]
-      if (typeof destroyed !== 'function') throw new Error('Missing destruction listener')
+      const listeners = mocks.contents.once.mock.calls
+        .filter(([name]) => name === 'destroyed')
+        .map(([, listener]) => listener)
+      const destroyed = () => {
+        for (const listener of listeners) if (typeof listener === 'function') listener()
+      }
       mocks.contents.isDestroyed.mockReturnValue(true)
       destroyed()
     } else {

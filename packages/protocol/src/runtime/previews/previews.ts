@@ -172,6 +172,33 @@ export type BrowserSitePermissions = {
 }
 export const browserCommandSchema = Schema.Union([
   mutableStruct({
+    action: Schema.Literal('zoom'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    direction: Schema.Literals(['in', 'out', 'reset']),
+  }),
+  mutableStruct({
+    action: Schema.Literals(['print', 'save-pdf']),
+    key: maxValue(minValue(Schema.String, 1), 500),
+  }),
+  mutableStruct({
+    action: Schema.Literal('downloads'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    profileId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
+    operation: Schema.Literals([
+      'list',
+      'pause',
+      'resume',
+      'cancel',
+      'retry',
+      'open',
+      'reveal',
+      'folder',
+    ]),
+    id: Schema.optional(
+      Schema.Number.pipe(Schema.check(Schema.isInt()), Schema.check(Schema.isGreaterThan(0))),
+    ),
+  }),
+  mutableStruct({
     action: Schema.Literal('find'),
     key: maxValue(minValue(Schema.String, 1), 500),
     text: maxValue(Schema.String, 1000),
@@ -468,6 +495,18 @@ export type BrowserCapture = {
   unresponsive?: boolean
 }
 export type BrowserCommand = Schema.Schema.Type<typeof browserCommandSchema>
+export type BrowserDownloadItem = {
+  id: number
+  url: string
+  filename: string
+  state: 'in_progress' | 'complete' | 'interrupted'
+  paused: boolean
+  canResume: boolean
+  bytesReceived: number
+  totalBytes: number
+  exists: boolean
+  error?: string
+}
 export type BrowserFindResult = { active: number; total: number; error?: string; limited?: boolean }
 export type BrowserCallTab = {
   key: string
@@ -504,6 +543,8 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       favicon?: string | null
       faviconUpdates?: { key: string; url: string; favicon: string | null }[]
       tabStates?: BrowserTabState[]
+      zoomFactor?: number
+      downloads?: BrowserDownloadItem[]
       find?: BrowserFindResult
       documentRevision?: number
       sitePermissions?: BrowserSitePermissions
