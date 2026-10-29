@@ -97,9 +97,9 @@ const mocks = {
     export const ConversationContext=createContext(null);
     export const useConversation=()=>useContext(ConversationContext);
     export const useConversationSelector=fn=>fn({task:useContext(ConversationContext)});
-    export const ConversationProvider=({children,task,temporary})=>{
+    export const ConversationProvider=({children,task,temporary,openCheckpoint})=>{
       useEffect(()=>{window.providerMounts++;return ()=>window.providerUnmounts++},[]);
-      window.task=task;window.temporary=temporary;
+      window.task=task;window.temporary=temporary;window.openCheckpoint=openCheckpoint;
       return <ConversationContext.Provider value={task}>{children}</ConversationContext.Provider>;
     };
   `,
@@ -171,9 +171,9 @@ mocks['./task-review'] =
 mocks['./commit-section'] = 'export const CommitSection=()=>null;'
 mocks['./pull-status'] = 'export const PullStatus=()=>null;'
 mocks['../files/saved-file-preview'] =
-  'export const SavedFilePreview=()=> <div>Binary preview</div>;'
+  'export const SavedFilePreview=({checkoutId,file})=> <div>Binary preview {checkoutId} {file.path}</div>;'
 mocks['../preview/diff-view'] =
-  'export const DiffView=()=> <div data-git-controls>Git controls</div>;'
+  'export const DiffView=({path,after})=> <div data-git-controls>Git controls {path} {after}</div>;'
 mocks['../../scm/review/use-file-review'] =
   'export const useFileReview=()=>({progress:null,ready:false,busy:false,error:"",reload:()=>{},setViewed:()=>{}});'
 mocks['../../scm/review/use-task-review'] =
@@ -590,6 +590,44 @@ try {
   assert.equal(await fileDraft.inputValue(), 'Keep my unsaved file edit')
   await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
   await page.getByText('No changed files.', { exact: true }).waitFor()
+
+  // The same path exists in three checkouts; route by checkout ID, including deferred previews.
+  await page.evaluate(() => {
+    const file = (after) => ({ path: 'same.ts', before: '', after, viewed: false })
+    window.publish('b', {
+      ...window.created,
+      status: 'done',
+      files: [],
+      turns: [
+        {
+          id: 'turn',
+          status: 'completed',
+          checkpoint: {
+            files: [file('primary')],
+            omitted: [],
+            linked: [
+              { checkoutId: 'first', repositoryId: 'first', files: [file('first')], omitted: [] },
+              {
+                checkoutId: 'second',
+                repositoryId: 'second',
+                files: [file('second')],
+                omitted: ['large.bin'],
+              },
+            ],
+          },
+        },
+      ],
+    })
+  })
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await page.evaluate(() => window.openCheckpoint('turn', 'same.ts', 'second'))
+  await page.getByText('Git controls same.ts second', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await page.evaluate(() => window.openCheckpoint('turn', 'large.bin', 'second'))
+  await page.getByText('Binary preview second large.bin', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await page.evaluate(() => window.openCheckpoint('turn', 'same.ts'))
+  await page.getByText('Git controls same.ts primary', { exact: true }).waitFor()
 
   await page.evaluate(() => {
     window.online(false)

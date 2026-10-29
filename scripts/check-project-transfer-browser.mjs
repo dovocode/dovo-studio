@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
+import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -71,7 +72,7 @@ import {ProjectTransferSettings,ProjectTransferDialog} from './${path}';
 const profile={id:'destination',name:'Desktop',connection:{address:'http://desktop:5235',runtimeId:'machine-b',token:'paired-device-token-with-32-characters'}};
 const repo={id:'project',name:'My project',path:'/project',branch:'main'};
 window.calls=[];window.refreshes=0;let current=null;
-function App(){const [source,setSource]=useState(null);window.setSource=setSource;const [job,setJob]=useState(null),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true);window.setSupported=setSupported;window.setConnected=setConnected;
+function App(){const [source,setSource]=useState(null);window.setSource=setSource;const [preview,setPreview]=useState(false);window.previewTransfer=()=>{setSource(null);setJob(null);setPreview(true)};const [job,setJob]=useState(null),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true);window.setSupported=setSupported;window.setConnected=setConnected;
 window.setJob=changes=>setJob(old=>{current={...old,...changes,updatedAt:(old?.updatedAt??0)+100};return current});
 const request=async(path,input)=>{window.calls.push({path,input});
 if(path==='/api/scm/worktrees/read')return {root:'/worktrees',worktrees:window.missingWorktree?[]:[{path:'/worktrees/feature',repositoryId:'project',branch:'feature',taskId:'owner',threadIds:['owner','reused'],prunable:false}]};
@@ -84,7 +85,7 @@ if(path.endsWith('/retry')){window.setJob({state:'preparing',error:undefined});r
 if(path.endsWith('/cancel')){window.setJob({state:'cancelled'});return {ok:true}}
 return {ok:true};};
 window.store={connected,request,read:request,call:request,snapshot:{runtimeId:'machine-a',projectTransfersSupported:supported,projectWorktreeTransfersSupported:supported,projectTransfers:job?[job]:[]},runtimeRegistry:{profiles:[profile]},profiles:[profile],runtimes:[{profile,connected:true,snapshot:{runtimeId:'machine-b',sshAddress:window.savedSsh??''}}],overviews:[{profile,connected:true,snapshot:{runtimeId:'machine-b'}}],switchRuntime:async id=>{window.switched=id},refreshRuntime:async()=>{window.refreshes++}};
-return source ? <ProjectTransferDialog key={source.id} repository={repo} sourceTask={source} onClose={()=>setSource(null)}/> : <ProjectTransferSettings repository={repo}/>;}
+return source||preview ? <ProjectTransferDialog key={source?.id??'preview'} repository={repo} sourceTask={source??undefined} onClose={()=>{setSource(null);setPreview(false)}}/> : <ProjectTransferSettings repository={repo}/>;}
 createRoot(document.getElementById('app')).render(<App/>);`,
         },
         bundle: true,
@@ -100,11 +101,23 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       },
       stubs,
     )
-    const page = await browser.newPage({ viewport: { width: mobile ? 390 : 700, height: 850 } })
+    const page = await browser.newPage({
+      viewport: { width: mobile ? 390 : 700, height: 850 },
+      reducedMotion: 'reduce',
+    })
     page.setDefaultTimeout(5000)
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.setContent('<body style="background:#202020;color:#eee"><div id="app"></div></body>')
+    if (!mobile) {
+      await page.evaluate(() => document.documentElement.classList.add('dark'))
+      for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+        file.endsWith('.css'),
+      ))
+        await page.addStyleTag({
+          content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+        })
+    }
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.evaluate(() => {
       window.failInspect = true
@@ -398,6 +411,35 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       )
       assert.equal(input.worktreePath, undefined)
       assert.equal(input.ssh.sshHost, 'shared-host')
+      await page.evaluate(() => {
+        window.truncated = false
+        window.previewTransfer()
+      })
+      await page.getByRole('dialog', { name: 'Add to another machine' }).waitFor()
+      await page
+        .getByRole('button', { name: 'Copy project', exact: true })
+        .waitFor({ state: 'visible' })
+      mkdirSync(root + 'work/dialogs', { recursive: true })
+      const panel = page.locator('.project-transfer-panel')
+      const actions = page.locator('.project-transfer-actions')
+      const panelBox = await panel.boundingBox()
+      const actionsBox = await actions.boundingBox()
+      assert.ok(
+        actionsBox.y >= panelBox.y + panelBox.height,
+        'Copy actions sit below the inset panel',
+      )
+      await page.screenshot({ path: root + 'work/dialogs/project-transfer.png' })
+      for (const width of [390, 320]) {
+        await page.setViewportSize({ width, height: 700 })
+        const modal = page.getByRole('dialog')
+        assert.equal(await modal.evaluate((node) => node.scrollWidth <= node.clientWidth), true)
+        await page
+          .getByRole('button', { name: 'Copy project', exact: true })
+          .scrollIntoViewIfNeeded()
+        await page.screenshot({ path: root + 'work/dialogs/project-transfer-' + width + '.png' })
+      }
+      await page.keyboard.press('Escape')
+      await page.getByRole('dialog').waitFor({ state: 'hidden' })
     }
     assert.deepEqual(errors, [])
     await page.close()

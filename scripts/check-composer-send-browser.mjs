@@ -660,8 +660,17 @@ try {
     }))
   })
   await input.fill('Explain this worktree')
-  const aside = page.getByRole('button', { name: 'Ask a side question (⌘/Ctrl+;)', exact: true })
-  await aside.click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Ask a side question (⌘/Ctrl+;)', exact: true }).count(),
+    0,
+  )
+  const askSide = () =>
+    page.evaluate(() =>
+      window.dispatchEvent(
+        new CustomEvent('dovo:ask-side-question', { detail: 'task', cancelable: true }),
+      ),
+    )
+  await askSide()
   await page.waitForFunction(() => typeof window.sideSaved === 'function')
   if ((await input.inputValue()) !== 'Explain this worktree')
     throw Error('Side question cleared before persistence')
@@ -699,14 +708,11 @@ try {
     window.sideResponse()
     window.sideResponse = null
   })
-  await page.waitForFunction(
-    () => !document.querySelector('[aria-label="Ask a side question (⌘/Ctrl+;)"]').disabled,
-  )
   if ((await input.inputValue()) !== 'A newer draft')
     throw Error('Side answer cleared newer typing')
   // Saving a side question must not clear an edit made away from and back to the same text.
   await input.fill('Keep this new edit')
-  await aside.click()
+  await askSide()
   await page.waitForFunction(() => typeof window.sideSaved === 'function')
   await input.fill('An intervening edit')
   await input.fill('Keep this new edit')
@@ -720,9 +726,6 @@ try {
     window.sideResponse()
     window.sideResponse = null
   })
-  await page.waitForFunction(
-    () => !document.querySelector('[aria-label="Ask a side question (⌘/Ctrl+;)"]').disabled,
-  )
   // Keyboard dispatch targets the same action, using live text rather than a stale task snapshot.
   await input.fill('Keyboard side question')
   await page.evaluate(() =>
@@ -742,13 +745,10 @@ try {
     window.sideResponse()
     window.sideResponse = null
   })
-  await page.waitForFunction(
-    () => !document.querySelector('[aria-label="Ask a side question (⌘/Ctrl+;)"]').disabled,
-  )
   const saves = await page.evaluate(
     () => window.requests.filter((request) => request.path === '/api/tasks/side-chat/save').length,
   )
-  await aside.click()
+  await askSide()
   if ((await page.evaluate(() => window.asides.at(-1))) !== null)
     throw Error('Empty composer did not open side chats')
   if (
@@ -762,7 +762,7 @@ try {
   await page.evaluate(() => {
     window.failSideSave = true
   })
-  await aside.click()
+  await askSide()
   await page.getByText('Side save failed', { exact: true }).waitFor()
   if (
     (await page.evaluate(
@@ -957,6 +957,7 @@ try {
   await page.getByRole('menuitemradio', { name: 'High', exact: true }).click()
   await page.getByRole('button', { name: 'Reasoning and speed', exact: true }).click()
   await page.getByRole('menuitemradio', { name: /Fast/, exact: false }).click()
+  await page.getByRole('button', { name: 'Task information', exact: true }).click()
   await page.getByRole('button', { name: 'Configure task permissions', exact: true }).click()
   await page.locator('[role=menuitemradio][data-value=full-access]').click()
   assert.equal(await input.inputValue(), 'Use the full composer')

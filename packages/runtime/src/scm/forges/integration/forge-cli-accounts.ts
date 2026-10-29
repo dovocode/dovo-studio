@@ -9,8 +9,21 @@ import path from 'node:path'
 import { runForgeCli, runForgeCliText } from './forge-cli.js'
 import { HttpError } from '../../../errors.js'
 import { readForgeCliProfiles } from './forge-cli-profiles.js'
+import { createHash } from 'node:crypto'
+import { processEnvironment } from '../../../process.js'
 export class ForgeCliAccounts {
   constructor(private settings: () => CommandSettings) {}
+  /** Wrappers can select credentials through their command or runtime environment. */
+  githubCredentialSource() {
+    return createHash('sha256')
+      .update(
+        JSON.stringify([
+          this.settings().gh,
+          Object.entries(processEnvironment()).sort(([a], [b]) => a.localeCompare(b)),
+        ]),
+      )
+      .digest('hex')
+  }
   profiles(input: ForgeCliProfileQuery, cwd?: string) {
     return readForgeCliProfiles(this.settings(), input, cwd)
   }
@@ -43,16 +56,15 @@ export class ForgeCliAccounts {
         ],
         undefined,
         cwd,
-        connection.credential === 'gh-wrapper'
-          ? connection.cliEnv
-          : connection.cliProfile
-            ? {
-                GH_TOKEN: undefined,
-                GITHUB_TOKEN: undefined,
-                GH_ENTERPRISE_TOKEN: undefined,
-                GITHUB_ENTERPRISE_TOKEN: undefined,
-              }
-            : undefined,
+        connection.credential === 'gh-wrapper' || connection.cliProfile
+          ? {
+              ...connection.cliEnv,
+              GH_TOKEN: undefined,
+              GITHUB_TOKEN: undefined,
+              GH_ENTERPRISE_TOKEN: undefined,
+              GITHUB_ENTERPRISE_TOKEN: undefined,
+            }
+          : undefined,
       )
     ).trim()
     if (!token || /\s/.test(token))

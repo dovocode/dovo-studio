@@ -59,7 +59,7 @@ export function SettingsScopePage({
                 <Popover.Content
                   align="start"
                   sideOffset={8}
-                  className="z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-lg"
+                  className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground"
                 >
                   <p className="font-semibold">Editing {summary.title}</p>
                   <p>{summary.description}</p>

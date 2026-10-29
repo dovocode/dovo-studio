@@ -36,13 +36,23 @@ export function SideQuestion({
   const [askErrors, setAskErrors] = useState<Record<string, string>>({})
   const [renaming, setRenaming] = useState(false)
   const [title, setTitle] = useState('')
-  const [selected, setSelected] = useState(selectedChatId ?? '')
+  const [selection, setSelection] = useState({ id: selectedChatId ?? '', request: selectedChatId })
+  const selected =
+    selectedChatId && selectedChatId !== selection.request ? selectedChatId : selection.id
   useEffect(() => {
-    if (selectedChatId) setSelected(selectedChatId)
-  }, [selectedChatId])
+    if (selectedChatId && selectedChatId !== selection.request)
+      setSelection({ id: selectedChatId, request: selectedChatId })
+  }, [selectedChatId, selection.request])
+  const selectChat = (id: string) => setSelection({ id, request: selectedChatId })
   const pendingRequests = useRef(new Set<string>())
   const chats = task.sideChats ?? []
-  const chat = chats.find((item) => item.id === selected) ?? chats[0]
+  const seenChatIds = useRef(new Set<string>())
+  useEffect(() => {
+    for (const item of chats) seenChatIds.current.add(item.id)
+  }, [task.sideChats])
+  const selectedChat = chats.find((item) => item.id === selected)
+  const awaitingChat = !!selected && !selectedChat && !seenChatIds.current.has(selected)
+  const chat = selectedChat ?? (awaitingChat ? undefined : chats[0])
   const asking =
     !!chat && (!!pending[chat.id] || chat.messages.some((item) => item.status === 'pending'))
   const question = chat ? (drafts[chat.id] ?? chat.draft) : ''
@@ -137,7 +147,7 @@ export function SideQuestion({
             compact
             value={chat?.id ?? ''}
             items={chats.map((item) => ({ id: item.id, name: item.title }))}
-            onChange={setSelected}
+            onChange={selectChat}
           />
         )}
         <Action
@@ -146,12 +156,13 @@ export function SideQuestion({
           onPress={() =>
             act(() =>
               callEffect('/api/tasks/side-chat/save', { id: task.id }, savedSchema).pipe(
-                Effect.tap((result) => Effect.sync(() => setSelected(result.id))),
+                Effect.tap((result) => Effect.sync(() => selectChat(result.id))),
               ),
             )
           }
         />
       </View>
+      {awaitingChat && <Text style={styles.muted}>Loading side chat…</Text>}
       {chat && (
         <Action
           secondary

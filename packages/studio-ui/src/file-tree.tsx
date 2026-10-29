@@ -59,6 +59,7 @@ export function FileBrowserTree({
   search = '',
   flat = false,
   defaultExpandedDepth = 1,
+  showChangeBars = false,
 }: {
   files: readonly FileTreeEntry[]
   selected?: string
@@ -67,8 +68,15 @@ export function FileBrowserTree({
   search?: string
   flat?: boolean
   defaultExpandedDepth?: number
+  showChangeBars?: boolean
 }) {
   const container = useRef<HTMLDivElement>(null)
+  const maximumChanges = showChangeBars
+    ? files.reduce(
+        (maximum, file) => Math.max(maximum, (file.additions ?? 0) + (file.deletions ?? 0)),
+        1,
+      )
+    : 1
   const lastFocused = useRef<HTMLButtonElement | null>(null)
   const [focused, setFocused] = useState(selected)
   const [expanded, setExpanded] = useState(
@@ -156,6 +164,11 @@ export function FileBrowserTree({
                 className="size-3.5 shrink-0 text-amber-600/80 dark:text-amber-400/80"
               />
               <span className="min-w-0 flex-1 truncate font-medium">{node.name}</span>
+              {showChangeBars && (
+                <span className="shrink-0 text-[0.625rem] text-muted-foreground tabular-nums">
+                  {node.count} {node.count === 1 ? 'file' : 'files'}
+                </span>
+              )}
               {node.hasStats && (
                 <FileChangeCounts additions={node.additions} deletions={node.deletions} />
               )}
@@ -201,6 +214,21 @@ export function FileBrowserTree({
             )}
           </span>
           <FileChangeCounts additions={node.additions} deletions={node.deletions} />
+          {showChangeBars && (node.additions !== undefined || node.deletions !== undefined) && (
+            <span
+              aria-hidden
+              className="hidden h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-muted @sm:flex"
+            >
+              <span
+                className="bg-status-success"
+                style={{ width: `${(100 * (node.additions ?? 0)) / maximumChanges}%` }}
+              />
+              <span
+                className="bg-status-error"
+                style={{ width: `${(100 * (node.deletions ?? 0)) / maximumChanges}%` }}
+              />
+            </span>
+          )}
           {node.label && (
             <span
               className="max-w-20 truncate text-[0.625rem] text-muted-foreground"

@@ -1,10 +1,31 @@
 import { describe, expect, it } from 'vite-plus/test'
 import {
   reportedPlanLimits,
+  mergePlanLimits,
   accountPlanLimits,
   accountLimitGroups,
   formatQuotaReset,
 } from './plan-limits.js'
+
+it('keeps newer account observations when delayed snapshots arrive', () => {
+  const latest = {
+    provider: 'codex' as const,
+    account: { id: 'account', label: 'Account' },
+    bucketId: 'codex',
+    windowId: 'primary',
+    window: 'Session',
+    usedPercent: 40,
+    updatedAt: '2026-10-29T10:00:02.000Z',
+  }
+  for (const updatedAt of ['2026-10-29T10:00:01.000Z', 'invalid'])
+    expect(mergePlanLimits([latest], [{ ...latest, usedPercent: 20, updatedAt }])).toEqual([latest])
+  expect(
+    mergePlanLimits(
+      [latest],
+      [{ ...latest, usedPercent: 0, updatedAt: '2026-10-29T10:00:03.000Z' }],
+    ),
+  ).toMatchObject([{ usedPercent: 0 }])
+})
 
 describe('reportedPlanLimits', () => {
   it('reads Codex windows only when a percentage is reported', () => {
@@ -316,4 +337,24 @@ it('keeps never-reported hub accounts visible as unknown without counting unsupp
   expect(pool.available).toBe(1)
   expect(pool.unknown).toBe(1)
   expect(pool.segments.find((segment) => segment.accountKey === 'bad')?.remaining).toBeNull()
+})
+
+it('attributes anonymous windows without replacing newer observations with older account probes', () => {
+  const account = { id: 'account', label: 'Account' }
+  const anonymous = {
+    provider: 'codex' as const,
+    sourceTaskId: 'task',
+    bucketId: 'codex',
+    windowId: 'primary',
+    window: 'Session',
+    usedPercent: 90,
+    updatedAt: '2026-10-29T20:00:00.000Z',
+    resetsAt: 2000000000,
+  }
+  const incoming = { ...anonymous, account, usedPercent: 50, updatedAt: '2026-10-29T19:00:00.000Z' }
+  expect(mergePlanLimits([anonymous], [incoming])).toEqual([{ ...anonymous, account }])
+  const latest = { ...incoming, usedPercent: 95, updatedAt: '2026-10-29T21:00:00.000Z' }
+  expect(mergePlanLimits([anonymous, latest], [incoming])).toEqual([latest])
+  const other = { ...anonymous, sourceTaskId: 'other' }
+  expect(mergePlanLimits([other], [incoming])).toEqual([other, incoming])
 })

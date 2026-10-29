@@ -3,9 +3,11 @@ import {
   decode,
   mutableStruct,
   mergePlanLimits,
+  planLimitKey,
   modelDiscoveryInput,
   resolveTaskAgent,
   type Agent,
+  type PlanLimit,
 } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import type { Services } from '../../services.js'
@@ -68,6 +70,14 @@ async function read(s: Services, force: boolean): Promise<Result> {
       const agents = [...configuration.values()]
       const agent = agents[0]
       try {
+        // Use admission time: a slower probe must not supersede a later observation.
+        const startedAt = new Date().toISOString()
+        const atAdmission = new Map(
+          (s.store.get().planLimits ?? []).map((limit) => [
+            planLimitKey(limit),
+            JSON.stringify(limit),
+          ]),
+        )
         const result = await readUsageLimits(agent)
         const accountId = result.account?.id
         const used = accountId ? s.store.usage.taskIds(accountId) : new Set<string>()
@@ -81,26 +91,62 @@ async function read(s: Services, force: boolean): Promise<Result> {
         )
         const limits = result.limits.map((limit) => ({
           ...limit,
+          updatedAt: startedAt,
           account: result.account,
           agentId: agent.id,
           ...(sourceTask ? { sourceTaskId: sourceTask.id } : {}),
         }))
         const status: 'ok' | 'unsupported' = limits.length ? 'ok' : 'unsupported'
-        s.store.update((workspace) => ({
-          ...workspace,
-          planLimits: mergePlanLimits(
-            (workspace.planLimits ?? []).filter(
-              (limit) =>
-                !(limit.agentId !== undefined && configuration.has(limit.agentId)) &&
-                !(
-                  result.account &&
-                  limit.provider === agent.provider &&
-                  limit.account?.id === result.account.id
-                ),
+        s.store.update((workspace) => {
+          const existing = workspace.planLimits ?? []
+          const concurrent = (limit: PlanLimit) => {
+            const observed = Date.parse(limit.updatedAt),
+              admission = Date.parse(startedAt)
+            return (
+              observed > admission ||
+              (observed === admission &&
+                atAdmission.get(planLimitKey(limit)) !== JSON.stringify(limit))
+            )
+          }
+          const protectedReadings = existing.filter(concurrent)
+          // Ignore account/source attribution only when comparing the same window.
+          // A concurrent anonymous reading must not be rolled back while an older
+          // probe is learning which account owns this source.
+          const windowKey = (limit: PlanLimit) =>
+            planLimitKey({
+              ...limit,
+              account: undefined,
+              agentId: undefined,
+              sourceTaskId: undefined,
+            })
+          const incoming = limits.filter(
+            (limit) =>
+              !protectedReadings.some(
+                (old) =>
+                  planLimitKey(old) === planLimitKey(limit) ||
+                  (!old.account &&
+                    windowKey(old) === windowKey(limit) &&
+                    ((old.agentId !== undefined && configuration.has(old.agentId)) ||
+                      (old.sourceTaskId !== undefined && old.sourceTaskId === limit.sourceTaskId))),
+              ),
+          )
+          return {
+            ...workspace,
+            planLimits: mergePlanLimits(
+              existing.filter(
+                (limit) =>
+                  concurrent(limit) ||
+                  (!(limit.agentId !== undefined && configuration.has(limit.agentId)) &&
+                    !(
+                      result.account &&
+                      limit.provider === agent.provider &&
+                      limit.account?.id === result.account.id
+                    )),
+              ),
+              incoming,
             ),
-            limits,
-          ),
-        }))
+          }
+        })
         accounts.push(
           ...agents.map((agent) => ({ agentId: agent.id, provider: agent.provider, status })),
         )

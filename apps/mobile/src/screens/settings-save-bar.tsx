@@ -91,33 +91,64 @@ export function SettingsSaveBar({
           backgroundColor: colors.background,
         }}
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Review unsaved settings changes"
-          accessibilityState={{ expanded: review, disabled: !dirty }}
-          disabled={!dirty || !changes.length}
-          onPress={() => setReview((value) => !value)}
-          style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
-        >
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Review unsaved settings changes"
+            accessibilityState={{ expanded: review, disabled: !dirty }}
+            disabled={!dirty || !changes.length}
+            onPress={() => setReview((value) => !value)}
+            style={{
+              minHeight: 44,
+              minWidth: 120,
+              flexGrow: 1,
+              flexShrink: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <View
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: colors.warning,
+                opacity: dirty ? 1 : 0,
+              }}
+            />
+            <Text accessibilityLiveRegion="polite" style={[styles.muted, { flexShrink: 1 }]}>
+              {saving
+                ? 'Saving…'
+                : dirty
+                  ? `${count} unsaved ${count === 1 ? 'change' : 'changes'}`
+                  : saved
+                    ? 'Changes saved.'
+                    : 'No unsaved changes'}
+            </Text>
+          </Pressable>
           <View
             style={{
-              width: 6,
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: colors.warning,
-              opacity: dirty ? 1 : 0,
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              flexGrow: 1,
+              gap: 12,
             }}
-          />
-          <Text accessibilityLiveRegion="polite" style={styles.muted}>
-            {saving
-              ? 'Saving…'
-              : dirty
-                ? `${count} unsaved ${count === 1 ? 'change' : 'changes'}`
-                : saved
-                  ? 'Changes saved.'
-                  : 'No unsaved changes'}
-          </Text>
-        </Pressable>
+          >
+            <SettingsAction
+              secondary
+              label="Discard"
+              disabled={!dirty || saving}
+              onPress={() => handlers.current.onDiscard()}
+            />
+            <SettingsAction
+              label={saveLabel}
+              disabled={!dirty || saving || disabled}
+              onPress={() => handlers.current.onSave()}
+            />
+          </View>
+        </View>
         {dirty && review && (
           <ScrollView style={{ maxHeight: 180 }} accessibilityLabel="Settings change review">
             <Text style={styles.text}>Your changes</Text>
@@ -156,21 +187,6 @@ export function SettingsSaveBar({
             Could not read latest saved changes: {reviewError}. Your draft is kept.
           </Text>
         )}
-        <View
-          style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 16 }}
-        >
-          <SettingsAction
-            secondary
-            label="Discard"
-            disabled={!dirty || saving}
-            onPress={() => handlers.current.onDiscard()}
-          />
-          <SettingsAction
-            label={saveLabel}
-            disabled={!dirty || saving || disabled}
-            onPress={() => handlers.current.onSave()}
-          />
-        </View>
       </View>
     ),
     [

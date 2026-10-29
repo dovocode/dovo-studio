@@ -73,27 +73,31 @@ export function CodeThemeSettings() {
           if (items.some((item) => item.id === codeTheme)) updateMobilePreferences({ codeTheme })
         }}
       />
-      <SettingsAction label="Browse VS Code themes" onPress={() => setBrowse(true)} />
-      <SettingsAction
-        label="Import VS Code theme"
-        disabled={busy}
-        onPress={() => void importFile()}
-      />
-      {importedCodeThemes.some((theme) => theme.name === codeTheme) && (
+      <View style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
+        <SettingsAction secondary label="Browse VS Code themes" onPress={() => setBrowse(true)} />
         <SettingsAction
-          label="Remove theme"
+          secondary
+          label="Import VS Code theme"
           disabled={busy}
-          onPress={() =>
-            updateMobilePreferences({
-              codeTheme: 'app',
-              importedCodeThemes: importedCodeThemes.filter((theme) => theme.name !== codeTheme),
-            })
-          }
+          onPress={() => void importFile()}
         />
-      )}
+        {importedCodeThemes.some((theme) => theme.name === codeTheme) && (
+          <SettingsAction
+            secondary
+            label="Remove theme"
+            disabled={busy}
+            onPress={() =>
+              updateMobilePreferences({
+                codeTheme: 'app',
+                importedCodeThemes: importedCodeThemes.filter((theme) => theme.name !== codeTheme),
+              })
+            }
+          />
+        )}
+      </View>
       {browse && <CodeThemeBrowser onClose={() => setBrowse(false)} onImport={saveTheme} />}
       {error && (
-        <View style={{ padding: 16 }}>
+        <View style={{ padding: 12 }}>
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
           </Text>

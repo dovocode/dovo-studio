@@ -62,14 +62,14 @@ export function useLinkChooser(adapters: Adapters) {
           if (!open) controller.dismissed(pending.request)
         }}
       >
-        <DialogContent className="max-w-sm">
-          <DialogTitle>Open link</DialogTitle>
+        <DialogContent className="max-w-sm gap-2">
+          <DialogTitle className="text-sm">Open link</DialogTitle>
           <DialogDescription className="break-all text-xs">{pending.request.url}</DialogDescription>
           {pending.request.actions.map((action) => (
             <Button
               key={action.id}
-              variant="outline"
-              className="justify-start"
+              variant="ghost"
+              className="h-9 justify-start rounded-lg px-2.5 text-xs text-muted-foreground hover:text-foreground"
               disabled={pending.busy || action.disabled}
               onClick={() =>
                 controller.select(pending.request, action.id, () =>
@@ -78,13 +78,13 @@ export function useLinkChooser(adapters: Adapters) {
               }
             >
               {action.kind === 'browser' ? (
-                <Globe className="size-4" />
+                <Globe className="size-3.5" />
               ) : action.kind === 'copy' ? (
-                <Copy className="size-4" />
+                <Copy className="size-3.5" />
               ) : action.kind === 'details' ? (
-                <GitPullRequest className="size-4" />
+                <GitPullRequest className="size-3.5" />
               ) : (
-                <ExternalLink className="size-4" />
+                <ExternalLink className="size-3.5" />
               )}
               {action.label}
             </Button>

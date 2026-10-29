@@ -63,7 +63,7 @@ import {
   type TaskRowChanges,
 } from '../list/task-row-actions'
 const menuClass =
-  'z-50 max-h-[min(80dvh,var(--radix-dropdown-menu-content-available-height,80dvh))] min-w-56 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground shadow-xl'
+  'studio-menu-surface z-50 max-h-[min(80dvh,var(--radix-dropdown-menu-content-available-height,80dvh))] min-w-56 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground'
 const itemClass =
   'flex cursor-default items-center gap-2 rounded-lg px-2.5 py-2 text-xs outline-none transition-colors data-[highlighted]:bg-accent/65 data-[disabled]:pointer-events-none data-[disabled]:opacity-40 [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-muted-foreground'
 const separatorClass = 'my-1 h-px bg-border/70'

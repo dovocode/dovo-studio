@@ -60,6 +60,11 @@ export default function ConversationSettings() {
               'Show rendered Markdown above the message as you type.',
             ],
             [
+              'showContextUsage',
+              'Show context usage',
+              'Show the context ring and percentage in the composer.',
+            ],
+            [
               'collapseComposerOnScroll',
               'Collapse composer while reading',
               'Collapse when reading older messages. Focus the composer to expand it.',

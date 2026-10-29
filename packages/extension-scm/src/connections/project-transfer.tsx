@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Schema } from 'effect'
-import { CopyPlus, ChevronDown } from 'lucide-react'
+import { MonitorUp, ChevronDown, Info } from 'lucide-react'
 import {
   randomUUID,
   parseSshAddress,
@@ -316,99 +316,101 @@ export function ProjectTransferSettings({
     })
   return (
     <section
-      className="space-y-3 rounded-lg border p-3"
+      className="project-transfer space-y-3 rounded-lg border p-3"
       aria-label="Copy project to another computer"
     >
-      <div className="flex items-center gap-2">
-        <CopyPlus className="size-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium">Add to another computer</p>
-          <p className="text-xs text-muted-foreground">
-            Copy files and local Git history. Chats stay here.
-          </p>
+      <div className="project-transfer-panel space-y-3">
+        <div className="project-transfer-header flex items-center gap-3">
+          <div className="project-transfer-icon flex size-9 shrink-0 items-center justify-center rounded-xl">
+            <MonitorUp className="size-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Add to another computer</p>
+            <p className="text-xs text-muted-foreground">
+              Copy files and local Git history. Chats stay here.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-expanded={open}
+            aria-label="Configure project copy"
+            onClick={() => {
+              setOpen(!open)
+              if (!open) void load()
+            }}
+          >
+            <ChevronDown className={`size-4 ${open ? 'rotate-180' : ''}`} />
+          </Button>
         </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-expanded={open}
-          aria-label="Configure project copy"
-          onClick={() => {
-            setOpen(!open)
-            if (!open) void load()
-          }}
-        >
-          <ChevronDown className={`size-4 ${open ? 'rotate-180' : ''}`} />
-        </Button>
-      </div>
-      {job && (
-        <div role="status" className="space-y-1 text-xs">
-          <p className={job.state === 'failed' ? 'text-destructive' : ''}>
-            {projectTransferLabel(job)}
-          </p>
-          {active && (
-            <progress
-              className="h-1.5 w-full"
-              aria-label="Project copy progress"
-              value={job.state === 'preparing' ? undefined : job.bytes}
-              max={job.totalBytes || 1}
-            />
-          )}
-          {job.targetTaskId && (
-            <>
-              <p>Thread created on {job.targetName}.</p>
+        {job && (
+          <div role="status" className="space-y-1 text-xs">
+            <p className={job.state === 'failed' ? 'text-destructive' : ''}>
+              {projectTransferLabel(job)}
+            </p>
+            {active && (
+              <progress
+                className="h-1.5 w-full"
+                aria-label="Project copy progress"
+                value={job.state === 'preparing' ? undefined : job.bytes}
+                max={job.totalBytes || 1}
+              />
+            )}
+            {job.targetTaskId && (
+              <>
+                <p>Thread created on {job.targetName}.</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    void act(async () => {
+                      const target = store.runtimes.find(
+                        (entry) =>
+                          (entry.profile.connection.runtimeId ?? entry.snapshot?.runtimeId) ===
+                          job.targetId,
+                      )
+                      if (!target)
+                        throw new Error('Pair the destination computer to open this thread')
+                      await store.switchRuntime(target.profile.id)
+                      host.navigate({ viewId: 'tasks', entityId: job.targetTaskId })
+                    })
+                  }
+                >
+                  Open thread on {job.targetName}
+                </Button>
+              </>
+            )}
+            {job.threadStartError && (
+              <p role="alert" className="text-destructive">
+                Files copied and thread saved. Could not start agent: {job.threadStartError}
+              </p>
+            )}
+            {job.path && <p className="break-all text-muted-foreground">{job.path}</p>}
+            {!!job.skippedLinks && (
+              <p className="text-muted-foreground">{job.skippedLinks} symbolic links skipped.</p>
+            )}
+            {active && (
               <Button
                 size="sm"
                 variant="outline"
                 disabled={busy}
                 onClick={() =>
                   void act(async () => {
-                    const target = store.runtimes.find(
-                      (entry) =>
-                        (entry.profile.connection.runtimeId ?? entry.snapshot?.runtimeId) ===
-                        job.targetId,
+                    await store.request(
+                      '/api/scm/project-transfer/cancel',
+                      { id: job.id },
+                      Schema.Struct({ ok: Schema.Boolean }),
                     )
-                    if (!target)
-                      throw new Error('Pair the destination computer to open this thread')
-                    await store.switchRuntime(target.profile.id)
-                    host.navigate({ viewId: 'tasks', entityId: job.targetTaskId })
                   })
                 }
               >
-                Open thread on {job.targetName}
+                Cancel copy
               </Button>
-            </>
-          )}
-          {job.threadStartError && (
-            <p role="alert" className="text-destructive">
-              Files copied and thread saved. Could not start agent: {job.threadStartError}
-            </p>
-          )}
-          {job.path && <p className="break-all text-muted-foreground">{job.path}</p>}
-          {!!job.skippedLinks && (
-            <p className="text-muted-foreground">{job.skippedLinks} symbolic links skipped.</p>
-          )}
-          {active && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() =>
-                void act(async () => {
-                  await store.request(
-                    '/api/scm/project-transfer/cancel',
-                    { id: job.id },
-                    Schema.Struct({ ok: Schema.Boolean }),
-                  )
-                })
-              }
-            >
-              Cancel copy
-            </Button>
-          )}
-        </div>
-      )}
-      {open && (
-        <div className="space-y-3">
+            )}
+          </div>
+        )}
+        {open && (
           <fieldset
             disabled={busy || active || !store.connected}
             className="space-y-3 disabled:opacity-60"
@@ -594,13 +596,16 @@ export function ProjectTransferSettings({
               </div>
             )}
             {inspection && (
-              <div className="space-y-2 text-xs">
-                <p className="text-muted-foreground">
-                  {inspection.files} files · {(inspection.bytes / 1048576).toFixed(1)} MB, plus Git
-                  history.{' '}
-                  {worktreePath
-                    ? 'Linked worktree on the destination.'
-                    : 'New folder under ~/.dovo/projects on the destination.'}
+              <div className="project-transfer-inspection space-y-3 text-xs">
+                <p className="flex items-start gap-2 text-muted-foreground">
+                  <Info className="mt-0.5 size-3.5 shrink-0" />
+                  <span>
+                    {inspection.files} files · {(inspection.bytes / 1048576).toFixed(1)} MB, plus
+                    Git history.{' '}
+                    {worktreePath
+                      ? 'Linked worktree on the destination.'
+                      : 'New folder under ~/.dovo/projects on the destination.'}
+                  </span>
                 </p>
                 {!!inspection.skippedLinks && (
                   <p className="text-muted-foreground">
@@ -614,7 +619,7 @@ export function ProjectTransferSettings({
                   </p>
                 )}
                 {!!inspection.ignoredFiles.length && (
-                  <details>
+                  <details className="project-transfer-ignored">
                     <summary className="cursor-pointer">
                       Include ignored or private files ({ignored.length} selected)
                     </summary>
@@ -645,41 +650,41 @@ export function ProjectTransferSettings({
               </div>
             )}
           </fieldset>
-          {!active && (
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                disabled={busy || !inspection || !targetId || !store.connected || !destinationReady}
-                onClick={() => void start()}
-              >
-                {busy
-                  ? 'Preparing…'
-                  : createThread
-                    ? 'Copy and create thread'
-                    : worktreePath
-                      ? 'Copy worktree'
-                      : 'Copy project'}
-              </Button>
-              {job?.state === 'failed' && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy || !store.connected}
-                  onClick={() => void start(true)}
-                >
-                  Retry copy
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy || !store.connected}
-                onClick={() => void load()}
-              >
-                Refresh
-              </Button>
-            </div>
+        )}
+      </div>
+      {open && !active && (
+        <div className="project-transfer-actions flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={busy || !inspection || !targetId || !store.connected || !destinationReady}
+            onClick={() => void start()}
+          >
+            {busy
+              ? 'Preparing…'
+              : createThread
+                ? 'Copy and create thread'
+                : worktreePath
+                  ? 'Copy worktree'
+                  : 'Copy project'}
+          </Button>
+          {job?.state === 'failed' && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || !store.connected}
+              onClick={() => void start(true)}
+            >
+              Retry copy
+            </Button>
           )}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy || !store.connected}
+            onClick={() => void load()}
+          >
+            Refresh
+          </Button>
         </div>
       )}
       {error && (
@@ -708,7 +713,7 @@ export function ProjectTransferDialog({
         if (!open) onClose()
       }}
     >
-      <DialogContent className="max-h-[85dvh] overflow-y-auto">
+      <DialogContent className="project-transfer-dialog max-w-xl">
         <DialogTitle>
           {sourceTask
             ? sourceTask.execution === 'worktree'

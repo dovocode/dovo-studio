@@ -951,8 +951,8 @@ export default function TasksView({
                 'hidden',
             )}
           >
-            {!temporary && (
-              <TaskProjectPopover>
+            <TaskProjectPopover>
+              {!temporary && projectPanelOpen && (
                 <TaskProjectPanel
                   key={taskCollectionKey(activeRuntimeId, task.id)}
                   task={task}
@@ -972,8 +972,8 @@ export default function TasksView({
                     selectSurface(next)
                   }}
                 />
-              </TaskProjectPopover>
-            )}
+              )}
+            </TaskProjectPopover>
             {!temporary && !projectPanelOpen && !native && (
               <TaskWaitingPanel
                 onPullLink={(url) => openPullPreview(task, url)}

@@ -246,17 +246,34 @@ export class ForgeConnections {
     return this.get(id)
   }
   async githubToken(id: string, cwd?: string): Promise<string | undefined> {
+    return (await this.githubCredential(id, cwd)).token
+  }
+  /** A rejection belongs to this selected source and lookup generation, not a later login. */
+  async githubCredential(id: string, cwd?: string) {
     const connection = this.get(id)
-    if (connection.provider !== 'github') return undefined
+    if (
+      connection.provider !== 'github' ||
+      (connection.credential === 'gh' && !connection.cliProfile)
+    )
+      return { token: undefined, onUnauthorized: () => {} }
     if (connection.credential === 'token' || connection.credential === 'environment')
-      return this.secret(id)
-    if (connection.credential === 'gh' && !connection.cliProfile) return undefined
+      return { token: this.secret(id), onUnauthorized: () => {} }
     const cli = this.cli
     if (!cli) throw new HttpError(400, 'CLI accounts are not configured')
-    return this.cachedCli(
-      [connection.id, connection.revision, 'github-token', cwd ?? ''].join('\0'),
-      async () => (await cli.githubToken(connection, cwd)) ?? '',
-    ).then((token) => token || undefined)
+    const key = [
+      connection.id,
+      connection.revision,
+      'github-token',
+      cwd ?? '',
+      cli.githubCredentialSource(),
+    ].join('\0')
+    const value = this.cachedCli(key, async () => (await cli.githubToken(connection, cwd)) ?? '')
+    return {
+      token: (await value) || undefined,
+      onUnauthorized: () => {
+        if (this.cliCredentials.get(key)?.value === value) this.cliCredentials.delete(key)
+      },
+    }
   }
   authorization(id: string, git = false, cwd?: string) {
     const connection = this.get(id)

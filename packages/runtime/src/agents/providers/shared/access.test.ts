@@ -95,6 +95,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
       ? {
           ephemeral: true,
           config: {
+            'features.apps': false,
             'features.shell_tool': false,
             'features.multi_agent': false,
             web_search: 'disabled',
@@ -171,11 +172,13 @@ it('disables Claude built-ins and inherited MCP servers for text-only utility tu
   const input = run('read-only')
   input.tools = 'none'
   input.agent.instructions = 'Punctuate only'
+  input.agent.cloudIntegrations = true
   await claudeAdapter.run(input)
   const options = captured.options[0]
   expect(options.tools).toEqual([])
   expect(options.strictMcpConfig).toBe(true)
   expect(options.mcpServers).toEqual({})
+  expect(options.env?.ENABLE_CLAUDEAI_MCP_SERVERS).toBe('false')
   expect(options.systemPrompt).toBe('Punctuate only')
   expect(
     await options.canUseTool?.(
@@ -192,6 +195,20 @@ it('disables Claude built-ins and inherited MCP servers for text-only utility tu
   })
   expect(input.approve).not.toHaveBeenCalled()
 })
+it.each([undefined, true, false])(
+  'uses the Claude account-app preference %s without changing other environment values',
+  async (cloudIntegrations) => {
+    const input = run('ask')
+    input.agent.env = { ENABLE_CLAUDEAI_MCP_SERVERS: 'false', CUSTOM_SETTING: 'present' }
+    input.agent.cloudIntegrations = cloudIntegrations
+    await claudeAdapter.run(input)
+    expect(captured.options[0].env).toMatchObject({
+      ENABLE_CLAUDEAI_MCP_SERVERS:
+        cloudIntegrations === undefined ? 'false' : String(cloudIntegrations),
+      CUSTOM_SETTING: 'present',
+    })
+  },
+)
 it.each(['auto', 'full-access'] as const)(
   'rejects Codex %s when the harness does not confirm the mode',
   async (permission) => {

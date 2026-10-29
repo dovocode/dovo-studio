@@ -118,6 +118,57 @@ it('falls back from an unknown palette without losing other saved preferences', 
   })
 })
 
+it('persists the context usage visibility preference', async () => {
+  vi.stubGlobal('localStorage', storage())
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().showContextUsage).toBe(true)
+  updateAppPreferences({ showContextUsage: false })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences().showContextUsage).toBe(false)
+  reopened.updateAppPreferences({ showContextUsage: true })
+  expect(reopened.readAppPreferences().showContextUsage).toBe(true)
+})
+
+it('persists glow intensity and gradients independently of the palette', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const { readAppPreferences, updateAppPreferences } = await import('./preferences')
+  expect(readAppPreferences()).toMatchObject({ themeGlow: 1, themeGradients: true })
+  updateAppPreferences({ themeGlow: 0.35, themeGradients: false, themePalette: 'iris' })
+  vi.resetModules()
+  const reopened = await import('./preferences')
+  expect(reopened.readAppPreferences()).toMatchObject({
+    themeGlow: 0.35,
+    themeGradients: false,
+    themePalette: 'iris',
+  })
+  reopened.updateAppPreferences({ themePalette: 'dovo' })
+  expect(reopened.readAppPreferences()).toMatchObject({ themeGlow: 0.35, themeGradients: false })
+})
+
+it.each([0, 1, -0.1, 1.1])('validates saved glow intensity %s', async (themeGlow) => {
+  vi.stubGlobal(
+    'localStorage',
+    storage({
+      'dovo.app-preferences.v1': JSON.stringify({ themeGlow }),
+    }),
+  )
+  const { readAppPreferences } = await import('./preferences')
+  expect(readAppPreferences().themeGlow).toBe(themeGlow < 0 || themeGlow > 1 ? 1 : themeGlow)
+})
+
+it('preserves the previous effects-off preference', async () => {
+  vi.stubGlobal(
+    'localStorage',
+    storage({
+      'dovo.app-preferences.v1': JSON.stringify({ themeEffects: false }),
+    }),
+  )
+  const { readAppPreferences } = await import('./preferences')
+  expect(readAppPreferences()).toMatchObject({ themeGlow: 0, themeGradients: false })
+})
+
 it('persists browser profiles, per-thread selections and opt-in agent access', async () => {
   const local = storage()
   vi.stubGlobal('localStorage', local)

@@ -93,7 +93,7 @@ function NestedThreadsView({
         aria-current={child.key === selectedKey ? 'true' : undefined}
         disabled={!host.openThread}
         className={cn(
-          'w-full min-w-0 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50',
+          'studio-thread-child w-full min-w-0 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50',
           child.key === selectedKey && 'bg-accent/70 text-foreground',
         )}
         onClick={(event) => {
@@ -219,7 +219,7 @@ function NestedThreadsView({
         <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           <button
             type="button"
-            className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 rounded px-0.5 py-1 text-left hover:bg-accent/50"
+            className="studio-thread-disclosure flex min-w-0 flex-1 flex-wrap items-center gap-x-1 rounded px-0.5 py-1 text-left hover:bg-accent/50"
             aria-label={`Spawned threads for ${parent.title}`}
             aria-expanded={open}
             aria-controls={id}
@@ -300,7 +300,7 @@ function NestedThreadsView({
             <li className="min-w-0 py-0.5">
               <button
                 type="button"
-                className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent/50"
+                className="studio-thread-disclosure flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent/50"
                 aria-label={`Finished threads for ${parent.title}`}
                 aria-expanded={finishedOpen}
                 aria-controls={finishedOpen ? finishedId : undefined}

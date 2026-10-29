@@ -67,6 +67,8 @@ app.whenReady().then(async () => {
     const run = (source: string, window = workPage): Promise<unknown> =>
       window.webContents.executeJavaScript(source, true)
     workPage.show(); workPage.focus()
+    await run('Promise.all(["camera","microphone","geolocation"].map(name=>navigator.permissions.query({name}))).then(()=>true)')
+    assert.deepEqual(browserPermissions('work').site(origin).requested,[], 'Passive permission queries do not fill the menu')
     const results: Record<string, unknown> = {}
     const stage = (name: string) => writeFileSync(${JSON.stringify(join(work, 'stage.txt'))},name)
     const check = async (name: string, source: string) => {
@@ -95,6 +97,10 @@ app.whenReady().then(async () => {
       assert(result && typeof result === 'object' && 'value' in result, key + ': ' + JSON.stringify(result))
     }
     assert.equal(prompts,6)
+    const requested = browserPermissions('work').site(origin).requested
+    for (const permission of ['geolocation','local-fonts','midi','window-management','pointerLock','keyboardLock'])
+      assert(requested.includes(permission), 'Native request recorded: '+permission)
+    assert(!requested.includes('microphone') && !requested.includes('camera'))
     assert.equal(browserPermissions('work').site(origin).permissions['local-fonts'],'ask')
     const personal = await page('personal')
     answer = 2
@@ -102,6 +108,7 @@ app.whenReady().then(async () => {
     const denied = await run('queryLocalFonts().then(()=>"bad",error=>error.name)', personal)
     assert.equal(denied,'NotAllowedError')
     assert.equal(browserPermissions('personal').site(origin).permissions['local-fonts'],'block')
+    assert.deepEqual(browserPermissions('personal').site(origin).requested,['local-fonts'])
     assert.equal(browserPermissions('work').site(origin).permissions['local-fonts'],'ask')
     stage('device chooser')
     const chooser = openBrowserDeviceChooser({ title: 'Native chooser smoke', message: origin, devices: [{id:'first',label:'<img src=x onerror=alert(1)>',remember:true}] })

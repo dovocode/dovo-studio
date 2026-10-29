@@ -36,6 +36,7 @@ export type FileEditDraft = { path: string; contents: string; expected: string }
 export function TaskReview({
   initialCheckpoint = '',
   initialPath = '',
+  initialCheckoutId = '',
   initialLine,
   initialTab = 'diff',
   edit,
@@ -43,6 +44,7 @@ export function TaskReview({
 }: {
   initialCheckpoint?: string
   initialPath?: string
+  initialCheckoutId?: string
   initialLine?: number
   initialTab?: ReviewTab
   edit: FileEditDraft | null
@@ -103,7 +105,7 @@ export function TaskReview({
     body: string
   } | null>(null)
   const selectedTurn = task.turns?.find((turn) => turn.id === checkpoint)?.checkpoint
-  const [checkoutId, setCheckoutId] = useState('')
+  const [checkoutId, setCheckoutId] = useState(initialCheckoutId)
   const linkedHistory = selectedTurn?.linked?.find((item) => item.checkoutId === checkoutId)
   const history = checkoutId ? linkedHistory : selectedTurn
   const [linkedFiles, setLinkedFiles] = useState<{

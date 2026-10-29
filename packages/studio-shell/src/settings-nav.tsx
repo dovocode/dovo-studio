@@ -289,7 +289,7 @@ export function SettingsNav({
       }}
       style={sidebarVisible ? undefined : { display: 'none' }}
       aria-label="Settings sections"
-      className="studio-side-panel flex min-h-0 shrink-0 flex-col border-b bg-sidebar/60 px-4 py-3 md:w-52 md:gap-3 md:overflow-hidden md:border-b-0 md:border-r md:px-3 md:py-4 lg:w-64"
+      className="studio-side-panel flex min-h-0 shrink-0 flex-col border-b bg-sidebar px-4 py-3 md:w-52 md:gap-3 md:overflow-hidden md:border-b-0 md:border-r md:px-3 md:py-4 lg:w-64"
     >
       <SidebarHeader />
       <div className="md:hidden">
@@ -347,7 +347,7 @@ export function SettingsNav({
               }
               if (event.key === 'Escape') clearSearch()
             }}
-            className="h-9 rounded-md border-border/70 bg-background/70 pl-8 pr-8"
+            className="h-9 rounded-lg border-border/60 bg-background/60 pl-8 pr-8"
           />
           {query && (
             <button
@@ -380,7 +380,7 @@ export function SettingsNav({
               <h2 className="flex min-h-8 items-center px-2 text-[0.8125rem] font-semibold text-foreground/90">
                 {label}
               </h2>
-              <div className="ml-3 space-y-0.5 border-l border-border/70 pl-1">
+              <div className="space-y-0.5">
                 {items.map((view) => {
                   const Icon = icons[view.id] ?? Settings2
                   const active = activeId === view.id
@@ -390,9 +390,9 @@ export function SettingsNav({
                   return (
                     <div key={view.id}>
                       <div
-                        className={`group flex min-h-8 w-full items-center gap-1 rounded-lg pr-1 text-[0.8125rem] transition-colors ${
+                        className={`group flex min-h-8 w-full items-center gap-1 rounded-lg border border-transparent pr-1 text-[0.8125rem] transition-colors ${
                           active
-                            ? 'bg-accent/70 font-medium text-foreground'
+                            ? 'border-primary/30 bg-[var(--studio-selected-fill)] font-medium text-foreground [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]'
                             : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
                         }`}
                       >
@@ -440,7 +440,7 @@ export function SettingsNav({
                                 side="right"
                                 align="start"
                                 sideOffset={8}
-                                className="z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-lg"
+                                className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground"
                               >
                                 <p className="font-semibold">
                                   {view.title} · {label}

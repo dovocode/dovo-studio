@@ -219,7 +219,8 @@ export function TaskConversation({
     >
       <div
         data-task-conversation={task.id}
-        className={`flex h-full min-h-0 flex-col ${welcome ? 'overflow-y-auto' : ''}`}
+        data-startup-draft={welcome ? '' : undefined}
+        className={`flex h-full min-h-0 flex-col ${welcome ? 'startup-draft overflow-y-auto' : ''}`}
       >
         {!welcome && !task.example && (
           <div className="flex justify-end px-4 py-1">
@@ -355,6 +356,7 @@ export function TaskConversation({
           onFocusCapture={() => setComposerCollapsed(false)}
         >
           <Composer
+            startup={welcome}
             collapsed={collapseComposerOnScroll && composerCollapsed}
             key={task.id}
             task={task}

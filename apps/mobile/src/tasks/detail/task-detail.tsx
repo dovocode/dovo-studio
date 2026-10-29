@@ -523,6 +523,7 @@ function TaskDetailContent({
                   : 'Draft'
   const [checkpoint, setCheckpoint] = useApplicationState('')
   const [checkpointPath, setCheckpointPath] = useApplicationState('')
+  const [checkpointCheckoutId, setCheckpointCheckoutId] = useApplicationState('')
   const [reviewLine, setReviewLine] = useApplicationState<number | undefined>(undefined)
   const [reviewTab, setReviewTab] = useApplicationState<'diff' | 'findings'>('diff')
   const [terminalId, setTerminalId] = useApplicationState('')
@@ -1025,10 +1026,11 @@ function TaskDetailContent({
             setTerminalId(id)
             setPane('terminal')
           }}
-          openCheckpoint={(id, path) => {
+          openCheckpoint={(id, path, checkoutId) => {
             setReviewLine(undefined)
             setReviewTab('diff')
             setCheckpointPath(path ?? '')
+            setCheckpointCheckoutId(checkoutId ?? '')
             setCheckpoint(id)
             setPane('diff')
           }}
@@ -1045,8 +1047,8 @@ function TaskDetailContent({
           >
             <Composer
               queuedMessages={<ComposerActivity task={task} />}
-              renderAbove={(setup, starters, startModes) => (
-                <Conversation setup={setup} starters={starters} startModes={startModes}>
+              renderAbove={(setup, startModes) => (
+                <Conversation setup={setup} startModes={startModes}>
                   {preparation ? (
                     <PreparationProgress
                       preparation={preparation}
@@ -1251,6 +1253,7 @@ function TaskDetailContent({
             <TaskReview
               initialCheckpoint={checkpoint}
               initialPath={checkpointPath}
+              initialCheckoutId={checkpoint ? checkpointCheckoutId : ''}
               initialLine={!checkpoint ? reviewLine : undefined}
               initialTab={!checkpoint ? reviewTab : 'diff'}
               edit={detailDraft.file}

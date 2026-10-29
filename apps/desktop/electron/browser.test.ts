@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => {
       >(),
     endFrameSubscription: vi.fn<() => void>(),
     reload: vi.fn<() => void>(),
+    copyImageAt: vi.fn<(x: number, y: number) => void>(),
+    downloadURL: vi.fn<(url: string) => void>(),
     stop: vi.fn<() => void>(),
     send: vi.fn<(...args: unknown[]) => void>(),
     getUserAgent: () =>
@@ -2263,6 +2265,81 @@ it('routes workspace context menus to the selected page and keeps password text 
   expect(mocks.menu).not.toHaveBeenCalled()
 })
 
+it('offers native image actions for the clicked image, including linked and generated images', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const params = {
+    mediaType: 'image',
+    hasImageContents: true,
+    srcURL: 'http://images.lan/photo.png',
+    linkURL: 'https://example.com/link',
+    x: 41,
+    y: 72,
+    selectionText: '',
+    formControlType: 'none',
+    isEditable: false,
+  }
+  const menu = (changes: Partial<typeof params> = {}) => {
+    listener('context-menu')?.({}, { ...params, ...changes })
+    return mocks.menu.mock.calls.at(-1)?.[0] ?? []
+  }
+  const click = (items: Electron.MenuItemConstructorOptions[], label: string) => {
+    const item = items.find((item) => item.label === label)
+    if (!item?.click) throw new Error(`Missing ${label}`)
+    item.click(
+      {} as Electron.MenuItem,
+      mocks.window as unknown as Electron.BrowserWindow,
+      {} as Electron.KeyboardEvent,
+    )
+  }
+  const items = menu()
+  click(items, 'Copy image')
+  expect(mocks.contents.copyImageAt).toHaveBeenLastCalledWith(41, 72)
+  click(items, 'Download image')
+  expect(mocks.contents.downloadURL).toHaveBeenLastCalledWith(params.srcURL)
+  click(items, 'Copy image address')
+  expect(mocks.clipboard).toHaveBeenLastCalledWith(params.srcURL)
+  click(items, 'Open image in new tab')
+  await expect(call(event, { action: 'status', key: 'shared' })).resolves.toMatchObject({
+    openedLinks: [params.srcURL],
+  })
+  expect(
+    menu({ hasImageContents: false }).find((item) => item.label === 'Copy image')?.enabled,
+  ).toBe(false)
+  for (const srcURL of ['data:image/png;base64,cGl4ZWw=', 'blob:https://example.com/image']) {
+    const generated = menu({ srcURL })
+    expect(generated.some((item) => item.label === 'Open image in new tab')).toBe(false)
+    click(generated, 'Download image')
+    expect(mocks.contents.downloadURL).toHaveBeenLastCalledWith(srcURL)
+  }
+  const canvas = menu({ mediaType: 'canvas', srcURL: '' })
+  click(canvas, 'Copy image')
+  expect(
+    canvas.some((item) => item.label === 'Copy image address' || item.label === 'Download image'),
+  ).toBe(false)
+  for (const srcURL of ['file:///private/image.png', 'javascript:alert(1)'])
+    expect(
+      menu({ srcURL }).some(
+        (item) => item.label === 'Download image' || item.label === 'Open image in new tab',
+      ),
+    ).toBe(false)
+  expect(menu({ mediaType: 'none' }).some((item) => item.label === 'Copy image')).toBe(false)
+  const stale = menu()
+  mocks.contents.copyImageAt.mockClear()
+  mocks.contents.downloadURL.mockClear()
+  listener('did-start-navigation')?.({}, 'https://example.com/next', false, true)
+  click(stale, 'Copy image')
+  click(stale, 'Download image')
+  expect(mocks.contents.copyImageAt).not.toHaveBeenCalled()
+  expect(mocks.contents.downloadURL).not.toHaveBeenCalled()
+  const closed = menu()
+  await call(event, { action: 'close', key: 'shared' })
+  click(closed, 'Copy image')
+  click(closed, 'Download image')
+  expect(mocks.contents.copyImageAt).not.toHaveBeenCalled()
+  expect(mocks.contents.downloadURL).not.toHaveBeenCalled()
+})
+
 it('offers picture-in-picture only for the selected supported video and its frame', async () => {
   const call = handler()
   await call(event, workspaceShow)
@@ -2272,6 +2349,8 @@ it('offers picture-in-picture only for the selected supported video and its fram
     x: 100,
     y: 200,
     mediaType: 'video',
+    srcURL: '',
+    hasImageContents: false,
     mediaFlags: { canShowPictureInPicture: true, isShowingPictureInPicture: false },
     linkURL: '',
     selectionText: '',

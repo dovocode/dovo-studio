@@ -224,6 +224,16 @@ it('enriches full detail without losing review decisions, requested teams, or cl
         data: {
           repository: {
             pullRequest: {
+              id: 'PR_7',
+              headRefOid: sha,
+              state: 'OPEN',
+              isDraft: false,
+              mergeStateStatus: 'BLOCKED',
+              isInMergeQueue: false,
+              viewerCanUpdate: true,
+              viewerCanEnableAutoMerge: true,
+              viewerCanDisableAutoMerge: true,
+              autoMergeRequest: null,
               reviewThreads: {
                 nodes: [
                   {
@@ -335,6 +345,12 @@ it('enriches full detail without losing review decisions, requested teams, or cl
     inlineRange: true,
     draft: true,
   })
+  expect(detail.capabilities?.actions).toEqual(expect.arrayContaining(['draft', 'auto-merge']))
+  expect(detail.pull).toMatchObject({
+    mergeStateStatus: 'BLOCKED',
+    autoMergeEnabled: false,
+    inMergeQueue: false,
+  })
   expect(detail.pull).toMatchObject({
     provider: 'github',
     cloneUrl: `${repo.url}.git`,
@@ -431,11 +447,12 @@ it('verifies a named GitHub profile without switching the globally active accoun
     .spyOn(git, 'githubAccount')
     .mockResolvedValue(JSON.stringify({ login: 'selected-user' }))
   const token = vi.fn<(cwd: string) => Promise<string>>().mockResolvedValue('fixture-private-token')
+  const onUnauthorized = vi.fn<() => void>()
   const pulls = new PullRequests(git, {
     host: repo.host,
     repository: repo.nameWithOwner,
     profile: 'selected-user',
-    token,
+    credential: async (cwd) => ({ token: await token(cwd), onUnauthorized }),
   })
   const identity = await pulls.identity('/checkout')
   expect(identity).toContain('selected-user')
@@ -444,7 +461,7 @@ it('verifies a named GitHub profile without switching the globally active accoun
     ['api', '--hostname', repo.host, 'user'],
     { timeout: 60000, maxBuffer: 32 * 1024 * 1024 },
     '/checkout',
-    { host: repo.host, token: 'fixture-private-token' },
+    { host: repo.host, token: 'fixture-private-token', onUnauthorized },
     false,
   )
   run.mockResolvedValue(JSON.stringify({ login: 'unexpected-user' }))

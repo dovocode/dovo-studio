@@ -104,6 +104,33 @@ export function AgentEditor({
         <AcpRegistry agent={draft} onChange={setDraft} showRegistry={false} />
       )}
       <ModelSettings key={draft.provider} agent={draft} onChange={setDraft} disabled={busy} />
+      {(draft.provider === 'claude' || draft.provider === 'codex') && (
+        <>
+          <Choice
+            label="Cloud integrations"
+            disabled={busy}
+            value={
+              draft.cloudIntegrations === undefined ? 'default' : String(draft.cloudIntegrations)
+            }
+            items={[
+              { id: 'default', name: 'Provider default' },
+              { id: 'true', name: 'Enabled' },
+              { id: 'false', name: 'Disabled' },
+            ]}
+            onChange={(value) =>
+              setDraft({
+                ...draft,
+                cloudIntegrations: value === 'default' ? undefined : value === 'true',
+              })
+            }
+          />
+          <Text style={styles.muted}>
+            Use apps already connected to your {draft.provider === 'claude' ? 'Claude' : 'ChatGPT'}{' '}
+            account, such as Google Drive or Slack. Requires account sign-in on the computer running
+            the task. Provider restrictions and tool approvals still apply.
+          </Text>
+        </>
+      )}
       <Choice
         label="Access mode"
         disabled={busy}

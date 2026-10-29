@@ -16,7 +16,8 @@ import {
 } from '@dovo/protocol'
 import { useFileReview } from '../../review/use-file-review'
 import { MobileOrganizeReview } from '../../review/organize-review'
-import { ChangeTypeFilters } from '../../../ui/content/change-types'
+import { ChangeSummary } from '../../../ui/content/change-summary'
+import { MobileFileTree } from '../../../ui/content/file-tree'
 import { MobileFileReview } from '../../review/file-review'
 import { Pressable, View, useWindowDimensions } from 'react-native'
 import { Text } from '../../../ui/content/text'
@@ -61,6 +62,7 @@ export function PullChanges({
 
   const { height } = useWindowDimensions()
   const [kind, setKind] = useState<FileKind | undefined>(undefined)
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
   const [wrapLines, setWrapLines] = useState(false)
   const [options, setOptions] = useState(false)
   const [feedbackPath, setFeedbackPath] = useState('')
@@ -130,18 +132,37 @@ export function PullChanges({
   useEffect(() => {
     if (linkedComment && file) setFeedbackPath(file.path)
   }, [linkedComment?.id, fragment, file?.path])
-  const filters = (
-    <ChangeTypeFilters
+  const summary = (
+    <ChangeSummary
       files={detail.files}
       value={kind}
       onChange={setKind}
       total={detail.pull.changedFiles}
-    />
+      expanded={summaryExpanded}
+      onExpandedChange={setSummaryExpanded}
+    >
+      <MobileFileTree
+        files={files.map((item) => ({
+          path: item.path,
+          changeKind: pullFileKind(item),
+          viewed: item.viewed,
+          additions: item.additions ?? undefined,
+          deletions: item.deletions ?? undefined,
+        }))}
+        groups={review.progress?.groups ?? []}
+        related={related}
+        selected={file?.path}
+        onSelect={setSelected}
+        scrollable={false}
+        defaultExpandedDepth={0}
+        showChangeBars
+      />
+    </ChangeSummary>
   )
   if (!file)
     return (
       <View>
-        {filters}
+        {summary}
         <Text style={styles.muted}>
           {detail.files.length ? 'No matching files.' : 'No changed files returned.'}
         </Text>
@@ -174,13 +195,13 @@ export function PullChanges({
         gap: 4,
       }}
     >
+      <View style={{ paddingHorizontal: 12 }}>{summary}</View>
       <View
         testID="PR file controls"
         onLayout={({ nativeEvent }) => setControlsHeight(nativeEvent.layout.height)}
         style={{ gap: 4 }}
       >
         <View style={{ paddingHorizontal: 12 }}>
-          {filters}
           <MobileFileReview
             files={files.map((file) => ({
               path: file.path,

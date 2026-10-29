@@ -9,7 +9,7 @@ const controls =
   ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog', 'tooltip']
     .map((name) => `export * from '${uiDir}/components/ui/${name}.tsx';`)
     .join('') +
-  `export {ProjectIcon} from '${uiDir}/project-icon.tsx';export * from '${uiDir}/sidebar-header.tsx';export const OrganizeReview=()=>null;export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
+  `export {ProjectIcon} from '${uiDir}/project-icon.tsx';export * from '${uiDir}/sidebar-header.tsx';export const OrganizeReview=()=>null;export {ChangeSummary} from '${uiDir}/review/change-summary.tsx';export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
 const mocks = {
   '@dovo/studio-ui': controls,
   '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[],theme:'dark',themePalette:'dovo',codeTheme:'app'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
@@ -205,7 +205,7 @@ try {
   assert.equal(await list.evaluate((element) => element.clientWidth <= 416), true)
   await detail
     .locator('[aria-label="Pull request status"]')
-    .getByText('No merge conflicts', { exact: true })
+    .getByText('Waiting for required reviews', { exact: true })
     .waitFor()
   assert.equal(
     (await detail.locator('.studio-pull-header').boundingBox()).y,
@@ -243,8 +243,29 @@ try {
   )
   assert.equal(await form.getByRole('textbox').inputValue(), 'Draft feedback')
   await page.getByRole('tab', { name: /Changes/ }).click()
-  await page.locator('[aria-label="Code changes"] article').first().waitFor()
-  assert.equal(await page.locator('[aria-label="Code changes"] article').count(), 2)
+  const changes = page.getByRole('region', { name: 'Code changes' })
+  await changes.locator('article').first().waitFor()
+  assert.equal(await changes.locator('article').count(), 2)
+  const summaryToggle = changes.locator('button[aria-expanded]').first()
+  assert.equal(await summaryToggle.getAttribute('aria-expanded'), 'false')
+  assert.equal(await changes.getByRole('navigation', { name: 'Changed files' }).count(), 0)
+  await summaryToggle.click()
+  assert.equal(await summaryToggle.getAttribute('aria-expanded'), 'true')
+  await changes.getByRole('navigation', { name: 'Changed files' }).waitFor()
+  await changes
+    .getByRole('navigation', { name: 'Changed files' })
+    .getByText('2 files', { exact: true })
+    .waitFor()
+  await page.screenshot({ path: '/tmp/dovo-pull-summary-expanded.png' })
+  await changes.getByRole('button', { name: 'Filter Code: 2 files', exact: true }).click()
+  assert.equal(
+    await changes
+      .getByRole('button', { name: 'Filter Code: 2 files', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  )
+  assert.equal(await changes.locator('article').count(), 2)
+  await changes.getByRole('button', { name: 'Filter Code: 2 files', exact: true }).click()
   await page.getByRole('checkbox', { name: 'File viewed', exact: true }).click()
   await page.waitForFunction(
     () =>
@@ -258,6 +279,9 @@ try {
     .getByRole('navigation', { name: 'Changed files' })
     .getByRole('button', { name: /second.ts/ })
     .click()
+  await summaryToggle.click()
+  assert.equal(await summaryToggle.getAttribute('aria-expanded'), 'false')
+  assert.equal(await changes.locator('article').count(), 2)
   await page.getByRole('button', { name: 'Review', exact: true }).click()
   await page.getByRole('radio', { name: /Approve merging/ }).check()
   await page.getByRole('dialog').getByRole('textbox', { name: 'PR action body' }).fill('Looks good')
@@ -302,6 +326,12 @@ try {
     assert.equal(await heading.isVisible(), true)
     assert.equal(await content.evaluate((element) => element.clientHeight > 100), true)
   }
+  await detail.getByRole('tab', { name: 'Changes (2)', exact: true }).click()
+  await summaryToggle.click()
+  await changes.getByRole('navigation', { name: 'Changed files' }).waitFor()
+  await noOverflow()
+  await page.screenshot({ path: '/tmp/dovo-pull-summary-narrow.png' })
+  await summaryToggle.click()
   await detail.getByRole('tab', { name: 'Overview', exact: true }).click()
   await content.evaluate((element) => {
     element.scrollTop = 0
@@ -573,6 +603,81 @@ try {
     0,
   )
   await bitbucketMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.setViewportSize({ width: 1100, height: 850 })
+  await page.evaluate(() => {
+    window.detail.pull = {
+      ...window.detail.pull,
+      provider: 'github',
+      draft: true,
+      mergeStateStatus: 'DRAFT',
+      autoMergeEnabled: false,
+    }
+    window.detail.capabilities = {
+      actions: ['draft'],
+      mergeMethods: ['squash'],
+      reviewDecisions: [],
+    }
+    window.showDestination('overview', 'draft-lifecycle')
+  })
+  await page.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Mark ready for review', exact: true }).click()
+  const readyDialog = page.getByRole('dialog')
+  await page.evaluate(() => {
+    window.detail = { ...window.detail, pull: { ...window.detail.pull, draft: false } }
+    window.showDestination('overview', 'draft-lifecycle')
+  })
+  await readyDialog.getByRole('button', { name: 'Mark ready for review', exact: true }).click()
+  await readyDialog.waitFor({ state: 'detached' })
+  const readyWrite = await page.evaluate(() => window.writes.at(-1).input)
+  assert.equal(readyWrite.action, 'draft')
+  assert.equal(readyWrite.draft, false)
+  assert.equal(readyWrite.headSha, 'a'.repeat(40))
+  await page.evaluate(() => {
+    window.detail.pull = { ...window.detail.pull, draft: false, mergeStateStatus: 'BLOCKED' }
+    window.detail.capabilities.actions = ['draft', 'auto-merge']
+    window.showDestination('overview', 'enable-auto-merge')
+  })
+  await page.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Enable auto-merge', exact: true }).click()
+  const autoDialog = page.getByRole('dialog')
+  const autoSubmit = autoDialog.getByRole('button', { name: 'Enable auto-merge', exact: true })
+  await page.evaluate(() => {
+    window.detail = { ...window.detail, pull: { ...window.detail.pull, autoMergeEnabled: true } }
+    window.showDestination('overview', 'enable-auto-merge')
+  })
+  assert.equal(await autoSubmit.isDisabled(), true)
+  await autoDialog.getByText(/also applies to later commits/).waitFor()
+  await autoDialog.getByRole('checkbox').check()
+  await page.evaluate(() => {
+    window.detail = { ...window.detail, stale: true }
+    window.showDestination('overview', 'enable-auto-merge')
+  })
+  await page.waitForFunction(
+    () => document.querySelector('[role="dialog"] button[type="submit"]')?.disabled,
+  )
+  assert.equal(await autoSubmit.isDisabled(), true)
+  await page.evaluate(() => {
+    window.detail = { ...window.detail, stale: false }
+    window.showDestination('overview', 'enable-auto-merge')
+  })
+  await autoSubmit.click()
+  await autoDialog.waitFor({ state: 'detached' })
+  const autoWrite = await page.evaluate(() => window.writes.at(-1).input)
+  assert.equal(autoWrite.action, 'auto-merge')
+  assert.equal(autoWrite.enabled, true)
+  assert.equal(autoWrite.method, 'squash')
+  await page.evaluate(() => {
+    window.detail.pull.autoMergeEnabled = true
+    window.showDestination('overview', 'disable-auto-merge')
+  })
+  await page.getByText('Auto-merge enabled', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'PR actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Disable auto-merge', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Disable auto-merge', exact: true })
+    .click()
+  assert.equal((await page.evaluate(() => window.writes.at(-1).input)).enabled, false)
   assert.deepEqual(errors, [])
   console.log(
     'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts and embedded previews passed.',

@@ -364,3 +364,46 @@ it('resolves background-only children to empty saved profiles and retains scoped
     repositoryId: 'remote-repo',
   })
 })
+
+it('projects active terminals without retaining terminal payloads or changing unrelated owners', () => {
+  const source = overview()
+  const snapshot = source.snapshot!
+  const initial = taskListProjection([source], now)
+  const shell: Subagent = {
+    id: 'shell',
+    name: 'Dev server',
+    provider: 'claude',
+    kind: 'background',
+    status: 'working',
+    sessionLive: true,
+    startedAt: '',
+    updatedAt: '',
+  }
+  const active = {
+    ...source,
+    snapshot: {
+      ...snapshot,
+      terminals: [{ id: 'term', taskId: 'running', title: 'Shell', exited: false }],
+      workspace: {
+        ...snapshot.workspace,
+        tasks: snapshot.workspace.tasks.map((task) =>
+          task.id === 'running' ? { ...task, status: 'review' as const, subagents: [shell] } : task,
+        ),
+      },
+    },
+  }
+  const projected = taskListProjection([active], now, initial)
+  const key = (id: string) => JSON.stringify([source.profile.id, id])
+  expect(projected.get(key('running'))?.owner.activeTerminals).toBe(2)
+  expect(projected.get(key('untouched'))?.owner).toBe(initial.get(key('untouched'))?.owner)
+  const exited = {
+    ...active,
+    snapshot: {
+      ...active.snapshot,
+      terminals: [{ ...active.snapshot.terminals[0]!, exited: true }],
+    },
+  }
+  expect(
+    taskListProjection([exited], now, projected).get(key('running'))?.owner.activeTerminals,
+  ).toBe(1)
+})

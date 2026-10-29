@@ -57,6 +57,7 @@
   }
 }
 :root {
+  --studio-glow-strength: 1;
   color-scheme: dark;
   --background: var(--dovo-background);
   --foreground: var(--dovo-foreground);
@@ -115,4 +116,184 @@
   --status-warning: var(--dovo-status-warning);
   --destructive: var(--dovo-status-error);
   --destructive-foreground: #ffffff;
+}
+
+/* Decorative effects follow the active palette without replacing selection or focus cues. */
+:root {
+  --studio-selected-fill: color-mix(in srgb, var(--primary) 16%, var(--sidebar));
+  --studio-selected-gradient: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--primary) 28%, var(--sidebar)),
+    color-mix(in srgb, var(--primary) 12%, var(--sidebar)) 68%,
+    color-mix(in srgb, var(--primary) 22%, var(--sidebar))
+  );
+  --studio-glow: 0 0 calc(14px * var(--studio-glow-strength))
+    color-mix(in srgb, var(--primary) calc(16% * var(--studio-glow-strength)), transparent);
+  --studio-glow-strong: 0 0 calc(20px * var(--studio-glow-strength))
+    color-mix(in srgb, var(--primary) calc(24% * var(--studio-glow-strength)), transparent);
+  --studio-glow-wide: 0 0 calc(36px * var(--studio-glow-strength))
+    color-mix(in srgb, var(--primary) calc(5% * var(--studio-glow-strength)), transparent);
+  --studio-icon-glow: drop-shadow(
+    0 0 calc(5px * var(--studio-glow-strength))
+      color-mix(in srgb, var(--primary) calc(20% * var(--studio-glow-strength)), transparent)
+  );
+}
+:root[data-theme-gradients='false'] {
+  --studio-selected-gradient: none;
+}
+:root[data-theme-glow='0'] {
+  --studio-glow: 0 0 0 transparent;
+  --studio-glow-strong: 0 0 0 transparent;
+  --studio-glow-wide: 0 0 0 transparent;
+  --studio-icon-glow: none;
+}
+
+/* Shared modal surfaces keep the app's compact type and control sizes. */
+.dovo-dialog-content {
+  --dialog-edge: color-mix(in srgb, var(--border) 75%, var(--foreground) 10%);
+  --dialog-field: color-mix(in srgb, var(--card) 90%, var(--foreground) 10%);
+  --dialog-inset: color-mix(in srgb, var(--card) 95%, var(--foreground) 5%);
+  border-color: var(--dialog-edge);
+  border-radius: 18px;
+  background-color: var(--card);
+  background-image: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--card) 92%, var(--foreground) 8%),
+    color-mix(in srgb, var(--card) 97%, var(--foreground) 3%)
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent),
+    0 24px 80px #0004,
+    var(--studio-glow-wide);
+}
+.dovo-dialog-content [data-dialog-close] {
+  border: 1px solid color-mix(in srgb, var(--foreground) 5%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--foreground) 7%, var(--card));
+}
+.dovo-dialog-content [data-dialog-close]:hover {
+  background: color-mix(in srgb, var(--foreground) 12%, var(--card));
+}
+.dovo-dialog-content
+  :where(
+    input:not(
+      [type='checkbox'],
+      [type='radio'],
+      [type='range'],
+      [type='file'],
+      [type='hidden'],
+      [type='color']
+    ),
+    textarea,
+    select,
+    button[role='combobox']
+  ) {
+  background-color: var(--dialog-field);
+  color: var(--foreground);
+  box-shadow: inset 0 1px 2px #0000000a;
+}
+.dovo-dialog-content
+  :where(input, textarea, select, button[role='combobox']):not([aria-invalid='true']) {
+  border-color: color-mix(in srgb, var(--border) 65%, var(--foreground) 16%);
+}
+.dovo-dialog-content input[type='checkbox'] {
+  accent-color: var(--primary);
+}
+.dovo-dialog-content [data-slot='button'][data-variant='default'] {
+  border: 1px solid color-mix(in srgb, var(--action) 65%, var(--primary));
+  background-color: var(--action);
+  background-image: linear-gradient(160deg, transparent, #0000000a);
+  color: var(--action-foreground);
+  box-shadow:
+    inset 0 1px 0 #ffffff30,
+    var(--studio-glow);
+}
+.dovo-dialog-content [data-slot='button'][data-variant='default']:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--action) 96%, #000);
+  box-shadow:
+    inset 0 1px 0 #ffffff40,
+    var(--studio-glow-strong);
+}
+.dovo-dialog-content [data-slot='button'][data-variant='default']:disabled {
+  box-shadow: none;
+}
+:root[data-theme-gradients='false']
+  :is(.dovo-dialog-content, .dovo-dialog-content [data-slot='button'][data-variant='default']) {
+  background-image: none;
+}
+@media (forced-colors: active) {
+  .dovo-dialog-content,
+  .dovo-dialog-content [data-dialog-close],
+  .dovo-dialog-content [data-slot='button'][data-variant='default'] {
+    border-color: ButtonText;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+  }
+}
+
+/* Shared controls use palette-derived layers; caller utilities can still override them. */
+@layer base {
+  :where(input, textarea, button):is(
+    [data-slot='input'],
+    [data-slot='textarea'],
+    [data-slot='select-trigger']
+  ) {
+    background-color: color-mix(in srgb, var(--card) 94%, var(--foreground) 6%);
+  }
+  :where([data-slot='card']) {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  }
+  :where(.studio-menu-surface) {
+    border-color: var(--border);
+    background-color: var(--popover);
+    color: var(--foreground);
+    box-shadow:
+      0 12px 32px #0003,
+      var(--studio-glow-wide);
+  }
+  :where(
+    [data-slot='select-item'][data-highlighted],
+    [data-slot='select-item'][data-state='checked']
+  ) {
+    background-color: var(--studio-selected-fill);
+    background-image: var(--studio-selected-gradient);
+    color: var(--foreground);
+  }
+  :where(select option, select optgroup) {
+    background-color: var(--popover);
+    color: var(--foreground);
+  }
+  :where([data-slot='button'][data-variant='default']:not([data-size='icon']):not(:disabled)) {
+    background-image: linear-gradient(160deg, #ffffff12, #0000000a);
+    box-shadow:
+      inset 0 1px 0 #ffffff24,
+      var(--studio-glow);
+  }
+  :where(
+    [data-slot='button'][data-variant='default']:not([data-size='icon']):not(:disabled):hover
+  ) {
+    box-shadow:
+      inset 0 1px 0 #ffffff30,
+      var(--studio-glow-strong);
+  }
+  :where(
+    [data-slot='checkbox'][data-state='checked'],
+    [data-slot='checkbox'][data-state='indeterminate'],
+    [data-slot='switch'][data-state='checked']
+  ) {
+    box-shadow: var(--studio-glow);
+  }
+  :root[data-theme-gradients='false'] :where([data-slot='button'][data-variant='default']) {
+    background-image: none;
+  }
+  @media (forced-colors: active) {
+    :where(
+      [data-slot='select-item'][data-highlighted],
+      [data-slot='select-item'][data-state='checked']
+    ) {
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
 }

@@ -203,7 +203,7 @@ function PullDetailContent({
           </Button>
           <ProjectIcon
             repository={workspace.repositories.find((repo) => repo.id === repositoryId)}
-            className="size-4"
+            className="size-4 max-sm:hidden @max-sm/pr-detail:hidden"
           />
           <h1 className="studio-titlebar-heading min-w-0 flex-1" title={detail?.pull.title}>
             <span className="studio-titlebar-project">
@@ -279,7 +279,7 @@ function PullDetailContent({
         )}
         {detail && (
           <>
-            <header className="shrink-0 space-y-3 border-b px-4 py-4">
+            <header className="shrink-0 space-y-2 border-b bg-sidebar px-4 py-3 dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]">
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <Badge variant="outline">
                   <Signal signal={pullState(detail.pull)} />
@@ -335,7 +335,7 @@ function PullDetailContent({
             <div
               role="tablist"
               aria-label="PR detail sections"
-              className="flex shrink-0 gap-1 overflow-x-auto border-b px-3"
+              className="flex shrink-0 gap-1 overflow-x-auto border-b bg-sidebar px-3 dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]"
             >
               {(
                 [
@@ -394,7 +394,7 @@ function PullDetailContent({
                     tabs[next]?.focus()
                   }}
                   onClick={() => selectTab(item.id)}
-                  className={`inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-xs font-medium ${tab === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                  className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'border-primary/30 bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] text-primary shadow-[var(--studio-glow)] forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                 >
                   <item.icon aria-hidden className="size-3.5" />
                   {item.label}
@@ -408,7 +408,7 @@ function PullDetailContent({
               ))}
             </div>
             <div
-              className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-muted/10 px-4 py-2.5"
+              className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-sidebar/60 px-4 py-2 dark:bg-[color-mix(in_srgb,var(--sidebar)_70%,#050709)]"
               aria-label="Pull request status"
             >
               <button
@@ -433,6 +433,9 @@ function PullDetailContent({
                 }
               />
               <Signal signal={pullMergeability(detail.pull)} />
+              {detail.pull.autoMergeEnabled && (
+                <span className="text-xs text-muted-foreground">Auto-merge enabled</span>
+              )}
             </div>
           </>
         )}
@@ -497,7 +500,7 @@ function PullDetailContent({
                     aria-label="PR description"
                     className="min-w-0 overflow-hidden rounded-lg border"
                   >
-                    <h3 className="flex items-center gap-2 border-b bg-muted/20 px-4 py-3 text-xs font-medium">
+                    <h3 className="flex items-center gap-2 border-b bg-sidebar/60 px-4 py-2 text-xs font-medium">
                       {detail.pull.author}
                       <span className="font-normal text-muted-foreground">Description</span>
                     </h3>
@@ -536,7 +539,12 @@ function PullDetailContent({
                         <Button
                           key={filter.id}
                           size="sm"
-                          variant={discussionFilter === filter.id ? 'secondary' : 'ghost'}
+                          variant="ghost"
+                          className={
+                            discussionFilter === filter.id
+                              ? 'bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] text-primary shadow-[var(--studio-glow)] forced-colors:outline forced-colors:outline-1'
+                              : 'text-muted-foreground'
+                          }
                           aria-pressed={discussionFilter === filter.id}
                           onClick={() => setDiscussionFilter(filter.id)}
                         >

@@ -68,6 +68,7 @@ function captureCliOutput(
       env: {
         ...processEnvironment(),
         ...env,
+        GH_DEBUG: '',
         GH_PROMPT_DISABLED: '1',
         AZURE_CORE_ONLY_SHOW_ERRORS: 'true',
         NO_COLOR: '1',

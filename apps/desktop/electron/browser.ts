@@ -972,6 +972,44 @@ export function registerBrowser(
           { label: 'Copy link address', click: () => clipboard.writeText(params.linkURL) },
           { type: 'separator' },
         )
+      if (params.mediaType === 'image' || params.mediaType === 'canvas') {
+        const { srcURL, x, y, hasImageContents } = params
+        const revision = navigationRevision
+        const imageUrl = URL.canParse(srcURL) ? new URL(srcURL) : undefined
+        const live = () =>
+          !view.webContents.isDestroyed() &&
+          views.get(JSON.stringify([created.windowId, created.key])) === created &&
+          navigationRevision === revision
+        if (openableUrl(srcURL))
+          items.push({
+            label: 'Open image in new tab',
+            click: () => {
+              if (!routeProfileLink(created, srcURL)) queueLink(created, srcURL)
+            },
+          })
+        if (
+          imageUrl &&
+          ['http:', 'https:', 'data:', 'blob:'].includes(imageUrl.protocol) &&
+          !imageUrl.username &&
+          !imageUrl.password
+        )
+          items.push({
+            label: 'Download image',
+            click: () => {
+              if (live()) view.webContents.downloadURL(srcURL)
+            },
+          })
+        items.push({
+          label: 'Copy image',
+          enabled: hasImageContents,
+          click: () => {
+            if (hasImageContents && live()) view.webContents.copyImageAt(x, y)
+          },
+        })
+        if (srcURL)
+          items.push({ label: 'Copy image address', click: () => clipboard.writeText(srcURL) })
+        items.push({ type: 'separator' })
+      }
       const text =
         params.formControlType === 'input-password' ? '' : params.selectionText.slice(0, 32000)
       if (text)

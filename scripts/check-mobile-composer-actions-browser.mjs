@@ -13,13 +13,13 @@ import {useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';import
 const flat=style=>{const s=Object.assign({},...(Array.isArray(style)?style.flat(Infinity):[style]));if(typeof s.lineHeight==='number')s.lineHeight=s.lineHeight+'px';if(Array.isArray(s.transform))s.transform=s.transform.map(t=>t.rotate?'rotate('+t.rotate+')':'translateY('+t.translateY+'px)').join(' ');return s};
 const useLayout=(ref,callback)=>{const current=useRef(callback);current.current=callback;const report=()=>{if(!ref.current||!current.current)return;const r=ref.current.getBoundingClientRect(),p=ref.current.parentElement.getBoundingClientRect();current.current({nativeEvent:{layout:{x:ref.current.offsetLeft-ref.current.parentElement.offsetLeft,y:ref.current.offsetTop-ref.current.parentElement.offsetTop,width:r.width,height:r.height}}})};useLayoutEffect(report);useLayoutEffect(()=>{const observer=new ResizeObserver(report);observer.observe(ref.current);return()=>observer.disconnect()},[])};
 export const View=({children,style,testID,accessibilityRole,accessibilityLabel,onLayout,ref:forwardedRef})=>{const ref=useRef(null);useLayout(ref,onLayout);useImperativeHandle(forwardedRef,()=>({measureInWindow:callback=>{const r=ref.current.getBoundingClientRect();callback(r.x,r.y,r.width,r.height)}}));return <div ref={ref} role={accessibilityRole} aria-label={accessibilityLabel} data-testid={testID} style={{display:'flex',boxSizing:'border-box',flexDirection:'column',borderStyle:'solid',borderWidth:0,...flat(style)}}>{children}</div>};
-export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled,horizontal})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,minWidth:0,overflowX:horizontal?'auto':undefined,overflowY:horizontal||scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...flat(contentContainerStyle)}}>{children}</div></div>};
+export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled,horizontal,keyboardShouldPersistTaps})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div onMouseDown={keyboardShouldPersistTaps==='always'?event=>event.preventDefault():undefined} ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,minWidth:0,overflowX:horizontal?'auto':undefined,overflowY:horizontal||scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...flat(contentContainerStyle)}}>{children}</div></div>};
 export const Text=({children,style,numberOfLines,accessibilityRole,accessibilityLabel,accessibilityLiveRegion})=><span role={accessibilityRole} aria-label={accessibilityLabel} aria-live={accessibilityLiveRegion} style={{...flat(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
-export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
-export const Pressable=({children,style,onPress,onPressIn,onPressOut,onLongPress,disabled,accessibilityLabel,accessibilityState,accessibilityValue,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=>{const press=useRef({});return <button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onPointerDown={()=>{press.current.held=false;onPressIn?.();if(onLongPress)press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress()},500)}} onPointerUp={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[]}})}} onPointerCancel={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[{}]}})}} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-valuetext={accessibilityValue?.text} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={()=>{if(!press.current.held)onPress?.()}} style={{display:'flex',border:0,padding:0,backgroundColor:'transparent',color:'inherit',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>};
+export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>{onChangeText(event.target.value);onSelectionChange?.({start:event.target.value.length,end:event.target.value.length})}}/>;
+export const Pressable=({children,style,onPress,onPressIn,onPressOut,onLongPress,disabled,accessibilityLabel,accessibilityState,accessibilityValue,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=>{const press=useRef({});return <button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onPointerDown={event=>{event.preventDefault();press.current.held=false;onPressIn?.();if(onLongPress)press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress()},500)}} onPointerUp={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[]}})}} onPointerCancel={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[{}]}})}} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-valuetext={accessibilityValue?.text} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={()=>{if(!press.current.held)onPress?.()}} style={{display:'flex',border:0,padding:0,backgroundColor:'transparent',color:'inherit',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>};
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const Modal=({children,onRequestClose,visible=true,onDismiss})=>{const shown=useRef(visible);useLayoutEffect(()=>{if(shown.current&&!visible)queueMicrotask(()=>onDismiss?.());shown.current=visible},[visible,onDismiss]);return visible?createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body):null};
-export const Platform={OS:'ios'};
+export const Platform={OS:'android'};
 export const useWindowDimensions=()=>{const[viewport,setViewport]=useState({width:innerWidth,height:innerHeight});useLayoutEffect(()=>{const resize=()=>setViewport({width:innerWidth,height:innerHeight});addEventListener('resize',resize);return()=>removeEventListener('resize',resize)},[]);return viewport};
 export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
@@ -27,6 +27,7 @@ export const Keyboard={dismiss(){window.keyboardDismissals=(window.keyboardDismi
 export const Icon=()=>null;
 export const IconButton=({label,onPress,onLongPress,disabled})=>{const press=useRef({});return <button aria-label={label} disabled={disabled} onPointerDown={()=>{press.current.held=false;press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress?.()},500)}} onPointerUp={()=>clearTimeout(press.current.timer)} onPointerCancel={()=>clearTimeout(press.current.timer)} onClick={()=>{if(!press.current.held)onPress()}} style={{width:44,height:44,padding:0,flexShrink:0}}/>};
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress} style={{minWidth:44,minHeight:44}}>{label}</button>;
+export const Image=({source,style})=><img src={source?.uri} style={style}/>;
 export const Glass=View;
 export const Choice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
@@ -37,7 +38,7 @@ export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#9
 const stubs = [
   {
     path: '@expo/ui/swift-ui',
-    contents: `export const Host=({children})=>children;export const Button=({children,testID,onPress,modifiers})=><button aria-label={testID} disabled={modifiers.some(value=>value?.disabled)} onClick={onPress} style={{width:44,height:44,padding:0,flexShrink:0}}>{children}</button>;`,
+    contents: `export const Host=({children})=>children;export const Menu=()=>null;export const Button=({children,testID,onPress,modifiers})=><button aria-label={testID} disabled={modifiers.some(value=>value?.disabled)} onClick={onPress} style={{width:44,height:44,padding:0,flexShrink:0}}>{children}</button>;`,
   },
   {
     path: '@expo/ui/swift-ui/modifiers',
@@ -50,7 +51,7 @@ const stubs = [
   {
     path: './native-icon',
     importer: mobile + 'src/ui/controls/icon-button.tsx',
-    contents: 'export const NativeIcon=()=>null;',
+    contents: 'export const NativeIcon=()=>null;export const NativeMenuButton=()=>null;',
   },
 
   {
@@ -81,6 +82,19 @@ const stubs = [
     contents: 'export const useLinkOrigin=()=>({});',
   },
   { path: 'react-native', contents: controls },
+  {
+    path: 'react-native-screens',
+    contents: `import {createPortal} from 'react-dom';export const FullWindowOverlay=({children})=>createPortal(<div data-native-overlay style={{position:'fixed',inset:0,zIndex:1000}}>{children}</div>,document.body);`,
+  },
+  {
+    path: 'react-native-reanimated',
+    contents: `import {View} from 'react-native';const transition={duration:()=>transition,reduceMotion:()=>transition};export const LinearTransition=transition,ReduceMotion={Always:'always',System:'system'};export default {View};`,
+  },
+  {
+    path: '../../agents/harness-icon',
+    importer: mobile,
+    contents: 'export const HarnessIcon=()=>null;',
+  },
   ...['./icon', '../content/text', '../theme'].map((path) => ({
     path,
     importer: mobile + 'src/ui/controls/',
@@ -156,7 +170,8 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
   {
     path: '../../runtime/preferences/app-preferences',
     importer: mobile,
-    contents: 'export const useCarMode=()=>false;',
+    contents:
+      'export const useCarMode=()=>false;export const useMobilePreferences=()=>({showContextUsage:window.showContextUsage!==false});',
   },
   { path: './harness-icon', importer: mobile, contents: 'export const HarnessIcon=()=>null;' },
   {
@@ -182,7 +197,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
   {
     path: './composer-field',
     importer: mobile,
-    contents: `import {useRef,useEffect} from 'react';export const ComposerField=({value,onChangeText,onFocus,onBlur,editable,focusKey})=>{const ref=useRef(null);useEffect(()=>{if(focusKey)ref.current?.focus()},[focusKey]);return <textarea ref={ref} style={{width:"100%",minWidth:0,boxSizing:"border-box"}} aria-label="Message" value={value} disabled={!editable} onFocus={onFocus} onBlur={onBlur} onChange={event=>onChangeText(event.target.value)}/>};`,
+    contents: `import {useRef,useEffect} from 'react';export const ComposerField=({value,onChangeText,onFocus,onBlur,editable,focusKey,onSelectionChange,showOptions,placeholder})=>{const ref=useRef(null);useEffect(()=>{if(focusKey)ref.current?.focus()},[focusKey]);return <textarea ref={ref} style={{width:"100%",minWidth:0,minHeight:showOptions?64:44,height:showOptions?64:44,margin:0,resize:"none",boxSizing:"border-box"}} placeholder={placeholder} aria-label="Message" value={value} disabled={!editable} onFocus={onFocus} onBlur={onBlur} onChange={event=>{onChangeText(event.target.value);onSelectionChange?.({start:event.target.value.length,end:event.target.value.length})}}/>};`,
   },
   {
     path: '../creation/task-machine-selector',
@@ -193,7 +208,6 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
     ['../creation/checkout-choice', 'CheckoutChoice'],
     ['../creation/worktree-base-picker', 'WorktreeBasePicker'],
     ['../conversation/components/message-attachments', 'MessageAttachments'],
-    ['../conversation/components/file-mentions', 'FileMentions'],
     ['../detail/harness-settings', 'HarnessSettings'],
     ['./car-composer', 'CarComposer'],
   ].map(([path, name]) => ({ path, importer: mobile, contents: `export const ${name}=()=>null;` })),
@@ -226,7 +240,7 @@ function App(){
   const [pendingFork,setPendingFork]=useState();window.setPendingFork=setPendingFork;const forkRef=useRef();const textRef=useRef(text);textRef.current=text;const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',pendingFork,stageForkEffect:fork=>Effect.sync(()=>{forkRef.current=fork;setPendingFork(fork);return fork}),confirmForkEffect:()=>Effect.sync(()=>{const fork={...forkRef.current,accepted:true};if(textRef.current===fork.draftText)setText('');forkRef.current=fork;setPendingFork(fork);return fork}),finishForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),discardForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
   window.runtime={connected,snapshot,overviews:[{profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan'}},connected,snapshot}],activeId:'runtime',profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan',token:'token'}},call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true}},catch:error=>error})};
   window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},act:work=>void work(),attachmentPicker:{pick(){throw new Error('Attachment chooser must not open')},select(source){window.calls.push({mode:'attach',source})},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
-  return <Composer task={task} renderAbove={(setup,starters,startModes)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState starters={starters} startModes={startModes} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
+  return <Composer task={task} renderAbove={(setup,startModes)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState startModes={startModes} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
     },
@@ -300,12 +314,38 @@ try {
       .getByTestId('Composer toolbar')
       .getByRole('button', { name: /^(Queue follow-up|Stop)$/ })
     await button.hover()
+    await page.getByRole('textbox', { name: 'Message', exact: true }).focus()
+    await button.hover()
     await page.mouse.down()
-    await page.waitForTimeout(600)
+    await page.getByRole('menu', { name: 'Message actions', exact: true }).waitFor()
     assert.equal(
       await page.getByRole('menu', { name: 'Message actions', exact: true }).count(),
-      0,
-      'Wait until the original finger is released before presenting a native menu',
+      1,
+      'Open message actions as soon as the hold is detected',
+    )
+    assert.equal(
+      await page
+        .getByRole('textbox', { name: 'Message', exact: true })
+        .evaluate((node) => document.activeElement === node),
+      true,
+      'Holding keeps the input focused',
+    )
+    const beforeRelease = await page.evaluate(() => window.calls.length)
+    await page
+      .getByRole('button', { name: 'Dismiss Message actions', exact: true })
+      .dispatchEvent('click')
+    await page
+      .getByRole('menuitem', { name: 'Queue follow-up', exact: true })
+      .dispatchEvent('click')
+    assert.equal(
+      await page.getByRole('menu', { name: 'Message actions', exact: true }).count(),
+      1,
+      'The originating release cannot dismiss the menu',
+    )
+    assert.equal(
+      await page.evaluate(() => window.calls.length),
+      beforeRelease,
+      'A release without a fresh press cannot send',
     )
     await page.mouse.up()
     await page.getByRole('menu', { name: 'Message actions', exact: true }).waitFor()
@@ -342,7 +382,9 @@ try {
     'Held menu fits above the keyboard and trigger',
   )
   assert.equal(await page.getByRole('dialog', { name: 'Message actions', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Dismiss Message actions', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Dismiss Message actions', exact: true })
+    .click({ position: { x: 4, y: 4 } })
   await messageMenu.waitFor({ state: 'detached' })
   assert.equal(
     await page.evaluate(() => window.calls.length),
@@ -359,6 +401,20 @@ try {
   await messageMenu.getByRole('menuitem', { name: 'Stop', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stop' })
   await page.evaluate(() => window.setDraftText(''))
+  await page.getByRole('textbox', { name: 'Message', exact: true }).focus()
+  const contextUsage = page.getByText('95%', { exact: true })
+  await contextUsage.waitFor()
+  await page.evaluate(() => {
+    window.showContextUsage = false
+    window.setTask({ title: 'Hidden context' })
+  })
+  await contextUsage.waitFor({ state: 'detached' })
+  assert.equal(await page.getByRole('button', { name: 'Compact context', exact: true }).count(), 1)
+  await page.evaluate(() => {
+    window.showContextUsage = true
+    window.setTask({ title: 'Review' })
+  })
+  await contextUsage.waitFor()
   await page
     .getByTestId('Composer toolbar')
     .getByRole('button', { name: 'Stop', exact: true })
@@ -598,7 +654,9 @@ try {
       .isVisible(),
     true,
   )
-  await page.getByRole('button', { name: 'Dismiss Message actions', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Dismiss Message actions', exact: true })
+    .click({ position: { x: 4, y: 4 } })
   await page.getByRole('button', { name: 'Agent & model', exact: true }).click()
   await page.getByRole('button', { name: 'Use thread defaults', exact: true }).click()
   await page.getByRole('button', { name: 'Close', exact: true }).click()
@@ -629,8 +687,14 @@ try {
     reasoning: 'low',
   })
   assert.equal(await page.evaluate(() => window.calls.at(-1).input.expectedTurnSettings), null)
-  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Explain this checkout')
-  await page.getByRole('button', { name: 'Ask a side question', exact: true }).click()
+  const sideCommand = page.getByRole('button', {
+    name: 'Command sidechat: Ask a side question',
+    exact: true,
+  })
+  await page
+    .getByRole('textbox', { name: 'Message', exact: true })
+    .fill('Explain this checkout\n/sidechat')
+  await sideCommand.click()
   await page.waitForFunction(() =>
     window.calls.some((call) => call.path === '/api/tasks/side-chat/ask'),
   )
@@ -638,29 +702,33 @@ try {
     await page.evaluate(
       () => window.calls.find((call) => call.path === '/api/tasks/side-chat/ask').input,
     ),
-    { id: 'task', chatId: 'side-1', question: 'Explain this checkout' },
+    { id: 'task', chatId: 'side-1', question: 'Explain this checkout\n' },
   )
   assert.equal(await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(), '')
   assert.deepEqual(await page.evaluate(() => window.calls.find((call) => call.mode === 'aside')), {
     mode: 'aside',
     chatId: 'side-1',
   })
-  // The side-chat icon sends immediately for both running and idle threads.
+  // The local slash command saves before sending in both running and idle threads.
   await page.evaluate(() => window.setTask({ status: 'review' }))
-  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('From the icon')
-  await page.getByRole('button', { name: 'Ask a side question', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'Message', exact: true })
+    .fill('From the command\n/sidechat')
+  await sideCommand.click()
   await page.waitForFunction(
     () => window.calls.filter((call) => call.path === '/api/tasks/side-chat/ask').length === 2,
   )
   await page.evaluate(() => {
     window.failSideSave = true
   })
-  await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Keep on failure')
-  await page.getByRole('button', { name: 'Ask a side question', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'Message', exact: true })
+    .fill('Keep on failure\n/sidechat')
+  await sideCommand.click()
   await page.waitForFunction(() => window.alerts.some((alert) => alert[1] === 'Side save failed'))
   assert.equal(
     await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
-    'Keep on failure',
+    'Keep on failure\n',
   )
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Offline draft')
   await page.evaluate(() => {
@@ -685,11 +753,10 @@ try {
     await messageMenu.getByRole('menuitem', { name: 'Fork', exact: true }).isDisabled(),
     true,
   )
-  assert.equal(
-    await page.getByRole('button', { name: 'Ask a side question', exact: true }).isDisabled(),
-    true,
-  )
-  await page.getByRole('button', { name: 'Dismiss Message actions', exact: true }).click()
+  assert.equal(await sideCommand.count(), 0)
+  await page
+    .getByRole('button', { name: 'Dismiss Message actions', exact: true })
+    .click({ position: { x: 4, y: 4 } })
   await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
   for (const name of [
     'Pause queued message 1',
@@ -1108,7 +1175,9 @@ try {
   assert.deepEqual(await page.getByTestId('Composer').boundingBox(), beforePlus)
   assert.equal(await page.evaluate(() => window.keyboardDismissals ?? 0), dismissalsBeforePlus)
   assert.equal(await page.getByRole('dialog', { name: 'Add to draft', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Dismiss Add to draft', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Dismiss Add to draft', exact: true })
+    .click({ position: { x: 4, y: 4 } })
   await plusMenu.waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Stashed drafts', exact: true }).click()
@@ -1142,7 +1211,7 @@ try {
     await page.waitForFunction((source) => window.calls.at(-1)?.source === source, source)
   }
   assert.equal(await page.getByRole('menu', { name: 'Add to draft', exact: true }).count(), 0)
-  // Prompt-first native layout uses the production empty state and starter actions.
+  // Prompt-first native layout uses the production empty state and start modes.
   await page.evaluate(() => {
     window.setDraftText('')
     window.setTask({
@@ -1165,16 +1234,28 @@ try {
     await page.setViewportSize(viewport)
     const start = page.getByTestId('Thread start')
     await start.waitFor()
+    const field = page.getByRole('textbox', { name: 'Message', exact: true })
+    await field.evaluate((node) => node.blur())
+    assert.equal(
+      await page.getByRole('button', { name: 'Agent & model', exact: true }).count(),
+      0,
+      'Empty start stays one line',
+    )
+    const compact = await field.boundingBox()
+    assert.equal(compact.height, 44)
+    await field.focus()
+    await page.getByRole('button', { name: 'Agent & model', exact: true }).waitFor()
+    assert.ok((await field.boundingBox()).height > compact.height)
+    await field.evaluate((node) => node.blur())
     assert.equal(await start.getByText('Browse threads', { exact: true }).count(), 0)
+    for (const label of ['Build something', 'Fix a bug', 'Understand code', 'Plan a change']) {
+      assert.equal(await page.getByRole('button', { name: label, exact: true }).count(), 0)
+    }
     for (const label of [
       'Start without a project',
       'Start in Scope',
       'Choose project',
       'Task server',
-      'Build something',
-      'Fix a bug',
-      'Understand code',
-      'Plan a change',
     ]) {
       const button = page.getByRole('button', { name: label, exact: true })
       await button.scrollIntoViewIfNeeded()
@@ -1256,7 +1337,8 @@ try {
   })
   assert.equal(await scope.count(), 0)
   assert.equal(await selectedProject.getAttribute('aria-selected'), 'true')
-  assert.equal(await selectedProject.textContent(), 'Project')
+  assert.equal(await selectedProject.getByText('Project', { exact: true }).count(), 1)
+  assert.equal(await selectedProject.getByTestId('Selected project icon').count(), 1)
   await selectedProject.click()
   assert.equal(await page.evaluate(() => window.currentTask.repositoryId), 'repo')
   await page.getByRole('button', { name: 'Scope mode', exact: true }).click()
@@ -1290,7 +1372,7 @@ try {
   await projects.click()
   await page.getByRole('button', { name: 'Project', exact: true }).click()
   await page.waitForFunction(() => window.currentTask.repositoryId === 'repo')
-  assert.equal(await projects.textContent(), 'Project')
+  assert.equal(await projects.getByText('Project', { exact: true }).count(), 1)
   assert.equal(await projects.isDisabled(), false)
   await general.click()
   await page.waitForFunction(() => window.currentTask.repositoryId === 'scratch')
@@ -1298,20 +1380,7 @@ try {
     window.setInputs({ questions: [], approvals: [] })
     window.setDraftText('')
   })
-  const calls = await page.evaluate(() => window.calls.length)
   const draftInput = page.getByRole('textbox', { name: 'Message', exact: true })
-  await draftInput.evaluate((node) => {
-    window.starterInput = node
-  })
-  await page.getByRole('button', { name: 'Plan a change', exact: true }).click()
-  assert.equal(await draftInput.inputValue(), 'Help me plan this change: ')
-  assert(
-    await draftInput.evaluate(
-      (node) => node === window.starterInput && document.activeElement === node,
-    ),
-  )
-  assert.equal(await page.getByRole('button', { name: 'Build something', exact: true }).count(), 0)
-  assert.equal(await page.evaluate(() => window.calls.length), calls)
   await draftInput.fill('My own draft')
   assert.equal(await draftInput.inputValue(), 'My own draft')
   // A saved retry waits for an in-progress machine operation, including automatic replay.

@@ -415,6 +415,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
                   key={item.path}
                   title={item.title}
                   subtitle={item.subtitle}
+                  compact={!needle && !category}
                   value={
                     item.path === '/settings/devices'
                       ? `${online} online`

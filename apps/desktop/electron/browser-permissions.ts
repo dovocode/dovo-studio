@@ -14,6 +14,9 @@ import {
 const schema = Schema.Struct({
   helpers: Schema.Array(Schema.String),
   notifications: Schema.Record(Schema.String, Schema.Boolean),
+  requested: Schema.optional(
+    Schema.Record(Schema.String, Schema.Array(browserSitePermissionSchema)),
+  ),
   devices: Schema.optional(Schema.Record(Schema.String, Schema.Array(Schema.String))),
   sites: Schema.optional(
     Schema.Record(
@@ -100,6 +103,15 @@ export function browserPermissions(profileId: string) {
       const current = read()
       return {
         origin,
+        requested: browserSitePermissionSchema.literals.filter(
+          (permission) =>
+            current.requested?.[origin]?.includes(permission) ||
+            current.sites?.[origin]?.[permission] !== undefined ||
+            (permission === 'notifications' && current.notifications[origin] !== undefined) ||
+            (permission === 'microphone' && current.media?.[origin]?.audio) ||
+            (permission === 'camera' && current.media?.[origin]?.video) ||
+            current.devices?.[origin]?.some((key) => key.startsWith(`${permission}:`)),
+        ),
         permissions: Schema.decodeUnknownSync(
           Schema.Record(browserSitePermissionSchema, browserPermissionSettingSchema),
         )(
@@ -111,6 +123,15 @@ export function browserPermissions(profileId: string) {
           ),
         ),
       }
+    },
+    recordRequest: (origin: string, ...permissions: BrowserSitePermission[]) => {
+      const current = read()
+      const previous = current.requested?.[origin] ?? []
+      if (permissions.every((permission) => previous.includes(permission))) return
+      write({
+        ...current,
+        requested: { ...current.requested, [origin]: [...new Set([...previous, ...permissions])] },
+      })
     },
     setSite: (
       origin: string,

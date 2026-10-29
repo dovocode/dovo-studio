@@ -20,6 +20,10 @@ export type ChoiceProps = {
   hideLabel?: boolean
   disabled?: boolean
   compact?: boolean
+  /** A flat, smaller value that can still wrap in settings. */
+  quiet?: boolean
+  /** Align a settings value against the trailing edge of a horizontal row. */
+  alignValue?: 'leading' | 'trailing'
   row?: boolean
 }
 export function Choice({
@@ -31,6 +35,8 @@ export function Choice({
   disabled = false,
   hideLabel = false,
   compact = false,
+  quiet = false,
+  alignValue = 'leading',
   row = false,
 }: ChoiceProps) {
   const { colors, styles } = useTheme()
@@ -163,12 +169,14 @@ export function Choice({
                 disabled,
               }}
               compact={compactControl}
+              quiet={quiet}
+              alignValue={alignValue}
             />
           ) : (
             <View
               style={{
                 borderRadius: 12,
-                backgroundColor: compactControl ? undefined : colors.surface,
+                backgroundColor: compactControl || quiet ? undefined : colors.surface,
                 opacity: disabled ? 0.45 : 1,
               }}
             >
@@ -191,8 +199,8 @@ export function Choice({
                 style={({ pressed }) => [
                   styles.row,
                   {
-                    paddingHorizontal: compactControl ? 4 : 12,
-                    paddingVertical: compactControl ? 8 : 12,
+                    paddingHorizontal: compactControl || quiet ? 4 : 12,
+                    paddingVertical: compactControl || quiet ? 8 : 12,
                     minHeight: 44,
                     flexWrap: 'nowrap',
                     borderRadius: 12,
@@ -204,18 +212,19 @@ export function Choice({
                   <Icon
                     name={selected.icon}
                     size={18}
-                    color={compactControl ? colors.accent : colors.text}
+                    color={compactControl || quiet ? colors.accent : colors.text}
                   />
                 )}
                 <Text
-                  numberOfLines={compactControl ? 1 : undefined}
+                  numberOfLines={compactControl && !quiet ? 1 : undefined}
                   style={[
                     styles.text,
                     {
                       flex: 1,
                       minWidth: 0,
-                      fontSize: compactControl ? 15 : 17,
-                      color: compactControl ? colors.accent : colors.text,
+                      fontSize: compactControl || quiet ? 15 : 17,
+                      color: compactControl || quiet ? colors.accent : colors.text,
+                      textAlign: alignValue === 'trailing' ? 'right' : 'left',
                     },
                   ]}
                 >

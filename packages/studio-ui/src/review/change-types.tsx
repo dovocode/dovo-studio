@@ -1,15 +1,27 @@
 import { changeTypeDistribution, type ChangeTypeFile, type FileKind } from '@dovo/protocol'
 import { cn } from '../lib/utils'
+import { Box, Code2, FileText, FlaskConical, Settings2 } from 'lucide-react'
 
-const categories: { kind: FileKind; label: string; color: string }[] = [
+export const changeCategories = [
   { kind: 'normal', label: 'Code', color: 'text-sky-700 dark:text-sky-400' },
-  { kind: 'tests', label: 'Tests', color: 'text-emerald-800 dark:text-emerald-400' },
-  { kind: 'mocks', label: 'Mocks', color: 'text-violet-700 dark:text-violet-300' },
-  { kind: 'docs', label: 'Docs', color: 'text-amber-800 dark:text-amber-400' },
-  { kind: 'generated', label: 'Generated', color: 'text-muted-foreground' },
-]
+  { kind: 'tests', label: 'Tests', color: 'text-purple-700 dark:text-purple-400' },
+  { kind: 'mocks', label: 'Mocks', color: 'text-orange-700 dark:text-orange-400' },
+  { kind: 'docs', label: 'Docs', color: 'text-emerald-800 dark:text-emerald-400' },
+  { kind: 'generated', label: 'Generated', color: 'text-amber-800 dark:text-amber-400' },
+] as const
+const categoryIcons = {
+  normal: Code2,
+  tests: FlaskConical,
+  mocks: Box,
+  docs: FileText,
+  generated: Settings2,
+}
+export function ChangeCategoryIcon({ kind }: { kind: FileKind }) {
+  const Icon = categoryIcons[kind]
+  return <Icon aria-hidden className="size-4 shrink-0" />
+}
 export function ChangeTypeIndicator({ kind }: { kind: FileKind }) {
-  const category = categories.find((category) => category.kind === kind)!
+  const category = changeCategories.find((category) => category.kind === kind)!
   return (
     <span
       role="img"
@@ -25,22 +37,24 @@ export function ChangeTypeFilters({
   onChange,
   total,
   weightBy = 'files',
+  showDistribution = true,
 }: {
   files: readonly ChangeTypeFile[]
   value?: FileKind
   onChange: (kind: FileKind | undefined) => void
   total?: number | null
   weightBy?: 'files' | 'lines'
+  showDistribution?: boolean
 }) {
   const { counts, weights, unit, total: amount } = changeTypeDistribution(files, weightBy)
   return (
     <div className="space-y-1">
-      {!!files.length && (
+      {showDistribution && !!files.length && (
         <div
           className="flex w-full gap-0.5"
           aria-label={unit === 'lines' ? 'Changed line distribution' : 'File type distribution'}
         >
-          {categories
+          {changeCategories
             .filter(({ kind }) => (weights.get(kind) ?? 0) > 0)
             .map(({ kind, label, color }) => (
               <button
@@ -79,7 +93,7 @@ export function ChangeTypeFilters({
         >
           All {files.length}
         </button>
-        {categories
+        {changeCategories
           .filter(({ kind }) => counts.has(kind) || value === kind)
           .map(({ kind, label, color }) => (
             <button
@@ -89,7 +103,7 @@ export function ChangeTypeFilters({
               onClick={() => onChange(value === kind ? undefined : kind)}
               className={cn('studio-filter-chip flex items-center gap-1.5', color)}
             >
-              <span aria-hidden className="size-1.5 rounded-full bg-current" />
+              <ChangeCategoryIcon kind={kind} />
               {label} {counts.get(kind) ?? 0}
             </button>
           ))}

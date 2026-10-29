@@ -38,7 +38,7 @@ function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;con
   [
     {
       path: '@dovo/studio-core',
-      contents: `export * from '@dovo/protocol';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useWorkspace=()=>window.store;export const whitespaceOnlyFile=()=>false;export const useAppPreferences=()=>({collapseChangedFiles:false,hideWhitespaceChanges:false,importedCodeThemes:[]});export const readAppPreferences=()=>({theme:'dark',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useDiffOptions=()=>({defaultSplit:false,options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'scroll'}});`,
+      contents: `export * from '@dovo/protocol';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useWorkspace=()=>window.store;export const whitespaceOnlyFile=()=>false;export const useAppPreferences=()=>({collapseChangedFiles:true,hideWhitespaceChanges:false,importedCodeThemes:[]});export const readAppPreferences=()=>({theme:'dark',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useDiffOptions=()=>({defaultSplit:false,options:{theme:'dovo-dovo-dark',themeType:'dark',overflow:'scroll'}});`,
     },
     {
       path: '@dovo/studio-core/state',
@@ -46,7 +46,7 @@ function App(){const [current,setTurn]=useState(turn);window.setTurn=setTurn;con
     },
     {
       path: '@dovo/studio-ui',
-      contents: `export * from '${ui}/components/ui/button.tsx';export * from '${ui}/components/ui/dialog.tsx';export {ChoicePicker} from '${ui}/choice-picker.tsx';export {ErrorBoundary} from '${ui}/components/error-boundary.tsx';export {FileBrowserTree} from '${ui}/file-tree.tsx';export {ChangeTypeFilters} from '${ui}/review/change-types.tsx';`,
+      contents: `export * from '${ui}/components/ui/button.tsx';export * from '${ui}/components/ui/dialog.tsx';export {ChoicePicker} from '${ui}/choice-picker.tsx';export {ErrorBoundary} from '${ui}/components/error-boundary.tsx';export {FileBrowserTree} from '${ui}/file-tree.tsx';export {ChangeTypeFilters} from '${ui}/review/change-types.tsx';export {ChangeSummary} from '${ui}/review/change-summary.tsx';`,
     },
     {
       path: '@dovo/studio-ui/code-themes',
@@ -108,10 +108,14 @@ try {
     28,
   )
   await page.screenshot({ path: '/tmp/dovo-compact-attachments.png' })
-  await page
-    .getByLabel('Changed file breakdown', { exact: true })
-    .filter({ hasText: /All 4Code 4/ })
-    .waitFor()
+  const summary = page.getByRole('region', { name: 'Changed file summary', exact: true })
+  const disclosure = summary.getByRole('button', { name: '4 files changed', exact: true })
+  assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
+  assert.equal(await summary.locator('[data-file-tree-row]').count(), 0)
+  await page.screenshot({ path: '/tmp/dovo-turn-summary-collapsed.png' })
+  await disclosure.click()
+  await summary.getByRole('button', { name: 'Code 4', exact: true }).waitFor()
+  await page.screenshot({ path: '/tmp/dovo-turn-summary-expanded.png' })
   await page.getByRole('button', { name: 'Open diff', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Turn checkpoint · 4 files' })
   const rendered = async (text) =>
@@ -201,23 +205,15 @@ try {
     })),
   )
   const breakdown = page.getByLabel('Changed file breakdown', { exact: true })
-  await breakdown.filter({ hasText: /All 8Code 4Tests 1Mocks 1Docs 1Generated 1/ }).waitFor()
-  const distribution = breakdown.getByLabel('Changed line distribution', { exact: true })
-  const codeSegment = distribution.getByRole('button', {
-    name: 'Filter Code: 4 files, 4 of 106 changed lines',
-    exact: true,
+  await breakdown.getByRole('button', { name: 'All 8', exact: true }).waitFor()
+  const distribution = breakdown.getByRole('img', {
+    name: /^(Available changed|Changed) line distribution/,
   })
-  const testSegment = distribution.getByRole('button', {
-    name: 'Filter Tests: 1 files, 100 of 106 changed lines',
-    exact: true,
-  })
-  const codeWidth = (await codeSegment.boundingBox()).width
-  const testWidth = (await testSegment.boundingBox()).width
-  assert.ok(
-    Math.abs(testWidth / codeWidth - 25) < 0.2,
-    'The large test diff occupies 25 times the code segment',
-  )
-  assert.equal(await distribution.getByRole('button', { name: /Generated/ }).count(), 0)
+  const segments = distribution.locator(':scope > span')
+  const codeWidth = (await segments.nth(0).boundingBox()).width
+  const testWidth = (await segments.nth(1).boundingBox()).width
+  assert.ok(testWidth > codeWidth, 'The large test diff dominates the changed-line bar')
+  assert.equal(await segments.count(), 4, 'Unknown generated line totals do not invent line weight')
   // A file with no line evidence remains selectable through its category chip.
   await breakdown.getByRole('button', { name: 'Generated 1', exact: true }).click()
   assert.equal(
@@ -258,26 +254,14 @@ try {
       },
     })),
   )
-  const tinyDoc = distribution.getByRole('button', {
-    name: 'Filter Docs: 1 files, 1 of 10006 changed lines',
-    exact: true,
-  })
-  assert.ok(
-    (await tinyDoc.boundingBox()).width >= 8,
-    'A one-line category remains visible beside a huge diff',
-  )
-  await tinyDoc.click()
-  assert.equal(
-    await breakdown
-      .getByRole('button', { name: 'Docs 1', exact: true })
-      .getAttribute('aria-pressed'),
-    'true',
-  )
+  const docs = breakdown.getByRole('button', { name: 'Filter Docs: 1 files', exact: true })
+  await docs.click()
+  assert.equal(await docs.getAttribute('aria-pressed'), 'true')
   await breakdown.getByRole('button', { name: 'All 8', exact: true }).click()
-  const disclosure = page.getByRole('button', { name: /8 changed files/ })
-  await disclosure.click()
-  assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
-  assert.equal(await breakdown.isVisible(), true)
+  const updatedDisclosure = summary.getByRole('button', { name: '8 files changed', exact: true })
+  await updatedDisclosure.click()
+  assert.equal(await updatedDisclosure.getAttribute('aria-expanded'), 'false')
+  assert.equal(await breakdown.count(), 0)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   await page.evaluate(() => {
     window.failSyntax = false

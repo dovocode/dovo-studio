@@ -39,6 +39,7 @@ export function useFileMentions({
   input,
   resources,
   onCommand,
+  onSideChat,
   prompts = [],
   onManagePrompts,
 }: {
@@ -49,6 +50,7 @@ export function useFileMentions({
   resources: ResourceSettings
   /** Runs a built-in "/" command; its text is removed from the draft. */
   onCommand?: (id: ComposerCommandId) => void
+  onSideChat?: () => void
   /** The project's saved prompts, inserted with "#". */
   prompts?: readonly SavedPrompt[]
   onManagePrompts?: () => void
@@ -81,8 +83,13 @@ export function useFileMentions({
         }))
     : []
   const commandItems: Suggestion[] =
-    mention?.trigger === '/' && onCommand
-      ? commandSuggestions(mention.query).map((command) => ({
+    mention?.trigger === '/' && (onCommand || onSideChat)
+      ? [
+          ...(onCommand ? commandSuggestions(mention.query) : []),
+          ...(onSideChat && 'sidechat'.startsWith(mention.query.toLowerCase())
+            ? [{ id: 'sidechat', description: 'Open a side chat or ask about the current draft' }]
+            : []),
+        ].map((command) => ({
           kind: 'command' as const,
           value: command.id,
           detail: command.description,
@@ -182,7 +189,8 @@ export function useFileMentions({
         input.current?.setSelectionRange(mention.start, mention.start)
         setCaret(mention.start)
       })
-      onCommand?.(item.value as ComposerCommandId)
+      if (item.value === 'sidechat') onSideChat?.()
+      else onCommand?.(item.value as ComposerCommandId)
       return
     }
     const next = insertMention(draft, mention.start, caret, item.value, mention.trigger)

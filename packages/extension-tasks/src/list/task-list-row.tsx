@@ -80,6 +80,7 @@ function TaskListRowView({
   multiSelected,
   editable,
   disabled,
+  hideStatusLabel,
   menuBusy,
   selectionMenu,
   canSplit,
@@ -102,6 +103,7 @@ function TaskListRowView({
   multiSelected: boolean
   editable: boolean
   disabled: boolean
+  hideStatusLabel: boolean
   menuBusy: boolean
   selectionMenu?: ReactNode
   canSplit: boolean
@@ -227,6 +229,7 @@ function TaskListRowView({
             owner={owner}
             editable={editable}
             disabled={disabled}
+            hideStatusLabel={hideStatusLabel}
             onSelect={open}
             thread={thread}
             selectedThreadKey={selectedThreadKey}

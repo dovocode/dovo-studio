@@ -1,5 +1,6 @@
 import {
   aggregateRuntimeTasks,
+  taskBackgroundTerminalCount,
   taskDisplayProject,
   projectDisplayName,
   buildThreadTree,
@@ -17,6 +18,7 @@ import {
 
 /** Only owner facts used by a row; task history and other snapshot data stay out of its props. */
 export type TaskListOwner = {
+  activeTerminals: number
   profile: RuntimeProfile
   runtimeIcon: RuntimeSnapshot['runtimeIcon']
   taskListUndoSupported: boolean
@@ -60,6 +62,14 @@ export function taskListProjection(
       ] as const
     }),
   )
+  const terminalCounts = new Map(
+    overviews.map((source) => {
+      const counts = new Map<string, number>()
+      for (const terminal of source.snapshot?.terminals ?? [])
+        if (!terminal.exited) counts.set(terminal.taskId, (counts.get(terminal.taskId) ?? 0) + 1)
+      return [source.profile.id, counts] as const
+    }),
+  )
   const rows = new Map<string, TaskListRowData>()
   for (const next of aggregateRuntimeTasks(overviews, now, true)) {
     const source = sources.get(next.runtimeId)
@@ -85,6 +95,9 @@ export function taskListProjection(
         ? prior.row
         : next
     const nextOwner: TaskListOwner = {
+      activeTerminals:
+        (terminalCounts.get(next.runtimeId)?.get(next.task.id) ?? 0) +
+        taskBackgroundTerminalCount(next.task),
       profile: source.profile,
       runtimeIcon: source.snapshot?.runtimeIcon,
       taskListUndoSupported: source.snapshot?.taskListUndoSupported === true,
@@ -95,6 +108,7 @@ export function taskListProjection(
     }
     const owner =
       prior &&
+      prior.owner.activeTerminals === nextOwner.activeTerminals &&
       prior.owner.profile === nextOwner.profile &&
       prior.owner.runtimeIcon === nextOwner.runtimeIcon &&
       prior.owner.taskListUndoSupported === nextOwner.taskListUndoSupported &&

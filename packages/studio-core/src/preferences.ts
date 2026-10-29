@@ -39,6 +39,7 @@ const schema = mutableStruct({
   responseStreaming: Schema.Literals(['live', 'paragraphs']),
   showSkillsInSlashMenu: Schema.Boolean,
   markdownComposerPreview: Schema.Boolean,
+  showContextUsage: Schema.Boolean,
   collapseComposerOnScroll: Schema.Boolean,
   hideWhitespaceChanges: Schema.Boolean,
   proactivePanels: Schema.Boolean,
@@ -52,6 +53,11 @@ const schema = mutableStruct({
   quitShortcut: Schema.Literals(['immediate', 'hold', 'disabled']),
   theme: Schema.Literals(['dark', 'light', 'system']),
   themePalette: Schema.Literals([...studioThemeIds]),
+  themeGlow: Schema.Number.pipe(
+    Schema.check(Schema.isFinite()),
+    Schema.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+  ),
+  themeGradients: Schema.Boolean,
   colorVision: Schema.Literals(['default', 'blue-orange']),
   highContrast: Schema.Boolean,
   codeTheme: codeThemeSchema,
@@ -146,6 +152,7 @@ export const defaultAppPreferences: AppPreferences = {
   responseStreaming: 'live',
   showSkillsInSlashMenu: true,
   markdownComposerPreview: false,
+  showContextUsage: true,
   collapseComposerOnScroll: false,
   hideWhitespaceChanges: false,
   proactivePanels: false,
@@ -159,6 +166,8 @@ export const defaultAppPreferences: AppPreferences = {
   quitShortcut: 'immediate',
   theme: 'dark',
   themePalette: 'dovo',
+  themeGlow: 1,
+  themeGradients: true,
   colorVision: 'default',
   highContrast: false,
   codeTheme: 'app',
@@ -260,6 +269,10 @@ export function readAppPreferences(): AppPreferences {
   // every preference, and fields added in later versions start at their defaults.
   const saved = stored && typeof stored === 'object' ? (stored as Record<string, unknown>) : {}
   const merged: Record<string, unknown> = { ...defaultAppPreferences }
+  if (saved.themeEffects === false) {
+    merged.themeGlow = 0
+    merged.themeGradients = false
+  }
   for (const field of Object.keys(defaultAppPreferences)) {
     if (!(field in saved)) continue
     const candidate = { ...defaultAppPreferences, [field]: saved[field] }

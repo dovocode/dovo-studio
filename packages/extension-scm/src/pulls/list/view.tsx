@@ -323,7 +323,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
         <nav
           style={sidebarVisible || (!selected && !urlSelection) ? undefined : { display: 'none' }}
           aria-label="Pull request sidebar"
-          className={`@container/pr-list min-h-0 min-w-0 flex-col overflow-hidden ${hasDetail ? 'hidden w-full shrink-0 border-r md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
+          className={`@container/pr-list min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)] ${hasDetail ? 'hidden w-full shrink-0 border-r md:flex md:w-[22rem] lg:w-[26rem]' : 'flex flex-1'}`}
         >
           <SidebarHeader enabled={hasDetail} />
           <PageHeader title="Pull requests" embedded={hasDetail}>
@@ -359,7 +359,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               <span className="hidden @sm/pr-list:inline">Create</span>
             </Button>
           </PageHeader>
-          <div className="shrink-0 border-b px-3 py-2">
+          <div className="shrink-0 border-b border-border/70 px-3 py-2">
             <SearchField
               inputRef={searchInput}
               aria-label="Search pull requests"
@@ -377,7 +377,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               className="min-h-10 max-h-[max(2.5rem,calc(100%-8rem))] shrink-0 overflow-y-auto overscroll-contain"
               aria-label="Pull request filters"
             >
-              <div className="flex shrink-0 items-center border-b">
+              <div className="flex shrink-0 items-center border-b border-border/70">
                 <div
                   className="flex min-w-0 flex-1 gap-1 overflow-x-auto px-3 [scrollbar-width:none]"
                   aria-label="Personal pull request filters"
@@ -414,7 +414,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       aria-label={item.label}
                       aria-pressed={personal === item.id}
                       title={`${item.count} in loaded, filtered results`}
-                      className={`h-10 shrink-0 rounded-none border-b-2 px-2.5 text-xs hover:bg-transparent ${personal === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'}`}
+                      className={`my-1 h-8 shrink-0 rounded-md border px-2.5 text-xs ${personal === item.id ? 'border-primary/30 bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] text-primary shadow-[var(--studio-glow)] forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                       onClick={() => {
                         setPersonal(item.id)
                         setMarked([])
@@ -431,9 +431,9 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                   ))}
                 </div>
                 <Button
-                  className="mx-2 shrink-0"
+                  className="mx-2 h-8 shrink-0"
                   size="sm"
-                  variant={activeFilters ? 'secondary' : 'outline'}
+                  variant={activeFilters ? 'secondary' : 'ghost'}
                   aria-label="Filters"
                   aria-expanded={filtersOpen}
                   aria-controls="pr-list-filters"
@@ -445,7 +445,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                 </Button>
               </div>
               <div id="pr-list-filters" hidden={!filtersOpen}>
-                <div className="flex shrink-0 flex-wrap items-center gap-2 border-b p-3">
+                <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/70 bg-background/30 p-3">
                   <ChoicePicker
                     aria-label="PR repository"
                     className={selectStyle}
@@ -497,7 +497,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                     <option value="updated">Recently updated</option>
                   </ChoicePicker>
                 </div>
-                <div className="shrink-0 space-y-3 border-b p-3">
+                <div className="shrink-0 space-y-3 border-b border-border/70 bg-background/30 p-3">
                   {!!pulls.length && (
                     <div
                       className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"
@@ -631,7 +631,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                 </div>
               ))}
               {!busy && connected && !pulls.length && (
-                <p className="text-xs text-muted-foreground">
+                <p className="rounded-md border border-border/60 bg-background/30 px-3 py-4 text-xs text-muted-foreground">
                   {unavailable
                     ? 'Couldn’t load pull requests. Retry the sources above.'
                     : failedPages.length
@@ -648,7 +648,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                 </div>
               )}
               {!!marked.length && (
-                <div className="sticky top-0 z-10 flex items-center justify-between bg-background px-3 py-2 text-xs">
+                <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-sidebar px-3 py-2 text-xs dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]">
                   <span>{marked.length} PRs selected</span>
                   <Button size="sm" variant="ghost" onClick={() => setMarked([])}>
                     Clear selection

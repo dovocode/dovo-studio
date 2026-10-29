@@ -122,12 +122,24 @@ try {
   const names = async () => (await headings()).map((text) => text.replace(/\d+$/, '').trim())
   await page.getByText('Active thread', { exact: true }).waitFor()
   assert.deepEqual(await names(), ['Working', 'Waiting'])
-  const bottom = await page.locator('details').last().boundingBox()
+  const lastSection = await page.locator('details').last().boundingBox()
+  const activeRow = await page.getByText('Active thread', { exact: true }).boundingBox()
   const sidebar = await page.getByRole('complementary', { name: 'Task sidebar' }).boundingBox()
   assert.ok(
-    Math.abs(bottom.y + bottom.height - sidebar.y - sidebar.height) < 10,
-    'Collapsed sections align to the bottom of the desktop sidebar',
+    Math.abs(lastSection.y + lastSection.height - sidebar.y - sidebar.height) < 10,
+    'Trailing collapsed sections stay at the bottom',
   )
+  const waitingSummary = page.locator('summary').filter({ hasText: 'Waiting' })
+  await waitingSummary.click()
+  await page.getByText('Waiting thread', { exact: true }).waitFor()
+  assert.deepEqual(await names(), ['Working', 'Waiting'], 'Opening a section preserves its order')
+  const firstSection = await page.locator('details').first().boundingBox()
+  assert.ok(
+    firstSection.y - activeRow.y - activeRow.height < 12,
+    'An opened section and the sections preceding it follow the thread list',
+  )
+  await waitingSummary.click()
+  assert.deepEqual(await names(), ['Working', 'Waiting'], 'Closing a section preserves its order')
   const savedCollapse = await page.evaluate(() => window.collapsedSections())
   await page.evaluate(() => {
     window.temporary = {
@@ -141,6 +153,16 @@ try {
     window.render()
   })
   await page.getByText('Working thread', { exact: true }).waitFor()
+  assert.deepEqual(
+    await names(),
+    ['Working', 'Waiting'],
+    'Automatic reveals preserve section order',
+  )
+  const waitingSection = await waitingSummary.locator('..').boundingBox()
+  assert.ok(
+    Math.abs(waitingSection.y + waitingSection.height - sidebar.y - sidebar.height) < 10,
+    'Trailing collapsed sections stay at the bottom while an earlier section is open',
+  )
   assert.deepEqual(
     await page.evaluate(() => window.collapsedSections()),
     savedCollapse,
@@ -165,6 +187,11 @@ try {
   await page.getByText('Working thread', { exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.collapsedSections().includes('working')), false)
   await chevron(workingSummary, true)
+  assert.deepEqual(
+    await names(),
+    ['Working', 'Waiting'],
+    'Keyboard expansion preserves section order',
+  )
   await page.keyboard.press('Enter')
   await page.waitForFunction(() => window.collapsedSections().includes('working'))
   await chevron(workingSummary, false)
@@ -172,7 +199,7 @@ try {
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
   await dialog.getByRole('button', { name: 'Move waiting up', exact: true }).click()
-  assert.deepEqual(await names(), ['Open', 'Waiting', 'Working'])
+  assert.deepEqual(await names(), ['Waiting', 'Open', 'Working'])
   assert.equal(
     await page
       .locator('details')
@@ -185,6 +212,11 @@ try {
   await page.locator('summary').filter({ hasText: 'Waiting' }).click()
   await page.getByText('Waiting thread', { exact: true }).waitFor()
   await chevron(page.locator('summary').filter({ hasText: 'Waiting' }), true)
+  assert.deepEqual(
+    await names(),
+    ['Waiting', 'Open', 'Working'],
+    'Expansion preserves custom order',
+  )
   await page.waitForFunction(() => window.keyboardOrder[0] === 'waiting')
   const savedTasks = await page.evaluate(() => window.source.workspace.tasks)
   await page.evaluate(async () => {

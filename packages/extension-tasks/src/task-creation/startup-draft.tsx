@@ -188,7 +188,10 @@ function StartupComposer({
     </ComposerWorkspace>
   )
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+    <div
+      data-startup-draft=""
+      className="startup-draft flex h-full min-h-0 flex-col overflow-y-auto"
+    >
       <TaskEmptyState
         task={task}
         disabled={switching}
@@ -204,6 +207,7 @@ function StartupComposer({
       />
       <div className="mb-auto w-full shrink-0 pb-8">
         <Composer
+          startup
           task={task}
           temporary={temporary}
           workspaceMoving={switching}

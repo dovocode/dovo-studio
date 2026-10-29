@@ -59,6 +59,7 @@ export const appSettingsExtension = defineStudioExtension(
         'Show tool call details',
         'Show skills in the / menu',
         'Formatted composer preview',
+        'Show context usage',
       ],
       navigationGroup: 'settings',
       settingsScope: 'device',
@@ -67,7 +68,7 @@ export const appSettingsExtension = defineStudioExtension(
       order: 0.3,
       settingsSection: 'app',
       keywords:
-        'send enter composer conversation chat follow up queue steer streaming paragraphs markdown preview collapse tools skills slash menu speech microphone dictation language download',
+        'send enter composer conversation chat follow up queue steer streaming paragraphs markdown preview collapse context usage percentage tools skills slash menu speech microphone dictation language download',
       load: () => import('./app-settings/conversation'),
     },
     {
@@ -119,6 +120,8 @@ export const appSettingsExtension = defineStudioExtension(
         'Status colors',
         'Higher contrast',
         'Animations',
+        'Glow',
+        'Gradients',
         'Color scheme',
         'App font',
         'Code font',
@@ -134,7 +137,7 @@ export const appSettingsExtension = defineStudioExtension(
       order: 0.2,
       settingsSection: 'app',
       keywords:
-        'theme dark light system mode color text size font zoom motion animation reduce accessibility colorblind color blindness contrast blue orange',
+        'theme dark light system mode color glow intensity gradient text size font zoom motion animation reduce accessibility colorblind color blindness contrast blue orange',
       load: () => import('./app-settings/appearance'),
     },
     {

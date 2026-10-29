@@ -313,6 +313,41 @@ try {
     await page.getByText('Uncommitted changes · Synced', { exact: true }).waitFor()
     await page.getByRole('button', { name: /^Changes · 1 file/ }).waitFor()
     await page.getByRole('button', { name: 'Git actions and pull requests', exact: true }).click()
+    if (stylesheet) {
+      const menu = page.getByRole('menu').filter({ hasText: 'Advanced Git actions…' })
+      const advanced = menu.getByRole('menuitem', { name: 'Advanced Git actions…', exact: true })
+      assert.equal(
+        await menu.evaluate((element) => element.classList.contains('studio-menu-surface')),
+        true,
+      )
+      await advanced.hover()
+      assert.notEqual(
+        await advanced.evaluate((element) => getComputedStyle(element).backgroundImage),
+        'none',
+      )
+      assert.ok(
+        (await menu.evaluate((element) => getComputedStyle(element).boxShadow)).includes('36px'),
+      )
+      if (!mobile) await page.screenshot({ path: '/tmp/dovo-project-git-menu-effects.png' })
+      await page.evaluate(() => {
+        document.documentElement.dataset.themeGradients = 'false'
+        document.documentElement.dataset.themeGlow = '0'
+        document.documentElement.style.setProperty('--studio-glow-strength', '0')
+      })
+      assert.equal(
+        await advanced.evaluate((element) => getComputedStyle(element).backgroundImage),
+        'none',
+      )
+      assert.ok(
+        !(await menu.evaluate((element) => getComputedStyle(element).boxShadow)).includes('36px'),
+      )
+      if (!mobile) await page.screenshot({ path: '/tmp/dovo-project-git-menu-flat.png' })
+      await page.evaluate(() => {
+        delete document.documentElement.dataset.themeGradients
+        delete document.documentElement.dataset.themeGlow
+        document.documentElement.style.removeProperty('--studio-glow-strength')
+      })
+    }
     await page.getByRole('menuitem', { name: 'Advanced Git actions…', exact: true }).click()
     await page.getByRole('dialog', { name: 'Git & project actions', exact: true }).waitFor()
     await page.keyboard.press('Escape')

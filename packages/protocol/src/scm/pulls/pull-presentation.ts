@@ -172,6 +172,33 @@ export function pullMergeability(pull: PullDetail['pull']): PullSignal {
       label: pull.state === 'merged' ? 'Already merged' : 'Pull request closed',
       tone: 'neutral',
     }
+  if (pull.draft) return { label: 'Draft · not ready to merge', tone: 'neutral' }
+  if (pull.inMergeQueue) return { label: 'In merge queue', tone: 'accent' }
+  if (pull.mergeable === false || pull.mergeStateStatus === 'DIRTY')
+    return { label: 'Merge conflicts', tone: 'danger' }
+  if (pull.statusError || pull.mergeReadinessError)
+    return { label: 'Merge readiness unavailable', tone: 'warning' }
+  if (pull.reviewDecision === 'CHANGES_REQUESTED')
+    return { label: 'Changes requested', tone: 'danger' }
+  if (['FAILURE', 'ERROR'].includes(pull.checksState ?? ''))
+    return { label: 'Checks failing', tone: 'danger' }
+  if (['PENDING', 'EXPECTED'].includes(pull.checksState ?? ''))
+    return { label: 'Waiting for checks', tone: 'warning' }
+  if (pull.reviewDecision === 'REVIEW_REQUIRED')
+    return { label: 'Waiting for required reviews', tone: 'warning' }
+  switch (pull.mergeStateStatus) {
+    case 'BLOCKED':
+      return { label: 'Blocked by repository requirements', tone: 'warning' }
+    case 'BEHIND':
+      return { label: 'Branch update required', tone: 'warning' }
+    case 'UNSTABLE':
+      return { label: 'Checks not passing', tone: 'warning' }
+    case 'CLEAN':
+    case 'HAS_HOOKS':
+      return { label: 'Ready to merge', tone: 'positive' }
+    case 'UNKNOWN':
+      return { label: 'Merge readiness pending', tone: 'neutral' }
+  }
   if (pull.mergeable === null) return { label: 'Mergeability pending', tone: 'neutral' }
   return pull.mergeable
     ? { label: 'No merge conflicts', tone: 'positive' }

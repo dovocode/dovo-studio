@@ -150,3 +150,112 @@ it('refreshes local providers and external hubs independently while retaining co
     await f.cleanup()
   }
 })
+
+it('does not replace a newer quota observation when a slower account probe completes', async () => {
+  const token = randomBytes(32).toString('base64url'),
+    f = await fixture()
+  const runtime = await startRuntime({
+    databasePath: join(f.directory, 'race.sqlite'),
+    ownerToken: token,
+    port: 0,
+  })
+  let release: () => void = () => {}
+  try {
+    runtime.services.store.update(() => f.workspace)
+    let entered: () => void = () => {}
+    const started = new Promise<void>((resolve) => (entered = resolve))
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const account = { id: 'account', label: 'Account' }
+    const limit = {
+      provider: 'codex' as const,
+      account,
+      bucketId: 'codex',
+      windowId: 'primary',
+      window: 'Session',
+      usedPercent: 20,
+      updatedAt: new Date().toISOString(),
+    }
+    vi.mocked(readUsageLimits).mockImplementationOnce(async () => {
+      entered()
+      await gate
+      return { account, limits: [limit] }
+    })
+    const pending = fetch(`http://127.0.0.1:${runtime.port}/api/usage/limits/read`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: true, section: 'local' }),
+    })
+    await started
+    const newer = {
+      ...limit,
+      usedPercent: 45,
+      updatedAt: new Date(Date.now() + 1000).toISOString(),
+    }
+    runtime.services.store.update((workspace) => ({ ...workspace, planLimits: [newer] }))
+    release()
+    expect((await pending).status).toBe(200)
+    expect(runtime.services.store.get().planLimits).toEqual([newer])
+  } finally {
+    release()
+    await runtime.close()
+    await f.cleanup()
+  }
+})
+
+it.each(['changed', 'unchanged', 'anonymous'] as const)(
+  'protects same-millisecond arrivals without freezing pre-existing readings: %s',
+  async (scenario) => {
+    const token = randomBytes(32).toString('base64url'),
+      f = await fixture()
+    const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+    let release: () => void = () => {}
+    try {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-10-29T21:00:00.000Z'))
+      const account = { id: 'account', label: 'Account' }
+      const limit = {
+        provider: 'codex' as const,
+        account,
+        agentId: 'agent',
+        bucketId: 'codex',
+        windowId: 'primary',
+        window: 'Session',
+        usedPercent: 10,
+        updatedAt: new Date().toISOString(),
+      }
+      runtime.services.store.update(() => ({ ...f.workspace, planLimits: [limit] }))
+      let entered: () => void = () => {}
+      const started = new Promise<void>((resolve) => (entered = resolve))
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      vi.mocked(readUsageLimits).mockImplementationOnce(async () => {
+        entered()
+        await gate
+        return { account, limits: [{ ...limit, usedPercent: 20 }] }
+      })
+      const pending = fetch(`http://127.0.0.1:${runtime.port}/api/usage/limits/read`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: true, section: 'local' }),
+      })
+      await started
+      const observed = {
+        ...limit,
+        account: scenario === 'anonymous' ? undefined : account,
+        usedPercent: scenario === 'unchanged' ? 10 : 45,
+      }
+      // Rewriting an unchanged reading also clones the validated workspace values;
+      // reference identity alone must not mistake that for a new observation.
+      runtime.services.store.update((workspace) => ({ ...workspace, planLimits: [observed] }))
+      release()
+      expect((await pending).status).toBe(200)
+      expect(runtime.services.store.get().planLimits).toEqual([
+        scenario === 'unchanged' ? { ...limit, usedPercent: 20 } : observed,
+      ])
+    } finally {
+      release()
+      vi.useRealTimers()
+      await runtime.close()
+      await f.cleanup()
+    }
+  },
+)

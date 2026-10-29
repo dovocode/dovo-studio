@@ -97,7 +97,7 @@ export function PullRow({
   return (
     <div className="relative">
       <div
-        className={`group flex min-w-0 items-center rounded-md border transition-colors ${selected ? 'border-primary/50 bg-accent' : 'border-transparent hover:bg-accent/60'}`}
+        className={`group flex min-w-0 items-center rounded-md border motion-safe:transition-colors ${selected ? 'border-primary/30 bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] shadow-[var(--studio-glow)] forced-colors:outline forced-colors:outline-1' : 'border-transparent hover:bg-accent/60'}`}
       >
         <ContextMenu.Root>
           <ContextMenu.Trigger asChild>
@@ -296,9 +296,9 @@ export function PullRow({
             <button
               type="button"
               aria-label={`Actions for PR #${pull.number}`}
-              className="mr-2 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+              className="mr-2 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
             >
-              <MoreHorizontal aria-hidden className="size-4" />
+              <MoreHorizontal aria-hidden className="size-3.5" />
             </button>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>

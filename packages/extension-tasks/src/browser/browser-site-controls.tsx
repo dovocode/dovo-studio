@@ -117,7 +117,7 @@ export function BrowserSiteControls({
           align="start"
           sideOffset={8}
           aria-label="Website permissions"
-          className="z-50 max-h-[calc(100vh-6rem)] overflow-y-auto w-80 max-w-[calc(100vw-1rem)] space-y-4 rounded-xl border bg-popover p-4 text-popover-foreground shadow-xl"
+          className="studio-browser-site-controls z-50 max-h-[calc(100vh-6rem)] overflow-y-auto w-80 max-w-[calc(100vw-1rem)] space-y-4 rounded-xl border bg-popover p-4 text-popover-foreground shadow-xl"
         >
           <div>
             <h2 className="truncate text-sm font-medium">{page?.host}</h2>
@@ -128,63 +128,67 @@ export function BrowserSiteControls({
             {page?.protocol === 'https:' ? 'Connection is encrypted' : 'HTTP connection'}
           </div>
           <div className="space-y-3" aria-busy={busy}>
-            {controls.map(({ permission, label, Icon }) => (
-              <div key={permission} className="flex items-center gap-2">
-                <Icon size={15} className="shrink-0 text-muted-foreground" />
-                <label htmlFor={`${tabKey}-${permission}`} className="flex-1 text-sm">
-                  {label}
-                </label>
-                <select
-                  id={`${tabKey}-${permission}`}
-                  aria-label={`${label} permission`}
-                  className="min-w-0 rounded border bg-background px-1.5 py-1 text-xs"
-                  disabled={busy || !state || !page}
-                  value={state?.permissions[permission] ?? 'ask'}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    if (value === 'ask' || value === 'allow' || value === 'block')
-                      void call({
-                        action: 'set-site-permission',
-                        origin: page!.origin,
-                        key: tabKey,
-                        permission,
-                        setting: value,
-                      })
-                  }}
-                >
-                  {permission !== 'automatic-pip' && <option value="ask">Ask every time</option>}
-                  <option value="allow">Allow</option>
-                  <option value="block">Block</option>
-                </select>
-                {(permission === 'camera' ||
-                  permission === 'microphone' ||
-                  permission === 'notifications') && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
+            {controls
+              .filter(
+                ({ permission }) =>
+                  permission === 'automatic-pip' ||
+                  (state?.origin === page?.origin && state?.requested?.includes(permission)),
+              )
+              .map(({ permission, label, Icon }) => (
+                <div key={permission} className="flex items-center gap-2">
+                  <Icon size={15} className="shrink-0 text-muted-foreground" />
+                  <label htmlFor={`${tabKey}-${permission}`} className="flex-1 text-sm">
+                    {label}
+                  </label>
+                  <select
+                    id={`${tabKey}-${permission}`}
+                    aria-label={`${label} permission`}
+                    className="min-w-0 rounded border bg-background px-1.5 py-1 text-xs"
                     disabled={busy || !state || !page}
-                    aria-label={`Request ${label.toLowerCase()} permission`}
-                    onClick={() => {
-                      setOpen(false)
-                      void call({
-                        action: 'request-site-permission',
-                        origin: page!.origin,
-                        key: tabKey,
-                        permission,
-                      })
+                    value={state?.permissions[permission] ?? 'ask'}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      if (value === 'ask' || value === 'allow' || value === 'block')
+                        void call({
+                          action: 'set-site-permission',
+                          origin: page!.origin,
+                          key: tabKey,
+                          permission,
+                          setting: value,
+                        })
                     }}
                   >
-                    Ask
-                  </Button>
-                )}
-              </div>
-            ))}
+                    {permission !== 'automatic-pip' && <option value="ask">Ask every time</option>}
+                    <option value="allow">Allow</option>
+                    <option value="block">Block</option>
+                  </select>
+                  {(permission === 'camera' ||
+                    permission === 'microphone' ||
+                    permission === 'notifications') && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy || !state || !page}
+                      aria-label={`Request ${label.toLowerCase()} permission`}
+                      onClick={() => {
+                        setOpen(false)
+                        void call({
+                          action: 'request-site-permission',
+                          origin: page!.origin,
+                          key: tabKey,
+                          permission,
+                        })
+                      }}
+                    >
+                      Ask
+                    </Button>
+                  )}
+                </div>
+              ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            Saved for this website in {profileName}. Ask opens a new permission prompt. Changes
-            apply to future requests; reload to stop existing access. Automatic call PiP requires
-            Allow; the website supplies the call window.
+            Reload to stop existing access. Automatic PiP requires a call window from the site.
           </p>
           <div className="border-t pt-3">
             {confirmClear ? (

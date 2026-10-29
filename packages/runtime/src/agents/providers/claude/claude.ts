@@ -22,6 +22,34 @@ import { updateSubagents } from '../../execution/subagents.js'
 import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { readClaudeThread } from './claude-thread.js'
 import { ClaudeBackgroundTasks } from './claude-background-tasks.js'
+import { isContextRejection } from '../../execution/handover.js'
+
+class ClaudeContextRejection extends Error {}
+function rejectedContext(message: SDKMessage) {
+  if (message.type !== 'result' || (message.subtype === 'success' && !message.is_error)) return
+  const text = message.subtype === 'success' ? message.result : message.errors.join('\n')
+  if (message.terminal_reason === 'prompt_too_long' || isContextRejection(new Error(text)))
+    return new ClaudeContextRejection(
+      message.terminal_reason === 'prompt_too_long' ? `prompt_too_long: ${text}` : text,
+    )
+}
+function contextErrorAssistant(message: SDKMessage) {
+  // The SDK also represents a rejected API request as a synthetic assistant.
+  // Its explicit error metadata distinguishes it from actual model output.
+  return (
+    message.type === 'assistant' &&
+    message.error === 'invalid_request' &&
+    message.parent_tool_use_id == null &&
+    message.message.content.every((block) => block.type === 'text') &&
+    isContextRejection(
+      new Error(
+        message.message.content
+          .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+          .join('\n'),
+      ),
+    )
+  )
+}
 
 function claudeToolDisposition(run: AgentRun, name: string) {
   if (
@@ -61,7 +89,16 @@ function claudeStream(
       ...(run.linkedDirectories?.length
         ? { additionalDirectories: run.linkedDirectories.map((item) => item.path) }
         : {}),
-      env: processEnvironment(run.agent.env),
+      env: processEnvironment({
+        ...run.agent.env,
+        ...(run.tools === 'none' || run.agent.cloudIntegrations !== undefined
+          ? {
+              ENABLE_CLAUDEAI_MCP_SERVERS: String(
+                run.tools !== 'none' && run.agent.cloudIntegrations,
+              ),
+            }
+          : {}),
+      }),
       extraArgs: {
         ...claudeLaunchFlags(run.agent.args),
         ...(mcpConfigPath ? { 'mcp-config': mcpConfigPath } : {}),
@@ -237,7 +274,12 @@ function handleMessage(
   intermediate = false,
 ) {
   if (message.type === 'system' && message.subtype === 'compact_boundary') compacted()
-  if (message.type === 'assistant' || message.type === 'stream_event' || message.type === 'result')
+  const rejection = rejectedContext(message)
+  if (
+    (message.type === 'assistant' && !contextErrorAssistant(message)) ||
+    message.type === 'stream_event' ||
+    (message.type === 'result' && !rejection)
+  )
     run.onPromptAccepted?.()
   run.onEvent?.(message.type, message)
   if (message.session_id) run.onSession(message.session_id)
@@ -258,6 +300,7 @@ function handleMessage(
       )
         run.onActivity(block.name)
   if (intermediate) return
+  if (rejection) throw rejection
   if (
     message.type === 'result' &&
     (message.terminal_reason === 'aborted_streaming' || message.terminal_reason === 'aborted_tools')
@@ -305,6 +348,7 @@ type WarmTurn = {
   run: AgentRun
   compacted: boolean
   steered: boolean
+  workStarted: boolean
   resolve: () => void
   reject: (error: Error) => void
 }
@@ -511,6 +555,11 @@ export function createClaudeAdapter(): AgentAdapter {
               continue
             }
             try {
+              if (
+                (message.type === 'assistant' && !contextErrorAssistant(message)) ||
+                message.type === 'stream_event'
+              )
+                turn.workStarted = true
               const intermediate =
                 turn.steered &&
                 !turn.run.signal.aborted &&
@@ -530,6 +579,10 @@ export function createClaudeAdapter(): AgentAdapter {
             } catch (error) {
               session.turn = undefined
               turn.reject(error instanceof Error ? error : new Error(String(error)))
+              // This result rejects just the submitted prompt, not the streaming
+              // session. Keep consuming native jobs and their completion events.
+              if (error instanceof ClaudeContextRejection && !turn.workStarted && !turn.steered)
+                continue
               throw error
             }
           }
@@ -558,7 +611,7 @@ export function createClaudeAdapter(): AgentAdapter {
     session.owner = run
     publish(session, run)
     const completion = new Promise<void>((resolve, reject) => {
-      session.turn = { run, compacted: false, steered: false, resolve, reject }
+      session.turn = { run, compacted: false, steered: false, workStarted: false, resolve, reject }
     })
     const turn = session.turn
     const abort = () => {
@@ -638,7 +691,16 @@ export function createClaudeAdapter(): AgentAdapter {
       } else await close(session)
     } catch (error) {
       session.turn = undefined
-      await close(session)
+      if (
+        error instanceof ClaudeContextRejection &&
+        !turn?.workStarted &&
+        !turn?.steered &&
+        !session.closed &&
+        !session.controller.signal.aborted &&
+        !run.signal.aborted
+      )
+        idle.set(run.taskId, session)
+      else await close(session)
       throw error
     } finally {
       run.onSteer?.(undefined)

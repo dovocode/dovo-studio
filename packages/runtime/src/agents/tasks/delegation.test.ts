@@ -1024,6 +1024,7 @@ it('preserves same-harness connection settings and blocks parent edits while a c
     harness: {
       ...defaultTaskHarness('codex'),
       configDirectory: '/custom/account',
+      cloudIntegrations: false,
       env: { DOVO_CUSTOM: 'present' },
     },
   })
@@ -1031,6 +1032,7 @@ it('preserves same-harness connection settings and blocks parent edits while a c
     await s.tasks.start(parent.id)
   ).done
   expect(childAgent?.configDirectory).toBe('/custom/account')
+  expect(childAgent?.cloudIntegrations).toBe(false)
   expect(childAgent?.env).toMatchObject({ DOVO_CUSTOM: 'present' })
   expect(() =>
     s.store.patch({

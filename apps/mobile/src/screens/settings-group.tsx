@@ -43,7 +43,7 @@ export function SettingsGroup({
 
   return (
     <SettingsAnchor label={title}>
-      <View style={{ gap: 10 }}>
+      <View style={{ gap: 8 }}>
         {advanced && (
           <Pressable
             accessibilityRole="button"
@@ -52,13 +52,13 @@ export function SettingsGroup({
             onPress={() => setExpanded(!expanded)}
             style={{
               minHeight: 44,
-              paddingHorizontal: 12,
+              paddingHorizontal: 2,
               flexDirection: 'row',
               alignItems: 'center',
-              gap: 12,
+              gap: 8,
             }}
           >
-            <Text style={[styles.text, { flex: 1, fontSize: 14, fontWeight: '600' }]}>{title}</Text>
+            <Text style={[styles.text, { flex: 1, fontSize: 13, fontWeight: '600' }]}>{title}</Text>
             <Icon name={open ? 'down' : 'next'} size={16} color={colors.muted} />
           </Pressable>
         )}
@@ -68,7 +68,7 @@ export function SettingsGroup({
             style={[
               styles.muted,
               {
-                paddingHorizontal: 12,
+                paddingHorizontal: 2,
                 fontSize: 13,
                 lineHeight: 18,
                 fontWeight: '600',
@@ -79,16 +79,14 @@ export function SettingsGroup({
             {title}
           </Text>
         )}
-        {description && (
-          <Text style={[styles.muted, { paddingHorizontal: 12 }]}>{description}</Text>
-        )}
+        {description && <Text style={[styles.muted, { paddingHorizontal: 2 }]}>{description}</Text>}
         {open && (
           <View
             style={{
               backgroundColor: colors.surface,
-              borderRadius: 16,
+              borderRadius: 12,
               overflow: 'hidden',
-              borderWidth: highContrast ? 1 : 0,
+              borderWidth: highContrast ? 1 : StyleSheet.hairlineWidth,
               borderColor: colors.border,
             }}
           >
@@ -98,7 +96,7 @@ export function SettingsGroup({
                   {index > 0 && (
                     <View
                       style={{
-                        marginLeft: isValidElement(child) && child.type === SettingsRow ? 46 : 12,
+                        marginLeft: 12,
                         marginRight: 12,
                         height: StyleSheet.hairlineWidth,
                         backgroundColor: colors.border,
@@ -111,7 +109,7 @@ export function SettingsGroup({
             </GroupContext.Provider>
           </View>
         )}
-        {footer && <Text style={[styles.muted, { paddingHorizontal: 12 }]}>{footer}</Text>}
+        {footer && <Text style={[styles.muted, { paddingHorizontal: 2 }]}>{footer}</Text>}
       </View>
     </SettingsAnchor>
   )
@@ -130,6 +128,7 @@ export function SettingsRow({
   disabled = false,
   selected = false,
   last = false,
+  compact = false,
 }: {
   title: string
   subtitle?: string
@@ -149,12 +148,14 @@ export function SettingsRow({
   disabled?: boolean
   selected?: boolean
   last?: boolean
+  /** Navigation rows keep descriptions available to accessibility and search. */
+  compact?: boolean
 }) {
   const { colors, styles } = useTheme()
   const grouped = useContext(GroupContext)
   const { width, fontScale } = useWindowDimensions()
   const [contentWidth, setContentWidth] = useState<number | null>(null)
-  const stacked = (contentWidth ?? width) / fontScale < 360
+  const stacked = (!compact || fontScale >= 1.5) && (contentWidth ?? width) / fontScale < 360
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', position: 'relative' }}>
       <Pressable
@@ -171,21 +172,25 @@ export function SettingsRow({
           flexDirection: 'row',
           alignItems: 'center',
           paddingLeft: 12,
-          gap: 10,
-          minHeight: subtitle ? 60 : 48,
+          gap: 12,
+          minHeight: subtitle && !compact ? 60 : 48,
           opacity: disabled ? 0.45 : 1,
           backgroundColor: pressed || selected ? colors.selection : 'transparent',
         })}
       >
         <View
           style={{
-            width: 24,
-            height: 24,
+            width: compact ? 20 : 28,
+            height: compact ? 24 : 28,
+            borderRadius: 8,
+            backgroundColor: compact ? 'transparent' : colors.background,
+            borderWidth: compact ? 0 : StyleSheet.hairlineWidth,
+            borderColor: selected ? colors.accent : colors.border,
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <Icon name={icon} size={20} color={tint ?? colors.text} />
+          <Icon name={icon} size={17} color={tint ?? (selected ? colors.accent : colors.muted)} />
         </View>
         <View
           style={{
@@ -194,8 +199,8 @@ export function SettingsRow({
             flexDirection: 'row',
             alignItems: 'center',
             gap: 8,
-            minHeight: subtitle ? 60 : 48,
-            paddingVertical: 8,
+            minHeight: subtitle && !compact ? 60 : 48,
+            paddingVertical: compact ? 8 : 10,
             marginRight: 12,
             borderBottomWidth: last || grouped ? 0 : StyleSheet.hairlineWidth,
             borderColor: colors.border,
@@ -212,10 +217,8 @@ export function SettingsRow({
             }}
           >
             <View style={{ flex: stacked ? undefined : 1, minWidth: 0, gap: 2 }}>
-              <Text style={styles.text}>{title}</Text>
-              {subtitle && (
-                <Text style={[styles.muted, { fontSize: 13, lineHeight: 18 }]}>{subtitle}</Text>
-              )}
+              <Text style={[styles.text, { fontWeight: '500' }]}>{title}</Text>
+              {subtitle && !compact && <Text style={styles.muted}>{subtitle}</Text>}
             </View>
             {value && (
               <Text

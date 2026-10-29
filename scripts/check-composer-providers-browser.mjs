@@ -6,6 +6,7 @@ import { chromium } from './browser/harness.mjs'
 
 const require = createRequire(new URL('../packages/studio-ui/package.json', import.meta.url))
 const mocks = {
+  '../../ui/controls/icon': `export const Icon=()=>null;`,
   '@dovo/studio-core': `import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';export {providers} from '../studio-core/src/providers';export const Context=createContext(null);export const useWorkspace=()=>useContext(Context);`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '../ui/controls/field': `export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)}/>;`,

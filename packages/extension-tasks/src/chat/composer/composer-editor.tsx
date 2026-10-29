@@ -21,6 +21,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   resources,
   prompts,
   onCommand,
+  onSideChat,
   onManagePrompts,
   autoFocus,
   hidden,
@@ -37,6 +38,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   resources: ResourceSettings
   prompts?: readonly SavedPrompt[]
   onCommand?: (id: ComposerCommandId) => void
+  onSideChat?: () => void
   onManagePrompts?: () => void
   autoFocus: boolean
   hidden: boolean
@@ -69,6 +71,7 @@ export const ComposerEditor = memo(function ComposerEditor({
     resources,
     prompts,
     onCommand,
+    onSideChat,
     onManagePrompts,
   })
   // Place the caret with the recalled value's DOM commit, before another edit can begin.

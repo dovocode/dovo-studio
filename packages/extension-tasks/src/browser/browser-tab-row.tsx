@@ -105,13 +105,15 @@ export function BrowserTabRow({
       <ContextMenu.Trigger asChild>
         <div
           data-browser-tab-id={tab.id}
+          data-active={active || undefined}
+          data-pinned={tab.pinned || undefined}
           draggable={!!reorder}
           onDragStart={reorder?.onDragStart}
           onDragOver={reorder?.onDragOver}
           onDrop={reorder?.onDrop}
           onDragEnd={reorder?.onDragEnd}
           className={cn(
-            'group relative flex min-w-0 items-center rounded-lg transition-colors',
+            'studio-browser-tab group relative flex min-w-0 items-center rounded-lg transition-colors',
             tab.pinned && 'flex-col',
             reorder?.dragging && 'opacity-40',
             reorder?.edge &&
@@ -159,16 +161,16 @@ export function BrowserTabRow({
             aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}`}
             onClick={onSelect}
             title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
-            className={`flex min-w-0 items-center gap-2 text-left ${tab.pinned ? 'h-12 w-full flex-none justify-center px-2 py-2' : 'h-10 flex-1 px-2 text-xs'}`}
+            className={`studio-browser-tab-select flex min-w-0 items-center gap-2 text-left ${tab.pinned ? 'h-12 w-full flex-none justify-center px-2 py-2' : 'h-10 flex-1 px-2 text-xs'}`}
           >
-            <span className="flex shrink-0 flex-col items-center gap-1">
-              <span className="relative inline-flex items-center">
+            <span className="studio-browser-tab-source flex shrink-0 flex-col items-center gap-1">
+              <span className="studio-browser-tab-favicon relative inline-flex items-center">
                 <BrowserFavicon tab={tab} />
                 {badge !== undefined && (
                   <span
                     aria-label={badge === 'unread' ? 'Unread activity' : `${badge} unread`}
                     className={cn(
-                      'absolute -right-2 -top-2 rounded-full bg-primary text-primary-foreground ring-2 ring-sidebar',
+                      'studio-browser-tab-badge absolute -right-2 -top-2 rounded-full bg-primary text-primary-foreground ring-2 ring-sidebar',
                       badge === 'unread'
                         ? 'size-2'
                         : 'min-w-3.5 px-1 text-center text-[9px] font-semibold leading-3.5',
@@ -186,7 +188,7 @@ export function BrowserTabRow({
                 )}
               </span>
               <span
-                className="flex h-2.5 shrink-0 items-center justify-center gap-0.5 text-[8px] leading-none text-muted-foreground"
+                className="studio-browser-tab-profile flex h-2.5 shrink-0 items-center justify-center gap-0.5 text-[8px] leading-none text-muted-foreground"
                 aria-label={`${computer} · ${profile}`}
               >
                 <RuntimeIcon
@@ -202,7 +204,9 @@ export function BrowserTabRow({
                 </span>
               </span>
             </span>
-            {!tab.pinned && <span className="min-w-0 flex-1 truncate">{title}</span>}
+            {!tab.pinned && (
+              <span className="studio-browser-tab-title min-w-0 flex-1 truncate">{title}</span>
+            )}
           </button>
           {(state?.camera ||
             state?.microphone ||
@@ -212,7 +216,7 @@ export function BrowserTabRow({
             <div
               aria-label="Tab activity"
               className={cn(
-                'flex shrink-0 items-center justify-center text-status-success',
+                'studio-browser-tab-activity flex shrink-0 items-center justify-center text-status-success',
                 tab.pinned ? 'gap-0.5 px-0.5 pb-1.5' : 'gap-1 pr-1',
               )}
             >
@@ -245,7 +249,7 @@ export function BrowserTabRow({
             </div>
           )}
           {!tab.pinned && (
-            <div className="flex shrink-0 items-center gap-0.5 rounded bg-sidebar opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+            <div className="studio-browser-tab-actions flex shrink-0 items-center gap-0.5 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
               {category === 'active' && (
                 <IconButton
                   type="button"
@@ -260,7 +264,7 @@ export function BrowserTabRow({
               <IconButton
                 type="button"
                 label={`Close tab ${title}`}
-                className="size-6"
+                className="studio-browser-tab-close size-6"
                 disabled={busy}
                 onClick={onClose}
               >
@@ -271,7 +275,7 @@ export function BrowserTabRow({
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
-        <ContextMenu.Content className="z-50 min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
+        <ContextMenu.Content className="studio-browser-tab-menu z-50 min-w-48 rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl">
           <ContextMenu.Label className="max-w-64 truncate px-2 py-1.5 text-xs text-muted-foreground">
             {title}
           </ContextMenu.Label>
@@ -335,7 +339,7 @@ export function BrowserTabRow({
                     <ArrowUpRight size={13} className="ml-auto" />
                   </ContextMenu.SubTrigger>
                   <ContextMenu.Portal>
-                    <ContextMenu.SubContent className="z-50 min-w-44 rounded-lg border bg-popover p-1 shadow-xl">
+                    <ContextMenu.SubContent className="studio-browser-tab-menu z-50 min-w-44 rounded-lg border bg-popover p-1 shadow-xl">
                       {windows.map((window) => (
                         <ContextMenu.Item
                           key={window.id}

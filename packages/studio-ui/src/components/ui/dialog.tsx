@@ -35,7 +35,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'dovo-dialog-fade fixed left-[50%] top-[calc((100dvh+var(--studio-window-top-inset,0px))/2)] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-var(--studio-window-top-inset,0px)-2rem)] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-3 rounded-lg border bg-background p-4 shadow-lg transition-none',
+        'dovo-dialog-content dovo-dialog-fade fixed left-[50%] top-[calc((100dvh+var(--studio-window-top-inset,0px))/2)] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-var(--studio-window-top-inset,0px)-2rem)] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border bg-background p-5 shadow-lg transition-none',
         className,
       )}
       {...props}

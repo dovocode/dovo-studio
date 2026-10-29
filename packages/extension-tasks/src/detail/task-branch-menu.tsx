@@ -17,7 +17,7 @@ import {
 } from '@dovo/studio-ui'
 
 const item =
-  'flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[disabled]:opacity-50 data-[highlighted]:bg-accent/55 motion-reduce:transition-none'
+  'flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[disabled]:opacity-50 data-[highlighted]:bg-[var(--studio-selected-fill)] data-[highlighted]:[background-image:var(--studio-selected-gradient)] motion-reduce:transition-none'
 
 /** The header's branch label, with quick actions: copy the branch name, or open the task's
  * checkout in an installed editor or file manager on the desktop client, using SSH for remote checkouts. */
@@ -115,7 +115,7 @@ export function TaskBranchMenu({
         <DropdownMenu.Content
           sideOffset={4}
           align="start"
-          className="z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+          className="studio-menu-surface z-50 min-w-48 rounded-md border bg-popover p-1 text-popover-foreground"
         >
           {inWorktree && (task.checkoutBranch || task.existingWorktreePath) && (
             <>

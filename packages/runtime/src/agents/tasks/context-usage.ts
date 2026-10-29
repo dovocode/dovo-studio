@@ -108,11 +108,16 @@ export function turnTokenCounter(
   provider: Agent['provider'],
   mainThread: () => string | undefined,
 ) {
-  let codexStart: number | undefined
-  let codexLatest: number | undefined
+  const codexSessions = new Map<
+    string,
+    {
+      start: number
+      latest: number
+      startUsage?: TurnTokenUsage
+      latestUsage?: TurnTokenUsage
+    }
+  >()
   let claude: number | undefined
-  let codexStartUsage: TurnTokenUsage | undefined
-  let codexLatestUsage: TurnTokenUsage | undefined
   let claudeUsage: TurnTokenUsage | undefined
   let claudeSegments: TurnTokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
   let claudeModel: string | undefined
@@ -217,13 +222,20 @@ export function turnTokenCounter(
       if (provider === 'codex' && name === 'thread/tokenUsage/updated') {
         const thread = typeof event.threadId === 'string' ? event.threadId : undefined
         const main = mainThread()
-        if (thread && main && thread !== main) return
+        // A replacement session has its own cumulative counters. Keep completed
+        // segments, but never admit stale/child events as a new main segment.
+        if (!main || thread !== main) return
         const usage = record(event.tokenUsage)
         const total = count(record(usage.total).totalTokens)
         if (total === undefined) return
+        const previous = codexSessions.get(main)
+        if (previous && total < previous.latest) return
         // The thread total is cumulative; before this turn it was total minus this request.
-        codexStart ??= Math.max(0, total - (count(record(usage.last).totalTokens) ?? 0))
-        codexLatest = total
+        const segment = previous ?? {
+          start: Math.max(0, total - (count(record(usage.last).totalTokens) ?? 0)),
+          latest: total,
+        }
+        segment.latest = total
         const totalParts = record(usage.total)
         const lastParts = record(usage.last)
         const parts = (value: Record<string, unknown>): TurnTokenUsage | undefined => {
@@ -242,14 +254,15 @@ export function turnTokenCounter(
         const current = parts(totalParts)
         const last = parts(lastParts)
         if (current && last) {
-          codexStartUsage ??= {
+          segment.startUsage ??= {
             input: Math.max(0, current.input - last.input),
             output: Math.max(0, current.output - last.output),
             cacheRead: Math.max(0, current.cacheRead - last.cacheRead),
             cacheWrite: Math.max(0, current.cacheWrite - last.cacheWrite),
           }
-          codexLatestUsage = current
+          segment.latestUsage = current
         }
+        codexSessions.set(main, segment)
       }
       if (provider === 'claude' && event.type === 'result') {
         const usage = record(event.usage)
@@ -352,8 +365,11 @@ export function turnTokenCounter(
         return usage ? Object.values(usage).reduce((a, b) => a + b, 0) : undefined
       }
       if (provider === 'codex')
-        return codexLatest !== undefined && codexStart !== undefined
-          ? codexLatest - codexStart
+        return codexSessions.size
+          ? [...codexSessions.values()].reduce(
+              (total, segment) => total + segment.latest - segment.start,
+              0,
+            )
           : undefined
       if (provider === 'claude') return claude
       if (provider === 'vibe')
@@ -383,14 +399,23 @@ export function turnTokenCounter(
               { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             )
           : opencodeV2Usage
-      if (provider !== 'codex' || !codexStartUsage || !codexLatestUsage) return undefined
-      const delta = {
-        input: codexLatestUsage.input - codexStartUsage.input,
-        output: codexLatestUsage.output - codexStartUsage.output,
-        cacheRead: codexLatestUsage.cacheRead - codexStartUsage.cacheRead,
-        cacheWrite: codexLatestUsage.cacheWrite - codexStartUsage.cacheWrite,
+      if (provider !== 'codex' || !codexSessions.size) return undefined
+      const total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+      for (const segment of codexSessions.values()) {
+        if (!segment.startUsage || !segment.latestUsage) return undefined
+        const delta = {
+          input: segment.latestUsage.input - segment.startUsage.input,
+          output: segment.latestUsage.output - segment.startUsage.output,
+          cacheRead: segment.latestUsage.cacheRead - segment.startUsage.cacheRead,
+          cacheWrite: segment.latestUsage.cacheWrite - segment.startUsage.cacheWrite,
+        }
+        if (!Object.values(delta).every((value) => value >= 0)) return undefined
+        total.input += delta.input
+        total.output += delta.output
+        total.cacheRead += delta.cacheRead
+        total.cacheWrite += delta.cacheWrite
       }
-      return Object.values(delta).every((value) => value >= 0) ? delta : undefined
+      return total
     },
     model() {
       return reportedModel ?? claudeModel

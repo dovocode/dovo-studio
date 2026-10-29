@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { FullWindowOverlay } from 'react-native-screens'
 import {
   Keyboard,
   Modal,
@@ -42,6 +43,12 @@ export function ActionMenu({
   const viewport = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const previousViewport = useRef(viewport)
+  // A menu can appear while the trigger's original touch is still down. Only a fresh
+  // press beginning inside this menu may activate it or dismiss its backdrop.
+  const freshPress = useRef<string | null>(null)
+  useEffect(() => {
+    freshPress.current = null
+  }, [anchor])
   const afterDismiss = useRef<(() => void) | undefined>(undefined)
   const finishDismiss = () => {
     const action = afterDismiss.current
@@ -52,8 +59,8 @@ export function ActionMenu({
     if (previousViewport.current.width !== viewport.width) onClose()
     previousViewport.current = viewport
   }, [viewport, onClose])
-  // Presenting an iOS Modal may hide the TextInput's keyboard. That is not an outside tap.
-  // Height changes update the bounds below; only a width/rotation change invalidates the anchor.
+  // The iOS overlay shares the current window, preserving the TextInput first responder.
+  // Only a width/rotation change invalidates its measured anchor.
   const width = Math.min(264, viewport.width - insets.left - insets.right - 24)
   const bottom = Math.min(
     viewport.height - insets.bottom,
@@ -80,6 +87,88 @@ export function ActionMenu({
         ),
       )
     : 0
+  const content = anchor && (
+    <View style={{ flex: 1 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={dismissLabel}
+        onPressIn={() => {
+          freshPress.current = 'backdrop'
+        }}
+        onPress={() => {
+          if (freshPress.current !== 'backdrop') return
+          freshPress.current = null
+          onClose()
+        }}
+        onAccessibilityTap={onClose}
+        style={{ position: 'absolute', inset: 0 }}
+      />
+      <View
+        accessibilityRole="menu"
+        accessibilityLabel={label}
+        accessibilityViewIsModal
+        style={{
+          position: 'absolute',
+          left,
+          top,
+          width,
+          maxHeight: height,
+          paddingVertical: 4,
+          borderRadius: 14,
+          backgroundColor: colors.surface,
+          borderWidth: 1,
+          borderColor: colors.border,
+          boxShadow: '0 6px 24px #00000030',
+          overflow: 'hidden',
+        }}
+      >
+        <ScrollView keyboardShouldPersistTaps="always" bounces={false}>
+          {actions.map((action) => {
+            const activate = () => {
+              if (action.disabled || afterDismiss.current) return
+              afterDismiss.current = action.onPress
+              onClose()
+              finishDismiss()
+            }
+            return (
+              <Pressable
+                key={action.label}
+                accessibilityRole="menuitem"
+                accessibilityLabel={action.label}
+                accessibilityState={{ disabled: action.disabled }}
+                disabled={action.disabled}
+                onPressIn={() => {
+                  freshPress.current = action.label
+                }}
+                onPress={() => {
+                  if (freshPress.current !== action.label) return
+                  freshPress.current = null
+                  activate()
+                }}
+                onAccessibilityTap={activate}
+                style={({ pressed }) => ({
+                  minHeight: 44,
+                  paddingHorizontal: 14,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  opacity: action.disabled ? 0.4 : 1,
+                  backgroundColor: pressed ? colors.selection : 'transparent',
+                })}
+              >
+                <Icon name={action.icon} size={18} color={colors.text} />
+                <Text style={{ color: colors.text, fontSize: 14 }}>{action.title}</Text>
+              </Pressable>
+            )
+          })}
+        </ScrollView>
+      </View>
+    </View>
+  )
+  if (Platform.OS === 'ios')
+    return anchor ? (
+      <FullWindowOverlay unstable_accessibilityContainerViewIsModal>{content}</FullWindowOverlay>
+    ) : null
   return (
     <Modal
       visible={!!anchor}
@@ -91,65 +180,7 @@ export function ActionMenu({
       onRequestClose={onClose}
       onDismiss={finishDismiss}
     >
-      {anchor && (
-        <View style={{ flex: 1 }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={dismissLabel}
-            onPress={onClose}
-            style={{ position: 'absolute', inset: 0 }}
-          />
-          <View
-            accessibilityRole="menu"
-            accessibilityLabel={label}
-            accessibilityViewIsModal
-            style={{
-              position: 'absolute',
-              left,
-              top,
-              width,
-              maxHeight: height,
-              paddingVertical: 4,
-              borderRadius: 14,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              boxShadow: '0 6px 24px #00000030',
-              overflow: 'hidden',
-            }}
-          >
-            <ScrollView keyboardShouldPersistTaps="always" bounces={false}>
-              {actions.map((action) => (
-                <Pressable
-                  key={action.label}
-                  accessibilityRole="menuitem"
-                  accessibilityLabel={action.label}
-                  accessibilityState={{ disabled: action.disabled }}
-                  disabled={action.disabled}
-                  onPress={() => {
-                    if (afterDismiss.current) return
-                    afterDismiss.current = action.onPress
-                    onClose()
-                    if (Platform.OS !== 'ios') finishDismiss()
-                  }}
-                  style={({ pressed }) => ({
-                    minHeight: 44,
-                    paddingHorizontal: 14,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                    opacity: action.disabled ? 0.4 : 1,
-                    backgroundColor: pressed ? colors.selection : 'transparent',
-                  })}
-                >
-                  <Icon name={action.icon} size={18} color={colors.text} />
-                  <Text style={{ color: colors.text, fontSize: 14 }}>{action.title}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      )}
+      {content}
     </Modal>
   )
 }

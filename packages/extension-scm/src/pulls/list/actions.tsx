@@ -41,6 +41,8 @@ const titles: Record<ActionKind, string> = {
   edit: 'Edit pull request',
   reviewers: 'Manage reviewers',
   merge: 'Merge pull request',
+  draft: 'Change draft status',
+  'auto-merge': 'Change auto-merge',
   close: 'Close pull request',
   reopen: 'Reopen pull request',
 }
@@ -53,16 +55,31 @@ export function PullActions(
   const [action, setAction] = useApplicationState<ActionKind | null>(null)
   const [notice, setNotice] = useApplicationState('')
   const supported = props.detail.capabilities?.actions ?? []
-  const items: ActionKind[] = ['comment', 'review', 'edit', 'reviewers', 'merge', 'close', 'reopen']
+  const items: ActionKind[] = [
+    'comment',
+    'review',
+    'edit',
+    'reviewers',
+    'draft',
+    'auto-merge',
+    'merge',
+    'close',
+    'reopen',
+  ]
   const available = items.filter(
     (item) =>
       supported.includes(item) &&
       (item !== 'merge' ||
         (props.detail.pull.state === 'open' &&
           !props.detail.pull.draft &&
+          !props.detail.pull.inMergeQueue &&
           !!props.detail.capabilities?.mergeMethods.length)) &&
       (item !== 'close' || props.detail.pull.state === 'open') &&
       (item !== 'reopen' || props.detail.pull.state === 'closed') &&
+      (!['draft', 'auto-merge'].includes(item) || props.detail.pull.state === 'open') &&
+      (item !== 'auto-merge' ||
+        !!props.detail.pull.autoMergeEnabled ||
+        (!props.detail.pull.draft && !!props.detail.capabilities?.mergeMethods.length)) &&
       (item !== 'review' || props.detail.pull.state === 'open'),
   )
   if (!available.length && !props.onStartTask) return null
@@ -84,6 +101,7 @@ export function PullActions(
       {available.includes('merge') && (
         <Button
           size="sm"
+          className="max-sm:hidden @max-sm/pr-detail:hidden"
           disabled={!connected || !!props.detail.stale || !!props.detail.refreshError}
           onClick={() => {
             setNotice('')
@@ -112,7 +130,7 @@ export function PullActions(
             className="z-50 min-w-48 rounded-lg border bg-popover p-1 shadow-xl"
           >
             {available
-              .filter((item) => item !== 'review' && item !== 'merge')
+              .filter((item) => item !== 'review')
               .map((item) => (
                 <DropdownMenu.Item
                   key={item}
@@ -120,9 +138,21 @@ export function PullActions(
                     setNotice('')
                     setAction(item)
                   }}
-                  className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent"
+                  disabled={
+                    ['merge', 'draft', 'auto-merge'].includes(item) &&
+                    (!!props.detail.stale || !!props.detail.refreshError)
+                  }
+                  className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
                 >
-                  {titles[item]}
+                  {item === 'draft'
+                    ? props.detail.pull.draft
+                      ? 'Mark ready for review'
+                      : 'Convert to draft'
+                    : item === 'auto-merge'
+                      ? props.detail.pull.autoMergeEnabled
+                        ? 'Disable auto-merge'
+                        : 'Enable auto-merge'
+                      : titles[item]}
                 </DropdownMenu.Item>
               ))}
             {props.onStartTask && (
@@ -205,7 +235,7 @@ export function PullCommentActions({
 }
 function PullActionDialog({
   repositoryId,
-  detail,
+  detail: initialDetail,
   kind,
   comment,
   onClose,
@@ -216,6 +246,9 @@ function PullActionDialog({
   onClose: () => void
   onCompleted: (message: string) => void
 }) {
+  // A background refresh must not reverse the operation being confirmed.
+  // The server still validates this captured head and account before writing.
+  const detail = useRef(initialDetail).current
   const { request, connected } = useWorkspace()
   const [body, setBody] = useApplicationState(kind === 'edit' ? detail.pull.body : '')
   const [title, setTitle] = useApplicationState(detail.pull.title)
@@ -317,6 +350,10 @@ function PullActionDialog({
               }
             : {}),
         }
+      case 'draft':
+        return { ...scope, action: kind, draft: !detail.pull.draft }
+      case 'auto-merge':
+        return { ...scope, action: kind, enabled: !detail.pull.autoMergeEnabled, method }
       case 'close':
       case 'reopen':
         return {
@@ -332,9 +369,12 @@ function PullActionDialog({
       event !== 'approve' &&
       !(detail.pull.provider === 'bitbucket' && event === 'request-changes'))
   const valid =
+    !initialDetail.stale &&
+    !initialDetail.refreshError &&
     (!needsBody || !!body.trim()) &&
     (kind !== 'edit' || !!title.trim()) &&
-    (kind !== 'merge' || confirmed) &&
+    ((kind !== 'merge' && !(kind === 'auto-merge' && !detail.pull.autoMergeEnabled)) ||
+      confirmed) &&
     (kind !== 'reviewers' || !!(list(reviewers).length + list(teams).length))
   const submit = async () => {
     if (!valid || !connected || pending.current) return
@@ -379,7 +419,19 @@ function PullActionDialog({
     }
   }
   const label =
-    kind === 'resolve' ? (comment?.resolved ? 'Reopen thread' : 'Resolve thread') : titles[kind]
+    kind === 'resolve'
+      ? comment?.resolved
+        ? 'Reopen thread'
+        : 'Resolve thread'
+      : kind === 'draft'
+        ? detail.pull.draft
+          ? 'Mark ready for review'
+          : 'Convert to draft'
+        : kind === 'auto-merge'
+          ? detail.pull.autoMergeEnabled
+            ? 'Disable auto-merge'
+            : 'Enable auto-merge'
+          : titles[kind]
   return (
     <Dialog
       open
@@ -510,10 +562,11 @@ function PullActionDialog({
               </p>
             </>
           )}
-          {kind === 'merge' && (
+          {(kind === 'merge' || (kind === 'auto-merge' && !detail.pull.autoMergeEnabled)) && (
             <>
               <p className="break-words text-sm">
-                Merge <strong>{detail.pull.title}</strong> into <code>{detail.pull.base}</code>.
+                {kind === 'auto-merge' ? 'Automatically merge' : 'Merge'}{' '}
+                <strong>{detail.pull.title}</strong> into <code>{detail.pull.base}</code>.
               </p>
               <FormField label="Merge method">
                 <ChoicePicker
@@ -548,7 +601,12 @@ function PullActionDialog({
                   }
                 />
                 <span>
-                  {detail.pull.provider === 'bitbucket' ? (
+                  {kind === 'auto-merge' ? (
+                    <>
+                      Merge when GitHub’s requirements pass. This also applies to later commits
+                      pushed to this PR.
+                    </>
+                  ) : detail.pull.provider === 'bitbucket' ? (
                     <>
                       Merge the current source branch. Studio checks viewed revision{' '}
                       {scope.headSha.slice(0, 8)} before submitting; later pushes may also be
@@ -586,6 +644,18 @@ function PullActionDialog({
           )}
           {kind === 'close' && (
             <p className="text-sm">Close this pull request without merging its changes?</p>
+          )}
+          {kind === 'draft' && (
+            <p className="text-sm">
+              {detail.pull.draft
+                ? 'Mark this pull request ready and notify its reviewers?'
+                : 'Return this pull request to draft while work continues?'}
+            </p>
+          )}
+          {kind === 'auto-merge' && detail.pull.autoMergeEnabled && (
+            <p className="text-sm">
+              Stop automatically merging this pull request when its requirements pass?
+            </p>
           )}
           {kind === 'reopen' && <p className="text-sm">Reopen this pull request for review?</p>}
           {kind === 'resolve' && (

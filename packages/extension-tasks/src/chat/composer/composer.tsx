@@ -3,7 +3,7 @@ import { ThreadContextPicker } from './thread-context-picker'
 import { DraftStash } from './draft-stash'
 import { draftStashScope } from '@dovo/protocol'
 import { QueueEditContext } from './queue-edit'
-import { ThreadStarters } from '../../task-creation/thread-starters'
+import { useTaskProjectSettings } from '../../detail/task-project-popover'
 import { useChatImageUploader } from './chat-image-edit-context'
 import { createComposerDraft } from './composer-draft'
 import { TurnModelControls } from './turn-model-controls'
@@ -29,7 +29,7 @@ import {
 import { AttachmentPicker } from './attachment-picker'
 import { MessageAttachments } from './message-attachments'
 import { useAttachments } from './use-attachments'
-import { useEffect, useRef, useState, useMemo, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useMemo, type ReactNode } from 'react'
 import { Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
 import { useCommittedCallback } from '../../detail/use-committed-callback'
@@ -44,12 +44,12 @@ import {
   ArrowUp,
   LoaderCircle,
   ListPlus,
-  MessageCircleQuestion,
   Square,
   CornerUpRight,
   Minimize2,
   GitBranchPlus,
   ChevronDown,
+  Info,
 } from 'lucide-react'
 import { useWorkspace, useStudioHost, updateTask, responses, type Task } from '@dovo/studio-core'
 import {
@@ -58,6 +58,7 @@ import {
   ComposerSurface,
   ComposerSubmit,
   DropdownMenu,
+  Popover,
   cn,
   type ComposerControlSlots,
 } from '@dovo/studio-ui'
@@ -77,9 +78,11 @@ export function Composer({
   onSelectRemote,
   queuedMessages,
   temporary = false,
+  startup = false,
 }: {
   task: Task
   temporary?: boolean
+  startup?: boolean
   workspaceControls?: WorkspaceControls
   workspaceMoving?: boolean
   onWorkspaceMoving?: (moving: boolean) => void
@@ -136,8 +139,9 @@ export function Composer({
     onWorkspaceMoving?.(moving)
   }
   const machineMoving = workspaceMoving || localMachineMoving
-  const [asideBusy, setAsideBusy] = useState(false)
   const [asideCreating, setAsideCreating] = useState(false)
+  const [asideBusy, setAsideBusy] = useState(false)
+  const [editorFocused, setEditorFocused] = useState(false)
   const asideRequest = useRef<'saving' | 'asking' | null>(null)
   const [dictating, setDictating] = useState(false)
   const sendingRequest = useRef(false)
@@ -242,6 +246,9 @@ export function Composer({
   const setDraft = composerDraft.update
   const [submittedText, setSubmittedText] = useState<string | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    if (editorFocused && document.activeElement !== input.current) setEditorFocused(false)
+  })
   const appliedInsert = useRef<string | null>(null)
   useEffect(() => {
     if (!composerInsert || appliedInsert.current === composerInsert.id) return
@@ -706,6 +713,10 @@ export function Composer({
     }
   }
   const [accessContainer, setAccessContainer] = useState<HTMLSpanElement | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
+  const projectSettings = useTaskProjectSettings()
+  const [infoOpen, setInfoOpen] = useState(false)
+  const [infoContainer, setInfoContainer] = useState<HTMLDivElement | null>(null)
   const usesTurnSettings = !!(
     snapshot?.queuedTurnSettingsSupported &&
     agent &&
@@ -721,8 +732,73 @@ export function Composer({
     !pendingQuestion && (!usesTurnSettings || snapshot?.fullTurnSettingsSupported) ? (
       <span ref={setAccessContainer} className="contents" />
     ) : null
+  const attachmentControl = !pendingQuestion && (
+    <AttachmentPicker
+      prominent
+      disabled={
+        (!!editing && !snapshot?.fullTurnSettingsSupported) ||
+        !connected ||
+        sending ||
+        !!task.archivedAt ||
+        attachments.busy
+      }
+      upload={attachments.upload}
+    />
+  )
+  const extraActions = !pendingQuestion && (
+    <>
+      <DraftStash
+        key={JSON.stringify(['draft-stash', stashRuntimeId, task.id])}
+        scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
+        getText={() => composerDraft.controller.text}
+        onChange={(value) => {
+          setDraft(value)
+          composerDraft.flush()
+        }}
+        focus={() => input.current?.focus()}
+        hasAttachments={!!attachments.files.length || attachments.busy}
+        disabled={!!editing || sending || !!task.archivedAt || !!task.archived || !!task.example}
+        showLabel
+      />
+      <ThreadContextPicker
+        key={JSON.stringify(['thread-context', stashRuntimeId, task.id])}
+        taskId={task.id}
+        attachmentBusy={attachments.busy}
+        disabled={!!editing || sending || !!task.archivedAt || !!task.archived || !!task.example}
+        upload={attachments.uploadContext}
+        showLabel
+      />
+    </>
+  )
+  const settingsContainer = projectSettings?.container ?? infoContainer
+  const workspaceSettings = workspaceControls?.(accessSlot) ?? (
+    <ComposerWorkspace
+      task={task}
+      disabled={sending || !!task.archived}
+      onMachineMoving={setMachineMoving}
+      onSelectRemote={onSelectRemote}
+    >
+      {accessSlot}
+    </ComposerWorkspace>
+  )
+  const settings = (
+    <section
+      aria-label="Task settings"
+      className="task-info-settings border-b border-border/60 p-4"
+      inert={machineMoving || undefined}
+    >
+      <h3 className="mb-2 text-[0.625rem] font-medium uppercase tracking-wider text-muted-foreground">
+        Task settings
+      </h3>
+      {workspaceSettings}
+    </section>
+  )
   return (
-    <div className="shrink-0 px-3 pb-2 pt-1">
+    <div
+      className="task-composer shrink-0"
+      onFocusCapture={() => setEditorFocused(document.activeElement === input.current)}
+      onBlurCapture={() => setEditorFocused(false)}
+    >
       {meter && meter.level !== 'ok' && !pendingQuestion && (
         <div className="mx-auto mb-1 flex max-w-[var(--chat-max)] justify-end">
           <Button
@@ -772,6 +848,66 @@ export function Composer({
       )}
       <ComposerSurface
         collapsed={collapsed}
+        compact={!editorFocused && !composerDraft.hasText && !pendingQuestion}
+        leadingActions={
+          !pendingQuestion && (
+            <>
+              <div className="composer-add-actions">
+                {attachmentControl}
+                <Popover.Root open={addOpen} onOpenChange={setAddOpen}>
+                  <Popover.Trigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label="More composer actions"
+                      className="composer-add-menu"
+                      disabled={sending || !!task.archivedAt}
+                    >
+                      <ChevronDown className="size-4" />
+                    </Button>
+                  </Popover.Trigger>
+                  <Popover.Portal forceMount>
+                    <Popover.Content
+                      forceMount
+                      hidden={!addOpen}
+                      side="top"
+                      align="start"
+                      sideOffset={12}
+                      onCloseAutoFocus={(event) => {
+                        if (document.activeElement === input.current) event.preventDefault()
+                      }}
+                      className="z-50 w-72 rounded-2xl border bg-popover p-2 text-popover-foreground shadow-xl"
+                    >
+                      {extraActions}
+                    </Popover.Content>
+                  </Popover.Portal>
+                </Popover.Root>
+              </div>
+              {!startup && !projectSettings && (
+                <Popover.Root open={infoOpen} onOpenChange={setInfoOpen}>
+                  <Popover.Trigger asChild>
+                    <IconButton label="Task information" className="size-8" type="button">
+                      <Info className="size-4" />
+                    </IconButton>
+                  </Popover.Trigger>
+                  <Popover.Portal forceMount>
+                    <Popover.Content
+                      forceMount
+                      hidden={!infoOpen}
+                      side="top"
+                      align="start"
+                      sideOffset={8}
+                      aria-label="Project information"
+                      className="z-40 w-72 max-w-[calc(100vw-24px)] rounded-2xl border bg-popover text-popover-foreground shadow-xl"
+                    >
+                      <div ref={setInfoContainer} />
+                    </Popover.Content>
+                  </Popover.Portal>
+                </Popover.Root>
+              )}
+            </>
+          )
+        }
         controls={
           pendingQuestion ? (
             <span className="text-xs text-muted-foreground">
@@ -798,33 +934,6 @@ export function Composer({
           <>
             <ContextMeter task={task} />
             {!pendingQuestion && (
-              <DraftStash
-                key={JSON.stringify(['draft-stash', stashRuntimeId, task.id])}
-                scope={stashRuntimeId ? draftStashScope(stashRuntimeId, task.id) : undefined}
-                getText={() => composerDraft.controller.text}
-                onChange={(value) => {
-                  setDraft(value)
-                  composerDraft.flush()
-                }}
-                focus={() => input.current?.focus()}
-                hasAttachments={!!attachments.files.length || attachments.busy}
-                disabled={
-                  !!editing || sending || !!task.archivedAt || !!task.archived || !!task.example
-                }
-              />
-            )}
-            {!pendingQuestion && (
-              <ThreadContextPicker
-                key={JSON.stringify(['thread-context', stashRuntimeId, task.id])}
-                taskId={task.id}
-                attachmentBusy={attachments.busy}
-                disabled={
-                  !!editing || sending || !!task.archivedAt || !!task.archived || !!task.example
-                }
-                upload={attachments.uploadContext}
-              />
-            )}
-            {!pendingQuestion && (
               <ComposerDictation
                 controller={composerDraft.controller}
                 input={input}
@@ -832,40 +941,17 @@ export function Composer({
                 onActive={setDictating}
               />
             )}
-            {onAside && !firstMessage && !editing && (
-              <IconButton
-                label="Ask a side question (⌘/Ctrl+;)"
-                type="button"
-                className="size-7"
-                disabled={
-                  !connected || sending || asideBusy || !!task.archived || !!task.archivedAt
-                }
-                onClick={() => void askAside()}
-              >
-                <MessageCircleQuestion className="size-3.5" />
-              </IconButton>
-            )}
-            {!pendingQuestion && (
-              <AttachmentPicker
-                disabled={
-                  (!!editing && !snapshot?.fullTurnSettingsSupported) ||
-                  !connected ||
-                  sending ||
-                  !!task.archivedAt ||
-                  attachments.busy
-                }
-                upload={attachments.upload}
-              />
-            )}
-
             {!pendingQuestion && (editing || task.status !== 'running' || hasInput) && (
               <div className="flex shrink-0 items-center" role="group" aria-label="Send message">
                 <ComposerSubmit
                   busy={sending}
+                  data-labeled={editing || task.status === 'running' ? '' : undefined}
                   className={
-                    task.status === 'running'
-                      ? 'h-8 w-auto gap-1.5 rounded-l-md rounded-r-none bg-muted px-2 text-[0.6875rem] text-foreground hover:bg-accent'
-                      : undefined
+                    editing
+                      ? 'h-8 w-auto gap-1.5 rounded-full px-3 text-[0.6875rem]'
+                      : task.status === 'running'
+                        ? 'h-8 w-auto gap-1.5 rounded-l-md rounded-r-none bg-muted px-2 text-[0.6875rem] text-foreground hover:bg-accent'
+                        : undefined
                   }
                   title={
                     editing
@@ -1128,6 +1214,18 @@ export function Composer({
               ? runCommand
               : undefined
           }
+          onSideChat={
+            onAside &&
+            !firstMessage &&
+            !editing &&
+            connected &&
+            !sending &&
+            !asideBusy &&
+            !task.archived &&
+            !task.archivedAt
+              ? askAside
+              : undefined
+          }
           onManagePrompts={task.repositoryId ? () => setManagingPrompts(true) : undefined}
           autoFocus={firstMessage}
           hidden={pendingQuestion}
@@ -1146,7 +1244,9 @@ export function Composer({
                       ? 'Steer the agent while it works…'
                       : 'Queue a follow-up while the agent works…'
                     : firstMessage
-                      ? 'What would you like to build or fix?'
+                      ? startup
+                        ? 'Ask anything, build or fix...'
+                        : 'What would you like to build or fix?'
                       : 'Ask a follow-up or describe a change…'
           }
         />
@@ -1167,38 +1267,13 @@ export function Composer({
         onClose={() => setCommand(null)}
         onConfirm={confirmCommand}
       />
-      <div className={pendingQuestion ? 'hidden' : undefined} inert={machineMoving || undefined}>
-        {workspaceControls?.(accessSlot) ?? (
-          <ComposerWorkspace
-            task={task}
-            disabled={sending || !!task.archived}
-            onMachineMoving={setMachineMoving}
-            onSelectRemote={onSelectRemote}
-          >
-            {accessSlot}
-          </ComposerWorkspace>
-        )}
-        <p className="mx-auto mt-1 hidden max-w-[var(--chat-max)] text-right text-[0.625rem] text-muted-foreground">
-          {task.status === 'running'
-            ? defaultSteerFirst
-              ? 'Enter to steer · Alt+Enter to queue'
-              : 'Enter to queue · Alt+Enter to steer'
-            : 'Enter to send'}{' '}
-          · Shift + Enter for a new line
-        </p>
-      </div>
-      {firstMessage && task.status === 'draft' && !pendingQuestion && (
-        <div className={hasInput ? 'invisible' : undefined} aria-hidden={hasInput || undefined}>
-          <ThreadStarters
-            disabled={hasInput || sending || !!task.archivedAt || !!task.example}
-            onChoose={(prompt) => {
-              if (composerDraft.controller.text.trim()) return
-              setDraft(prompt)
-              input.current?.focus()
-            }}
-          />
+      {startup ? (
+        <div className={pendingQuestion ? 'hidden' : undefined} inert={machineMoving || undefined}>
+          {workspaceSettings}
         </div>
-      )}
+      ) : settingsContainer ? (
+        createPortal(settings, settingsContainer)
+      ) : null}
     </div>
   )
 }

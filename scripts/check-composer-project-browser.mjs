@@ -15,8 +15,9 @@ const built = await build({
       import {ComposerProject} from '../extension-tasks/src/chat/composer/composer-project';
       const repo=(id,name,gitIdentity)=>({id,name,path:'/'+id,branch:'main',gitIdentity});
       const scratch=id=>({...repo(id,'Private folder'),kind:'scratch'});
+      window.projectIcon='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
       const inventory={
-        local:[scratch('scratch'),repo('local','Shared project','github.com/team/project'),repo('other','Other project'),{...repo('invalid','Invalid project'),gitIdentityError:'Invalid identity'}],
+        local:[scratch('scratch'),repo('local','Shared project','github.com/team/project'),{...repo('other','Other project'),iconOverride:window.projectIcon},{...repo('invalid','Invalid project'),gitIdentityError:'Invalid identity'}],
         remote:[scratch('remote-scratch'),repo('remote','Shared project','github.com/team/project'),repo('notes','Remote notes')],
         offline:[scratch('offline-scratch'),repo('offline-project','Offline project')],
         empty:[scratch('empty-scratch')],
@@ -55,7 +56,7 @@ const built = await build({
       setup(builder) {
         const mocks = {
           '@dovo/studio-core': `export * from '../protocol/src/index';export {createTask,updateTask} from '../studio-core/src/workspace/actions';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({});export const WorkspaceScope=({profile,children})=><div data-runtime-scope={profile.id}>{children}</div>;`,
-          '@dovo/studio-ui': `export const ComposerWorkspaceBar=({children})=><div role="group" aria-label="Project and checkout">{children}</div>;export {LinkedCheckoutEditor} from '../studio-ui/src/linked-checkouts';export {ChoicePicker} from '../studio-ui/src/choice-picker';export * from '../studio-ui/src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {Button} from '../studio-ui/src/components/ui/button';export {Input} from '../studio-ui/src/components/ui/input';export * as Popover from '@radix-ui/react-popover';`,
+          '@dovo/studio-ui': `export {ProjectIcon} from '../studio-ui/src/project-icon';export const ComposerWorkspaceBar=({children})=><div role="group" aria-label="Project and checkout">{children}</div>;export {LinkedCheckoutEditor} from '../studio-ui/src/linked-checkouts';export {ChoicePicker} from '../studio-ui/src/choice-picker';export * from '../studio-ui/src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {Button} from '../studio-ui/src/components/ui/button';export {Input} from '../studio-ui/src/components/ui/input';export * as Popover from '@radix-ui/react-popover';`,
           '@dovo/extension-scm/project-transfer': `export const ProjectTransferDialog=({repository,onClose})=><div role="dialog" aria-label="Add to another machine"><output>{repository.id}</output><button onClick={onClose}>Close transfer</button></div>;`,
           '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=({onClose})=><div role="dialog" aria-label="Add project"><button onClick={onClose}>Cancel adding</button></div>;`,
         }
@@ -309,13 +310,24 @@ try {
   await generalStart.click()
   assert.equal(await generalStart.getAttribute('aria-pressed'), 'true')
   await projectStart.click()
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Other project', exact: true })
+      .locator('img')
+      .getAttribute('src'),
+    await page.evaluate(() => window.projectIcon),
+  )
   await page.getByRole('button', { name: 'Other project', exact: true }).click()
   const selectedProject = page.getByRole('button', {
     name: 'Selected project: Other project',
     exact: true,
   })
   await selectedProject.waitFor()
-  assert.equal(await selectedProject.textContent(), 'Other project')
+  assert.equal(await selectedProject.locator('span.truncate').textContent(), 'Other project')
+  assert.equal(
+    await selectedProject.locator('img').getAttribute('src'),
+    await page.evaluate(() => window.projectIcon),
+  )
   assert.equal(await scopeStart.count(), 0)
   await selectedProject.click()
   await page.getByRole('button', { name: 'Scope mode', exact: true }).click()

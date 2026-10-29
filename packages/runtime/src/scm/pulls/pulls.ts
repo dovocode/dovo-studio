@@ -6,6 +6,7 @@ import { pullStatuses } from './pull-statuses.js'
 import { actOnGithubPull, createGithubPull } from '../forges/providers/github-actions.js'
 import { githubThreads } from '../forges/providers/github-threads.js'
 import { githubChecks } from '../forges/providers/github-checks.js'
+import { githubLifecycle } from '../forges/providers/github-lifecycle.js'
 import { Schema } from 'effect'
 import type { GitService } from '../git/git.js'
 import {
@@ -76,8 +77,9 @@ export class PullRequests {
       profile?: string
       viewerLogin?: string
       env?: Record<string, string>
-      token?: (cwd: string) => Promise<string | undefined>
-      onUnauthorized?: () => void
+      credential?: (
+        cwd: string,
+      ) => Promise<{ token: string | undefined; onUnauthorized: () => void }>
       validate?: () => void
     },
   ) {}
@@ -111,7 +113,8 @@ export class PullRequests {
   private async run(cwd: string, args: string[], background = false) {
     if (!this.target) return this.git.github(cwd, args, background)
     this.target.validate?.()
-    const token = await this.target.token?.(cwd)
+    const credential = await this.target.credential?.(cwd)
+    const token = credential?.token
     if (this.target.profile && !token)
       throw new HttpError(401, 'The selected GitHub profile is not signed in on this runtime.')
     return this.git.githubAccount(
@@ -125,7 +128,7 @@ export class PullRequests {
         ? {
             host: this.target.host,
             token,
-            onUnauthorized: this.target.onUnauthorized,
+            onUnauthorized: credential?.onUnauthorized,
             beforeDispatch: this.target.validate,
             ...(this.target.env ? { env: this.target.env } : {}),
           }
@@ -139,7 +142,7 @@ export class PullRequests {
   async identity(cwd: string, refresh = false) {
     if (refresh) this.locations.delete(cwd)
     const repo = await this.location(cwd)
-    const selectedToken = await this.target?.token?.(cwd)
+    const selectedToken = (await this.target?.credential?.(cwd))?.token
     // A checkout can select its own CLI account; keep identities per checkout.
     const environment = createHash('sha256')
       .update(
@@ -487,11 +490,27 @@ export class PullRequests {
               value,
             ),
           ),
+      settings
+        ? githubLifecycle(json, repo, number).then((value) => {
+            if (value.headRefOid !== pull.head.sha)
+              throw new HttpError(409, 'This PR changed while loading merge readiness. Refresh it.')
+            return value
+          })
+        : Promise.resolve(undefined),
     ])
     const warnings: string[] = [],
       comments: PullComment[] = []
-    const [conversation, reviews, inline, files, checks, threads, checkDetails, repository] =
-      results
+    const [
+      conversation,
+      reviews,
+      inline,
+      files,
+      checks,
+      threads,
+      checkDetails,
+      repository,
+      lifecycle,
+    ] = results
     if (
       changes &&
       files.status === 'fulfilled' &&
@@ -543,7 +562,7 @@ export class PullRequests {
     for (const [i, result] of results.entries())
       if (result.status === 'rejected')
         warnings.push(
-          `${['Conversation', 'Reviews', 'Inline comments', 'Files', 'Checks', 'Review threads', 'Check details', 'Repository settings'][i]}: ${errorMessage(result.reason)}`,
+          `${['Conversation', 'Reviews', 'Inline comments', 'Files', 'Checks', 'Review threads', 'Check details', 'Repository settings', 'Merge readiness'][i]}: ${errorMessage(result.reason)}`,
         )
     if (conversation.status === 'fulfilled')
       comments.push(
@@ -621,6 +640,22 @@ export class PullRequests {
           ? ['resolve' as const]
           : []),
         ...(mergeMethods.length ? ['merge' as const] : []),
+        ...(lifecycle.status === 'fulfilled' &&
+        lifecycle.value?.state === 'OPEN' &&
+        !lifecycle.value.isInMergeQueue
+          ? [
+              ...(lifecycle.value.viewerCanUpdate ? ['draft' as const] : []),
+              ...((
+                lifecycle.value.autoMergeRequest
+                  ? lifecycle.value.viewerCanDisableAutoMerge
+                  : !lifecycle.value.isDraft &&
+                    lifecycle.value.viewerCanEnableAutoMerge &&
+                    mergeMethods.length
+              )
+                ? ['auto-merge' as const]
+                : []),
+            ]
+          : []),
       ],
       reviewDecisions: ['comment', 'approve', 'request-changes'],
       mergeMethods,
@@ -665,6 +700,18 @@ export class PullRequests {
         deletions: pull.deletions,
         changedFiles: pull.changed_files,
         mergeable: pull.mergeable,
+        ...(lifecycle.status === 'rejected'
+          ? { mergeReadinessError: errorMessage(lifecycle.reason) }
+          : {}),
+        ...(lifecycle.status === 'fulfilled' && lifecycle.value
+          ? {
+              draft: lifecycle.value.isDraft,
+              state: lifecycle.value.state.toLowerCase(),
+              mergeStateStatus: lifecycle.value.mergeStateStatus,
+              autoMergeEnabled: !!lifecycle.value.autoMergeRequest,
+              inMergeQueue: lifecycle.value.isInMergeQueue,
+            }
+          : {}),
         reviewers: [
           ...pull.requested_reviewers.map((u) => u.login),
           ...(pull.requested_teams ?? []).map((team) => team.slug),

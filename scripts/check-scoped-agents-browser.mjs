@@ -86,6 +86,15 @@ try {
     page.on('dialog', (dialog) => dialog.accept())
     await page.setContent('<div id="app"></div>')
     await page.addScriptTag({ content: built.outputFiles[0].text })
+    const setCloudIntegrations = async (value, label) => {
+      const scope = (await page.getByRole('dialog').count()) ? page.getByRole('dialog') : page
+      const picker = scope.getByRole('combobox', { name: 'Cloud integrations', exact: true })
+      if (mobile) await picker.selectOption(value)
+      else {
+        await picker.click()
+        await page.getByRole('option', { name: label, exact: true }).click()
+      }
+    }
     const project = page.getByLabel(mobile ? 'Project' : 'Settings project', { exact: true })
     const environment = page.getByLabel(mobile ? 'Computer' : 'Settings machine', {
       exact: true,
@@ -103,6 +112,7 @@ try {
     else await page.getByLabel('Name', { exact: true }).waitFor()
     assert.equal(await page.getByLabel('Configuration scope', { exact: true }).count(), 0)
     await page.getByLabel('Name', { exact: true }).fill('Project writer')
+    await setCloudIntegrations('false', 'Disabled')
     await page
       .getByRole('button', { name: mobile ? 'Save agent' : 'Save changes', exact: true })
       .click()
@@ -118,6 +128,7 @@ try {
         repository: window.writes.at(-1).repositoryId,
         agent: window.writes.at(-1).after.agents[0].id,
         instructions: window.writes.at(-1).after.agents[0].instructions,
+        cloudIntegrations: window.writes.at(-1).after.agents[0].cloudIntegrations,
       })),
       {
         host: 'linux',
@@ -125,6 +136,7 @@ try {
         repository: 'linux-repo',
         agent: 'writer',
         instructions: 'Inherited instructions',
+        cloudIntegrations: false,
       },
     )
     await page.getByRole('button', { name: 'Reset', exact: true }).click()
@@ -150,6 +162,9 @@ try {
       assert.equal(await editor.getByLabel('Name', { exact: true }).inputValue(), 'Research')
       await editor.getByRole('button', { name: 'Next', exact: true }).click()
     }
+    await setCloudIntegrations('true', 'Enabled')
+    await setCloudIntegrations('default', 'Provider default')
+    await setCloudIntegrations('true', 'Enabled')
     await editor
       .getByRole('button', { name: mobile ? 'Save agent' : 'Add configuration', exact: true })
       .click()
@@ -161,12 +176,20 @@ try {
             .getByRole('button', { name: /Research/ })
     ).waitFor()
     assert.equal(await page.evaluate(() => window.writes.at(-1).after.agents[0].provider), 'claude')
+    assert.equal(
+      await page.evaluate(() => window.writes.at(-1).after.agents[0].cloudIntegrations),
+      true,
+    )
     await page
       .getByRole('button', { name: mobile ? 'New configuration' : 'Add profile', exact: true })
       .click()
     if (mobile) await editor.getByLabel('Provider', { exact: true }).selectOption('cursor')
     else await editor.getByRole('button', { name: 'Cursor', exact: true }).click()
     if (!mobile) await editor.getByRole('button', { name: 'Next', exact: true }).click()
+    assert.equal(
+      await editor.getByRole('combobox', { name: 'Cloud integrations', exact: true }).count(),
+      0,
+    )
     await editor.getByLabel('Name', { exact: true }).fill('Cursor worker')
     if (!mobile) await editor.getByRole('button', { name: 'Next', exact: true }).click()
     if (mobile) {
@@ -234,6 +257,11 @@ try {
       await navigation.getByRole('button', { name: /Research/ }).click()
       assert.equal(await page.getByLabel('Name', { exact: true }).inputValue(), 'Research')
       assert.equal(await page.getByRole('dialog').count(), 0)
+      assert.equal(
+        await page.getByRole('combobox', { name: 'Cloud integrations', exact: true }).textContent(),
+        'Enabled',
+      )
+      await setCloudIntegrations('false', 'Disabled')
       const writesBefore = await page.evaluate(() => window.writes.length)
       await page.getByText('Connection & account', { exact: true }).click()
       const env = page.getByRole('textbox', { name: /^Environment variables/ })
@@ -257,9 +285,17 @@ try {
       assert.deepEqual(
         await page.evaluate(() => {
           const agent = window.writes.at(-1).after.agents.find((agent) => agent.name === 'Research')
-          return { instructions: agent.instructions, env: agent.env }
+          return {
+            instructions: agent.instructions,
+            env: agent.env,
+            cloudIntegrations: agent.cloudIntegrations,
+          }
         }),
-        { instructions: 'Updated instructions', env: { EXAMPLE: 'value' } },
+        {
+          instructions: 'Updated instructions',
+          env: { EXAMPLE: 'value' },
+          cloudIntegrations: false,
+        },
       )
       await page.getByLabel('Instructions', { exact: true }).fill('Unsaved changes')
       const confirmation = page.waitForEvent('dialog')
@@ -280,7 +316,7 @@ try {
     await page.close()
     console.log(
       (mobile ? 'Mobile' : 'Desktop') +
-        ' scoped agents: inherited override, reset, host/project ownership, Cursor SDK access/auth fields and editor save passed',
+        ' scoped agents: inherited override, reset, host/project ownership, account apps, Cursor SDK access/auth fields and editor save passed',
     )
   }
 } finally {

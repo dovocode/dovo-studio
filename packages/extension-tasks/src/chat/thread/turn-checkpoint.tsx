@@ -3,15 +3,16 @@ export { CheckpointDiff } from '../../files/saved-file-diff'
 import { whitespaceOnlyFile } from '@dovo/studio-core'
 import { SavedFilePreview } from '../../files/saved-file-preview'
 import { checkpointFiles, pullFileKind, type FileKind, filePreviewLabel } from '@dovo/protocol'
-import { fileStats, DiffAmounts } from '../../files/presentation'
+import { fileStats } from '../../files/presentation'
 import { responses, useWorkspace, useAppPreferences } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useMemo } from 'react'
-import { BookmarkCheck, ChevronRight, Undo2 } from 'lucide-react'
+import { ChevronRight, Undo2 } from 'lucide-react'
 import { useTurnDisclosure } from './turn-window'
 import type { TaskTurn } from '@dovo/studio-core'
 import {
   Button,
+  ChangeSummary,
   ChangeTypeFilters,
   ChoicePicker,
   Dialog,
@@ -71,46 +72,30 @@ export function TurnCheckpoint({
       label: file.preview ? filePreviewLabel(file) : undefined,
     }))
   }, [filtered, stats])
-  const totals = stats.reduce(
-    (sum, file) => ({
-      additions: sum.additions + file.additions,
-      deletions: sum.deletions + file.deletions,
-    }),
-    { additions: 0, deletions: 0 },
-  )
   const checkpoint = turn.checkpoint
   if (!checkpoint) return null
   const undone = !!checkpoint.undone
   const file = filtered.find((entry) => entry.path === selected) ?? filtered[0]
   const count = files.length
+  const title = undone
+    ? 'Changes undone'
+    : checkpoint.error
+      ? 'Checkpoint incomplete'
+      : `${count} ${count === 1 ? 'file' : 'files'} changed`
   // Show checkpoint controls only once the turn has a result to inspect.
   if ((!checkpoint.after && !checkpoint.error) || (!count && checkpoint.after && !checkpoint.error))
     return null
   return (
-    <div className="mt-2 w-full rounded-xl bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className="flex items-center gap-2 rounded text-left hover:text-foreground"
-          aria-expanded={showFiles}
-          onClick={() => setExpanded(!showFiles)}
-        >
-          <ChevronRight className={showFiles ? 'size-3 rotate-90' : 'size-3'} />
-          <BookmarkCheck className="size-3.5" />
-          <span>
-            {projectName ? `${projectName} · ` : ''}
-            {undone
-              ? 'Changes undone'
-              : checkpoint.error
-                ? 'Checkpoint incomplete'
-                : count
-                  ? `${count} changed ${count === 1 ? 'file' : 'files'}`
-                  : 'Checkpoint · No file changes'}
-          </span>
-          {!!stats.length && <DiffAmounts stats={totals} />}
-        </button>
-        <span className="ml-auto flex items-center gap-1">
-          {(!!count || checkpoint.error) && (
+    <div className="mt-2 w-full text-xs text-muted-foreground">
+      <ChangeSummary
+        files={breakdownFiles}
+        expanded={showFiles}
+        onExpandedChange={setExpanded}
+        value={kind}
+        onChange={setKind}
+        title={projectName ? `${projectName} · ${title}` : title}
+        actions={
+          (!!count || checkpoint.error) && (
             <Button
               type="button"
               variant="ghost"
@@ -118,38 +103,31 @@ export function TurnCheckpoint({
               className="h-7 text-xs"
               onClick={() => setOpen(true)}
             >
-              Open diff
-              <ChevronRight className="size-3" />
+              Open diff <ChevronRight className="size-3" />
             </Button>
-          )}
-        </span>
-      </div>
-      {!!count && (
-        <div aria-label="Changed file breakdown" className="mt-1">
-          <ChangeTypeFilters
-            files={breakdownFiles}
-            weightBy="lines"
-            value={kind}
-            onChange={(value) => {
-              setKind(value)
-              setExpanded(true)
-            }}
-          />
-        </div>
-      )}
-      {showFiles && (
-        <div className="mt-2 border-t border-border/40 pt-2">
-          <FileBrowserTree
-            files={treeFiles}
-            selected={selected}
-            defaultExpandedDepth={0}
-            onSelect={(path) => {
-              setSelected(path)
-              setOpen(true)
-            }}
-          />
-        </div>
-      )}
+          )
+        }
+      >
+        {!!count && (
+          <div className="studio-change-file-tree">
+            <FileBrowserTree
+              files={treeFiles}
+              selected={selected}
+              defaultExpandedDepth={0}
+              showChangeBars
+              onSelect={(path) => {
+                setSelected(path)
+                setOpen(true)
+              }}
+            />
+          </div>
+        )}
+        {checkpoint.error && (
+          <p role="alert" className="px-3 pb-2 text-xs text-destructive">
+            {checkpoint.error}
+          </p>
+        )}
+      </ChangeSummary>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex h-[85dvh] max-w-7xl flex-col gap-0 overflow-hidden p-0">
           <div className="shrink-0 space-y-1 border-b px-4 py-3 pr-12">

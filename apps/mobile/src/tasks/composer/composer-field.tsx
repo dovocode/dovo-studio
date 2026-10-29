@@ -84,7 +84,7 @@ export const ComposerField = memo(function ComposerField({
         styles.chatText,
         {
           maxHeight: 144,
-          minHeight: 44,
+          minHeight: showOptions ? 64 : 44,
           borderWidth: 0,
           paddingLeft: showOptions ? 12 : 44,
           paddingRight: showOptions ? 12 : trailingControlCount * 44,

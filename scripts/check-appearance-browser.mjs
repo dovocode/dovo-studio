@@ -37,7 +37,15 @@ function App(){useAppearance();return <TooltipProvider><div className="flex h-sc
 <TitleBar online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>
 <main className="flex min-h-0 flex-1"><Appearance/>
 <aside style={{width:400}} className="flex shrink-0 flex-col gap-4 overflow-auto border-l p-4">
-<Button>Start task</Button><div data-testid="pull-states"><PullRequestIcon state="open"/><PullRequestIcon state="closed"/><PullRequestIcon state="merged"/></div><Message from="user"><MessageContent>Build this interface.</MessageContent></Message>
+<Button>Start task</Button>
+<div data-testid="effects" className="flex flex-col gap-2">
+<nav className="studio-navigation" aria-label="Main navigation"><button className="studio-navigation-item" aria-current="page">T</button></nav>
+<div className="studio-browser-sidebar"><button className="studio-browser-tab" data-active>Selected browser tab</button></div>
+<div className="studio-task-sidebar"><div className="studio-thread-row" data-highlighted><button className="studio-thread-card">Selected thread</button></div></div>
+<div className="task-composer"><div className="studio-composer"><textarea aria-label="Effects composer"/><button type="submit">Send</button></div></div>
+<div className="dovo-dialog-content p-3"><Button>Dialog action</Button></div>
+</div>
+<div data-testid="pull-states"><PullRequestIcon state="open"/><PullRequestIcon state="closed"/><PullRequestIcon state="merged"/></div><Message from="user"><MessageContent>Build this interface.</MessageContent></Message>
 <div data-preserved-lines><MessageResponse preserveLineBreaks>{'First line\\nSecond line\\nThird line'}</MessageResponse></div>
 <MessageResponse>{'Read the [docs](https://dovocode.com).\\n\\n~~~typescript\\n'+sample+'\\n~~~'}</MessageResponse>
 <div data-testid="diff" className="studio-code"><Diff/></div>
@@ -195,6 +203,34 @@ try {
         { id, scheme },
       )
       const expected = palette[scheme]
+      const effects = await page.evaluate((primary) => {
+        const probe = document.createElement('span')
+        probe.style.color = 'color-mix(in srgb, ' + primary + ' 16%, transparent)'
+        document.body.append(probe)
+        const glow = getComputedStyle(probe).color
+        probe.remove()
+        const style = (selector) =>
+          getComputedStyle(document.querySelector('[data-testid=effects] ' + selector))
+        return {
+          intensity: document.documentElement.dataset.themeGlow,
+          gradients: document.documentElement.dataset.themeGradients,
+          primary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
+          tab: style('.studio-browser-tab').backgroundImage,
+          tabShadow: style('.studio-browser-tab').boxShadow,
+          dialog: style('.dovo-dialog-content').backgroundImage,
+          dialogAction: style('.dovo-dialog-content button').color,
+          glow,
+        }
+      }, expected.primary)
+      assert.equal(effects.intensity, '1')
+      assert.equal(effects.gradients, 'true')
+      assert.equal(effects.primary, expected.primary)
+      assert.match(effects.tab, /linear-gradient/)
+      assert.ok(
+        effects.tabShadow.includes(effects.glow),
+        id + ' ' + scheme + ' glow uses the theme accent',
+      )
+      assert.match(effects.dialog, /linear-gradient/)
       const actual = await page.evaluate(() => {
         const color = (value) => {
           const div = document.createElement('div')
@@ -294,6 +330,101 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark')
   await page.emulateMedia({ colorScheme: 'light' })
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light')
+  const glow = page.getByRole('slider', { name: 'Glow intensity', exact: true })
+  const gradients = page.getByRole('switch', { name: 'Gradients', exact: true })
+  const setGlow = async (value) => {
+    await glow.fill(String(value))
+    await page.waitForFunction(
+      (value) => document.documentElement.dataset.themeGlow === String(value),
+      value,
+    )
+  }
+  await mode('Dark')
+  await setGlow(0.5)
+  await page.waitForFunction(() =>
+    getComputedStyle(
+      document.querySelector('[data-testid=effects] .studio-browser-tab'),
+    ).boxShadow.includes('7px'),
+  )
+  await page.reload()
+  await ready()
+  assert.equal(await glow.inputValue(), '0.5', 'Intermediate glow intensity survives reload')
+  await setGlow(0)
+  assert.match(
+    await page
+      .locator('[data-testid=effects] .studio-browser-tab')
+      .evaluate((el) => getComputedStyle(el).backgroundImage),
+    /linear-gradient/,
+    'Glow can be disabled independently of gradients',
+  )
+  await gradients.click()
+  const checkFlatEffects = async () => {
+    await page.waitForFunction(
+      () =>
+        document.documentElement.dataset.themeGradients === 'false' &&
+        document.documentElement.dataset.themeGlow === '0',
+    )
+    // Filled buttons animate their shadow; wait for the rendered endpoint.
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('[data-testid=effects] button')].every(
+        (el) => getComputedStyle(el).boxShadow === 'none',
+      ),
+    )
+    const surfaces = await page.locator('[data-testid=effects]').evaluate((preview) =>
+      [
+        ...preview.querySelectorAll(
+          '.studio-navigation-item, .studio-browser-tab, .studio-thread-card, .studio-composer, .studio-composer button, .dovo-dialog-content, .dovo-dialog-content button',
+        ),
+      ].map((el) => ({
+        element: el.className,
+        background: getComputedStyle(el).backgroundImage,
+        fill: getComputedStyle(el).backgroundColor,
+        shadow: getComputedStyle(el).boxShadow,
+      })),
+    )
+    assert.ok(
+      surfaces.every((surface) => surface.background === 'none'),
+      'Flat mode removes decorative gradients',
+    )
+    assert.notEqual(surfaces[1].fill, 'rgba(0, 0, 0, 0)', 'Selected tabs retain a solid fill')
+    assert.ok(
+      surfaces.every((surface) => surface.shadow === 'none'),
+      'Zero glow removes all decorative surface shadows: ' + JSON.stringify(surfaces),
+    )
+  }
+  await checkFlatEffects()
+  await choose('Nord')
+  await mode('Dark')
+  await checkFlatEffects()
+  await page.reload()
+  await ready()
+  assert.equal(
+    await gradients.isChecked(),
+    false,
+    'Effects preference survives reload and palette changes',
+  )
+  assert.equal(await glow.inputValue(), '0')
+  await checkFlatEffects()
+  await page.getByRole('textbox', { name: 'Effects composer', exact: true }).focus()
+  assert.notEqual(
+    await page
+      .locator('[data-testid=effects] .studio-composer')
+      .evaluate((el) => getComputedStyle(el).borderColor),
+    'rgba(0, 0, 0, 0)',
+    'Composer focus stays visible with effects disabled',
+  )
+  await gradients.click()
+  await setGlow(1)
+  await page.waitForFunction(
+    () =>
+      document.documentElement.dataset.themeGradients === 'true' &&
+      document.documentElement.dataset.themeGlow === '1' &&
+      getComputedStyle(
+        document.querySelector('[data-testid=effects] .studio-browser-tab'),
+      ).backgroundImage.includes('linear-gradient'),
+  )
+  await choose('Claude')
+  await mode('System')
   await page.reload()
   await ready()
   assert.equal(await page.getByRole('radio', { name: 'Claude', exact: true }).isChecked(), true)

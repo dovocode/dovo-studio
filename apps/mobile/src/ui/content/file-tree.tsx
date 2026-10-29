@@ -37,6 +37,11 @@ export function MobileFileTypeIcon({ path }: { path: string }) {
   return <Icon name={fileIcons[kind]} size={16} color={color} />
 }
 type Row = { node: FileTreeNode; depth: number; open: boolean; flat?: boolean }
+function hasLineStat(node: FileTreeNode, field: 'additions' | 'deletions'): boolean {
+  return node.kind === 'directory'
+    ? node.children.some((child) => hasLineStat(child, field))
+    : node[field] !== undefined
+}
 export function MobileFileTree({
   files,
   selected = '',
@@ -47,6 +52,7 @@ export function MobileFileTree({
   disabled = false,
   scrollable = true,
   defaultExpandedDepth = 1,
+  showChangeBars = false,
 }: {
   files: readonly FileTreeEntry[]
   selected?: string
@@ -57,6 +63,7 @@ export function MobileFileTree({
   disabled?: boolean
   scrollable?: boolean
   defaultExpandedDepth?: number
+  showChangeBars?: boolean
 }) {
   const { colors, styles } = useTheme()
   const [expanded, setExpanded] = useState(new Map<string, boolean>())
@@ -178,17 +185,47 @@ export function MobileFileTree({
             </Text>
           )}
         </View>
-        {!folder && (
+        {folder && showChangeBars ? (
           <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
-            {!!node.additions && (
+            <Text style={[styles.muted, { fontSize: 11 }]}>
+              {node.count} {node.count === 1 ? 'file' : 'files'}
+            </Text>
+            {hasLineStat(node, 'additions') && (
+              <Text style={{ color: colors.success, fontSize: 11 }}>+{node.additions}</Text>
+            )}
+            {hasLineStat(node, 'deletions') && (
+              <Text style={{ color: colors.error, fontSize: 11 }}>−{node.deletions}</Text>
+            )}
+          </View>
+        ) : !folder ? (
+          <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
+            {(showChangeBars ? node.additions !== undefined : !!node.additions) && (
               <Text style={{ color: colors.success, fontSize: 11, fontVariant: ['tabular-nums'] }}>
-                +{node.additions.toLocaleString()}
+                +{node.additions?.toLocaleString()}
               </Text>
             )}
-            {!!node.deletions && (
+            {(showChangeBars ? node.deletions !== undefined : !!node.deletions) && (
               <Text style={{ color: colors.error, fontSize: 11, fontVariant: ['tabular-nums'] }}>
-                −{node.deletions.toLocaleString()}
+                −{node.deletions?.toLocaleString()}
               </Text>
+            )}
+            {showChangeBars && !!((node.additions ?? 0) + (node.deletions ?? 0)) && (
+              <View
+                style={{
+                  width: 24,
+                  height: 4,
+                  flexDirection: 'row',
+                  overflow: 'hidden',
+                  borderRadius: 2,
+                }}
+              >
+                {!!node.additions && (
+                  <View style={{ flex: node.additions, backgroundColor: colors.success }} />
+                )}
+                {!!node.deletions && (
+                  <View style={{ flex: node.deletions, backgroundColor: colors.error }} />
+                )}
+              </View>
             )}
             {!!node.label && (
               <Text numberOfLines={1} style={[styles.muted, { fontSize: 11, maxWidth: 72 }]}>
@@ -197,7 +234,7 @@ export function MobileFileTree({
             )}
             {!!node.viewed && <Icon name="check" size={13} color={colors.success} />}
           </View>
-        )}
+        ) : null}
       </Pressable>
     )
   }

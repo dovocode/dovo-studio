@@ -46,6 +46,7 @@
     "test:watch-messages:browser": "node scripts/check-watch-messages-browser.mjs",
     "test:message-source:browser": "node scripts/check-message-source-browser.mjs",
     "test:command-palette:browser": "node scripts/check-command-palette-browser.mjs",
+    "test:change-summary:browser": "node scripts/check-change-summary-browser.mjs && node scripts/check-mobile-change-summary-browser.mjs",
     "test:thread-servers:browser": "node scripts/check-thread-servers-browser.mjs",
     "test:thread-scroll:browser": "node scripts/check-thread-scroll-browser.mjs",
     "test:thread-streaming:browser": "node scripts/check-thread-streaming-browser.mjs",

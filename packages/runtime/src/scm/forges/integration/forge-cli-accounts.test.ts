@@ -12,6 +12,7 @@ vi.mock('./forge-cli', () => ({
 afterEach(() => {
   vi.resetAllMocks()
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 const cli = new ForgeCliAccounts(() => decode(commandsSchema, {}))
 const connection = decode(forgeConnectionSchema, {
@@ -302,7 +303,13 @@ it('resolves wrapper-selected tokens in the checkout and keeps them outside conn
       ['auth', 'token', '--hostname', 'github.com'],
       undefined,
       '/project',
-      { GH_ACCOUNT: 'work' },
+      {
+        GH_ACCOUNT: 'work',
+        GH_TOKEN: undefined,
+        GITHUB_TOKEN: undefined,
+        GH_ENTERPRISE_TOKEN: undefined,
+        GITHUB_ENTERPRISE_TOKEN: undefined,
+      },
     )
     expect(
       await connections.gitAuthorization(
@@ -320,6 +327,39 @@ it('resolves wrapper-selected tokens in the checkout and keeps them outside conn
     expect(JSON.stringify(db.prepare('SELECT * FROM forge_connections').all())).not.toContain(
       'wrapper-private-token',
     )
+  } finally {
+    db.close()
+  }
+})
+
+it('refreshes selected GitHub credentials when the command or runtime account context changes', async () => {
+  let executable = 'gh'
+  const selectedCli = new ForgeCliAccounts(() => ({
+    ...decode(commandsSchema, {}),
+    gh: executable,
+  }))
+  const db = openDatabase(':memory:')
+  try {
+    const connections = new ForgeConnections(db, undefined, selectedCli)
+    const account = connections.save({
+      name: 'Work',
+      provider: 'github',
+      baseUrl: 'https://github.com',
+      credential: 'gh',
+      cliProfile: 'work',
+    })
+    vi.mocked(runForgeCli)
+      .mockResolvedValueOnce('first-token')
+      .mockResolvedValueOnce('second-token')
+      .mockResolvedValueOnce('third-token')
+    expect(await connections.githubToken(account.id, '/project')).toBe('first-token')
+    expect(await connections.githubToken(account.id, '/project')).toBe('first-token')
+    executable = '/custom/gh'
+    expect(await connections.githubToken(account.id, '/project')).toBe('second-token')
+    vi.stubEnv('GH_CONFIG_DIR', '/different-config')
+    expect(await connections.githubToken(account.id, '/project')).toBe('third-token')
+    expect(runForgeCli).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(runForgeCli).mock.calls[1]?.[0]).toBe('/custom/gh')
   } finally {
     db.close()
   }

@@ -14,7 +14,7 @@ import {
   preferredProjectEntry,
   projectDefaultServer,
 } from '@dovo/protocol'
-import { Button, Input, Popover } from '@dovo/studio-ui'
+import { Button, Input, Popover, ProjectIcon } from '@dovo/studio-ui'
 import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
 import { RepositoryDialog } from '@dovo/extension-scm/repository-dialog'
 import {
@@ -25,6 +25,7 @@ import {
   Plus,
   MessageCircleDashed,
   ScanSearch,
+  Layers,
 } from 'lucide-react'
 import { useRef, useState, type ComponentProps } from 'react'
 import { taskSources, type TaskSource } from '../../list/task-collection'
@@ -212,7 +213,10 @@ export function ComposerProject({
         {group.key === 'scratch' ? (
           <MessageCircleDashed className="size-4 shrink-0" />
         ) : (
-          <Folder className="size-4 shrink-0" />
+          <ProjectIcon
+            repository={preferred?.repository ?? group.entries[0]?.repository}
+            className="size-4 shrink-0"
+          />
         )}
         <span className="min-w-0 flex-1">
           <span className="block truncate">{group.name}</span>
@@ -274,7 +278,14 @@ export function ComposerProject({
         }
       }}
     >
-      <div className={prominent ? 'inline-flex min-w-0 max-w-full items-stretch' : 'contents'}>
+      <div
+        className={
+          prominent
+            ? 'startup-project-selector inline-flex min-w-0 max-w-full items-stretch'
+            : 'contents'
+        }
+        data-selected={projectSelected || undefined}
+      >
         {prominent && autoAvailable && (
           <button
             type="button"
@@ -293,9 +304,14 @@ export function ComposerProject({
                 setOpen(true)
               } else chooseScope()
             }}
-            className={`min-h-11 min-w-20 max-w-52 truncate rounded-l-lg border border-r-0 px-3 text-sm outline-none hover:bg-accent focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${projectSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
+            className={`inline-flex items-center justify-center gap-3 min-h-11 min-w-20 max-w-52 rounded-l-lg border border-r-0 px-3 text-sm outline-none hover:bg-accent focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${projectSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
           >
-            {startLabel}
+            {selectedProject ? (
+              <ProjectIcon repository={selectedProject} className="size-4 shrink-0" />
+            ) : (
+              <Layers className="size-5 shrink-0 text-primary" aria-hidden="true" />
+            )}
+            <span className="truncate">{startLabel}</span>
           </button>
         )}
         <Popover.Trigger asChild>
@@ -311,7 +327,16 @@ export function ComposerProject({
             }
           >
             {prominent && !autoAvailable && (
-              <span className="max-w-48 truncate">{selectedProject?.name ?? 'Choose project'}</span>
+              <>
+                {selectedProject ? (
+                  <ProjectIcon repository={selectedProject} className="size-4 shrink-0" />
+                ) : (
+                  <Folder className="size-4 shrink-0" aria-hidden="true" />
+                )}
+                <span className="max-w-48 truncate">
+                  {selectedProject?.name ?? 'Choose project'}
+                </span>
+              </>
             )}
             {!prominent && (
               <>
@@ -320,7 +345,7 @@ export function ComposerProject({
                 ) : repository?.kind === 'scratch' ? (
                   <MessageCircleDashed className="size-3.5" />
                 ) : (
-                  <Folder className="size-3.5" />
+                  <ProjectIcon repository={repository} className="size-3.5 shrink-0" />
                 )}
                 <span className="max-w-32 truncate">
                   {task.autoProject
@@ -556,7 +581,7 @@ export function ComposerProject({
               onClick={() => {
                 if (current && scratchRepository) void choose(current, scratchRepository)
               }}
-              className={`inline-flex items-center justify-center gap-1.5 min-h-11 min-w-20 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${!task.autoProject && repository?.kind === 'scratch' ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
+              className={`startup-no-project inline-flex items-center justify-center gap-1.5 min-h-11 min-w-20 rounded-lg border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 ${!task.autoProject && repository?.kind === 'scratch' ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
             >
               <MessageCircleDashed className="size-4" aria-hidden="true" />
               No Project

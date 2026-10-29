@@ -17,7 +17,7 @@ const stubs = [
   },
   {
     path: 'react-native',
-    contents: `import {useEffect} from 'react';export const View=({children,style,testID,onLayout,accessibilityRole,accessibilityLabel})=>{useEffect(()=>{if(testID==='PR file controls')onLayout?.({nativeEvent:{layout:{height:88}}})},[testID]);return <div role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel} data-testid={testID} style={style}>{children}</div>};export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,style})=><button style={style} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>;export const useWindowDimensions=()=>({height:800});`,
+    contents: `import {useEffect} from 'react';export const View=({children,style,testID,onLayout,accessibilityRole,accessibilityLabel,pointerEvents})=>{useEffect(()=>{if(testID==='PR file controls')onLayout?.({nativeEvent:{layout:{height:88}}})},[testID]);return <div role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel} data-testid={testID} style={{...style,pointerEvents:pointerEvents==='none'?'none':undefined}}>{children}</div>};export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,style})=><button style={{position:'relative',...(typeof style==='function'?style({pressed:false}):style)}} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>;export const SectionList=()=>null;export const useWindowDimensions=()=>({height:800});`,
   },
   {
     path: '../../../ui/content/text',
@@ -73,6 +73,16 @@ const stubs = [
 ]
 stubs.push(
   {
+    path: 'lucide-react-native',
+    contents:
+      'export const Box=()=>null,CodeXml=()=>null,FileText=()=>null,FlaskConical=()=>null,Settings=()=>null;',
+  },
+  {
+    path: '../controls/icon',
+    importer: `${mobile}/ui/content`,
+    contents: 'export const Icon=()=>null;',
+  },
+  {
     path: '../theme',
     importer: `${mobile}/ui/content`,
     contents: stubs.find((stub) => stub.path === '../../../ui/theme').contents,
@@ -80,7 +90,8 @@ stubs.push(
   {
     path: './text',
     importer: `${mobile}/ui/content`,
-    contents: 'export const Text=({children,style})=><span style={style}>{children}</span>;',
+    contents:
+      'export const Text=({children,style})=><span style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;',
   },
 )
 const bundle = await bundleBrowser(
@@ -90,7 +101,7 @@ const bundle = await bundleBrowser(
       loader: 'tsx',
       contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {PullChanges} from '${mobile}/scm/pulls/detail/pull-changes.tsx';
 window.diffMounts=0;
-const files=['binary.dat','generated.ts','vendor.ts','normal.ts','docs/setup.md'].map((path,index)=>({path,status:'modified',additions:1,deletions:0,patch:index===0?undefined:'@@ -1 +1,2 @@\\n old\\n+new',attributes:{binary:index===0,generated:index===1,vendored:index===2}}));
+const files=['binary.dat','generated.ts','vendor.ts','normal.ts','docs/setup.md'].map((path,index)=>({path,status:'modified',additions:index===0?null:1,deletions:index===0?null:0,patch:index===0?undefined:'@@ -1 +1,2 @@\\n old\\n+new',attributes:{binary:index===0,generated:index===1,vendored:index===2}}));
 function App(){const [version,setVersion]=useState(0),[headSha,setHeadSha]=useState('a'.repeat(40)),[current,setCurrent]=useState(files),[fragment,setFragment]=useState(''),[initialPath,setInitialPath]=useState();window.statusVersion=version;window.refreshStatus=()=>setVersion(value=>value+1);window.pushCommit=()=>setHeadSha('c'.repeat(40));window.openLinkedComment=()=>{setInitialPath('normal.ts');setFragment('#discussion_r7')};window.clearGenerated=()=>setCurrent(prior=>prior.map(file=>({...file,attributes:{...file.attributes,generated:false}})));return <PullChanges initialPath={initialPath} viewportHeight={640} fragment={fragment} repositoryId="repo" detail={{pull:{number:7,headSha,baseSha:'b'.repeat(40)},files:current,comments:[{id:'inline',kind:'inline',path:'normal.ts',url:'https://github.com/o/r/pull/7#discussion_r7',body:'Inline feedback'}],capabilities:{actions:['inline-comment']}}} onOpen={()=>{}} onLineComment={()=>{}}/>}createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -138,14 +149,47 @@ try {
   assert.equal(nextFingerprints['normal.ts'], initialFingerprints['normal.ts'])
   assert.equal(await page.locator('[data-diff]').count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Comment on line', exact: true }).count(), 0)
+  const summary = page.getByRole('button', { name: '5 files changed', exact: true })
+  assert.equal(await summary.getAttribute('aria-expanded'), 'false')
+  assert.match(await summary.innerText(), /available stats/)
+  assert.match(await summary.innerText(), /\+4/)
+  assert.equal(await page.getByRole('button', { name: 'Code 3', exact: true }).count(), 0)
+  await summary.click()
+  assert.equal(await summary.getAttribute('aria-expanded'), 'true')
   await page.getByRole('button', { name: 'Code 3', exact: true }).waitFor()
+  assert.match(
+    await page
+      .getByRole('img', { name: /Available changed line distribution/ })
+      .getAttribute('aria-label'),
+    /Code 2 lines/,
+  )
+  assert.match(
+    await page.getByRole('button', { name: 'Filter Code: 3 files' }).innerText(),
+    /available/,
+  )
+  assert.doesNotMatch(
+    await page.getByRole('button', { name: 'binary.dat, unviewed', exact: true }).innerText(),
+    /[+−]\d/,
+  )
+  await page.getByRole('button', { name: 'normal.ts, unviewed', exact: true }).click()
+  assert.equal(await page.getByRole('combobox', { name: 'Changed file' }).inputValue(), 'normal.ts')
+  await page.locator('[data-diff]').waitFor()
+  await page.getByRole('combobox', { name: 'Changed file' }).selectOption('binary.dat')
+  const docsTile = page.getByRole('button', { name: 'Filter Docs: 1 files', exact: true })
+  assert.ok((await docsTile.evaluate((node) => parseFloat(getComputedStyle(node).minHeight))) >= 44)
+  await docsTile.click()
+  assert.equal(await docsTile.getAttribute('aria-pressed'), 'true')
+  assert.deepEqual(await page.locator('select option').allTextContents(), ['docs/setup.md'])
+  await docsTile.click()
+  assert.equal(await docsTile.getAttribute('aria-pressed'), 'false')
+  assert.equal(await page.locator('select option').count(), 5)
   const docs = page.getByRole('button', { name: 'Docs 1', exact: true })
   await docs.click()
   assert.equal(await docs.getAttribute('aria-pressed'), 'true')
   assert.deepEqual(await page.locator('select option').allTextContents(), ['docs/setup.md'])
   assert.equal(
     await docs.locator('[role=img]').evaluate((node) => getComputedStyle(node).backgroundColor),
-    'rgb(146, 64, 14)',
+    'rgb(4, 120, 87)',
   )
   await docs.click()
   assert.equal(await docs.getAttribute('aria-pressed'), 'false')

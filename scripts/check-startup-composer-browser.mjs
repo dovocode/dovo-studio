@@ -48,7 +48,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     export const IconButton=({children,label,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;
     export const Input=props=><input {...props}/>;
     export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;
-    export const ComposerSurface=({children,toolbar,actions,footer,onSubmit})=><form onSubmit={onSubmit}>{toolbar}{children}{actions}{footer}</form>;
+    export const ComposerSurface=({children,controls,leadingActions,actions,onSubmit})=><form onSubmit={onSubmit}>{children}{leadingActions}{controls}{actions}</form>;
     export const ComposerSubmit=props=><button {...props}/>;
     export const ComposerTextarea=props=><textarea {...props}/>;
     export const ContextMenu={Label:Box,Sub:Box,SubTrigger:Box,Portal:Box,SubContent:Box,Item:Box};
@@ -241,16 +241,19 @@ try {
     await page.locator('[data-composer-project]').getAttribute('data-auto-project'),
     'false',
   )
-  // A starter commits the existing draft, keeps the welcome and focuses the same editor.
+  // Typing commits the existing draft, keeps the welcome and focuses the same editor.
   await editor.evaluate((element) => {
-    window.starterEditor = element
+    window.draftEditor = element
   })
-  await page.getByRole('button', { name: 'Fix a bug', exact: true }).click()
+  await page.getByRole('button', { name: 'More composer actions', exact: true }).click()
+  assert.equal(await page.getByRole('navigation', { name: 'Start with a prompt' }).count(), 0)
+  await page.keyboard.press('Escape')
+  await editor.fill('Help me investigate and fix this issue: ')
   await page.waitForFunction(() => window.saved.length === 2)
   assert.equal(await editor.inputValue(), 'Help me investigate and fix this issue: ')
   assert(
     await editor.evaluate(
-      (element) => element === window.starterEditor && document.activeElement === element,
+      (element) => element === window.draftEditor && document.activeElement === element,
     ),
   )
   assert.equal(

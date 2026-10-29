@@ -5,7 +5,7 @@ import { WatchMessageCard } from './components/watch-message'
 import { MessageSource } from './components/message-source'
 import { watchMessage, checkpointFiles, formatTurnDuration, type FileKind } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
-import { ChangeTypeFilters } from '../../ui/content/change-types'
+import { ChangeSummary } from '../../ui/content/change-summary'
 import { CheckpointFiles } from './components/checkpoint-files'
 import {
   formatTime,
@@ -112,10 +112,10 @@ function CheckpointRow({
   turn,
 }: {
   checkpoint: Schema.Schema.Type<typeof checkpointSchema>
-  openCheckpoint: (turnId: string, path?: string) => void
+  openCheckpoint: (turnId: string, path?: string, checkoutId?: string) => void
   turn: TaskTurn | undefined
 }) {
-  const { colors, styles } = useTheme()
+  const { styles } = useTheme()
 
   const { collapseChangedFiles } = useMobilePreferences()
   const [expanded, setExpanded] = useApplicationState<boolean | null>(null)
@@ -131,103 +131,54 @@ function CheckpointRow({
         : [],
     [turn?.checkpoint],
   )
-  const totals = useMemo(
-    () =>
-      changedFiles.reduce(
-        (sum, file) => ({
-          additions: sum.additions + (file.additions ?? 0),
-          deletions: sum.deletions + (file.deletions ?? 0),
-        }),
-        { additions: 0, deletions: 0 },
-      ),
-    [changedFiles],
-  )
   return (
-    <View
-      style={{
-        gap: 4,
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Pressable
-          testID={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
-          accessibilityRole="button"
-          accessibilityLabel={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
-          accessibilityState={{ expanded: showFiles }}
-          onPress={() => setExpanded(!showFiles)}
-          style={({ pressed }) => ({
-            flex: 1,
-            minHeight: 44,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 8,
-            opacity: pressed ? 0.55 : 1,
-          })}
-        >
-          <Icon name={showFiles ? 'down' : 'next'} size={15} color={colors.muted} />
-          <Text
-            style={[
-              styles.muted,
-              {
-                flexShrink: 1,
-              },
-            ]}
-          >
-            {checkpoint.files} {checkpoint.files === 1 ? 'file' : 'files'} changed
-          </Text>
-          {!!changedFiles.some((file) => !file.preview) && (
-            <>
-              <Text style={{ color: colors.success, fontSize: 12 }}>+{totals.additions}</Text>
-              <Text style={{ color: colors.error, fontSize: 12 }}>-{totals.deletions}</Text>
-            </>
-          )}
-        </Pressable>
+    <View style={{ gap: 4 }}>
+      <ChangeSummary
+        files={changedFiles}
+        total={checkpoint.files}
+        expanded={showFiles}
+        onExpandedChange={setExpanded}
+        value={kind}
+        onChange={setKind}
+        testID={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
+        accessibilityLabel={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
+      >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Open turn diff"
           onPress={() => openCheckpoint(checkpoint.turnId)}
-          style={{ minHeight: 36, justifyContent: 'center' }}
+          style={{ minHeight: 44, justifyContent: 'center' }}
         >
           <Text style={styles.muted}>Open diff</Text>
         </Pressable>
-      </View>
-      {!!changedFiles.length && (
-        <ChangeTypeFilters
-          files={changedFiles}
-          weightBy="lines"
-          value={kind}
-          onChange={(next) => {
-            setKind(next)
-            setExpanded(true)
-          }}
-        />
-      )}
-      {showFiles && (
         <CheckpointFiles
           kind={kind}
           files={turn?.checkpoint?.files ?? []}
           omitted={turn?.checkpoint?.omitted ?? []}
           onOpen={(path) => openCheckpoint(checkpoint.turnId, path)}
         />
-      )}
-
-      {turn?.checkpoint?.linked?.map((link) => (
-        <View key={link.checkoutId} style={{ gap: 4 }}>
-          <Text style={styles.muted}>
-            {link.repositoryName ?? link.repositoryId} · {link.branch ?? 'Linked checkout'} ·{' '}
-            {link.files.length} changed files
-          </Text>
-          {showFiles && (
+        {turn?.checkpoint?.linked?.map((link) => (
+          <View key={link.checkoutId} style={{ gap: 4 }}>
+            <Text style={styles.muted}>
+              {link.repositoryName ?? link.repositoryId} · {link.branch ?? 'Linked checkout'} ·{' '}
+              {checkpointFiles(link).length} changed files
+            </Text>
             <CheckpointFiles
               kind={kind}
               files={link.files}
               omitted={link.omitted}
-              onOpen={() => openCheckpoint(checkpoint.turnId)}
+              onOpen={(path) => openCheckpoint(checkpoint.turnId, path, link.checkoutId)}
             />
-          )}
-          {!!link.error && <Text style={styles.error}>{link.error}</Text>}
-        </View>
-      ))}
+          </View>
+        ))}
+      </ChangeSummary>
+      {turn?.checkpoint?.linked?.map((link) =>
+        link.error ? (
+          <Text key={link.checkoutId} style={styles.error}>
+            {link.error}
+          </Text>
+        ) : null,
+      )}
       {!!checkpoint.error && <Text style={styles.error}>{checkpoint.error}</Text>}
     </View>
   )
@@ -531,12 +482,10 @@ const renderConversationMessage = ({ item }: { item: string }) => (
 const messageKey = (id: string) => id
 export function Conversation({
   setup,
-  starters,
   startModes,
   children,
 }: {
   setup?: ReactNode
-  starters?: ReactNode
   startModes?: ReactNode
   children?: ReactNode
 }) {
@@ -747,7 +696,6 @@ export function Conversation({
                 // FlatList applies its inversion and measurement props to this native view.
                 <View style={{ flex: 1 }}>
                   <TaskEmptyState
-                    starters={starters}
                     startModes={startModes}
                     projectName={project?.kind !== 'scratch' ? project?.name : undefined}
                   />

@@ -459,10 +459,12 @@ export function createBrowserMedia(host: MediaHost) {
         if (!origin || webOrigin(contents.mainFrame.url) !== origin) return callback(false)
         // This permits opening a chooser, not access to any device. The separate device
         // permission handler only accepts the exact devices selected by this website.
-        if (browserDevicePermission(permission))
+        if (browserDevicePermission(permission)) {
+          browserPermissions(profileId).recordRequest(origin, permission)
           return callback(
             browserPermissions(profileId).site(origin).permissions[permission] !== 'block',
           )
+        }
         if (commonBrowserPermission(permission)) {
           void requestCommonBrowserPermission(
             contents,
@@ -496,6 +498,7 @@ export function createBrowserMedia(host: MediaHost) {
           return
         }
         if (permission === 'notifications') {
+          browserPermissions(profileId).recordRequest(origin, 'notifications')
           const saved = browserPermissions(profileId).notification(origin)
           if (saved !== undefined) return callback(saved)
           add({
@@ -515,6 +518,11 @@ export function createBrowserMedia(host: MediaHost) {
         if (permission === 'display-capture') return callback(true)
         const types = permission === 'media' ? mediaTypes(details) : undefined
         if (!types) return callback(false)
+        browserPermissions(profileId).recordRequest(
+          origin,
+          ...(types.audio ? ['microphone' as const] : []),
+          ...(types.video ? ['camera' as const] : []),
+        )
         const settings = browserPermissions(profileId).site(origin).permissions
         if (
           (types.audio && settings.microphone === 'block') ||

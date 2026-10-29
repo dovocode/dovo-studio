@@ -137,7 +137,7 @@ export function ComposerSettingsControls({
             align="start"
             sideOffset={8}
             collisionPadding={12}
-            className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-60 overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+            className="studio-menu-surface z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-60 overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground"
           >
             <DropdownMenu.Label className="px-3 py-2 text-xs text-muted-foreground">
               {automatic ? 'Difficulty' : 'Reasoning'}
@@ -343,7 +343,7 @@ export function ComposerSettingsControls({
             align="start"
             sideOffset={8}
             collisionPadding={12}
-            className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+            className="studio-menu-surface z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl border bg-popover p-1.5 text-popover-foreground"
           >
             <DropdownMenu.Label className="px-3 py-2 text-xs text-muted-foreground">
               Access mode
@@ -422,7 +422,7 @@ export function ComposerSettingsControls({
                 <DropdownMenu.SubContent
                   sideOffset={8}
                   collisionPadding={12}
-                  className="z-50 w-80 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+                  className="studio-menu-surface z-50 w-80 rounded-xl border bg-popover p-1.5 text-popover-foreground"
                 >
                   <DropdownMenu.RadioGroup
                     aria-label="Approval policy"
@@ -479,7 +479,7 @@ export function ComposerSettingsControls({
                 <DropdownMenu.SubContent
                   sideOffset={8}
                   collisionPadding={12}
-                  className="z-50 w-80 rounded-xl border bg-popover p-1.5 text-popover-foreground shadow-xl"
+                  className="studio-menu-surface z-50 w-80 rounded-xl border bg-popover p-1.5 text-popover-foreground"
                 >
                   <DropdownMenu.RadioGroup
                     aria-label="Sandbox"

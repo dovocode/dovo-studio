@@ -44,7 +44,7 @@ type Conversation = {
   actions: ReturnType<typeof useConversationActions>
   send: (mode?: 'queue' | 'steer') => void
   stop: () => void
-  openCheckpoint: (turnId: string, path?: string) => void
+  openCheckpoint: (turnId: string, path?: string, checkoutId?: string) => void
   openTerminal: (terminalId: string) => void
   legacyEvents: ToolEvents
   activityError: string
@@ -89,7 +89,7 @@ export function ConversationProvider({
   task: Task
   temporary?: boolean
   visible: boolean
-  openCheckpoint: (turnId: string, path?: string) => void
+  openCheckpoint: (turnId: string, path?: string, checkoutId?: string) => void
   openTerminal: (terminalId: string) => void
   children: ReactNode
 }) {
@@ -270,7 +270,8 @@ export function ConversationProvider({
   const navigation = useRef({ openCheckpoint, openTerminal })
   navigation.current = { openCheckpoint, openTerminal }
   const showCheckpoint = useCallback(
-    (turnId: string, path?: string) => navigation.current.openCheckpoint(turnId, path),
+    (turnId: string, path?: string, checkoutId?: string) =>
+      navigation.current.openCheckpoint(turnId, path, checkoutId),
     [],
   )
   const showTerminal = useCallback(

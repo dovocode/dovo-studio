@@ -193,6 +193,8 @@ export class ForgePullRequests {
           ? ((await github().nativeStack(cwd, operation.number, operation.stackNumber)) ?? null)
           : null
       case 'act': {
+        if (scope.provider !== 'github' && ['draft', 'auto-merge'].includes(operation.input.action))
+          throw new HttpError(400, 'This pull request action is supported only for GitHub.')
         const input = {
           ...operation.input,
           expectedDestination: scope.destination,
@@ -586,7 +588,8 @@ export class ForgePullRequests {
     const api = async (path: string) => {
       if (this.connections.get(connection.id).revision !== connection.revision)
         throw new HttpError(409, 'This source control account changed. Refresh before continuing.')
-      const token = await this.connections.githubToken(connection.id, directory)
+      const credential = await this.connections.githubCredential(connection.id, directory)
+      const token = credential.token
       return JSON.parse(
         await this.git.githubAccount(
           ['api', '--hostname', host, path],
@@ -596,6 +599,7 @@ export class ForgePullRequests {
             ? {
                 host,
                 token,
+                onUnauthorized: credential.onUnauthorized,
                 ...(connection.cliEnv ? { env: connection.cliEnv } : {}),
               }
             : undefined,
@@ -657,14 +661,13 @@ export class ForgePullRequests {
       repository,
       profile,
       env: this.connections.get(id).cliEnv,
-      onUnauthorized: () => this.connections.forgetCredentials(id),
-      token: (cwd) => {
+      credential: (cwd) => {
         if (this.connections.get(id).revision !== revision)
           throw new HttpError(
             409,
             'This source control account changed. Refresh before continuing.',
           )
-        return this.connections.githubToken(id, cwd)
+        return this.connections.githubCredential(id, cwd)
       },
     })
     if (this.githubTargets.size >= 100) this.githubTargets.clear()
@@ -680,11 +683,10 @@ export class ForgePullRequests {
       repository: scope.repository,
       viewerLogin: scope.viewerLogin,
       env: credential.env,
-      token: async () => {
+      credential: async () => {
         scope.validate()
-        return credential.token
+        return { token: credential.token, onUnauthorized: credential.onUnauthorized ?? (() => {}) }
       },
-      onUnauthorized: credential.onUnauthorized,
       validate: scope.validate,
     })
   }

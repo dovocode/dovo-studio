@@ -169,6 +169,8 @@ export type BrowserPermissionSetting = typeof browserPermissionSettingSchema.Typ
 export type BrowserSitePermissions = {
   origin: string
   permissions: Record<BrowserSitePermission, BrowserPermissionSetting>
+  /** Permissions requested by this origin, including saved choices from earlier versions. */
+  requested?: BrowserSitePermission[]
 }
 export const browserCommandSchema = Schema.Union([
   mutableStruct({

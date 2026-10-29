@@ -114,13 +114,16 @@ export function PullActionSheet({
     edit: 'Edit pull request',
     reviewers: 'Request reviewers',
     merge: 'Merge pull request',
+    draft: detail.pull.draft ? 'Mark ready for review' : 'Convert to draft',
+    'auto-merge': detail.pull.autoMergeEnabled ? 'Disable auto-merge' : 'Enable auto-merge',
     close: 'Close pull request',
     reopen: 'Reopen pull request',
   }
   const submit = () => {
     return runClientEffect(
       mobileWorkflow(function* () {
-        if (pending.current || !connected || detail.stale || detail.refreshError) return
+        if (pending.current || !connected || initialDetail.stale || initialDetail.refreshError)
+          return
         pending.current = true
         setBusy(true)
         setError('')
@@ -146,6 +149,8 @@ export function PullActionSheet({
             commentId: target.comment?.id,
             threadId: target.comment?.threadId,
             resolved: !target.comment?.resolved,
+            draft: !detail.pull.draft,
+            enabled: !detail.pull.autoMergeEnabled,
           })
           const result = yield* callEffect(
             '/api/scm/pulls/action',
@@ -201,7 +206,7 @@ export function PullActionSheet({
       footer={
         <Action
           label={busy ? 'Submitting…' : labels[target.action]}
-          disabled={busy || !connected || !!detail.stale || !!detail.refreshError}
+          disabled={busy || !connected || !!initialDetail.stale || !!initialDetail.refreshError}
           onPress={() => void submit()}
         />
       }
@@ -291,13 +296,20 @@ export function PullActionSheet({
           )}
         </>
       )}
-      {target.action === 'merge' && (
+      {(target.action === 'merge' ||
+        (target.action === 'auto-merge' && !detail.pull.autoMergeEnabled)) && (
         <>
           <Text style={styles.text}>
-            Merge {detail.pull.head} into {detail.pull.base}?
+            {target.action === 'auto-merge' ? 'Automatically merge' : 'Merge'} {detail.pull.head}{' '}
+            into {detail.pull.base}?
           </Text>
           <Text style={styles.muted}>
-            {detail.pull.provider === 'bitbucket' ? (
+            {target.action === 'auto-merge' ? (
+              <>
+                Merge when GitHub’s requirements pass. This also applies to later commits pushed to
+                this PR.
+              </>
+            ) : detail.pull.provider === 'bitbucket' ? (
               <>
                 Bitbucket merges the current source branch. Studio checks viewed revision{' '}
                 {headSha.slice(0, 8)} before submitting; later pushes may also be merged. Branch
@@ -329,6 +341,18 @@ export function PullActionSheet({
       )}
       {target.action === 'close' && (
         <Text style={styles.text}>Close this pull request without merging its changes?</Text>
+      )}
+      {target.action === 'draft' && (
+        <Text style={styles.text}>
+          {detail.pull.draft
+            ? 'Mark this pull request ready and notify its reviewers?'
+            : 'Return this pull request to draft while work continues?'}
+        </Text>
+      )}
+      {target.action === 'auto-merge' && detail.pull.autoMergeEnabled && (
+        <Text style={styles.text}>
+          Stop automatically merging this pull request when its requirements pass?
+        </Text>
       )}
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>

@@ -79,6 +79,7 @@ export function ComposerModelPicker({
   onConfigure: () => void
 }) {
   const ModeIcon = modelSelection ? modelModeIcons[modelSelection] : undefined
+  const automatic = modelSelection === 'auto' || modelSelection === 'smart'
   const { snapshot, request } = useWorkspace()
   const installations = snapshot?.acpInstallations ?? []
   const [open, setOpen] = useApplicationState(false)
@@ -329,6 +330,11 @@ export function ComposerModelPicker({
           variant="ghost"
           disabled={disabled}
           aria-label="Choose agent and model"
+          title={
+            modelSelection
+              ? { inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[modelSelection]
+              : undefined
+          }
           className={cn(
             'h-8 min-w-0 max-w-64 gap-1.5 rounded-lg px-2 text-xs font-normal',
             joined && 'max-w-48 rounded-r-none pr-1',
@@ -342,7 +348,7 @@ export function ComposerModelPicker({
               customIcon={selectedAgent ? (selectedAgent.icon ?? 'bot') : undefined}
             />
           )}
-          <span className="truncate">
+          <span className={cn('truncate', joined && automatic && 'sr-only')}>
             {modelSelection ? (
               { inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[modelSelection]
             ) : (
@@ -364,7 +370,7 @@ export function ComposerModelPicker({
           align="start"
           sideOffset={8}
           collisionPadding={12}
-          className="z-50 flex h-[min(27rem,var(--radix-popover-content-available-height))] w-[min(26rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-2xl"
+          className="studio-menu-surface z-50 flex h-[min(27rem,var(--radix-popover-content-available-height))] w-[min(26rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border bg-popover text-popover-foreground"
           aria-label="Choose agent and model"
         >
           <div

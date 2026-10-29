@@ -8,6 +8,7 @@ import {
 import { runCredentials } from '../../auth/run-credentials.js'
 import type { MemoryScope } from '@dovo/protocol'
 import { retainChangedFiles } from '../../scm/git/retain-changes.js'
+import { preservesNativeSession } from '../execution/handover.js'
 import { OwnedProcessShutdownError } from '../execution/stop-owned-child.js'
 import type { NativeThreadRead, NativeThreadPage, NativeThreadEntry } from '@dovo/protocol'
 import type { McpApps } from '../../mcp-apps/bridge.js'
@@ -82,6 +83,7 @@ type Running = {
   id: string
   runId: string
   retiring?: boolean
+  preserveNativeSession?: boolean
   shutdownUnconfirmed?: OwnedProcessShutdownError
   controller: AbortController
   fiber?: Fiber.Fiber<void, RuntimeFailure>
@@ -1440,10 +1442,14 @@ export class Tasks {
                 },
                 (prompt) => this.askQuestion(id, attemptId, prompt),
                 continuing,
-                (completed) =>
+                (completed, preserveNative) =>
                   Effect.gen({ self: this }, function* () {
                     run.retiring = true
-                    yield* this.drainChildren(id, completed ? run.id : undefined)
+                    run.preserveNativeSession ||= preserveNative
+                    yield* this.drainChildren(
+                      id,
+                      completed || run.preserveNativeSession ? run.id : undefined,
+                    )
                   }),
               )
               run.retiring = true
@@ -1456,6 +1462,7 @@ export class Tasks {
             Effect.tapCause((cause) =>
               Effect.gen({ self: this }, function* () {
                 const error = runtimeFailure(Cause.squash(cause))
+                run.preserveNativeSession ||= preservesNativeSession(error)
                 if (
                   error instanceof RuntimeOperationError &&
                   error.cause instanceof OwnedProcessShutdownError
@@ -1509,7 +1516,8 @@ export class Tasks {
                   run.retiring = true
                   yield* this.drainChildren(
                     id,
-                    run.controller.signal.aborted || this.store.taskSummary(id).status === 'failed'
+                    run.controller.signal.aborted ||
+                      (this.store.taskSummary(id).status === 'failed' && !run.preserveNativeSession)
                       ? undefined
                       : run.id,
                   )
@@ -2479,6 +2487,7 @@ export class Tasks {
             endpoint: inherited.endpoint,
             executablePath: inherited.executablePath,
             configDirectory: inherited.configDirectory,
+            cloudIntegrations: inherited.cloudIntegrations,
             args: inherited.args,
             env: inherited.env,
             serviceTier: inherited.serviceTier,

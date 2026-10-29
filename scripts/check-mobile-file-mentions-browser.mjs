@@ -20,7 +20,7 @@ function App(){
   const [state,setState]=useState({text:'@old',taskId:'task1',activeId:'runtime1',connected:true,connection:{address:'http://one',token:'token'},call});
   window.update=changes=>setState(previous=>({...previous,...changes}));
   window.runtime=state;
-  return <FileMentions taskId={state.taskId} text={state.text} caret={state.text.length} resources={{skills:[{name:'enabled',description:'Review changes',enabled:true},{name:'disabled',description:'Review security',enabled:false},{name:'review-empty',enabled:true}],mcpServers:[{name:'review-server',enabled:true}]}} onChange={text=>window.update({text})}/>;
+  return <FileMentions taskId={state.taskId} text={state.text} caret={state.text.length} resources={{skills:[{name:'enabled',description:'Review changes',enabled:true},{name:'disabled',description:'Review security',enabled:false},{name:'review-empty',enabled:true}],mcpServers:[{name:'review-server',enabled:true}]}} onChange={text=>window.update({text})} onSideChat={state.sidechat ? text=>window.sidechat=text : undefined}/>;
 }
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
@@ -120,6 +120,17 @@ try {
   await server.waitFor()
   assert.equal(await server.locator('span').nth(1).innerText(), 'MCP server')
   assert.deepEqual(errors, [])
+  await update({ text: '/sidechat', sidechat: true })
+  await page.getByRole('button', { name: 'Command sidechat: Ask a side question' }).click()
+  assert.equal(await page.evaluate(() => window.sidechat), '')
+  await update({ text: 'Question\n/sidechat' })
+  await page.getByRole('button', { name: 'Command sidechat: Ask a side question' }).click()
+  assert.equal(await page.evaluate(() => window.sidechat), 'Question\n')
+  await update({ text: '/sidechat', sidechat: false })
+  assert.equal(
+    await page.getByRole('button', { name: 'Command sidechat: Ask a side question' }).count(),
+    0,
+  )
   console.log('Mobile file mention request races and resource details passed')
 } finally {
   await browser.close()

@@ -1,6 +1,6 @@
 import { decode } from '../../shared/schema.js'
 import { describe, expect, it } from 'vite-plus/test'
-import { pullSummarySchema, type PullComment } from './pulls.js'
+import { pullSummarySchema, type PullComment, type PullDetail } from './pulls.js'
 import {
   comparePulls,
   pullNextStep,
@@ -11,6 +11,7 @@ import {
   pullState,
   checkSignal,
   pullCommentSignal,
+  pullMergeability,
 } from './pull-presentation.js'
 const pull = decode(pullSummarySchema, {
   number: 7,
@@ -25,6 +26,38 @@ const pull = decode(pullSummarySchema, {
   labels: ['bug'],
 })
 describe('PR presentation', () => {
+  it('distinguishes conflict-free branches from actual merge readiness', () => {
+    const detail: PullDetail['pull'] = {
+      ...pull,
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      repositoryUrl: 'https://github.com/test/repo',
+      body: '',
+      additions: 0,
+      deletions: 0,
+      changedFiles: 0,
+      mergeable: true,
+      reviewers: [],
+      assignees: [],
+    }
+    expect(pullMergeability(detail).label).toBe('No merge conflicts')
+    expect(pullMergeability({ ...detail, draft: true }).label).toBe('Draft · not ready to merge')
+    expect(pullMergeability({ ...detail, inMergeQueue: true }).label).toBe('In merge queue')
+    expect(pullMergeability({ ...detail, mergeStateStatus: 'CLEAN' }).label).toBe('Ready to merge')
+    expect(pullMergeability({ ...detail, mergeStateStatus: 'BLOCKED' }).label).toBe(
+      'Blocked by repository requirements',
+    )
+    expect(pullMergeability({ ...detail, mergeStateStatus: 'BEHIND' }).label).toBe(
+      'Branch update required',
+    )
+    expect(
+      pullMergeability({ ...detail, mergeStateStatus: 'CLEAN', checksState: 'FAILURE' }).tone,
+    ).toBe('danger')
+    expect(
+      pullMergeability({ ...detail, mergeStateStatus: 'CLEAN', reviewDecision: 'REVIEW_REQUIRED' })
+        .label,
+    ).toBe('Waiting for required reviews')
+  })
   it('distinguishes review decisions from discussion and code feedback without relying on body text', () => {
     expect(
       pullCommentSignal({

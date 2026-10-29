@@ -188,6 +188,11 @@ export function PullStatus({
           </Text>
         )}
         <Signal signal={pullMergeability(detail.pull)} />
+        {detail.pull.autoMergeEnabled && (
+          <Text style={[styles.muted, { marginTop: 8 }]}>
+            Auto-merge enabled · merges when GitHub’s requirements pass.
+          </Text>
+        )}
       </View>
     </View>
   )

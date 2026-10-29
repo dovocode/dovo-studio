@@ -70,6 +70,8 @@ export const agentPresetSchema = mutableStruct({
   reasoning: Schema.optional(maxValue(Schema.String, 100)),
   serviceTier: Schema.optional(maxValue(Schema.String, 100)),
   cyberAccessProgram: Schema.optional(Schema.Literals(['standard', 'daybreakBlue', 'daybreakRed'])),
+  /** Account-linked apps for Claude and Codex; omitted inherits the provider's settings. */
+  cloudIntegrations: Schema.optional(Schema.Boolean),
   instructions: Schema.String,
   permission: Schema.Literals(['ask', 'read-only', 'workspace-write', 'auto', 'full-access']),
   approvalPolicy: Schema.optional(approvalPolicySchema),

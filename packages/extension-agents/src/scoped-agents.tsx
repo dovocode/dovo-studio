@@ -145,12 +145,12 @@ export function ScopedAgents({
           ))}
         </ChoicePicker>
       </div>
-      <div className="grid overflow-hidden rounded-xl border lg:grid-cols-[14rem_minmax(0,1fr)]">
+      <div className="grid overflow-hidden rounded-xl border border-border/60 bg-muted/20 lg:grid-cols-[14rem_minmax(0,1fr)]">
         <nav
           aria-label="Provider configurations"
-          className="hidden min-w-0 border-r bg-card/30 lg:block"
+          className="hidden min-w-0 border-r border-border/60 bg-background/40 lg:block"
         >
-          <div className="border-b p-3">
+          <div className="border-b border-border/50 p-3">
             <div className="relative">
               <Search
                 aria-hidden="true"
@@ -165,7 +165,7 @@ export function ScopedAgents({
               />
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:block">
+          <div className="space-y-0.5 p-2">
             {filtered.map((agent) => {
               const local = own.some((entry) => entry.id === agent.id)
               const origin = origins.find((entry) => entry.agent.id === agent.id)?.scope
@@ -183,22 +183,24 @@ export function ScopedAgents({
                     setNotice('')
                     setSelectedId(agent.id)
                   }}
-                  className={`flex w-full items-start gap-3 border-b border-l-2 px-3 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selected?.id === agent.id ? 'border-l-primary bg-primary/8' : 'border-l-transparent'}`}
+                  className={`flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selected?.id === agent.id ? 'border-primary/30 bg-[var(--studio-selected-fill)] [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]' : 'border-transparent'}`}
                 >
                   <AgentAvatar
                     provider={agent.provider}
                     customIcon={agent.icon}
-                    className="mt-0.5 size-6 shrink-0"
+                    className="mt-0.5 size-5 shrink-0"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{agent.name}</span>
+                    <span className="block truncate text-[0.8125rem] font-medium">
+                      {agent.name}
+                    </span>
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                       {agent.name === providerDisplayName(agent.provider)
                         ? model
                         : `${provider} · ${model}`}
                     </span>
                     <span
-                      className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-[11px] ${local ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
+                      className={`mt-1 block text-[11px] ${local ? 'text-primary' : 'text-muted-foreground'}`}
                     >
                       {local
                         ? 'Customized here'
@@ -226,7 +228,7 @@ export function ScopedAgents({
             </p>
           )}
         </nav>
-        <div className="min-w-0 p-4 lg:p-6">
+        <div className="min-w-0 bg-background/30 p-4 lg:p-5">
           {selected ? (
             <>
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -316,7 +318,7 @@ export function ScopedAgents({
                   )}
                 </div>
               </div>
-              <div className="mb-5 space-y-2 rounded-lg border bg-muted/30 p-3">
+              <div className="mb-5 space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3">
                 <SettingSource
                   label={selected.name}
                   origin={{ source: local ? scope : origin, overridden: !!local }}

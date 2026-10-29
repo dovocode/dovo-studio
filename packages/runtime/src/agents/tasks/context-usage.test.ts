@@ -187,6 +187,66 @@ it('keeps the billable token categories for a Codex turn and a Claude result', (
   expect(claude.model()).toBe('claude-sonnet-4-6')
 })
 
+it('preserves accrued Codex categories across a native session replacement and rejects stale/child events', () => {
+  let main: string | undefined = 'old-session'
+  const counter = turnTokenCounter('codex', () => main)
+  const parts = (input: number, output: number, cached: number, write = 0) => ({
+    inputTokens: input,
+    outputTokens: output,
+    cachedInputTokens: cached,
+    cacheWriteInputTokens: write,
+    totalTokens: input + output,
+  })
+  const event = (thread: string, total: ReturnType<typeof parts>, last = total) => ({
+    threadId: thread,
+    tokenUsage: { total, last },
+  })
+  counter.accept(
+    'thread/tokenUsage/updated',
+    event('old-session', parts(1000, 100, 500), parts(200, 20, 100)),
+  )
+  counter.accept(
+    'thread/tokenUsage/updated',
+    event('old-session', parts(1300, 150, 700), parts(300, 50, 200)),
+  )
+  expect(counter.total()).toBe(570)
+  expect(counter.usage()).toEqual({ input: 200, output: 70, cacheRead: 300, cacheWrite: 0 })
+  main = undefined
+  counter.accept('thread/tokenUsage/updated', event('old-session', parts(20000, 3000, 0)))
+  counter.accept('thread/tokenUsage/updated', event('native-child', parts(30000, 4000, 0)))
+  main = 'replacement-session'
+  counter.accept('thread/tokenUsage/updated', event('old-session', parts(20000, 3000, 0)))
+  counter.accept('thread/tokenUsage/updated', event('native-child', parts(30000, 4000, 0)))
+  counter.accept('thread/tokenUsage/updated', event('replacement-session', parts(120, 30, 20, 5)))
+  counter.accept('thread/tokenUsage/updated', event('replacement-session', parts(120, 30, 20, 5)))
+  expect(counter.total()).toBe(720)
+  expect(counter.usage()).toEqual({ input: 295, output: 100, cacheRead: 320, cacheWrite: 5 })
+  counter.accept('thread/tokenUsage/updated', event('replacement-session', parts(100, 20, 10)))
+  expect(counter.total()).toBe(720)
+  counter.accept(
+    'thread/tokenUsage/updated',
+    event('replacement-session', parts(220, 50, 50, 15), parts(100, 20, 30, 10)),
+  )
+  expect(counter.total()).toBe(840)
+  expect(counter.usage()).toEqual({ input: 355, output: 120, cacheRead: 350, cacheWrite: 15 })
+})
+
+it('preserves scalar Codex spend when a replacement reports no billable categories', () => {
+  let main = 'old'
+  const counter = turnTokenCounter('codex', () => main)
+  const event = (total: number, last: number) => ({
+    threadId: main,
+    tokenUsage: { total: { totalTokens: total }, last: { totalTokens: last } },
+  })
+  counter.accept('thread/tokenUsage/updated', event(1000, 400))
+  counter.accept('thread/tokenUsage/updated', event(1900, 500))
+  main = 'new'
+  counter.accept('thread/tokenUsage/updated', event(80, 80))
+  counter.accept('thread/tokenUsage/updated', event(110, 30))
+  expect(counter.total()).toBe(1410)
+  expect(counter.usage()).toBeUndefined()
+})
+
 it('counts only the new OpenCode v2 session usage after a baseline', () => {
   const counter = turnTokenCounter('opencode', () => 's')
   counter.accept('dovo/usage/baseline', {

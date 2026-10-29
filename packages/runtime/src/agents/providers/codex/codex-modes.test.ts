@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { mutableStruct } from '@dovo/protocol'
 import { decode, resourceSettingsSchema } from '@dovo/protocol'
 import { taskToolsServer } from '../../../agent-tools/config.js'
@@ -25,6 +26,8 @@ async function fixture(
   lateChild = false,
   nativeRequests = false,
   webRequests = false,
+  rateLimits = false,
+  contextFailure?: 'request' | 'after-work',
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-codex-modes-'))
   cleanups.push(directory)
@@ -48,21 +51,34 @@ const approvalCases = [
 ];
 let approvalIndex=0;
 const nextApproval=()=>{const next=approvalCases[approvalIndex++];if(next)send({...next,params:{threadId:'thread',...next.params}});else send({method:'turn/completed',params:{turn:{status:'completed'}}})};
-let mcpServers;
+let mcpServers, turnRequests = 0;
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);if(m.id===undefined)return;
  fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({...m,pid:process.pid,argv:process.argv.slice(2)})+'\\n');
  if(m.method===undefined){if(${webRequests})nextApproval();return;}
  let result={};
  if(m.method==='initialize')result={userAgent:'codex/${version}'};
+ if(m.method==='account/rateLimits/read' && ${rateLimits})result={rateLimits:{primary:{usedPercent:20,windowDurationMins:300}}};
  if(m.method==='thread/start'||m.method==='thread/resume') {
    result={thread:{id:'thread',daybreakEnabled:${savedDaybreak}},approvalsReviewer:'user'};
    // A loaded Codex thread retains the original MCP connection on resume.
    mcpServers ??= m.params.config?.mcp_servers ?? {};
  }
  if(m.method==='thread/compact/start' && ${compactBeforeResponse})send({method:'item/completed',params:{threadId:'thread',item:{type:'contextCompaction',id:'compact'}}});
+ if(m.method==='turn/start' && ++turnRequests===2 && ${JSON.stringify(contextFailure ?? '')}) {
+   if(${JSON.stringify(contextFailure ?? '')}==='request') {
+     send({id:m.id,error:{code:-32000,message:'context_length_exceeded'}});
+     setTimeout(()=>send({method:'turn/completed',params:{threadId:'native-child',turn:{id:'native-turn',status:'completed'}}}),50);
+   } else {
+     send({id:m.id,result:{turn:{id:'failed-turn',status:'inProgress'}}});
+     send({method:'item/agentMessage/delta',params:{threadId:'thread',turnId:'failed-turn',delta:'Actual partial work'}});
+     send({method:'turn/completed',params:{threadId:'thread',turn:{id:'failed-turn',status:'failed',error:{message:'context_length_exceeded'}}}});
+   }
+   return;
+ }
  send({id:m.id,result});
  if(m.method==='turn/start') {
+   if (${rateLimits})send({method:'account/rateLimits/updated',params:{rateLimits:{primary:{usedPercent:20,windowDurationMins:300}}}});
    send({method:'item/agentMessage/delta',params:{delta:JSON.stringify(mcpServers.dovo_task?.env ?? {})}});
    if (${webRequests}) {nextApproval();return;}
    if (${nativeRequests})send({method:'item/started',params:{threadId:'native-child',item:{type:'commandExecution'}}});
@@ -167,6 +183,68 @@ it('reuses the Codex app-server for follow-up turns and closes it with the adapt
     pressure.mockRestore()
   }
 })
+it('does not republish cached quota notifications or reads across warm turns', async () => {
+  const { run } = await fixture('0.155.1', false, false, false, false, false, false, true)
+  run.taskId = 'quota-task'
+  run.onEvent = vi.fn<NonNullable<AgentRun['onEvent']>>()
+  const adapter = createCodexAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  try {
+    await adapter.run(run)
+    run.sessionId = 'thread'
+    await adapter.run(run)
+    expect(
+      vi.mocked(run.onEvent).mock.calls.filter(([name]) => name.startsWith('account/rateLimits/')),
+    ).toHaveLength(1)
+  } finally {
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
+it('applies account apps at launch and resume, restarting warm processes when the preference changes', async () => {
+  const { run, requests } = await fixture()
+  run.taskId = 'account-apps-task'
+  run.agent.args = ['-c', 'features.apps=false']
+  const adapter = createCodexAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  try {
+    for (const cloudIntegrations of [undefined, true, false, undefined]) {
+      run.agent.cloudIntegrations = cloudIntegrations
+      await adapter.run(run)
+      run.sessionId = 'thread'
+      await adapter.run(run)
+      const rows = (await requests())
+        .filter((row) => row.method === 'thread/start' || row.method === 'thread/resume')
+        .slice(-2)
+      expect(rows[0].pid).toBe(rows[1].pid)
+      for (const row of rows) {
+        const config = decode(
+          Schema.Record(Schema.String, Schema.Unknown),
+          row.params?.config ?? {},
+        )
+        expect(config['features.apps']).toBe(cloudIntegrations)
+        expect(row.argv).toEqual([
+          'app-server',
+          '--listen',
+          'stdio://',
+          ...run.agent.args,
+          ...(cloudIntegrations === undefined ? [] : ['-c', `features.apps=${cloudIntegrations}`]),
+        ])
+      }
+    }
+    expect(new Set((await requests()).map((row) => row.pid)).size).toBe(4)
+    run.agent.cloudIntegrations = true
+    run.tools = 'none'
+    await adapter.run(run)
+    const utility = (await requests()).filter((row) => row.method === 'thread/resume').at(-1)
+    expect(utility?.params?.config).toHaveProperty(['features.apps'], false)
+    expect(utility?.argv.slice(-2)).toEqual(['-c', 'features.apps=false'])
+  } finally {
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
+
 it('rebinds Dovo task tools before a follow-up turn while resuming the same conversation', async () => {
   const { run, requests } = await fixture()
   run.taskId = 'bound-task'
@@ -553,3 +631,66 @@ it.each(['0.160.0', '0.161.0', '0.162.0'])(
     }
   },
 )
+
+it('keeps native work and the loaded process alive after a pre-accept context rejection', async () => {
+  const f = await fixture('0.155.1', false, false, false, false, true, false, false, 'request')
+  const adapter = createCodexAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const accepted = vi.fn<NonNullable<AgentRun['onPromptAccepted']>>()
+  const approve = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
+    async () => 'approve',
+  )
+  const run: AgentRun = {
+    ...f.run,
+    taskId: 'rejected-native',
+    onSubagentEvent: native,
+    nativeAgentInteractions: { approve, ask: f.run.ask },
+  }
+  try {
+    await adapter.run(run)
+    await expect(
+      adapter.run({ ...run, sessionId: 'thread', onPromptAccepted: accepted }),
+    ).rejects.toThrow('context_length_exceeded')
+    expect(accepted).not.toHaveBeenCalled()
+    expect(native).not.toHaveBeenCalledWith('dovo/session/closed', {}, 'thread')
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith(
+        'turn/completed',
+        expect.objectContaining({ threadId: 'native-child' }),
+        'thread',
+      ),
+    )
+    await adapter.run({ ...run, sessionId: 'thread', compact: true })
+    const rows = await f.requests()
+    expect(new Set(rows.map((row) => row.pid)).size).toBe(1)
+    expect(rows.filter((row) => row.method === 'initialize')).toHaveLength(1)
+    expect(rows.filter((row) => row.method === 'thread/compact/start')).toHaveLength(1)
+    await adapter.run({ ...run, sessionId: 'thread' })
+    expect(new Set((await f.requests()).map((row) => row.pid)).size).toBe(1)
+  } finally {
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
+
+it('closes the loaded process when context failure follows real accepted work', async () => {
+  const f = await fixture('0.155.1', false, false, false, false, false, false, false, 'after-work')
+  const adapter = createCodexAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const accepted = vi.fn<NonNullable<AgentRun['onPromptAccepted']>>()
+  const run: AgentRun = { ...f.run, taskId: 'failed-work', onSubagentEvent: native }
+  try {
+    await adapter.run(run)
+    await expect(
+      adapter.run({ ...run, sessionId: 'thread', onPromptAccepted: accepted }),
+    ).rejects.toThrow('context_length_exceeded')
+    expect(accepted).toHaveBeenCalled()
+    expect(native).toHaveBeenCalledWith('dovo/session/closed', {}, 'thread')
+    expect(run.onText).toHaveBeenCalledWith('Actual partial work')
+  } finally {
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})

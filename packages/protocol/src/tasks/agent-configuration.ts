@@ -19,6 +19,7 @@ export function changeAgentProvider(agent: Agent, provider: TaskHarness['provide
     reasoning: '',
     serviceTier: undefined,
     cyberAccessProgram: undefined,
+    cloudIntegrations: undefined,
     acpInstallationId: undefined,
     acpMode: undefined,
     acpConfig: undefined,

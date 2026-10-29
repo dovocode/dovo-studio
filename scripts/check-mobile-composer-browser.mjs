@@ -96,7 +96,7 @@ try {
       minHeight: window.composerLayout.minHeight,
       maxHeight: window.composerLayout.maxHeight,
     })),
-    { height: null, minHeight: 44, maxHeight: 144 },
+    { height: null, minHeight: 64, maxHeight: 144 },
   )
   assert.equal(await input.getAttribute('data-scroll-enabled'), 'true')
   assert.equal(await input.getAttribute('data-submit-behavior'), 'newline')

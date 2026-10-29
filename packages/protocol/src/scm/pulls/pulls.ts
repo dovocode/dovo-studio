@@ -126,6 +126,10 @@ export const pullDetailSchema = mutableStruct({
       deletions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       changedFiles: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       mergeable: Schema.NullOr(Schema.Boolean),
+      mergeStateStatus: Schema.optional(Schema.String),
+      mergeReadinessError: Schema.optional(Schema.String),
+      autoMergeEnabled: Schema.optional(Schema.Boolean),
+      inMergeQueue: Schema.optional(Schema.Boolean),
       reviewers: mutableArray(Schema.String),
       assignees: mutableArray(Schema.String),
     },
@@ -202,22 +206,50 @@ export function combinePullSections(
     changes = get('changes'),
     checks = get('checks'),
     stack = get('stack')
+  const overviewUpdated = Date.parse(overview.pull.updatedAt)
+  const statusUpdated = status ? Date.parse(status.pull.updatedAt) : NaN
+  // Reopening or changing draft state does not change the head/base revision.
+  // An older cached status must not undo a fresher overview's lifecycle state.
+  const lifecycleStatus =
+    status &&
+    !(
+      Number.isFinite(overviewUpdated) &&
+      Number.isFinite(statusUpdated) &&
+      statusUpdated < overviewUpdated
+    )
+      ? status
+      : undefined
   return {
     ...overview,
-    capabilities: status?.capabilities
+    capabilities: lifecycleStatus?.capabilities
       ? {
-          ...status.capabilities,
+          ...lifecycleStatus.capabilities,
           actions: [
-            ...status.capabilities.actions,
+            ...lifecycleStatus.capabilities.actions,
             ...(discussion?.capabilities?.actions.includes('resolve') ? ['resolve' as const] : []),
           ],
         }
       : overview.capabilities,
     pull: {
       ...overview.pull,
+      state: lifecycleStatus ? lifecycleStatus.pull.state : overview.pull.state,
+      draft: lifecycleStatus ? lifecycleStatus.pull.draft : overview.pull.draft,
+      mergeable: lifecycleStatus ? lifecycleStatus.pull.mergeable : overview.pull.mergeable,
       checksState: status ? status.pull.checksState : overview.pull.checksState,
       reviewDecision: status ? status.pull.reviewDecision : overview.pull.reviewDecision,
       statusError: status ? status.pull.statusError : overview.pull.statusError,
+      mergeStateStatus: lifecycleStatus
+        ? lifecycleStatus.pull.mergeStateStatus
+        : overview.pull.mergeStateStatus,
+      mergeReadinessError: lifecycleStatus
+        ? lifecycleStatus.pull.mergeReadinessError
+        : overview.pull.mergeReadinessError,
+      autoMergeEnabled: lifecycleStatus
+        ? lifecycleStatus.pull.autoMergeEnabled
+        : overview.pull.autoMergeEnabled,
+      inMergeQueue: lifecycleStatus
+        ? lifecycleStatus.pull.inMergeQueue
+        : overview.pull.inMergeQueue,
       stack: stack?.pull.stack,
     },
     stack: stack?.stack,

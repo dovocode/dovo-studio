@@ -329,11 +329,11 @@ export function ArtifactBrowser({
       )}
       <header
         className={cn(
-          'flex shrink-0 items-center gap-3 border-b px-4 py-3',
+          'flex shrink-0 items-center gap-2 border-b bg-sidebar px-3 py-2 dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]',
           (!embedded || expanded) && 'pr-14',
         )}
       >
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-card">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-card/50">
           {metadata ? (
             <ArtifactIcon format={metadata.format} />
           ) : (
@@ -343,7 +343,7 @@ export function ArtifactBrowser({
         <div className="min-w-0 flex-1">
           <select
             aria-label="Artifact"
-            className="w-full min-w-0 truncate rounded bg-background py-0.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="w-full min-w-0 truncate rounded bg-transparent py-0.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             value={id}
             disabled={!items?.length && !links.length}
             onChange={(event) => {
@@ -378,26 +378,31 @@ export function ArtifactBrowser({
         </div>
         <IconButton
           label="Refresh artifacts"
+          className="size-7 shrink-0"
           disabled={!connected || refreshing}
           onClick={() => setReload((value) => value + 1)}
         >
-          <RotateCw className={cn('size-4', refreshing && 'animate-spin')} />
+          <RotateCw className={cn('size-3.5', refreshing && 'animate-spin')} />
         </IconButton>
         {embedded && !expanded && (
-          <IconButton label="Expand artifact" onClick={() => setExpanded(true)}>
-            <Maximize2 className="size-4" />
+          <IconButton
+            label="Expand artifact"
+            className="size-7 shrink-0"
+            onClick={() => setExpanded(true)}
+          >
+            <Maximize2 className="size-3.5" />
           </IconButton>
         )}
         {embedded && !expanded && onClose && (
-          <IconButton label="Close artifacts" onClick={onClose}>
-            <X className="size-4" />
+          <IconButton label="Close artifacts" className="size-7 shrink-0" onClick={onClose}>
+            <X className="size-3.5" />
           </IconButton>
         )}
       </header>
       {!link && id && (
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-sidebar/60 px-3 py-1.5 dark:bg-[color-mix(in_srgb,var(--sidebar)_70%,#050709)]">
           <div
-            className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
+            className="flex items-center gap-0.5 rounded-md border border-border/50 bg-background/40 p-0.5"
             aria-label="Artifact view"
           >
             {(
@@ -412,7 +417,11 @@ export function ArtifactBrowser({
                 size="sm"
                 aria-pressed={source === value}
                 disabled={!artifact}
-                className={cn('gap-1.5', source === value && 'bg-background shadow-sm')}
+                className={cn(
+                  'h-7 gap-1.5 px-2 text-xs text-muted-foreground',
+                  source === value &&
+                    'bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] text-primary shadow-[var(--studio-glow)]',
+                )}
                 onClick={() => setSource(value)}
               >
                 <Icon className="size-3.5" />
@@ -423,7 +432,7 @@ export function ArtifactBrowser({
           <div className="flex items-center gap-0.5">
             <select
               aria-label="Artifact version"
-              className="min-w-0 max-w-36 rounded bg-background py-1 text-xs text-muted-foreground"
+              className="min-w-0 max-w-36 rounded bg-transparent py-1 text-xs text-muted-foreground"
               disabled={!versions.length}
               value={revision ?? ''}
               onChange={(event) =>
@@ -473,7 +482,7 @@ export function ArtifactBrowser({
         </div>
       )}
       {artifact?.files && (
-        <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs">
+        <div className="flex shrink-0 items-center gap-2 border-b bg-sidebar/60 px-4 py-2 text-xs dark:bg-[color-mix(in_srgb,var(--sidebar)_70%,#050709)]">
           <span className="shrink-0 text-muted-foreground">Files</span>
           <select
             aria-label="Artifact file"
@@ -551,7 +560,7 @@ export function ArtifactBrowser({
         </div>
       )}
       {artifact && !link && (exportOptions || draftHtml !== undefined) && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-xs">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-sidebar/60 px-4 py-2 text-xs dark:bg-[color-mix(in_srgb,var(--sidebar)_70%,#050709)]">
           <Button
             size="sm"
             variant="outline"
@@ -687,7 +696,7 @@ export function ArtifactBrowser({
         )}
       </div>
       {artifact && (
-        <footer className="flex shrink-0 items-center justify-between gap-3 border-t px-4 py-2 text-[0.6875rem] text-muted-foreground">
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t bg-sidebar/60 px-4 py-2 text-[0.6875rem] text-muted-foreground dark:bg-[color-mix(in_srgb,var(--sidebar)_70%,#050709)]">
           <span>
             {artifact.language || artifactLabel(artifact)} · Version {artifact.revision}
             {revision === undefined && ' · Latest'}

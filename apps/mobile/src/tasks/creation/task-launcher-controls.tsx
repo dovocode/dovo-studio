@@ -7,6 +7,7 @@ import {
 import { Pressable, View } from 'react-native'
 import { Sheet } from '../../ui/layout/sheet'
 import { HarnessIcon } from '../../agents/harness-icon'
+import { Icon } from '../../ui/controls/icon'
 import { useState, type ComponentProps } from 'react'
 import { Action } from '../../ui/controls/action'
 import {
@@ -31,7 +32,12 @@ import { useTheme } from '../../ui/theme'
 import { Choice } from '../../ui/controls/choice'
 import { taskHarnessChoices, taskHarnessSelection } from './harness-choices'
 
-export function TaskLauncherPicker(props: ComponentProps<typeof TaskLauncherControls>) {
+export function TaskLauncherPicker(
+  props: ComponentProps<typeof TaskLauncherControls> & {
+    compact?: boolean
+    onOpenChange?: (open: boolean) => void
+  },
+) {
   const [open, setOpen] = useState(false)
   const { colors } = useTheme()
   const { selection, disabled } = props
@@ -44,32 +50,78 @@ export function TaskLauncherPicker(props: ComponentProps<typeof TaskLauncherCont
           ? 'Inherit'
           : modelDisplayName(selection.model ?? selection.harness?.model ?? '') ||
             'Provider default'
+  const automatic = selection.modelSelection === 'auto' || selection.modelSelection === 'smart'
+  const reasoning =
+    (automatic ? selection.modelSelectionDifficulty : selection.harness?.reasoning) ||
+    (automatic ? 'auto' : 'default')
+  const effort =
+    {
+      default: 'Default',
+      auto: 'Auto',
+      low: 'Low',
+      medium: 'Medium',
+      high: 'High',
+      xhigh: 'Extra High',
+      max: 'Max',
+      ultra: 'Ultra',
+      minimal: 'Minimal',
+      none: 'None',
+    }[reasoning] ?? reasoning
   return (
     <>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Choose agent and model"
         accessibilityState={{ expanded: open, disabled }}
+        accessibilityValue={{ text: `${model}, ${effort}` }}
         disabled={disabled}
-        onPress={() => setOpen(true)}
+        onPress={() => {
+          setOpen(true)
+          props.onOpenChange?.(true)
+        }}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          gap: 8,
-          padding: 12,
+          gap: props.compact ? 3 : 8,
+          minHeight: 44,
+          padding: props.compact ? 0 : 12,
           borderRadius: 12,
-          borderWidth: 1,
+          borderWidth: props.compact ? 0 : 1,
           borderColor: colors.border,
         }}
       >
-        <HarnessIcon provider={selection.provider} size={18} />
-        <Text style={{ flex: 1, color: colors.text }}>
-          {selection.name} · {model}
-        </Text>
-        <Text style={{ color: colors.muted }}>⌄</Text>
+        {props.compact && automatic ? (
+          <Icon
+            name={selection.modelSelection === 'auto' ? 'tune' : 'maestro'}
+            size={15}
+            color={colors.muted}
+          />
+        ) : (
+          <HarnessIcon provider={selection.provider} size={props.compact ? 15 : 18} />
+        )}
+        {(!props.compact || !automatic) && (
+          <Text
+            numberOfLines={1}
+            style={{
+              flexShrink: 1,
+              color: props.compact ? colors.muted : colors.text,
+              fontSize: props.compact ? 13 : undefined,
+            }}
+          >
+            {props.compact ? model : `${selection.name} · ${model}`}
+          </Text>
+        )}
+        {props.compact && <Text style={{ color: colors.muted, fontSize: 11 }}>{effort}</Text>}
+        <Icon name="down" size={10} color={colors.muted} />
       </Pressable>
       {open && (
-        <Sheet title="Agent & model" onClose={() => setOpen(false)}>
+        <Sheet
+          title="Agent & model"
+          onClose={() => {
+            setOpen(false)
+            props.onOpenChange?.(false)
+          }}
+        >
           <TaskLauncherControls {...props} />
         </Sheet>
       )}

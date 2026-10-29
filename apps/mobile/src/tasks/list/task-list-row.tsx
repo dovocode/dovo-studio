@@ -25,6 +25,7 @@ import {
   MessageCircleDashed,
   Pin,
   Network,
+  SquareTerminal,
   Save,
   type LucideIcon,
 } from 'lucide-react-native'
@@ -89,9 +90,11 @@ function TaskListRowView({
   current = false,
   showDevice = true,
   density,
+  hideStatusLabel = false,
 }: {
   /** Which computer ran a task is noise when only one computer is saved. */
   showDevice?: boolean
+  hideStatusLabel?: boolean
   density: MobilePreferences['threadDensity']
   row: RuntimeTask
   /** Includes attention from spawned work without replacing the stable row projection. */
@@ -213,13 +216,15 @@ function TaskListRowView({
     .join(' · ')
   const unread = hasUnreadTaskActivity(task)
 
-  const compactTitleHeight = Math.ceil(18 * fontScale)
-  const compactContextHeight = Math.max(16, Math.ceil(16 * fontScale))
-  const headerHeight = dense ? compactContextHeight : Math.max(26, Math.ceil(16 * fontScale))
-  const hasFooter = !general || row.reachability === 'offline'
-  const compactRowHeight =
-    16 + compactTitleHeight + (hasFooter ? 8 : 3) + compactContextHeight * (hasFooter ? 2 : 1)
-  const badgeSize = dense ? Math.max(14, Math.ceil(10 * fontScale)) : 16
+  const titleHeight = Math.ceil((dense ? 18 : 20) * fontScale)
+  const metadataHeight = Math.max(16, Math.ceil(16 * fontScale))
+  const rowGap = dense ? 3 : 4
+  const hasFooter = !general
+  const contentHeight =
+    metadataHeight + titleHeight + (hasFooter ? metadataHeight : 0) + rowGap * (hasFooter ? 2 : 1)
+  const openRowHeight = (dense ? 16 : 20) + contentHeight
+  const headerTop = (openRowHeight - contentHeight) / 2
+  const badgeSize = 16
   const contextSize = dense ? 11 : 12
   const contextText = { fontSize: contextSize, lineHeight: dense ? 14 : 16 }
   const metadataText = { ...contextText, opacity: highContrast ? 1 : 0.94 }
@@ -322,19 +327,29 @@ function TaskListRowView({
       )}
     </>
   )
+  const terminalIndicator = owner.activeTerminals > 0 && (
+    <SquareTerminal
+      size={12}
+      color={colors.muted}
+      accessibilityLabel={`${owner.activeTerminals} active terminal${owner.activeTerminals === 1 ? '' : 's'}`}
+    />
+  )
   const executionIcons = (
     <View
       testID="thread-execution"
       style={{ flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '40%' }}
     >
+      {terminalIndicator}
       {pullIndicators}
       {subthreadAnchor}
-      <DeviceLabel
-        runtimeIcon={owner.runtimeIcon}
-        task={task}
-        runtimeHost={row.runtimeName}
-        size={contextSize}
-      />
+      {showDevice && (
+        <DeviceLabel
+          runtimeIcon={owner.runtimeIcon}
+          task={task}
+          runtimeHost={row.runtimeName}
+          size={contextSize}
+        />
+      )}
       {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
     </View>
   )
@@ -353,15 +368,18 @@ function TaskListRowView({
     </Text>
   )
 
+  const groupedStatus =
+    hideStatusLabel && row.online && (state === 'Working' || state === 'Waiting')
   const statusIndicator = (
     <View
       testID="Thread status"
+      accessibilityLabel={groupedStatus ? status : undefined}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
         flexShrink: 0,
-        maxWidth: dense ? '45%' : undefined,
+        maxWidth: '45%',
       }}
     >
       {StatusIcon && <StatusIcon size={12} color={stateColor} />}
@@ -374,7 +392,11 @@ function TaskListRowView({
           opacity: stateColor === colors.muted ? metadataText.opacity : 1,
         }}
       >
-        {working || needsInput || done || failed ? `${state}${age ? ` ${age}` : ''}` : age || state}
+        {groupedStatus
+          ? age
+          : working || state === 'Waiting' || needsInput || done || failed
+            ? `${state}${age ? ` ${age}` : ''}`
+            : age || state}
       </Text>
     </View>
   )
@@ -382,11 +404,26 @@ function TaskListRowView({
   const content = (
     <View
       style={{
-        marginVertical: dense ? 2.25 : 4.5,
+        marginVertical: dense ? 2 : 3,
         borderRadius: 12,
         backgroundColor: selected || current ? colors.selection : colors.background,
       }}
     >
+      {(selected || current) && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            borderRadius: 12,
+            borderWidth: highContrast ? 2 : 1,
+            borderColor: colors.accent,
+          }}
+        />
+      )}
       {draft && (
         <View
           pointerEvents="none"
@@ -420,7 +457,7 @@ function TaskListRowView({
             onPress={onDetails}
             style={{
               width: 44,
-              height: Math.max(44, compactTitleHeight + 12),
+              height: Math.max(44, titleHeight + 12),
               alignItems: 'center',
               justifyContent: 'center',
             }}
@@ -456,12 +493,8 @@ function TaskListRowView({
             minWidth: 0,
             flexDirection: 'row',
             minHeight: settled ? 44 : undefined,
-            height: settled
-              ? Math.max(44, compactTitleHeight + 12)
-              : dense
-                ? compactRowHeight
-                : undefined,
-            alignItems: settled || dense ? 'center' : undefined,
+            height: settled ? Math.max(44, titleHeight + 12) : openRowHeight,
+            alignItems: 'center',
             paddingVertical: 6,
             paddingLeft: settled ? 0 : 12,
             paddingRight: !car && !settled ? 44 : 12,
@@ -495,6 +528,7 @@ function TaskListRowView({
                 executionIcons
               ) : (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {terminalIndicator}
                   {pullIndicators}
                   {subthreadAnchor}
                 </View>
@@ -502,21 +536,22 @@ function TaskListRowView({
               {statusIndicator}
             </View>
           ) : (
-            <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+            <View style={{ flex: 1, minWidth: 0, gap: rowGap }}>
               <View
+                testID="Thread project"
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
+                  height: metadataHeight,
                   gap: 6,
-                  minHeight: headerHeight,
-                  marginBottom: 4,
-                  height: dense ? compactContextHeight : undefined,
                 }}
               >
                 {draft && (
-                  <FilePenLine accessibilityLabel="Draft" size={14} color={colors.warning} />
+                  <FilePenLine accessibilityLabel="Draft" size={12} color={colors.warning} />
                 )}
-                {!settled && projectBadge}
+                <View testID="Thread project icon" style={{ width: badgeSize, flexShrink: 0 }}>
+                  {projectBadge}
+                </View>
                 <Text numberOfLines={1} style={[styles.muted, { flex: 1, ...metadataText }]}>
                   {projectName}
                 </Text>
@@ -524,53 +559,46 @@ function TaskListRowView({
                 {statusIndicator}
               </View>
               <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  height: dense ? compactTitleHeight : undefined,
-                }}
+                style={{ flexDirection: 'row', alignItems: 'center', height: titleHeight, gap: 6 }}
               >
                 {title}
                 {general && executionIcons}
+                {general && row.reachability === 'offline' && (
+                  <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
+                )}
               </View>
               {hasFooter && (
                 <View
+                  testID="Thread metadata"
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
-                    flexWrap: 'nowrap',
-                    marginTop: 2,
-                    // Leave the disclosure's touch target clear of the header menu.
-                    paddingRight: !car && !showDevice && !agent && childCount > 0 ? 12 : 0,
-                    height: dense ? compactContextHeight : undefined,
-                    overflow: dense ? 'hidden' : undefined,
+                    height: metadataHeight,
                     gap: 6,
+                    paddingRight: !car && !showDevice && !agent && childCount > 0 ? 12 : 0,
                   }}
                 >
-                  {!general && (
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: dense ? 4 : 6,
-                        flex: 1,
-                        minWidth: 0,
-                      }}
+                  <View
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <GitBranch size={12} color={colors.muted} />
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.muted, { flexShrink: 1, ...metadataText }]}
                     >
-                      <GitBranch size={12} color={colors.muted} />
-                      <Text
-                        numberOfLines={1}
-                        style={[styles.muted, { flexShrink: 1, ...metadataText }]}
-                      >
-                        {branch}
-                      </Text>
-                    </View>
-                  )}
-                  {general && !dense && <View style={{ flex: 1 }} />}
-                  {!general && pullIndicators}
-                  {!general && subthreadAnchor}
-                  {!general && showDevice && !car && (
+                      {branch}
+                    </Text>
+                  </View>
+                  {terminalIndicator}
+                  {pullIndicators}
+                  {subthreadAnchor}
+                  {showDevice && !car && (
                     <DeviceLabel
                       runtimeIcon={owner.runtimeIcon}
                       task={task}
@@ -578,13 +606,10 @@ function TaskListRowView({
                       size={contextSize}
                     />
                   )}
-                  {!general && !!agent && <HarnessIcon provider={agent.provider} size={12} />}
-                  {row.reachability === 'offline' &&
-                    (dense ? (
-                      <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
-                    ) : (
-                      <Text style={[styles.muted, contextText]}>Offline</Text>
-                    ))}
+                  {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
+                  {row.reachability === 'offline' && (
+                    <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
+                  )}
                 </View>
               )}
             </View>
@@ -595,7 +620,7 @@ function TaskListRowView({
           <View style={{ position: 'absolute', right: 0, top: 0 }}>
             <TaskRowMenu
               testID={`${testID} actions`}
-              contentOffsetY={6 + headerHeight / 2 - 22}
+              contentOffsetY={headerTop + metadataHeight / 2 - 22}
               task={task}
               actions={actions}
               disabled={disabled}

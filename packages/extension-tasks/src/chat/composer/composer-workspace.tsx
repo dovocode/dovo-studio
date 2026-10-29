@@ -4,7 +4,7 @@ import type { Repository } from '@dovo/studio-core'
 import { ComposerProject } from './composer-project'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Schema } from 'effect'
-import { Check, ChevronDown, Folder, GitBranch, GitFork, Link2 } from 'lucide-react'
+import { Check, ChevronDown, Folder, GitBranch, GitFork, Link2, ListFilter } from 'lucide-react'
 import {
   branchesSchema,
   defaultWorktreeBase,
@@ -108,6 +108,11 @@ export function ComposerWorkspace({
           aria-label="Scope checkout"
           className="h-6 w-auto gap-1.5 border-0 px-2 text-[0.6875rem] shadow-none"
           value={task.autoProjectExecution ?? 'default'}
+          icons={{
+            default: <ListFilter className="size-4" />,
+            worktree: <GitFork className="size-4" />,
+            main: <Folder className="size-4" />,
+          }}
           disabled={disabled || !connected}
           onValueChange={(value) => {
             if (value !== 'default' && value !== 'main' && value !== 'worktree') return

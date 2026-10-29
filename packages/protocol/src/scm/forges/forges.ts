@@ -255,6 +255,8 @@ export const forgeCapabilitiesSchema = mutableStruct({
       'resolve',
       'reviewers',
       'merge',
+      'draft',
+      'auto-merge',
       'close',
       'reopen',
     ]),
@@ -280,6 +282,17 @@ const action = mutableStruct({
   headSha: revision,
 })
 export const pullActionSchema = Schema.Union([
+  mutableStruct({
+    ...action.fields,
+    action: Schema.Literal('draft'),
+    draft: Schema.Boolean,
+  }),
+  mutableStruct({
+    ...action.fields,
+    action: Schema.Literal('auto-merge'),
+    enabled: Schema.Boolean,
+    method: Schema.Literals(['merge', 'squash', 'rebase']),
+  }),
   mutableStruct({
     ...action.fields,
     ...{

@@ -17,8 +17,9 @@ const mocks = {
     export {WorkspaceContext as Context,useWorkspace} from '../studio-core/src/workspace/context';
     export const useStudioHost=()=>({navigate:()=>{}});
     export const useResolvedTheme=()=> 'dark';
-    const preferences={sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false};
+    const preferences={sendWith:'enter',themePalette:'dovo',codeTheme:'app',importedCodeThemes:[],markdownComposerPreview:false,followUp:'queue',confirmStop:false,dictationEnabled:true,showContextUsage:true,showSkillsInSlashMenu:true};
     window.setFollowUp=value=>{preferences.followUp=value};
+    window.setContextVisible=value=>{preferences.showContextUsage=value};
     export const useAppPreferences=()=>preferences;
     export const readAppPreferences=()=>preferences;
   `,
@@ -49,10 +50,13 @@ const built = await build({
       import {useState} from 'react';
       import {createRoot} from 'react-dom/client';
       import {Context,defaultTaskHarness} from '@dovo/studio-core';
-      import {TooltipProvider,TaskDefaultSettings} from '@dovo/studio-ui';
+      import {TooltipProvider,TaskDefaultSettings,Popover,IconButton} from '@dovo/studio-ui';
+      import {Info} from 'lucide-react';
+      import {TaskProjectPanelRoot,TaskProjectPopover} from '../extension-tasks/src/detail/task-project-popover';
       import {StartupDraft} from '../extension-tasks/src/task-creation/startup-draft';
       import {TaskConversation} from '../extension-tasks/src/detail/task-conversation';
       import {ComposerActivity} from '../extension-tasks/src/chat/composer/composer-activity';
+      import {ActivityBar} from '../studio-shell/src/activity-bar';
       const repositories=[
         {id:'scratch',kind:'scratch',name:'Thread folder',path:'/private/thread',branch:''},
         {id:'git',name:'dovo-studio',path:'/repo',branch:'main',gitIdentity:'github.com/dovo/studio'},
@@ -62,9 +66,17 @@ const built = await build({
       const defaults={scopedSettings:{environment:{taskDefaults:{harness}},shared:[{key:'project:github.com/dovo/studio',updatedAt:1,changeId:'fixture',value:{taskDefaults:{defaultServerId:'linux'}}}]},harness};
       const profile={id:'mac',name:'MacBook',nameIsCustom:true,connection:{address:'http://runtime.test',token:'fixture-token'}};
       const remoteProfile={...profile,id:'linux',name:'Linux workstation'};
-      window.requests=[];
+      window.requests=[];window.asides=[];
+      window.dovo={dictation:{status:async()=>({engine:true,model:true,downloading:false,downloaded:0}),install:async()=>{},start:async()=>{},feed:async()=>{},finish:async()=>'',subscribe:()=>()=>{},cancel:async()=>{}}};
+      function Thread({task,workspaceControls,temporary,onSelectRemote}){
+        const [open,setOpen]=useState(false);
+        return <TaskProjectPanelRoot open={open} onOpenChange={setOpen}><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm"><span className="flex-1">{temporary?'New task':task.title}</span>{!temporary&&<Popover.Trigger asChild><IconButton label="Task information" className="size-7"><Info className="size-4"/></IconButton></Popover.Trigger>}</header><div data-project-panel-frame className="relative flex min-h-0 flex-1 flex-col"><TaskProjectPopover/><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}} onAside={chatId=>window.asides.push(chatId??null)}/></div></TaskProjectPanelRoot>;
+      }
       function App(){
         const [workspace,setWorkspace]=useState({repositories,agents:[],tasks:[],automations:[]});
+        const [rail,setRail]=useState(false);window.setRail=setRail;
+        const [activeView,setActiveView]=useState('tasks');window.setActiveView=setActiveView;
+        const views=[['tasks','Tasks','tasks'],['browser','Browser','browser'],['artifacts','Artifacts','artifacts'],['issues','Issues','issues'],['jira','Jira','jira'],['pulls','Pull requests','pulls'],['jobs','Automations','jobs']].map(([id,title,icon])=>({id,title,icon})).concat([{id:'settings',title:'Settings',icon:'runtime',navigationGroup:'settings'}]);
         const [id,setId]=useState(null);
         const [pending,setPending]=useState(null);
         const [multiple,setMultiple]=useState(false);window.setMultiple=setMultiple;const [scopeEnabled,setScopeEnabled]=useState(false);window.setScopeEnabled=setScopeEnabled;
@@ -81,6 +93,8 @@ const built = await build({
           if(path==='/api/agents/availability')return [{id:'harness:codex',available:true}];
           if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:'refs/heads/main'}]};
           if(path==='/api/tasks/title')return {title:'Unify the composers'};
+          if(path==='/api/tasks/side-chat/save')return {id:'side-fixture'};
+          if(path==='/api/tasks/side-chat/ask')return {answer:'Side answer'};
           if(path==='/api/tasks/message'||path==='/api/tasks/steer'){
             setWorkspace(w=>({...w,tasks:w.tasks.map(t=>t.id===input.id?{...t,status:'running',messages:[{id:input.messageId,role:'user',text:input.text,createdAt:new Date().toISOString()}]}:t)}));
             return {ok:true};
@@ -88,8 +102,8 @@ const built = await build({
           throw Error('Unexpected request '+path);
         };
         const value={workspace,setWorkspace,snapshot:{workspace,defaults,autoProjectSelectionEnabled:scopeEnabled,questions:[],acpInstallations:[]},connected:true,activeRuntimeId:'mac',connection:profile.connection,runtimeRegistry:{profiles:multiple?[profile,remoteProfile]:[profile]},runtimes:[{profile,snapshot:{workspace,defaults,acpInstallations:[],runtimeHost:'MacBook'},connected:true},...(multiple?[{profile:remoteProfile,snapshot:{workspace:{...workspace,repositories:[{id:'remote-scratch',kind:'scratch',name:'Thread folder',path:'/private/remote',branch:''},{id:'remote-git',name:'dovo-studio',path:'/home/dominic/projects/dovo-studio',branch:'main',gitIdentity:'github.com/dovo/studio'},{id:'remote-notes',kind:'folder',name:'Project notes',path:'/home/dominic/notes',branch:''}]},defaults,acpInstallations:[],runtimeHost:'Linux workstation'},connected:true}]:[])],request,flush:async()=>{},switchRuntime:async()=>new Promise((_resolve,reject)=>{window.cancelSwitch=()=>reject(new Error('Transfer fixture failed'))})};
-        const renderThread=(task,workspaceControls,temporary,onSelectRemote)=><TaskConversation task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote} visible onReview={()=>{}}/>;
-        return <Context.Provider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-col bg-background text-foreground"><header className="flex h-12 shrink-0 items-center border-b px-4 text-sm">{task?.title??'New task'}</header><section className="flex min-h-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
+        const renderThread=(task,workspaceControls,temporary,onSelectRemote)=><Thread task={task} workspaceControls={workspaceControls} temporary={temporary} onSelectRemote={onSelectRemote}/>;
+        return <Context.Provider value={value}>{activity?<ComposerActivity task={{id:'activity',title:'Activity preview',repositoryId:'git',agentId:'agent',status:activityPaused?'review':'running',messages:[],queuePaused:activityPaused,queue:[{id:'preview',role:'user',text:'Follow up'}],nativeTodos:[{text:'Verify work',status:'in-progress'}]}}/>:settings?<section className="mx-auto max-w-3xl space-y-6 px-6 py-8"><h1 className="text-xl font-semibold">Task defaults</h1><p className="text-sm text-muted-foreground">Project: dovo-studio · All computers</p><TaskDefaultSettings inline repository={repositories[1]} scope="project"/></section>:<main style={{height:'100dvh'}} className="flex min-h-0 flex-row bg-background text-foreground">{rail&&<ActivityBar views={views} activeId={activeView} onSelect={setActiveView} onCheckUpdates={()=>{}}/>}<section className="flex min-h-0 min-w-0 flex-1 flex-col" data-saved={!!task}>{task?renderThread(task):<StartupDraft renderThread={renderThread} onProject={()=>{}} onCommit={task=>setId(task.id)}/>}</section></main>}</Context.Provider>
       }
       createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
     `,
@@ -149,6 +163,65 @@ try {
         overflow: document.documentElement.scrollWidth > innerWidth,
       }
     })
+  const infoButton = page.getByRole('button', { name: 'Task information', exact: true })
+  const openInfo = async () => {
+    if ((await infoButton.getAttribute('aria-expanded')) !== 'true') await infoButton.click()
+    await page.getByRole('region', { name: 'Task settings', exact: true }).waitFor()
+  }
+  const closeInfo = async () => {
+    if ((await infoButton.count()) && (await infoButton.getAttribute('aria-expanded')) === 'true')
+      await infoButton.click()
+  }
+  const settleComposer = () =>
+    page.waitForFunction(
+      () =>
+        !document
+          .querySelector('.studio-composer')
+          .getAnimations()
+          .some((a) => a.playState === 'running'),
+    )
+  const checkIdle = async (screenshot) => {
+    const input = page.getByRole('textbox', { name: 'Message task', exact: true })
+    await page
+      .locator('header')
+      .first()
+      .click({ position: { x: 20, y: 20 } })
+    await page.locator('.studio-composer[data-idle]').waitFor()
+    await settleComposer()
+    const surface = await page.locator('.studio-composer').boundingBox()
+    const editor = await input.boundingBox()
+    const add = await page.getByRole('button', { name: 'Attach files', exact: true }).boundingBox()
+    const actions = await page.locator('[data-composer-actions]').boundingBox()
+    assert.ok(
+      surface.height <= 48,
+      'Empty, unfocused composer is a single row: ' + JSON.stringify(surface),
+    )
+    assert.ok(editor.width > 70, 'The idle input leaves room for its placeholder')
+    assert.ok(editor.x >= add.x + add.width, 'The placeholder follows the plus control')
+    assert.ok(Math.abs(editor.y + editor.height / 2 - (add.y + add.height / 2)) < 2)
+    assert.ok(Math.abs(editor.y + editor.height / 2 - (actions.y + actions.height / 2)) < 2)
+    const idleFont = await input.evaluate((element) => getComputedStyle(element).fontSize)
+    assert.ok(parseFloat(idleFont) <= 14, 'The compact layout keeps the existing small text')
+    if (screenshots && screenshot) await page.screenshot({ path: screenshots + '/' + screenshot })
+    const motion = await input.evaluate((element) => {
+      element.focus()
+      return new Promise((resolve) =>
+        requestAnimationFrame(() => {
+          const surface = element.closest('.studio-composer')
+          resolve({
+            height: surface.getBoundingClientRect().height,
+            animations: surface
+              .getAnimations()
+              .filter((animation) => animation.playState === 'running').length,
+          })
+        }),
+      )
+    })
+    assert.ok(motion.animations > 0, 'Focusing smoothly animates the compact layout')
+    await settleComposer()
+    assert.equal(await input.evaluate((element) => getComputedStyle(element).fontSize), idleFont)
+    assert.ok((await page.locator('.studio-composer').boundingBox()).height > surface.height + 40)
+  }
   // The composer machine selector and header share transfer state, including recovery.
   await page.evaluate(() => window.setMultiple(true))
   await page.getByRole('button', { name: 'Task server', exact: true }).click()
@@ -176,6 +249,7 @@ try {
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Task server', exact: true }).click()
   await page.keyboard.press('Escape')
+  await closeInfo()
   await page.evaluate(() => window.setMultiple(false))
   for (const device of [
     { name: 'desktop', width: 1440, height: 900 },
@@ -204,6 +278,7 @@ try {
           .querySelector('[aria-label="Choose agent and model"]')
           .textContent.includes('6.1 Sol'),
       )
+      await checkIdle(project === 'No project' ? device.name + '-idle-start.png' : undefined)
       if (screenshots && device.name === 'desktop' && project === 'No project')
         await page.screenshot({ path: screenshots + '/desktop-empty.png' })
       const start = page.getByRole('group', { name: 'Start a thread', exact: true })
@@ -215,6 +290,7 @@ try {
       const dropdownBounds = await start
         .getByRole('button', { name: 'Choose project', exact: true })
         .boundingBox()
+      assert.equal(await page.locator('.task-composer [data-composer-workspace]').count(), 1)
       const workspaceBar = page.getByRole('group', { name: 'Project and checkout', exact: true })
       const deviceBounds = await workspaceBar
         .getByRole('button', { name: 'Task server', exact: true })
@@ -249,8 +325,46 @@ try {
           .count(),
         1,
       )
+      await page.getByRole('textbox', { name: 'Message task' }).focus()
+      await settleComposer()
       const before = await geometry()
+      // The reference layout must apply through StartupDraft's production conversation path.
+      assert.equal(await page.locator('[data-task-conversation][data-startup-draft]').count(), 1)
+      const surface = await page.locator('.studio-composer').boundingBox()
+      if (device.name === 'desktop') assert.equal(surface.width, 768)
+      const add = await page
+        .getByRole('button', { name: 'Attach files', exact: true })
+        .boundingBox()
+      const model = await page
+        .getByRole('button', { name: 'Choose agent and model', exact: true })
+        .boundingBox()
+      const mic = await page
+        .getByRole('button', { name: 'Dictate message', exact: true })
+        .boundingBox()
+      const send = await page
+        .getByRole('button', { name: 'Send to agent', exact: true })
+        .boundingBox()
+      assert.ok(add.x >= surface.x && add.x + add.width < model.x)
+      assert.ok(model.x + model.width <= mic.x)
+      assert.ok(mic.x + mic.width <= send.x)
+      assert.ok(send.x + send.width <= surface.x + surface.width)
+      assert.ok(Math.abs(add.y + add.height / 2 - (send.y + send.height / 2)) < 1)
+      assert.equal(await page.getByRole('navigation', { name: 'Start with a prompt' }).count(), 0)
       const input = page.getByRole('textbox', { name: 'Message task' })
+      assert.equal(await input.getAttribute('placeholder'), 'Ask anything, build or fix...')
+      const emptyEditor = await input.evaluate((el) => ({
+        height: el.getBoundingClientRect().height,
+        textX: el.getBoundingClientRect().x + parseFloat(getComputedStyle(el).paddingLeft),
+      }))
+      const addIcon = await page
+        .getByRole('button', { name: 'Attach files', exact: true })
+        .locator('svg')
+        .boundingBox()
+      assert.ok(emptyEditor.height <= 65, 'Empty composers stay compact')
+      assert.ok(
+        Math.abs(emptyEditor.textX - addIcon.x) < 2,
+        'Placeholder aligns with the plus icon',
+      )
       if (device.name === 'desktop' && project === 'No project') {
         await input.focus()
         await input.pressSequentially('Make both composers uniform using this styling.', {
@@ -260,12 +374,10 @@ try {
       await page.locator('[data-saved="true"]').waitFor()
       await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
       const after = await geometry()
-      if (device.name === 'desktop') {
-        const bar = await page
-          .getByRole('group', { name: 'Project and checkout', exact: true })
-          .boundingBox()
-        assert.ok(bar && bar.height <= 44, JSON.stringify(bar))
-      }
+      assert.equal(
+        await page.getByRole('region', { name: 'Task settings', exact: true }).count(),
+        0,
+      )
       for (const key of ['heroX', 'heroY', 'composerY', 'composerHeight'])
         assert(
           Math.abs(before[key] - after[key]) < 2,
@@ -316,7 +428,39 @@ try {
         await page.getByRole('button', { name: 'Scope checkout', exact: true }).count(),
         0,
       )
+      assert.equal(await page.locator('.task-composer [data-composer-workspace]').count(), 0)
+      await openInfo()
+      await page.getByRole('button', { name: 'Configure task permissions', exact: true }).waitFor()
+      if (project === 'dovo-studio')
+        assert.equal(
+          await page.getByRole('button', { name: 'Checkout branch', exact: true }).isDisabled(),
+          true,
+        )
+      if (screenshots && device.name === 'desktop' && project === 'dovo-studio')
+        await page.screenshot({ path: screenshots + '/desktop-info-menu.png' })
+      await closeInfo()
       assert.equal(await input.inputValue(), '')
+      await checkIdle(project === 'dovo-studio' ? device.name + '-idle-thread.png' : undefined)
+      const startedSurface = await page.locator('.studio-composer').boundingBox()
+      assert.ok(
+        device.height - startedSurface.y - startedSurface.height >= 19,
+        'Started composers leave space above the bottom edge',
+      )
+      await input.fill('A longer message\n'.repeat(8))
+      await input.evaluate((element) => element.blur())
+      await settleComposer()
+      const expandedSurface = await page.locator('.studio-composer').boundingBox()
+      assert.ok(
+        expandedSurface.height > startedSurface.height + 50,
+        'Composers grow with multiline content',
+      )
+      await input.fill('')
+      await settleComposer()
+      assert.equal(
+        (await page.locator('.studio-composer').boundingBox()).height,
+        startedSurface.height,
+        'Clearing a message restores the compact height',
+      )
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
         false,
@@ -325,7 +469,60 @@ try {
         await page.screenshot({ path: screenshots + '/' + device.name + '-task-started.png' })
     }
   }
-  // The queue mirrors the inset project strip, with compaction outside both surfaces.
+  // /sidechat uses the real command menu and never submits a main-thread message.
+  const input = page.getByRole('textbox', { name: 'Message task' })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page
+    .locator('header')
+    .first()
+    .click({ position: { x: 20, y: 20 } })
+  await settleComposer()
+  await input.focus()
+  assert.equal(
+    await page.locator('.studio-composer').evaluate((element) => element.getAnimations().length),
+    0,
+    'Reduced motion skips the layout animation',
+  )
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page
+    .locator('header')
+    .first()
+    .click({ position: { x: 20, y: 20 } })
+  await settleComposer()
+  await page.getByRole('button', { name: 'More composer actions', exact: true }).click()
+  await page.getByRole('button', { name: 'Stashed drafts', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  const mainCount = await page.evaluate(
+    () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
+  )
+  assert.equal(
+    await page.getByRole('button', { name: 'Ask a side question (⌘/Ctrl+;)' }).count(),
+    0,
+  )
+  await input.fill('/sidechat')
+  await page.getByRole('option', { name: '/sidechat', exact: false }).waitFor()
+  await input.press('Enter')
+  await page.waitForFunction(() => window.asides.at(-1) === null)
+  assert.equal(await input.inputValue(), '')
+  await input.fill('Explain this code\n/sidechat')
+  await page.getByRole('option', { name: '/sidechat', exact: false }).waitFor()
+  await input.press('Enter')
+  await page.waitForFunction(() =>
+    window.requests.some((r) => r.path === '/api/tasks/side-chat/ask'),
+  )
+  const sideAsk = await page.evaluate(() =>
+    window.requests.findLast((r) => r.path === '/api/tasks/side-chat/ask'),
+  )
+  assert.equal(sideAsk.input.question.trim(), 'Explain this code')
+  assert.equal(sideAsk.input.question.includes('/sidechat'), false)
+  assert.equal(await input.inputValue(), '')
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
+    ),
+    mainCount,
+  )
+  // The queue stays inset above the shared composer, with compaction outside both surfaces.
   await page.evaluate(() =>
     window.setTask({
       repositoryId: 'git',
@@ -345,6 +542,20 @@ try {
       ],
     }),
   )
+  await input.fill('Continue the review')
+  await settleComposer()
+  await page.getByRole('meter', { name: 'Agent context used' }).waitFor()
+  await page.evaluate(() => {
+    window.setContextVisible(false)
+    window.setTask({ title: 'Hidden context' })
+  })
+  await page.getByRole('meter', { name: 'Agent context used' }).waitFor({ state: 'detached' })
+  assert.equal(await page.getByRole('button', { name: 'Compact context', exact: true }).count(), 1)
+  await page.evaluate(() => {
+    window.setContextVisible(true)
+    window.setTask({ title: 'Visible context' })
+  })
+  await page.getByRole('meter', { name: 'Agent context used' }).waitFor()
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     const compact = await page
@@ -359,13 +570,11 @@ try {
       .getByRole('region', { name: 'Composer activity', exact: true })
       .boundingBox()
     const composer = await page.locator('.studio-composer').boundingBox()
-    const project = await page
-      .getByRole('group', { name: 'Project and checkout', exact: true })
-      .boundingBox()
     assert.ok(compact.y + compact.height <= queue.y)
     assert.ok(queue.height <= 32, JSON.stringify(queue))
     assert.ok(
-      Math.abs(queueStrip.x - project.x) < 1 && Math.abs(queueStrip.width - project.width) < 1,
+      Math.abs(queueStrip.x - composer.x - 12) < 1 &&
+        Math.abs(queueStrip.width - composer.width + 24) < 1,
     )
     assert.ok(
       Math.abs(queueStrip.y + queueStrip.height + 8 - composer.y) < 2,
@@ -585,6 +794,7 @@ try {
       await page.getByRole('dialog', { name: 'Choose a server' }).waitFor()
       await page.screenshot({ path: screenshots + '/' + device.name + '-server-choice.png' })
       await page.keyboard.press('Escape')
+      await closeInfo()
     }
   }
   if (screenshots) {
@@ -597,6 +807,48 @@ try {
         ?.textContent.includes('Linux workstation'),
     )
     await page.screenshot({ path: screenshots + '/desktop-project-default-server.png' })
+  }
+  if (screenshots) {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.evaluate(() => {
+      window.hideSettings()
+      window.reset()
+      window.setRail(true)
+      window.setMultiple(false)
+      window.setScopeEnabled(false)
+    })
+    await page.getByRole('button', { name: 'Choose project', exact: true }).click()
+    await page.getByRole('button', { name: 'dovo-studio', exact: true }).click()
+    await page.getByRole('group', { name: 'Project and checkout', exact: true }).waitFor()
+    const rail = page.getByRole('navigation', { name: 'Main navigation', exact: true })
+    const tasks = rail.getByRole('button', { name: 'Tasks', exact: true })
+    assert.equal(await tasks.getAttribute('aria-current'), 'page')
+    await rail.getByRole('button', { name: 'Browser', exact: true }).click()
+    assert.equal(
+      await rail.getByRole('button', { name: 'Browser', exact: true }).getAttribute('aria-current'),
+      'page',
+    )
+    await tasks.click()
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[aria-label="Choose agent and model"]')
+        ?.textContent.includes('6.1 Sol'),
+    )
+    await page.screenshot({ path: screenshots + '/sidebar-startup.png', scale: 'css' })
+    const draft = page.getByRole('textbox', { name: 'Message task', exact: true })
+    await draft.fill('Refine the project start experience')
+    await page.locator('[data-saved="true"]').waitFor()
+    await page.screenshot({ path: screenshots + '/sidebar-startup-ready.png', scale: 'css' })
+    await page.getByRole('button', { name: 'Send to agent', exact: true }).click()
+    await page.getByRole('button', { name: 'Stop', exact: true }).waitFor()
+    await page.evaluate(() => window.setTask({ status: 'review' }))
+    await page.getByRole('button', { name: 'Send to agent', exact: true }).waitFor()
+    await page.screenshot({ path: screenshots + '/sidebar-default-composer.png', scale: 'css' })
+    await openInfo()
+    await page.screenshot({ path: screenshots + '/sidebar-project-info.png', scale: 'css' })
+    await closeInfo()
+    await rail.screenshot({ path: screenshots + '/sidebar-detail.png', scale: 'css' })
+    await page.evaluate(() => window.setRail(false))
   }
   // Keep counts, status indicators and collapse reachable in the narrow header.
   await page.evaluate(() => window.setActivity(true))
@@ -651,7 +903,7 @@ try {
       await collapse.waitFor()
     }
   }
-  // Light mode, draft-only starters, and errors in an otherwise empty saved draft.
+  // Light mode, extra composer actions, and errors in an otherwise empty saved draft.
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.evaluate(() => {
     window.setActivity(false)
@@ -661,14 +913,21 @@ try {
     document.documentElement.classList.remove('dark')
     document.documentElement.dataset.theme = 'light'
   })
-  await page.getByRole('button', { name: 'Build something', exact: true }).waitFor()
   if (screenshots) await page.screenshot({ path: screenshots + '/desktop-empty-light.png' })
+  await page.getByRole('button', { name: 'More composer actions', exact: true }).click()
+  await page.getByRole('button', { name: 'Stashed drafts', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Stashed drafts', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  const addMenu = page.getByRole('button', { name: 'More composer actions', exact: true })
+  if ((await addMenu.getAttribute('aria-expanded')) !== 'true') await addMenu.click()
+  assert.equal(await page.getByRole('navigation', { name: 'Start with a prompt' }).count(), 0)
+  await page.keyboard.press('Escape')
   const sentBefore = await page.evaluate(
     () => window.requests.filter((r) => r.path === '/api/tasks/message').length,
   )
-  await page.getByRole('button', { name: 'Build something', exact: true }).click()
   const draftInput = page.getByRole('textbox', { name: 'Message task', exact: true })
-  assert.equal(await draftInput.inputValue(), 'Help me build ')
+  await draftInput.fill('Help me build ')
+  await page.locator('[data-saved="true"]').waitFor()
   assert(await draftInput.evaluate((node) => document.activeElement === node))
   assert.equal(
     await page.evaluate(

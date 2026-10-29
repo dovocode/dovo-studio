@@ -58,14 +58,22 @@ export function ThreadStartModes({
             paddingHorizontal: 10,
             paddingVertical: 8,
             borderRadius: 10,
-            borderWidth: 1,
+            borderWidth: 0,
             borderColor: selected ? colors.accent : colors.border,
-            backgroundColor: selected ? colors.selection : colors.surface,
+            backgroundColor: 'transparent',
             opacity: disabled ? 0.4 : 1,
           }}
         >
           <Icon name="noProject" size={16} color={colors.muted} />
-          <Text style={{ color: colors.text, fontSize: 14, fontWeight: '500' }}>No Project</Text>
+          <Text
+            style={{
+              color: selected ? colors.accent : colors.muted,
+              fontSize: 13,
+              fontWeight: '500',
+            }}
+          >
+            No Project
+          </Text>
         </Pressable>
         {project}
       </View>

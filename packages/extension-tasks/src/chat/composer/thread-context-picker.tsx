@@ -9,11 +9,13 @@ export function ThreadContextPicker({
   disabled,
   attachmentBusy = false,
   upload,
+  showLabel = false,
 }: {
   taskId: string
   disabled: boolean
   attachmentBusy?: boolean
   upload: (files: File[], signal: AbortSignal) => Promise<void>
+  showLabel?: boolean
 }) {
   const { workspace, connection, connected } = useWorkspace()
   const [open, setOpen] = useState(false)
@@ -65,8 +67,10 @@ export function ThreadContextPicker({
       <Button
         type="button"
         variant="ghost"
-        size="icon"
-        className="size-7"
+        size={showLabel ? 'default' : 'icon'}
+        className={
+          showLabel ? 'h-10 w-full justify-start gap-2 px-3 text-sm font-normal' : 'size-7'
+        }
         aria-label="Attach thread context"
         disabled={disabled || attachmentBusy || !connected}
         onClick={() => {
@@ -75,6 +79,7 @@ export function ThreadContextPicker({
         }}
       >
         <MessageSquarePlus className="size-3.5" />
+        {showLabel && 'Attach thread context'}
       </Button>
       <Dialog
         open={open}

@@ -34,7 +34,7 @@ export function ChoiceMenu(props: ChoiceProps) {
         minWidth: 0,
         minHeight: 44,
         borderRadius: 12,
-        backgroundColor: props.compact ? 'transparent' : colors.surface,
+        backgroundColor: props.compact || props.quiet ? 'transparent' : colors.surface,
         opacity: props.disabled ? 0.45 : 1,
       }}
     >
@@ -60,7 +60,7 @@ export function ChoiceMenu(props: ChoiceProps) {
               spacing={6}
               modifiers={[
                 padding({
-                  horizontal: props.compact ? 4 : 12,
+                  horizontal: props.compact || props.quiet ? 4 : 12,
                   vertical: 8,
                 }),
                 frame({
@@ -71,26 +71,27 @@ export function ChoiceMenu(props: ChoiceProps) {
                 contentShape(shapes.rectangle(), ['interaction', 'accessibility']),
               ]}
             >
+              {props.alignValue === 'trailing' && <Spacer minLength={0} />}
               {selectedIcon && (
                 <NativeIcon
                   name={selectedIcon}
                   size={18}
-                  color={props.compact ? colors.accent : colors.text}
+                  color={props.compact || props.quiet ? colors.accent : colors.text}
                 />
               )}
               <Text
                 modifiers={[
                   font({
-                    textStyle: props.compact ? 'subheadline' : 'body',
+                    textStyle: props.compact || props.quiet ? 'subheadline' : 'body',
                     weight: 'medium',
                   }),
-                  foregroundStyle(props.compact ? colors.accent : colors.text),
-                  props.compact ? lineLimit(1) : lineLimit(),
+                  foregroundStyle(props.compact || props.quiet ? colors.accent : colors.text),
+                  props.compact && !props.quiet ? lineLimit(1) : lineLimit(),
                 ]}
               >
                 {selected}
               </Text>
-              <Spacer minLength={0} />
+              {props.alignValue !== 'trailing' && <Spacer minLength={0} />}
               <NativeIcon name="down" size={11} color={colors.muted} />
             </HStack>
           }

@@ -24,6 +24,8 @@ import { JsonLineReader, JsonLineWriter } from './codex-transport.js'
 import { codexThreadEntries } from '../../execution/native-thread.js'
 import { readCodexThread } from './codex-thread.js'
 import { nativeWait } from '../shared/native.js'
+import { isContextRejection } from '../../execution/handover.js'
+import { codexRateLimitUpdates } from './codex-rate-limits.js'
 import { CUA_SERVER_NAME } from '../../../computer-use/cua.js'
 const turnInput = (input: Pick<AgentInput, 'prompt' | 'attachments'>) => [
   {
@@ -45,6 +47,7 @@ type CodexConnection = {
   launchConfig: string
   cwd: string
   initialized: unknown
+  rateLimitUpdates: ReturnType<typeof codexRateLimitUpdates>
   stderr: string
   onSubagentEvent?: AgentRun['onSubagentEvent']
   nativeAgents: Subagent[]
@@ -107,13 +110,18 @@ export function createCodexAdapter(): AgentAdapter {
           : undefined
       // Apply before plugin/skill discovery and again when resuming saved threads.
       // These overrides belong only to this Dovo process, never the user's config.
-      const computerUseConfig = mcpServers?.[CUA_SERVER_NAME]?.enabled
-        ? {
-            'features.computer_use': false,
-            'plugins."computer-use@openai-bundled".enabled': false,
-          }
-        : {}
-      const computerUseArgs = Object.entries(computerUseConfig).flatMap(([key, value]) => [
+      const providerConfig = {
+        ...(mcpServers?.[CUA_SERVER_NAME]?.enabled
+          ? {
+              'features.computer_use': false,
+              'plugins."computer-use@openai-bundled".enabled': false,
+            }
+          : {}),
+        ...(run.tools === 'none' || run.agent.cloudIntegrations !== undefined
+          ? { 'features.apps': run.tools !== 'none' && run.agent.cloudIntegrations === true }
+          : {}),
+      }
+      const providerArgs = Object.entries(providerConfig).flatMap(([key, value]) => [
         '-c',
         `${key}=${value}`,
       ])
@@ -124,7 +132,7 @@ export function createCodexAdapter(): AgentAdapter {
         run.agent.env,
         mcpServers,
         policy,
-        computerUseConfig,
+        providerConfig,
       ])
       const previous = run.taskId ? idle.get(run.taskId) : undefined
       if (run.taskId) idle.delete(run.taskId)
@@ -149,7 +157,7 @@ export function createCodexAdapter(): AgentAdapter {
         reusable?.child ??
         spawn(
           endpoint,
-          ['app-server', '--listen', 'stdio://', ...(run.agent.args ?? []), ...computerUseArgs],
+          ['app-server', '--listen', 'stdio://', ...(run.agent.args ?? []), ...providerArgs],
           {
             windowsHide: true,
             cwd: run.cwd,
@@ -172,11 +180,16 @@ export function createCodexAdapter(): AgentAdapter {
         launchConfig,
         cwd: run.cwd,
         initialized: undefined,
+        rateLimitUpdates: codexRateLimitUpdates(),
         stderr: '',
         nativeAgents: [],
         lifetime: new AbortController(),
       }
       transport.onSubagentEvent = run.onSubagentEvent
+      const emitEvent = (method: string, params: unknown) => {
+        const update = transport.rateLimitUpdates(method, params)
+        if (update !== undefined) run.onEvent?.(method, update)
+      }
       if (!reusable)
         rpc.onNotification((method, params) => {
           transport.nativeAgents = updateSubagents(
@@ -207,6 +220,11 @@ export function createCodexAdapter(): AgentAdapter {
       const questionItems = new Set<string>()
       let threadId = run.sessionId
       let turnFinished = false
+      let promptAccepted = false
+      const acceptPrompt = () => {
+        promptAccepted = true
+        run.onPromptAccepted?.()
+      }
       let submitted = false
       let awaitingTurn = false
       let activeTurnId: string | undefined
@@ -295,7 +313,10 @@ export function createCodexAdapter(): AgentAdapter {
           )
             throw new Error('This Codex request belongs to a retired turn')
         }
-        if (!native) run.onEvent?.(method, params)
+        if (!native) {
+          if (method.startsWith('item/')) promptAccepted = true
+          run.onEvent?.(method, params)
+        }
         if (
           method === 'item/commandExecution/requestApproval' ||
           method === 'item/fileChange/requestApproval'
@@ -411,12 +432,12 @@ export function createCodexAdapter(): AgentAdapter {
           !threadId || typeof value.data.threadId !== 'string' || value.data.threadId === threadId
         if (!run.compact && root && activeTurnId && nativeTurn && nativeTurn !== activeTurnId)
           return
-        run.onEvent?.(method, params)
+        emitEvent(method, params)
         // Child notifications feed the Agents panel, never the parent transcript or completion.
         if (threadId && typeof value.data.threadId === 'string' && value.data.threadId !== threadId)
           return
         if (method === 'turn/started' || method === 'turn/completed' || method === 'item/started')
-          run.onPromptAccepted?.()
+          acceptPrompt()
         if (method === 'item/agentMessage/delta' && typeof value.data.delta === 'string')
           run.onText(value.data.delta)
         if (method === 'item/completed') {
@@ -479,6 +500,7 @@ export function createCodexAdapter(): AgentAdapter {
       }, 30000)
       if (!reusable) rpc.listen()
       let succeeded = false
+      let rejectedBeforeAcceptance = false
       let initialized: unknown = reusable?.initialized
       try {
         if (run.signal.aborted) throw new Error('Task cancelled')
@@ -496,12 +518,12 @@ export function createCodexAdapter(): AgentAdapter {
           })
         if (!reusable) await rpc.sendNotification('initialized', {})
         try {
-          run.onEvent?.('account/read', await request('account/read', { refreshToken: false }))
+          emitEvent('account/read', await request('account/read', { refreshToken: false }))
         } catch {
           // Account metadata is optional on older app servers.
         }
         try {
-          run.onEvent?.('account/rateLimits/read', await request('account/rateLimits/read', {}))
+          emitEvent('account/rateLimits/read', await request('account/rateLimits/read', {}))
         } catch {
           // Older app servers may not expose account limits.
         }
@@ -512,7 +534,7 @@ export function createCodexAdapter(): AgentAdapter {
           )
         const tier = serviceTierValue(run.agent.serviceTier)
         const config = {
-          ...computerUseConfig,
+          ...providerConfig,
           ...(supportsCodexInstantInterrupt(initialized)
             ? { 'features.instant_interrupt': true }
             : {}),
@@ -702,7 +724,7 @@ export function createCodexAdapter(): AgentAdapter {
         if (run.compact) {
           await request('thread/compact/start', { threadId: thread.id })
           compactStarted = true
-          run.onPromptAccepted?.()
+          acceptPrompt()
           if (compacted) resolveTurn()
           let confirmationTimeout: ReturnType<typeof setTimeout> | undefined
           try {
@@ -762,7 +784,7 @@ export function createCodexAdapter(): AgentAdapter {
             : {}),
           input: turnInput(run),
         })
-        run.onPromptAccepted?.()
+        acceptPrompt()
         const turn = decodeResult(
           mutableStruct({
             turn: mutableStruct({
@@ -784,6 +806,7 @@ export function createCodexAdapter(): AgentAdapter {
         if (!turnFinished && turn.success && turn.data.turn.status === 'inProgress') {
           const expectedTurnId = turn.data.turn.id
           run.onSteer?.(async (input) => {
+            promptAccepted = true
             run.signal.throwIfAborted()
             await rpc.sendRequest('turn/steer', {
               threadId: thread.id,
@@ -795,6 +818,21 @@ export function createCodexAdapter(): AgentAdapter {
         }
         await completed
         succeeded = true
+      } catch (error) {
+        rejectedBeforeAcceptance =
+          !!run.sessionId &&
+          submitted &&
+          !promptAccepted &&
+          !run.compact &&
+          isContextRejection(error)
+        if (rejectedBeforeAcceptance) {
+          // Retire only this input. The loaded session still owns native jobs and
+          // must continue consuming their notifications and interaction requests.
+          turnFinished = true
+          awaitingTurn = false
+          rejectTurn(error instanceof Error ? error : new Error(String(error)))
+        }
+        throw error
       } finally {
         run.onSteer?.(undefined)
         clearTimeout(timeout)
@@ -802,7 +840,15 @@ export function createCodexAdapter(): AgentAdapter {
         transport.consumeNotification = undefined
         child.off('error', rejectTurn)
         child.off('exit', onExit)
-        if (succeeded && run.taskId && run.tools !== 'none' && threadId && !run.signal.aborted) {
+        if (
+          (succeeded || rejectedBeforeAcceptance) &&
+          run.taskId &&
+          run.tools !== 'none' &&
+          threadId &&
+          !run.signal.aborted &&
+          child.exitCode === null &&
+          !transport.lifetime.signal.aborted
+        ) {
           transport.sessionId = threadId
           transport.initialized = initialized
           idle.set(run.taskId, transport)

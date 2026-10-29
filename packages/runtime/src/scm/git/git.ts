@@ -122,7 +122,8 @@ export class GitService {
       responses,
     }
     try {
-      const token = await this.githubCredentials.token(request.host, cwd, env)
+      const credential = await this.githubCredentials.capture(request.host, cwd, env)
+      const token = credential.token
       const key = createHash('sha256')
         .update(JSON.stringify([request.host, token]))
         .digest('hex')
@@ -138,7 +139,7 @@ export class GitService {
                 if (info.quota) this.githubBudget.observe(key, info.quota, info.resource)
               },
               onUnauthorized: () => {
-                this.githubCredentials.invalidate(request.host, cwd, env)
+                credential.onUnauthorized()
                 onUnauthorized?.()
               },
             })
@@ -1513,12 +1514,8 @@ export class GitService {
   ): Promise<GithubAccount> {
     const context = { ...processEnvironment(), ...(env ?? (await this.githubEnvironment(cwd))) }
     if (refresh) this.githubCredentials.invalidate(host, cwd, context)
-    return {
-      host,
-      token: await this.githubCredentials.token(host, cwd, context),
-      ...(env ? { env } : {}),
-      onUnauthorized: () => this.githubCredentials.invalidate(host, cwd, context),
-    }
+    const credential = await this.githubCredentials.capture(host, cwd, context)
+    return { host, ...credential, ...(env ? { env } : {}) }
   }
   async githubAccount(
     args: string[],

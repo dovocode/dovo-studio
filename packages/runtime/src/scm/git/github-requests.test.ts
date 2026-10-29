@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { GitService } from './git'
 import { GithubTransport, GithubApiError } from './github-transport'
 import { exec } from '../../process'
+import { decode, commandsSchema } from '@dovo/protocol'
 
 vi.mock('../../process', async (original) => ({
   ...(await original<typeof import('../../process')>()),
@@ -168,4 +169,27 @@ it('uses Git URL rewrites when choosing the CLI credential host', async () => {
       env: expect.objectContaining({ GH_TOKEN: 'enterprise-secret' }),
     }),
   )
+})
+
+it('keeps an account rejection bound to the credential source captured before a settings change', async () => {
+  for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'])
+    vi.stubEnv(name, undefined)
+  let executable = 'old-gh'
+  const cli = vi
+    .mocked(exec)
+    .mockReset()
+    .mockImplementation(async (command) => ({
+      stdout: `${command}-token`,
+      stderr: '',
+    }))
+  const git = new GitService(() => ({ ...decode(commandsSchema, {}), gh: executable }))
+  const old = await git.githubCredential('/repo', 'github.com', {})
+  executable = 'new-gh'
+  const current = await git.githubCredential('/repo', 'github.com', {})
+  old.onUnauthorized?.()
+  expect((await git.githubCredential('/repo', 'github.com', {})).token).toBe(current.token)
+  expect(cli).toHaveBeenCalledTimes(2)
+  executable = 'old-gh'
+  await git.githubCredential('/repo', 'github.com', {})
+  expect(cli).toHaveBeenCalledTimes(3)
 })

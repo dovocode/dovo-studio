@@ -18,6 +18,8 @@ export default function AppearanceSettings() {
   const {
     theme,
     themePalette,
+    themeGlow,
+    themeGradients,
     textSize,
     motion,
     highContrast,
@@ -93,6 +95,39 @@ export default function AppearanceSettings() {
       </SettingsGroup>
       <SettingsGroup title="Theme">
         <SettingRow
+          label="Glow"
+          description="Theme-colored glow intensity. 0 is off; 1 is the full glow."
+        >
+          <div className="flex w-full items-center gap-3 sm:w-52">
+            <input
+              type="range"
+              aria-label="Glow intensity"
+              min={0}
+              max={1}
+              step={0.05}
+              value={themeGlow}
+              aria-valuetext={themeGlow === 0 ? '0 · Off' : String(themeGlow)}
+              onChange={(event) =>
+                updateAppPreferences({ themeGlow: event.currentTarget.valueAsNumber })
+              }
+              className="h-5 min-w-0 flex-1 cursor-pointer accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            />
+            <output className="w-8 text-right text-xs tabular-nums" aria-hidden="true">
+              {themeGlow.toFixed(2)}
+            </output>
+          </div>
+        </SettingRow>
+        <SettingRow
+          label="Gradients"
+          description="Use gradient highlights on buttons and surfaces."
+        >
+          <Toggle
+            label="Gradients"
+            checked={themeGradients}
+            onChange={(themeGradients) => updateAppPreferences({ themeGradients })}
+          />
+        </SettingRow>
+        <SettingRow
           label="Color scheme"
           description="System follows your computer’s light or dark mode."
         >
@@ -119,7 +154,7 @@ export default function AppearanceSettings() {
               return (
                 <label
                   key={id}
-                  className={`relative min-w-0 cursor-pointer rounded-lg border p-2.5 focus-within:ring-2 focus-within:ring-ring ${themePalette === id ? 'border-primary bg-accent' : 'bg-background hover:border-muted-foreground'}`}
+                  className={`relative min-w-0 cursor-pointer rounded-lg border p-2.5 focus-within:ring-2 focus-within:ring-ring ${themePalette === id ? 'border-primary/50 bg-[var(--studio-selected-fill)] [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]' : 'border-border/60 bg-background/60 hover:border-muted-foreground/60 hover:bg-muted/50'}`}
                 >
                   <input
                     type="radio"

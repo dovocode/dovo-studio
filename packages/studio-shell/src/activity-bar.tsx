@@ -69,6 +69,12 @@ export function ActivityBar({
     )
       setUpdateOpen(true)
   }, [update?.status])
+  const workspaceViews = views.filter(
+    (view) => !view.navigationGroup && ['tasks', 'browser', 'artifacts'].includes(view.id),
+  )
+  const toolViews = views.filter(
+    (view) => !view.navigationGroup && !['tasks', 'browser', 'artifacts'].includes(view.id),
+  )
   const settings = views.filter((view) => view.navigationGroup === 'settings')
   const settingsActive = settings.some((view) => view.id === activeId)
   const item = (
@@ -109,13 +115,17 @@ export function ActivityBar({
       <span className="studio-navigation-heading" aria-hidden="true">
         Workspace
       </span>
-      {views
-        .filter((view) => !view.navigationGroup)
-        .map((view) =>
-          item(view.id, view.title, icons[view.icon], activeId === view.id, () =>
-            onSelect(view.id),
-          ),
-        )}
+      {[workspaceViews, toolViews]
+        .filter((group) => group.length)
+        .map((group) => (
+          <div className="studio-navigation-group" key={group[0].id}>
+            {group.map((view) =>
+              item(view.id, view.title, icons[view.icon], activeId === view.id, () =>
+                onSelect(view.id),
+              ),
+            )}
+          </div>
+        ))}
       <div className="studio-navigation-settings">
         {(onCheckUpdates || onUpdate) && (
           <Popover.Root open={updateOpen} onOpenChange={setUpdateOpen}>
@@ -153,7 +163,7 @@ export function ActivityBar({
               <Popover.Content
                 side="right"
                 sideOffset={10}
-                className="z-50 w-80 max-w-[calc(100vw-4rem)] rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg"
+                className="studio-menu-surface z-50 w-80 max-w-[calc(100vw-4rem)] rounded-lg border bg-popover p-4 text-popover-foreground"
                 aria-label="Desktop update"
                 onOpenAutoFocus={(event) => {
                   if (update?.status === 'downloading' || update?.status === 'restarting')

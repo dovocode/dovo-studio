@@ -72,6 +72,8 @@ function fixture() {
   const controller = new AbortController()
   const onNativeTurnEnd = vi.fn<() => void>()
   const onText = vi.fn<(text: string) => void>()
+  const onPromptAccepted = vi.fn<NonNullable<AgentRun['onPromptAccepted']>>()
+  const onSubagentEvent = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
   const usage = turnTokenCounter('claude', () => 'session')
   const onEvent = vi.fn<NonNullable<AgentRun['onEvent']>>((name, payload) =>
     usage.accept(name, payload),
@@ -94,6 +96,8 @@ function fixture() {
     onSession: () => {},
     onActivity: () => {},
     onText,
+    onPromptAccepted,
+    onSubagentEvent,
     onEvent,
     onNativeTurnEnd,
     onSteer: (handler) => {
@@ -116,6 +120,8 @@ function fixture() {
     running,
     onNativeTurnEnd,
     onText,
+    onPromptAccepted,
+    onSubagentEvent,
     onEvent,
     usage,
     async ready() {
@@ -154,6 +160,92 @@ const task = (id: string, depth = 1, background = false) => ({
   is_backgrounded: background,
   description: id,
 })
+
+it('preserves native jobs and the warm stream after a pre-accept context rejection', async () => {
+  const f = fixture()
+  await f.ready()
+  f.events.push({ ...task('background-shell', 1, true), task_type: 'local_bash' })
+  f.events.push(success)
+  await f.running
+  f.onPromptAccepted.mockClear()
+  const rejected = f.adapter.run({ ...f.run, sessionId: 'session', prompt: 'Next request' })
+  await vi.waitFor(() => expect(f.input).toHaveLength(2))
+  // Claude can emit a synthetic API-error assistant before the terminal result.
+  f.events.push({
+    type: 'assistant',
+    error: 'invalid_request',
+    session_id: 'session',
+    parent_tool_use_id: null,
+    message: { content: [{ type: 'text', text: 'Prompt is too long' }] },
+  })
+  f.events.push({
+    ...success,
+    subtype: 'error_during_execution',
+    is_error: true,
+    terminal_reason: 'prompt_too_long',
+    errors: ['Request exceeds the available window'],
+  })
+  await expect(rejected).rejects.toThrow('prompt_too_long')
+  expect(f.onPromptAccepted).not.toHaveBeenCalled()
+  expect(f.close).not.toHaveBeenCalled()
+  expect(f.onSubagentEvent).not.toHaveBeenCalledWith('dovo/session/closed', {}, 'session')
+  f.events.push({
+    type: 'system',
+    subtype: 'task_notification',
+    task_id: 'background-shell',
+    status: 'completed',
+    session_id: 'session',
+  })
+  await vi.waitFor(() =>
+    expect(f.onSubagentEvent).toHaveBeenCalledWith(
+      'system',
+      expect.objectContaining({ subtype: 'task_notification', status: 'completed' }),
+      'session',
+    ),
+  )
+  const resumed = f.adapter.run({
+    ...f.run,
+    sessionId: 'session',
+    prompt: '/compact',
+    compact: true,
+  })
+  await vi.waitFor(() => expect(f.input).toHaveLength(3))
+  f.events.push({ type: 'system', subtype: 'compact_boundary', session_id: 'session' })
+  f.events.push(success)
+  await expect(resumed).resolves.toBeUndefined()
+  expect(mocks.query).toHaveBeenCalledOnce()
+})
+
+it.each(['assistant', 'stream_event'])(
+  'keeps context failures terminal after actual %s work',
+  async (kind) => {
+    const f = fixture()
+    await f.ready()
+    f.events.push(
+      kind === 'assistant'
+        ? {
+            type: 'assistant',
+            session_id: 'session',
+            parent_tool_use_id: null,
+            message: { content: [{ type: 'text', text: 'Started work' }] },
+          }
+        : {
+            type: 'stream_event',
+            session_id: 'session',
+            event: { type: 'message_start' },
+          },
+    )
+    f.events.push({
+      ...success,
+      is_error: true,
+      terminal_reason: 'prompt_too_long',
+      result: 'Prompt too long',
+    })
+    await expect(f.running).rejects.toThrow('prompt_too_long')
+    expect(f.onPromptAccepted).toHaveBeenCalled()
+    expect(f.close).toHaveBeenCalledOnce()
+  },
+)
 
 it.each([
   ['aborted_streaming', 'success'],

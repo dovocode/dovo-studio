@@ -9,6 +9,7 @@ import {
   pullStackLabel,
   taskPullStatusFor,
   taskDisplayProject,
+  taskBackgroundTerminalCount,
 } from '@dovo/protocol'
 import { taskPullLinks } from '../detail/task-pull-links'
 import {
@@ -42,6 +43,7 @@ import {
   Layers,
   Pin,
   Network,
+  SquareTerminal,
 } from 'lucide-react'
 import { memo, useId, useMemo, useState } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
@@ -71,6 +73,7 @@ function TaskRowView({
   terminals,
   editable,
   disabled,
+  hideStatusLabel = false,
   selectedChildId,
   thread,
   selectedThreadKey,
@@ -87,11 +90,19 @@ function TaskRowView({
   terminals: number
   editable: boolean
   disabled: boolean
+  hideStatusLabel?: boolean
   selectedChildId?: string
   thread?: NestedThread
   selectedThreadKey?: string
   searching?: boolean
 }) {
+  const activeTerminals = terminals + taskBackgroundTerminalCount(task)
+  const terminalIndicator = activeTerminals > 0 && (
+    <SquareTerminal
+      className="size-3.5 shrink-0 text-muted-foreground"
+      aria-label={`${activeTerminals} active terminal${activeTerminals === 1 ? '' : 's'}`}
+    />
+  )
   const studioHost = useStudioHost()
   const childrenId = useId()
   const parentKey = JSON.stringify([owner.runtimeId, task.id])
@@ -156,9 +167,15 @@ function TaskRowView({
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const projectIcon =
     displayProject?.kind === 'scratch' ? (
-      <MessageCircleDashed className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <MessageCircleDashed
+        className={cn('shrink-0 text-muted-foreground', compact ? 'size-4' : 'size-7')}
+        aria-hidden="true"
+      />
     ) : (
-      <ProjectIcon repository={displayProject} className="size-4 shrink-0" />
+      <ProjectIcon
+        repository={displayProject}
+        className={cn('shrink-0', compact ? 'size-4' : 'size-7 rounded-[7px] text-[10px]')}
+      />
     )
   const latest = task.turns?.at(-1)
   const provider =
@@ -193,6 +210,13 @@ function TaskRowView({
   const status = !owner.online && owner.runtimeId ? 'Offline · Cached' : presentation.label
   const offline = !owner.online && !!owner.runtimeId
   const compactStatus = offline ? 'Offline' : presentation.compactLabel
+  const groupedStatus =
+    hideStatusLabel && !offline && ['Working', 'Waiting'].includes(presentation.state)
+  const visibleStatus = groupedStatus
+    ? presentation.state === 'Working'
+      ? presentation.time
+      : ''
+    : compactStatus
   const StatusIcon = offline
     ? CloudOff
     : ['Review', 'Finished', 'Draft'].includes(presentation.state)
@@ -255,11 +279,11 @@ function TaskRowView({
       {!!childCount && <span className="studio-subthread-anchor block h-3.5 w-5 shrink-0" />}
       <RuntimeIcon
         icon={owner.runtimeIcon}
-        className="size-3 shrink-0"
+        className="size-3.5 shrink-0"
         aria-label={host ?? 'Unknown host'}
       />
       {provider && (
-        <AgentAvatar provider={provider} customIcon={customIcon} className="size-3 shrink-0" />
+        <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5 shrink-0" />
       )}
     </span>
   )
@@ -267,15 +291,9 @@ function TaskRowView({
   const highlighted = selected || multiSelected || !!selectedChildId
   return (
     <div
+      data-highlighted={highlighted || undefined}
       onMouseLeave={() => setHovered(false)}
-      className={cn(
-        'studio-thread-row group/task relative w-full min-w-0',
-        grouped && 'mb-[3px] rounded-xl border transition-colors',
-        grouped &&
-          (highlighted
-            ? 'border-transparent bg-accent/70 hover:bg-accent/80'
-            : 'border-border/30 bg-accent/15 hover:bg-accent/30'),
-      )}
+      className={cn('studio-thread-row group/task relative w-full min-w-0', grouped && 'mb-[3px]')}
     >
       <div className="relative">
         <Tooltip delayDuration={450}>
@@ -284,16 +302,14 @@ function TaskRowView({
               variant="ghost"
               aria-current={selected ? 'true' : undefined}
               data-unread={unread || undefined}
+              data-draft={draft || undefined}
               className={cn(
-                'mb-[3px] h-auto w-full min-w-0 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
+                'studio-thread-card mb-[3px] h-auto w-full min-w-0 flex-row gap-2.5 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
                 compact
-                  ? 'min-h-9 flex-row items-center gap-2 py-1.5'
-                  : cn(
-                      'flex-col items-stretch gap-0.5 py-1.5',
-                      general ? 'min-h-[48px]' : 'min-h-[68px]',
-                    ),
+                  ? 'min-h-9 items-center py-1.5'
+                  : cn('items-start py-2', general ? 'min-h-[48px]' : 'min-h-[68px]'),
                 grouped
-                  ? 'mb-0 rounded-b-none border-0 bg-transparent hover:bg-accent/30'
+                  ? 'mb-0'
                   : highlighted
                     ? 'border-transparent bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
                     : draft
@@ -303,69 +319,82 @@ function TaskRowView({
               onClick={onSelect}
               disabled={disabled}
             >
-              {compact ? (
-                <span className="shrink-0">{projectIcon}</span>
-              ) : (
+              <span className={cn('studio-thread-project-icon shrink-0', !compact && 'pt-0.5')}>
+                {projectIcon}
+              </span>
+              <span
+                className={cn(
+                  'studio-thread-card-body flex min-w-0 flex-1',
+                  compact ? 'items-center gap-1.5' : 'flex-col items-stretch gap-0.5',
+                )}
+              >
+                {!compact && (
+                  <span
+                    className={cn(
+                      'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
+                      editable &&
+                        'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
+                    )}
+                  >
+                    {draft && (
+                      <FilePenLine
+                        aria-label="Draft"
+                        className="size-3.5 shrink-0 text-status-warning"
+                      />
+                    )}
+                    <span
+                      className="min-w-0 flex-1 truncate"
+                      title={`${statusDetail} · ${agentDetail}`}
+                    >
+                      {projectName}
+                    </span>
+                    {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
+                    <span
+                      className={cn('flex shrink-0 items-center gap-1 text-xs', statusTone)}
+                      aria-label={groupedStatus ? status : undefined}
+                      title={groupedStatus ? status : undefined}
+                    >
+                      {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
+                      {visibleStatus}
+                    </span>
+                  </span>
+                )}
                 <span
                   className={cn(
-                    'studio-thread-card-context mb-1 flex min-w-0 items-center gap-1.5 text-xs leading-4',
+                    'studio-thread-card-title flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5',
+                    compact ? 'flex-1' : 'w-full',
+                    highlighted || unread
+                      ? 'text-foreground'
+                      : 'text-foreground/75 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
                     editable &&
                       'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                   )}
                 >
-                  {draft && (
-                    <FilePenLine
-                      aria-label="Draft"
-                      className="size-3.5 shrink-0 text-status-warning"
-                    />
-                  )}
-                  {projectIcon}
+                  <span className="min-w-0 flex-1 truncate" data-thread-title>
+                    {task.title}
+                  </span>
+                  {(general || (compact && !!childCount)) && executionIcons}
+                  {(general || compact) && terminalIndicator}
+                </span>
+                {compact && StatusIcon && (
                   <span
-                    className="min-w-0 flex-1 truncate"
-                    title={`${statusDetail} · ${agentDetail}`}
+                    className={cn('shrink-0', statusTone)}
+                    aria-label={compactStatus}
+                    title={status}
                   >
-                    {projectName}
+                    <StatusIcon className="size-3.5" aria-hidden="true" />
                   </span>
-                  {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-                  <span className={cn('flex shrink-0 items-center gap-1 text-xs', statusTone)}>
-                    {StatusIcon && <StatusIcon className="size-3.5" aria-hidden="true" />}
-                    {compactStatus}
-                  </span>
-                </span>
-              )}
-              <span
-                className={cn(
-                  'flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5',
-                  compact ? 'flex-1' : 'w-full',
-                  highlighted || unread
-                    ? 'text-foreground'
-                    : 'text-foreground/75 group-hover/task:text-foreground group-has-[:focus-visible]/task:text-foreground',
-                  editable &&
-                    'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                 )}
-              >
-                <span className="min-w-0 flex-1 truncate" data-thread-title>
-                  {task.title}
-                </span>
-                {(general || (compact && !!childCount)) && executionIcons}
+                {!compact && !general && (
+                  <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
+                    <GitBranch className="size-3 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
+                    {pullIndicators}
+                    {executionIcons}
+                    {terminalIndicator}
+                  </span>
+                )}
               </span>
-              {compact && StatusIcon && (
-                <span
-                  className={cn('shrink-0', statusTone)}
-                  aria-label={compactStatus}
-                  title={status}
-                >
-                  <StatusIcon className="size-3.5" aria-hidden="true" />
-                </span>
-              )}
-              {!compact && !general && (
-                <span className="studio-thread-card-context mt-0.5 flex min-w-0 items-center gap-1 text-xs leading-4">
-                  <GitBranch className="size-3 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{branch || 'Local checkout'}</span>
-                  {pullIndicators}
-                  {executionIcons}
-                </span>
-              )}
             </Button>
           </TooltipTrigger>
           <TooltipContent
@@ -432,7 +461,7 @@ function TaskRowView({
                 </p>
               )}
               <p>
-                {terminals} terminal {terminals === 1 ? 'session' : 'sessions'} running
+                {activeTerminals} terminal {activeTerminals === 1 ? 'session' : 'sessions'} running
               </p>
             </div>
           </TooltipContent>
@@ -494,7 +523,7 @@ function TaskRowView({
       {editable && (
         <div
           className={cn(
-            'pointer-events-none absolute flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none',
+            'studio-thread-actions pointer-events-none absolute flex h-6 items-center gap-1 text-muted-foreground opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-has-[:focus-visible]/task:pointer-events-auto group-has-[:focus-visible]/task:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100 motion-safe:translate-x-0.5 motion-safe:group-hover/task:translate-x-0 motion-safe:group-has-[:focus-visible]/task:translate-x-0 motion-safe:has-[[data-state=open]]:translate-x-0 motion-reduce:transition-none',
             compact ? 'top-1.5' : 'top-0.5',
             'right-2',
           )}

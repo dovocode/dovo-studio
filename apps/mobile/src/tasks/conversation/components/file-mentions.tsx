@@ -36,6 +36,7 @@ export function FileMentions({
   resources,
   onChange,
   onCommand,
+  onSideChat,
   prompts = [],
 }: {
   taskId: string
@@ -45,6 +46,7 @@ export function FileMentions({
   onChange: (text: string) => void
   /** Runs a built-in "/" command; its text is removed from the draft. */
   onCommand?: (id: ComposerCommandId) => void
+  onSideChat?: (text: string) => void
   /** The project's saved prompts, inserted with "#" (edited on the desktop). */
   prompts?: readonly SavedPrompt[]
 }) {
@@ -96,6 +98,9 @@ export function FileMentions({
           name: prompt.name,
           detail: prompt.text.replace(/\s+/g, ' ').slice(0, 60),
         }))
+      : []),
+    ...(mention.trigger === '/' && onSideChat && 'sidechat'.startsWith(mention.query.toLowerCase())
+      ? [{ kind: 'command' as const, value: 'sidechat', detail: 'Ask a side question' }]
       : []),
     ...(mention.trigger === '/' && onCommand
       ? commandSuggestions(mention.query).map((command) => ({
@@ -160,8 +165,10 @@ export function FileMentions({
                 const prompt = prompts.find((entry) => entry.id === item.value)
                 if (prompt) onChange(insertPrompt(text, mention.start, caret, prompt.text).text)
               } else if (item.kind === 'command') {
-                onChange(text.slice(0, mention.start) + text.slice(caret))
-                onCommand?.(item.value as ComposerCommandId)
+                const remaining = text.slice(0, mention.start) + text.slice(caret)
+                onChange(remaining)
+                if (item.value === 'sidechat') onSideChat?.(remaining)
+                else onCommand?.(item.value as ComposerCommandId)
               } else
                 onChange(
                   insertMention(text, mention.start, caret, item.value, mention.trigger).text,

@@ -8,7 +8,7 @@ import {
   type ArtifactReference,
 } from '@dovo/protocol'
 import { useWorkspace } from '@dovo/studio-core'
-import { Button, IconButton, MessageResponse } from '@dovo/studio-ui'
+import { Button, IconButton, MessageResponse, cn } from '@dovo/studio-ui'
 import { FloatingPreview, type PreviewPlacement } from '../detail/floating-preview'
 import { useArtifactPreviewTheme } from './preview-theme'
 import { ArtifactSharedBadge } from './artifact-shared-badge'
@@ -88,7 +88,11 @@ export function InlineArtifact({
             <ArtifactSharedBadge artifact={reference} />
             <IconButton
               label={source ? 'Show rendered artifact' : 'View artifact source'}
-              className="size-7 shrink-0"
+              className={cn(
+                'size-7 shrink-0',
+                source &&
+                  'bg-[var(--studio-selected-fill)] bg-[image:var(--studio-selected-gradient)] text-primary shadow-[var(--studio-glow)]',
+              )}
               aria-pressed={source}
               onClick={() => setSource((value) => !value)}
             >
@@ -148,7 +152,7 @@ export function InlineArtifact({
           </>
         )}
       </FloatingPreview>
-      <div className="border-t px-3 py-1 text-[0.625rem] text-muted-foreground">
+      <div className="rounded-b-xl border-t bg-sidebar px-3 py-1 text-[0.625rem] text-muted-foreground dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]">
         {reference.fileCount ? `${reference.fileCount} files · ` : ''}Version {reference.revision}
       </div>
     </div>

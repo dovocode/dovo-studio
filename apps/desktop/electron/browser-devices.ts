@@ -76,6 +76,8 @@ export function createBrowserDevices(host: MediaHost) {
     watch: (update: (device: Device, removed: boolean) => void) => () => void,
   ) => {
     const origin = originOf(contents.mainFrame.url)
+    if (owned(contents, profileId) && origin)
+      browserPermissions(profileId).recordRequest(origin, kind)
     if (
       !owned(contents, profileId) ||
       !origin ||
@@ -333,6 +335,7 @@ export function createBrowserDevices(host: MediaHost) {
         event.preventDefault()
         const tab = host.tabFor(contents)
         const origin = originOf(contents.mainFrame.url)
+        if (tab && origin) browserPermissions(tab.profileId).recordRequest(origin, 'bluetooth')
         if (
           !tab ||
           !origin ||

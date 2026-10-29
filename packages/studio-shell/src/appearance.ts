@@ -17,6 +17,8 @@ export type WindowColors = { background: string; symbol: string }
 export function useAppearance(onWindowColors?: (colors: WindowColors) => unknown) {
   const {
     themePalette,
+    themeGlow,
+    themeGradients,
     textSize,
     motion,
     chatWidth,
@@ -43,6 +45,9 @@ export function useAppearance(onWindowColors?: (colors: WindowColors) => unknown
     root.dataset.chatWidth = chatWidth
     root.dataset.theme = mode
     root.dataset.themePalette = themePalette
+    root.dataset.themeGlow = String(themeGlow)
+    root.dataset.themeGradients = String(themeGradients)
+    root.style.setProperty('--studio-glow-strength', String(themeGlow))
     root.classList.toggle('dark', mode === 'dark')
     for (const [name, value] of Object.entries(colors)) root.style.setProperty(`--${name}`, value)
     root.style.setProperty('--primary-foreground', mode === 'dark' ? colors.background : '#ffffff')
@@ -57,6 +62,8 @@ export function useAppearance(onWindowColors?: (colors: WindowColors) => unknown
   }, [
     mode,
     themePalette,
+    themeGlow,
+    themeGradients,
     colors,
     textSize,
     motion,

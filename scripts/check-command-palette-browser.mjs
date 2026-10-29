@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -52,10 +53,18 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
-  await page.addStyleTag({
-    content:
-      '[role=dialog]{position:fixed;inset:80px 120px;background:white;padding:20px}[role=listbox]{max-height:300px;overflow:auto}[role=option]{display:block;width:100%;text-align:left}[role=dialog]>div{margin:8px}',
-  })
+  const screenshots = process.env.DOVO_COMMAND_SCREENSHOTS
+  if (screenshots) {
+    await mkdir(screenshots, { recursive: true })
+    const assets = `${root}apps/desktop/dist/assets/`
+    for (const file of await readdir(assets))
+      if (file.endsWith('.css'))
+        await page.addStyleTag({ content: await readFile(assets + file, 'utf8') })
+  } else
+    await page.addStyleTag({
+      content:
+        '[role=dialog]{position:fixed;inset:80px 120px;background:white;padding:20px}[role=listbox]{max-height:300px;overflow:auto}[role=option]{display:block;width:100%;text-align:left}[role=dialog]>div{margin:8px}',
+    })
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const opener = page.getByRole('button', { name: 'Open commands', exact: true })
   const input = page.getByRole('combobox', { name: 'Search commands', exact: true })
@@ -64,6 +73,24 @@ try {
   await opener.click()
   await input.waitFor()
   assert.equal(await input.evaluate((element) => element === document.activeElement), true)
+  if (screenshots) {
+    await page.getByRole('dialog').evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished))
+    })
+    await page.screenshot({ path: screenshots + '/commands-desktop.png' })
+    await page.setViewportSize({ width: 320, height: 700 })
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    await page.evaluate(() => {
+      document.documentElement.dataset.themeGlow = '0'
+      document.documentElement.dataset.themeGradients = 'false'
+    })
+    assert.equal(
+      await options.first().evaluate((el) => getComputedStyle(el).backgroundImage),
+      'none',
+    )
+    await page.screenshot({ path: screenshots + '/commands-320-flat.png' })
+    await page.setViewportSize({ width: 900, height: 800 })
+  }
   const declarationOrder = await titles()
   assert.equal(declarationOrder.length, 7)
   await input.fill('  ThReAd  ')

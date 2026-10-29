@@ -4,6 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ForgeConnections } from './forge-connections'
+import { ForgeCliAccounts } from './forge-cli-accounts'
+import { commandsSchema, decode } from '@dovo/protocol'
 import { openDatabase } from '../../../storage/database'
 import { WorkspaceStore } from '../../../storage/workspace'
 import { startRuntime } from '../../../index'
@@ -386,4 +388,31 @@ it('reuses a CLI account lookup across reads and forgets it when a server reject
   connections.forgetCredentials(saved.id)
   await connections.reconcileCli(saved.id, '/repo')
   expect(identity).toHaveBeenCalledTimes(3)
+})
+
+it('rejects only the selected credential generation dispatched before a newer login', async () => {
+  const cli = new ForgeCliAccounts(() => decode(commandsSchema, {}))
+  const lookup = vi
+    .spyOn(cli, 'githubToken')
+    .mockResolvedValueOnce('old-token')
+    .mockResolvedValueOnce('fresh-token')
+    .mockResolvedValue('next-token')
+  vi.spyOn(cli, 'githubCredentialSource').mockReturnValue('stable-source')
+  const connections = new ForgeConnections(db, undefined, cli)
+  const saved = connections.save({
+    name: 'Selected',
+    provider: 'github',
+    baseUrl: 'https://github.com',
+    credential: 'gh',
+    cliProfile: 'viewer',
+  })
+  const old = await connections.githubCredential(saved.id, '/repo')
+  connections.forgetCredentials(saved.id)
+  const fresh = await connections.githubCredential(saved.id, '/repo')
+  old.onUnauthorized()
+  expect(await connections.githubToken(saved.id, '/repo')).toBe('fresh-token')
+  expect(lookup).toHaveBeenCalledTimes(2)
+  fresh.onUnauthorized()
+  expect(await connections.githubToken(saved.id, '/repo')).toBe('next-token')
+  expect(lookup).toHaveBeenCalledTimes(3)
 })

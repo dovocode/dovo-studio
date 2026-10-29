@@ -11,8 +11,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default:
-          'bg-action text-action-foreground shadow-xs hover:bg-action/90 active:bg-action/85',
+        default: 'bg-action text-action-foreground hover:bg-action/90 active:bg-action/85',
         destructive:
           'bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 active:bg-destructive/85',
         outline:
@@ -48,6 +47,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <Comp
         data-slot="button"
+        data-variant={variant ?? 'default'}
+        data-size={size ?? 'default'}
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         {...props}

@@ -303,10 +303,10 @@ export function TaskProjectPanel({
               <DropdownMenu.Content
                 align="end"
                 sideOffset={6}
-                className="z-50 min-w-40 rounded-md border bg-popover p-1 text-xs text-popover-foreground shadow-md"
+                className="studio-menu-surface z-50 min-w-40 rounded-md border bg-popover p-1 text-xs text-popover-foreground"
               >
                 <RepositoryOpenItems
-                  itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent"
+                  itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
                   disabled={openBusy}
                   onSelect={openTarget}
                 />
@@ -376,14 +376,14 @@ export function TaskProjectPanel({
               <DropdownMenu.Content
                 align="end"
                 sideOffset={6}
-                className="z-50 min-w-56 rounded-md border bg-popover p-1 text-xs text-popover-foreground shadow-md"
+                className="studio-menu-surface z-50 min-w-56 rounded-md border bg-popover p-1 text-xs text-popover-foreground"
               >
                 {gitState?.dirty && (
                   <>
                     {gitState.canPush && !gitState.behind && (
                       <DropdownMenu.Item
                         disabled={!mutable}
-                        className="rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                        className="rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)] data-[disabled]:opacity-50"
                         onSelect={() => void commitAndPush()}
                       >
                         Commit & push
@@ -391,7 +391,7 @@ export function TaskProjectPanel({
                     )}
                     <DropdownMenu.Item
                       disabled={!mutable}
-                      className="rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                      className="rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)] data-[disabled]:opacity-50"
                       onSelect={() => void commitAndPush(false)}
                     >
                       Commit only
@@ -401,7 +401,7 @@ export function TaskProjectPanel({
                 {pushAvailable && (
                   <DropdownMenu.Item
                     disabled={!mutable}
-                    className="rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                    className="rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)] data-[disabled]:opacity-50"
                     onSelect={() => void pushBranch()}
                   >
                     Push branch
@@ -415,7 +415,7 @@ export function TaskProjectPanel({
                 {linkedPulls.map((pull) => (
                   <DropdownMenu.Item
                     key={pull.url}
-                    className="flex max-w-80 items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent"
+                    className="flex max-w-80 items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
                     onSelect={() => openPull(pull.url)}
                   >
                     <GitPullRequest className="size-3.5 shrink-0" />
@@ -426,19 +426,19 @@ export function TaskProjectPanel({
                 ))}
                 <DropdownMenu.Separator className="my-1 h-px bg-border" />
                 <DropdownMenu.Item
-                  className="rounded px-2 py-1.5 outline-none focus:bg-accent"
+                  className="rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
                   onSelect={() => setLinking(true)}
                 >
                   Manage PR links…
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
-                  className="rounded px-2 py-1.5 outline-none focus:bg-accent"
+                  className="rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
                   onSelect={() => host.navigate({ viewId: 'pulls', entityId: repo.id })}
                 >
                   Pull requests…
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
-                  className="rounded px-2 py-1.5 outline-none focus:bg-accent"
+                  className="rounded px-2 py-1.5 outline-none focus:bg-[var(--studio-selected-fill)] focus:[background-image:var(--studio-selected-gradient)]"
                   onSelect={() => setGitOpen(true)}
                 >
                   Advanced Git actions…

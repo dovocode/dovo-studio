@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vite-plus/test'
 import type { GithubResponseInfo } from './github-rate-limit'
+import { ProcessError } from '../../process'
 import {
   GithubApiError,
   GithubCredentials,
@@ -118,6 +119,45 @@ it('sends bearer requests, follows pagination into a slurped array and revalidat
   expect(JSON.parse(await transport.send(user, 'secret-token'))).toEqual({ login: 'me' })
   expect(JSON.parse(await transport.send(user, 'secret-token'))).toEqual({ login: 'me' })
   expect(new Headers(fetcher.mock.calls[3]![1]?.headers).get('if-none-match')).toBe('"v1"')
+})
+
+it.each([
+  'http://api.github.com/items?page=2',
+  'https://api.github.com:444/items?page=2',
+  'https://other.example/items?page=2',
+  'https://user:password@api.github.com/items?page=2',
+  'https://user@api.github.com/items?page=2',
+])('rejects unsafe pagination before forwarding credentials: %s', async (next) => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(reply([], { headers: { link: `<${next}>; rel="next"` } }))
+    .mockResolvedValueOnce(reply([]))
+  await expect(
+    new GithubTransport(fetcher).send(
+      parseGithubApiArgs(['api', 'items', '--paginate', '--slurp']),
+      'private-token',
+    ),
+  ).rejects.toThrow('GitHub pagination')
+  expect(fetcher).toHaveBeenCalledTimes(1)
+})
+
+it('keeps Enterprise pagination on its API origin', async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      reply([{ id: 1 }], {
+        headers: {
+          link: '<https://git.example.com/api/v3/items?page=2>; rel="next"',
+        },
+      }),
+    )
+    .mockResolvedValueOnce(reply([{ id: 2 }]))
+  const result = await new GithubTransport(fetcher).send(
+    parseGithubApiArgs(['api', '--hostname', 'git.example.com', 'items', '--paginate', '--slurp']),
+    'private-token',
+  )
+  expect(JSON.parse(result)).toEqual([[{ id: 1 }], [{ id: 2 }]])
+  expect(fetcher).toHaveBeenCalledTimes(2)
 })
 
 it('revalidates later cached pages when a 304 omits pagination headers and rejects oversized bodies', async () => {
@@ -366,4 +406,107 @@ it('does not use the primary reset for a secondary limit', async () => {
     retryAfter: 2,
     rateLimit: { secondary: true, retryAfter: 2, resetAt: undefined },
   })
+})
+
+it('separates cached CLI credentials by executable and effective account environment', async () => {
+  let executable = 'gh'
+  const runner = vi.fn<ConstructorParameters<typeof GithubCredentials>[1] & object>(
+    async (command, _args, options) => ({
+      stdout: `token-${command}-${options.env.CUSTOM_ACCOUNT ?? 'default'}`,
+    }),
+  )
+  const credentials = new GithubCredentials(() => executable, runner)
+  expect(await credentials.token('github.com', '/repo', { CUSTOM_ACCOUNT: 'first' })).toBe(
+    'token-gh-first',
+  )
+  expect(await credentials.token('github.com', '/repo', { CUSTOM_ACCOUNT: 'first' })).toBe(
+    'token-gh-first',
+  )
+  expect(await credentials.token('github.com', '/repo', { CUSTOM_ACCOUNT: 'second' })).toBe(
+    'token-gh-second',
+  )
+  executable = '/custom/gh'
+  expect(await credentials.token('github.com', '/repo', { CUSTOM_ACCOUNT: 'second' })).toBe(
+    'token-/custom/gh-second',
+  )
+  expect(runner).toHaveBeenCalledTimes(3)
+})
+
+it('redacts failed credential lookups for every coalesced caller', async () => {
+  let reject: (error: unknown) => void = () => {}
+  const runner = vi.fn<ConstructorParameters<typeof GithubCredentials>[1] & object>(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail
+      }),
+  )
+  const credentials = new GithubCredentials(() => 'gh', runner)
+  const first = credentials.token('github.com', '/repo', {})
+  const second = credentials.token('github.com', '/repo', {})
+  const results = Promise.allSettled([first, second])
+  reject(
+    new ProcessError({
+      message: 'private-token in command output',
+      cause: new Error('private-token'),
+      stdout: 'private-token',
+      stderr: 'private-secret',
+    }),
+  )
+  for (const result of await results) {
+    if (result.status !== 'rejected')
+      throw new Error('The credential lookup unexpectedly succeeded')
+    expect(result.reason).toBeInstanceOf(GithubApiError)
+    expect(String(result.reason)).toContain('gh auth login')
+    expect(JSON.stringify(result.reason)).not.toContain('private-')
+  }
+  expect(runner).toHaveBeenCalledOnce()
+})
+
+it('invalidates the captured credential source when the configured executable changes in flight', async () => {
+  let executable = 'old-gh'
+  const runner = vi.fn<ConstructorParameters<typeof GithubCredentials>[1] & object>(
+    async (command) => ({ stdout: `${command}-token` }),
+  )
+  const credentials = new GithubCredentials(() => executable, runner)
+  const old = await credentials.capture('github.com', '/repo', {})
+  executable = 'new-gh'
+  const current = await credentials.capture('github.com', '/repo', {})
+  old.onUnauthorized()
+  expect(await credentials.token('github.com', '/repo', {})).toBe(current.token)
+  expect(runner).toHaveBeenCalledTimes(2)
+  executable = 'old-gh'
+  await credentials.token('github.com', '/repo', {})
+  expect(runner).toHaveBeenCalledTimes(3)
+})
+
+it('does not let a delayed rejection invalidate a refreshed credential from the same source', async () => {
+  const runner = vi
+    .fn<ConstructorParameters<typeof GithubCredentials>[1] & object>()
+    .mockResolvedValueOnce({ stdout: 'old-token' })
+    .mockResolvedValueOnce({ stdout: 'new-token' })
+  const credentials = new GithubCredentials(() => 'gh', runner)
+  const old = await credentials.capture('github.com', '/repo', {})
+  credentials.invalidate('github.com', '/repo', {})
+  const fresh = await credentials.capture('github.com', '/repo', {})
+  old.onUnauthorized()
+  expect(await credentials.token('github.com', '/repo', {})).toBe(fresh.token)
+  expect(runner).toHaveBeenCalledTimes(2)
+  fresh.onUnauthorized()
+  runner.mockResolvedValueOnce({ stdout: 'another-token' })
+  expect(await credentials.token('github.com', '/repo', {})).toBe('another-token')
+})
+
+it('bounds live credential sources and retains recently used sources', async () => {
+  const runner = vi.fn<ConstructorParameters<typeof GithubCredentials>[1] & object>(
+    async (_command, _args, options) => ({ stdout: `token-${options.env.CUSTOM_ACCOUNT}` }),
+  )
+  const credentials = new GithubCredentials(() => 'gh', runner)
+  for (let index = 0; index < 200; index++)
+    await credentials.token('github.com', '/repo', { CUSTOM_ACCOUNT: String(index) })
+  await credentials.token('github.com', '/repo', { CUSTOM_ACCOUNT: '0' })
+  await credentials.token('github.com', '/repo', { CUSTOM_ACCOUNT: '200' })
+  await credentials.token('github.com', '/repo', { CUSTOM_ACCOUNT: '0' })
+  expect(runner).toHaveBeenCalledTimes(201)
+  await credentials.token('github.com', '/repo', { CUSTOM_ACCOUNT: '1' })
+  expect(runner).toHaveBeenCalledTimes(202)
 })

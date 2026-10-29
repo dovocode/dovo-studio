@@ -22,9 +22,15 @@ export function TaskEmptyState({
   return (
     <div
       data-thread-start=""
-      className={`flex min-h-0 flex-col items-center justify-center gap-2 px-5 text-center ${welcome ? 'mt-auto shrink-0 pb-4 pt-6' : 'flex-1 py-6'}`}
+      className={`flex min-h-0 flex-col items-center justify-center px-5 text-center ${welcome ? 'mt-auto shrink-0 gap-6 pb-6 pt-8' : 'flex-1 gap-2 py-6'}`}
     >
-      <h2 className="max-w-xl text-balance text-xl font-medium tracking-tight sm:text-2xl">
+      <h2
+        className={
+          welcome
+            ? 'startup-heading text-balance text-xl font-medium tracking-tight sm:text-2xl'
+            : 'max-w-xl text-balance text-xl font-medium tracking-tight sm:text-2xl'
+        }
+      >
         What would you like to work on?
       </h2>
       {projectName && !task && <p className="text-xs text-muted-foreground">In {projectName}</p>}

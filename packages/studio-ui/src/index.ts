@@ -97,3 +97,4 @@ export { PullRequestIcon, pullRequestIconTone } from './pull-request-icon'
 export { Card } from '@dovo/web-ui/card'
 
 export { ChangeTypeFilters, ChangeTypeIndicator } from './review/change-types'
+export { ChangeSummary } from './review/change-summary'

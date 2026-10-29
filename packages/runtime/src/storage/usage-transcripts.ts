@@ -13,7 +13,78 @@ const record = (value: unknown): Record<string, unknown> =>
     : {}
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
-type ParserState = { session: string; model: string; lastTotal?: number; lastTotalAt?: string }
+const codexCounters = [
+  'input_tokens',
+  'cached_input_tokens',
+  'cache_write_input_tokens',
+  'output_tokens',
+  'reasoning_output_tokens',
+  'total_tokens',
+] as const
+type CodexCounter = (typeof codexCounters)[number]
+type CodexUsage = Record<CodexCounter, number>
+type CodexTotal = Partial<CodexUsage> & { total_tokens: number }
+function codexTotal(value: Record<string, unknown>): CodexTotal | undefined {
+  if (typeof value.total_tokens !== 'number') return
+  const counters: Partial<CodexUsage> = {}
+  for (const key of codexCounters) {
+    const counter = value[key]
+    if (counter === undefined) continue
+    if (typeof counter !== 'number' || !Number.isSafeInteger(counter) || counter < 0) return
+    counters[key] = counter
+  }
+  const {
+    input_tokens: input,
+    output_tokens: output,
+    cached_input_tokens: cached,
+    cache_write_input_tokens: cacheWrite,
+    reasoning_output_tokens: reasoning,
+  } = counters
+  // An impossible snapshot cannot establish a baseline: doing so can make all
+  // subsequent real counters look stale and suppress the rest of a session.
+  if (
+    (input !== undefined && output !== undefined && input + output !== value.total_tokens) ||
+    (input !== undefined && input > value.total_tokens) ||
+    (output !== undefined && output > value.total_tokens) ||
+    (cached ?? 0) + (cacheWrite ?? 0) > (input ?? value.total_tokens) ||
+    (reasoning !== undefined && reasoning > (output ?? value.total_tokens))
+  )
+    return
+  return { ...counters, total_tokens: value.total_tokens }
+}
+function codexUsage(value: Record<string, unknown>): CodexUsage | undefined {
+  if (typeof value.input_tokens !== 'number' || typeof value.output_tokens !== 'number') return
+  const counters = codexTotal({
+    cached_input_tokens: 0,
+    cache_write_input_tokens: 0,
+    reasoning_output_tokens: 0,
+    total_tokens: value.input_tokens + value.output_tokens,
+    ...value,
+  })
+  if (!counters) return
+  const usage: CodexUsage = {
+    input_tokens: value.input_tokens,
+    output_tokens: value.output_tokens,
+    cached_input_tokens: counters.cached_input_tokens ?? 0,
+    cache_write_input_tokens: counters.cache_write_input_tokens ?? 0,
+    reasoning_output_tokens: counters.reasoning_output_tokens ?? 0,
+    total_tokens: counters.total_tokens,
+  }
+  if (
+    usage.total_tokens !== usage.input_tokens + usage.output_tokens ||
+    usage.cached_input_tokens + usage.cache_write_input_tokens > usage.input_tokens ||
+    usage.reasoning_output_tokens > usage.output_tokens
+  )
+    return
+  return usage
+}
+type ParserState = {
+  session: string
+  model: string
+  lastTotal?: CodexTotal
+  lastUsage?: CodexUsage
+  lastTotalAt?: string
+}
 function createTranscriptUsage(
   provider: 'codex' | 'claude',
   fallbackSession: string,
@@ -27,14 +98,23 @@ function createTranscriptUsage(
   let session = initial?.session ?? fallbackSession,
     model = initial?.model ?? ''
   let lastTotal = initial?.lastTotal
+  let lastUsage = initial?.lastUsage
   let lastTotalAt = initial?.lastTotalAt
   let invalidTotalAt: number | undefined
+  const issues = new Map<string, number>()
+  const notices = () => [...issues].filter(([, at]) => at >= since).map(([notice]) => notice)
   return {
     accept(line: unknown) {
       const value = record(line),
         payload = record(value.payload)
-      if (provider === 'codex' && value.type === 'session_meta' && typeof payload.id === 'string')
+      if (provider === 'codex' && value.type === 'session_meta' && typeof payload.id === 'string') {
+        if (session !== payload.id) {
+          lastTotal = undefined
+          lastUsage = undefined
+          lastRowId = undefined
+        }
         session = payload.id
+      }
       if (
         provider === 'codex' &&
         value.type === 'turn_context' &&
@@ -47,23 +127,85 @@ function createTranscriptUsage(
       if (provider === 'codex') {
         if (value.type !== 'event_msg' || payload.type !== 'token_count') return
         const info = record(payload.info),
-          total = record(info.total_token_usage),
-          usage = record(info.last_token_usage)
-        const duplicate = typeof total.total_tokens === 'number' && total.total_tokens === lastTotal
+          rawTotal = record(info.total_token_usage),
+          total = codexTotal(rawTotal),
+          usage = codexUsage(record(info.last_token_usage))
+        const inconsistent = () =>
+          issues.set(
+            'codex: skipped inconsistent token counters in CLI history.',
+            Date.parse(timestamp),
+          )
+        if (Object.keys(rawTotal).length && !total) {
+          inconsistent()
+          return
+        }
+        // A request-only event does not establish a new billable request, even
+        // before the first baseline. Its paired notification may arrive later.
+        if (!total) {
+          if (usage)
+            issues.set(
+              'codex: excluded CLI records without cumulative token counters; usage may be incomplete.',
+              Date.parse(timestamp),
+            )
+          return
+        }
+        const previousTotal = lastTotal,
+          acceptedUsage = lastUsage
+        // A stale snapshot must never move the baseline backwards.
+        if (
+          total &&
+          previousTotal &&
+          codexCounters.some((key) => {
+            const previous = previousTotal[key],
+              current = total[key]
+            return previous !== undefined && current !== undefined && current < previous
+          })
+        )
+          return
+        const duplicate =
+          !!total &&
+          !!previousTotal &&
+          codexCounters.every((key) => total[key] === previousTotal[key])
         if (duplicate && !lastRowId) return
         if (!duplicate) {
-          lastTotal = typeof total.total_tokens === 'number' ? total.total_tokens : undefined
+          lastTotal = total
           lastTotalAt = timestamp
           lastRowId = undefined
         }
-        if (typeof usage.input_tokens !== 'number' || typeof usage.output_tokens !== 'number') {
-          if (!duplicate && typeof lastTotal === 'number')
+        if (!usage) {
+          inconsistent()
+          if (!duplicate && lastTotal)
             invalidTotalAt = Math.min(invalidTotalAt ?? Infinity, Date.parse(timestamp))
           return
         }
-        const cacheRead = count(usage.cached_input_tokens),
-          input = Math.max(0, count(usage.input_tokens) - cacheRead),
-          output = count(usage.output_tokens)
+        if (
+          duplicate &&
+          (!acceptedUsage || codexCounters.some((key) => usage[key] !== acceptedUsage[key]))
+        )
+          return
+        if (
+          !duplicate &&
+          total &&
+          codexCounters.some((key) => {
+            const current = total[key],
+              previous = previousTotal?.[key]
+            if (current === undefined) return false
+            return previous === undefined ? current < usage[key] : current - previous !== usage[key]
+          })
+        ) {
+          inconsistent()
+          invalidTotalAt = Math.min(invalidTotalAt ?? Infinity, Date.parse(timestamp))
+          return
+        }
+        if (!total || codexCounters.some((key) => total[key] === undefined))
+          issues.set(
+            'codex: CLI history has partial token counters; reconciliation is limited.',
+            Date.parse(timestamp),
+          )
+        const cacheRead = usage.cached_input_tokens,
+          cacheWrite = usage.cache_write_input_tokens,
+          input = usage.input_tokens - cacheRead - cacheWrite,
+          output = usage.output_tokens
         const id = createHash('sha256')
           .update(JSON.stringify([session, total, usage, timestamp]))
           .digest('hex')
@@ -81,8 +223,8 @@ function createTranscriptUsage(
             startedAt: timestamp,
             finishedAt: timestamp,
             status: 'completed',
-            tokens: input + output + cacheRead,
-            tokenUsage: { input, output, cacheRead, cacheWrite: 0 },
+            tokens: input + output + cacheRead + cacheWrite,
+            tokenUsage: { input, output, cacheRead, cacheWrite },
           },
         }
         if (duplicate && lastRowId) {
@@ -97,6 +239,7 @@ function createTranscriptUsage(
         } else {
           rows.set(id, row)
           lastRowId = id
+          lastUsage = usage
         }
       } else {
         if (value.type !== 'assistant') return
@@ -154,20 +297,23 @@ function createTranscriptUsage(
       if (lastRowId && rows.has(lastRowId)) lastTotalAt = rows.get(lastRowId)!.turn.startedAt
       if (lastTotalAt && Date.parse(lastTotalAt) < since) {
         lastTotal = undefined
+        lastUsage = undefined
         lastRowId = undefined
       }
     },
-    preview(line: unknown): UsageRecord[] {
+    preview(line: unknown): { records: UsageRecord[]; notices: string[] } {
       const preview = createTranscriptUsage(provider, fallbackSession, since, {
         session,
         model,
         lastTotal,
+        lastUsage,
         lastTotalAt,
       })
       preview.accept(line)
-      return preview.records()
+      return { records: preview.records(), notices: preview.notices() }
     },
     records: (): UsageRecord[] => [...rows.values()],
+    notices,
   }
 }
 export function transcriptUsage(
@@ -383,10 +529,12 @@ export class UsageTranscripts {
                   }
                   if (value !== undefined) {
                     const preview = scan.parser.preview(value)
-                    const ids = new Set(preview.map((row) => row.turn.id))
-                    rows = rows.filter((row) => !ids.has(row.turn.id)).concat(preview)
+                    const ids = new Set(preview.records.map((row) => row.turn.id))
+                    rows = rows.filter((row) => !ids.has(row.turn.id)).concat(preview.records)
+                    notices.push(...preview.notices)
                   }
                 }
+                notices.push(...scan.parser.notices())
                 if (scan.incomplete)
                   notices.push(`${provider}: skipped an incomplete transcript row.`)
                 this.cache.set(path, scan)

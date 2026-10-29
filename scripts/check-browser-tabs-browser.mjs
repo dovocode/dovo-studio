@@ -388,6 +388,7 @@ try {
   const browserActions = await page.evaluate(() => window.calls.map((call) => call.action))
   if (!['hard-reload', 'devtools', 'external'].every((action) => browserActions.includes(action)))
     throw new Error('Advanced browser actions stopped working')
+  await page.getByText('Tab & page actions', { exact: true }).click()
   await page.getByRole('button', { name: 'Close current tab', exact: true }).click()
   await page.getByLabel('Browser options', { exact: true }).click()
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'close'))

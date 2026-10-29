@@ -50,7 +50,7 @@ export default function AppearanceScreen() {
           />
           <View
             accessibilityLabel="Status color preview"
-            style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, padding: 16 }}
+            style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, padding: 12 }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <CircleCheck size={16} color={colors.success} accessible={false} />
@@ -134,25 +134,25 @@ export default function AppearanceScreen() {
                 onPress={() => updateMobilePreferences({ themePalette: id })}
                 style={({ pressed }) => ({
                   flexDirection: 'row',
-                  backgroundColor: colors.surface,
+                  backgroundColor: selected ? colors.selection : colors.surface,
                   alignItems: 'center',
-                  minHeight: 70,
-                  padding: 16,
+                  minHeight: 60,
+                  padding: 12,
                   gap: 12,
                   opacity: pressed ? 0.7 : 1,
                 })}
               >
                 <View
-                  style={{ width: 84, flexDirection: 'row', borderRadius: 8, overflow: 'hidden' }}
+                  style={{ width: 72, flexDirection: 'row', borderRadius: 6, overflow: 'hidden' }}
                 >
                   <PalettePreview colors={palette.dark} />
                   <PalettePreview colors={palette.light} />
                 </View>
-                <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                   <Text style={styles.text}>{palette.name}</Text>
                   <Text style={styles.muted}>{palette.description}</Text>
                 </View>
-                {selected && <Icon name="check" size={18} color={colors.text} />}
+                {selected && <Icon name="check" size={16} color={colors.accent} />}
               </Pressable>
             )
           })}
@@ -196,7 +196,7 @@ function PalettePreview({ colors }: { colors: StudioThemeColors }) {
   return (
     <View
       accessible={false}
-      style={{ width: '50%', height: 44, padding: 8, backgroundColor: colors.background, gap: 4 }}
+      style={{ width: '50%', height: 36, padding: 6, backgroundColor: colors.background, gap: 3 }}
     >
       <View
         style={{ height: 3, width: '80%', borderRadius: 2, backgroundColor: colors.foreground }}

@@ -568,6 +568,7 @@ try {
     await page.waitForFunction(() => window.settledPath().includes('settled=25'))
   }
   // Verify the actual app CSS after the render/windowing checks above.
+  await page.evaluate(() => document.documentElement.classList.add('dark'))
   for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
     file.endsWith('.css'),
   ))
@@ -634,6 +635,13 @@ try {
     await readTitle.locator('xpath=ancestor::button[1]').getAttribute('aria-current'),
     'true',
   )
+  assert.match(
+    await readTitle
+      .locator('xpath=ancestor::button[1]')
+      .evaluate((el) => getComputedStyle(el).backgroundImage),
+    /linear-gradient/,
+    'Selected threads retain their gradient highlight',
+  )
   assert.equal(
     await readTitle.evaluate((el) => getComputedStyle(el).color),
     await unreadTitle.evaluate((el) => getComputedStyle(el).color),
@@ -657,8 +665,6 @@ try {
       .evaluate((el) => el.classList.contains('text-status-success')),
     true,
   )
-  if (process.env.DOVO_UI_SCREENSHOT)
-    await page.screenshot({ path: process.env.DOVO_UI_SCREENSHOT })
   const compactBox = await compactTitle.locator('xpath=ancestor::button[1]').boundingBox()
   assert.ok(
     compactBox && compactBox.height <= 38,
@@ -745,6 +751,143 @@ try {
     4,
     'Open, closed, merged and draft PRs have distinct state colors',
   )
+  await page.evaluate(() => {
+    window.setRemoteTasks([])
+    window.setListPreferences({ workingSection: true, collapsedThreadSections: [] })
+    window.publish([
+      window.initialTasks[0],
+      {
+        ...window.initialTasks[0],
+        id: 'pinned-working',
+        title: 'Pinned working thread',
+        pinned: true,
+      },
+      {
+        ...window.initialTasks[1],
+        id: 'waiting',
+        title: 'Waiting thread',
+        waitingForFeedback: true,
+        subagents: [],
+      },
+      { ...window.initialTasks[0], id: 'saving', title: 'Saving thread', runPhase: 'finalizing' },
+    ])
+  })
+  const workingRow = page.getByRole('button', { name: /Running thread/ }).first()
+  const waitingRow = page.getByRole('button', { name: /Waiting thread/ }).first()
+  for (const { row, state } of [
+    { row: workingRow, state: 'Working' },
+    { row: waitingRow, state: 'Waiting' },
+  ]) {
+    const indicator = row.getByLabel(new RegExp('^' + state))
+    await indicator.waitFor()
+    const text = await indicator.innerText()
+    if (state === 'Working')
+      assert.match(text, /^\d+[smh]/, 'Grouped working rows keep their elapsed time')
+    else assert.equal(text, '', 'Waiting sections use an icon without a repeated label')
+    assert.ok(!text.includes(state), `${state} sections omit the repeated label`)
+    assert.equal(await indicator.locator('svg').count(), 1)
+  }
+  assert.match(
+    await page
+      .getByRole('button', { name: /Pinned working thread/ })
+      .first()
+      .innerText(),
+    /Working/,
+  )
+  assert.match(
+    await page
+      .getByRole('button', { name: /Saving thread/ })
+      .first()
+      .innerText(),
+    /Saving changes/,
+  )
+  await page.evaluate(() => window.setListPreferences({ workingSection: false }))
+  assert.match(await workingRow.innerText(), /Working/, 'Ungrouped working rows keep their label')
+  assert.equal(await waitingRow.getByLabel(/^Waiting/).innerText(), '')
+
+  // A provider shell is activity, but is not an agent. Keep it in Open and expose its icon.
+  await page.evaluate(() => {
+    const task = {
+      ...window.initialTasks[0],
+      id: 'terminal-only',
+      title: 'Terminal-only thread',
+      status: 'review',
+      subagents: [
+        {
+          id: 'shell',
+          provider: 'claude',
+          name: 'Background server',
+          kind: 'background',
+          status: 'working',
+          sessionLive: true,
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    }
+    window.terminalTask = task
+    window.setListPreferences({
+      taskGrouping: 'none',
+      workingSection: true,
+      collapsedThreadSections: ['working'],
+    })
+    window.publish([task])
+  })
+  const terminalRow = page
+    .getByRole('button')
+    .filter({
+      has: page.locator('[data-thread-title]').filter({ hasText: 'Terminal-only thread' }),
+    })
+    .first()
+  await terminalRow.waitFor()
+  assert.equal(await terminalRow.getByLabel('1 active terminal', { exact: true }).count(), 1)
+  assert.equal(
+    await terminalRow.locator('xpath=ancestor::details').count(),
+    0,
+    'Terminal-only work stays Open',
+  )
+  await page.evaluate(() => window.publish([{ ...window.terminalTask, status: 'running' }]))
+  assert.equal(
+    await page.getByText('Terminal-only thread', { exact: true }).count(),
+    0,
+    'An agent waiting on the shell stays in the collapsed Working section',
+  )
+  await page.evaluate(() =>
+    window.publish([
+      {
+        ...window.terminalTask,
+        subagents: window.terminalTask.subagents.map((shell) => ({ ...shell, sessionLive: false })),
+      },
+    ]),
+  )
+  await terminalRow.waitFor()
+  assert.equal(await terminalRow.getByLabel('1 active terminal', { exact: true }).count(), 0)
+
+  if (process.env.DOVO_UI_SCREENSHOT) {
+    await page.evaluate(() => {
+      window.setRemoteTasks([])
+      window.setListPreferences({
+        taskGrouping: 'status',
+        taskSort: 'newest',
+        workingSection: true,
+      })
+      window.publish([...window.initialTasks.slice(0, 5), window.initialTasks[303]])
+    })
+    await page.getByText('Parent thread', { exact: true }).click()
+    const subthreads = page.getByRole('button', {
+      name: 'Subthreads for Parent thread',
+      exact: true,
+    })
+    if ((await subthreads.getAttribute('aria-expanded')) !== 'true') await subthreads.click()
+    const finished = page.getByRole('button', {
+      name: 'Finished threads for Parent thread',
+      exact: true,
+    })
+    if ((await finished.getAttribute('aria-expanded')) !== 'true') await finished.click()
+    await page.getByRole('button', { name: 'Open child thread Child thread' }).click()
+    await page.mouse.move(800, 650)
+    await page.screenshot({ path: process.env.DOVO_UI_SCREENSHOT })
+  }
   assert.deepEqual(errors, [])
   console.log(
     `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero tree renders for 30 large Studio/native child-payload updates and one tree render per visible activity/name change; selector isolation, latest-entry commands, nested thread navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,

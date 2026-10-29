@@ -2,6 +2,7 @@ import { SettingsScrollView } from './settings-search'
 import { router } from 'expo-router'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { View } from 'react-native'
 import { requireOptionalNativeModule } from 'expo'
 import type { ExpoSpeechRecognitionModule } from 'expo-speech-recognition'
 import { getAvailableVoicesAsync, type Voice } from 'expo-speech'
@@ -30,19 +31,21 @@ function BrowserCleanupMinutes({
   const [text, setText] = useState(String(value))
   useEffect(() => setText(String(value)), [value])
   return (
-    <Field
-      label={label}
-      value={text}
-      keyboardType="number-pad"
-      onChangeText={(text) => {
-        setText(text)
-        if (/^\d+$/.test(text)) {
-          const minutes = Number(text)
-          if (minutes <= 525600) onSave(minutes)
-        }
-      }}
-      onBlur={() => setText(String(value))}
-    />
+    <View style={{ padding: 12 }}>
+      <Field
+        label={label}
+        value={text}
+        keyboardType="number-pad"
+        onChangeText={(text) => {
+          setText(text)
+          if (/^\d+$/.test(text)) {
+            const minutes = Number(text)
+            if (minutes <= 525600) onSave(minutes)
+          }
+        }}
+        onBlur={() => setText(String(value))}
+      />
+    </View>
   )
 }
 
@@ -315,6 +318,11 @@ export function ConversationSettingsScreen() {
           label="Show tool call details"
           value={preferences.showToolDetails}
           onValueChange={(showToolDetails) => updateMobilePreferences({ showToolDetails })}
+        />
+        <SettingsSwitchRow
+          label="Show context usage"
+          value={preferences.showContextUsage}
+          onValueChange={(showContextUsage) => updateMobilePreferences({ showContextUsage })}
         />
         <SettingsSwitchRow
           label="Keep the screen on while a task runs"

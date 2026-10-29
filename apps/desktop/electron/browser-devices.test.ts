@@ -96,7 +96,9 @@ const flush = async () => {
 it('requires an exact chosen device; transient grants expire on navigation', async () => {
   const { contents, permitted, choose, session } = fixture()
   expect(permitted()).toBe(false)
+  expect(browserPermissions('work').site(origin).requested).toEqual([])
   const callback = choose()
+  expect(browserPermissions('work').site(origin).requested).toEqual(['usb'])
   f.choosers[0]!.resolve({ id: usb.deviceId, remember: false })
   await flush()
   expect(callback).toHaveBeenCalledExactlyOnceWith(usb.deviceId)

@@ -22,6 +22,7 @@ export const mobileSettingsFields: Readonly<Record<string, readonly string[]>> =
     'Collapse changed files by default',
     'Tool activity',
     'Show tool call details',
+    'Show context usage',
     'Keep the screen on while a task runs',
   ],
   '/settings/speech': [

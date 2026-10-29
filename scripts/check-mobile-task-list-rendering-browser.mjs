@@ -49,7 +49,7 @@ const stubs = [
   { path: 'react-native', contents: controls },
   {
     path: 'lucide-react-native',
-    contents: `const Icon=({color,accessibilityLabel,size=12,style})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0,transform:style?.transform?.map(value=>'translateY('+value.translateY+'px)').join(' ')}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Save,Icon as Network};`,
+    contents: `const Icon=({color,accessibilityLabel,size=12,style})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0,transform:style?.transform?.map(value=>'translateY('+value.translateY+'px)').join(' ')}}/>;export {Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Save,Icon as SquareTerminal,Icon as Network};`,
   },
   {
     path: '@dovo/protocol',
@@ -385,12 +385,18 @@ try {
             const execution = await row.getByTestId('thread-execution').boundingBox()
             assert.ok(
               Math.abs(title.y + title.height / 2 - execution.y - execution.height / 2) < 1,
-              'Runtime shares the projectless title line',
+              'Projectless execution metadata shares the title line',
             )
           }
           const project = await row
             .getByText(id === 'task-1' ? 'No Project' : 'Project', { exact: true })
             .boundingBox()
+          const projectIcon = await row.getByTestId('Thread project icon').boundingBox()
+          assert.ok(
+            Math.abs(projectIcon.y + projectIcon.height / 2 - project.y - project.height / 2) < 1,
+            'Project icons stay inline with their names at every text size',
+          )
+          assert.ok(projectIcon.x + projectIcon.width <= project.x)
           assert.ok(
             project.y + project.height <= title.y,
             JSON.stringify({ id, width, scale, project, title }),
@@ -475,7 +481,7 @@ try {
         assert.ok(Math.abs(provider.y + provider.height / 2 - icon.y - icon.height / 2) < 1)
         assert.ok(
           provider.y >= project.y + project.height,
-          'Execution indicators follow the header',
+          'Comfortable execution indicators follow the project and title',
         )
         assert.equal(touch.width, 44)
         assert.equal(touch.height, 44)
@@ -573,10 +579,7 @@ try {
             )
             assert.ok(icon.x + icon.width <= indicator.x, 'Subthreads precede harness')
             const runtimeIcon = row.locator('[data-runtime-icon]')
-            assert.equal(
-              await runtimeIcon.count(),
-              Number(repositoryId === 'scratch' || showDevice),
-            )
+            assert.equal(await runtimeIcon.count(), Number(showDevice))
             if (await runtimeIcon.count()) {
               const runtime = await runtimeIcon.boundingBox()
               assert.ok(icon.x + icon.width <= runtime.x, 'Subthreads precede runtime')
@@ -628,6 +631,14 @@ try {
     )
     await page.evaluate(() => window.publish({ parent: { agentId: 'agent' } }))
     await page.screenshot({ path: '/tmp/dovo-compact-uniform-rows.png' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => {
+      window.rowFontScale = 1
+      window.setListPreferences({ threadDensity: 'compact' })
+    })
+    await page.screenshot({ path: '/tmp/dovo-mobile-thread-overview-compact.png' })
+    await page.evaluate(() => window.setListPreferences({ threadDensity: 'comfortable' }))
+    await page.screenshot({ path: '/tmp/dovo-mobile-thread-overview-comfortable.png' })
     assert.deepEqual(errors, [])
     console.log(
       'Single-line settled rows and uniform open rows verified across phone and iPad widths and 1/1.5/2x text sizes.',
@@ -669,12 +680,12 @@ try {
   assert.equal(
     await densityTitle.evaluate((el) => el.parentElement.parentElement.children.length),
     3,
-    'Compact preserves project/status, title and checkout context',
+    'Compact follows desktop project/status, title and checkout hierarchy',
   )
   assert.equal(
     await densityTitle.evaluate((el) => el.parentElement.children.length),
     1,
-    'Compact title has its own row',
+    'Compact gives the title its own line',
   )
   const historyInput = page.getByRole('textbox', { name: 'Search tasks', exact: true })
   await historyInput.fill('old history')
@@ -1219,6 +1230,152 @@ try {
   await page.getByRole('button', { name: /^Settled,/ }).click()
   await footer.waitFor()
   assert.equal(await page.getByTestId('Task task-0').count(), 0)
+  await page.evaluate(() => {
+    window.setListPreferences({
+      taskGrouping: 'none',
+      workingSection: true,
+      collapsedThreadSections: ['working'],
+    })
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      terminals: [{ id: 'terminal', taskId: 'running', title: 'Shell', exited: false }],
+      workspace: {
+        ...window.snapshot.workspace,
+        tasks: window.snapshot.workspace.tasks
+          .filter((task) => task.id === 'running')
+          .map((task) => ({
+            ...task,
+            status: 'review',
+            subagents: [
+              {
+                id: 'shell',
+                provider: 'claude',
+                name: 'Dev server',
+                kind: 'background',
+                sessionLive: true,
+                status: 'working',
+                startedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            ],
+          })),
+      },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  await page.getByTestId('Task running').waitFor()
+  assert.equal(
+    await page
+      .getByTestId('Task running')
+      .getByLabel('2 active terminals', { exact: true })
+      .count(),
+    1,
+  )
+  await page.evaluate(() => {
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      workspace: {
+        ...window.snapshot.workspace,
+        tasks: window.snapshot.workspace.tasks.map((task) => ({
+          ...task,
+          status: 'running',
+          turns: [
+            {
+              id: 'active-turn',
+              assistantId: 'reply',
+              agentId: 'agent',
+              provider: 'codex',
+              model: 'fixture',
+              status: 'running',
+              startedAt: new Date(Date.now() - 65000).toISOString(),
+            },
+          ],
+        })),
+      },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  await page.getByTestId('Task running').waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: /^Working,/ }).click()
+  await page.getByTestId('Task running').waitFor()
+  const groupedStatus = page.getByTestId('Task running').getByTestId('Thread status')
+  assert.ok(
+    !/Working/.test(await groupedStatus.innerText()),
+    'Grouped status keeps only the indicator and elapsed time',
+  )
+  assert.match(await groupedStatus.getAttribute('aria-label'), /^Working/)
+  assert.ok(
+    (await groupedStatus.innerText()).trim().length > 0,
+    'Working elapsed time remains visible',
+  )
+  await page.evaluate(() => {
+    const task = window.snapshot.workspace.tasks[0]
+    window.setListPreferences({
+      threadSectionOrder: ['working', 'active', 'waiting', 'snoozed', 'settled'],
+      collapsedThreadSections: ['working'],
+    })
+    window.snapshot = {
+      ...window.snapshot,
+      revision: window.snapshot.revision + 1,
+      workspace: {
+        ...window.snapshot.workspace,
+        tasks: [
+          task,
+          { ...task, id: 'pinned-working', title: 'Pinned working', pinned: true },
+          {
+            ...task,
+            id: 'waiting',
+            title: 'Waiting task',
+            status: 'review',
+            subagents: [],
+            waitingForFeedback: true,
+            turns: [
+              {
+                ...task.turns[0],
+                status: 'completed',
+                finishedAt: new Date(Date.now() - 600000).toISOString(),
+              },
+            ],
+          },
+        ],
+      },
+    }
+    window.pushSnapshot(window.snapshot)
+  })
+  const workingHeader = page.getByRole('button', { name: /^Working,/ })
+  const openHeader = page.getByRole('button', { name: /^Open,/ })
+  const waitingHeader = page.getByRole('button', { name: /^Waiting,/ })
+  await waitingHeader.waitFor()
+  assert.equal(
+    await workingHeader.evaluate(
+      (element, open) =>
+        !!(element.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING),
+      await openHeader.elementHandle(),
+    ),
+    true,
+  )
+  assert.equal(
+    await openHeader.evaluate(
+      (element, waiting) =>
+        !!(element.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING),
+      await waitingHeader.elementHandle(),
+    ),
+    true,
+  )
+  assert.match(
+    await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
+    /Working/,
+  )
+  const waitingStatus = page.getByTestId('Task waiting').getByTestId('Thread status')
+  assert.doesNotMatch(await waitingStatus.innerText(), /Waiting/)
+  assert.match(await waitingStatus.innerText(), /\d+m/)
+  await page.evaluate(() => window.setListPreferences({ taskGrouping: 'project' }))
+  assert.match(
+    await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
+    /Working/,
+  )
   console.log(
     'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
   )

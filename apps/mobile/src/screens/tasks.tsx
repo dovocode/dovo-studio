@@ -79,7 +79,7 @@ import { useTheme } from '../ui/theme'
 type TaskListItem =
   | { kind: 'history'; count: number }
   | { kind: 'group'; key: string; name: string; count: number }
-  | { kind: 'task'; entry: RuntimeTask }
+  | { kind: 'task'; entry: RuntimeTask; section?: string }
 const sortOptions = taskSortOptions.filter((option) => option.id !== 'status')
 export default function TasksScreen({ archived = false }: { archived?: boolean }) {
   const { colors, styles } = useTheme()
@@ -293,11 +293,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         (group) => group.key,
         preferences.threadSectionOrder,
       ).flatMap((section, index) => {
-        if (section.key !== 'active' || grouping === 'project') return section.items
-        if (index === 0) return section.items.filter((item) => item.kind === 'task')
-        return collapsed.has('active')
-          ? section.items.filter((item) => item.kind === 'group')
-          : section.items
+        const items = section.items.map((item): TaskListItem =>
+          item.kind === 'task' ? { ...item, section: section.key } : item,
+        )
+        if (section.key !== 'active' || grouping === 'project') return items
+        if (index === 0 && !collapsed.has('active'))
+          return items.filter((item) => item.kind === 'task')
+        return collapsed.has('active') ? items.filter((item) => item.kind === 'group') : items
       })
     const attention = tasks.filter(({ task, needsInput }) => needsInput && !task.archived)
     const attentionItems: TaskListItem[] = attention.length
@@ -480,13 +482,17 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     ['settled', 'snoozed', 'working', 'waiting', 'needs-input', 'active'].includes(key)
       ? key
       : `${grouping}:${key}`
-  const collapsedHeaders = listItems.filter(
-    (item): item is Extract<TaskListItem, { kind: 'group' }> =>
-      item.kind === 'group' && collapsed.has(sectionKey(item.key)),
-  )
-  const expandedItems = listItems.filter(
-    (item) => item.kind !== 'group' || !collapsed.has(sectionKey(item.key)),
-  )
+  // Only trailing collapsed sections can move to the bottom without changing their order.
+  let footerStart = listItems.length
+  while (footerStart > 0) {
+    const item = listItems[footerStart - 1]
+    if (item.kind !== 'group' || !collapsed.has(sectionKey(item.key))) break
+    footerStart--
+  }
+  const expandedItems = listItems.slice(0, footerStart)
+  const collapsedHeaders = listItems
+    .slice(footerStart)
+    .filter((item): item is Extract<TaskListItem, { kind: 'group' }> => item.kind === 'group')
   const renderSectionHeader = (item: Extract<TaskListItem, { kind: 'group' }>) => (
     <Pressable
       accessibilityRole="button"
@@ -507,17 +513,27 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         }
         updateMobilePreferences({ collapsedThreadSections: [...next] })
       }}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 }}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        minHeight: 44,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+      }}
     >
       <Icon
         name={collapsed.has(sectionKey(item.key)) ? 'next' : 'down'}
         size={12}
         color={colors.muted}
       />
-      <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontWeight: '600' }]}>
+      <Text
+        numberOfLines={1}
+        style={[styles.muted, { flexShrink: 1, fontSize: 12, fontWeight: '500' }]}
+      >
         {item.name}
       </Text>
-      <Text style={styles.muted}>{item.count}</Text>
+      <Text style={[styles.muted, { fontSize: 11 }]}>{item.count}</Text>
     </Pressable>
   )
   const bulk = async (
@@ -685,6 +701,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             inputRef={searchInput}
             label={archived ? 'Search archived tasks' : 'Search tasks'}
             placeholder="Search threads"
+            style={{ fontSize: 15 }}
             clearButtonMode="while-editing"
             returnKeyType="search"
             value={search}
@@ -900,8 +917,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                       backgroundColor:
                         selecting && selected.has(item.entry.key)
                           ? colors.elevated
-                          : colors.surface,
-                      borderRadius: 24,
+                          : colors.background,
+                      borderRadius: 12,
                       overflow: 'hidden',
                       marginBottom: 12,
                       padding: 4,
@@ -913,6 +930,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             >
               <TaskListRow
                 density={preferences.threadDensity ?? 'compact'}
+                hideStatusLabel={item.section === 'working' || item.section === 'waiting'}
                 row={rowData.get(item.entry.key)!.row}
                 needsInput={item.entry.needsInput}
                 thread={tree.nodes.get(item.entry.key)}

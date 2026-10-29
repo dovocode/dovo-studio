@@ -17,7 +17,7 @@ import {
 } from '@dovo/studio-ui'
 
 const item =
-  'flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[disabled]:opacity-50 data-[highlighted]:bg-accent/55 motion-reduce:transition-none'
+  'flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[disabled]:opacity-50 data-[highlighted]:bg-[var(--studio-selected-fill)] data-[highlighted]:[background-image:var(--studio-selected-gradient)] motion-reduce:transition-none'
 
 /** One-tap project commands ("Run tests", "Start dev server") in the task's terminal. */
 export function TaskProjectActions({
@@ -75,7 +75,7 @@ export function TaskProjectActions({
           <DropdownMenu.Content
             sideOffset={4}
             align="end"
-            className="z-50 min-w-56 max-w-80 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+            className="studio-menu-surface z-50 min-w-56 max-w-80 rounded-md border bg-popover p-1 text-popover-foreground"
           >
             {actions.map((action) => (
               <DropdownMenu.Item

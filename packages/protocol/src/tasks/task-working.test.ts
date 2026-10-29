@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import { decode, taskSchema, type Task, type Subagent, type ThreadWatchSummary } from '../index.js'
-import { taskIsWorking } from './task-working.js'
+import { taskIsWorking, taskBackgroundTerminalCount } from './task-working.js'
 import { hasUnreadTaskActivity, hasUnviewedTaskCompletion } from '../workspace.js'
 
 const parent = decode(taskSchema, {
@@ -72,4 +72,20 @@ it('keeps remote delegated children active, including unknown/offline state, unt
     false,
   )
   expect(taskIsWorking({ ...parent, threadWatches: [{ ...watch, delegated: false }] })).toBe(false)
+})
+
+it('keeps terminal-only activity Open while an agent waiting on a shell stays Working', () => {
+  const shell: Subagent = { ...child, provider: 'claude', kind: 'background', background: true }
+  const task = { ...parent, subagents: [shell] }
+  expect(taskIsWorking(task)).toBe(false)
+  expect(taskBackgroundTerminalCount(task)).toBe(1)
+  expect(taskIsWorking({ ...task, status: 'running' })).toBe(true)
+  expect(taskIsWorking({ ...parent, subagents: [{ ...child, background: true }] })).toBe(true)
+  expect(taskIsWorking({ ...task, subagents: [{ ...shell, completion: 'pending' }] })).toBe(false)
+  for (const stopped of [
+    { ...shell, sessionLive: false },
+    { ...shell, status: 'completed' as const, finishedAt: '2026-10-29T12:00:00Z' },
+    { ...shell, status: 'stopped' as const },
+  ])
+    expect(taskBackgroundTerminalCount({ subagents: [stopped] })).toBe(0)
 })

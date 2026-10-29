@@ -1,4 +1,4 @@
-import { Button, Host } from '@expo/ui/swift-ui'
+import { Button, Host, Menu } from '@expo/ui/swift-ui'
 import {
   accessibilityAddTraits,
   accessibilityLabel,
@@ -15,8 +15,9 @@ import {
 import { isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect'
 import { Platform, Pressable, View } from 'react-native'
 import { Icon, type IconName } from './icon'
-import { NativeIcon } from './native-icon'
-import { useEffect, useRef } from 'react'
+import { NativeIcon, NativeMenuButton } from './native-icon'
+import type { MenuAction } from './action-menu'
+import { useRef } from 'react'
 import { useTheme } from '../theme'
 
 type IconButtonProps = {
@@ -24,6 +25,7 @@ type IconButtonProps = {
   icon: IconName
   onPress: () => void
   onLongPress?: () => void
+  menuActions?: MenuAction[]
   disabled?: boolean
   prominent?: boolean
   selected?: boolean
@@ -104,22 +106,93 @@ function NativeIconButton({
   )
 }
 
+/** Native menu used by composer controls; a primary action makes the menu open on hold. */
+export function NativeActionMenu({
+  label,
+  icon,
+  menuActions,
+  onPrimaryAction,
+  disabled,
+  size = 44,
+  variant = 'plain',
+  color,
+}: {
+  label: string
+  icon: IconName
+  menuActions: MenuAction[]
+  onPrimaryAction?: () => void
+  disabled?: boolean
+  size?: 44 | 48
+  variant?: 'glass' | 'plain' | 'filled'
+  color?: string
+}) {
+  const { colors, mode: appearanceMode } = useTheme()
+  return (
+    <Host
+      ignoreSafeArea="all"
+      colorScheme={appearanceMode}
+      style={{ width: size, height: size, flexShrink: 0 }}
+    >
+      <Menu
+        testID={label}
+        label={
+          <NativeIcon
+            name={icon}
+            size={icon === 'stop' ? 18 : 20}
+            color={variant === 'filled' ? colors.onAccent : (color ?? colors.text)}
+            modifiers={[
+              ...(variant === 'filled'
+                ? [
+                    frame({ width: size - 12, height: size - 12 }),
+                    background(colors.action, shapes.circle()),
+                  ]
+                : []),
+              frame({ width: size, height: size }),
+            ]}
+          />
+        }
+        onPrimaryAction={
+          onPrimaryAction
+            ? () => {
+                if (!disabled) onPrimaryAction()
+              }
+            : undefined
+        }
+        modifiers={[
+          buttonStyle('plain'),
+          frame({ width: size, height: size }),
+          contentShape(shapes.circle(), ['interaction', 'accessibility']),
+          disabledModifier(
+            !!disabled && (!onPrimaryAction || menuActions.every((action) => action.disabled)),
+          ),
+          accessibilityLabel(label),
+        ]}
+      >
+        {menuActions.map((action) => (
+          <NativeMenuButton
+            key={action.label}
+            testID={action.label}
+            label={action.title}
+            icon={action.icon}
+            modifiers={[disabledModifier(action.disabled), accessibilityLabel(action.label)]}
+            onPress={action.onPress}
+          />
+        ))}
+      </Menu>
+    </Host>
+  )
+}
+
 export function IconButton(props: IconButtonProps) {
   const { colors, mode: appearanceMode } = useTheme()
   const held = useRef(false)
-  const releaseFrame = useRef<number | undefined>(undefined)
-  useEffect(
-    () => () => {
-      if (releaseFrame.current !== undefined) cancelAnimationFrame(releaseFrame.current)
-    },
-    [],
-  )
 
   const {
     label,
     icon,
     onPress,
     onLongPress,
+    menuActions,
     disabled,
     prominent,
     selected,
@@ -127,6 +200,20 @@ export function IconButton(props: IconButtonProps) {
     variant = 'plain',
     color,
   } = props
+  if (Platform.OS === 'ios' && menuActions) {
+    return (
+      <NativeActionMenu
+        label={label}
+        icon={icon}
+        menuActions={menuActions}
+        onPrimaryAction={onLongPress ? onPress : undefined}
+        disabled={disabled}
+        size={size}
+        variant={variant}
+        color={color}
+      />
+    )
+  }
   // The filled Send/Stop control belongs to the TextInput's React Native responder tree.
   // A SwiftUI button can blur the input on touch-down, moving the composer before touch-up
   // and cancelling the press. Keep native SwiftUI controls for the other toolbar buttons.
@@ -141,32 +228,29 @@ export function IconButton(props: IconButtonProps) {
         <NativeIconButton {...props} />
       </Host>
     )
+  const triggerDisabled =
+    !!disabled && (!onLongPress || !menuActions?.some((action) => !action.disabled))
   return (
     <Pressable
       testID={label}
       accessibilityLabel={label}
       accessibilityRole="button"
-      accessibilityState={{ disabled, selected }}
-      disabled={disabled}
+      accessibilityState={{ disabled: triggerDisabled, selected }}
+      disabled={triggerDisabled}
       onPressIn={() => {
         held.current = false
       }}
       onPress={() => {
-        if (!held.current) onPress()
+        if (!held.current && !disabled) onPress()
       }}
       onLongPress={
         onLongPress
           ? () => {
               held.current = true
+              onLongPress()
             }
           : undefined
       }
-      onPressOut={(event) => {
-        if (!held.current || event.nativeEvent.touches.length) return
-        // Finish the original responder's release before presenting a different native window.
-        // Otherwise iOS can deliver its touch-up to the new menu/backdrop and dismiss it.
-        releaseFrame.current = requestAnimationFrame(() => onLongPress?.())
-      }}
       accessibilityHint={onLongPress ? 'Hold for message actions' : undefined}
       accessibilityActions={
         onLongPress ? [{ name: 'messageActions', label: 'Message actions' }] : undefined

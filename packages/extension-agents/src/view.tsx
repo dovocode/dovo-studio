@@ -55,7 +55,7 @@ function LinkCard({
     <div
       data-setting-label={title}
       tabIndex={-1}
-      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/30 p-4"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/20 p-3"
     >
       <div className="min-w-0 flex-1">
         <h2 className="text-xs font-medium">{title}</h2>
@@ -69,7 +69,7 @@ function EnvironmentTools() {
   const { connected, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
   return (
-    <details className="rounded-xl border p-4">
+    <details className="rounded-xl border border-border/60 bg-muted/20 p-3">
       <summary
         data-setting-label="Installations & sign-in"
         className="cursor-pointer text-sm font-medium"
@@ -88,7 +88,7 @@ function EnvironmentTools() {
       <fieldset disabled={!connected} className="mt-4 space-y-4">
         <HarnessUpdates />
         <AcpRegistrySettings />
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/40 p-3">
           <p className="text-xs text-muted-foreground">
             Titles and dictation cleanup use their own model on each computer.
           </p>

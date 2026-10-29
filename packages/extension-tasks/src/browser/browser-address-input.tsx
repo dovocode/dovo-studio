@@ -69,7 +69,7 @@ export function BrowserAddressInput({
   bookmarks: BrowserTab[]
   visits: BrowserTab[]
   profileId: string
-  onChoose: (tab: BrowserTab) => void
+  onChoose: (tab: BrowserTab, newTab: boolean) => void
   onEditing: (editing: boolean) => void
 }) {
   const id = useId()
@@ -81,12 +81,12 @@ export function BrowserAddressInput({
       ? browserAddressSuggestions(typed ? value : '', tabs, bookmarks, visits, profileId)
       : []
   const shown = suggestions.length > 0
-  const choose = (tab: BrowserTab) => {
+  const choose = (tab: BrowserTab, newTab: boolean) => {
     setOpen(false)
     onEditing(false)
     onChange(tab.url)
     inputRef.current?.blur()
-    onChoose(tab)
+    onChoose(tab, newTab)
   }
   return (
     <div className="min-w-0 flex-1 self-stretch">
@@ -140,13 +140,13 @@ export function BrowserAddressInput({
           }
           if (event.key === 'Enter' && shown && active >= 0 && suggestions[active]) {
             event.preventDefault()
-            choose(suggestions[active].tab)
+            choose(suggestions[active].tab, event.ctrlKey || event.metaKey)
           } else if (event.key === 'Enter') {
             setOpen(false)
           }
         }}
         placeholder={shared ? 'Search or enter address' : 'Enter website address'}
-        className="h-full min-w-0 border-0 bg-transparent px-0 text-center text-[13px] shadow-none focus:text-left focus-visible:outline-none focus-visible:ring-0 [@media(pointer:coarse)]:text-base"
+        className="h-full min-w-0 border-0 bg-transparent px-0 text-left text-[13px] shadow-none focus-visible:outline-none focus-visible:ring-0 [@media(pointer:coarse)]:text-base"
       />
       {shown && (
         <div
@@ -164,7 +164,14 @@ export function BrowserAddressInput({
                 role="option"
                 aria-selected={index === active}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => choose(tab)}
+                onClick={(event) => choose(tab, event.ctrlKey || event.metaKey)}
+                onContextMenu={(event) => {
+                  // macOS delivers Control-click as a context menu event.
+                  if (event.ctrlKey) {
+                    event.preventDefault()
+                    choose(tab, true)
+                  }
+                }}
                 onPointerMove={() => setActive(index)}
                 className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs ${index === active ? 'bg-accent' : 'hover:bg-accent/50'}`}
               >
@@ -173,9 +180,7 @@ export function BrowserAddressInput({
                   <p className="truncate font-medium">{tab.title || tab.url}</p>
                   <p className="truncate text-muted-foreground">{tab.url}</p>
                 </div>
-                <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {source === 'Tab' ? 'Switch to tab' : source}
-                </span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">{source}</span>
               </div>
             )
           })}

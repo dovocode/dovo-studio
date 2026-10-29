@@ -34,6 +34,7 @@ export function CheckpointFiles({
         onSelect={onOpen}
         scrollable={false}
         defaultExpandedDepth={0}
+        showChangeBars
       />
     </View>
   )

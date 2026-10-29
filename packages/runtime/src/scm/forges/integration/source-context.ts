@@ -109,7 +109,7 @@ export async function verifySourceContext(
   const unauthorized = () => {
     authorized = false
     if (verification) verification.valid = false
-    if (connection) connections.forgetCredentials(connection.id)
+    if (connection && connection.provider !== 'github') connections.forgetCredentials(connection.id)
   }
   validate()
   const provider = connection?.provider ?? 'github'
@@ -118,13 +118,13 @@ export async function verifySourceContext(
   let account: string
   if (provider === 'github') {
     if (connection && refresh) connections.forgetCredentials(connection.id)
-    const token = connection ? await connections.githubToken(connection.id, cwd) : undefined
-    github = token
+    const selected = connection ? await connections.githubCredential(connection.id, cwd) : undefined
+    github = selected?.token
       ? {
           host,
-          token,
+          token: selected.token,
           env: connection?.cliEnv,
-          onUnauthorized: unauthorized,
+          onUnauthorized: selected.onUnauthorized,
           beforeDispatch: validate,
         }
       : await git.githubCredential(cwd, host, connection?.cliEnv, true)

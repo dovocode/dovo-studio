@@ -169,7 +169,8 @@ export class GithubTransport {
     const pages: string[] = []
     let total = 0
     const limit = options.maxBytes ?? RESPONSE_BYTES
-    let url: URL | undefined = githubApiUrl(request.host, request.path)
+    const apiUrl = githubApiUrl(request.host, request.path)
+    let url: URL | undefined = apiUrl
     for (const [key, value] of request.query) url.searchParams.append(key, value)
     const body =
       request.body ??
@@ -267,8 +268,8 @@ export class GithubTransport {
       }
       const link = request.paginate ? nextLink(linkHeader) : undefined
       url = link ? new URL(link) : undefined
-      if (url && url.host !== githubApiUrl(request.host, request.path).host)
-        throw new GithubApiError(502, 'GitHub pagination left its API host')
+      if (url && (url.origin !== apiUrl.origin || url.username || url.password))
+        throw new GithubApiError(502, 'GitHub pagination returned an unsafe API URL')
     }
     if (url)
       throw new GithubApiError(
@@ -342,46 +343,84 @@ export class GithubCredentials {
     if (host === 'github.com') return token || undefined
     return enterprise || (env.GH_HOST === host ? token : undefined) || undefined
   }
-  private key(host: string, cwd: string, env: NodeJS.ProcessEnv) {
-    return JSON.stringify([host, cwd, env.GH_CONFIG_DIR ?? '', env.GH_HOST ?? ''])
+  private key(host: string, cwd: string, env: NodeJS.ProcessEnv, executable = this.executable()) {
+    // Config paths and custom wrappers can change the selected login without a
+    // checkout change. Hash the effective context; never put its secrets in keys.
+    return createHash('sha256')
+      .update(
+        JSON.stringify([
+          executable,
+          host,
+          cwd,
+          Object.entries(env).sort(([a], [b]) => a.localeCompare(b)),
+        ]),
+      )
+      .digest('hex')
   }
   token(host: string, cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
+    return this.resolve(host, cwd, env).value
+  }
+  /** Bind rejection to the exact source and cache generation used by this request. */
+  async capture(host: string, cwd: string, env: NodeJS.ProcessEnv) {
+    const source = this.resolve(host, cwd, env)
+    return { token: await source.value, onUnauthorized: source.onUnauthorized }
+  }
+  private resolve(host: string, cwd: string, env: NodeJS.ProcessEnv) {
     const fromEnvironment = GithubCredentials.environmentToken(host, env)
-    if (fromEnvironment) return Promise.resolve(fromEnvironment)
-    const key = this.key(host, cwd, env)
+    if (fromEnvironment)
+      return { value: Promise.resolve(fromEnvironment), onUnauthorized: () => {} }
+    const executable = this.executable()
+    const key = this.key(host, cwd, env, executable)
     const now = Date.now()
     const cached = this.tokens.get(key)
-    if (cached && cached.expires > now) return cached.value
-    const value = this.runner(this.executable(), ['auth', 'token', '--hostname', host], {
+    if (cached && cached.expires > now) {
+      this.tokens.delete(key)
+      this.tokens.set(key, cached)
+      return {
+        value: cached.value,
+        onUnauthorized: () => {
+          if (this.tokens.get(key) === cached) this.tokens.delete(key)
+        },
+      }
+    }
+    const value = this.runner(executable, ['auth', 'token', '--hostname', host], {
       cwd,
       // Never let gh print the token into a debug log or wait for a prompt.
       env: { ...env, GH_DEBUG: '', GH_PROMPT_DISABLED: '1' },
       timeout: 20000,
       maxBuffer: 1024 * 1024,
-    }).then(({ stdout }) => {
-      const token = stdout.trim()
-      if (!token || /\s/.test(token))
-        throw new GithubApiError(
-          401,
-          `No GitHub login for ${host}. Run gh auth login --hostname ${host} on the runtime host.`,
-        )
-      return token
     })
+      .then(({ stdout }) => {
+        const token = stdout.trim()
+        if (!token || /\s/.test(token))
+          throw new GithubApiError(
+            401,
+            `No GitHub login for ${host}. Run gh auth login --hostname ${host} on the runtime host.`,
+          )
+        return token
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ProcessError)
+          throw new GithubApiError(
+            401,
+            `No GitHub login for ${host}. Run gh auth login --hostname ${host} on the runtime host.`,
+          )
+        throw error
+      })
     const entry = { value, expires: now + TOKEN_TTL }
     this.tokens.set(key, entry)
     value.catch(() => {
       if (this.tokens.get(key) === entry) this.tokens.delete(key)
     })
-    if (this.tokens.size > 200)
-      for (const [old, item] of this.tokens) if (item.expires <= now) this.tokens.delete(old)
-    return value.catch((error: unknown) => {
-      if (error instanceof ProcessError)
-        throw new GithubApiError(
-          401,
-          `No GitHub login for ${host}. Run gh auth login --hostname ${host} on the runtime host.`,
-        )
-      throw error
-    })
+    // Environment-aware sources can change frequently. Keep a hard bound even
+    // when every entry is unexpired; evicting a pending lookup does not cancel it.
+    while (this.tokens.size > 200) this.tokens.delete(this.tokens.keys().next().value!)
+    return {
+      value,
+      onUnauthorized: () => {
+        if (this.tokens.get(key) === entry) this.tokens.delete(key)
+      },
+    }
   }
   invalidate(host: string, cwd: string, env: NodeJS.ProcessEnv) {
     this.tokens.delete(this.key(host, cwd, env))

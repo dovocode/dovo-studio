@@ -1,3 +1,4 @@
+import { projectIcon, projectIconColor, projectIconInitials } from '@dovo/protocol'
 import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import type { ReactNode } from 'react'
 import {
@@ -7,7 +8,7 @@ import {
   projectDefaultServer,
   type Repository,
 } from '@dovo/protocol'
-import { Pressable, View } from 'react-native'
+import { Image, Pressable, View } from 'react-native'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Sheet } from '../../ui/layout/sheet'
 import { SearchField } from '../../ui/controls/field'
@@ -194,6 +195,33 @@ export function FolderPicker({
   const projectSelected = autoProject || (!!selected && selected.kind !== 'scratch')
   const selectedProject = !autoProject && selected?.kind !== 'scratch' ? selected : undefined
   const prominentLabel = selectedProject?.name ?? 'Scope'
+  const selectedIcon = projectIcon(selectedProject)
+  const projectMark = selectedProject ? (
+    <View
+      testID="Selected project icon"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{
+        width: 16,
+        height: 16,
+        borderRadius: 4,
+        overflow: 'hidden',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: selectedIcon ? 'transparent' : projectIconColor(selectedProject),
+      }}
+    >
+      {selectedIcon ? (
+        <Image source={{ uri: selectedIcon }} style={{ width: 16, height: 16 }} />
+      ) : (
+        <Text style={{ fontSize: 8, color: '#fff', fontWeight: '700' }}>
+          {projectIconInitials(selectedProject)}
+        </Text>
+      )}
+    </View>
+  ) : (
+    <Icon name="scope" size={15} color={colors.muted} />
+  )
   const scopeDisabled = locked || (!selectedProject && !onAuto)
   const projectLabel = autoProject
     ? onAuto
@@ -229,19 +257,25 @@ export function FolderPicker({
               minHeight: 44,
               paddingHorizontal: 10,
               paddingVertical: 8,
-              borderWidth: 1,
+              borderWidth: 0,
               borderRightWidth: 0,
               borderTopLeftRadius: 10,
               borderBottomLeftRadius: 10,
               borderColor: projectSelected ? colors.accent : colors.border,
-              backgroundColor: projectSelected ? colors.selection : colors.surface,
+              backgroundColor: 'transparent',
               opacity: scopeDisabled ? 0.45 : 1,
             },
           ]}
         >
+          {projectMark}
           <Text
             numberOfLines={1}
-            style={{ color: colors.text, fontSize: 14, fontWeight: '500', flexShrink: 1 }}
+            style={{
+              color: projectSelected ? colors.text : colors.muted,
+              fontSize: 13,
+              fontWeight: '500',
+              flexShrink: 1,
+            }}
           >
             {prominentLabel}
           </Text>
@@ -269,11 +303,11 @@ export function FolderPicker({
               minHeight: 44,
               paddingHorizontal: 10,
               paddingVertical: 8,
-              borderWidth: 1,
+              borderWidth: 0,
               borderTopRightRadius: 10,
               borderBottomRightRadius: 10,
               borderColor: projectSelected ? colors.accent : colors.border,
-              backgroundColor: projectSelected ? colors.selection : colors.surface,
+              backgroundColor: 'transparent',
               opacity: locked ? 0.45 : 1,
             },
           ]}
@@ -300,18 +334,22 @@ export function FolderPicker({
             flexWrap: 'nowrap',
             padding: 12,
             minHeight: 44,
-            borderWidth: prominent ? 1 : 0,
+            borderWidth: 0,
             borderColor: projectSelected ? colors.accent : colors.border,
             borderRadius: 12,
-            backgroundColor: colors.surface,
+            backgroundColor: prominent ? 'transparent' : colors.surface,
             opacity: locked ? 0.45 : 1,
           },
         ]}
       >
-        <Icon
-          name={autoProject ? 'scope' : selected?.kind === 'scratch' ? 'noProject' : 'folder'}
-          size={18}
-        />
+        {prominent ? (
+          projectMark
+        ) : (
+          <Icon
+            name={autoProject ? 'scope' : selected?.kind === 'scratch' ? 'noProject' : 'folder'}
+            size={18}
+          />
+        )}
         <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
           {prominent ? (selectedProject?.name ?? 'Choose project') : projectLabel}
         </Text>
@@ -337,10 +375,10 @@ export function FolderPicker({
             padding: prominent ? 8 : 12,
             gap: prominent ? 4 : 6,
             minHeight: 44,
-            borderWidth: prominent ? 1 : 0,
+            borderWidth: 0,
             borderColor: colors.border,
             borderRadius: prominent ? 10 : 12,
-            backgroundColor: colors.surface,
+            backgroundColor: prominent ? 'transparent' : colors.surface,
             opacity: locked ? 0.45 : 1,
           },
         ]}

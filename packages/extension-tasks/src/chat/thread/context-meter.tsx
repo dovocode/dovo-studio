@@ -1,11 +1,12 @@
 import { contextMeter } from '@dovo/protocol'
-import type { Task } from '@dovo/studio-core'
+import { useAppPreferences, type Task } from '@dovo/studio-core'
 import { cn } from '@dovo/studio-ui'
 
 /** A small ring showing how full the agent's context window is. */
 export function ContextMeter({ task }: { task: Task }) {
+  const { showContextUsage } = useAppPreferences()
   const meter = contextMeter(task)
-  if (!meter) return null
+  if (!showContextUsage || !meter) return null
   const radius = 6
   const circumference = 2 * Math.PI * radius
   const tone =

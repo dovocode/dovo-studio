@@ -101,13 +101,13 @@ export function AgentEditor({
       {creating && (
         <ol
           aria-label="Setup progress"
-          className="mb-4 grid grid-cols-3 gap-2 rounded-xl bg-muted/40 p-2"
+          className="mb-4 grid grid-cols-3 gap-1 rounded-lg border border-border/50 bg-background/50 p-1"
         >
           {['Provider', 'Profile', 'Model & behavior'].map((label, index) => (
             <li
               key={label}
               aria-current={step === index ? 'step' : undefined}
-              className={`flex items-center gap-2 rounded-lg px-2 py-2 text-xs ${step === index ? 'bg-background text-foreground' : 'text-muted-foreground'}`}
+              className={`flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs ${step === index ? 'border-primary/30 bg-[var(--studio-selected-fill)] text-foreground [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]' : 'border-transparent text-muted-foreground'}`}
             >
               <span
                 className={`flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] ${step >= index ? 'border-primary text-primary' : ''}`}
@@ -186,7 +186,7 @@ export function AgentEditor({
                       key={id}
                       type="button"
                       variant="outline"
-                      className={`h-auto justify-start gap-3 whitespace-normal p-4 text-left ${agent.provider === id ? 'border-primary/50 bg-primary/8' : ''}`}
+                      className={`h-auto min-h-10 justify-start gap-2 whitespace-normal p-3 text-left ${agent.provider === id ? 'border-primary/40 bg-[var(--studio-selected-fill)] [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]' : 'border-border/60 bg-background/60'}`}
                       aria-pressed={agent.provider === id}
                       onClick={() => setAgent(changeAgentProvider(agent, id))}
                     >
@@ -196,7 +196,7 @@ export function AgentEditor({
                     </Button>
                   ))}
               </div>
-              <details className="rounded-lg border p-3">
+              <details className="rounded-lg border border-border/50 bg-muted/20 p-3">
                 <summary className="cursor-pointer text-xs font-medium">
                   More agents from the ACP registry
                 </summary>
@@ -263,7 +263,7 @@ export function AgentEditor({
                         }
                         className="peer sr-only"
                       />
-                      <span className="flex size-8 items-center justify-center rounded-md border border-transparent peer-checked:border-border peer-checked:bg-accent peer-checked:text-foreground peer-focus-visible:ring-2 peer-focus-visible:ring-ring hover:bg-muted">
+                      <span className="flex size-8 items-center justify-center rounded-md border border-transparent peer-checked:border-primary/40 peer-checked:bg-[var(--studio-selected-fill)] peer-checked:text-foreground peer-checked:[background-image:var(--studio-selected-gradient)] peer-checked:[box-shadow:var(--studio-glow)] peer-focus-visible:ring-2 peer-focus-visible:ring-ring hover:bg-muted">
                         <Icon size={15} />
                       </span>
                     </label>
@@ -280,6 +280,41 @@ export function AgentEditor({
                   <AcpRegistry agent={agent} onChange={setAgent} showRegistry={false} />
                 )}
                 <ModelSettings agent={agent} onChange={setAgent} />
+                {(agent.provider === 'claude' || agent.provider === 'codex') && (
+                  <FormField layout="settings" label="Cloud integrations">
+                    <div className="space-y-2">
+                      <Select
+                        value={
+                          agent.cloudIntegrations === undefined
+                            ? 'default'
+                            : String(agent.cloudIntegrations)
+                        }
+                        onValueChange={(value) => {
+                          if (!value) return
+                          setAgent({
+                            ...agent,
+                            cloudIntegrations: value === 'default' ? undefined : value === 'true',
+                          })
+                        }}
+                      >
+                        <SelectTrigger aria-label="Cloud integrations" className="h-9 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">Provider default</SelectItem>
+                          <SelectItem value="true">Enabled</SelectItem>
+                          <SelectItem value="false">Disabled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs font-normal leading-relaxed text-muted-foreground">
+                        Use apps already connected to your{' '}
+                        {agent.provider === 'claude' ? 'Claude' : 'ChatGPT'} account, such as Google
+                        Drive or Slack. Requires account sign-in on the computer running the task.
+                        Provider restrictions and tool approvals still apply.
+                      </p>
+                    </div>
+                  </FormField>
+                )}
                 <FormField layout="settings" label="Access mode">
                   <div className="space-y-2">
                     <Select
@@ -344,7 +379,7 @@ export function AgentEditor({
                   />
                 </FormField>
               </section>
-              <details className="rounded-lg border bg-card/20 p-4">
+              <details className="rounded-lg border border-border/50 bg-muted/20 p-3">
                 <summary className="cursor-pointer text-xs font-medium">
                   Connection & account
                 </summary>

@@ -56,6 +56,31 @@ it('combines independent resources without letting their failures mark the overv
   expect(pullDetailChecks(result)).toEqual({ label: 'Checks failed', tone: 'danger' })
   expect(pullDetailReviews(result)).toEqual({ label: 'Changes requested', tone: 'danger' })
 })
+it('uses fresh lifecycle status only for the matching PR revision and account', () => {
+  const status: PullDetail = {
+    ...overview,
+    pull: {
+      ...overview.pull,
+      draft: true,
+      mergeable: true,
+      mergeStateStatus: 'DRAFT',
+      autoMergeEnabled: false,
+      inMergeQueue: false,
+    },
+    capabilities: { actions: ['draft'], mergeMethods: ['squash'], reviewDecisions: [] },
+  }
+  const combined = combinePullSections(overview, { status })
+  expect(combined?.pull).toMatchObject({
+    draft: true,
+    mergeStateStatus: 'DRAFT',
+    autoMergeEnabled: false,
+  })
+  expect(combined?.capabilities?.actions).toContain('draft')
+  expect(
+    combinePullSections(overview, { status: { ...status, destination: 'other-account' } })?.pull
+      .draft,
+  ).toBe(false)
+})
 it.each([
   { ...overview, pull: { ...overview.pull, headSha: 'c'.repeat(40) } },
   { ...overview, pull: { ...overview.pull, baseSha: 'c'.repeat(40) } },
@@ -88,4 +113,59 @@ it.each([
   { ...overview, pull: { ...overview.pull, url: 'https://github.com/other/project/pull/7' } },
 ])('never retains a diff across missing or different PR/account identities', (current) => {
   expect(pullChangesSnapshot(current, false, overview)).toBeNull()
+})
+
+it.each(['closed', 'merged'] as const)(
+  'uses matching %s status instead of an older open overview',
+  (state) => {
+    const status = { ...overview, pull: { ...overview.pull, state } }
+    expect(combinePullSections(overview, { status })?.pull.state).toBe(state)
+    expect(
+      combinePullSections(overview, { status: { ...status, destination: 'other-account' } })?.pull
+        .state,
+    ).toBe('open')
+  },
+)
+
+it('does not let an older same-head closed status undo a freshly reopened overview', () => {
+  const opened = { ...overview, pull: { ...overview.pull, updatedAt: '2026-10-29T10:00:00Z' } }
+  const closed: PullDetail = {
+    ...overview,
+    pull: {
+      ...overview.pull,
+      state: 'closed',
+      draft: true,
+      mergeable: false,
+      mergeStateStatus: 'DIRTY',
+      autoMergeEnabled: true,
+      inMergeQueue: true,
+      updatedAt: '2026-10-29T11:00:00Z',
+    },
+    capabilities: { actions: ['reopen'], mergeMethods: [], reviewDecisions: [] },
+  }
+  expect(combinePullSections(opened, { status: closed })?.pull.state).toBe('closed')
+  const reopened: PullDetail = {
+    ...overview,
+    pull: {
+      ...overview.pull,
+      updatedAt: '2026-10-29T12:00:00Z',
+      mergeable: true,
+      mergeStateStatus: 'CLEAN',
+      autoMergeEnabled: false,
+      inMergeQueue: false,
+    },
+    capabilities: { actions: ['draft'], mergeMethods: ['squash'], reviewDecisions: [] },
+  }
+  const combined = combinePullSections(reopened, { status: closed })
+  expect(combined?.pull).toMatchObject({
+    state: 'open',
+    draft: false,
+    mergeable: true,
+    mergeStateStatus: 'CLEAN',
+    autoMergeEnabled: false,
+    inMergeQueue: false,
+  })
+  expect(combined?.capabilities).toEqual(reopened.capabilities)
+  const newer = { ...closed, pull: { ...closed.pull, updatedAt: '2026-10-29T13:00:00Z' } }
+  expect(combinePullSections(reopened, { status: newer })?.pull.state).toBe('closed')
 })

@@ -140,8 +140,8 @@ export function FloatingPreview({
           hideInlineHeader && placement === 'inline'
             ? 'hidden'
             : cn(
-                'flex shrink-0 items-center gap-1 rounded-t-[inherit] border-b px-2',
-                minimalFrame ? 'h-9 bg-muted/40' : 'h-10',
+                'flex shrink-0 items-center gap-1 rounded-t-[inherit] border-b bg-sidebar px-2 dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]',
+                minimalFrame ? 'h-9' : 'h-10',
               )
         }
       >

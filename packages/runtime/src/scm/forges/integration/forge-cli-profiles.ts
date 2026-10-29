@@ -112,6 +112,9 @@ export async function readForgeCliProfiles(
         active: row.active,
       }))
     profiles = [...new Map(profiles.map((profile) => [profile.id, profile])).values()]
+    if ((data.hosts[host] ?? []).some((row) => row.tokenSource?.endsWith('_TOKEN')))
+      message =
+        'The active GitHub account uses a runtime environment token. Select a stored user to use its CLI credential, or choose Token from runtime environment to bind that token explicitly.'
   } else if (input.cliTool === 'fj') {
     const url = new URL(baseUrl)
     const expected = `${url.host}${url.pathname === '/' ? '' : url.pathname}`

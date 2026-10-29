@@ -150,6 +150,11 @@ export function PullStatus({
         <div>
           <h3 className="mb-2 font-medium">Mergeability</h3>
           <Signal signal={pullMergeability(detail.pull)} />
+          {detail.pull.autoMergeEnabled && (
+            <p className="mt-2 text-muted-foreground">
+              Auto-merge enabled · merges when GitHub’s requirements pass.
+            </p>
+          )}
         </div>
       </aside>
     </div>

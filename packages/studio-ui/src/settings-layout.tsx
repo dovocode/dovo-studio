@@ -63,16 +63,16 @@ export function SettingsGroup({
 }) {
   const id = useId()
   const content = (
-    <Card asChild className="divide-y divide-border/60 p-0">
+    <Card asChild className="divide-y divide-border/50 rounded-xl border-border/60 bg-muted/20 p-0">
       <div>{children}</div>
     </Card>
   )
   if (advanced)
     return (
-      <details className="studio-settings-group group space-y-3">
+      <details className="studio-settings-group group space-y-2">
         <summary
           data-setting-label={title}
-          className="flex cursor-pointer list-none items-center gap-3 rounded-lg px-1 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
+          className="flex cursor-pointer list-none items-center gap-2 rounded-md px-1 py-1.5 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
         >
           <span className="min-w-0 flex-1">
             {title}
@@ -95,7 +95,7 @@ export function SettingsGroup({
       data-setting-label={title}
       tabIndex={-1}
       aria-labelledby={id}
-      className="studio-settings-group scroll-mt-4 space-y-3 outline-none"
+      className="studio-settings-group scroll-mt-4 space-y-2 outline-none"
     >
       <div>
         <h2 id={id} className="text-sm font-semibold tracking-tight">
@@ -222,7 +222,7 @@ export function SettingsSaveBar({
         : description
   return (
     <div
-      className={`sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 bg-background/95 backdrop-blur ${dirty || saving ? 'border-border shadow-sm' : 'border-transparent border-t-border text-muted-foreground'}`}
+      className={`sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur ${dirty || saving ? 'border-border/70 shadow-sm' : 'border-border/40 text-muted-foreground'}`}
       role="group"
       aria-label="Settings save actions"
       aria-busy={saving}
@@ -257,7 +257,7 @@ export function SettingsSaveBar({
             >
               More
             </summary>
-            <div className="absolute bottom-full right-0 mb-2 w-64 rounded-lg border bg-popover p-2 text-popover-foreground shadow-lg">
+            <div className="studio-menu-surface absolute bottom-full right-0 mb-2 w-64 rounded-lg border bg-popover p-2 text-popover-foreground">
               {children}
             </div>
           </details>
@@ -334,7 +334,7 @@ export function Segmented<T extends string>({
     <div
       role="radiogroup"
       aria-label={label}
-      className="inline-flex max-w-full flex-wrap gap-1 rounded-lg bg-muted/50 p-1"
+      className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-border/50 bg-background/60 p-1"
     >
       {options.map(([id, name], index) => (
         <button
@@ -372,7 +372,7 @@ export function Segmented<T extends string>({
           onClick={() => onChange(id)}
           className={`min-h-7 rounded-md border px-3 py-1 text-xs transition-colors pointer-coarse:min-h-11 ${
             value === id
-              ? 'border-border bg-background font-medium text-foreground'
+              ? 'border-primary/40 bg-[var(--studio-selected-fill)] font-medium text-foreground [background-image:var(--studio-selected-gradient)] [box-shadow:var(--studio-glow)]'
               : 'border-transparent text-muted-foreground hover:bg-background/50 hover:text-foreground'
           }`}
         >

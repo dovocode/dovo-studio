@@ -24,6 +24,7 @@ export function DraftStash(props: {
   focus: () => void
   hasAttachments: boolean
   disabled?: boolean
+  showLabel?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<StashedDraft[]>([])
@@ -92,7 +93,9 @@ export function DraftStash(props: {
       <IconButton
         label="Stashed drafts"
         type="button"
-        className="size-7"
+        className={
+          props.showLabel ? 'h-10 w-full justify-start gap-2 px-3 text-sm font-normal' : 'size-7'
+        }
         disabled={props.disabled || !props.scope}
         onClick={() => {
           setOpen(true)
@@ -100,6 +103,7 @@ export function DraftStash(props: {
         }}
       >
         <Archive className="size-3.5" />
+        {props.showLabel && 'Stashed drafts'}
       </IconButton>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
