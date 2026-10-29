@@ -16,13 +16,14 @@ export const View=({children,style,testID,accessibilityRole,accessibilityLabel,o
 export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled,horizontal})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,minWidth:0,overflowX:horizontal?'auto':undefined,overflowY:horizontal||scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...flat(contentContainerStyle)}}>{children}</div></div>};
 export const Text=({children,style,numberOfLines,accessibilityRole,accessibilityLabel,accessibilityLiveRegion})=><span role={accessibilityRole} aria-label={accessibilityLabel} aria-live={accessibilityLiveRegion} style={{...flat(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
-export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=><button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=><button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',border:0,padding:0,backgroundColor:'transparent',color:'inherit',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
-export const Modal=({children,onRequestClose})=>createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body);
+export const Modal=({children,onRequestClose,visible=true,onDismiss})=>{const shown=useRef(visible);useLayoutEffect(()=>{if(shown.current&&!visible)queueMicrotask(()=>onDismiss?.());shown.current=visible},[visible,onDismiss]);return visible?createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body):null};
+export const Platform={OS:'ios'};
 export const useWindowDimensions=()=>{const[viewport,setViewport]=useState({width:innerWidth,height:innerHeight});useLayoutEffect(()=>{const resize=()=>setViewport({width:innerWidth,height:innerHeight});addEventListener('resize',resize);return()=>removeEventListener('resize',resize)},[]);return viewport};
 export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
-export const Keyboard={dismiss(){document.activeElement?.blur()}};export const Linking={openSettings:async()=>{}};
+export const Keyboard={dismiss(){window.keyboardDismissals=(window.keyboardDismissals??0)+1;document.activeElement?.blur()},addListener(){return {remove(){}}},metrics(){return window.keyboardMetrics}};export const Linking={openSettings:async()=>{}};
 export const Icon=()=>null;
 export const IconButton=({label,onPress,onLongPress,disabled})=>{const press=useRef({});return <button aria-label={label} disabled={disabled} onPointerDown={()=>{press.current.held=false;press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress?.()},500)}} onPointerUp={()=>clearTimeout(press.current.timer)} onPointerCancel={()=>clearTimeout(press.current.timer)} onClick={()=>{if(!press.current.held)onPress()}} style={{width:44,height:44,padding:0,flexShrink:0}}/>};
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress} style={{minWidth:44,minHeight:44}}>{label}</button>;
@@ -62,6 +63,11 @@ const stubs = [
     contents: 'export const useLinkOrigin=()=>({});',
   },
   { path: 'react-native', contents: controls },
+  ...['./icon', '../content/text', '../theme'].map((path) => ({
+    path,
+    importer: mobile + 'src/ui/controls/',
+    contents: controls,
+  })),
   {
     path: '../../scm/connections/project-transfer',
     importer: mobile,
@@ -280,16 +286,48 @@ try {
     await page.mouse.down()
     await page.waitForTimeout(600)
     await page.mouse.up()
-    await page.getByRole('dialog', { name: 'Message actions', exact: true }).waitFor()
+    await page.getByRole('menu', { name: 'Message actions', exact: true }).waitFor()
   }
-  const messageMenu = page.getByRole('dialog', { name: 'Message actions', exact: true })
+  const messageMenu = page.getByRole('menu', { name: 'Message actions', exact: true })
   const beforeHold = await page.evaluate(() => window.calls.length)
+  const composerBeforeMenu = await page.getByTestId('Composer').boundingBox()
+  await page.evaluate((y) => {
+    window.keyboardMetrics = { screenY: y }
+  }, primaryBounds.y + primaryBounds.height)
   await openMessageActions()
   assert.equal(await page.evaluate(() => window.calls.length), beforeHold, 'Holding does not send')
+  assert.deepEqual(
+    await page.getByTestId('Composer').boundingBox(),
+    composerBeforeMenu,
+    'Inline menu does not move the composer',
+  )
+  const heldMenuBounds = await messageMenu.boundingBox()
+  if (screenshots) await page.screenshot({ path: screenshots + '/message-actions-inline.png' })
+  assert.ok(
+    heldMenuBounds.width <= 264 &&
+      heldMenuBounds.x >= 12 &&
+      heldMenuBounds.x + heldMenuBounds.width <= 308,
+  )
+  assert.ok(
+    heldMenuBounds.y + heldMenuBounds.height <= primaryBounds.y,
+    'Held menu fits above the keyboard and trigger',
+  )
+  assert.equal(await page.getByRole('dialog', { name: 'Message actions', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Dismiss Message actions', exact: true }).click()
+  await messageMenu.waitFor({ state: 'detached' })
+  assert.equal(
+    await page.evaluate(() => window.calls.length),
+    beforeHold,
+    'Outside tap only dismisses the menu',
+  )
+  await page.evaluate(() => {
+    window.keyboardMetrics = undefined
+  })
+  await openMessageActions()
   for (const name of ['Fork', 'Queue follow-up', 'Steer agent', 'Stop']) {
-    assert.equal(await messageMenu.getByRole('button', { name, exact: true }).isEnabled(), true)
+    assert.equal(await messageMenu.getByRole('menuitem', { name, exact: true }).isEnabled(), true)
   }
-  await messageMenu.getByRole('button', { name: 'Stop', exact: true }).click()
+  await messageMenu.getByRole('menuitem', { name: 'Stop', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stop' })
   await page.evaluate(() => window.setDraftText(''))
   await page
@@ -458,9 +496,9 @@ try {
     window.setTask({ queue: [{ id: 'queued', role: 'user', text: 'Check the tests' }] }),
   )
   await openMessageActions()
-  await messageMenu.getByRole('button', { name: 'Steer agent', exact: true }).click()
+  await messageMenu.getByRole('menuitem', { name: 'Steer agent', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'steer' })
-  assert.equal(await page.getByRole('dialog', { name: 'Message actions' }).count(), 0)
+  assert.equal(await page.getByRole('menu', { name: 'Message actions' }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Agent & model', exact: true }).count(), 1)
   assert.equal(
     await page.getByRole('button', { name: 'Next turn model and reasoning', exact: true }).count(),
@@ -484,22 +522,25 @@ try {
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await openMessageActions()
   assert.equal(
-    await page.getByRole('button', { name: 'Steer agent', exact: true }).isDisabled(),
+    await messageMenu.getByRole('menuitem', { name: 'Steer agent', exact: true }).isDisabled(),
     true,
   )
-  assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).isDisabled(), true)
+  assert.equal(
+    await messageMenu.getByRole('menuitem', { name: 'Fork', exact: true }).isDisabled(),
+    true,
+  )
   assert.equal(
     await page
       .getByText('Fork uses the thread’s settings. Select Use thread defaults to fork.')
       .isVisible(),
     true,
   )
-  await messageMenu.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'Dismiss Message actions', exact: true }).click()
   await page.getByRole('button', { name: 'Agent & model', exact: true }).click()
   await page.getByRole('button', { name: 'Use thread defaults', exact: true }).click()
   await page.getByRole('button', { name: 'Close', exact: true }).click()
   await openMessageActions()
-  await messageMenu.getByRole('button', { name: 'Fork', exact: true }).click()
+  await messageMenu.getByRole('menuitem', { name: 'Fork', exact: true }).click()
   await page.waitForFunction(() => window.navigations.length === 1)
   assert.deepEqual(await page.evaluate(() => window.navigations[0]), [
     'tasks',
@@ -570,19 +611,22 @@ try {
     () => document.querySelector('[aria-label="Queue follow-up"]')?.disabled,
   )
   assert.equal(
-    await messageMenu.getByRole('button', { name: 'Queue follow-up', exact: true }).isDisabled(),
+    await messageMenu.getByRole('menuitem', { name: 'Queue follow-up', exact: true }).isDisabled(),
     true,
   )
   assert.equal(
-    await page.getByRole('button', { name: 'Steer agent', exact: true }).isDisabled(),
+    await messageMenu.getByRole('menuitem', { name: 'Steer agent', exact: true }).isDisabled(),
     true,
   )
-  assert.equal(await page.getByRole('button', { name: 'Fork', exact: true }).isDisabled(), true)
+  assert.equal(
+    await messageMenu.getByRole('menuitem', { name: 'Fork', exact: true }).isDisabled(),
+    true,
+  )
   assert.equal(
     await page.getByRole('button', { name: 'Ask a side question', exact: true }).isDisabled(),
     true,
   )
-  await messageMenu.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'Dismiss Message actions', exact: true }).click()
   await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
   for (const name of [
     'Pause queued message 1',
@@ -604,7 +648,7 @@ try {
   }
   await page.getByRole('button', { name: 'Dismiss queued message actions', exact: true }).click()
   await page.evaluate(() => window.setTask({ repositoryId: undefined }))
-  await page.getByRole('button', { name: 'Fork', exact: true }).waitFor({ state: 'detached' })
+  await page.getByRole('menuitem', { name: 'Fork', exact: true }).waitFor({ state: 'detached' })
   await page.evaluate(() => {
     window.setConnected(true)
     window.setTask({ repositoryId: 'scratch', status: 'draft', messages: [], linkedCheckouts: [] })
@@ -990,8 +1034,21 @@ try {
   // The plus menu keeps draft tools available without a permanent toolbar row.
   assert.equal(await page.getByLabel('Draft tools', { exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Stashed drafts', exact: true }).count(), 0)
+  const beforePlus = await page.getByTestId('Composer').boundingBox()
+  const dismissalsBeforePlus = await page.evaluate(() => window.keyboardDismissals ?? 0)
   await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
-  await page.getByRole('button', { name: 'Stashed drafts', exact: true }).click()
+  const plusMenu = page.getByRole('menu', { name: 'Add to draft', exact: true })
+  await plusMenu.waitFor()
+  const plusBounds = await plusMenu.boundingBox()
+  if (screenshots) await page.screenshot({ path: screenshots + '/plus-menu-inline.png' })
+  assert.ok(plusBounds.width <= 264 && plusBounds.x >= 12 && plusBounds.x + plusBounds.width <= 308)
+  assert.deepEqual(await page.getByTestId('Composer').boundingBox(), beforePlus)
+  assert.equal(await page.evaluate(() => window.keyboardDismissals ?? 0), dismissalsBeforePlus)
+  assert.equal(await page.getByRole('dialog', { name: 'Add to draft', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Dismiss Add to draft', exact: true }).click()
+  await plusMenu.waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Stashed drafts', exact: true }).click()
   const stash = page.getByRole('dialog', { name: 'Stashed drafts', exact: true })
   await stash.waitFor()
   const originalDraft = await page
@@ -1006,13 +1063,13 @@ try {
     originalDraft,
   )
   await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
-  await page.getByRole('button', { name: 'Attach thread context', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Attach thread context', exact: true }).click()
   await page.getByRole('textbox', { name: 'Search threads', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
-  await page.getByRole('button', { name: 'Attach photos or files', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Attach photos or files', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.mode === 'attach')
-  assert.equal(await page.getByRole('dialog', { name: 'Add to draft', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('menu', { name: 'Add to draft', exact: true }).count(), 0)
   // Prompt-first native layout uses the production empty state and starter actions.
   await page.evaluate(() => {
     window.setDraftText('')
@@ -1239,7 +1296,7 @@ try {
   assert.equal(await page.evaluate(() => window.calls.length), beforeProjectMove)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile composer: default Queue / empty Stop, held Fork/Queue/Steer/Stop menu without accidental send, inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/direct steer/restore, compact anchored queue menus, retry-safe duplication, composer queue editing, checklist collapse, side-chat sending, failure recovery and offline guards passed with native control adapters.',
+    'Mobile composer: default Queue / empty Stop, anchored Fork/Queue/Steer/Stop and + menus, keyboard bounds and outside dismissal without composer movement or accidental send, inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/direct steer/restore, compact anchored queue menus, retry-safe duplication, composer queue editing, checklist collapse, side-chat sending, failure recovery and offline guards passed with native control adapters.',
   )
 } finally {
   await browser.close()

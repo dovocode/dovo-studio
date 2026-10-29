@@ -1,3 +1,4 @@
+import { ActionMenu, type MenuAnchor } from '../../ui/controls/action-menu'
 import { blockAccessibleNotificationInputs } from '../../notifications/visibility'
 import { randomUUID } from 'expo-crypto'
 import { useForkDraft } from './use-fork-draft'
@@ -24,7 +25,15 @@ import { Glass } from '../../ui/layout/glass'
 import { MessageAttachments } from '../conversation/components/message-attachments'
 import { ActivityIndicator, Alert, Keyboard, Linking, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentRef,
+  type ReactNode,
+} from 'react'
 import {
   REVIEW_PROMPT,
   contextMeter,
@@ -40,7 +49,7 @@ import { mutableStruct } from '@dovo/protocol'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
 import { ComposerField } from './composer-field'
-import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
+import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -151,15 +160,19 @@ export function Composer({
   const [focused, setFocused] = useApplicationState(false),
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
-  const [draftTools, setDraftTools] = useState<'menu' | 'stash' | 'context'>()
-  const toolsSheet = useRef<SheetHandle>(null)
-  const [messageActions, setMessageActions] = useState(false)
-  const messageActionsSheet = useRef<SheetHandle>(null)
+  const [draftTools, setDraftTools] = useState<'stash' | 'context'>()
+  const toolsTrigger = useRef<ComponentRef<typeof View>>(null)
+  const messageTrigger = useRef<ComponentRef<typeof View>>(null)
+  const [toolsAnchor, setToolsAnchor] = useState<MenuAnchor | null>(null)
+  const [messageActions, setMessageActions] = useState<MenuAnchor | null>(null)
   useEffect(
-    () => setMessageActions(false),
+    () => setMessageActions(null),
     [task.id, task.status, editing?.message.id, stashRuntimeId],
   )
-  useEffect(() => setDraftTools(undefined), [task.id, stashRuntimeId])
+  useEffect(() => {
+    setDraftTools(undefined)
+    setToolsAnchor(null)
+  }, [task.id, stashRuntimeId])
   const [starterFocus, setStarterFocus] = useState<string>()
   const selection = useRef<DraftSelection | undefined>(undefined)
   const [caret, setCaret] = useState(0)
@@ -246,7 +259,7 @@ export function Composer({
     settings ||
     linkingProjects ||
     messageActions ||
-    draftTools === 'menu' ||
+    toolsAnchor ||
     attachmentPicker.editor
   )
   useLayoutEffect(() => {
@@ -854,18 +867,45 @@ export function Composer({
               },
             ]}
           >
-            <IconButton
-              variant="plain"
-              icon="add"
-              label="Add to draft"
-              disabled={
-                busy || dictation.active || !!task.archivedAt || !!task.archived || !!task.example
-              }
-              onPress={() => {
-                Keyboard.dismiss()
-                setDraftTools('menu')
-              }}
-            />
+            <View ref={toolsTrigger} collapsable={false} style={{ width: 44, height: 44 }}>
+              {/* Keep the menu trigger in the TextInput responder tree so it retains the keyboard. */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add to draft"
+                accessibilityState={{
+                  expanded: !!toolsAnchor,
+                  disabled:
+                    busy ||
+                    dictation.active ||
+                    !!task.archivedAt ||
+                    !!task.archived ||
+                    !!task.example,
+                }}
+                disabled={
+                  busy || dictation.active || !!task.archivedAt || !!task.archived || !!task.example
+                }
+                onPress={() => {
+                  setMessageActions(null)
+                  toolsTrigger.current?.measureInWindow((x, y, width, height) =>
+                    setToolsAnchor({ x, y, width, height }),
+                  )
+                }}
+                style={({ pressed }) => ({
+                  width: 44,
+                  height: 44,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity:
+                    busy || dictation.active || task.archivedAt || task.archived || task.example
+                      ? 0.4
+                      : pressed
+                        ? 0.6
+                        : 1,
+                })}
+              >
+                <Icon name="add" size={20} color={colors.text} />
+              </Pressable>
+            </View>
             <View
               pointerEvents="box-none"
               style={{
@@ -1000,91 +1040,110 @@ export function Composer({
               }
             />
             {!showFollowupActions && sideQuestionAction}
-            <IconButton
-              variant="filled"
-              icon={
-                editing
-                  ? 'send'
-                  : task.status === 'running'
-                    ? hasInput
-                      ? 'queue'
-                      : 'stop'
-                    : 'send'
-              }
-              label={
-                editing
-                  ? 'Save changes'
-                  : task.status === 'running'
-                    ? hasInput
-                      ? 'Queue follow-up'
-                      : 'Stop'
-                    : 'Send'
-              }
-              disabled={
-                machineMoving ||
-                (!editing && task.status === 'running' && !hasInput
-                  ? !connected || stopping
-                  : !canSend || fork.busy)
-              }
-              onPress={!editing && task.status === 'running' && !hasInput ? stop : () => send()}
-              onLongPress={
-                !editing && task.status === 'running' ? () => setMessageActions(true) : undefined
-              }
-            />
-          </View>
-          {messageActions && !editing && task.status === 'running' && (
-            <Sheet
-              ref={messageActionsSheet}
-              title="Message actions"
-              onClose={() => setMessageActions(false)}
-            >
-              {showFork && (
-                <Action
-                  secondary
-                  label="Fork"
-                  disabled={!canSend || busy || !!turnSettings}
-                  onPress={() => messageActionsSheet.current?.dismiss(fork.start)}
-                />
-              )}
-              <Action
-                secondary
-                label="Queue follow-up"
-                disabled={!canSend || busy}
-                onPress={() => messageActionsSheet.current?.dismiss(() => send())}
-              />
-              <Action
-                secondary
-                label="Steer agent"
-                disabled={!canSend || busy || !!turnSettings}
-                onPress={() => messageActionsSheet.current?.dismiss(() => send('steer'))}
-              />
-              <Action
-                secondary
-                label="Stop"
-                disabled={!connected || stopping || machineMoving}
-                onPress={() => messageActionsSheet.current?.dismiss(stop)}
-              />
-            </Sheet>
-          )}
-          {draftTools === 'menu' && (
-            <Sheet ref={toolsSheet} title="Add to draft" onClose={() => setDraftTools(undefined)}>
-              <Action
-                label="Attach photos or files"
-                secondary
+            <View ref={messageTrigger} collapsable={false} style={{ width: 44, height: 44 }}>
+              <IconButton
+                variant="filled"
+                icon={
+                  editing
+                    ? 'send'
+                    : task.status === 'running'
+                      ? hasInput
+                        ? 'queue'
+                        : 'stop'
+                      : 'send'
+                }
+                label={
+                  editing
+                    ? 'Save changes'
+                    : task.status === 'running'
+                      ? hasInput
+                        ? 'Queue follow-up'
+                        : 'Stop'
+                      : 'Send'
+                }
                 disabled={
+                  machineMoving ||
+                  (!editing && task.status === 'running' && !hasInput
+                    ? !connected || stopping
+                    : !canSend || fork.busy)
+                }
+                onPress={!editing && task.status === 'running' && !hasInput ? stop : () => send()}
+                onLongPress={
+                  !editing && task.status === 'running'
+                    ? () => {
+                        setToolsAnchor(null)
+                        messageTrigger.current?.measureInWindow((x, y, width, height) =>
+                          setMessageActions({ x, y, width, height }),
+                        )
+                      }
+                    : undefined
+                }
+              />
+            </View>
+          </View>
+          <ActionMenu
+            label="Message actions"
+            anchor={!editing && task.status === 'running' ? messageActions : null}
+            onClose={() => setMessageActions(null)}
+            actions={[
+              ...(showFork
+                ? [
+                    {
+                      title: 'Fork',
+                      label: 'Fork',
+                      icon: 'changes' as const,
+                      disabled: !canSend || busy || !!turnSettings,
+                      onPress: fork.start,
+                    },
+                  ]
+                : []),
+              {
+                title: 'Queue follow-up',
+                label: 'Queue follow-up',
+                icon: 'queue',
+                disabled: !canSend || busy,
+                onPress: () => send(),
+              },
+              {
+                title: 'Steer agent',
+                label: 'Steer agent',
+                icon: 'steer',
+                disabled: !canSend || busy || !!turnSettings,
+                onPress: () => send('steer'),
+              },
+              {
+                title: 'Stop',
+                label: 'Stop',
+                icon: 'stop',
+                disabled: !connected || stopping || machineMoving,
+                onPress: stop,
+              },
+            ]}
+          />
+          <ActionMenu
+            label="Add to draft"
+            anchor={toolsAnchor}
+            onClose={() => setToolsAnchor(null)}
+            align="start"
+            actions={[
+              {
+                title: 'Attach photos or files',
+                label: 'Attach photos or files',
+                icon: 'attach',
+                disabled:
                   (!!editing && !snapshot?.fullTurnSettingsSupported) ||
                   !connected ||
                   busy ||
                   attaching ||
                   dictation.active ||
-                  !!task.archivedAt
-                }
-                onPress={() => toolsSheet.current?.dismiss(attachmentPicker.pick)}
-              />
-              <Action
-                label="Stashed drafts"
-                secondary
-                disabled={
+                  !!task.archivedAt,
+                onPress: attachmentPicker.pick,
+              },
+              {
+                title: 'Stashed drafts',
+                label: 'Stashed drafts',
+                icon: 'save',
+                disabled:
                   !stashRuntimeId ||
                   !!editing ||
                   busy ||
@@ -1092,14 +1151,14 @@ export function Composer({
                   dictation.active ||
                   !!task.archivedAt ||
                   !!task.archived ||
-                  !!task.example
-                }
-                onPress={() => toolsSheet.current?.dismiss(() => setDraftTools('stash'))}
-              />
-              <Action
-                label="Attach thread context"
-                secondary
-                disabled={
+                  !!task.example,
+                onPress: () => setDraftTools('stash'),
+              },
+              {
+                title: 'Attach thread context',
+                label: 'Attach thread context',
+                icon: 'chat',
+                disabled:
                   !connected ||
                   !!editing ||
                   busy ||
@@ -1107,12 +1166,11 @@ export function Composer({
                   attaching ||
                   !!task.archivedAt ||
                   !!task.archived ||
-                  !!task.example
-                }
-                onPress={() => toolsSheet.current?.dismiss(() => setDraftTools('context'))}
-              />
-            </Sheet>
-          )}
+                  !!task.example,
+                onPress: () => setDraftTools('context'),
+              },
+            ]}
+          />
           <DraftStash
             open={draftTools === 'stash'}
             onOpenChange={(open) => setDraftTools(open ? 'stash' : undefined)}
