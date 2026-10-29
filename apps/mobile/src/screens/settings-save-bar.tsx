@@ -101,6 +101,7 @@ export function SettingsSaveBar({
             style={{
               minHeight: 44,
               minWidth: 120,
+              flexBasis: 120,
               flexGrow: 1,
               flexShrink: 1,
               flexDirection: 'row',

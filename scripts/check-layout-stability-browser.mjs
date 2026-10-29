@@ -74,22 +74,30 @@ try {
 const browser = await chromium.launch()
 try {
   for (const nativeUI of [false, true])
-    for (const [width, scale] of [
-      [320, 1],
-      [390, 1],
-      [1024, 1],
-      [390, 1.5],
+    for (const [width, scale, font] of [
+      ...(nativeUI
+        ? ['system-ui', 'Arial'].flatMap((font) =>
+            Array.from({ length: 17 }, (_, index) => [320 + index * 10, 1, font]),
+          )
+        : [
+            [320, 1, 'system-ui'],
+            [390, 1, 'system-ui'],
+          ]),
+      [1024, 1, 'system-ui'],
+      [390, 1.5, 'system-ui'],
     ]) {
       const page = await browser.newPage({ viewport: { width, height: 900 } })
       const errors = []
       page.on('pageerror', (error) => errors.push(error.message))
       await page.setContent(
-        '<html><body style="margin:0;font-family:system-ui"><div id="app"></div></body></html>',
+        `<html><body style="margin:0;font-family:${font}"><div id="app"></div></body></html>`,
       )
       await page.addStyleTag({
         content: css + `html{font-size:${16 * scale}px}body{font-size:${13 * scale}px}`,
       })
-      await page.addScriptTag({ content: (nativeUI ? mobileBundle : desktop).outputFiles[0].text })
+      await page.addScriptTag({
+        content: (nativeUI ? mobileBundle : desktop).outputFiles[0].text,
+      })
       const footer = page.getByLabel('Settings save actions', { exact: true })
       const save = page.getByRole('button', { name: 'Save changes', exact: true })
       const discard = page.getByRole('button', { name: 'Discard', exact: true })
@@ -128,7 +136,7 @@ try {
             discard: await discard.boundingBox(),
           },
           before,
-          `Save actions stay in place: ${nativeUI ? 'mobile' : 'desktop'} ${width}px ${state}`,
+          `Save actions stay in place: ${nativeUI ? 'mobile' : 'desktop'} ${width}px ${font} ${state}`,
         )
       }
       if (!nativeUI) {

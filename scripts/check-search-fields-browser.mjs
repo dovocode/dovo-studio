@@ -63,11 +63,12 @@ function App(){const [value,setValue]=useState('a search'),[selected,setSelected
     {
       path: './native-icon',
       importer: mobile + 'ui/controls/',
-      contents: 'export const NativeIcon=()=>null;',
+      contents: 'export const NativeIcon=()=>null;export const NativeMenuButton=()=>null;',
     },
     {
       path: '@expo/ui/swift-ui',
-      contents: 'export const Button=()=>null;export const Host=()=>null;',
+      contents:
+        'export const Button=()=>null;export const Host=()=>null;export const Menu=()=>null;',
     },
     {
       path: '@expo/ui/swift-ui/modifiers',
