@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { DOCUMENT_PIP_HEADER_HEIGHT } from './browser-document-pip-controls.js'
+import { enterAutomaticVideoPip } from './browser-video-pip.js'
 export { createDocumentPipWindow } from './browser-document-pip-controls.js'
 
 /** A regular same-origin window avoids Electron's broken native Document PiP owner. */
@@ -15,6 +16,13 @@ export function authorizeDocumentPip(
     'browser:document-pip-auto',
     (event) => event.senderFrame === contents.mainFrame && automaticAllowed(),
   )
+  contents.ipc.handle('browser:video-pip-auto', (event) => {
+    if (event.senderFrame !== contents.mainFrame || !automaticAllowed()) return false
+    return event.senderFrame.executeJavaScript(
+      `(${enterAutomaticVideoPip.toString()})(${JSON.stringify(contents.getURL())})`,
+      true,
+    )
+  })
   contents.ipc.handle(
     'browser:document-pip-authorize',
     (event, active: unknown, automatic: unknown) => {
@@ -85,6 +93,7 @@ export function documentPipWindowOptions(
 export function installDocumentPictureInPicture(
   automaticAllowed: () => Promise<boolean>,
   authorize: (automatic: boolean) => Promise<string | null>,
+  enterVideo: () => Promise<boolean>,
 ) {
   if (
     window !== window.top ||
@@ -192,8 +201,8 @@ export function installDocumentPictureInPicture(
     if (current && !current.closed) apply(close, current, [])
     current = null
   })
-  // Electron lacks Chrome's automatic Media Session action. Sites still own their call UI;
-  // Studio invokes it only when the site has an explicit automatic-PiP approval.
+  // Prefer the site's call UI; ordinary video sites use native video PiP instead.
+  // Both paths require the site's explicit automatic-PiP approval.
   if (!navigator.mediaSession) return
   const nativeSet = navigator.mediaSession.setActionHandler.bind(navigator.mediaSession)
   let handler: ((details: { reason: string }) => unknown) | null = null
@@ -212,18 +221,23 @@ export function installDocumentPictureInPicture(
     wasHidden = hidden
     // Native occlusion events can repeat while Studio already considers this page hidden.
     // Closing a PiP should not immediately reopen it without another leave transition.
-    if (!changed || !hidden || !handler || current || entering) return
+    // document.open() in the child removes its pagehide listeners. Use the live
+    // Window.closed state as well so a replaced document cannot block later PiP.
+    if (!changed || !hidden || api.window || document.pictureInPictureElement || entering) return
     entering = true
     try {
-      if (
-        !(await automaticAllowed()) ||
-        document.visibilityState !== 'hidden' ||
-        !handler ||
-        current
-      )
-        return
+      if (!(await automaticAllowed()) || document.visibilityState !== 'hidden' || api.window) return
       automatic = true
-      await handler({ reason: 'contentoccluded' })
+      if (handler) {
+        try {
+          await handler({ reason: 'contentoccluded' })
+        } catch (error) {
+          // Native video requests from a site's handler lack activation in Electron.
+          if (!(error instanceof DOMException) || error.name !== 'NotAllowedError') throw error
+          if (api.window || !(await enterVideo())) throw error
+        }
+      }
+      if (!api.window && !document.pictureInPictureElement) await enterVideo()
     } finally {
       automatic = false
       entering = false
@@ -238,6 +252,7 @@ contextBridge.executeInMainWorld({
   args: [
     () => ipcRenderer.invoke('browser:document-pip-auto'),
     (automatic) => ipcRenderer.invoke('browser:document-pip-authorize', navigator.userActivation.isActive, automatic),
+    () => ipcRenderer.invoke('browser:video-pip-auto'),
   ],
 })
 }

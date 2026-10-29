@@ -82,7 +82,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:window.tabActivityStates||[]}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:window.tabActivityStates||[],focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -2151,9 +2151,10 @@ try {
   assert.ok(pinBounds[3].y > pinBounds[0].y, 'Exactly three pins share a row')
   assert.equal(
     await pins.first().getByText('Website 0', { exact: true }).count(),
-    1,
-    'Pins show a favicon and a readable title',
+    0,
+    'Pinned tabs hide their visible title',
   )
+  assert.ok((await pins.first().getAttribute('title')).startsWith('Website 0\n'))
   assert.equal(
     await compactSidebar.getByRole('button', { name: /^Return .* to home$/ }).count(),
     0,
@@ -2177,6 +2178,57 @@ try {
     await pins.nth(1).getByLabel('This computer · Local Work').textContent(),
     '🏠',
     'Each pin uses its own profile emoji',
+  )
+  await controlsPage.evaluate(async () => {
+    window.tabActivityStates = [
+      {
+        key: 'studio:browser:main:compact-0',
+        url: 'https://example.test/0',
+        title: 'Website 0',
+        badge: 7,
+        audible: true,
+        muted: false,
+        camera: true,
+        microphone: true,
+        screenSharing: true,
+      },
+    ]
+    await window.pollBrowser()
+  })
+  await pins.first().getByLabel('7 unread', { exact: true }).waitFor()
+  const firstTile = compactSidebar.locator('[data-browser-tab-id="compact-0"]')
+  await firstTile.getByRole('img', { name: 'Camera on in Website 0', exact: true }).waitFor()
+  await firstTile.getByRole('img', { name: 'Microphone on in Website 0', exact: true }).waitFor()
+  await firstTile.getByRole('img', { name: 'Screen sharing in Website 0', exact: true }).waitFor()
+  const faviconBounds = await pins.first().locator('img').boundingBox()
+  const identityBounds = await pins
+    .first()
+    .getByLabel('This computer · Local Default')
+    .boundingBox()
+  assert.ok(
+    identityBounds.y >= faviconBounds.y + faviconBounds.height,
+    'Device/profile indicators sit below the favicon',
+  )
+  const selectedBeforeMute = await controlsPage.evaluate(
+    () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
+  )
+  await firstTile.getByRole('button', { name: 'Mute tab Website 0', exact: true }).click()
+  await firstTile.getByRole('button', { name: 'Unmute tab Website 0', exact: true }).waitFor()
+  assert.equal(
+    await controlsPage.evaluate(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).active,
+    ),
+    selectedBeforeMute,
+    'Mute never selects the sounding tab',
+  )
+  await firstTile.getByRole('button', { name: 'Unmute tab Website 0', exact: true }).click()
+  await firstTile.getByRole('button', { name: 'Mute tab Website 0', exact: true }).waitFor()
+  const tileBounds = await firstTile.boundingBox()
+  const activityBounds = await firstTile.getByLabel('Tab activity', { exact: true }).boundingBox()
+  assert.ok(
+    activityBounds.x >= tileBounds.x &&
+      activityBounds.x + activityBounds.width <= tileBounds.x + tileBounds.width,
+    'All activity controls fit inside a pinned tile',
   )
   await pins.first().hover()
   await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-refined.png' })
@@ -2202,6 +2254,23 @@ try {
     'Narrow sidebars wrap pins before their contents are squeezed',
   )
   await compactSidebar.screenshot({ path: root + 'work/shared-browser/pinned-tabs-narrow.png' })
+  await controlsPage.evaluate(async () => {
+    window.tabActivityStates = []
+    window.setNativePage('studio:browser:main:compact-4', {
+      profileId: 'default',
+      url: 'https://example.test/4',
+      title: 'Website 4',
+      back: false,
+      forward: false,
+    })
+    await window.pollBrowser()
+  })
+  await firstTile.getByLabel('Tab activity', { exact: true }).waitFor({ state: 'detached' })
+  assert.equal(
+    await pins.first().getByLabel('7 unread', { exact: true }).count(),
+    0,
+    'Resolved activity clears its pill and device indicators',
+  )
   for (let step = 0; step < 6; step++) await separator.press('ArrowRight')
   await controlsPage.waitForFunction(() => window.preferences.at(-1)?.browserSidebarWidth === 244)
   const currentRow = compactSidebar.getByRole('button', { name: /^Website 4 Local/ })
@@ -2242,7 +2311,7 @@ try {
     ),
   )
   await controlsPage
-    .getByRole('combobox', { name: 'Automatic call PiP permission' })
+    .getByRole('combobox', { name: 'Automatic PiP permission' })
     .selectOption('allow')
   await controlsPage
     .getByRole('combobox', { name: 'Read clipboard permission' })
@@ -2264,9 +2333,7 @@ try {
     'block',
   )
   assert.equal(
-    await controlsPage
-      .getByRole('combobox', { name: 'Automatic call PiP permission' })
-      .inputValue(),
+    await controlsPage.getByRole('combobox', { name: 'Automatic PiP permission' }).inputValue(),
     'allow',
   )
   assert.equal(

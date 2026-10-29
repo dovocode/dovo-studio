@@ -106,7 +106,7 @@ function NotificationSettingsRows() {
       <SettingsGroup title="Preview & sound">
         <SettingRow
           label="Quick input preview"
-          description="On desktop, show questions and approvals over other apps while Dovo is inactive. Includes connected computers."
+          description="On desktop, show questions and approvals over other apps while Dovo is inactive. Includes connected computers. Input requests also open while using Browser, regardless of this setting."
         >
           <Toggle
             label="Show quick input preview"

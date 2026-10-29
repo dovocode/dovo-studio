@@ -38,6 +38,7 @@ import {
   cleanBrowserTabs,
   browserTabActivitySchema,
   type BrowserTabCategory,
+  type BrowserTabState,
   type BrowserWebsiteCustomization,
 } from '@dovo/protocol'
 import { Effect } from 'effect'
@@ -332,6 +333,7 @@ function BrowserContent({
   const routingProfiles = useRef(profiles)
   routingProfiles.current = profiles
   const awakeCommands = useRef(new Map<string, string>())
+  const [tabStates, setTabStates] = useState<BrowserTabState[]>([])
   useEffect(() => {
     if (!shared || !browser) return
     for (const tab of tabs) {
@@ -832,6 +834,7 @@ function BrowserContent({
         Effect.sync(() => {
           if (!alive || !state) return
           if (shared) {
+            if (state.tabStates) setTabStates(state.tabStates)
             if (state.faviconUpdates?.length) {
               setTabs((previous) =>
                 previous.map((tab) => {
@@ -1558,6 +1561,24 @@ function BrowserContent({
     <BrowserTabRow
       key={tab.id}
       tab={tab}
+      state={
+        tab.kind === 'web' ? tabStates.find((state) => state.key === nativeKey(tab.id)) : undefined
+      }
+      onMute={
+        browser && tab.kind === 'web'
+          ? () => {
+              const state = tabStates.find((state) => state.key === nativeKey(tab.id))
+              void act(async () => {
+                const result = await browser({
+                  action: 'set-audio-muted',
+                  key: nativeKey(tab.id),
+                  muted: !state?.muted,
+                })
+                if (result?.tabStates) setTabStates(result.tabStates)
+              })
+            }
+          : undefined
+      }
       active={activeTab === tab.id}
       busy={busy}
       reorder={

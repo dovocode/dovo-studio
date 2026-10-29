@@ -5,6 +5,7 @@ import {
   BROWSER_UNAVAILABLE_BACKGROUND_PRELOAD,
 } from './browser-permission-preload.js'
 import { DOCUMENT_PIP_PRELOAD } from './browser-document-pip.js'
+import { BROWSER_TAB_ACTIVITY_PRELOAD } from './browser-tab-activity.js'
 import {
   commonBrowserPermission,
   commonBrowserPermissionAllowed,
@@ -343,6 +344,7 @@ export function createBrowserMedia(host: MediaHost) {
       path,
       PRELOAD +
         DOCUMENT_PIP_PRELOAD +
+        BROWSER_TAB_ACTIVITY_PRELOAD +
         BROWSER_PERMISSION_PRELOAD +
         BROWSER_UNAVAILABLE_BACKGROUND_PRELOAD,
     )

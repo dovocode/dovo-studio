@@ -61,7 +61,7 @@ app.whenReady().then(async () => {
     const options = pipOptions(details);
     if (!options) return {action:'deny'};
     return {action:'allow',overrideBrowserWindowOptions:options,createWindow: options => {
-      const pip = createDocumentPipWindow(options, owner.webContents.getURL(), details.features.includes('dovo-disallow-return=1') ? undefined : () => { globalThis.pipReturned = true; owner.show(); owner.focus() });
+      const pip = createDocumentPipWindow(options, owner.webContents.getURL(), details.features.includes('dovo-disallow-return=1') ? undefined : () => { globalThis.pipReturned = true; owner.show(); owner.focus(); globalThis.reportPipVisibility(true) });
       const child = pip.window;
       pip.contents.on('will-navigate', event => event.preventDefault());
       owner.webContents.once('did-navigate', () => {if (!child.isDestroyed()) child.close()});
@@ -255,7 +255,18 @@ app.whenReady().then(async () => {
   await owner.waitForFunction(() => !!documentPictureInPicture)
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1)
   await cdp.send('Runtime.evaluate', {
-    expression: `window.autoCount = 0; navigator.mediaSession.setActionHandler('enterpictureinpicture', async details => {window.autoReason = details.reason; window.autoCount++; await Promise.resolve(); try {window.autoWindow = await documentPictureInPicture.requestWindow()} catch(error) {window.autoError = error.message}})`,
+    expression: `window.autoCount = 0; navigator.mediaSession.setActionHandler('enterpictureinpicture', async details => {
+      window.autoReason = details.reason; window.autoCount++; await Promise.resolve();
+      try {
+        const child = await documentPictureInPicture.requestWindow();
+        // Call applications can replace the initial about:blank document before rendering.
+        child.document.open(); child.document.write('<!doctype html><title>Floating call</title>'); child.document.close();
+        const video = document.getElementById('call');
+        child.document.body.append(video);
+        child.addEventListener('pagehide', () => document.body.append(video), {once: true});
+        window.autoWindow = child;
+      } catch(error) {window.autoError = error.message}
+    })`,
     userGesture: false,
   })
   assert.equal(
@@ -325,6 +336,38 @@ app.whenReady().then(async () => {
     1,
     'Repeated hidden reports do not re-enter PiP',
   )
+  for (let cycle = 1; cycle <= 3; cycle++) {
+    const automaticHeader = await headerPage()
+    await automaticHeader
+      .getByRole('button', { name: 'Back to tab', exact: true })
+      .click({ noWaitAfter: true })
+    await owner.waitForFunction(
+      () =>
+        !documentPictureInPicture.window &&
+        document.visibilityState === 'visible' &&
+        !!document.getElementById('call'),
+      null,
+      { polling: 100 },
+    )
+    assert.equal(
+      await owner.evaluate(
+        () =>
+          document.getElementById('call').srcObject === stream &&
+          stream.getTracks()[0].readyState === 'live',
+      ),
+      true,
+      'Returning to the tab preserves the live call across repeated automatic PiP cycles',
+    )
+    await owner.evaluate(() => {
+      window.autoWindow = undefined
+    })
+    await app.evaluate(() => globalThis.reportPipVisibility(false))
+    await owner.waitForFunction(() => !!window.autoWindow || !!window.autoError, null, {
+      polling: 100,
+    })
+    assert.equal(await owner.evaluate(() => window.autoError), undefined)
+    assert.equal(await owner.evaluate(() => window.autoCount), cycle + 1)
+  }
   await owner.evaluate(() => {
     documentPictureInPicture.window.close()
     window.autoWindow = undefined
@@ -336,7 +379,7 @@ app.whenReady().then(async () => {
   await owner.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
   assert.equal(
     await owner.evaluate(() => window.autoCount),
-    1,
+    4,
     'Closing PiP while away does not reopen it',
   )
   await app.evaluate(({ BrowserWindow }) => {
@@ -359,9 +402,70 @@ app.whenReady().then(async () => {
     polling: 100,
   })
   assert.equal(await owner.evaluate(() => window.autoError), undefined)
-  assert.equal(await owner.evaluate(() => window.autoCount), 2)
+  assert.equal(await owner.evaluate(() => window.autoCount), 5)
+  // Ordinary video sites have no Media Session handler. Use Chromium's native PiP.
+  await owner.evaluate(() => documentPictureInPicture.window.close())
+  await owner.waitForFunction(() => !!document.getElementById('call'))
+  await owner.evaluate(() => {
+    navigator.mediaSession.setActionHandler('enterpictureinpicture', null)
+    const canvas = document.createElement('canvas')
+    const context = canvas.getContext('2d')
+    window.drawVideo = setInterval(() => {
+      context.fillStyle = 'red'
+      context.fillRect(0, 0, canvas.width, canvas.height)
+    }, 50)
+    const video = document.getElementById('call')
+    video.srcObject = canvas.captureStream(20)
+    video.style.cssText = 'width:320px;height:180px'
+    video.play()
+  })
+  await app.evaluate(({ BrowserWindow }) => {
+    const owner = BrowserWindow.getAllWindows().find((w) => !w.isAlwaysOnTop())
+    owner.show()
+    owner.focus()
+    globalThis.pipAutoAllowed = false
+    globalThis.reportPipVisibility(true)
+  })
+  await owner.waitForFunction(() => {
+    const video = document.getElementById('call')
+    return !document.hidden && !video.paused && video.readyState >= 2 && video.videoWidth > 0
+  })
+  await app.evaluate(() => globalThis.reportPipVisibility(false))
+  await owner.waitForFunction(() => document.hidden)
+  assert.equal(
+    await owner.evaluate(() => !!document.pictureInPictureElement),
+    false,
+    'Unapproved sites cannot enter native video PiP automatically',
+  )
+  await app.evaluate(() => {
+    globalThis.pipAutoAllowed = true
+    globalThis.reportPipVisibility(true)
+  })
+  await owner.waitForFunction(() => !document.hidden)
+  for (let cycle = 0; cycle < 2; cycle++) {
+    await app.evaluate(() => globalThis.reportPipVisibility(false))
+    await owner.waitForFunction(() => document.pictureInPictureElement?.id === 'call')
+    await owner.evaluate(() => document.exitPictureInPicture())
+    await owner.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    assert.equal(
+      await owner.evaluate(() => !!document.pictureInPictureElement),
+      false,
+      'Closing native PiP while hidden does not immediately reopen it',
+    )
+    await app.evaluate(() => globalThis.reportPipVisibility(true))
+    await owner.waitForFunction(() => !document.hidden)
+  }
+  await owner.evaluate(() => document.getElementById('call').pause())
+  await app.evaluate(() => globalThis.reportPipVisibility(false))
+  await owner.waitForFunction(() => document.hidden)
+  assert.equal(
+    await owner.evaluate(() => !!document.pictureInPictureElement),
+    false,
+    'Paused videos do not enter automatic PiP',
+  )
+  await owner.evaluate(() => clearInterval(window.drawVideo))
   console.log(
-    'Document PiP native fixture passed: activation, real Window/DOM/media, separate header, hostname, resize, close/restore, owner navigation, in-app visibility transitions and async automatic-PiP opt-in.',
+    'Document PiP native fixture passed: activation, real Window/DOM/media, separate header, hostname, resize, close/restore, owner navigation, in-app visibility transitions, async automatic-PiP opt-in, repeated Back-to-tab cycles after document replacement and automatic native video PiP without a site handler.',
   )
 } catch (error) {
   console.error('Native test failure:', error)

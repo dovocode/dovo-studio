@@ -30,6 +30,9 @@ const mocks = vi.hoisted(() => {
       'Mozilla/5.0 Chrome/148.0.0.0 Safari/537.36 DovoStudio/0.0.9 Electron/45.0.0',
     setUserAgent: vi.fn<(value: string) => void>(),
     setBackgroundThrottling: vi.fn<(value: boolean) => void>(),
+    isCurrentlyAudible: vi.fn<() => boolean>(() => false),
+    isAudioMuted: vi.fn<() => boolean>(() => false),
+    setAudioMuted: vi.fn<(muted: boolean) => void>(),
     setWindowOpenHandler: vi.fn<(...args: unknown[]) => void>(),
     setIgnoreMenuShortcuts: vi.fn<(ignore: boolean) => void>(),
     session: {
@@ -226,6 +229,11 @@ beforeEach(() => {
   mocks.linkProfile.mockReturnValue(undefined)
   mocks.windowFor = undefined
   mocks.automaticPip = false
+  mocks.contents.isCurrentlyAudible.mockReturnValue(false)
+  mocks.contents.isAudioMuted.mockReturnValue(false)
+  mocks.contents.setAudioMuted.mockImplementation((muted) =>
+    mocks.contents.isAudioMuted.mockReturnValue(muted),
+  )
   mocks.view.getVisible.mockReturnValue(true)
   mocks.view.setVisible.mockImplementation((visible) => {
     mocks.view.getVisible.mockReturnValue(Boolean(visible))
@@ -880,6 +888,30 @@ it('activates automatic PiP when leaving an occluded tab even with a live previe
   expect(allowed(mainFrame)).toBe(false)
 })
 
+it('grants automatic native video PiP only to the approved hidden main frame', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const enter = mocks.contents.ipc.handle.mock.calls.find(
+    ([name]) => name === 'browser:video-pip-auto',
+  )?.[1]
+  if (typeof enter !== 'function') throw new Error('Missing automatic video PiP handler')
+  const main = { senderFrame: mocks.contents.mainFrame }
+  mocks.contents.mainFrame.executeJavaScript.mockClear()
+  mocks.automaticPip = true
+  expect(enter(main)).toBe(false)
+  await call(event, { action: 'hide', key: 'shared' })
+  mocks.automaticPip = false
+  expect(enter(main)).toBe(false)
+  mocks.automaticPip = true
+  expect(enter({ senderFrame: {} })).toBe(false)
+  expect(mocks.contents.mainFrame.executeJavaScript).not.toHaveBeenCalled()
+  await enter(main)
+  expect(mocks.contents.mainFrame.executeJavaScript).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining('requestPictureInPicture'),
+    true,
+  )
+})
+
 it('reports a background page on tab switching and after its document reloads', async () => {
   const call = handler()
   await call(event, workspaceShow)
@@ -1351,6 +1383,11 @@ function popupWindow() {
     once: vi.fn<(event: string, callback: () => void) => void>(),
     webContents: {
       mainFrame: {},
+      isDestroyed: () => false,
+      isCurrentlyAudible: () => false,
+      isAudioMuted: () => false,
+      setAudioMuted: vi.fn<(muted: boolean) => void>(),
+      getTitle: () => 'Floating call',
       ipc: {
         handle: vi.fn<(name: string, handler: (...args: unknown[]) => unknown) => void>(),
         on: vi.fn<(name: string, handler: (...args: unknown[]) => unknown) => void>(),
@@ -2615,7 +2652,7 @@ it('queues distinct local and remote link tabs until the workspace consumes them
   })
   await expect(
     call(event, { action: 'status', key: 'workspace', tabCount: 3 }),
-  ).resolves.toBeUndefined()
+  ).resolves.toMatchObject({ tabStates: [expect.objectContaining({ key: 'external:one' })] })
 })
 
 it('rejects unsafe and ownerless external destinations before creating a native page', async () => {
@@ -2710,10 +2747,70 @@ it('accepts one-use PiP tickets only from the owning main frame and protects the
     'callTabs.0.pictureInPicture',
     true,
   )
+  await call(event, { action: 'set-audio-muted', key: 'shared', muted: true })
+  expect(mocks.contents.setAudioMuted).toHaveBeenCalledWith(true)
+  expect(popup.webContents.setAudioMuted).toHaveBeenCalledWith(true)
   const closed = popup.once.mock.calls.find(([name]) => name === 'closed')?.[1]
   closed?.()
   expect(await call(event, { action: 'tab-activity', key: 'activity' })).toHaveProperty(
     'protectedKeys',
     [],
   )
+})
+
+it('reports background tab activity, validates frame reports, and mutes without selecting the tab', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const devices = mocks.contents.ipc.on.mock.calls.find(
+    ([name]) => name === 'browser:tab-devices',
+  )?.[1]
+  const badge = mocks.contents.ipc.on.mock.calls.find(([name]) => name === 'browser:tab-badge')?.[1]
+  if (typeof devices !== 'function' || typeof badge !== 'function')
+    throw new Error('Missing activity listeners')
+  const main = { senderFrame: mocks.contents.mainFrame }
+  devices(main, { camera: true, microphone: true, screenSharing: true })
+  badge(main, 7)
+  devices({ senderFrame: {} }, { camera: false, microphone: false, screenSharing: false })
+  badge({ senderFrame: {} }, 99)
+  mocks.contents.isCurrentlyAudible.mockReturnValue(true)
+  await call(event, { action: 'hide', key: workspaceShow.key })
+  const status = await call(event, { action: 'status', key: 'workspace', tabCount: 1 })
+  expect(status).toMatchObject({
+    tabStates: [
+      {
+        key: workspaceShow.key,
+        badge: 7,
+        camera: true,
+        microphone: true,
+        screenSharing: true,
+        audible: true,
+        muted: false,
+      },
+    ],
+  })
+  mocks.window.focus.mockClear()
+  const muted = await call(event, {
+    action: 'set-audio-muted',
+    key: workspaceShow.key,
+    muted: true,
+  })
+  expect(muted).toMatchObject({ tabStates: [expect.objectContaining({ muted: true })] })
+  expect(mocks.contents.setAudioMuted).toHaveBeenCalledWith(true)
+  expect(mocks.window.focus).not.toHaveBeenCalled()
+  devices(main, { camera: false, microphone: false, screenSharing: false })
+  badge(main, null)
+  expect(await call(event, { action: 'status', key: 'workspace', tabCount: 1 })).toMatchObject({
+    tabStates: [
+      expect.objectContaining({
+        camera: false,
+        microphone: false,
+        screenSharing: false,
+        badge: undefined,
+      }),
+    ],
+  })
+  await call(event, { ...workspaceShow, key: 'preview', workspaceBrowser: false })
+  await expect(
+    call(event, { action: 'set-audio-muted', key: 'preview', muted: true }),
+  ).rejects.toThrow('Browser workspace')
 })

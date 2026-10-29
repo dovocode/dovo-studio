@@ -8,11 +8,21 @@ import {
   AlarmClock,
   ExternalLink,
   ArrowUpRight,
+  Volume2,
+  VolumeX,
+  Camera,
+  Mic,
+  ScreenShare,
 } from 'lucide-react'
 import { cn, ContextMenu, IconButton } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { useWorkspace } from '@dovo/studio-core'
-import { browserTabCategory, runtimeComputerName } from '@dovo/protocol'
+import {
+  browserTabBadge,
+  browserTabCategory,
+  runtimeComputerName,
+  type BrowserTabState,
+} from '@dovo/protocol'
 import { BrowserFavicon } from './browser-favicon'
 import { useBrowserProfileDetails } from './browser-profile-label'
 import type { DragEventHandler } from 'react'
@@ -33,6 +43,8 @@ export function BrowserTabRow({
   onMove,
   onMenuOpen,
   onKeepAwake,
+  state,
+  onMute,
   reorder,
 }: {
   tab: BrowserTab
@@ -49,6 +61,8 @@ export function BrowserTabRow({
   onMove?: (windowId?: number) => void
   onMenuOpen: () => void
   onKeepAwake?: () => void
+  state?: BrowserTabState
+  onMute?: () => void
   reorder?: {
     dragging: boolean
     edge?: 'before' | 'after'
@@ -77,7 +91,8 @@ export function BrowserTabRow({
       : owner
         ? runtimeComputerName(owner)
         : 'Unavailable computer'
-  const title = tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'
+  const title = state?.title || tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'
+  const badge = state?.badge ?? browserTabBadge(title)
   const category = browserTabCategory(tab)
   const menuItem =
     'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs outline-none focus:bg-accent data-[disabled]:opacity-50'
@@ -97,6 +112,7 @@ export function BrowserTabRow({
           onDragEnd={reorder?.onDragEnd}
           className={cn(
             'group relative flex min-w-0 items-center rounded-lg transition-colors',
+            tab.pinned && 'flex-col',
             reorder?.dragging && 'opacity-40',
             reorder?.edge &&
               (tab.pinned
@@ -143,52 +159,93 @@ export function BrowserTabRow({
             aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}`}
             onClick={onSelect}
             title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
-            className={`flex min-w-0 flex-1 items-center gap-2 text-left ${tab.pinned ? 'h-16 flex-col justify-center gap-1.5 px-2 text-[11px]' : 'h-9 px-2 text-xs'}`}
+            className={`flex min-w-0 items-center gap-2 text-left ${tab.pinned ? 'h-12 w-full flex-none justify-center px-2 py-2' : 'h-10 flex-1 px-2 text-xs'}`}
           >
-            <span className="relative inline-flex shrink-0 items-center">
-              <BrowserFavicon tab={tab} />
-              {tab.keepAwake && (
-                <span
-                  aria-label="Kept awake"
-                  title="Keep awake is on"
-                  className="absolute -right-1 -bottom-1 size-1.5 rounded-full bg-status-success ring-2 ring-sidebar"
-                />
-              )}
-            </span>
-            <span
-              className={
-                tab.pinned
-                  ? 'line-clamp-2 min-h-[2.5em] w-full text-center leading-tight break-words'
-                  : 'min-w-0 flex-1 truncate'
-              }
-            >
-              {title}
-            </span>
-            <span
-              className={
-                tab.pinned
-                  ? 'absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-background/80 px-0.5 text-[9px] leading-none text-muted-foreground'
-                  : 'flex shrink-0 items-center gap-0.5 text-[9px] leading-none text-muted-foreground'
-              }
-              aria-label={`${computer} · ${profile}`}
-            >
-              {!tab.pinned && (
+            <span className="flex shrink-0 flex-col items-center gap-1">
+              <span className="relative inline-flex items-center">
+                <BrowserFavicon tab={tab} />
+                {badge !== undefined && (
+                  <span
+                    aria-label={badge === 'unread' ? 'Unread activity' : `${badge} unread`}
+                    className={cn(
+                      'absolute -right-2 -top-2 rounded-full bg-primary text-primary-foreground ring-2 ring-sidebar',
+                      badge === 'unread'
+                        ? 'size-2'
+                        : 'min-w-3.5 px-1 text-center text-[9px] font-semibold leading-3.5',
+                    )}
+                  >
+                    {badge === 'unread' ? null : badge > 99 ? '99+' : badge}
+                  </span>
+                )}
+                {tab.keepAwake && (
+                  <span
+                    aria-label="Kept awake"
+                    title="Keep awake is on"
+                    className="absolute -right-1 -bottom-1 size-1.5 rounded-full bg-status-success ring-2 ring-sidebar"
+                  />
+                )}
+              </span>
+              <span
+                className="flex h-2.5 shrink-0 items-center justify-center gap-0.5 text-[8px] leading-none text-muted-foreground"
+                aria-label={`${computer} · ${profile}`}
+              >
                 <RuntimeIcon
                   icon={tab.kind === 'remote' ? owner?.snapshot?.runtimeIcon : undefined}
-                  className="size-2.5 shrink-0"
+                  className="size-2 shrink-0"
                   aria-hidden="true"
                 />
-              )}
-              <span
-                className={cn('max-w-6 truncate', emoji && 'text-xs')}
-                title={`${profile} · ${computer}`}
-              >
-                {emoji ?? initials}
+                <span
+                  className={cn('max-w-5 truncate', emoji && 'text-[9px]')}
+                  title={`${profile} · ${computer}`}
+                >
+                  {emoji ?? initials}
+                </span>
               </span>
             </span>
+            {!tab.pinned && <span className="min-w-0 flex-1 truncate">{title}</span>}
           </button>
+          {(state?.camera ||
+            state?.microphone ||
+            state?.screenSharing ||
+            state?.audible ||
+            state?.muted) && (
+            <div
+              aria-label="Tab activity"
+              className={cn(
+                'flex shrink-0 items-center justify-center text-status-success',
+                tab.pinned ? 'gap-0.5 px-0.5 pb-1.5' : 'gap-1 pr-1',
+              )}
+            >
+              {state.camera && (
+                <span role="img" aria-label={`Camera on in ${title}`} title="Camera on">
+                  <Camera className={tab.pinned ? 'size-2.5' : 'size-3'} />
+                </span>
+              )}
+              {state.microphone && (
+                <span role="img" aria-label={`Microphone on in ${title}`} title="Microphone on">
+                  <Mic className={tab.pinned ? 'size-2.5' : 'size-3'} />
+                </span>
+              )}
+              {state.screenSharing && (
+                <span role="img" aria-label={`Screen sharing in ${title}`} title="Screen sharing">
+                  <ScreenShare className={tab.pinned ? 'size-2.5' : 'size-3'} />
+                </span>
+              )}
+              {(state.audible || state.muted) && onMute && (
+                <IconButton
+                  type="button"
+                  label={`${state.muted ? 'Unmute' : 'Mute'} tab ${title}`}
+                  aria-pressed={state.muted}
+                  className="size-5 shrink-0"
+                  onClick={onMute}
+                >
+                  {state.muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+                </IconButton>
+              )}
+            </div>
+          )}
           {!tab.pinned && (
-            <div className="absolute right-0.5 flex items-center gap-0.5 rounded bg-sidebar opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:opacity-100">
+            <div className="flex shrink-0 items-center gap-0.5 rounded bg-sidebar opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
               {category === 'active' && (
                 <IconButton
                   type="button"

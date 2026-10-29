@@ -1,4 +1,5 @@
 import { createBrowserVisibility } from './browser-visibility.js'
+import { createBrowserTabActivity } from './browser-tab-activity.js'
 import {
   DOCUMENT_PIP_NAME,
   authorizeDocumentPip,
@@ -9,6 +10,7 @@ import {
   selectedBrowserText,
   isPrivateBrowserProfile,
   type BrowserWorkspaceTab,
+  type BrowserTabState,
 } from '@dovo/protocol'
 import { createBrowserCdp } from './browser-cdp.js'
 import { decode } from '@dovo/protocol'
@@ -46,6 +48,9 @@ type Entry = {
   navigationError?: string
   popups: Set<BrowserWindow>
   documentPip?: BrowserWindow
+  documentPipContents?: Electron.WebContents
+  activity?: ReturnType<typeof createBrowserTabActivity>
+  pipActivity?: ReturnType<typeof createBrowserTabActivity>
   taskId?: string
   cdp?: string
   view: WebContentsView
@@ -264,6 +269,32 @@ export function registerBrowser(
         : []
     })
   }
+  const audioContents = (entry: Entry) =>
+    [entry.contents, entry.documentPipContents].filter(
+      (contents): contents is Electron.WebContents => !!contents && !contents.isDestroyed(),
+    )
+  const tabStates = (windowId: number): BrowserTabState[] =>
+    [...views.values()].flatMap((entry) => {
+      if (entry.windowId !== windowId || !entry.workspace || entry.contents.isDestroyed()) return []
+      const state = entry.activity?.()
+      const pip =
+        entry.documentPipContents && !entry.documentPipContents.isDestroyed()
+          ? entry.pipActivity?.()
+          : undefined
+      return [
+        {
+          key: entry.key,
+          url: entry.contents.getURL(),
+          title: entry.contents.getTitle(),
+          badge: state?.badge,
+          audible: audioContents(entry).some((contents) => contents.isCurrentlyAudible()),
+          muted: entry.contents.isAudioMuted(),
+          camera: !!(state?.camera || pip?.camera),
+          microphone: !!(state?.microphone || pip?.microphone),
+          screenSharing: !!(state?.screenSharing || pip?.screenSharing),
+        },
+      ]
+    })
   const focusStudio = (entry: Entry) => {
     if (
       !entry.contents.isDestroyed() &&
@@ -635,6 +666,7 @@ export function registerBrowser(
       browserSession: view.webContents.session,
       url: '',
     }
+    if (workspace) created.activity = createBrowserTabActivity(view.webContents)
     if (workspace && !routingSessions.has(created.browserSession)) {
       const browserSession = created.browserSession
       routingSessions.add(browserSession)
@@ -935,6 +967,9 @@ export function registerBrowser(
       }
       if (documentPip) {
         created.documentPip = popup
+        created.documentPipContents = contents
+        created.pipActivity = createBrowserTabActivity(contents)
+        contents.setAudioMuted(view.webContents.isAudioMuted())
         const keepOnTop = () => {
           if (!popup.isDestroyed()) popup.setAlwaysOnTop(true, 'floating')
         }
@@ -964,6 +999,8 @@ export function registerBrowser(
         created.popups.delete(popup)
         if (created.documentPip === popup) {
           created.documentPip = undefined
+          created.documentPipContents = undefined
+          created.pipActivity = undefined
           if (!view.webContents.isDestroyed()) syncBackgroundThrottling(created)
         }
       })
@@ -1568,6 +1605,7 @@ export function registerBrowser(
       if (command.action !== 'status') return
       const events = {
         ...drainTabEvents(window.id, command.tabCount !== undefined),
+        ...(command.tabCount !== undefined ? { tabStates: tabStates(window.id) } : {}),
         ...media.snapshot(window.id),
         ...(command.tabCount !== undefined && focusedTabs.has(window.id)
           ? { focusedTabKey: focusedTabs.get(window.id) }
@@ -1622,6 +1660,11 @@ export function registerBrowser(
     if (command.action === 'focus-tab') {
       if (!entry.workspace) throw new Error('Only Browser workspace tabs can be focused.')
       return focusTab(entry)
+    }
+    if (command.action === 'set-audio-muted') {
+      if (!entry.workspace) throw new Error('Only Browser workspace tabs can be muted.')
+      for (const contents of audioContents(entry)) contents.setAudioMuted(command.muted)
+      return { url: '', back: false, forward: false, tabStates: tabStates(window.id) }
     }
     const navigation = entry.view.webContents.navigationHistory
     if (
@@ -1717,6 +1760,7 @@ export function registerBrowser(
         favicon: entry.favicon,
         cdp: entry.cdp,
         ...(focusedTabKey ? { focusedTabKey } : {}),
+        ...(command.tabCount !== undefined ? { tabStates: tabStates(window.id) } : {}),
         back: navigation.canGoBack(),
         forward: navigation.canGoForward(),
         ...(openedLinks.length ? { openedLinks } : {}),

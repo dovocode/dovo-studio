@@ -24,7 +24,7 @@ export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
 export const Keyboard={dismiss(){document.activeElement?.blur()}};export const Linking={openSettings:async()=>{}};
 export const Icon=()=>null;
-export const IconButton=({label,onPress,disabled})=><button aria-label={label} disabled={disabled} onClick={onPress} style={{width:44,height:44,padding:0,flexShrink:0}}/>;
+export const IconButton=({label,onPress,onLongPress,disabled})=>{const press=useRef({});return <button aria-label={label} disabled={disabled} onPointerDown={()=>{press.current.held=false;press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress?.()},500)}} onPointerUp={()=>clearTimeout(press.current.timer)} onPointerCancel={()=>clearTimeout(press.current.timer)} onClick={()=>{if(!press.current.held)onPress()}} style={{width:44,height:44,padding:0,flexShrink:0}}/>};
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress} style={{minWidth:44,minHeight:44}}>{label}</button>;
 export const Glass=View;
 export const Choice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select>;
@@ -267,14 +267,40 @@ try {
     await page.getByRole('button', { name: 'More message actions', exact: true }).count(),
     0,
   )
-  const inlineActions = []
-  for (const name of ['Queue follow-up', 'Steer agent', 'Fork', 'Stop']) {
-    const bounds = await page.getByRole('button', { name, exact: true }).boundingBox()
-    assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44)
-    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320)
-    inlineActions.push(bounds)
+  const primary = page.getByRole('button', { name: 'Queue follow-up', exact: true })
+  const primaryBounds = await primary.boundingBox()
+  assert.ok(primaryBounds.width >= 44 && primaryBounds.height >= 44)
+  assert.ok(primaryBounds.x >= 0 && primaryBounds.x + primaryBounds.width <= 320)
+  assert.equal(await page.getByRole('button', { name: 'Stop', exact: true }).count(), 0)
+  const openMessageActions = async () => {
+    const button = page
+      .getByTestId('Composer toolbar')
+      .getByRole('button', { name: /^(Queue follow-up|Stop)$/ })
+    await button.hover()
+    await page.mouse.down()
+    await page.waitForTimeout(600)
+    await page.mouse.up()
+    await page.getByRole('dialog', { name: 'Message actions', exact: true }).waitFor()
   }
-  assert.ok(inlineActions.every((bounds) => bounds.y === inlineActions[0].y))
+  const messageMenu = page.getByRole('dialog', { name: 'Message actions', exact: true })
+  const beforeHold = await page.evaluate(() => window.calls.length)
+  await openMessageActions()
+  assert.equal(await page.evaluate(() => window.calls.length), beforeHold, 'Holding does not send')
+  for (const name of ['Fork', 'Queue follow-up', 'Steer agent', 'Stop']) {
+    assert.equal(await messageMenu.getByRole('button', { name, exact: true }).isEnabled(), true)
+  }
+  await messageMenu.getByRole('button', { name: 'Stop', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stop' })
+  await page.evaluate(() => window.setDraftText(''))
+  await page
+    .getByTestId('Composer toolbar')
+    .getByRole('button', { name: 'Stop', exact: true })
+    .click()
+  assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stop' })
+  await page.evaluate(() => window.setDraftText('Continue the review'))
+  await page.waitForFunction(
+    () => document.querySelector('[aria-label="Message"]').value === 'Continue the review',
+  )
   const compact = await page
     .getByRole('button', { name: 'Compact context', exact: true })
     .boundingBox()
@@ -431,7 +457,8 @@ try {
   await page.evaluate(() =>
     window.setTask({ queue: [{ id: 'queued', role: 'user', text: 'Check the tests' }] }),
   )
-  await page.getByRole('button', { name: 'Steer agent', exact: true }).click()
+  await openMessageActions()
+  await messageMenu.getByRole('button', { name: 'Steer agent', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'steer' })
   assert.equal(await page.getByRole('dialog', { name: 'Message actions' }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Agent & model', exact: true }).count(), 1)
@@ -455,6 +482,7 @@ try {
     false,
   )
   await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await openMessageActions()
   assert.equal(
     await page.getByRole('button', { name: 'Steer agent', exact: true }).isDisabled(),
     true,
@@ -466,10 +494,12 @@ try {
       .isVisible(),
     true,
   )
+  await messageMenu.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('button', { name: 'Agent & model', exact: true }).click()
   await page.getByRole('button', { name: 'Use thread defaults', exact: true }).click()
   await page.getByRole('button', { name: 'Close', exact: true }).click()
-  await page.getByRole('button', { name: 'Fork', exact: true }).click()
+  await openMessageActions()
+  await messageMenu.getByRole('button', { name: 'Fork', exact: true }).click()
   await page.waitForFunction(() => window.navigations.length === 1)
   assert.deepEqual(await page.evaluate(() => window.navigations[0]), [
     'tasks',
@@ -531,13 +561,16 @@ try {
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Offline draft')
   await page.evaluate(() => {
     window.setTask({ status: 'running' })
+  })
+  await openMessageActions()
+  await page.evaluate(() => {
     window.setConnected(false)
   })
   await page.waitForFunction(
     () => document.querySelector('[aria-label="Queue follow-up"]')?.disabled,
   )
   assert.equal(
-    await page.getByRole('button', { name: 'Queue follow-up', exact: true }).isDisabled(),
+    await messageMenu.getByRole('button', { name: 'Queue follow-up', exact: true }).isDisabled(),
     true,
   )
   assert.equal(
@@ -549,6 +582,7 @@ try {
     await page.getByRole('button', { name: 'Ask a side question', exact: true }).isDisabled(),
     true,
   )
+  await messageMenu.getByRole('button', { name: 'Close', exact: true }).click()
   await page.getByRole('button', { name: 'Actions for queued message 1', exact: true }).click()
   for (const name of [
     'Pause queued message 1',
@@ -1205,7 +1239,7 @@ try {
   assert.equal(await page.evaluate(() => window.calls.length), beforeProjectMove)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile composer: inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/direct steer/restore, compact anchored queue menus, retry-safe duplication, composer queue editing, checklist collapse, side-chat sending, failure recovery and offline guards passed with native control adapters.',
+    'Mobile composer: default Queue / empty Stop, held Fork/Queue/Steer/Stop menu without accidental send, inline scrollable queue and 44pt actions at 320px, pause/resume/reorder/direct steer/restore, compact anchored queue menus, retry-safe duplication, composer queue editing, checklist collapse, side-chat sending, failure recovery and offline guards passed with native control adapters.',
   )
 } finally {
   await browser.close()

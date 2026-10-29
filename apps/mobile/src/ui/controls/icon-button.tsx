@@ -22,6 +22,7 @@ type IconButtonProps = {
   label: string
   icon: IconName
   onPress: () => void
+  onLongPress?: () => void
   disabled?: boolean
   prominent?: boolean
   selected?: boolean
@@ -109,6 +110,7 @@ export function IconButton(props: IconButtonProps) {
     label,
     icon,
     onPress,
+    onLongPress,
     disabled,
     prominent,
     selected,
@@ -119,7 +121,7 @@ export function IconButton(props: IconButtonProps) {
   // The filled Send/Stop control belongs to the TextInput's React Native responder tree.
   // A SwiftUI button can blur the input on touch-down, moving the composer before touch-up
   // and cancelling the press. Keep native SwiftUI controls for the other toolbar buttons.
-  if (Platform.OS === 'ios' && variant !== 'filled')
+  if (Platform.OS === 'ios' && variant !== 'filled' && !onLongPress)
     return (
       // React Native owns this control's frame and keyboard avoidance.
       <Host
@@ -138,6 +140,14 @@ export function IconButton(props: IconButtonProps) {
       accessibilityState={{ disabled, selected }}
       disabled={disabled}
       onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityHint={onLongPress ? 'Hold for message actions' : undefined}
+      accessibilityActions={
+        onLongPress ? [{ name: 'messageActions', label: 'Message actions' }] : undefined
+      }
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === 'messageActions') onLongPress?.()
+      }}
       style={({ pressed }) => ({
         width: size,
         height: size,

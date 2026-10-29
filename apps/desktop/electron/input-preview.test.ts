@@ -6,6 +6,7 @@ const f = vi.hoisted(() => ({
   windows: [] as Array<{
     options?: Electron.BrowserWindowConstructorOptions
     focused: boolean
+    focus: () => void
     visible: boolean
     callbacks: Map<string, () => void>
     webContents: {
@@ -133,7 +134,7 @@ it('reconciles resolved requests and hides on app activation without exposing co
   const { invoke, sync } = await fixture()
   expect(f.windows[1].visible).toBe(true)
   expect(await invoke('current')).not.toHaveProperty('connection')
-  f.windows[0].callbacks.get('focus')?.()
+  f.windows[0].focus()
   expect(f.windows[1].visible).toBe(false)
   await sync([])
   expect(await invoke('current')).toBeNull()
@@ -141,6 +142,31 @@ it('reconciles resolved requests and hides on app activation without exposing co
     invoke('answer', { key: inputPreviewKey(item), answer: { choice: ['yes'] } }),
   ).rejects.toThrow('no longer waiting')
 })
+it('shows input while Browser mode is focused, then hides it on return to a thread', async () => {
+  await fixture()
+  f.windows[0].focus()
+  expect(f.windows[1].visible).toBe(false)
+  const sync = (showWhileFocused: boolean, enabled = true) =>
+    f.handlers.get('input-preview:sync')?.(event(0), { enabled, showWhileFocused, items: [item] })
+  await sync(true)
+  expect(f.windows[1].visible).toBe(true)
+  f.windows[0].focus()
+  expect(f.windows[1].visible).toBe(true)
+  await sync(false)
+  expect(f.windows[1].visible).toBe(false)
+  await sync(true, false)
+  expect(f.windows[1].visible).toBe(true)
+  f.windows[0].focused = false
+  f.windows[1].focus()
+  f.windows[0].callbacks.get('blur')?.()
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(f.windows[1].visible).toBe(true)
+  f.windows[1].focused = false
+  f.windows[1].callbacks.get('blur')?.()
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(f.windows[1].visible).toBe(false)
+})
+
 it('submits to the originating remote runtime once and advances to the next request', async () => {
   const calls: string[] = []
   vi.stubGlobal(

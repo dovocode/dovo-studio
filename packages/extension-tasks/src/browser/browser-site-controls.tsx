@@ -36,7 +36,7 @@ const controls = [
   { permission: 'screen-wake-lock', label: 'Keep screen awake', Icon: Monitor },
   { permission: 'idle-detection', label: 'Device presence', Icon: UserRound },
   { permission: 'persistent-storage', label: 'Persistent storage', Icon: Database },
-  { permission: 'automatic-pip', label: 'Automatic call PiP', Icon: PictureInPicture2 },
+  { permission: 'automatic-pip', label: 'Automatic PiP', Icon: PictureInPicture2 },
   { permission: 'geolocation', label: 'Precise location', Icon: MapPin },
   { permission: 'geolocation-approximate', label: 'Approximate location', Icon: MapPin },
   { permission: 'fileSystem', label: 'Files and folders you choose', Icon: FolderOpen },

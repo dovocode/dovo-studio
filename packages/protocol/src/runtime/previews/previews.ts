@@ -362,6 +362,11 @@ export const browserCommandSchema = Schema.Union([
       ),
     ),
   }),
+  mutableStruct({
+    action: Schema.Literal('set-audio-muted'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    muted: Schema.Boolean,
+  }),
   /** Trusted Studio registers remote workspace tabs as potential sharing sources. */
   mutableStruct({
     action: Schema.Literal('remote-media-sources'),
@@ -459,6 +464,18 @@ export type BrowserCallTab = {
   pictureInPicture: boolean
 }
 export type BrowserFrame = { key: string; url: string; image: string }
+/** Live native tab state; never persisted with the browser library. */
+export type BrowserTabState = {
+  key: string
+  url: string
+  title: string
+  badge?: number | 'unread'
+  audible: boolean
+  muted: boolean
+  camera: boolean
+  microphone: boolean
+  screenSharing: boolean
+}
 export type BrowserFrameBridge = (
   key: string,
   listener: (frame: BrowserFrame) => void,
@@ -472,6 +489,7 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       selection?: string
       favicon?: string | null
       faviconUpdates?: { key: string; url: string; favicon: string | null }[]
+      tabStates?: BrowserTabState[]
       sitePermissions?: BrowserSitePermissions
       windows?: { id: number; title: string }[]
       movedTabs?: { key: string; tab: BrowserWorkspaceTab }[]

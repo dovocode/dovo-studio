@@ -184,6 +184,7 @@ export * from './runtime/previews/browser-search.js'
 export * from './runtime/previews/browser-website-customization.js'
 export * from './runtime/previews/browser-tab-lifecycle.js'
 export * from './runtime/previews/browser-favicon.js'
+export * from './runtime/previews/browser-tab-badge.js'
 
 export * from './runtime/connection/mutations.js'
 

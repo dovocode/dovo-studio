@@ -122,6 +122,7 @@ export function useTaskNotifications(
   preview?: InputPreviewBridge,
   activeTarget?: NotificationTarget,
   enabled = true,
+  browserMode = false,
 ) {
   const [notice, setNotice] = useState<{ title: string; target: NotificationTarget } | null>(null)
   const { runtimes } = useWorkspace()
@@ -154,9 +155,9 @@ export function useTaskNotifications(
         })
     }
     void preview
-      .sync({ enabled: preferences.inputPreview, items })
+      .sync({ enabled: preferences.inputPreview, showWhileFocused: browserMode, items })
       .catch((error: unknown) => console.error('Could not update input preview', error))
-  }, [runtimes, preview, preferences.inputPreview, enabled])
+  }, [runtimes, preview, preferences.inputPreview, enabled, browserMode])
   useEffect(
     () => preview?.onOpenThread((target) => onOpen({ ...target, viewId: 'tasks' })),
     [preview, onOpen],

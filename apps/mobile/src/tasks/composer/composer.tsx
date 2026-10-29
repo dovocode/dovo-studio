@@ -153,6 +153,12 @@ export function Composer({
     [checkout, setCheckout] = useApplicationState(false)
   const [draftTools, setDraftTools] = useState<'menu' | 'stash' | 'context'>()
   const toolsSheet = useRef<SheetHandle>(null)
+  const [messageActions, setMessageActions] = useState(false)
+  const messageActionsSheet = useRef<SheetHandle>(null)
+  useEffect(
+    () => setMessageActions(false),
+    [task.id, task.status, editing?.message.id, stashRuntimeId],
+  )
   useEffect(() => setDraftTools(undefined), [task.id, stashRuntimeId])
   const [starterFocus, setStarterFocus] = useState<string>()
   const selection = useRef<DraftSelection | undefined>(undefined)
@@ -239,6 +245,7 @@ export function Composer({
     checkout ||
     settings ||
     linkingProjects ||
+    messageActions ||
     draftTools === 'menu' ||
     attachmentPicker.editor
   )
@@ -993,51 +1000,72 @@ export function Composer({
               }
             />
             {!showFollowupActions && sideQuestionAction}
-            {!editing && showFollowupActions && (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                }}
-              >
-                <IconButton
-                  variant="plain"
-                  icon="queue"
-                  label="Queue follow-up"
-                  disabled={!canSend || busy}
-                  onPress={() => send()}
-                />
-                <IconButton
-                  variant="plain"
-                  icon="steer"
-                  label="Steer agent"
-                  disabled={!canSend || busy || !!turnSettings}
-                  onPress={() => send('steer')}
-                />
-                {showFork && (
-                  <IconButton
-                    variant="plain"
-                    icon="changes"
-                    label="Fork"
-                    disabled={!canSend || busy || !!turnSettings}
-                    onPress={fork.start}
-                  />
-                )}
-              </View>
-            )}
             <IconButton
               variant="filled"
-              icon={editing ? 'send' : task.status === 'running' ? 'stop' : 'send'}
-              label={editing ? 'Save changes' : task.status === 'running' ? 'Stop' : 'Send'}
+              icon={
+                editing
+                  ? 'send'
+                  : task.status === 'running'
+                    ? hasInput
+                      ? 'queue'
+                      : 'stop'
+                    : 'send'
+              }
+              label={
+                editing
+                  ? 'Save changes'
+                  : task.status === 'running'
+                    ? hasInput
+                      ? 'Queue follow-up'
+                      : 'Stop'
+                    : 'Send'
+              }
               disabled={
                 machineMoving ||
-                (!editing && task.status === 'running'
+                (!editing && task.status === 'running' && !hasInput
                   ? !connected || stopping
                   : !canSend || fork.busy)
               }
-              onPress={!editing && task.status === 'running' ? stop : () => send()}
+              onPress={!editing && task.status === 'running' && !hasInput ? stop : () => send()}
+              onLongPress={
+                !editing && task.status === 'running' ? () => setMessageActions(true) : undefined
+              }
             />
           </View>
+          {messageActions && !editing && task.status === 'running' && (
+            <Sheet
+              ref={messageActionsSheet}
+              title="Message actions"
+              onClose={() => setMessageActions(false)}
+            >
+              {showFork && (
+                <Action
+                  secondary
+                  label="Fork"
+                  disabled={!canSend || busy || !!turnSettings}
+                  onPress={() => messageActionsSheet.current?.dismiss(fork.start)}
+                />
+              )}
+              <Action
+                secondary
+                label="Queue follow-up"
+                disabled={!canSend || busy}
+                onPress={() => messageActionsSheet.current?.dismiss(() => send())}
+              />
+              <Action
+                secondary
+                label="Steer agent"
+                disabled={!canSend || busy || !!turnSettings}
+                onPress={() => messageActionsSheet.current?.dismiss(() => send('steer'))}
+              />
+              <Action
+                secondary
+                label="Stop"
+                disabled={!connected || stopping || machineMoving}
+                onPress={() => messageActionsSheet.current?.dismiss(stop)}
+              />
+            </Sheet>
+          )}
           {draftTools === 'menu' && (
             <Sheet ref={toolsSheet} title="Add to draft" onClose={() => setDraftTools(undefined)}>
               <Action

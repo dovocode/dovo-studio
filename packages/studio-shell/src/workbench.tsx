@@ -618,6 +618,7 @@ function WorkbenchContent({
         }
       : undefined,
     !threadWindow && !browserWindowId,
+    target.viewId === 'browser',
   )
   const [palette, setPalette] = useApplicationState(false)
   const commands = useRef(new Map<string, StudioCommand>())
