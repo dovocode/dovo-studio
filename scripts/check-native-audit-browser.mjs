@@ -14,6 +14,7 @@ export const Image=({source,style,onError,accessibilityLabel})=><img src={source
 export const Text=({children,style,accessibilityRole})=><span role={accessibilityRole==='alert'?'alert':undefined} style={{display:'block',...flat(style)}}>{children}</span>;
 export const Pressable=({children,onPress,disabled,style,accessibilityLabel,accessibilityRole,accessibilityState,testID})=><button role={accessibilityRole} aria-label={accessibilityLabel} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} disabled={disabled} onClick={onPress} style={flat(typeof style==='function'?style({pressed:false}):style)}>{children}</button>;
 export const FlatList=({data,renderItem,keyExtractor})=><div>{data.map((item,index)=><div key={keyExtractor?.(item,index)??index}>{renderItem({item,index})}</div>)}</div>;
+export const SectionList=({sections,renderItem,renderSectionHeader,keyExtractor})=><div>{sections.map((section,index)=><section key={section.title??index}>{renderSectionHeader?.({section})}{section.data.map((item,index)=><div key={keyExtractor?.(item,index)??index}>{renderItem({item,index,section})}</div>)}</section>)}</div>;
 export const ScrollView=({children,ref,contentContainerStyle,style,testID})=>{useImperativeHandle(ref,()=>({scrollTo:input=>window.scrolls.push(input)}));return <div data-testid={testID} style={{...flat(style),...flat(contentContainerStyle)}}>{children}</div>};
 export const Platform={OS:'ios'};export const Keyboard={dismiss(){},addListener:()=>({remove(){}})};export const KeyboardAvoidingView=View;export const RefreshControl=()=>null;export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};export const useWindowDimensions=()=>({height:844,width:390});export const Alert={alert:(title,body,actions)=>{window.alerts.push({title,body});actions?.find(a=>a.style==='destructive')?.onPress()}};
 `
@@ -24,6 +25,7 @@ const searchField = `export const SearchField=({placeholder,value,onChangeText})
 const mocks = {
   '@dovo/studio-core': `export {useTaskWaiting} from '${root}/packages/studio-core/src/use-task-waiting.ts';`,
   'react-native': controls,
+  'lucide-react-native': `export * from 'lucide-react';`,
   '@expo/ui/swift-ui': swift,
   '@expo/ui/swift-ui/modifiers': [
     'accessibilityLabel',
@@ -49,6 +51,7 @@ const mocks = {
   './safe-modal': `export const SafeModal=({children})=><div>{children}</div>;`,
   '../controls/native-icon': `export const NativeIcon=()=>null;export const NativeMenuButton=({onPress,label})=><button onClick={onPress}>{label}</button>;`,
   '../controls/icon-button': `export const IconButton=({label,onPress})=><button onClick={onPress}>{label}</button>;`,
+  '../controls/icon': `export const Icon=()=>null;`,
   '../../ui/controls/icon': `export const Icon=()=>null;`,
   '../../../ui/controls/icon': `export const Icon=()=>null;`,
   '../../ui/content/pull-request-icon': `export const PullRequestIcon=()=>null;`,
@@ -114,6 +117,7 @@ function App(){const[state,setState]=useState({page:'create',tab:undefined,fragm
   alias: {
     react: `${root}/packages/studio-ui/node_modules/react`,
     'react-dom': `${root}/packages/studio-ui/node_modules/react-dom`,
+    'lucide-react': `${root}/packages/studio-ui/node_modules/lucide-react`,
     '@dovo/protocol': `${root}/packages/protocol/src/index.ts`,
     '@dovo/client-runtime': `${root}/packages/client-runtime/src/index.ts`,
     '@dovo/studio-core': `${root}/packages/studio-core/src/index.ts`,

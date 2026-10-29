@@ -6,6 +6,7 @@ const resolveDir = new URL('../apps/mobile/', import.meta.url).pathname
 const controls = `
 const flat=style=>Object.assign({},...(Array.isArray(style)?style:[style]));
 export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',...flat(style)}}>{children}</div>;
+export const Image=({source,style})=><img src={source.uri} style={flat(style)} alt=""/>;
 export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibilityState,style})=><button style={{display:"flex",...flat(style)}} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress}>{children}</button>;
 export const Text=({children,accessibilityRole,style})=><span style={flat(style)} role={accessibilityRole}>{children}</span>;
 export const Icon=({name})=><span aria-hidden data-icon={name}/>;

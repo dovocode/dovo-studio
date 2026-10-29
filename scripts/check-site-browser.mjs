@@ -36,7 +36,13 @@ assert.ok(address && typeof address === 'object')
 const origin = `http://127.0.0.1:${address.port}`
 const browser = await chromium.launch({
   headless: true,
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+  args: [
+    // Large full-page captures exceed SwiftShader's compositor surface limit; keep WebGL on it.
+    '--disable-gpu-compositing',
+    '--use-gl=angle',
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
+  ],
 })
 const release = (tag, date, extra = {}) => ({
   tag_name: tag,

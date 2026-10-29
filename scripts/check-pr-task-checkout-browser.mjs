@@ -16,7 +16,7 @@ const mocks = {
   'react-native': native,
   '@dovo/studio-core': `export * from '../protocol/src/index';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:value=>window.events.push(['navigate',value])});export const WorkspaceScope=({children})=>children;export {updateTask} from '../studio-core/src/workspace/actions';`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `export {LinkedCheckoutEditor} from './src/linked-checkouts';export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {ChoicePicker} from './src/choice-picker';export * from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';export const ComposerWorkspaceBar=({children})=><div>{children}</div>;`,
+  '@dovo/studio-ui': `export {ProjectIcon} from './src/project-icon';export {LinkedCheckoutEditor} from './src/linked-checkouts';export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {ChoicePicker} from './src/choice-picker';export * from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';export const ComposerWorkspaceBar=({children})=><div>{children}</div>;`,
   '@dovo/extension-scm/project-transfer': 'export const ProjectTransferDialog=()=>null;',
   '@dovo/extension-scm/repository-dialog': `export const RepositoryDialog=()=>null;`,
   '../../list/task-collection': `export const taskSources=store=>[{runtimeId:'machine',name:'Machine',online:true,workspace:store.workspace}];`,

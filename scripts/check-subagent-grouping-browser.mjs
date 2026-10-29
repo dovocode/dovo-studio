@@ -998,8 +998,20 @@ try {
           threadSectionOrder: ['active', 'working', 'waiting', 'pinned', 'snoozed', 'settled'],
         }),
       )
+      if (mobile) {
+        await activeHeader.waitFor()
+        assert.equal(
+          await activeHeader.getAttribute('aria-expanded'),
+          'false',
+          'Reordering Open to the top preserves its collapsed state',
+        )
+        await page.getByText('Active order', { exact: true }).waitFor({ state: 'hidden' })
+        await page.getByText('Working order', { exact: true }).waitFor()
+        await page.getByText('Waiting order', { exact: true }).waitFor()
+        await activeHeader.click()
+      }
       await page.getByText('Active order', { exact: true }).waitFor()
-      assert.equal(await activeHeader.count(), 0, 'Open at the top has no collapse header')
+      assert.equal(await activeHeader.count(), 0, 'Expanded Open at the top has no collapse header')
       if (!mobile) await page.waitForFunction(() => window.orders.at(-1).includes('active-order'))
       await page.evaluate(() =>
         window.updatePreferences({
@@ -1007,6 +1019,7 @@ try {
         }),
       )
       await activeHeader.waitFor()
+      if (mobile) await activeHeader.click()
       await page.getByText('Active order', { exact: true }).waitFor({ state: 'hidden' })
 
       assert.equal(

@@ -104,7 +104,9 @@ export function ChangeTypeFilters({
               className={cn('studio-filter-chip flex items-center gap-1.5', color)}
             >
               <ChangeCategoryIcon kind={kind} />
-              {label} {counts.get(kind) ?? 0}
+              <span className="text-foreground">
+                {label} {counts.get(kind) ?? 0}
+              </span>
             </button>
           ))}
         {total != null && total > files.length && (

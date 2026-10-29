@@ -10,7 +10,7 @@ const controls =
   ['button', 'input', 'textarea', 'checkbox', 'badge', 'dialog']
     .map((name) => `export * from '${uiDir}/components/ui/${name}.tsx';`)
     .join('') +
-  `export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export const OrganizeReview=()=>null;export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
+  `export * from '${uiDir}/sidebar-header.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export {ChangeSummary} from '${uiDir}/review/change-summary.tsx';export const OrganizeReview=()=>null;export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {LineCommentForm} from '${uiDir}/line-comment-form.tsx';export const FormField=({label,children})=><label>{label}{children}</label>;export {MessageResponse} from '${uiDir}/components/ai-elements/message.tsx';`
 const mocks = {
   '@dovo/studio-ui': controls,
   '@dovo/studio-core': `export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const useRepositorySources=()=>[];export const useWorkspace=()=>window.store;export const useStudioHost=()=>({navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export {studioSyntaxTheme,studioThemeIds} from '${root}/packages/studio-core/src/themes.ts';export const useDiffOptions=()=>({options:{preferredHighlighter:'highlights',theme:'dovo-dovo-dark',themeType:'dark',overflow:'wrap'},defaultSplit:false});export const useResolvedTheme=()=> 'dark';export const useAppPreferences=()=>({hideWhitespaceChanges:false,themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[],theme:'dark',themePalette:'dovo',codeTheme:'app'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
@@ -159,6 +159,7 @@ try {
   await detail.getByRole('tab', { name: 'Changes (2)', exact: true }).click()
   await detail.getByText('Loading files…', { exact: true }).waitFor()
   await page.evaluate(() => window.releaseSection('changes'))
+  await detail.getByRole('button', { name: '2 files changed', exact: true }).click()
   await detail.getByRole('navigation', { name: 'Changed files', exact: true }).waitFor()
   assert.equal(
     await page.evaluate(() =>
@@ -331,6 +332,10 @@ try {
     window.store.connected = false
     window.showProbe()
   })
+  await preservedInlineForm
+    .getByRole('status')
+    .filter({ hasText: 'Offline · your draft is preserved. Connect to submit.' })
+    .waitFor()
   await inline.waitFor()
   assert.equal(await inline.inputValue(), 'Keep my inline feedback across pushes')
   assert.equal(
@@ -350,6 +355,7 @@ try {
     window.store.connected = true
     window.showProbe()
   })
+  await preservedInlineForm.getByRole('status').waitFor({ state: 'hidden' })
   assert.equal(await inline.inputValue(), 'Edited while offline')
   // Leave the detail and return to the same owner/account/PR.
   await detail.getByRole('button', { name: 'Back to PRs', exact: true }).click()
@@ -555,6 +561,7 @@ try {
     .getByRole('button', { name: 'Show changes', exact: true })
     .waitFor({ state: 'detached' })
   await generated.locator('diffs-container').waitFor({ state: 'visible' })
+  await detail.getByRole('button', { name: '120 files changed', exact: true }).click()
   await detail
     .getByRole('navigation', { name: 'Changed files', exact: true })
     .getByRole('button')
@@ -650,14 +657,12 @@ try {
     ]
     window.showAnchored()
   })
-  await page
-    .getByLabel('Changed file breakdown', { exact: true })
-    .filter({ hasText: /All 12Code 11Docs 1/ })
-    .waitFor()
+  await page.getByRole('button', { name: '12 files changed', exact: true }).click()
+  await page.getByLabel('Changed file breakdown', { exact: true }).waitFor()
   const reviewControls = page.getByLabel('Pinned file review controls', { exact: true })
   await reviewControls.getByText('src/review-5.ts', { exact: true }).waitFor()
   const types = page.getByLabel('Changed file breakdown', { exact: true })
-  await types.getByRole('button', { name: 'Docs 1', exact: true }).click()
+  await types.getByRole('button', { name: 'Filter Docs: 1 files', exact: true }).click()
   assert.equal(
     await page
       .getByRole('region', { name: 'Code changes', exact: true })
@@ -665,7 +670,7 @@ try {
       .count(),
     1,
   )
-  await types.getByRole('button', { name: 'All 12', exact: true }).click()
+  await types.getByRole('button', { name: 'Filter Docs: 1 files', exact: true }).click()
 
   await detail
     .getByRole('navigation', { name: 'Changed files', exact: true })

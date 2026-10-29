@@ -345,10 +345,11 @@ try {
       await show('rows', { long: true, unread })
       const contrast = await page.locator('.group\\/task').evaluate((element) => {
         const button = element.querySelector('button')
-        const title = [...button.children].find((span) =>
-          span.textContent.startsWith('A_very_long_task_title_'),
-        )
+        if (!button) throw new Error('Contrast checks require the thread row button')
+        const title = button.querySelector('[data-thread-title]')
         const context = button.querySelector('.studio-thread-card-context')
+        if (!title || !context)
+          throw new Error('Contrast checks require the rendered thread title and metadata')
         const background = getComputedStyle(element.parentElement).backgroundColor
         const canvas = document.createElement('canvas')
         canvas.width = canvas.height = 1

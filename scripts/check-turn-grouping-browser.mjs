@@ -31,6 +31,7 @@ export const ConversationRail=()=>null,ConversationScrollButton=()=>null;
 `
 async function bundle(mobile) {
   const mocks = {
+    'lucide-react-native': `export * from 'lucide-react';`,
     '../../task-creation/task-empty-state': `export const TaskEmptyState=()=>null;`,
     './components/failed-task-retry': 'export const FailedTaskRetry=()=>null;',
 
@@ -79,8 +80,9 @@ const Component=components.Message;return <MessageContext.Provider value={messag
 }};`,
     'react-native': `
 import {useEffect} from 'react';
-export const View=({children,style,accessibilityRole,accessibilityLabel})=><div style={style} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel}>{children}</div>,Text=({children,style})=><span style={Array.isArray(style)?Object.assign({},...style):style}>{children}</span>;export const SectionList=()=>null;export const ScrollView=View;
-export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState,style,testID})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>:<div data-testid={testID} style={Array.isArray(style)?Object.assign({},...style):typeof style==='function'?style({pressed:false}):style} onClick={onPress}>{children}</div>;
+const flat=style=>Array.isArray(style)?Object.assign({},...style.flat(Infinity)):style;
+export const View=({children,style,pointerEvents,accessibilityRole,accessibilityLabel})=><div style={{position:'relative',...flat(style),pointerEvents}} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel}>{children}</div>,Text=({children,style})=><span style={flat(style)}>{children}</span>;export const SectionList=()=>null;export const ScrollView=View;
+export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState,style,testID})=>accessibilityRole==='button'?<button aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} style={{position:'relative',...flat(typeof style==='function'?style({pressed:false}):style)}} onClick={onPress}>{children}</button>:<div data-testid={testID} style={Array.isArray(style)?Object.assign({},...style):typeof style==='function'?style({pressed:false}):style} onClick={onPress}>{children}</div>;
 export const Alert={alert:message=>{throw Error(message)}};export const ActivityIndicator=()=> <span data-loading-history style={{display:"block",width:20,height:20}}/>;
 export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFooterComponent,onLayout,contentContainerStyle,onScrollBeginDrag,onScrollEndDrag})=>{window.readEarlier=()=>{onScrollBeginDrag();onScrollEndDrag({nativeEvent:{contentOffset:{y:500},velocity:{y:0}}})};const padding=Object.assign({},...contentContainerStyle);useEffect(()=>onLayout?.({nativeEvent:{layout:{height:500}}}),[onLayout]);return <div data-conversation-list style={{display:'flex',flexDirection:'column-reverse',paddingTop:padding.paddingTop,paddingBottom:padding.paddingBottom}}>{ListHeaderComponent}{data.map(item=><div key={keyExtractor(item)}>{renderItem({item})}</div>)}{ListFooterComponent}</div>};`,
   }
@@ -523,15 +525,28 @@ try {
           })),
         }))
       })
+      const changes = page.getByRole('button', {
+        name: 'Turn changes · 7 files',
+        exact: true,
+      })
+      await changes.waitFor()
+      assert.equal(await changes.getAttribute('aria-expanded'), 'false')
+      assert.equal(await page.getByRole('button', { name: 'All 7', exact: true }).count(), 0)
+      for (const label of [
+        'Code, 2 files',
+        'Tests, 1 files',
+        'Mocks, 1 files',
+        'Docs, 2 files',
+        'Generated, 1 files',
+      ])
+        await page.getByLabel(label, { exact: true }).waitFor()
+      await changes.click()
       for (const name of ['All 7', 'Code 2', 'Tests 1', 'Mocks 1', 'Docs 2', 'Generated 1'])
         await page.getByRole('button', { name, exact: true }).waitFor()
-      assert.equal(
-        await page
-          .getByRole('button', { name: 'Turn changes · 7 files', exact: true })
-          .getAttribute('aria-expanded'),
-        'false',
-      )
-      await page.getByRole('button', { name: 'Tests 1', exact: true }).click()
+      assert.equal(await changes.getAttribute('aria-expanded'), 'true')
+      const tests = page.getByRole('button', { name: 'Filter Tests: 1 files', exact: true })
+      await tests.click()
+      assert.equal(await tests.getAttribute('aria-pressed'), 'true')
       assert.equal(
         await page
           .getByRole('button', { name: 'Tests 1', exact: true })
@@ -577,7 +592,7 @@ try {
           })),
         })),
       )
-      await page.getByText('Docs 1', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Docs 1', exact: true }).waitFor()
       // An empty recent window must still allow older history to load after list layout.
       await page.evaluate(() => {
         window.recentLayouts = 0
