@@ -16,7 +16,7 @@ export const View=({children,style,testID,accessibilityRole,accessibilityLabel,o
 export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled,horizontal})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,minWidth:0,overflowX:horizontal?'auto':undefined,overflowY:horizontal||scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...flat(contentContainerStyle)}}>{children}</div></div>};
 export const Text=({children,style,numberOfLines,accessibilityRole,accessibilityLabel,accessibilityLiveRegion})=><span role={accessibilityRole} aria-label={accessibilityLabel} aria-live={accessibilityLiveRegion} style={{...flat(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
-export const Pressable=({children,style,onPress,onPressIn,onPressOut,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=>{const press=useRef({});return <button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onPointerDown={()=>{press.current.held=false;onPressIn?.();if(onLongPress)press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress()},500)}} onPointerUp={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[]}})}} onPointerCancel={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[{}]}})}} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={()=>{if(!press.current.held)onPress?.()}} style={{display:'flex',border:0,padding:0,backgroundColor:'transparent',color:'inherit',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>};
+export const Pressable=({children,style,onPress,onPressIn,onPressOut,onLongPress,disabled,accessibilityLabel,accessibilityState,accessibilityValue,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=>{const press=useRef({});return <button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onPointerDown={()=>{press.current.held=false;onPressIn?.();if(onLongPress)press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress()},500)}} onPointerUp={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[]}})}} onPointerCancel={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[{}]}})}} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-valuetext={accessibilityValue?.text} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={()=>{if(!press.current.held)onPress?.()}} style={{display:'flex',border:0,padding:0,backgroundColor:'transparent',color:'inherit',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>};
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const Modal=({children,onRequestClose,visible=true,onDismiss})=>{const shown=useRef(visible);useLayoutEffect(()=>{if(shown.current&&!visible)queueMicrotask(()=>onDismiss?.());shown.current=visible},[visible,onDismiss]);return visible?createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body):null};
 export const Platform={OS:'ios'};
@@ -220,7 +220,7 @@ window.calls=[];window.navigations=[];window.alerts=[];window.sideCount=0;
 function App(){
   const [task,setTask]=useState({id:'task',title:'Review',repositoryId:'repo',harness:defaultTaskHarness('codex'),status:'running',activeRunId:'active-run',messages:[{id:'first',role:'user',text:'Review'}],turns:[],queue:[{id:'queued',role:'user',text:'Check the tests'}],contextUsage:{used:190000,limit:200000},files:[],draftAttachments:[]});
   const [inputs,setInputs]=useState({questions:[],approvals:[]});window.setInputs=setInputs;
-  const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;const [text,setText]=useState('Continue the review');window.setDraftText=setText;const [connected,setConnected]=useState(true);
+  const [turnSettings,setTurnSettings]=useState(null);window.turnSettings=turnSettings;window.setTurnSettings=setTurnSettings;const [text,setText]=useState('Continue the review');window.setDraftText=setText;const [connected,setConnected]=useState(true);
   window.currentTask=task;window.setTask=update=>setTask(task=>({...task,...update}));window.setConnected=setConnected;
   const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const [pendingFork,setPendingFork]=useState();window.setPendingFork=setPendingFork;const forkRef=useRef();const textRef=useRef(text);textRef.current=text;const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',pendingFork,stageForkEffect:fork=>Effect.sync(()=>{forkRef.current=fork;setPendingFork(fork);return fork}),confirmForkEffect:()=>Effect.sync(()=>{const fork={...forkRef.current,accepted:true};if(textRef.current===fork.draftText)setText('');forkRef.current=fork;setPendingFork(fork);return fork}),finishForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),discardForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
@@ -426,8 +426,31 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Up 1', exact: true }).count(), 0)
   assert.equal(
     await page.getByRole('button', { name: 'Agent & model', exact: true }).innerText(),
-    'GPT',
+    'GPT\nDefault',
   )
+  await page.evaluate(() =>
+    window.setTurnSettings({
+      provider: 'codex',
+      model: 'large-model',
+      reasoning: 'high',
+      harness: {
+        provider: 'codex',
+        model: 'large-model',
+        reasoning: 'high',
+        serviceTier: 'priority',
+      },
+    }),
+  )
+  await page.waitForFunction(() =>
+    document.querySelector('[aria-label="Agent & model"]').textContent.includes('High'),
+  )
+  assert.match(
+    await page
+      .getByRole('button', { name: 'Agent & model', exact: true })
+      .getAttribute('aria-valuetext'),
+    /High reasoning, Fast mode/,
+  )
+  await page.evaluate(() => window.setTurnSettings(null))
   for (const name of ['Steer with queued message 1', 'Actions for queued message 1']) {
     const bounds = await page.getByRole('button', { name, exact: true }).boundingBox()
     assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44)

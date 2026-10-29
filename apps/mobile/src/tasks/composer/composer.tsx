@@ -9,7 +9,7 @@ import { contentColumn } from '../../ui/layout/content-column'
 import { ThreadStartModes } from '../creation/thread-start-modes'
 import { ThreadStarters } from '../creation/thread-starters'
 import { TurnModelControls } from './turn-model-controls'
-import { applyTurnSettings } from '@dovo/protocol'
+import { applyTurnSettings, selectedCatalogModel, serviceTierValue } from '@dovo/protocol'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FileDropTarget } from './file-drop-target'
 import { changeTaskProject, changeTaskAutoProject } from '@dovo/protocol'
@@ -122,6 +122,32 @@ export function Composer({
     modelName,
     modelCatalog?.harness?.name,
   )
+  const automaticModel =
+    !(nextTurnControls && turnSettings) &&
+    (task.modelSelection === 'auto' || task.modelSelection === 'smart')
+  const selectedModel =
+    modelCatalog && selectedCatalogModel(modelCatalog, composerAgent?.model ?? '')
+  const reasoning = automaticModel
+    ? task.modelSelectionDifficulty || 'auto'
+    : composerAgent?.reasoning || selectedModel?.defaultReasoning
+  const reasoningLabel = reasoning
+    ? ({
+        auto: 'Auto',
+        low: 'Low',
+        medium: 'Medium',
+        high: 'High',
+        xhigh: 'Extra High',
+        max: 'Max',
+        ultra: 'Ultra',
+        minimal: 'Minimal',
+        none: 'None',
+      }[reasoning] ??
+      (selectedModel?.reasoning ?? modelCatalog?.reasoning)?.find(
+        (effort) => effort.id === reasoning,
+      )?.name ??
+      reasoning)
+    : 'Default'
+  const fastMode = ['priority', 'fast'].includes(serviceTierValue(composerAgent?.serviceTier))
   const { activeId: stashRuntimeId } = useRuntime()
   const checkoutAction = useAction()
   const [turnModelOpen, setTurnModelOpen] = useApplicationState(false)
@@ -945,7 +971,7 @@ export function Composer({
                   accessibilityRole="button"
                   accessibilityLabel="Agent & model"
                   accessibilityValue={{
-                    text: `${nextTurnControls ? 'Next turn: ' : ''}${modelLabel}`,
+                    text: `${nextTurnControls ? 'Next turn: ' : ''}${modelLabel}, ${reasoningLabel} ${automaticModel ? 'difficulty' : 'reasoning'}${fastMode ? ', Fast mode' : ''}`,
                   }}
                   accessibilityState={{
                     disabled:
@@ -999,6 +1025,10 @@ export function Composer({
                     ]}
                   >
                     {modelLabel}
+                  </Text>
+                  {fastMode && <Icon name="fast" size={12} color={colors.muted} filled />}
+                  <Text numberOfLines={1} style={[styles.muted, { fontSize: 11, flexShrink: 0 }]}>
+                    {reasoningLabel}
                   </Text>
                   <Icon name="down" size={10} color={colors.muted} />
                 </Pressable>

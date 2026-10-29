@@ -1,5 +1,6 @@
 import {
   WandSparkles,
+  Zap,
   Camera,
   ScanSearch,
   SlidersHorizontal,
@@ -82,6 +83,7 @@ import {
 import { useTheme } from '../theme'
 const icons = {
   magic: WandSparkles,
+  fast: Zap,
   scope: ScanSearch,
   tune: SlidersHorizontal,
   maestro: WandSparkles,
