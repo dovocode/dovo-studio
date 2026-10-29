@@ -165,7 +165,7 @@ export function useAttachmentPicker(
     })
   }
   const select = (source: 'photos' | 'files' | 'camera') => {
-    if (!connected) return
+    if (!connected || busy || uploading.current) return
     act(() =>
       mobileWorkflow(function* () {
         Keyboard.dismiss()
@@ -229,6 +229,7 @@ export function useAttachmentPicker(
     busy,
     error,
     pick,
+    select,
     upload,
     uploadContext,
   }

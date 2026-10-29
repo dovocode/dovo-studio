@@ -112,6 +112,7 @@ import { RemoteBrowser, type RemoteBrowserControls } from './remote-browser'
 import { DeviceList } from './device-list'
 import { PhysicalControls } from './physical-controls'
 import { DeviceDeployment } from './device-deployment'
+import { BrowserFindBar } from './browser-find-bar'
 import { FloatingPreview, type PreviewPlacement } from '../detail/floating-preview'
 import { deviceHostSettingsResultSchema } from '@dovo/protocol'
 // A popped-out thread has its own renderer and must never share main-window tabs.
@@ -212,7 +213,7 @@ function BrowserContent({
 }) {
   const store = useWorkspace()
   const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = store,
-    { browser, browserFrames, openBrowserWindow } = useStudioHost()
+    { browser, browserFrames, openBrowserWindow, onBrowserContextAction } = useStudioHost()
   const screenshots = useScreenshotAttachment(taskId)
   const runtimesRef = useRef(runtimes)
   runtimesRef.current = runtimes
@@ -357,6 +358,20 @@ function BrowserContent({
     }
   }, [browser, shared, tabs])
   const browserKey = nativeKey(activeTab)
+  const [findOpen, setFindOpen] = useState(false)
+  const [findRequest, setFindRequest] = useState(0)
+  const [pageRevision, setPageRevision] = useState(0)
+  useEffect(
+    () =>
+      onBrowserContextAction?.((action) => {
+        if (action.action === 'close-find' && action.key === browserKey) setFindOpen(false)
+        if (action.action === 'find' && action.key === browserKey) {
+          setFindOpen(true)
+          setFindRequest((value) => value + 1)
+        }
+      }),
+    [onBrowserContextAction, browserKey],
+  )
   useEffect(() => {
     if (!browser || !shared) return
     const sources = tabs.flatMap((tab) => {
@@ -506,6 +521,7 @@ function BrowserContent({
     initialMode === 'devices'
       ? 'devices'
       : (tabs.find((tab) => tab.id === activeTab)?.kind ?? 'web')
+  useEffect(() => setFindOpen(false), [browserKey, mode])
   const tabProfiles = mode === 'remote' ? (remoteProfiles.profiles ?? []) : profiles
   useEffect(() => setCustomization(null), [activeTab, profileId])
   const websiteProfile = tabProfiles.find((profile) => profile.id === profileId)
@@ -833,6 +849,7 @@ function BrowserContent({
       Effect.tap((state) =>
         Effect.sync(() => {
           if (!alive || !state) return
+          setPageRevision(state.documentRevision ?? 0)
           if (shared) {
             if (state.tabStates) setTabStates(state.tabStates)
             if (state.faviconUpdates?.length) {
@@ -1798,6 +1815,9 @@ function BrowserContent({
           sideOffset={8}
           collisionPadding={8}
           aria-label="Browser settings"
+          onCloseAutoFocus={(event) => {
+            if (findOpen) event.preventDefault()
+          }}
           className="z-50 flex max-h-[var(--radix-popover-content-available-height)] w-72 max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto rounded-xl border bg-popover p-3 text-popover-foreground shadow-xl"
         >
           <div className="space-y-1 px-1">
@@ -1976,6 +1996,17 @@ function BrowserContent({
               )}
               {mode === 'web' && browser && url && (
                 <>
+                  <Popover.Close asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="justify-start text-xs"
+                      onClick={() => setFindOpen(true)}
+                    >
+                      Find on page
+                    </Button>
+                  </Popover.Close>
                   {!shared && (
                     <Button
                       type="button"
@@ -2675,6 +2706,19 @@ function BrowserContent({
         </div>
       )}
       {(mode === 'web' || mode === 'remote') && navigation}
+      {mode === 'web' && browser && url && (
+        <BrowserFindBar
+          key={browserKey}
+          browser={browser}
+          browserKey={browserKey}
+          url={url}
+          open={findOpen}
+          onOpenChange={setFindOpen}
+          globalShortcut={shared}
+          focusRequest={findRequest}
+          pageRevision={pageRevision}
+        />
+      )}
       {mode === 'remote' && remoteProfiles.error && (
         <p role="alert" className="p-3 text-xs text-destructive">
           {remoteProfiles.error}

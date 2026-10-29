@@ -16,14 +16,14 @@ export const View=({children,style,testID,accessibilityRole,accessibilityLabel,o
 export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref,onLayout,onScroll,onContentSizeChange,scrollEnabled,horizontal})=>{const element=useRef(null),content=useRef(null);useLayout(element,onLayout);useLayout(content,e=>onContentSizeChange?.(e.nativeEvent.layout.width,e.nativeEvent.layout.height));useImperativeHandle(ref,()=>({scrollTo:({y})=>element.current.scrollTo(0,y)}));return <div ref={element} aria-label={accessibilityLabel} onScroll={event=>onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})} style={{minHeight:0,minWidth:0,overflowX:horizontal?'auto':undefined,overflowY:horizontal||scrollEnabled===false?'hidden':'auto',...flat(style)}}><div ref={content} style={{display:'flex',flexDirection:horizontal?'row':'column',width:horizontal?'max-content':undefined,...flat(contentContainerStyle)}}>{children}</div></div>};
 export const Text=({children,style,numberOfLines,accessibilityRole,accessibilityLabel,accessibilityLiveRegion})=><span role={accessibilityRole} aria-label={accessibilityLabel} aria-live={accessibilityLiveRegion} style={{...flat(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
 export const TextInput=({value,onChangeText,accessibilityLabel})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;
-export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=><button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',border:0,padding:0,backgroundColor:'transparent',color:'inherit',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
+export const Pressable=({children,style,onPress,onPressIn,onPressOut,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,accessibilityRole,accessibilityActions,onAccessibilityAction,accessibilityHint})=>{const press=useRef({});return <button aria-description={accessibilityHint} data-actions={JSON.stringify(accessibilityActions)} onPointerDown={()=>{press.current.held=false;onPressIn?.();if(onLongPress)press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress()},500)}} onPointerUp={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[]}})}} onPointerCancel={()=>{clearTimeout(press.current.timer);onPressOut?.({nativeEvent:{touches:[{}]}})}} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();onAccessibilityAction?.({nativeEvent:{actionName:event.key==='ArrowDown'?'increment':'decrement'}})}}} role={accessibilityRole} aria-selected={accessibilityState?.selected} aria-expanded={accessibilityState?.expanded} data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={()=>{if(!press.current.held)onPress?.()}} style={{display:'flex',border:0,padding:0,backgroundColor:'transparent',color:'inherit',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>};
 export const SafeModal=({visible,children})=>visible?<div role="dialog">{children}</div>:null;
 export const Modal=({children,onRequestClose,visible=true,onDismiss})=>{const shown=useRef(visible);useLayoutEffect(()=>{if(shown.current&&!visible)queueMicrotask(()=>onDismiss?.());shown.current=visible},[visible,onDismiss]);return visible?createPortal(<div onKeyDown={event=>{if(event.key==='Escape')onRequestClose()}} style={{position:'fixed',inset:0,display:'flex',zIndex:1000}}>{children}</div>,document.body):null};
 export const Platform={OS:'ios'};
 export const useWindowDimensions=()=>{const[viewport,setViewport]=useState({width:innerWidth,height:innerHeight});useLayoutEffect(()=>{const resize=()=>setViewport({width:innerWidth,height:innerHeight});addEventListener('resize',resize);return()=>removeEventListener('resize',resize)},[]);return viewport};
 export const ActivityIndicator=()=>null;
 export const Alert={alert:(...args)=>window.alerts.push(args)};
-export const Keyboard={dismiss(){window.keyboardDismissals=(window.keyboardDismissals??0)+1;document.activeElement?.blur()},addListener(){return {remove(){}}},metrics(){return window.keyboardMetrics}};export const Linking={openSettings:async()=>{}};
+export const Keyboard={dismiss(){window.keyboardDismissals=(window.keyboardDismissals??0)+1;document.activeElement?.blur()},addListener(name,callback){(window.keyboardListeners??={})[name]??=new Set();window.keyboardListeners[name].add(callback);return {remove(){window.keyboardListeners[name].delete(callback)}}},metrics(){return window.keyboardMetrics}};export const Linking={openSettings:async()=>{}};
 export const Icon=()=>null;
 export const IconButton=({label,onPress,onLongPress,disabled})=>{const press=useRef({});return <button aria-label={label} disabled={disabled} onPointerDown={()=>{press.current.held=false;press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress?.()},500)}} onPointerUp={()=>clearTimeout(press.current.timer)} onPointerCancel={()=>clearTimeout(press.current.timer)} onClick={()=>{if(!press.current.held)onPress()}} style={{width:44,height:44,padding:0,flexShrink:0}}/>};
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress} style={{minWidth:44,minHeight:44}}>{label}</button>;
@@ -35,6 +35,24 @@ export const Sheet=({title,children,onClose,ref})=>{useImperativeHandle(ref,()=>
 export const useTheme=()=>({colors:{surface:'#202020',border:'#404040',muted:'#999',text:'#eee',accent:'#76a1ff'},styles:{content:{},muted:{color:'#999'}}});
 `
 const stubs = [
+  {
+    path: '@expo/ui/swift-ui',
+    contents: `export const Host=({children})=>children;export const Button=({children,testID,onPress,modifiers})=><button aria-label={testID} disabled={modifiers.some(value=>value?.disabled)} onClick={onPress} style={{width:44,height:44,padding:0,flexShrink:0}}>{children}</button>;`,
+  },
+  {
+    path: '@expo/ui/swift-ui/modifiers',
+    contents: `export const accessibilityAddTraits=()=>null,accessibilityLabel=()=>null,background=()=>null,buttonBorderShape=()=>null,buttonStyle=()=>null,contentShape=()=>null,controlSize=()=>null,disabled=value=>({disabled:value}),frame=()=>null,shapes={circle:()=>null},tint=()=>null;`,
+  },
+  {
+    path: 'expo-glass-effect',
+    contents: `export const isGlassEffectAPIAvailable=()=>false,isLiquidGlassAvailable=()=>false;`,
+  },
+  {
+    path: './native-icon',
+    importer: mobile + 'src/ui/controls/icon-button.tsx',
+    contents: 'export const NativeIcon=()=>null;',
+  },
+
   {
     path: 'expo-router',
     contents: 'export const router={push:target=>window.navigations.push(target)};',
@@ -101,7 +119,6 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
     '../../../ui/theme',
     '../../ui/content/text',
     '../../ui/controls/icon',
-    '../../ui/controls/icon-button',
     '../../ui/controls/action',
     '../../ui/controls/choice',
     '../../ui/controls/field',
@@ -208,7 +225,7 @@ function App(){
   const snapshot={queuedTurnSettingsSupported:true,autoProjectSelectionEnabled:true,...inputs,workspace:{repositories:[{id:'repo',name:'Project',path:'/repo',branch:'main'},{id:'scratch',kind:'scratch',name:'No project',path:'/private',branch:''}],agents:[]}};
   const [pendingFork,setPendingFork]=useState();window.setPendingFork=setPendingFork;const forkRef=useRef();const textRef=useRef(text);textRef.current=text;const [pendingMessages,setPendingMessages]=useState([]);window.setPendingMessages=setPendingMessages;const [editing,setEditing]=useState(null);const draft={text:editing?.text??text,ready:true,key:'draft',pendingFork,stageForkEffect:fork=>Effect.sync(()=>{forkRef.current=fork;setPendingFork(fork);return fork}),confirmForkEffect:()=>Effect.sync(()=>{const fork={...forkRef.current,accepted:true};if(textRef.current===fork.draftText)setText('');forkRef.current=fork;setPendingFork(fork);return fork}),finishForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),discardForkEffect:()=>Effect.sync(()=>setPendingFork(undefined)),revision:editing?.text??text,update:value=>editing?setEditing({...editing,text:value}):setText(value)};
   window.runtime={connected,snapshot,overviews:[{profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan'}},connected,snapshot}],activeId:'runtime',profile:{id:'runtime',name:'Local machine',nameIsCustom:true,connection:{address:'http://runtime.lan',token:'token'}},call:async(path,input)=>{window.calls.push({path,input});if(path==='/api/tasks/checklist/clear'){if(window.failClear)throw Error('Clear failed');if(JSON.stringify(window.currentTask.nativeTodos)!==JSON.stringify(input.expectedItems))throw Error('The checklist changed');const finish=()=>{window.setTask({nativeTodos:undefined});return {ok:true}};return window.holdClear?new Promise(resolve=>{window.finishClear=()=>resolve(finish())}):finish()};if(window.failSideSave)throw Error('Side save failed');if(path==='/api/tasks/side-chat/save')return {id:'side-'+(++window.sideCount)};return {answer:'Answer'}},callEffect:(path,input)=>Effect.try({try:()=>{window.calls.push({path,input});if(input.action==='duplicate'&&window.failDuplicate)throw Error('Duplicate failed');return path==='/api/tasks/start-fork'?{id:input.forkId}:{ok:true}},catch:error=>error})};
-  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},act:work=>void work(),attachmentPicker:{pick(){window.calls.push({mode:'attach'})},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
+  window.conversation={send:mode=>{if(editing){window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'edit',messageId:editing.message.id,text:editing.text,expectedText:editing.message.text,turnSettings:editing.settings,expectedTurnSettings:editing.message.turnSettings??null}});setEditing(null)}else window.calls.push({mode:mode??'queue'})},stop:()=>window.calls.push({mode:'stop'}),actions:{editing,restoreQueuedMessage:async message=>{window.calls.push({path:'/api/tasks/queue',input:{id:task.id,action:'restore',messageId:message.id}});setText(text=>[text,message.text].filter(Boolean).join('\\n\\n'));if(message.turnSettings)setTurnSettings(message.turnSettings)},beginEdit:message=>setEditing({message,text:message.text,settings:message.turnSettings??null}),cancelEdit:()=>setEditing(null),turnSettings:editing?editing.settings:turnSettings,setTurnSettings:value=>editing?setEditing({...editing,settings:value}):setTurnSettings(value),agent:{...defaultTaskHarness('codex'),id:'agent',name:'Agent'},connected,snapshot,draft,dictation:{active:false},busy:false,stopping:false,error:'',attaching:false,setAttaching(){},act:work=>void work(),attachmentPicker:{pick(){throw new Error('Attachment chooser must not open')},select(source){window.calls.push({mode:'attach',source})},upload(){}},firstMessage:task.status==='draft'&&!task.messages.length,checkoutEditable:task.status==='draft',hasInput:!!draft.text,canSend:connected&&!!draft.text,patch:async changes=>{window.calls.push({patch:changes});setTask(old=>({...old,...Object.fromEntries(Object.entries(changes).map(([key,value])=>[key,value.after]))}))},threadScope:'runtime:task',pendingMessages}};
   return <Composer task={task} renderAbove={(setup,starters,startModes)=>task.status==='draft'&&!task.messages.length?<><div style={{flex:1,minHeight:0,overflowY:'auto',display:'flex',padding:20}}><TaskEmptyState starters={starters} startModes={startModes} projectName="Project"/></div>{setup}</>:<>{setup}<div>Conversation</div></>} queuedMessages={<ComposerActivity task={task}/>} onAsk={chatId=>window.calls.push({mode:'aside',chatId})}/>;
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -285,6 +302,11 @@ try {
     await button.hover()
     await page.mouse.down()
     await page.waitForTimeout(600)
+    assert.equal(
+      await page.getByRole('menu', { name: 'Message actions', exact: true }).count(),
+      0,
+      'Wait until the original finger is released before presenting a native menu',
+    )
     await page.mouse.up()
     await page.getByRole('menu', { name: 'Message actions', exact: true }).waitFor()
   }
@@ -296,6 +318,13 @@ try {
   }, primaryBounds.y + primaryBounds.height)
   await openMessageActions()
   assert.equal(await page.evaluate(() => window.calls.length), beforeHold, 'Holding does not send')
+  await page.evaluate(() => {
+    for (const callback of window.keyboardListeners?.keyboardDidHide ?? []) callback()
+  })
+  await page.setViewportSize({ width: 320, height: 840 })
+  await messageMenu.waitFor()
+  await page.setViewportSize({ width: 320, height: 900 })
+  await messageMenu.waitFor()
   assert.deepEqual(
     await page.getByTestId('Composer').boundingBox(),
     composerBeforeMenu,
@@ -1067,8 +1096,17 @@ try {
   await page.getByRole('textbox', { name: 'Search threads', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Attach photos or files', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Photos', exact: true }).click()
   await page.waitForFunction(() => window.calls.at(-1)?.mode === 'attach')
+  assert.equal(await page.evaluate(() => window.calls.at(-1).source), 'photos')
+  for (const [name, source] of [
+    ['Camera', 'camera'],
+    ['Files', 'files'],
+  ]) {
+    await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+    await page.getByRole('menuitem', { name, exact: true }).click()
+    await page.waitForFunction((source) => window.calls.at(-1)?.source === source, source)
+  }
   assert.equal(await page.getByRole('menu', { name: 'Add to draft', exact: true }).count(), 0)
   // Prompt-first native layout uses the production empty state and starter actions.
   await page.evaluate(() => {

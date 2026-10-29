@@ -1,5 +1,7 @@
 import { createBrowserVisibility } from './browser-visibility.js'
 import { createBrowserTabActivity } from './browser-tab-activity.js'
+import { createBrowserFind } from './browser-find.js'
+import { renderBrowserJson } from './browser-json.js'
 import {
   DOCUMENT_PIP_NAME,
   authorizeDocumentPip,
@@ -46,10 +48,13 @@ type Entry = {
   favicon?: string | null
   /** Reported once by the next `status`; native POST loads have no other channel to the UI. */
   navigationError?: string
+  documentRevision?: number
+  findOpen?: boolean
   popups: Set<BrowserWindow>
   documentPip?: BrowserWindow
   documentPipContents?: Electron.WebContents
   activity?: ReturnType<typeof createBrowserTabActivity>
+  find?: ReturnType<typeof createBrowserFind>
   pipActivity?: ReturnType<typeof createBrowserTabActivity>
   taskId?: string
   cdp?: string
@@ -150,7 +155,7 @@ const primaryModifier = (input: Electron.Input) =>
 const tabShortcut = (input: Electron.Input) => {
   if (input.type !== 'keyDown' || !primaryModifier(input)) return
   const key = input.key.toLowerCase()
-  if (key === 't' || (!input.shift && ['l', 'w', 'd', 'r', 'n'].includes(key))) return key
+  if (key === 't' || (!input.shift && ['l', 'w', 'd', 'r', 'n', 'f'].includes(key))) return key
 }
 /** App-menu accelerators would act on the Studio window; pages keep only editing and Quit. */
 const syncMenuShortcuts = (contents: Electron.WebContents, input: Electron.Input) => {
@@ -667,6 +672,7 @@ export function registerBrowser(
       url: '',
     }
     if (workspace) created.activity = createBrowserTabActivity(view.webContents)
+    created.find = createBrowserFind(view.webContents)
     if (workspace && !routingSessions.has(created.browserSession)) {
       const browserSession = created.browserSession
       routingSessions.add(browserSession)
@@ -814,6 +820,13 @@ export function registerBrowser(
     })
     view.webContents.on('did-finish-load', () => {
       void faviconLoader.load(view.webContents.getURL(), faviconCandidates)
+      void renderBrowserJson(view.webContents)
+        .catch((error: unknown) => {
+          if (!view.webContents.isDestroyed()) console.error('Could not format browser JSON', error)
+        })
+        .finally(() => {
+          created.documentRevision = (created.documentRevision ?? 0) + 1
+        })
     })
     view.webContents.on('will-navigate', (_event, url) => {
       if (created.workspace) created.routeNavigation = openableUrl(url)
@@ -1122,7 +1135,20 @@ export function registerBrowser(
         view.webContents.focus()
     })
     view.webContents.on('before-input-event', (event, input) => {
-      if (!created.workspace) return
+      if (input.type === 'keyDown' && input.key === 'Escape' && created.findOpen) {
+        event.preventDefault()
+        created.findOpen = false
+        created.find?.clear()
+        created.window.webContents.send('browser:context-action', {
+          key: created.key,
+          action: 'close-find',
+          text: '',
+          url: '',
+          title: '',
+        })
+        return
+      }
+      if (!created.workspace && !(primaryModifier(input) && input.key.toLowerCase() === 'f')) return
       syncMenuShortcuts(view.webContents, input)
       const key = tabShortcut(input)
       if (!key) return
@@ -1130,6 +1156,18 @@ export function registerBrowser(
       event.preventDefault()
       const main = created.window.webContents
       if (input.isAutoRepeat || main.isDestroyed()) return
+      if (key === 'f') {
+        created.findOpen = true
+        main.focus()
+        main.send('browser:context-action', {
+          key: created.key,
+          action: 'find',
+          text: '',
+          url: '',
+          title: '',
+        })
+        return
+      }
       const modifiers: Array<'meta' | 'control' | 'shift'> = [
         process.platform === 'darwin' ? 'meta' : 'control',
         ...(input.shift ? (['shift'] as const) : []),
@@ -1616,6 +1654,17 @@ export function registerBrowser(
         ? { url: '', back: false, forward: false, ...events }
         : undefined
     }
+    if (command.action === 'stop-find') {
+      entry.findOpen = false
+      entry.find?.clear()
+      if (command.focus && entry.view.getVisible()) entry.contents.focus()
+      return
+    }
+    if (command.action === 'find') {
+      entry.findOpen = true
+      const find = await entry.find?.search(command, command.direction)
+      return { url: entry.contents.getURL(), back: false, forward: false, find }
+    }
     if (command.action === 'watch-frames') {
       const source = entry
       if (!command.enabled) {
@@ -1758,6 +1807,7 @@ export function registerBrowser(
         url: entry.view.webContents.getURL() || entry.url,
         title: entry.view.webContents.getTitle(),
         favicon: entry.favicon,
+        documentRevision: entry.documentRevision,
         cdp: entry.cdp,
         ...(focusedTabKey ? { focusedTabKey } : {}),
         ...(command.tabCount !== undefined ? { tabStates: tabStates(window.id) } : {}),

@@ -53,6 +53,7 @@ export const iconAssets = {
   copy: require('../../../assets/icons/copy.png'),
   error: require('../../../assets/icons/error.png'),
   attach: require('../../../assets/icons/attach.png'),
+  camera: require('../../../assets/icons/camera.png'),
   keyboard: require('../../../assets/icons/keyboard.png'),
   folder: require('../../../assets/icons/folder.png'),
   file: require('../../../assets/icons/file.png'),

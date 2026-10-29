@@ -14,6 +14,7 @@
     "./state": "./src/runtime/application-state.ts",
     "./testing": "./src/testing.ts",
     "./pierre-theme": "./src/pierre-theme.ts",
+    "./browser-json": "./src/browser-json.ts",
     "./repository-open": "./src/repository-open.ts"
   },
   "scripts": {

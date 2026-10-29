@@ -1,5 +1,6 @@
 import {
   WandSparkles,
+  Camera,
   ScanSearch,
   SlidersHorizontal,
   ArrowDown,
@@ -131,6 +132,7 @@ const icons = {
   copy: Copy,
   error: CircleAlert,
   attach: Paperclip,
+  camera: Camera,
   keyboard: Keyboard,
   folder: Folder,
   file: File,

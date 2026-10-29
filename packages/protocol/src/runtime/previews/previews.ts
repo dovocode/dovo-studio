@@ -172,6 +172,19 @@ export type BrowserSitePermissions = {
 }
 export const browserCommandSchema = Schema.Union([
   mutableStruct({
+    action: Schema.Literal('find'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    text: maxValue(Schema.String, 1000),
+    regex: Schema.Boolean,
+    matchCase: Schema.Boolean,
+    direction: Schema.optional(Schema.Literals(['next', 'previous'])),
+  }),
+  mutableStruct({
+    action: Schema.Literal('stop-find'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    focus: Schema.optional(Schema.Boolean),
+  }),
+  mutableStruct({
     action: Schema.Literal('open-tab'),
     key: maxValue(minValue(Schema.String, 1), 500),
     tab: browserWorkspaceTabSchema,
@@ -455,6 +468,7 @@ export type BrowserCapture = {
   unresponsive?: boolean
 }
 export type BrowserCommand = Schema.Schema.Type<typeof browserCommandSchema>
+export type BrowserFindResult = { active: number; total: number; error?: string; limited?: boolean }
 export type BrowserCallTab = {
   key: string
   title: string
@@ -490,6 +504,8 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       favicon?: string | null
       faviconUpdates?: { key: string; url: string; favicon: string | null }[]
       tabStates?: BrowserTabState[]
+      find?: BrowserFindResult
+      documentRevision?: number
       sitePermissions?: BrowserSitePermissions
       windows?: { id: number; title: string }[]
       movedTabs?: { key: string; tab: BrowserWorkspaceTab }[]
@@ -638,7 +654,7 @@ export type BrowserExtensionBridge = (
 
 export const browserContextActionSchema = mutableStruct({
   key: maxValue(minValue(Schema.String, 1), 500),
-  action: Schema.Literals(['selection', 'page']),
+  action: Schema.Literals(['selection', 'page', 'find', 'close-find']),
   text: maxValue(Schema.String, 32000),
   url: maxValue(Schema.String, 4096),
   title: maxValue(Schema.String, 500),

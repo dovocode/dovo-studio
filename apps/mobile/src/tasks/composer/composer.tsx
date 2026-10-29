@@ -1126,10 +1126,16 @@ export function Composer({
             onClose={() => setToolsAnchor(null)}
             align="start"
             actions={[
-              {
-                title: 'Attach photos or files',
-                label: 'Attach photos or files',
-                icon: 'attach',
+              ...(
+                [
+                  { source: 'camera', title: 'Camera', icon: 'camera' },
+                  { source: 'photos', title: 'Photos', icon: 'fileImage' },
+                  { source: 'files', title: 'Files', icon: 'attach' },
+                ] as const
+              ).map(({ source, title, icon }) => ({
+                title,
+                label: title,
+                icon,
                 disabled:
                   (!!editing && !snapshot?.fullTurnSettingsSupported) ||
                   !connected ||
@@ -1137,8 +1143,8 @@ export function Composer({
                   attaching ||
                   dictation.active ||
                   !!task.archivedAt,
-                onPress: attachmentPicker.pick,
-              },
+                onPress: () => attachmentPicker.select(source),
+              })),
               {
                 title: 'Stashed drafts',
                 label: 'Stashed drafts',

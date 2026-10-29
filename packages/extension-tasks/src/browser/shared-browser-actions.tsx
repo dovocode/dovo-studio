@@ -64,7 +64,7 @@ export function SharedBrowserActions({
         const parsed = decodeResult(browserContextActionSchema, input)
         if (!parsed.success) return
         const action = parsed.data
-        if (action.key !== tabKey || busy) return
+        if (action.key !== tabKey || busy || !['selection', 'page'].includes(action.action)) return
         setError('')
         setNotice('')
         setQuery('')

@@ -49,18 +49,11 @@ export function ActionMenu({
     action?.()
   }
   useEffect(() => {
-    if (
-      previousViewport.current.width !== viewport.width ||
-      previousViewport.current.height !== viewport.height
-    )
-      onClose()
+    if (previousViewport.current.width !== viewport.width) onClose()
     previousViewport.current = viewport
   }, [viewport, onClose])
-  useEffect(() => {
-    if (!anchor) return
-    const subscription = Keyboard.addListener('keyboardDidHide', onClose)
-    return () => subscription.remove()
-  }, [anchor, onClose])
+  // Presenting an iOS Modal may hide the TextInput's keyboard. That is not an outside tap.
+  // Height changes update the bounds below; only a width/rotation change invalidates the anchor.
   const width = Math.min(264, viewport.width - insets.left - insets.right - 24)
   const bottom = Math.min(
     viewport.height - insets.bottom,

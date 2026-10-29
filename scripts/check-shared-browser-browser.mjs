@@ -82,7 +82,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:window.tabActivityStates||[]}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:window.tabActivityStates||[],focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);window.transferredTab=command;return;}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions}}};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:window.tabActivityStates||[]}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:window.tabActivityStates||[],focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>({extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}});
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -109,7 +109,7 @@ export const useSettingsTarget=()=>{
   return {target,setTarget,sources,...resolveSettingsTarget(sources,target,workspace.activeRuntimeId)};
 };
 const frameListeners=new Map();window.frameSubscriptions=()=>[...frameListeners.keys()];window.emitBrowserFrame=(key,image)=>{for(const listener of frameListeners.get(key)||[])listener({key,url:nativePages.get(key)?.url||'',image})};const browserFrames=(key,listener)=>{const listeners=frameListeners.get(key)||new Set();listeners.add(listener);frameListeners.set(key,listeners);return ()=>{listeners.delete(listener);if(!listeners.size)frameListeners.delete(key)}};
-export const useStudioHost=()=>({browser,browserFrames,browserExtensions,onBrowserContextAction:listener=>{window.contextAction=listener;return ()=>{window.contextAction=null}},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
+export const useStudioHost=()=>({browser,browserFrames,browserExtensions,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>window.calls.push({navigate:target,options}),openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
 const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
@@ -174,6 +174,85 @@ try {
         action,
       action,
     )
+  // The find bar owns keyboard focus without hiding/replacing the native page.
+  await page.keyboard.press('Control+f')
+  const findField = page.getByRole('textbox', { name: 'Find on page', exact: true })
+  await findField.waitFor()
+  await findField.fill('world')
+  await page
+    .getByRole('search', { name: 'Find on page' })
+    .getByRole('status')
+    .filter({ hasText: '1/3' })
+    .waitFor()
+  mkdirSync(root + 'work/browser-page-tools', { recursive: true })
+  await page.screenshot({ path: root + 'work/browser-page-tools/find.png' })
+  await page.setViewportSize({ width: 390, height: 800 })
+  assert.equal(
+    await page
+      .getByRole('search', { name: 'Find on page' })
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
+    true,
+    'Find controls wrap without horizontal overflow',
+  )
+  await page.screenshot({ path: root + 'work/browser-page-tools/find-narrow.png' })
+  await page.setViewportSize({ width: 1200, height: 800 })
+  await page.getByRole('button', { name: 'Use regular expression', exact: true }).click()
+  await page.getByRole('button', { name: 'Match case', exact: true }).click()
+  await findField.fill('world|page')
+  await findField.press('Enter')
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (c) =>
+        c.action === 'find' &&
+        c.text === 'world|page' &&
+        c.regex &&
+        c.matchCase &&
+        c.direction === 'next',
+    ),
+  )
+  await findField.press('Shift+Enter')
+  await page.waitForFunction(() =>
+    window.calls.some((c) => c.action === 'find' && c.direction === 'previous'),
+  )
+  await findField.fill('[')
+  await page
+    .getByRole('alert')
+    .filter({ hasText: /regular expression/ })
+    .waitFor()
+  await findField.fill('world')
+  await page.waitForFunction(
+    () => !document.querySelector('[aria-label="Find on page"] [role="alert"]'),
+  )
+  await page.keyboard.press('Control+f')
+  assert.equal(
+    await findField.evaluate(
+      (node) =>
+        document.activeElement === node &&
+        node.selectionStart === 0 &&
+        node.selectionEnd === node.value.length,
+    ),
+    true,
+  )
+  await page.keyboard.press('Escape')
+  await findField.waitFor({ state: 'detached' })
+  await page.waitForFunction(() => window.calls.some((c) => c.action === 'stop-find' && c.focus))
+  await page.evaluate(
+    (key) => window.contextAction({ key, action: 'find', text: '', url: '', title: '' }),
+    `studio:browser:main:${initialTabId}`,
+  )
+  await findField.waitFor()
+  await page.evaluate(
+    (key) => window.contextAction({ key, action: 'close-find', text: '', url: '', title: '' }),
+    `studio:browser:main:${initialTabId}`,
+  )
+  await findField.waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+  await page.getByRole('button', { name: 'Find on page', exact: true }).click()
+  await findField.waitFor()
+  assert.equal(await findField.evaluate((node) => document.activeElement === node), true)
+  await page.getByRole('button', { name: 'Close find', exact: true }).click()
+  await findField.waitFor({ state: 'detached' })
+  await nativeAction('show')
   assert.equal(
     await page.getByRole('button', { name: 'Picture-in-Picture', exact: true }).count(),
     0,

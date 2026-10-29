@@ -16,6 +16,7 @@ import { isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-ef
 import { Platform, Pressable, View } from 'react-native'
 import { Icon, type IconName } from './icon'
 import { NativeIcon } from './native-icon'
+import { useEffect, useRef } from 'react'
 import { useTheme } from '../theme'
 
 type IconButtonProps = {
@@ -105,6 +106,14 @@ function NativeIconButton({
 
 export function IconButton(props: IconButtonProps) {
   const { colors, mode: appearanceMode } = useTheme()
+  const held = useRef(false)
+  const releaseFrame = useRef<number | undefined>(undefined)
+  useEffect(
+    () => () => {
+      if (releaseFrame.current !== undefined) cancelAnimationFrame(releaseFrame.current)
+    },
+    [],
+  )
 
   const {
     label,
@@ -139,8 +148,25 @@ export function IconButton(props: IconButtonProps) {
       accessibilityRole="button"
       accessibilityState={{ disabled, selected }}
       disabled={disabled}
-      onPress={onPress}
-      onLongPress={onLongPress}
+      onPressIn={() => {
+        held.current = false
+      }}
+      onPress={() => {
+        if (!held.current) onPress()
+      }}
+      onLongPress={
+        onLongPress
+          ? () => {
+              held.current = true
+            }
+          : undefined
+      }
+      onPressOut={(event) => {
+        if (!held.current || event.nativeEvent.touches.length) return
+        // Finish the original responder's release before presenting a different native window.
+        // Otherwise iOS can deliver its touch-up to the new menu/backdrop and dismiss it.
+        releaseFrame.current = requestAnimationFrame(() => onLongPress?.())
+      }}
       accessibilityHint={onLongPress ? 'Hold for message actions' : undefined}
       accessibilityActions={
         onLongPress ? [{ name: 'messageActions', label: 'Message actions' }] : undefined
