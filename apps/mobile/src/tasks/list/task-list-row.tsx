@@ -497,7 +497,7 @@ function TaskListRowView({
             alignItems: 'center',
             paddingVertical: 6,
             paddingLeft: settled ? 0 : 12,
-            paddingRight: !car && !settled ? 44 : 12,
+            paddingRight: 12,
             opacity: pressed ? 0.55 : 1,
           })}
         >
@@ -544,6 +544,7 @@ function TaskListRowView({
                   alignItems: 'center',
                   height: metadataHeight,
                   gap: 6,
+                  paddingRight: car ? 0 : 32,
                 }}
               >
                 {draft && (
