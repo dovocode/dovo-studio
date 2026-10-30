@@ -229,6 +229,7 @@ afterEach(async () => {
   for (const registration of registrations.splice(0)) await registration.dispose()
   vi.unstubAllEnvs()
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 beforeEach(() => {
   vi.clearAllMocks()
@@ -1220,7 +1221,95 @@ it('keeps an explicitly awake page loaded and unthrottled until the setting is d
   await vi.advanceTimersByTimeAsync(30_000)
   expect(mocks.contents.close).toHaveBeenCalledOnce()
 })
-it.each(['close', 'reload'] as const)(
+it.each([
+  'https://teams.microsoft.com/v2/',
+  'https://outlook.office.com/mail/',
+  'https://mail.google.com/mail/u/0/',
+  'https://app.slack.com/client/T123/C123',
+  'https://example-workspace.slack.com/',
+  'https://discord.com/channels/@me',
+  'https://canary.discord.com/channels/@me',
+  'https://ptb.discord.com/channels/@me',
+  'https://web.whatsapp.com/',
+  'https://chat.google.com/',
+])(
+  'keeps %s unthrottled and retained by default, respecting an opt-out after reload',
+  async (url) => {
+    vi.useFakeTimers()
+    vi.spyOn(mocks.contents, 'getURL').mockReturnValue(url)
+    const call = handler()
+    await call(event, { ...workspaceShow, url })
+    await call(event, { action: 'hide', key: 'shared' })
+    expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+    await vi.advanceTimersByTimeAsync(6 * 60_000)
+    expect(mocks.contents.close).not.toHaveBeenCalled()
+    await call(event, {
+      action: 'keep-awake',
+      key: 'shared',
+      url,
+      profileId: 'default',
+      enabled: false,
+    })
+    expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(mocks.contents.close).toHaveBeenCalledOnce()
+    await call(event, { ...workspaceShow, url, keepAwake: false })
+    expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  },
+)
+
+it('follows communication-app defaults across navigation without applying them to thread previews', async () => {
+  const url = vi.spyOn(mocks.contents, 'getURL').mockReturnValue('https://example.com/')
+  const call = handler()
+  await call(event, workspaceShow)
+  url.mockReturnValue('https://mail.google.com/')
+  listener('did-navigate')?.()
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(false)
+  url.mockReturnValue('https://example.com/')
+  listener('did-navigate')?.()
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  await call(event, { action: 'close', key: 'shared' })
+  url.mockReturnValue('https://mail.google.com/')
+  await call(event, { ...workspaceShow, workspaceBrowser: false, url: 'https://mail.google.com/' })
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+})
+
+it('releases a sleeping background page immediately, even when Keep awake was enabled', async () => {
+  const call = handler()
+  await call(event, { ...workspaceShow, keepAwake: true })
+  await call(event, { action: 'sleep', key: 'shared' })
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  await call(event, { action: 'hide', key: 'shared' })
+  expect(mocks.contents.close).toHaveBeenCalledOnce()
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+})
+
+it('defers sleeping during live media and releases the page after activity ends', async () => {
+  vi.useFakeTimers()
+  const call = handler()
+  await call(event, workspaceShow)
+  mocks.media.keepAlive.mockReturnValue(true)
+  await call(event, { action: 'hide', key: 'shared' })
+  await call(event, { action: 'sleep', key: 'shared' })
+  await vi.advanceTimersByTimeAsync(6 * 60_000)
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  mocks.media.keepAlive.mockReturnValue(false)
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(mocks.contents.close).toHaveBeenCalledOnce()
+})
+
+it('throttles sleeping private tabs without deleting their in-memory sign-in data', async () => {
+  vi.useFakeTimers()
+  const call = handler()
+  await call(event, { ...workspaceShow, profileId: 'private-12345678-1234-4234-8234-123456789abc' })
+  await call(event, { action: 'hide', key: 'shared' })
+  await call(event, { action: 'sleep', key: 'shared' })
+  await vi.advanceTimersByTimeAsync(6 * 60_000)
+  expect(mocks.contents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  expect(mocks.contents.session.clearStorageData).not.toHaveBeenCalled()
+})
+it.each(['close', 'reload', 'sleep'] as const)(
   'cancels background restoration after tab %s',
   async (reason) => {
     const call = handler()
@@ -1238,7 +1327,7 @@ it.each(['close', 'reload'] as const)(
       profileId: 'default',
       enabled: true,
     })
-    if (reason === 'close') await call(event, { action: 'close', key: 'shared' })
+    if (reason !== 'reload') await call(event, { action: reason, key: 'shared' })
     else
       mocks.window.webContents.on.mock.calls.find(([name]) => name === 'did-start-navigation')?.[1](
         { isMainFrame: true, isSameDocument: false },
@@ -2906,3 +2995,297 @@ it('reports background tab activity, validates frame reports, and mutes without 
     call(event, { action: 'set-audio-muted', key: 'preview', muted: true }),
   ).rejects.toThrow('Browser workspace')
 })
+
+function workspaceTarget(id: number) {
+  return {
+    ...mocks.window,
+    id,
+    once: vi.fn<typeof mocks.window.once>(),
+    on: vi.fn<typeof mocks.window.on>(),
+    contentView: {
+      ...mocks.window.contentView,
+      children: [] as unknown[],
+      addChildView: vi.fn<typeof mocks.window.contentView.addChildView>(),
+      removeChildView: vi.fn<typeof mocks.window.contentView.removeChildView>(),
+    },
+    webContents: {
+      ...mocks.window.webContents,
+      on: vi.fn<typeof mocks.window.webContents.on>(),
+      send: vi.fn<typeof mocks.window.webContents.send>(),
+    },
+  }
+}
+const placeholderState = {
+  action: 'sync-tabs' as const,
+  key: 'workspace',
+  activeId: 'empty',
+  tabs: [
+    {
+      key: 'empty-key',
+      tab: {
+        id: 'empty',
+        url: '',
+        title: '',
+        kind: 'web' as const,
+        profileId: 'default',
+      },
+    },
+  ],
+}
+
+it('detaches and returns pinned, sleeping and remote tabs without replacing the live page', async () => {
+  const target = workspaceTarget(2)
+  const create = vi.fn<() => Promise<import('electron').BrowserWindow>>(async () => {
+    mocks.windowFor = target
+    await call(event, placeholderState)
+    mocks.windowFor = undefined
+    return target as never
+  })
+  const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+    create,
+    list: () => [target as never],
+    main: async () => mocks.window as never,
+  })
+  registrations.push(bridge)
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  const tabs = [
+    {
+      key: 'shared',
+      tab: {
+        id: 'pinned',
+        title: 'Pinned',
+        url: 'https://example.com/',
+        kind: 'web',
+        profileId: 'default',
+        pinned: true,
+        homeUrl: 'https://example.com/',
+        keepAwake: true,
+      },
+    },
+    {
+      key: 'asleep-key',
+      tab: {
+        id: 'asleep',
+        title: 'Read later',
+        url: 'http://lan.local/',
+        kind: 'web',
+        profileId: 'work',
+        settledAt: 100,
+        keepAwake: false,
+      },
+    },
+    {
+      key: 'remote-key',
+      tab: {
+        id: 'remote',
+        title: 'Remote app',
+        url: 'http://vpn.local/',
+        kind: 'remote',
+        profileId: 'default',
+        runtimeId: 'server',
+        snoozedUntil: Date.now() + 60000,
+      },
+    },
+  ]
+  await call(event, { ...placeholderState, tabs, activeId: 'pinned' })
+  await call(event, { ...workspaceShow, keepAwake: true })
+  const loads = mocks.contents.loadURL.mock.calls.length
+  mocks.media.keepAlive.mockReturnValue(true)
+  await call(event, { action: 'detach-tabs', key: 'workspace', tabs, activeId: 'pinned' })
+  expect(create).toHaveBeenCalledOnce()
+  expect(mocks.create).toHaveBeenCalledOnce()
+  expect(mocks.media.moveTab).toHaveBeenCalledWith(mocks.contents, 2)
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  mocks.windowFor = target
+  const detached = await call(event, { action: 'status', key: 'shared', tabCount: 3 })
+  expect(detached).toMatchObject({
+    movedTabs: [{ key: 'shared', tab: { ...tabs[0].tab, title: 'Example' } }, tabs[1], tabs[2]],
+    focusedTabKey: 'shared',
+  })
+  // Close immediately after event delivery, before the destination renderer can sync again.
+  const returning = bridge.returnWindowTabs(target as never)
+  expect(bridge.returnWindowTabs(target as never)).toBe(returning)
+  let saved = false
+  void returning.then(() => {
+    saved = true
+  })
+  await vi.waitFor(() => expect(mocks.media.moveTab).toHaveBeenLastCalledWith(mocks.contents, 1))
+  mocks.windowFor = undefined
+  await call(event, {
+    action: 'sync-tabs',
+    key: 'workspace',
+    tabs,
+    activeId: 'pinned',
+    persisted: false,
+  })
+  expect(saved).toBe(false)
+  await call(event, {
+    action: 'sync-tabs',
+    key: 'workspace',
+    tabs,
+    activeId: 'pinned',
+    persisted: true,
+  })
+  await returning
+  const closed = target.once.mock.calls.find(([name]) => name === 'closed')![1]
+  closed()
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  mocks.windowFor = undefined
+  expect(await call(event, { action: 'status', key: 'shared', tabCount: 0 })).toMatchObject({
+    movedTabs: [{ key: 'shared', tab: { ...tabs[0].tab, title: 'Example' } }, tabs[1], tabs[2]],
+    focusedTabKey: 'shared',
+  })
+  await call(event, { ...workspaceShow, keepAwake: true })
+  expect(mocks.create).toHaveBeenCalledOnce()
+  expect(mocks.contents.loadURL).toHaveBeenCalledTimes(loads)
+})
+
+it('waits for the main workspace to restore before returning an extra window', async () => {
+  const target = workspaceTarget(2)
+  const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+    create: async () => target as never,
+    list: () => [target as never],
+    main: async () => mocks.window as never,
+  })
+  registrations.push(bridge)
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  mocks.windowFor = target
+  const tab = {
+    id: 'remote',
+    url: 'http://lan.local/',
+    title: 'Remote',
+    kind: 'remote',
+    runtimeId: 'server',
+    profileId: 'work',
+    pinned: true,
+  }
+  await call(event, {
+    action: 'sync-tabs',
+    key: 'workspace',
+    activeId: 'remote',
+    tabs: [{ key: 'remote-key', tab }],
+  })
+  const returning = bridge.returnWindowTabs(target as never)
+  await vi.waitFor(() =>
+    expect(mocks.window.webContents.send).toHaveBeenCalledWith('browser:focus-workspace'),
+  )
+  mocks.windowFor = undefined
+  await call(event, placeholderState)
+  await vi.waitFor(() =>
+    expect(
+      mocks.window.webContents.send.mock.calls.filter(
+        ([name]) => name === 'browser:focus-workspace',
+      ),
+    ).toHaveLength(2),
+  )
+  await call(event, {
+    action: 'sync-tabs',
+    key: 'workspace',
+    activeId: 'remote',
+    tabs: [{ key: 'remote-key', tab }],
+    persisted: true,
+  })
+  await returning
+  expect(await call(event, { action: 'status', key: 'empty-key', tabCount: 1 })).toMatchObject({
+    movedTabs: [{ key: 'remote-key', tab }],
+  })
+})
+
+it('preserves the detached workspace if returning would exceed the main tab limit', async () => {
+  const target = workspaceTarget(2)
+  const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+    create: async () => target as never,
+    list: () => [target as never],
+    main: async () => mocks.window as never,
+  })
+  registrations.push(bridge)
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  const tabs = Array.from({ length: 100 }, (_, i) => ({
+    key: `main-${i}`,
+    tab: {
+      id: `main-${i}`,
+      title: 'Page',
+      url: 'https://example.com/',
+      kind: 'web',
+      profileId: 'default',
+    },
+  }))
+  await call(event, { action: 'sync-tabs', key: 'workspace', tabs, activeId: 'main-0' })
+  mocks.windowFor = target
+  await call(event, workspaceShow)
+  await call(event, {
+    action: 'sync-tabs',
+    key: 'workspace',
+    activeId: 'extra',
+    tabs: [
+      {
+        key: 'shared',
+        tab: {
+          id: 'extra',
+          url: 'https://example.com/',
+          title: 'Extra',
+          kind: 'web',
+          profileId: 'default',
+          pinned: true,
+        },
+      },
+    ],
+  })
+  await expect(bridge.returnWindowTabs(target as never)).rejects.toThrow('limit 100')
+  expect(mocks.contents.close).not.toHaveBeenCalled()
+  expect(mocks.media.moveTab).not.toHaveBeenCalled()
+  expect(await call(event, { action: 'status', key: 'shared' })).toHaveProperty(
+    'url',
+    'https://example.com/',
+  )
+})
+
+it.each(['show', 'keep-awake'] as const)(
+  'cancels pending %s when its tab is detached before creation completes',
+  async (action) => {
+    const target = workspaceTarget(2)
+    let finish = () => {}
+    const bridge = registerBrowser('/app/index.html', undefined, undefined, {
+      create: async () => target as never,
+      list: () => [target as never],
+    })
+    registrations.push(bridge)
+    const call = mocks.handle.mock.calls.at(-1)![1]
+    mocks.windowFor = target
+    await call(event, placeholderState)
+    mocks.windowFor = undefined
+    mocks.extensions.prepare.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const tab = {
+      id: 'restoring',
+      title: 'Gmail',
+      url: 'https://mail.google.com/',
+      kind: 'web',
+      profileId: 'default',
+    }
+    const restoring = call(event, {
+      ...workspaceShow,
+      action,
+      key: 'restoring-key',
+      url: tab.url,
+      profileId: 'default',
+    })
+    await call(event, {
+      action: 'detach-tabs',
+      key: 'workspace',
+      activeId: 'restoring',
+      tabs: [{ key: 'restoring-key', tab }],
+    })
+    finish()
+    await restoring
+    expect(mocks.create).not.toHaveBeenCalled()
+    mocks.windowFor = target
+    expect(await call(event, { action: 'status', key: 'empty-key', tabCount: 1 })).toMatchObject({
+      movedTabs: [{ key: 'restoring-key', tab }],
+    })
+  },
+)

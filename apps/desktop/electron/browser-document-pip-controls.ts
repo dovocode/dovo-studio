@@ -30,6 +30,9 @@ export function createDocumentPipWindow(
   // It must be adopted exactly once; the trusted header needs its own WebContents.
   const { webContents: guest, ...chromeOptions } = options
   if (!guest) throw new Error('Document PiP requires the pending popup WebContents.')
+  // Electron reuses the pending guest's preferences when createWindow adopts it.
+  // Setting this only in the requested window options leaves real PiP pages throttled.
+  guest.setBackgroundThrottling(false)
   const page = new WebContentsView({ webContents: guest, webPreferences: options.webPreferences })
   const popup = new BrowserWindow({
     ...chromeOptions,

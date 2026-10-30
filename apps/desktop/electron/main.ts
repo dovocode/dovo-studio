@@ -175,8 +175,19 @@ const browserBridge = registerBrowser(
   join(__dirname, '../dist/index.html'),
   dataDirectory,
   join(__dirname, 'preload.mjs'),
-  browserWindows,
+  {
+    ...browserWindows,
+    main: async () => {
+      if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+      const window = mainWindow
+      if (!window) throw new Error('The main window could not be opened.')
+      await mainWindowReady
+      if (window.isDestroyed()) throw new Error('The main window was closed.')
+      return window
+    },
+  },
 )
+browserWindows.onClose(browserBridge.returnWindowTabs)
 app.once('will-quit', () => {
   void browserBridge.dispose()
 })
@@ -191,6 +202,7 @@ app.once('will-quit', () => runtimeSync.dispose())
 const threadWindows = registerThreadWindows(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => threadWindows.dispose())
 let mainWindow: BrowserWindow | undefined
+let mainWindowReady: Promise<void> = Promise.resolve()
 queueExternalLinks(process.argv.slice(1))
 const deliverExternalLinks = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return
@@ -313,10 +325,13 @@ function createWindow(): void {
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
-    void window.loadURL(process.env.VITE_DEV_SERVER_URL)
+    mainWindowReady = window.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
-    void window.loadFile(join(__dirname, '../dist/index.html'))
+    mainWindowReady = window.loadFile(join(__dirname, '../dist/index.html'))
   }
+  void mainWindowReady.catch((error: unknown) =>
+    console.error('Could not load the main window.', error),
+  )
 }
 
 app.on('second-instance', (_event, args) => {
@@ -526,10 +541,13 @@ const startup = Effect.gen(function* () {
       }
     })
     const updates = registerUpdates(__dirname, async () => {
+      await browserWindows.returnAll()
       const restore = await prepareLocalRuntimeUpdate(__dirname)
       quitting = true
+      browserWindows.setQuitting(true)
       return async () => {
         quitting = false
+        browserWindows.setQuitting(false)
         await restore()
       }
     })
@@ -595,11 +613,30 @@ app.on('window-all-closed', () => {
 })
 
 let quitting = false
+let shuttingDown = false
 app.on('before-quit', (event) => {
   if (quitting) return
   event.preventDefault()
-  quitting = true
-  void Promise.all([stopLocalRuntime(), runDesktop(disposeRuntime)])
-    .catch((error) => console.error('Desktop shutdown failed', error))
-    .finally(() => app.quit())
+  if (shuttingDown) return
+  shuttingDown = true
+  void (async () => {
+    try {
+      // Return and persist detached workspaces before any window/runtime is torn down.
+      await browserWindows.returnAll()
+    } catch (error) {
+      shuttingDown = false
+      await dialog.showMessageBox({
+        type: 'error',
+        message: 'Dovo could not save the detached browser tabs before quitting.',
+        detail: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+    await Promise.all([stopLocalRuntime(), runDesktop(disposeRuntime)]).catch((error) =>
+      console.error('Desktop shutdown failed', error),
+    )
+    quitting = true
+    browserWindows.setQuitting(true)
+    app.quit()
+  })()
 })

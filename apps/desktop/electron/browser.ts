@@ -14,8 +14,10 @@ import {
 import { loadBrowserFaviconModule } from './browser-favicon.js'
 import {
   selectedBrowserText,
+  browserDefaultKeepAwake,
   isPrivateBrowserProfile,
   type BrowserWorkspaceTab,
+  type BrowserWorkspaceState,
   type BrowserTabState,
 } from '@dovo/protocol'
 import { createBrowserCdp } from './browser-cdp.js'
@@ -88,6 +90,7 @@ type Entry = {
   /** Restore page focus after a passive tooltip, unless Studio receives deliberate input. */
   restoreFocus?: boolean
   keepAwake?: boolean
+  sleeping?: boolean
   videoPictureInPicture?: boolean
   fullscreenBounds?: Electron.Rectangle
   fullscreenWindowWasFullscreen?: boolean
@@ -209,7 +212,11 @@ export function registerBrowser(
   indexPath: string,
   directory?: string,
   preload?: string,
-  browserWindows?: { create: () => Promise<BrowserWindow>; list: () => BrowserWindow[] },
+  browserWindows?: {
+    create: () => Promise<BrowserWindow>
+    list: () => BrowserWindow[]
+    main?: () => Promise<BrowserWindow>
+  },
 ) {
   let cdp: Awaited<ReturnType<typeof createBrowserCdp>> | undefined
   let cdpPending: Promise<Awaited<ReturnType<typeof createBrowserCdp>>> | undefined
@@ -218,6 +225,13 @@ export function registerBrowser(
   const registered = new WeakSet<BrowserWindow>()
   const workspaces = new Set<BrowserWindow>()
   const tabCounts = new Map<number, number>()
+  // Renderer-owned metadata also covers unloaded and remote tabs during a window handoff.
+  const workspaceStates = new Map<number, BrowserWorkspaceState>()
+  const workspaceWaiters = new Map<number, Set<() => void>>()
+  const adoptionWaiters = new Map<number, Set<{ keys: Set<string>; done: () => void }>>()
+  const persistedKeys = new Map<number, Set<string>>()
+  const pendingReturns = new Map<number, { target: BrowserWindow; keys: Set<string> }>()
+  const returnOperations = new Map<number, Promise<void>>()
   const views = new Map<string, Entry>()
   const zoom = createBrowserZoom()
   const downloadSessions = new Set<Electron.Session>()
@@ -262,11 +276,15 @@ export function registerBrowser(
     return entry ? pageVisible(entry) : undefined
   })
   const reportVisibility = (entry: Entry) => visibility.report(entry.contents)
+  const keepsAwake = (entry: Entry) =>
+    entry.workspace &&
+    !entry.sleeping &&
+    (entry.keepAwake ?? browserDefaultKeepAwake(entry.contents.getURL() || entry.url))
   const syncBackgroundThrottling = (entry: Entry) => {
     if (!entry.contents.isDestroyed())
       entry.contents.setBackgroundThrottling(
         !(
-          entry.keepAwake ||
+          keepsAwake(entry) ||
           entry.videoPictureInPicture ||
           entry.documentPip ||
           entry.stopFrames ||
@@ -418,7 +436,8 @@ export function registerBrowser(
     // A thread preview can poll in the same Studio window while Browser is opening.
     const movedTabs = consumeMoves ? (events?.moved.splice(0) ?? []) : []
     const faviconUpdates = consumeMoves ? (events?.favicons.splice(0) ?? []) : []
-    if (movedTabs.length) tabCounts.set(windowId, (tabCounts.get(windowId) ?? 1) + movedTabs.length)
+    if (movedTabs.length && !workspaceStates.has(windowId))
+      tabCounts.set(windowId, (tabCounts.get(windowId) ?? 1) + movedTabs.length)
     return {
       ...(createdTabs.length ? { createdTabs } : {}),
       ...(closedTabs.length ? { closedTabs } : {}),
@@ -559,9 +578,10 @@ export function registerBrowser(
     const inactive = [...views].filter(
       ([key, entry]) =>
         entry.inactiveAt !== undefined &&
+        !entry.foreground &&
         !isPrivateBrowserProfile(entry.profileId) &&
         !cdp?.connected(key) &&
-        !entry.keepAwake &&
+        !keepsAwake(entry) &&
         !entry.videoPictureInPicture &&
         !entry.documentPip &&
         !(entry.workspace && media.keepAlive(entry.view.webContents)),
@@ -571,7 +591,11 @@ export function registerBrowser(
     for (const [, entry] of inactive)
       counts.set(entry.windowId, (counts.get(entry.windowId) ?? 0) + 1)
     for (const [key, entry] of inactive) {
-      if ((counts.get(entry.windowId) ?? 0) <= 4 && Date.now() - entry.inactiveAt! < 5 * 60_000)
+      if (
+        !entry.sleeping &&
+        (counts.get(entry.windowId) ?? 0) <= 4 &&
+        Date.now() - entry.inactiveAt! < 5 * 60_000
+      )
         continue
       releaseView(key)
       counts.set(entry.windowId, counts.get(entry.windowId)! - 1)
@@ -582,6 +606,9 @@ export function registerBrowser(
   const releaseWindow = (window: BrowserWindow, detach: boolean) => {
     workspaces.delete(window)
     tabCounts.delete(window.id)
+    workspaceStates.delete(window.id)
+    persistedKeys.delete(window.id)
+    pendingReturns.delete(window.id)
     activeViews.delete(window.id)
     windowTabs.delete(window.id)
     focusedTabs.delete(window.id)
@@ -820,6 +847,7 @@ export function registerBrowser(
       created.videoPictureInPicture = false
       syncBackgroundThrottling(created)
     })
+    view.webContents.on('did-navigate-in-page', () => syncBackgroundThrottling(created))
     // Service-worker clients.focus() and Chromium's native notification focus follow this path.
     view.webContents.on('focus', () => {
       if (
@@ -1391,6 +1419,197 @@ export function registerBrowser(
       })
     })
   })
+  const validateWorkspaceState = (state: BrowserWorkspaceState) => {
+    if (
+      new Set(state.tabs.map(({ key }) => key)).size !== state.tabs.length ||
+      new Set(state.tabs.map(({ tab }) => tab.id)).size !== state.tabs.length ||
+      !state.tabs.some(({ tab }) => tab.id === state.activeId)
+    )
+      throw new Error('The browser workspace contains invalid tab identities.')
+  }
+  const emptyPlaceholder = (tab: BrowserWorkspaceTab) =>
+    !tab.url && !tab.pinned && !tab.previewOf && !tab.thread
+  const waitForWorkspace = async (window: BrowserWindow) => {
+    if (workspaceStates.has(window.id)) return
+    window.webContents.send('browser:focus-workspace')
+    let done = () => {}
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await new Promise<void>((resolve, reject) => {
+        done = resolve
+        let waiters = workspaceWaiters.get(window.id)
+        if (!waiters) workspaceWaiters.set(window.id, (waiters = new Set()))
+        waiters.add(done)
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error('The destination browser is not ready. Tabs were kept in their window.'),
+            ),
+          10000,
+        )
+      })
+    } finally {
+      clearTimeout(timer)
+      workspaceWaiters.get(window.id)?.delete(done)
+      if (!workspaceWaiters.get(window.id)?.size) workspaceWaiters.delete(window.id)
+    }
+  }
+  /** A renderer sync follows its localStorage save; receipt makes closing the source safe. */
+  const waitForAdoption = (window: BrowserWindow, keys: Set<string>) => {
+    if ([...keys].every((key) => persistedKeys.get(window.id)?.has(key))) return Promise.resolve()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const waiters = adoptionWaiters.get(window.id) ?? new Set()
+    adoptionWaiters.set(window.id, waiters)
+    const entry = { keys, done: () => {} }
+    const pending = new Promise<void>((resolve, reject) => {
+      entry.done = resolve
+      waiters.add(entry)
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error('The main window has not saved the returned tabs yet. Try closing again.'),
+          ),
+        10000,
+      )
+    })
+    return pending.finally(() => {
+      clearTimeout(timer)
+      waiters.delete(entry)
+      if (!waiters.size) adoptionWaiters.delete(window.id)
+    })
+  }
+  /** Include pages opened/moved since the renderer's last update, before a window can close. */
+  const workspaceState = (window: BrowserWindow): BrowserWorkspaceState => {
+    const saved = workspaceStates.get(window.id)
+    const events = windowTabs.get(window.id)
+    const closed = new Set(events?.closed)
+    const tabs = new Map(
+      (saved?.tabs ?? []).filter(({ key }) => !closed.has(key)).map((item) => [item.key, item]),
+    )
+    for (const item of events?.moved ?? []) tabs.set(item.key, item)
+    for (const item of events?.created ?? [])
+      if (!tabs.has(item.key))
+        tabs.set(item.key, {
+          key: item.key,
+          tab: {
+            id: randomUUID(),
+            url: item.url,
+            title: '',
+            kind: 'web',
+            profileId: item.profileId,
+          },
+        })
+    for (const entry of views.values())
+      if (entry.workspace && entry.windowId === window.id && !tabs.has(entry.key))
+        tabs.set(entry.key, {
+          key: entry.key,
+          tab: {
+            id: randomUUID(),
+            url: entry.contents.getURL() || entry.url,
+            title: entry.contents.getTitle().slice(0, 4096),
+            kind: 'web',
+            profileId: entry.profileId,
+            keepAwake: entry.keepAwake,
+          },
+        })
+    const result = [...tabs.values()]
+    return { tabs: result, activeId: saved?.activeId ?? result[0]?.tab.id ?? '' }
+  }
+  /** Move the existing WebContentsView, retaining documents, sign-in, history and live calls. */
+  const moveEntry = (entry: Entry, target: BrowserWindow) => {
+    const source = entry.window
+    const viewKey = JSON.stringify([entry.windowId, entry.key])
+    entry.stopFrames?.()
+    exitFullscreen(entry, true)
+    for (const popup of entry.popups)
+      if (!popup.isDestroyed() && popup.getParentWindow() === source) popup.setParentWindow(target)
+    if (activeViews.get(source.id)?.key === viewKey) activeViews.delete(source.id)
+    setVisible(entry, false)
+    source.contentView.removeChildView(entry.view)
+    views.delete(viewKey)
+    awakeRequests.delete(viewKey)
+    extensions.removeTab(entry.profileId, entry.contents)
+    entry.windowId = target.id
+    entry.window = target
+    media.moveTab(entry.contents, target.id)
+    entry.inactiveAt = Date.now()
+    entry.restoreFocus = false
+    views.set(JSON.stringify([target.id, entry.key]), entry)
+    target.contentView.addChildView(entry.view)
+    extensions.addTab(entry.profileId, entry.contents, target)
+    profileWindows.set(entry.profileId, { window: target, key: entry.key })
+  }
+  const movedTab = (key: string, tab: BrowserWorkspaceTab, entry?: Entry) => ({
+    key,
+    tab: entry
+      ? {
+          ...tab,
+          url:
+            entry.contents.getURL() === 'about:blank'
+              ? tab.url
+              : entry.contents.getURL() || tab.url,
+          title: entry.contents.getTitle().slice(0, 4096) || tab.title,
+          favicon: entry.favicon ?? tab.favicon,
+        }
+      : tab,
+  })
+  const moveWorkspace = (
+    source: BrowserWindow,
+    target: BrowserWindow,
+    state: BrowserWorkspaceState,
+  ) => {
+    if (source === target || source.isDestroyed() || target.isDestroyed())
+      throw new Error('The destination browser window is unavailable.')
+    const existing = workspaceState(target).tabs.filter(({ tab }) => !emptyPlaceholder(tab))
+    const incoming = state.tabs
+    if (existing.length + incoming.length > 100)
+      throw new Error('Close some tabs in the main window before returning these tabs (limit 100).')
+    const ids = new Set(existing.map(({ tab }) => tab.id))
+    for (const { key, tab } of incoming) {
+      const entry = views.get(JSON.stringify([source.id, key]))
+      if (
+        ids.has(tab.id) ||
+        views.has(JSON.stringify([target.id, key])) ||
+        (entry && (!entry.workspace || entry.profileId !== tab.profileId || tab.kind !== 'web'))
+      )
+        throw new Error('The browser tabs changed before they could be moved.')
+    }
+    registerWindow(target)
+    const transferred: BrowserWorkspaceState['tabs'] = []
+    for (const { key, tab } of incoming) {
+      persistedKeys.get(target.id)?.delete(key)
+      const viewKey = JSON.stringify([source.id, key])
+      awakeRequests.delete(viewKey)
+      if (activeViews.get(source.id)?.key === viewKey) activeViews.delete(source.id)
+      const entry = views.get(viewKey)
+      if (entry) moveEntry(entry, target)
+      const item = movedTab(key, tab, entry)
+      transferred.push(item)
+      tabEvents(target.id).moved.push(item)
+    }
+    const selected = incoming.find(({ tab }) => tab.id === state.activeId)
+    if (selected) focusedTabs.set(target.id, selected.key)
+    workspaceStates.set(target.id, {
+      tabs: [...existing, ...transferred],
+      activeId:
+        selected?.tab.id ?? workspaceStates.get(target.id)?.activeId ?? incoming[0]?.tab.id ?? '',
+    })
+    tabCounts.set(target.id, existing.length + transferred.length)
+    const movedKeys = new Set(incoming.map(({ key }) => key))
+    tabEvents(target.id).closed = tabEvents(target.id).closed.filter((key) => !movedKeys.has(key))
+    const sourceState = workspaceStates.get(source.id)
+    if (sourceState) sourceState.tabs = sourceState.tabs.filter(({ key }) => !movedKeys.has(key))
+    const pending = windowTabs.get(source.id)
+    if (pending) {
+      pending.moved = pending.moved.filter(({ key }) => !movedKeys.has(key))
+      pending.created = pending.created.filter(({ key }) => !movedKeys.has(key))
+    }
+    tabEvents(source.id).closed.push(...movedKeys)
+    target.webContents.send('browser:focus-workspace')
+    if (target.isMinimized()) target.restore()
+    target.show()
+    target.focus()
+  }
   /** Retain external links until the workspace can adopt their native or remote destination. */
   const openWorkspaceTab = async (
     window: BrowserWindow,
@@ -1418,6 +1637,8 @@ export function registerBrowser(
       page.inactiveAt = Date.now()
       setVisible(page, false)
       page.url = tab.url
+      page.keepAwake = tab.keepAwake
+      syncBackgroundThrottling(page)
       page.loading = loadUntilReady(page, tab.url).catch((cause: unknown) => {
         if (!isAborted(cause))
           page.navigationError = cause instanceof Error ? cause.message : String(cause)
@@ -1430,6 +1651,31 @@ export function registerBrowser(
   ipcMain.handle('preview:browser', async (event, raw: unknown) => {
     const window = trustedWindow(event)
     const command = decode(browserCommandSchema, raw)
+    if (command.action === 'sync-tabs' || command.action === 'detach-tabs') {
+      validateWorkspaceState(command)
+      const keys = new Set(command.tabs.map(({ key }) => key))
+      if (command.persisted) {
+        persistedKeys.set(window.id, keys)
+        for (const waiter of adoptionWaiters.get(window.id) ?? [])
+          if ([...waiter.keys].every((key) => keys.has(key))) waiter.done()
+      }
+      const pending = (windowTabs.get(window.id)?.moved ?? []).filter(({ key }) => !keys.has(key))
+      workspaceStates.set(window.id, {
+        tabs: [...command.tabs, ...pending],
+        activeId: command.activeId,
+      })
+      for (const ready of workspaceWaiters.get(window.id) ?? []) ready()
+      workspaces.add(window)
+      tabCounts.set(window.id, command.tabs.length)
+      if (command.action === 'detach-tabs') {
+        const target = await browserWindows?.create()
+        if (!target) throw new Error('A separate browser window is unavailable.')
+        await waitForWorkspace(target)
+        if (window.isDestroyed()) return
+        moveWorkspace(window, target, command)
+      }
+      return
+    }
     if (command.action === 'downloads') {
       const downloads = downloadsFor(
         session.fromPartition(workspacePartition(command.profileId)),
@@ -1465,7 +1711,7 @@ export function registerBrowser(
     if (command.action === 'keep-awake') {
       const request = {}
       awakeRequests.set(viewKey, request)
-      if (!entry && command.enabled) {
+      if (!entry && (command.enabled ?? browserDefaultKeepAwake(command.url))) {
         const url = previewUrl(command.url)
         await extensions.prepare(command.profileId)
         if (awakeRequests.get(viewKey) !== request || window.isDestroyed()) return
@@ -1482,8 +1728,19 @@ export function registerBrowser(
       if (!entry.workspace || entry.profileId !== command.profileId)
         throw new Error('The tab changed before Keep awake could be updated.')
       entry.keepAwake = command.enabled
+      entry.sleeping = false
       syncBackgroundThrottling(entry)
       await entry.loading
+      return
+    }
+    if (command.action === 'sleep') {
+      awakeRequests.delete(viewKey)
+      if (entry?.workspace) {
+        entry.sleeping = true
+        syncBackgroundThrottling(entry)
+        // Media/PiP remain protected. The regular sweep releases them once activity ends.
+        prune()
+      }
       return
     }
     if (command.action === 'status' && command.tabCount !== undefined)
@@ -1529,40 +1786,16 @@ export function registerBrowser(
         throw new Error('The destination browser window has reached its 100-tab limit.')
       registerWindow(target)
       awakeRequests.delete(viewKey)
-      if (entry) {
-        entry.stopFrames?.()
-        for (const popup of entry.popups)
-          if (!popup.isDestroyed() && popup.getParentWindow() === window)
-            popup.setParentWindow(target)
-        if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
-        setVisible(entry, false)
-        window.contentView.removeChildView(entry.view)
-        views.delete(viewKey)
-        extensions.removeTab(entry.profileId, entry.view.webContents)
-        entry.windowId = target.id
-        entry.window = target
-        media.moveTab(entry.contents, target.id)
-        entry.inactiveAt = Date.now()
-        entry.restoreFocus = false
-        views.set(JSON.stringify([target.id, command.key]), entry)
-        target.contentView.addChildView(entry.view)
-        extensions.addTab(entry.profileId, entry.view.webContents, target)
-        profileWindows.set(entry.profileId, { window: target, key: command.key })
-      }
-      tabEvents(target.id).moved.push({
-        key: command.key,
-        tab: entry
-          ? {
-              ...command.tab,
-              url:
-                entry.view.webContents.getURL() === 'about:blank'
-                  ? ''
-                  : entry.view.webContents.getURL(),
-              title: entry.view.webContents.getTitle().slice(0, 4096),
-              favicon: entry.favicon ?? undefined,
-            }
-          : command.tab,
+      if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
+      if (entry) moveEntry(entry, target)
+      tabEvents(target.id).moved.push(movedTab(command.key, command.tab, entry))
+      const destination = workspaceState(target)
+      workspaceStates.set(target.id, {
+        tabs: destination.tabs.filter(({ tab }) => !emptyPlaceholder(tab)),
+        activeId: command.tab.id,
       })
+      const sourceState = workspaceStates.get(window.id)
+      if (sourceState) sourceState.tabs = sourceState.tabs.filter(({ key }) => key !== command.key)
       if (target.isMinimized()) target.restore()
       target.webContents.send('browser:focus-workspace')
       target.show()
@@ -1636,6 +1869,8 @@ export function registerBrowser(
         entry = undefined
       }
       entry ??= createEntry(window, viewKey, command.key, profileId, workspace)
+      entry.keepAwake = command.keepAwake
+      entry.sleeping = false
       // Selection precedes loading/painting. A selected page must not auto-pop out
       // merely because its new renderer is not ready to be displayed yet.
       entry.foreground = true
@@ -1700,6 +1935,7 @@ export function registerBrowser(
         entry.loading =
           entry.view.webContents.getURL() === url ? undefined : loadUntilReady(entry, url)
       }
+      syncBackgroundThrottling(entry)
       const loading = entry.loading
       if (loading) {
         try {
@@ -1782,7 +2018,7 @@ export function registerBrowser(
             entry.windowId === window.id &&
             entry.workspace &&
             (media.keepAlive(entry.view.webContents) ||
-              entry.keepAwake ||
+              keepsAwake(entry) ||
               entry.videoPictureInPicture ||
               entry.documentPip),
         )
@@ -2008,6 +2244,31 @@ export function registerBrowser(
     if (command.action === 'devtools') entry.view.webContents.openDevTools({ mode: 'detach' })
   })
   return {
+    /** Called before an extra window closes, while its native views are still alive. */
+    returnWindowTabs: (window: BrowserWindow) => {
+      const existing = returnOperations.get(window.id)
+      if (existing) return existing
+      const operation = (async () => {
+        const pending = pendingReturns.get(window.id)
+        if (pending) {
+          await waitForAdoption(pending.target, pending.keys)
+          pendingReturns.delete(window.id)
+          return
+        }
+        if (!workspaceState(window).tabs.some(({ tab }) => !emptyPlaceholder(tab))) return
+        const target = await browserWindows?.main?.()
+        if (!target) throw new Error('The main window is unavailable. Browser tabs were kept here.')
+        await waitForWorkspace(target)
+        const state = workspaceState(window)
+        moveWorkspace(window, target, state)
+        const keys = new Set(state.tabs.map(({ key }) => key))
+        pendingReturns.set(window.id, { target, keys })
+        await waitForAdoption(target, keys)
+        pendingReturns.delete(window.id)
+      })().finally(() => returnOperations.delete(window.id))
+      returnOperations.set(window.id, operation)
+      return operation
+    },
     /** Native external links become independent tabs, so bursts never overwrite navigation. */
     openRoutedLink: async (window: BrowserWindow, raw: string) => {
       const url = previewUrl(raw)
@@ -2044,6 +2305,9 @@ export function registerBrowser(
       views.clear()
       activeViews.clear()
       windowTabs.clear()
+      workspaceStates.clear()
+      persistedKeys.clear()
+      pendingReturns.clear()
       profileWindows.clear()
       await extensions.dispose()
       for (const browserSession of downloadSessions) disposeBrowserDownloads(browserSession)

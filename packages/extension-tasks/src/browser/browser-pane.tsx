@@ -33,6 +33,7 @@ import {
   browserLinkProfile,
   isPrivateBrowserProfile,
   browserTabCategory,
+  browserTabKeepsAwake,
   wakeBrowserTab,
   settleBrowserTab,
   snoozeBrowserTab,
@@ -358,20 +359,23 @@ function BrowserContent({
     for (const tab of tabs) {
       if (tab.kind !== 'web' || !/^https?:\/\//i.test(tab.url)) continue
       const key = nativeKey(tab.id)
-      if (!tab.keepAwake && !awakeCommands.current.has(key)) continue
-      const command = {
-        action: 'keep-awake' as const,
-        key,
-        enabled: !!tab.keepAwake,
-        url: tab.url,
-        profileId: tab.profileId,
-      }
+      const sleeping = browserTabCategory(tab) !== 'active'
+      if (!sleeping && !browserTabKeepsAwake(tab) && !awakeCommands.current.has(key)) continue
+      const command = sleeping
+        ? { action: 'sleep' as const, key }
+        : {
+            action: 'keep-awake' as const,
+            key,
+            enabled: tab.keepAwake,
+            url: tab.url,
+            profileId: tab.profileId,
+          }
       const signature = JSON.stringify(command)
       if (awakeCommands.current.get(key) === signature) continue
       awakeCommands.current.set(key, signature)
       void browser(command).catch((cause) => {
         awakeCommands.current.delete(key)
-        setError(`Could not update Keep awake: ${String(cause)}`)
+        setError(`Could not update tab sleep: ${String(cause)}`)
       })
     }
   }, [browser, shared, tabs])
@@ -611,6 +615,7 @@ function BrowserContent({
     [reload, setReload] = useApplicationState(0)
   useEffect(() => {
     if (!shared) return
+    let persisted = false
     try {
       // Extension pages require their existing native view; never restore stale extension URLs.
       const restorable = tabs.filter(restorableTab)
@@ -642,10 +647,24 @@ function BrowserContent({
         },
         storageWindowId,
       )
+      persisted = true
     } catch {
       setError('Could not save browser tabs. They will remain in this session.')
     }
-  }, [shared, tabs, activeTab, closed, storageWindowId, browser, activeRuntimeId])
+    if (browser)
+      void browser({
+        action: 'sync-tabs',
+        key: scope,
+        tabs: workspaceTabs(tabs),
+        activeId: activeTab,
+        persisted,
+      }).catch((cause) => setError(`Could not sync browser tabs: ${String(cause)}`))
+  }, [shared, tabs, activeTab, closed, storageWindowId, browser, activeRuntimeId, scope])
+  const workspaceTabs = (snapshot = currentTabs.current) =>
+    snapshot.map((tab) => ({
+      key: nativeKey(tab.id),
+      tab: { ...tab, title: tab.title.slice(0, 4096) },
+    }))
   const lastLibrary = useRef({ bookmarks, visits })
   useEffect(() => {
     if (!shared) return
@@ -891,7 +910,12 @@ function BrowserContent({
                 .filter((tab) => closedKeys.has(nativeKey(tab.id)))
                 .map((tab) => tab.id),
             )
-            const remaining = currentTabs.current.filter((tab) => !closedIds.has(tab.id))
+            const hasIncoming = !!state.movedTabs?.length
+            const placeholder = (tab: BrowserTab) =>
+              hasIncoming && !tab.url && !tab.pinned && !tab.previewOf && !tab.thread
+            const remaining = currentTabs.current.filter(
+              (tab) => !closedIds.has(tab.id) && !placeholder(tab),
+            )
             const incoming = (state.movedTabs ?? [])
               .map(({ key, tab }) => {
                 nativeTabKeys.set(`${scope}:${tab.id}`, key)
@@ -947,7 +971,7 @@ function BrowserContent({
               const next = [...remaining, ...incoming, ...adopted]
               currentTabs.current = next.length ? next : [fallback]
               setTabs((previous) => {
-                const kept = previous.filter((tab) => !closedIds.has(tab.id))
+                const kept = previous.filter((tab) => !closedIds.has(tab.id) && !placeholder(tab))
                 const next = [...kept, ...incoming, ...adopted].slice(0, 100)
                 return next.length ? next : [fallback]
               })
@@ -1104,6 +1128,7 @@ function BrowserContent({
           ? {
               action: 'show' as const,
               workspaceBrowser: shared,
+              keepAwake: selectedTab.keepAwake,
               profileId,
               taskId: shared ? undefined : taskId,
               agentAccess: shared ? false : agentAccess,
@@ -1237,6 +1262,7 @@ function BrowserContent({
     profileId,
     taskId,
     agentAccess,
+    selectedTab.keepAwake,
   ])
   const deviceAction = (
     device: PreviewDevice,
@@ -1319,6 +1345,7 @@ function BrowserContent({
     for (const tab of candidates)
       if (
         tab.keepAwake ||
+        (tab.kind === 'web' && browserTabCategory(tab) === 'active' && browserTabKeepsAwake(tab)) ||
         (tab.kind === 'web' &&
           (!activity?.protectedKeys || activity.protectedKeys.includes(nativeKey(tab.id))))
       )
@@ -1703,7 +1730,13 @@ function BrowserContent({
               setTabs((previous) =>
                 previous.map((item) =>
                   item.id === tab.id
-                    ? { ...wakeBrowserTab(item), previewOf: undefined, keepAwake: !item.keepAwake }
+                    ? {
+                        ...wakeBrowserTab(item),
+                        previewOf: undefined,
+                        keepAwake: !(
+                          browserTabCategory(item) === 'active' && browserTabKeepsAwake(item)
+                        ),
+                      }
                     : item,
                 ),
               )
@@ -1817,6 +1850,43 @@ function BrowserContent({
               >
                 New browser window
               </DropdownMenu.Item>
+              {browser && (
+                <DropdownMenu.Item
+                  disabled={busy}
+                  className="cursor-pointer rounded px-2 py-1.5 outline-none focus:bg-accent data-[disabled]:opacity-50"
+                  onSelect={() =>
+                    void act(async () => {
+                      const moving = workspaceTabs()
+                      await browser({
+                        action: 'detach-tabs',
+                        key: scope,
+                        tabs: moving,
+                        activeId: activeTabRef.current,
+                      })
+                      const ids = new Set(moving.map(({ tab }) => tab.id))
+                      for (const id of ids) nativeTabKeys.delete(`${scope}:${id}`)
+                      const remaining = currentTabs.current.filter((tab) => !ids.has(tab.id))
+                      const next = remaining.length
+                        ? remaining
+                        : [
+                            {
+                              id: randomUUID(),
+                              url: '',
+                              title: '',
+                              kind: 'web' as const,
+                              profileId: 'default',
+                              runtimeId: store.localRuntimeId ?? undefined,
+                            },
+                          ]
+                      currentTabs.current = next
+                      setTabs(next)
+                      selectTab(next[0])
+                    })
+                  }
+                >
+                  Detach browser
+                </DropdownMenu.Item>
+              )}
             </>
           )}
         </DropdownMenu.Content>

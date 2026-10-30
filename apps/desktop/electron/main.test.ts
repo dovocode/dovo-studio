@@ -12,6 +12,7 @@ const fixture = vi.hoisted(() => {
   return {
     resourcesDescriptor,
     handlers,
+    appHandlers: new Map<string, (...args: unknown[]) => void>(),
     windows: 0,
     ipc: vi.fn<
       (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void
@@ -19,6 +20,10 @@ const fixture = vi.hoisted(() => {
       handlers.set(channel, listener)
     }),
     quit: vi.fn<() => void>(),
+    returnBrowserTabs: vi.fn<() => Promise<void>>(async () => {}),
+    browserQuitting: vi.fn<(ready: boolean) => void>(),
+    stop: vi.fn<() => Promise<void>>(async () => {}),
+    error: vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
     choice: undefined as import('@dovo/protocol').WindowsRuntimeChoice | undefined,
     start: vi.fn<() => Promise<{ address: string; token: string }>>(() =>
       Promise.reject(new Error('Runtime protocol is incompatible')),
@@ -48,7 +53,9 @@ vi.mock('electron', () => ({
     commandLine: { hasSwitch: () => true },
     setName: vi.fn<(...args: unknown[]) => void>(),
     setPath: vi.fn<(...args: unknown[]) => void>(),
-    on: vi.fn<(...args: unknown[]) => void>(),
+    on: vi.fn<(name: string, listener: (...args: unknown[]) => void) => void>((name, listener) => {
+      fixture.appHandlers.set(name, listener)
+    }),
     once: vi.fn<(...args: unknown[]) => void>(),
     whenReady: () => Promise.resolve(),
     requestSingleInstanceLock: () => true,
@@ -74,7 +81,7 @@ vi.mock('electron', () => ({
     }
   },
   ipcMain: { handle: fixture.ipc, on: fixture.ipc },
-  dialog: {},
+  dialog: { showMessageBox: fixture.error },
 }))
 vi.mock('./runtime-connection-health.js', () => ({ checkRuntimeConnection: fixture.confirm }))
 vi.mock('./remote-updates.js', () => ({ registerRemoteUpdates: async () => undefined }))
@@ -87,6 +94,16 @@ vi.mock('./browser.js', () => ({
   registerBrowser: vi.fn<(...args: unknown[]) => { dispose: () => Promise<void> }>(() => ({
     dispose: async () => {},
   })),
+}))
+vi.mock('./browser-window.js', () => ({
+  registerBrowserWindows: () => ({
+    create: vi.fn<() => Promise<import('electron').BrowserWindow>>(),
+    list: () => [],
+    onClose: () => {},
+    returnAll: fixture.returnBrowserTabs,
+    setQuitting: fixture.browserQuitting,
+    dispose: () => {},
+  }),
 }))
 vi.mock('./links.js', () => ({
   queueExternalLinks: vi.fn<typeof import('./links.js').queueExternalLinks>(),
@@ -101,7 +118,7 @@ vi.mock('./connection-storage.js', () => ({
 vi.mock('./local-runtime.js', () => ({
   startLocalRuntime: fixture.start,
   pauseLocalRuntime: fixture.pause,
-  stopLocalRuntime: () => Promise.resolve(),
+  stopLocalRuntime: fixture.stop,
   prepareLocalRuntimeUpdate: vi.fn<typeof import('./local-runtime').prepareLocalRuntimeUpdate>(),
 }))
 vi.mock('./windows-runtime.js', () => ({
@@ -332,4 +349,38 @@ it('registers only validated link receiver readiness from the trusted owning ren
   handler(event, false)
   expect(setLinkReceiver).toHaveBeenCalledWith(event.sender, false)
   expect(() => handler(event, 'true')).toThrow('Expected link receiver readiness')
+})
+
+it('keeps repeated quit requests blocked until detached tabs are saved, and permits retry on failure', async () => {
+  await import('./main')
+  const beforeQuit = fixture.appHandlers.get('before-quit')
+  if (!beforeQuit) throw new Error('Missing shutdown handler')
+  const event = { preventDefault: vi.fn<() => void>() }
+  fixture.stop.mockClear()
+  fixture.returnBrowserTabs.mockRejectedValueOnce(new Error('Storage is full'))
+  beforeQuit(event)
+  await vi.waitFor(() => expect(fixture.error).toHaveBeenCalled())
+  expect(fixture.quit).not.toHaveBeenCalled()
+  expect(fixture.stop).not.toHaveBeenCalled()
+  expect(fixture.browserQuitting).not.toHaveBeenCalledWith(true)
+
+  let saved = () => {}
+  fixture.returnBrowserTabs.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        saved = resolve
+      }),
+  )
+  beforeQuit(event)
+  beforeQuit(event)
+  expect(event.preventDefault).toHaveBeenCalledTimes(3)
+  expect(fixture.returnBrowserTabs).toHaveBeenCalledTimes(2)
+  expect(fixture.stop).not.toHaveBeenCalled()
+  expect(fixture.quit).not.toHaveBeenCalled()
+  saved()
+  await vi.waitFor(() => expect(fixture.quit).toHaveBeenCalledOnce())
+  expect(fixture.stop).toHaveBeenCalledOnce()
+  expect(fixture.browserQuitting).toHaveBeenLastCalledWith(true)
+  beforeQuit(event)
+  expect(event.preventDefault).toHaveBeenCalledTimes(3)
 })

@@ -3,6 +3,8 @@ import { Schema } from 'effect'
 import { decodeResult } from '../../shared/schema.js'
 import {
   browserTabCategory,
+  browserDefaultKeepAwake,
+  browserTabKeepsAwake,
   browserTabCleanupSettingsFields,
   cleanBrowserTabs,
   settleBrowserTab,
@@ -21,6 +23,51 @@ const tab = {
   visitedAt: minute,
   lastActiveAt: 2 * minute,
 }
+it.each([
+  'https://teams.microsoft.com/v2/',
+  'https://teams.cloud.microsoft/',
+  'https://teams.live.com/',
+  'https://outlook.office.com/mail/',
+  'https://outlook.office365.com/',
+  'https://outlook.live.com/mail/0/',
+  'https://outlook.cloud.microsoft/',
+  'https://mail.google.com/mail/u/0/',
+  'https://app.slack.com/client/T123/C123',
+  'https://example-workspace.slack.com/',
+  'https://EXAMPLE.slack.com/messages/general',
+  'https://discord.com/channels/@me',
+  'https://canary.discord.com/channels/@me',
+  'https://ptb.discord.com/channels/@me',
+  'https://web.whatsapp.com/',
+  'https://chat.google.com/',
+])('keeps communication app %s awake by default, with an explicit opt-out', (url) => {
+  expect(browserDefaultKeepAwake(url)).toBe(true)
+  expect(browserTabKeepsAwake({ url })).toBe(true)
+  expect(browserTabKeepsAwake({ url, keepAwake: false })).toBe(false)
+})
+it.each([
+  'https://example.com/',
+  'https://teams.microsoft.com.example.com/',
+  'https://example.com/?next=https://mail.google.com/',
+  'https://notmail.google.com/',
+  'https://slack.com/',
+  'https://app.slack.com.example.com/',
+  'https://notslack.com/',
+  'https://discord.com.example.com/',
+  'https://support.discord.com/',
+  'https://www.whatsapp.com/',
+  'https://web.whatsapp.com.example.com/',
+  'https://chat.google.com.example.com/',
+  'https://accounts.google.com/',
+  'https://www.microsoft.com/',
+  'http://192.168.1.2:3000/',
+  'file://mail.google.com/mail/',
+  'file://app.slack.com/client/',
+  'not a URL',
+])('allows other pages and look-alike hosts to sleep: %s', (url) => {
+  expect(browserTabKeepsAwake({ url })).toBe(false)
+  expect(browserTabKeepsAwake({ url, keepAwake: true })).toBe(true)
+})
 it('does no automatic settling or closing with both timers off', () => {
   const settled = settleBrowserTab({ ...tab, id: 'settled' }, minute)
   expect(cleanBrowserTabs([tab, settled], off, 'current', 100 * minute)).toEqual({

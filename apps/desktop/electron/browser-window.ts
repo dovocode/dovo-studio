@@ -1,5 +1,5 @@
 import { readLocalSettingsSection } from '@dovo/protocol/local-settings'
-import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
 import { defaultWindowColors, readWindowColors, titleBarOverlay } from './window-colors.js'
@@ -9,6 +9,8 @@ import { registerQuitShortcut } from './quit-shortcut.js'
 /** Each browser window hosts browser-only controls and its own independent tab workspace. */
 export function registerBrowserWindows(rendererPath: string, preload: string) {
   const windows = new Set<BrowserWindow>()
+  let returnTabs: ((window: BrowserWindow) => Promise<void>) | undefined
+  let quitting = false
   const create = async () => {
     const settings = readLocalSettingsSection('app')
     if (
@@ -40,6 +42,28 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
       webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload },
     })
     windows.add(window)
+    let returned = false
+    let returning = false
+    window.on('close', (event) => {
+      if (quitting || returned || !returnTabs) return
+      event.preventDefault()
+      if (returning) return
+      returning = true
+      void returnTabs(window)
+        .then(() => {
+          returned = true
+          if (!window.isDestroyed()) window.close()
+        })
+        .catch((error: unknown) => {
+          returning = false
+          if (!window.isDestroyed())
+            void dialog.showMessageBox(window, {
+              type: 'error',
+              message: 'Browser tabs could not return to the main window.',
+              detail: error instanceof Error ? error.message : String(error),
+            })
+        })
+    })
     window.once('closed', () => windows.delete(window))
     window.webContents.setWindowOpenHandler(({ url }) => {
       void offerLink(window, url)
@@ -78,6 +102,16 @@ export function registerBrowserWindows(rendererPath: string, preload: string) {
   return {
     create,
     list: () => [...windows].filter((window) => !window.isDestroyed()),
+    onClose: (handler: (window: BrowserWindow) => Promise<void>) => {
+      returnTabs = handler
+    },
+    setQuitting: (ready: boolean) => {
+      quitting = ready
+    },
+    returnAll: async () => {
+      if (returnTabs)
+        for (const window of windows) if (!window.isDestroyed()) await returnTabs(window)
+    },
     dispose: () => {
       for (const window of windows) window.destroy()
       windows.clear()

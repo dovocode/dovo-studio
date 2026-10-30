@@ -31,7 +31,9 @@ Document PiP feature remains disabled; a session preload supplies `requestWindow
 real same-origin window, so websites can move their existing DOM, video elements and live streams
 into it. The native window is resizable and always on top. Closing it delivers the website's normal
 `pagehide` cleanup. Navigation, tab closure and browser shutdown close the window. An open PiP
-protects its owning tab from suspension and background throttling.
+protects its owning tab from suspension and background throttling. The adopted PiP page also has
+background throttling disabled directly; Electron's pending popup does not reliably inherit that
+setting from window creation options.
 
 The compact PiP header sits above website content in a separate native view and displays the source
 hostname, including subdomains. Its Back to tab and Close buttons never cover the site's controls;
@@ -68,9 +70,11 @@ need a manual check against the released desktop build.
 
 Verification: `pnpm test:browser-apis:native` runs real Electron with isolated temporary data and a
 local media fixture. It checks actual DOM/stream transfer, activation, events, always-on-top,
-close/restore, navigation, automatic-entry consent and native common API grants. It opens temporary
-desktop windows and requires an installed Electron binary and a desktop session. Browser UI coverage
-is in `scripts/check-shared-browser-browser.mjs`.
+close/restore, navigation, automatic-entry consent and native common API grants. The native
+page-tools fixture also checks incoming WebRTC video pixels across repeated PiP opens and while the
+main window is hidden, plus throttling on the actual adopted PiP page. It opens temporary desktop
+windows and requires an installed Electron binary and a desktop session. Browser UI coverage is in
+`scripts/check-shared-browser-browser.mjs`.
 
 ## Address-bar search
 

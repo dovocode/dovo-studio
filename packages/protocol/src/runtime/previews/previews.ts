@@ -124,6 +124,7 @@ export const previewResultSchema = mutableStruct({
 })
 export const browserWorkspaceTabSchema = mutableStruct({
   ...browserTabLifecycleFields,
+  previewOf: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   id: maxValue(minValue(Schema.String, 1), 200),
   url: maxValue(Schema.String, 8192),
   title: maxValue(Schema.String, 4096),
@@ -172,7 +173,26 @@ export type BrowserSitePermissions = {
   /** Permissions requested by this origin, including saved choices from earlier versions. */
   requested?: BrowserSitePermission[]
 }
+const browserWorkspaceStateFields = {
+  tabs: mutableArray(
+    mutableStruct({
+      key: maxValue(minValue(Schema.String, 1), 500),
+      tab: browserWorkspaceTabSchema,
+    }),
+  ).pipe(Schema.check(Schema.isMinLength(1)), Schema.check(Schema.isMaxLength(100))),
+  activeId: maxValue(minValue(Schema.String, 1), 200),
+}
+export type BrowserWorkspaceState = {
+  tabs: { key: string; tab: BrowserWorkspaceTab }[]
+  activeId: string
+}
 export const browserCommandSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literals(['sync-tabs', 'detach-tabs']),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    persisted: Schema.optional(Schema.Boolean),
+    ...browserWorkspaceStateFields,
+  }),
   mutableStruct({
     action: Schema.Literal('zoom'),
     key: maxValue(minValue(Schema.String, 1), 500),
@@ -221,7 +241,8 @@ export const browserCommandSchema = Schema.Union([
   mutableStruct({
     action: Schema.Literal('keep-awake'),
     key: maxValue(minValue(Schema.String, 1), 500),
-    enabled: Schema.Boolean,
+    /** Omitted follows the website default; false explicitly permits sleeping. */
+    enabled: Schema.optional(Schema.Boolean),
     url: maxValue(minValue(Schema.String, 1), 8192),
     profileId: Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,100}$/))),
   }),
@@ -273,6 +294,7 @@ export const browserCommandSchema = Schema.Union([
     agentAccess: Schema.optional(Schema.Boolean),
     /** Shared Browser activity only: queue new-tab requests, allow popups and forward tab shortcuts. */
     workspaceBrowser: Schema.optional(Schema.Boolean),
+    keepAwake: Schema.optional(Schema.Boolean),
     key: maxValue(minValue(Schema.String, 1), 500),
     url: urlSchema(),
     viewport: Schema.optional(
@@ -394,6 +416,7 @@ export const browserCommandSchema = Schema.Union([
       'media-status',
       /** Active media/sharing tab keys; never drains page-created tab events. */
       'tab-activity',
+      'sleep',
       'focus-tab',
     ]),
     key: maxValue(minValue(Schema.String, 1), 500),

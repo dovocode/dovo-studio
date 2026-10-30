@@ -341,7 +341,129 @@ async function checkAddressSelection() {
     }
   }
 }
+async function checkAwakeDefaultsAndDetaching() {
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  try {
+    await page.route('http://localhost/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<html class="dark"><body><div id="app" style="height:800px"></div></body></html>',
+      }),
+    )
+    await page.goto('http://localhost/awake-defaults')
+    await page.evaluate(() => {
+      const base = { kind: 'web', profileId: 'default', runtimeId: 'runtime' }
+      localStorage.setItem(
+        'dovo.shared-browser-tabs.v1',
+        JSON.stringify({
+          active: 'other',
+          tabs: [
+            {
+              ...base,
+              id: 'teams',
+              title: 'Teams',
+              url: 'https://teams.microsoft.com/v2/',
+              pinned: true,
+            },
+            { ...base, id: 'outlook', title: 'Outlook', url: 'https://outlook.office.com/mail/' },
+            { ...base, id: 'gmail', title: 'Gmail', url: 'https://mail.google.com/mail/u/0/' },
+            { ...base, id: 'other', title: 'Other app', url: 'http://localhost/other' },
+          ],
+        }),
+      )
+    })
+    const load = async () => {
+      await page.evaluate(() => {
+        window.testMainDraft = true
+      })
+      for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+        file.endsWith('.css'),
+      ))
+        await page.addStyleTag({
+          content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+        })
+      await page.addScriptTag({ content: built.outputFiles[0].text })
+    }
+    await load()
+    const row = (id) => page.locator('[data-browser-tab-id="' + id + '"]')
+    for (const id of ['teams', 'outlook', 'gmail'])
+      await row(id).getByLabel('Kept awake', { exact: true }).waitFor()
+    assert.equal(await row('other').getByLabel('Kept awake', { exact: true }).count(), 0)
+    await row('teams').click({ button: 'right' })
+    const awake = page.getByRole('menuitemcheckbox', { name: 'Keep awake', exact: true })
+    assert.equal(await awake.getAttribute('aria-checked'), 'true')
+    await awake.click()
+    await page.waitForFunction(() =>
+      window.calls.some(
+        (c) => c.action === 'keep-awake' && c.key.endsWith(':teams') && c.enabled === false,
+      ),
+    )
+    await page.reload()
+    await load()
+    await row('teams').waitFor()
+    assert.equal(
+      await row('teams').getByLabel('Kept awake', { exact: true }).count(),
+      0,
+      'Opt-out survives reload',
+    )
+    await row('gmail').getByLabel('Kept awake', { exact: true }).waitFor()
+    await row('outlook').click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Settle tab', exact: true }).click()
+    await page.waitForFunction(() =>
+      window.calls.some((c) => c.action === 'sleep' && c.key.endsWith(':outlook')),
+    )
+    await row('gmail').getByRole('button').first().click()
+    await page
+      .getByRole('complementary', { name: 'Recent browser tabs' })
+      .getByRole('button', { name: 'New browser tab', exact: true })
+      .click()
+    await page.getByRole('menuitem', { name: 'Detach browser', exact: true }).click()
+    await page.waitForFunction(() => window.calls.some((c) => c.action === 'detach-tabs'))
+    await page.waitForFunction(
+      () => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.length === 1,
+    )
+    const detached = await page.evaluate(() =>
+      window.calls.findLast((c) => c.action === 'detach-tabs'),
+    )
+    assert.equal(detached.tabs.length, 4)
+    assert.equal(detached.activeId, 'gmail')
+    assert.equal(detached.tabs.find((item) => item.tab.id === 'teams').tab.pinned, true)
+    assert.equal(detached.tabs.find((item) => item.tab.id === 'teams').tab.keepAwake, false)
+    assert.ok(detached.tabs.find((item) => item.tab.id === 'outlook').tab.settledAt)
+    await page.evaluate(async () => {
+      const detached = window.calls.findLast((c) => c.action === 'detach-tabs')
+      window.movedTabs.push(...detached.tabs)
+      window.focusedTabKey = detached.tabs.find((item) => item.tab.id === detached.activeId).key
+      await window.pollBrowser()
+    })
+    await page.waitForFunction(() => {
+      const state = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+      return state.tabs.length === 4 && state.active === 'gmail'
+    })
+    const returned = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')),
+    )
+    assert.deepEqual(
+      returned.tabs.map((tab) => tab.id),
+      detached.tabs.map((item) => item.tab.id),
+      'Return replaces the empty placeholder and preserves order',
+    )
+    assert.equal(returned.tabs.find((tab) => tab.id === 'teams').pinned, true)
+    assert.equal(returned.tabs.find((tab) => tab.id === 'teams').keepAwake, false)
+    assert.ok(returned.tabs.find((tab) => tab.id === 'outlook').settledAt)
+    await page.waitForFunction(() => {
+      const sync = window.calls.findLast((call) => call.action === 'sync-tabs')
+      return sync?.persisted === true && sync.tabs.length === 4
+    })
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
 try {
+  await checkAwakeDefaultsAndDetaching()
   await checkAddressSelection()
   await captureBrowserSidebar(browser)
   const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })

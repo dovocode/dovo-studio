@@ -20,6 +20,7 @@ import { useWorkspace } from '@dovo/studio-core'
 import {
   browserTabBadge,
   browserTabCategory,
+  browserTabKeepsAwake,
   runtimeComputerName,
   type BrowserTabState,
 } from '@dovo/protocol'
@@ -94,6 +95,7 @@ export function BrowserTabRow({
   const title = state?.title || tab.title || tab.url.replace(/^https?:\/\//, '') || 'New tab'
   const badge = state?.badge ?? browserTabBadge(title)
   const category = browserTabCategory(tab)
+  const keepsAwake = category === 'active' && tab.kind === 'web' && browserTabKeepsAwake(tab)
   const menuItem =
     'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs outline-none focus:bg-accent data-[disabled]:opacity-50'
   return (
@@ -179,7 +181,7 @@ export function BrowserTabRow({
                     {badge === 'unread' ? null : badge > 99 ? '99+' : badge}
                   </span>
                 )}
-                {tab.keepAwake && (
+                {keepsAwake && (
                   <span
                     aria-label="Kept awake"
                     title="Keep awake is on"
@@ -300,7 +302,7 @@ export function BrowserTabRow({
           {onKeepAwake && (
             <ContextMenu.CheckboxItem
               className={menuItem}
-              checked={!!tab.keepAwake}
+              checked={keepsAwake}
               disabled={busy}
               onCheckedChange={onKeepAwake}
             >
