@@ -560,7 +560,13 @@ function TaskListRowView({
                 {statusIndicator}
               </View>
               <View
-                style={{ flexDirection: 'row', alignItems: 'center', height: titleHeight, gap: 6 }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  height: titleHeight,
+                  gap: 6,
+                  paddingRight: !car && general && childCount > 0 ? 44 : 0,
+                }}
               >
                 {title}
                 {general && executionIcons}
@@ -576,7 +582,7 @@ function TaskListRowView({
                     alignItems: 'center',
                     height: metadataHeight,
                     gap: 6,
-                    paddingRight: !car && !showDevice && !agent && childCount > 0 ? 12 : 0,
+                    paddingRight: !car && childCount > 0 ? (!showDevice && !agent ? 44 : 32) : 0,
                   }}
                 >
                   <View
