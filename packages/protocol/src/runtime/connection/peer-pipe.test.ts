@@ -69,7 +69,7 @@ it('preserves binary bytes and limits send credits until the receiver flushes it
   const sent = f.send.mock.calls
     .map(([part]) => part)
     .filter((part): part is Uint8Array => part instanceof Uint8Array)
-  expect(new Uint8Array(sent.flatMap((part) => Array.from(part)))).toEqual(bytes)
+  expect(Buffer.concat(sent).equals(bytes)).toBe(true)
   f.pipe.receive(new Uint8Array([0, 255, 128]))
   expect(f.send.mock.calls.at(-1)?.[0]).not.toBe('ack')
   f.writes[0]!.done()
@@ -96,7 +96,8 @@ it.each([8, 64] as const)(
     }
     const frames = f.send.mock.calls.map(([frame]) => frame)
     const data = frames.filter((frame): frame is Uint8Array => frame instanceof Uint8Array)
-    expect(Buffer.concat(data)).toEqual(Buffer.concat([head, tail]))
+    // Compare every byte without deep-enumerating a megabyte of indexed properties.
+    expect(Buffer.concat(data).equals(Buffer.concat([head, tail]))).toBe(true)
     expect(frames.at(-1)).toBe('end')
     expect(frames.filter((frame) => frame === 'end')).toHaveLength(1)
     f.pipe.receive('ack')
@@ -213,7 +214,7 @@ it.each([8, 64] as const)(
       pipe.receive('end')
       await closed
       expect(ended).toBe(true)
-      expect(Buffer.concat(frames)).toEqual(payload)
+      expect(Buffer.concat(frames).equals(payload)).toBe(true)
       expect(serverErrors).toEqual([])
       expect(close).not.toHaveBeenCalled()
       pipe.receive('ack')
