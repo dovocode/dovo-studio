@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mocks = {
   '@dovo/studio-core': `export const useAppPreferences=()=>({projectGrouping:'name',projectOrder:'name'});export const projectActivity=()=>0;export const useWorkspace=()=>window.store;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-ui': `export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export * from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';export const TaskDefaultSettings=()=>null;`,
+  '@dovo/studio-ui': `export {Button} from './src/components/ui/button';export {Input} from './src/components/ui/input';export {ProjectIcon} from './src/project-icon';export * from './src/components/ui/dialog';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export * as Popover from '@radix-ui/react-popover';export const TaskDefaultSettings=()=>null;`,
   './repository-dialog': `export const RepositoryDialog=({onClose})=><div role="dialog" aria-label="Add project"><button onClick={onClose}>Close adding</button></div>;`,
   './repository-checkouts': 'export const RepositoryCheckouts=()=>null;',
   './forge-repository': 'export const ProjectForgeBinding=()=>null;',
