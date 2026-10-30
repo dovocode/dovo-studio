@@ -347,10 +347,10 @@ kernel egress quota, coturn bandwidth/allocation caps and operational monitoring
 Run `pnpm test:peer-connection:browser` for real Chromium-to-runtime negotiation and pairing UI
 checks. Set `DOVO_TEST_TURN_BINARY` to a local coturn `turnserver` binary to additionally force UDP,
 TCP and TLS relay paths using real expiring REST credentials. The test server binds only loopback.
-The TLS fixture requires OpenSSL, generates a temporary certificate and trusts it only inside the
-test process and its local fixture browser. Deployed relay checks retain normal certificate
-validation. Mobile TCP and UI native boundaries are adapted in Chromium; it is not a physical-device
-test.
+The main CI check installs coturn and requires these forced relay checks on every change. The TLS
+fixture requires OpenSSL, generates a temporary certificate and trusts it only inside the test
+process and its local fixture browser. Deployed relay checks retain normal certificate validation.
+Mobile TCP and UI native boundaries are adapted in Chromium; it is not a physical-device test.
 
 Set `DOVO_TEST_CONNECT_ORIGIN=https://connect.dovo.studio` to test the deployed signaling broker and
 relay. The browser check verifies direct, UDP, TCP and TLS paths independently. Set

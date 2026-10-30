@@ -5,7 +5,7 @@ export function createPeerPipe(options: {
   stream: {
     onData: (callback: (bytes: Uint8Array) => void) => void
     onEnd: (callback: () => void) => void
-    onClose: (callback: () => void) => void
+    onClose: (callback: (hadError?: boolean) => void) => void
     onError: (callback: () => void) => void
     write: (bytes: Uint8Array, callback: (error?: Error | null) => void) => void
     pause: () => void
@@ -21,6 +21,7 @@ export function createPeerPipe(options: {
   const window = options.window ?? 8
   let ready = false,
     stopped = false,
+    sourceClosed = false,
     sourceEnded = false,
     sentEnd = false,
     receivedEnd = false
@@ -44,6 +45,11 @@ export function createPeerPipe(options: {
       stop()
     }
   }
+  const finish = () => {
+    // A graceful socket close can precede delivery of the data-channel tail. Credits
+    // return only after the peer's socket writes finish, including under backpressure.
+    if (sourceClosed && sentEnd && credits === window && received === 0) stop()
+  }
   const flush = () => {
     if (!ready || stopped) return
     while (credits > 0 && queue.length && !stopped) {
@@ -60,6 +66,7 @@ export function createPeerPipe(options: {
     if (stopped) return
     if (credits > 0 && !queue.length && !sourceEnded) stream.resume()
     else stream.pause()
+    finish()
   }
   stream.onData((chunk) => {
     if (stopped) return
@@ -80,7 +87,14 @@ export function createPeerPipe(options: {
     flush()
   })
   stream.onError(stop)
-  stream.onClose(stop)
+  stream.onClose((hadError) => {
+    if (hadError || !sourceEnded || !receivedEnd) {
+      stop()
+      return
+    }
+    sourceClosed = true
+    finish()
+  })
   return {
     ready: () => {
       ready = true
@@ -120,6 +134,7 @@ export function createPeerPipe(options: {
             else {
               send('ack')
               if (!stopped && receivedEnd && received === 0) stream.end()
+              finish()
             }
           })
         } catch {

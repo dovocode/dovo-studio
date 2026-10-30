@@ -8,8 +8,9 @@ export function refreshPullPage(
   previous: CachedPullPage | undefined,
   incoming: PullPage,
   laterPages: PullPage[] = [],
+  refreshed = false,
 ): CachedPullPage {
-  const retained = retainNewerPullSnapshot(previous, incoming)
+  const retained = retainNewerPullSnapshot(previous, incoming, refreshed)
   if (retained !== incoming) return retained
   const firstPageIds = incoming.pulls.map((pull) => String(pull.number))
   const failed = laterPages.find((page) => page.stale || page.refreshError)
@@ -24,6 +25,7 @@ export function refreshPullPage(
     ...incoming,
     page: last.page,
     hasMore: last.hasMore,
+    paginationNotice: last.paginationNotice,
     firstPageIds,
     pulls: [
       ...new Map(

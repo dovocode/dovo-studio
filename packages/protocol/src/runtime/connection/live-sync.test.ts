@@ -878,3 +878,30 @@ it('negotiates settled list limits and keeps a simultaneous complete-list consum
   first()
   expect(runtimeSnapshotPath(connection)).not.toContain('settled=')
 })
+
+it('reconnects when the watchdog cannot resend a resume', async () => {
+  vi.useFakeTimers()
+  vi.spyOn(Math, 'random').mockReturnValue(0.5)
+  const { clock, Socket, live, frame } = await stalledSocketFixture(
+    'http://resume-send-failure.local',
+  )
+  const first = Socket.instances[0]!
+  first.readyState = 1
+  first.onopen?.()
+  first.onmessage?.({ data: frame })
+  live.refresh()
+  vi.spyOn(first, 'send').mockImplementation(() => {
+    throw new Error('Socket send failed')
+  })
+  clock.mockReturnValue(4000)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(first.readyState).toBe(3)
+  expect(live.online()).toBe(false)
+  await vi.advanceTimersByTimeAsync(500)
+  expect(Socket.instances).toHaveLength(2)
+  const second = Socket.instances[1]!
+  second.readyState = 1
+  second.onopen?.()
+  second.onmessage?.({ data: JSON.stringify({ type: 'heartbeat', epoch: 'stalled', sequence: 1 }) })
+  expect(live.online()).toBe(true)
+})

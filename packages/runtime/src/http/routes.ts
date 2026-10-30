@@ -7,6 +7,7 @@ import { sharingWriterConfigSchema } from '@dovo/protocol'
 import { remoteDesktopRequestSchema, remoteDesktopUnlockSchema } from '@dovo/protocol'
 import { serveRetrieval } from '../retrieval/host.js'
 import { retrievalRequestSchema } from '../retrieval/request.js'
+import { pullPeerScopeSchema } from '../retrieval/pulls.js'
 import { requireLocalStudioUI } from '../studio/local-ui.js'
 import { studioTool } from '../studio/tools.js'
 import { studioPeers, routedStudioTool } from '../studio/peers.js'
@@ -583,6 +584,14 @@ export function route(
         return s.retrievalPeers.register(device.id, yield* serviceResult(body(request, 256 * 1024)))
       }
       if (method === 'POST' && path === '/api/retrieval/host') return s.retrieval.status()
+      if (method === 'POST' && path === '/api/scm/pulls/invalidate') {
+        const input = decode(
+          mutableStruct({ scope: pullPeerScopeSchema }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        s.retrieval.forgetPull(input.scope)
+        return { ok: true }
+      }
       if (method === 'POST' && path === '/api/scm/pulls/peer') {
         if (s.retrieval.status().enabled === false)
           throw new HttpError(

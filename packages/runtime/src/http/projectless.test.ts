@@ -69,6 +69,37 @@ async function registerFolder(f: Awaited<ReturnType<typeof setup>>, path: string
   expect(repository.kind).toBe('folder')
   return repository
 }
+it('keeps shared project metadata when removing the last local clone', async () => {
+  const f = await setup()
+  f.runtime.services.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      {
+        id: 'clone',
+        name: 'Clone',
+        path: '/tmp/metadata-only-clone',
+        branch: 'main',
+        gitIdentity: 'github.com/team/app',
+      },
+    ],
+  }))
+  const shared = [
+    {
+      key: 'project:github.com/team/app',
+      updatedAt: 1,
+      changeId: 'name',
+      value: { projectName: 'Shared App' },
+    },
+  ]
+  f.runtime.services.defaults.save(
+    { ...f.runtime.services.defaults.get(), scopedSettings: { environment: {}, shared } },
+    false,
+  )
+  expect((await f.request('/api/scm/repositories/delete', { repositoryId: 'clone' })).status).toBe(
+    200,
+  )
+  expect(f.runtime.services.defaults.get().scopedSettings?.shared).toEqual(shared)
+})
 it('creates named Dovo projects with separate managed folders and shares files between their chats across restarts', async () => {
   const f = await setup()
   vi.stubEnv('DOVO_DATA_ROOT', f.root)

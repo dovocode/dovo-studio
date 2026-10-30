@@ -71,9 +71,13 @@ export function projectMachineGroups<
       name:
         group.entries[0].repository.kind === 'scratch'
           ? 'No Project'
-          : [...new Set(group.entries.map((entry) => entry.repository.name))].sort(
-              (a, b) => a.length - b.length || a.localeCompare(b),
-            )[0],
+          : (group.entries
+              .map(({ repository }) => repository.sharedName)
+              .filter((name) => name !== undefined)
+              .sort((a, b) => a.localeCompare(b))[0] ??
+            [...new Set(group.entries.map((entry) => entry.repository.name))].sort((a, b) =>
+              a.localeCompare(b),
+            )[0]),
       identity: sharedProjectKey(group.entries[0].repository)
         ? group.entries[0].repository.gitIdentity
         : undefined,

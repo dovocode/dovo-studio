@@ -4,6 +4,7 @@ import { saveRuntimePairing, recoverRuntimePairings, cancelRuntimePairing } from
 import { runtimeProfile, runtimeRegistrySchema, type RuntimeRegistry } from './runtime-fleet'
 import { decode } from '../../shared/schema'
 import { snapshotSchema } from './runtime'
+import { peerAddress, registerPeerTransport } from './peer'
 import { RuntimeMutations, type MutationOutbox } from './mutations'
 
 const previous = runtimeProfile({
@@ -409,3 +410,192 @@ it('recovers an expired confirmation from an authenticated overview without down
   expect(result.pendingPairings).toEqual([])
   expect(fetcher).toHaveBeenCalledOnce()
 })
+
+it.each(['cancelled', 'expired'] as const)(
+  'reconciles the staged permanent connection when bootstrap cancellation is %s',
+  async (outcome) => {
+    const pending = { ...entry(), claimAddress: 'http://bootstrap:51464' }
+    const saved = decode(runtimeRegistrySchema, {
+      ...initial(),
+      pendingPairings: [pending],
+    })
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        outcome === 'cancelled' ? ok() : Response.json({ error: 'Expired' }, { status: 404 }),
+      )
+      .mockResolvedValueOnce(ok())
+    vi.stubGlobal('fetch', fetcher)
+    const result = await Effect.runPromise(
+      cancelRuntimePairing(saved, pending.claimAddress, pending.proof, () => Effect.void),
+    )
+    expect(fetcher.mock.calls[0]?.[0]).toEqual(
+      new URL(candidate.connection.address + '/api/pair/cancel'),
+    )
+    expect(fetcher).toHaveBeenCalledTimes(outcome === 'expired' ? 2 : 1)
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual(
+      outcome === 'expired'
+        ? [
+            new URL(candidate.connection.address + '/api/pair/cancel'),
+            new URL(candidate.connection.address + '/api/devices/revoke-self'),
+          ]
+        : [new URL(candidate.connection.address + '/api/pair/cancel')],
+    )
+    expect(result.pendingPairings).toEqual([])
+    expect(result.profiles).toEqual([previous])
+  },
+)
+
+it.each(['cancel', 'revoke'] as const)(
+  'retains the staged credential when %s has an uncertain outcome',
+  async (failure) => {
+    const pending = { ...entry(), claimAddress: 'http://bootstrap:51464' }
+    const saved = { ...initial(), pendingPairings: [pending] }
+    const fetcher = vi.fn<typeof fetch>()
+    if (failure === 'revoke')
+      fetcher.mockResolvedValueOnce(Response.json({ error: 'Expired' }, { status: 404 }))
+    fetcher.mockRejectedValueOnce(new Error('Network lost'))
+    vi.stubGlobal('fetch', fetcher)
+    const write = vi.fn<() => Effect.Effect<void>>(() => Effect.void)
+    await expect(
+      Effect.runPromise(cancelRuntimePairing(saved, pending.claimAddress, pending.proof, write)),
+    ).rejects.toThrow(/./)
+    expect(fetcher).toHaveBeenCalledTimes(failure === 'cancel' ? 1 : 2)
+    expect(write).not.toHaveBeenCalled()
+    expect(saved.pendingPairings).toEqual([pending])
+  },
+)
+
+it('does not use a colliding request id with a different secret to revoke a staged device', async () => {
+  const pending = { ...entry(), claimAddress: 'http://bootstrap:51464' }
+  const fetcher = vi.fn<typeof fetch>(async () =>
+    Response.json({ error: 'Expired' }, { status: 404 }),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const result = await Effect.runPromise(
+    cancelRuntimePairing(
+      { ...initial(), pendingPairings: [pending] },
+      pending.claimAddress,
+      { ...pending.proof, secret: 'different-secret-long-enough' },
+      () => Effect.void,
+    ),
+  )
+  expect(fetcher).toHaveBeenCalledOnce()
+  expect(result.pendingPairings).toEqual([pending])
+})
+
+it('reconciles an older internet journal using its unique full pairing proof', async () => {
+  const bootstrap = peerAddress({ origin: 'https://connect.test', secret: 'a'.repeat(64) })
+  const permanent = { origin: 'https://connect.test', secret: 'b'.repeat(64) }
+  const pending = {
+    ...entry(),
+    profile: runtimeProfile({
+      address: peerAddress(permanent),
+      peer: permanent,
+      token: candidate.connection.token,
+    }),
+  }
+  const resolved = vi.fn<(address: string) => Promise<string>>(async () => 'http://127.0.0.1:12345')
+  registerPeerTransport({ resolve: resolved, address: () => 'http://127.0.0.1:12345' })
+  const fetcher = vi.fn<typeof fetch>(async () => ok())
+  vi.stubGlobal('fetch', fetcher)
+  const result = await Effect.runPromise(
+    cancelRuntimePairing(
+      { ...initial(), pendingPairings: [pending] },
+      bootstrap,
+      pending.proof,
+      () => Effect.void,
+    ),
+  )
+  expect(resolved.mock.calls[0]?.[0]).toBe(peerAddress(permanent))
+  expect(fetcher).toHaveBeenCalledOnce()
+  expect(result.pendingPairings).toEqual([])
+})
+
+it('refuses ambiguous legacy internet journals before issuing a cancellation', async () => {
+  const bootstrap = peerAddress({ origin: 'https://connect.test', secret: 'a'.repeat(64) })
+  const pending = entry()
+  const internet = (secret: string) => {
+    const peer = { origin: 'https://connect.test', secret: secret.repeat(64) }
+    return {
+      ...pending,
+      profile: runtimeProfile({
+        address: peerAddress(peer),
+        peer,
+        token: candidate.connection.token,
+      }),
+    }
+  }
+  const fetcher = vi.fn<typeof fetch>()
+  const write = vi.fn<() => Effect.Effect<void>>(() => Effect.void)
+  vi.stubGlobal('fetch', fetcher)
+  await expect(
+    Effect.runPromise(
+      cancelRuntimePairing(
+        { ...initial(), pendingPairings: [internet('b'), internet('c')] },
+        bootstrap,
+        pending.proof,
+        write,
+      ),
+    ),
+  ).rejects.toThrow('Cannot safely identify')
+  expect(fetcher).not.toHaveBeenCalled()
+  expect(write).not.toHaveBeenCalled()
+})
+
+it('preserves an unrelated staged proof sharing the same address and request id', async () => {
+  const pending = entry()
+  const other = { ...pending, proof: { ...pending.proof, secret: 'another-unique-secret-value' } }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => ok()),
+  )
+  const result = await Effect.runPromise(
+    cancelRuntimePairing(
+      { ...initial(), pendingPairings: [pending, other] },
+      pending.profile.connection.address,
+      pending.proof,
+      () => Effect.void,
+    ),
+  )
+  expect(result.pendingPairings).toEqual([other])
+})
+
+it('retains its durable journal if cancellation succeeds but the registry write fails', async () => {
+  const pending = { ...entry(), claimAddress: 'http://bootstrap:51464' }
+  const saved = { ...initial(), pendingPairings: [pending] }
+  const fetcher = vi.fn<typeof fetch>(async () => ok())
+  vi.stubGlobal('fetch', fetcher)
+  await expect(
+    Effect.runPromise(
+      cancelRuntimePairing(saved, pending.claimAddress, pending.proof, () => fail('Disk full')),
+    ),
+  ).rejects.toThrow('Disk full')
+  expect(fetcher).toHaveBeenCalledOnce()
+  expect(saved.pendingPairings).toEqual([pending])
+})
+
+it.each([
+  'http://192.168.1.20:51464',
+  'http://computer.tailnet:51464',
+  'https://computer.example:51464',
+  `http://${'a'.repeat(64)}.p2p.invalid`,
+])('accepts a supported claim address in the persisted journal: %s', (claimAddress) => {
+  const saved = decode(runtimeRegistrySchema, {
+    ...initial(),
+    pendingPairings: [{ ...entry(), claimAddress }],
+  })
+  expect(saved.pendingPairings?.[0]?.claimAddress).toBe(claimAddress)
+})
+
+it.each(['not a URL', 'ftp://computer.example', 'http://user:password@computer.example'])(
+  'rejects an invalid or credential-bearing claim address in the persisted journal: %s',
+  (claimAddress) => {
+    expect(() =>
+      decode(runtimeRegistrySchema, {
+        ...initial(),
+        pendingPairings: [{ ...entry(), claimAddress }],
+      }),
+    ).toThrow(/./)
+  },
+)

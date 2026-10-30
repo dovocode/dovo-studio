@@ -272,6 +272,7 @@ export class GitService {
     ) => string | Promise<string>,
     private repositoryGithubEnvironment?: (cwd: string) => Promise<Record<string, string>>,
     private worktreeCreated?: (common: string, directory: string) => void,
+    private repositoryProvider?: (identity: string) => 'github' | undefined,
   ) {}
   async githubEnvironment(cwd: string) {
     return this.repositoryGithubEnvironment?.(cwd) ?? {}
@@ -567,6 +568,19 @@ export class GitService {
     string,
     { expires: number; pending: boolean; result: Promise<string | undefined> }
   >()
+  private githubIdentityHosts = new Set<string>()
+  /** Called only after the selected provider credential successfully verifies with GitHub. */
+  confirmGithubHost(host: string) {
+    if (this.githubIdentityHosts.has(host.toLowerCase())) return
+    this.githubIdentityHosts.add(host.toLowerCase())
+    this.identities.clear()
+  }
+  canonicalRepositoryIdentity(identity: string) {
+    return this.githubIdentityHosts.has(identity.split('/')[0].toLowerCase()) ||
+      this.repositoryProvider?.(identity) === 'github'
+      ? identity.toLowerCase()
+      : identity
+  }
   repositoryIdentity(path: string, refresh = false) {
     const now = Date.now()
     const cached = this.identities.get(path)
@@ -592,7 +606,9 @@ export class GitService {
         entry.expires = Date.now() + 60000
       },
       () => {
-        if (this.identities.get(path) === entry) this.identities.delete(path)
+        // Keep a bounded unavailable state instead of alternating error/pending every snapshot.
+        entry.pending = false
+        entry.expires = Date.now() + 15000
       },
     )
     return result
@@ -605,14 +621,16 @@ export class GitService {
     return cached?.result
   }
   private async readRepositoryIdentity(path: string) {
+    const identity = (remote: string) => {
+      const raw = gitRemoteIdentity(remote)
+      return raw ? this.canonicalRepositoryIdentity(raw) : undefined
+    }
     const remotes = (await this.command(path, ['remote'])).trim().split('\n').filter(Boolean)
     // Prefer the clone's origin: merging every remote would incorrectly merge forks.
     if (remotes.includes('origin'))
-      return gitRemoteIdentity(await this.command(path, ['remote', 'get-url', 'origin']))
+      return identity(await this.command(path, ['remote', 'get-url', 'origin']))
     const identities = await Promise.all(
-      remotes.map(async (name) =>
-        gitRemoteIdentity(await this.command(path, ['remote', 'get-url', name])),
-      ),
+      remotes.map(async (name) => identity(await this.command(path, ['remote', 'get-url', name]))),
     )
     const unique = new Set(identities)
     if (unique.size === 1) return identities[0]
@@ -789,13 +807,11 @@ export class GitService {
     const { path: root } = await this.inspect(path)
     const tracked = (await this.command(root, ['ls-files', '-z'])).split('\0').filter(Boolean)
     const changed = (
-      await this.command(root, [
-        'status',
-        '--porcelain=v1',
-        '-z',
-        '--untracked-files=all',
-        '--no-renames',
-      ])
+      await this.command(
+        root,
+        ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames'],
+        { ...processEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
+      )
     )
       .split('\0')
       .filter(Boolean)

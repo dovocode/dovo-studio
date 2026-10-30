@@ -326,7 +326,7 @@ try {
         'none',
       )
       assert.ok(
-        (await menu.evaluate((element) => getComputedStyle(element).boxShadow)).includes('36px'),
+        (await menu.evaluate((element) => getComputedStyle(element).boxShadow)).includes('18px'),
       )
       if (!mobile) await page.screenshot({ path: '/tmp/dovo-project-git-menu-effects.png' })
       await page.evaluate(() => {
@@ -339,7 +339,7 @@ try {
         'none',
       )
       assert.ok(
-        !(await menu.evaluate((element) => getComputedStyle(element).boxShadow)).includes('36px'),
+        !(await menu.evaluate((element) => getComputedStyle(element).boxShadow)).includes('18px'),
       )
       if (!mobile) await page.screenshot({ path: '/tmp/dovo-project-git-menu-flat.png' })
       await page.evaluate(() => {

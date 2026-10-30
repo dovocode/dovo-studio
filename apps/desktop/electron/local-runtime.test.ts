@@ -1,18 +1,36 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtempSync, rmSync, writeFileSync, utimesSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  utimesSync,
+} from 'node:fs'
+import { PassThrough } from 'node:stream'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-const fixture = vi.hoisted(() => ({ directory: '', packaged: false }))
+const fixture = vi.hoisted(() => ({
+  directory: '',
+  packaged: false,
+  dialog: vi.fn<(options: unknown) => Promise<{ response: number }>>(() =>
+    Promise.resolve({ response: 0 }),
+  ),
+}))
 vi.mock('./runtime-data-directory.js', () => ({ desktopRuntimeDirectory: () => fixture.directory }))
 vi.mock('electron', () => ({
   app: {
     getPath: () => fixture.directory,
     getVersion: () => '0.0.7',
+    getName: () => 'Dovo Studio',
     get isPackaged() {
       return fixture.packaged
     },
   },
+  dialog: { showMessageBox: fixture.dialog },
 }))
 vi.mock('./background-runtime.js', () => ({
   stopBackgroundRuntimeForUpdate:
@@ -26,6 +44,8 @@ vi.mock('node:child_process', async (importOriginal) => ({
 }))
 afterEach(() => {
   fixture.packaged = false
+  fixture.dialog.mockReset()
+  fixture.dialog.mockResolvedValue({ response: 0 })
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
@@ -630,4 +650,171 @@ it('ignores pre-boot discovery even when its PID belongs to a live unrelated pro
   expect(request).not.toHaveBeenCalled()
   expect(probe).not.toHaveBeenCalled()
   await stopLocalRuntime()
+})
+
+/** One fresh child per spawn, so relaunch cycles can be observed process by process. */
+async function relaunchFixture() {
+  const { ChildProcess } =
+    await vi.importActual<typeof import('node:child_process')>('node:child_process')
+  const { spawn } = await import('node:child_process')
+  const children: InstanceType<typeof ChildProcess>[] = []
+  vi.mocked(spawn).mockImplementation(() => {
+    const child = new ChildProcess()
+    Object.defineProperty(child, 'pid', { value: 1000 + children.length })
+    Object.defineProperty(child, 'stdout', { value: new PassThrough() })
+    Object.defineProperty(child, 'stderr', { value: new PassThrough() })
+    vi.spyOn(child, 'kill').mockImplementation((signal) => {
+      Object.defineProperty(child, 'signalCode', { value: signal ?? 'SIGTERM', configurable: true })
+      child.emit('exit', null, child.signalCode)
+      return true
+    })
+    children.push(child)
+    return child
+  })
+  fixture.directory = mkdtempSync(join(tmpdir(), 'dovo-desktop-relaunch-'))
+  const scheduledSignals: Array<ReturnType<typeof Promise.withResolvers<void>>> = []
+  let replacementFailures = 0
+  vi.spyOn(console, 'error').mockImplementation((message: unknown) => {
+    if (
+      typeof message === 'string' &&
+      message.startsWith('Local runtime replacement failed before it became ready:')
+    ) {
+      scheduledSignals[replacementFailures++]?.resolve()
+    }
+  })
+  vi.spyOn(console, 'log').mockImplementation(() => {})
+  // Scope cleanup drains the log descriptor asynchronously, so the supervisor's decision
+  // after a replacement failure lands after real I/O, not inside a fake-timer advance.
+  const scheduled = (count: number) => {
+    if (replacementFailures >= count) return Promise.resolve()
+    const signal = (scheduledSignals[count - 1] ??= Promise.withResolvers<void>())
+    return signal.promise
+  }
+  const ready = (child: InstanceType<typeof ChildProcess>, port: number) =>
+    child.emit('message', { type: 'ready', port })
+  const crash = (child: InstanceType<typeof ChildProcess>, code = 1) => {
+    Object.defineProperty(child, 'exitCode', { value: code, configurable: true })
+    child.emit('exit', code, null)
+  }
+  return { children, spawn, ready, crash, scheduled, ...(await import('./local-runtime')) }
+}
+
+it('keeps the bounded relaunch cycle going when a replacement dies before readiness', async () => {
+  const f = await relaunchFixture()
+  vi.useFakeTimers()
+  const starting = f.startLocalRuntime('/unused')
+  await vi.advanceTimersByTimeAsync(0)
+  f.ready(f.children[0]!, 8787)
+  await starting
+  // Adopted runtime crashes after readiness: first relaunch in two seconds.
+  f.crash(f.children[0]!)
+  await vi.advanceTimersByTimeAsync(2_000)
+  await vi.waitFor(() => expect(f.spawn).toHaveBeenCalledTimes(2))
+  // The replacement dies before `ready` (busy port, bad lock). This used to end recovery.
+  f.children[1]!.stderr!.emit('data', Buffer.from('EADDRINUSE: address already in use\n'))
+  f.crash(f.children[1]!)
+  await f.scheduled(1)
+  await expect(f.startLocalRuntime('/unused')).rejects.toThrow('recovery is paused')
+  await vi.advanceTimersByTimeAsync(4_000)
+  await vi.waitFor(() => expect(f.spawn).toHaveBeenCalledTimes(3))
+  f.ready(f.children[2]!, 8787)
+  await vi.advanceTimersByTimeAsync(0)
+  await expect(f.startLocalRuntime('/unused')).resolves.toMatchObject({
+    address: 'http://127.0.0.1:8787',
+  })
+  expect(f.spawn).toHaveBeenCalledTimes(3)
+  expect(fixture.dialog).not.toHaveBeenCalled()
+  const stopping = f.stopLocalRuntime()
+  await vi.advanceTimersByTimeAsync(0)
+  await stopping
+})
+
+it('stops relaunching after six failures and names the runtime log instead of a missing one', async () => {
+  const f = await relaunchFixture()
+  vi.useFakeTimers()
+  const starting = f.startLocalRuntime('/unused')
+  await vi.advanceTimersByTimeAsync(0)
+  f.ready(f.children[0]!, 8787)
+  await starting
+  f.crash(f.children[0]!)
+  for (let attempt = 0; attempt < 6; attempt++) {
+    // Exponential backoff: two seconds doubling to a minute, never a tight loop.
+    const delay = Math.min(60_000, 2_000 * 2 ** attempt)
+    await vi.advanceTimersByTimeAsync(delay - 1)
+    expect(f.spawn).toHaveBeenCalledTimes(attempt + 1)
+    await vi.advanceTimersByTimeAsync(1)
+    await vi.waitFor(() => expect(f.spawn).toHaveBeenCalledTimes(attempt + 2))
+    f.children[attempt + 1]!.stderr!.emit('data', Buffer.from(`boot failure ${attempt}\n`))
+    f.crash(f.children[attempt + 1]!)
+    await f.scheduled(attempt + 1)
+  }
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect(f.spawn).toHaveBeenCalledTimes(7)
+  const log = join(fixture.directory, 'runtime-service.log')
+  await vi.waitFor(() => expect(fixture.dialog).toHaveBeenCalledOnce())
+  expect(fixture.dialog.mock.calls[0]![0]).toMatchObject({
+    detail: expect.stringContaining(log),
+  })
+  expect(fixture.dialog.mock.calls[0]![0]).toMatchObject({
+    detail: expect.stringContaining('boot failure 5'),
+  })
+  await expect(f.startLocalRuntime('/unused')).rejects.toThrow(log)
+  expect(f.spawn).toHaveBeenCalledTimes(7)
+  await vi.waitFor(() => {
+    const text = readFileSync(log, 'utf8')
+    expect(text).toContain('boot failure 5')
+    // Supervisor decisions survive alongside the child's own output.
+    expect(text).toContain('replacement failed before it became ready')
+    expect(text).toContain('Relaunch 6/6 in 60s.')
+    expect(text).toContain('Giving up after 6 relaunches.')
+  })
+  await f.stopLocalRuntime()
+})
+
+it('records owned runtime output durably in the data directory and survives a missing log', async () => {
+  const f = await relaunchFixture()
+  const starting = f.startLocalRuntime('/unused')
+  await vi.waitFor(() => expect(f.children[0]?.listenerCount('message')).toBe(1))
+  const child = f.children[0]!
+  child.stdout!.emit('data', Buffer.from('listening on 8787\n'))
+  child.stderr!.emit('data', Buffer.from('warning: slow disk\n'))
+  f.ready(child, 8787)
+  await starting
+  await f.stopLocalRuntime()
+  const log = join(fixture.directory, 'runtime-service.log')
+  await vi.waitFor(() => {
+    const text = readFileSync(log, 'utf8')
+    expect(text).toContain('started local runtime (pid 1000)')
+    expect(text).toContain('listening on 8787\n')
+    expect(text).toContain('warning: slow disk\n')
+    expect(text).toContain('local runtime exited (SIGTERM)')
+  })
+  expect(statSync(log).mode & 0o777).toBe(0o600)
+})
+
+it('starts even when the runtime log cannot be opened', async () => {
+  const f = await relaunchFixture()
+  // A directory squatting on the log path makes it unwritable (EISDIR) without touching
+  // the rest of the data directory.
+  mkdirSync(join(fixture.directory, 'runtime-service.log'))
+  const starting = f.startLocalRuntime('/unused')
+  await vi.waitFor(() => expect(f.children[0]?.listenerCount('message')).toBe(1))
+  f.children[0]!.stdout!.emit('data', Buffer.from('still running\n'))
+  f.ready(f.children[0]!, 8787)
+  await expect(starting).resolves.toMatchObject({ address: 'http://127.0.0.1:8787' })
+  await f.stopLocalRuntime()
+})
+
+it('closes the runtime log before shutdown resolves, even when shutdown overlaps startup', async () => {
+  const f = await relaunchFixture()
+  const starting = f.startLocalRuntime('/unused')
+  const stopping = f.stopLocalRuntime()
+  await vi.waitFor(() => expect(f.children[0]?.listenerCount('message')).toBe(1))
+  f.children[0]!.stdout!.emit('data', Buffer.from('starting\n'))
+  f.ready(f.children[0]!, 8787)
+  await Promise.all([starting, stopping])
+  // The data directory can be removed immediately; no pending open or write recreates it.
+  rmSync(fixture.directory, { recursive: true, force: true })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(existsSync(fixture.directory)).toBe(false)
 })

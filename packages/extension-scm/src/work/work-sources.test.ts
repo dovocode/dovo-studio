@@ -26,6 +26,7 @@ vi.mock('@dovo/studio-core', async (importOriginal) => ({
 vi.mock('react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react')>()),
   useMemo: (factory: () => unknown) => factory(),
+  useCallback: <T>(callback: T) => callback,
   useEffect: () => {},
   useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
   useRef: <T>(value: T) => ({ current: value }),

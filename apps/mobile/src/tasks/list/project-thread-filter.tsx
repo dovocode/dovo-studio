@@ -6,6 +6,7 @@ import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { RepositoryCheckouts } from '../../scm/connections/repository-checkouts'
 import { ProjectIconSettings } from '../../scm/connections/project-icon-settings'
 import { SearchField } from '../../ui/controls/field'
+import { ProjectIcon } from '../../scm/connections/project-icon'
 import { Icon } from '../../ui/controls/icon'
 import { IconButton } from '../../ui/controls/icon-button'
 import { Sheet } from '../../ui/layout/sheet'
@@ -61,11 +62,15 @@ export function ProjectThreadFilter({
           opacity: pressed ? 0.7 : 1,
         })}
       >
-        <Icon
-          name={selected?.entries[0].repository.kind === 'scratch' ? 'noProject' : 'folder'}
-          size={compact ? 14 : 17}
-          color={selected ? colors.text : colors.muted}
-        />
+        {selected && selected.entries[0].repository.kind !== 'scratch' ? (
+          <ProjectIcon repository={selected.entries[0].repository} size={compact ? 16 : 20} />
+        ) : (
+          <Icon
+            name={selected ? 'noProject' : 'folder'}
+            size={compact ? 14 : 17}
+            color={selected ? colors.text : colors.muted}
+          />
+        )}
         <Text
           numberOfLines={1}
           style={
@@ -128,11 +133,11 @@ export function ProjectThreadFilter({
                     opacity: pressed ? 0.7 : 1,
                   })}
                 >
-                  <Icon
-                    name={group.entries[0].repository.kind === 'scratch' ? 'noProject' : 'folder'}
-                    size={18}
-                    color={colors.muted}
-                  />
+                  {group.entries[0].repository.kind === 'scratch' ? (
+                    <Icon name="noProject" size={18} color={colors.muted} />
+                  ) : (
+                    <ProjectIcon repository={group.entries[0].repository} />
+                  )}
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text numberOfLines={1} style={styles.text}>
                       {group.name}

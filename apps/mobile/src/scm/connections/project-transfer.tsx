@@ -3,6 +3,7 @@ import { View } from 'react-native'
 import { Schema } from 'effect'
 import {
   decodeResult,
+  isPeerAddress,
   validationMessages,
   projectTransferActive,
   projectTransferLabel,
@@ -103,8 +104,10 @@ export function ProjectTransferSettings({
     )
     if (target) {
       const url = new URL(target.profile.connection.address)
-      setSshHost(url.hostname)
-      setRuntimePort(url.protocol === 'https:' ? '5235' : url.port || '80')
+      setSshHost(isPeerAddress(url.href) ? '' : url.hostname)
+      setRuntimePort(
+        isPeerAddress(url.href) ? '' : url.protocol === 'https:' ? '5235' : url.port || '80',
+      )
     }
   }
   const sourceResolved = useRef(false)
@@ -185,6 +188,8 @@ export function ProjectTransferSettings({
         .catch((error) => setError(error instanceof Error ? error.message : String(error)))
     }
   }, [job, runtime.overviews, runtime.refreshRuntime])
+  const directUnavailable =
+    targets.find((target) => target.id === targetId)?.directSupported === false
   const planInput = {
     repositoryId: repository.id,
     worktreePath: worktreePath || undefined,
@@ -215,7 +220,8 @@ export function ProjectTransferSettings({
     (!!plan &&
       ('repositoryId' in destination ? !!destination.repositoryId : !!destination.parentDirectory))
   useEffect(() => {
-    if (!open || !worktreePath || !targetId || active) return
+    if (!open || !worktreePath || !targetId || active || (directUnavailable && transport !== 'ssh'))
+      return
     let cancelled = false
     setDestinationError(null)
     setDestinationPlan(null)
@@ -252,7 +258,7 @@ export function ProjectTransferSettings({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [open, worktreePath, targetId, planKey, active, planRevision])
+  }, [open, worktreePath, targetId, planKey, active, planRevision, directUnavailable, transport])
   if (repository.kind === 'scratch') return null
   if (!runtime.snapshot?.projectTransfersSupported)
     return (
@@ -465,7 +471,12 @@ export function ProjectTransferSettings({
             items={targets.map((target) => ({ id: target.id, name: target.name }))}
             disabled={busy || active}
           />
-          {!!worktreePath && (
+          {directUnavailable && transport !== 'ssh' && (
+            <Text accessibilityRole="alert" style={styles.error}>
+              This destination requires an SSH tunnel or a LAN/VPN pairing for project copies.
+            </Text>
+          )}
+          {!!worktreePath && !(directUnavailable && transport !== 'ssh') && (
             <View style={{ gap: 8 }}>
               {!plan && !planError && (
                 <Text style={styles.muted}>Checking destination project…</Text>
@@ -656,7 +667,12 @@ export function ProjectTransferSettings({
                         : 'Copy project'
                 }
                 disabled={
-                  busy || !inspection || !targetId || !runtime.connected || !destinationReady
+                  busy ||
+                  !inspection ||
+                  !targetId ||
+                  !runtime.connected ||
+                  !destinationReady ||
+                  (directUnavailable && transport !== 'ssh')
                 }
                 onPress={() => void start()}
               />

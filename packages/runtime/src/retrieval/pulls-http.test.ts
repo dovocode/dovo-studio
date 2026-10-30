@@ -129,6 +129,22 @@ it('uses authenticated P2P for lists and actions, one owner cache across gateway
     server = await host('server', 'server')
   await pair(laptop, server)
   await pair(other, server)
+  expect(
+    (
+      await server.post('/api/retrieval/peers', {
+        sessionId: 'return-routes',
+        peers: [laptop, other].map((gateway) => ({
+          id: gateway.services.runtimeId,
+          name: 'Gateway',
+          connection: {
+            address: `http://127.0.0.1:${gateway.port}`,
+            token,
+            runtimeId: gateway.services.runtimeId,
+          },
+        })),
+      })
+    ).status,
+  ).toBe(200)
   const receive = vi.spyOn(server.services.pulls, 'servePeer')
   const read = async (caller: typeof laptop, refresh = false) => {
     const response = await caller.post('/api/scm/pulls/overview', {
@@ -159,6 +175,9 @@ it('uses authenticated P2P for lists and actions, one owner cache across gateway
   })
   expect(response.status).toBe(200)
   expect(act).toHaveBeenCalledTimes(1)
+  const otherRows = other.services.db.prepare('SELECT value FROM pull_cache').pluck().all()
+  expect(otherRows.length).toBeGreaterThan(0)
+  for (const value of otherRows) expect(JSON.parse(String(value))).toMatchObject({ stale: true })
   expect(
     receive.mock.calls.some(
       ([input]) =>

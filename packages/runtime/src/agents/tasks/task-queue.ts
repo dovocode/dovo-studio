@@ -287,6 +287,7 @@ export class TaskQueue {
     const task = this.store.taskSummary(id)
     const message = task.queue?.find((item) => item.id === messageId)
     if (!message) throw new HttpError(409, 'This message already started or was removed')
+    if (message.steering) throw new HttpError(409, 'This message is being delivered to the agent')
     if (
       message.text !== expectedText ||
       (turnSettings !== undefined &&
@@ -463,6 +464,8 @@ export class TaskQueue {
     const queue = [...(task.queue ?? [])],
       index = queue.findIndex((m) => m.id === messageId)
     if (index < 0) throw new HttpError(409, 'This message already started or was removed')
+    if ((action === 'remove' || action === 'restore') && queue[index].steering)
+      throw new HttpError(409, 'This message is being delivered to the agent')
     if (action === 'restore') {
       if (
         (task.draft.trim() || task.draftAttachments?.length) &&

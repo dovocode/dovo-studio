@@ -118,7 +118,7 @@ export class SharedRetrieval implements RetrievalHook {
   private generation = 0
   private hosts?: { until: number; value: Promise<Host[]> }
   private unavailable = new Map<string, number>()
-  private pullLoads = new Map<string, Promise<unknown>>()
+  private pullLoads = new Map<string, { promise: Promise<unknown>; fresh: boolean }>()
   private pullGeneration = 0
   private counters = {
     local: 0,
@@ -197,7 +197,10 @@ export class SharedRetrieval implements RetrievalHook {
     load: () => Promise<T>,
   ): Promise<T> {
     if (retrievalContext()?.local) return load()
-    if (this.local().enabled === false) return retrievalLocal(load)
+    if (this.local().enabled === false)
+      return pullOperationWrites(operation)
+        ? this.servePull(scope, operation, schema, load)
+        : retrievalLocal(load)
     const self = this.local()
     // Ignore legacy automatic assignments: they could pin PRs to a machine without
     // the selected account or a token with access to this repository.
@@ -259,18 +262,13 @@ export class SharedRetrieval implements RetrievalHook {
     fresh = retrievalContext()?.fresh === true,
   ): Promise<T> {
     const account = JSON.stringify([scope.provider, scope.instance, scope.readerIdentity])
-    const invalidate = () => {
-      this.pullGeneration++
-      this.pullLoads.clear()
-      this.db.prepare('DELETE FROM peer_pull_cache WHERE scope=?').run(account)
-      this.onInvalidate?.()
-    }
     if (pullOperationWrites(operation)) {
-      invalidate()
+      this.forgetPull(scope)
       try {
         return await retrievalLocal(load)
       } finally {
-        invalidate()
+        this.forgetPull(scope)
+        if (this.local().enabled !== false) await this.invalidatePullPeers(scope)
       }
     }
     const key = createHash('sha256')
@@ -285,7 +283,13 @@ export class SharedRetrieval implements RetrievalHook {
         return decode(schema, JSON.parse(row.value))
     }
     const existing = this.pullLoads.get(key)
-    if (existing) return decode(schema, await existing)
+    if (existing) {
+      if (fresh && !existing.fresh) {
+        await Promise.allSettled([existing.promise]) // The prior caller owns its result or failure.
+        return this.servePull(scope, operation, schema, load, true)
+      }
+      return decode(schema, await existing.promise)
+    }
     const generation = this.pullGeneration
     const pending = Promise.resolve()
       .then(() => retrievalLocal(load))
@@ -310,10 +314,34 @@ export class SharedRetrieval implements RetrievalHook {
         return value
       })
       .finally(() => {
-        if (this.pullLoads.get(key) === pending) this.pullLoads.delete(key)
+        if (this.pullLoads.get(key)?.promise === pending) this.pullLoads.delete(key)
       })
-    this.pullLoads.set(key, pending)
+    this.pullLoads.set(key, { promise: pending, fresh })
     return pending
+  }
+  /** Invalidation carries no rows or credentials and never dispatches a provider operation. */
+  forgetPull(scope: PullPeerScope) {
+    this.pullGeneration++
+    this.pullLoads.clear()
+    this.db
+      .prepare('DELETE FROM peer_pull_cache WHERE scope=?')
+      .run(JSON.stringify([scope.provider, scope.instance, scope.readerIdentity]))
+    // Raw provider read keys use a different reader fingerprint. Expire them conservatively.
+    this.generation++
+    this.loads.clear()
+    this.db.prepare('DELETE FROM shared_retrieval').run()
+    this.onInvalidate?.()
+  }
+  private async invalidatePullPeers(scope: PullPeerScope) {
+    await Promise.all(
+      this.peers().map(async (peer) => {
+        try {
+          await this.send(peer, '/api/scm/pulls/invalidate', { scope }, Schema.Unknown, 2000)
+        } catch {
+          this.counters.invalidationFailures++
+        }
+      }),
+    )
   }
   async read(input: RetrievalRequest, load: () => Promise<string>, renewing = false) {
     const request = validateRead({

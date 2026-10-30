@@ -31,7 +31,7 @@ const pullOperationSchema = Schema.Union([
   mutableStruct({ kind: Schema.Literal('act'), input: pullActionSchema }),
 ])
 export type PullOperation = typeof pullOperationSchema.Type
-const pullPeerScopeSchema = mutableStruct({
+export const pullPeerScopeSchema = mutableStruct({
   provider: forgeProviderSchema,
   instance: refine(
     maxValue(urlSchema({ protocol: /^https?$/ }), 2048),

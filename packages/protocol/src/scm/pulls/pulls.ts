@@ -66,6 +66,7 @@ export const pullSummarySchema = mutableStruct({
   statusError: Schema.optional(Schema.String),
 })
 export const pullPageSchema = mutableStruct({
+  paginationNotice: Schema.optional(maxValue(Schema.String, 1024)),
   destination: Schema.optional(forgeIdentityTokenSchema),
   cachedAt: Schema.optional(Schema.String),
   stale: Schema.optional(Schema.Boolean),

@@ -26,9 +26,12 @@ it('retains shifted PRs and removes closed PRs only after the opened depth is re
   expect(refreshed.page).toBe(2)
   expect(refreshed.firstPageIds).toEqual(['8', '7'])
   expect(refreshed.stale).toBeUndefined()
-  const closed = refreshPullPage(refreshed, page([8, 6], 1), [page([5], 2, false)])
+  const closed = refreshPullPage(refreshed, page([8, 6], 1), [
+    { ...page([5], 2, false), paginationNotice: 'Open older requests on the provider.' },
+  ])
   expect(closed.pulls.map((pull) => pull.number)).toEqual([8, 6, 5])
   expect(closed.hasMore).toBe(false)
+  expect(closed.paginationNotice).toBe('Open older requests on the provider.')
 })
 it('deduplicates moving page boundaries and keeps the last refreshed cursor', () => {
   const result = refreshPullPage(undefined, page([8, 7], 1), [page([7, 6], 2)])
@@ -74,4 +77,13 @@ it('preserves newer rows and loaded pagination when a returning gateway serves a
   expect(result.refreshError).toBe('PR computer offline')
   const next = { ...page([615], 1, false), cachedAt: '2026-10-20T12:00:00Z' }
   expect(refreshPullPage(previous, next).pulls.map((pull) => pull.number)).toEqual([615])
+})
+
+it('replaces a future-dated saved prefix only after a successful explicit refresh', () => {
+  const previous = { ...page([1, 2], 2), cachedAt: '2026-10-30T10:05:00Z' }
+  const live = { ...page([3], 1, false), cachedAt: '2026-10-30T10:00:00Z', stale: false }
+  expect(refreshPullPage(previous, live, [], true).pulls.map((pull) => pull.number)).toEqual([3])
+  expect(
+    refreshPullPage(previous, { ...live, stale: true }, [], true).pulls.map((pull) => pull.number),
+  ).toEqual([1, 2])
 })

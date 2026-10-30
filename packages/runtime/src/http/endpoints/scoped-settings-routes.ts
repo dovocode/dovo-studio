@@ -18,6 +18,8 @@ import {
   agentPresetSchema,
   sharedProjectKey,
   mergeSharedSettings,
+  updateSharedSettingsEntry,
+  canonicalSharedSettings,
   type SharedSettingsEntry,
   type ScopedSettingsValue,
 } from '@dovo/protocol'
@@ -109,10 +111,19 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
     const raw = yield* serviceResult(body(request))
     let current = s.defaults.get()
     let scoped = initializeScopedSettings(current)
+    const canonicalize = (identity: string) => s.git.canonicalRepositoryIdentity(identity)
+    const canonical = canonicalSharedSettings(scoped.shared, canonicalize)
+    if (canonical !== scoped.shared) {
+      scoped = { ...scoped, shared: canonical }
+      current = s.defaults.save({ ...current, scopedSettings: scoped }, false)
+    }
     if (path === '/api/agents/settings/sync') {
       const { shared } = decode(sharedSettingsSyncSchema, raw)
       for (const entry of shared) validateKey(entry)
-      const merged = mergeSharedSettings(scoped.shared, shared)
+      const merged = mergeSharedSettings(
+        scoped.shared,
+        canonicalSharedSettings(shared, canonicalize),
+      )
       if (!isDeepStrictEqual(merged, scoped.shared))
         s.defaults.save({ ...current, scopedSettings: { ...scoped, shared: merged } }, false)
       return { shared: merged }
@@ -281,7 +292,12 @@ export function scopedSettingsRoute(request: IncomingMessage, path: string) {
         if (!key) throw new HttpError(400, 'The project has no shared identity')
         const updatedAt = Math.max(Date.now(), ...scoped.shared.map((entry) => entry.updatedAt + 1))
         scoped.shared = mergeSharedSettings(scoped.shared, [
-          { key, updatedAt, changeId: randomUUID(), value: after },
+          updateSharedSettingsEntry(
+            key,
+            scoped.shared.find((entry) => entry.key === key),
+            after,
+            { updatedAt, changeId: randomUUID() },
+          ),
         ])
         s.defaults.save({ ...current, scopedSettings: scoped }, false)
       }

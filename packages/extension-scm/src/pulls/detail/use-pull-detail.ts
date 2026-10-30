@@ -170,7 +170,9 @@ function usePullSection(
             ? { ...value, destination, pull: { ...value.pull, destination } }
             : value,
         ),
-        Effect.map((value) => retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value)),
+        Effect.map((value) =>
+          retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value, refresh),
+        ),
         Effect.tap((value) =>
           Effect.sync(() => {
             if (!stopped) {

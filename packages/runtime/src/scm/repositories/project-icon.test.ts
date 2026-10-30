@@ -6,6 +6,20 @@ import sharp from 'sharp'
 import { expect, it, vi } from 'vite-plus/test'
 import { discoverProjectIcon } from './project-icon'
 
+it('discovers a common SVG favicon without scanning unrelated files', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dovo-project-svg-icon-'))
+  try {
+    await mkdir(join(root, 'public'))
+    await writeFile(
+      join(root, 'public', 'favicon.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="blue"/></svg>',
+    )
+    expect(await discoverProjectIcon(root)).toMatch(/^data:image\/png;base64,/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 it('discovers a local app icon and returns a bounded PNG thumbnail', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dovo-project-icon-'))
   try {

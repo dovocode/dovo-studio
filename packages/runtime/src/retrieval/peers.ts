@@ -76,7 +76,7 @@ export class RetrievalPeers {
       ? decode(Schema.Array(Schema.String), JSON.parse(value))
       : undefined
   }
-  list(studioOnly = false) {
+  list(studioOnly = false, preferredDevice?: string) {
     const valid = new Set([
       'owner',
       ...this.devices
@@ -85,10 +85,16 @@ export class RetrievalPeers {
         .map((device) => device.id),
     ])
     const peers = new Map<string, (typeof studioPeerRegistrationSchema.Type.peers)[number]>()
-    for (const row of decode(
+    const registrations = decode(
       rows,
-      this.db.prepare('SELECT device,value FROM retrieval_peers ORDER BY device').all(),
-    )) {
+      this.db.prepare('SELECT device,value FROM retrieval_peers ORDER BY rowid').all(),
+    )
+    // The requester’s own authenticated registration wins. Otherwise the most recently
+    // changed registration wins, with rowid providing a deterministic persisted order.
+    registrations.sort(
+      (a, b) => Number(a.device === preferredDevice) - Number(b.device === preferredDevice),
+    )
+    for (const row of registrations) {
       if (!valid.has(row.device)) {
         this.db.prepare('DELETE FROM retrieval_peers WHERE device=?').run(row.device)
         this.db.prepare('DELETE FROM studio_peer_grants WHERE device=?').run(row.device)

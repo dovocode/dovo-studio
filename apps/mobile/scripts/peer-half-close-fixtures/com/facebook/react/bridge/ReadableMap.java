@@ -1,0 +1,1 @@
+package com.facebook.react.bridge; public interface ReadableMap { boolean hasKey(String k); String getString(String k); boolean getBoolean(String k); int getInt(String k); ReadableArray getArray(String k); }

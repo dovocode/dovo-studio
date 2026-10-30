@@ -25,6 +25,7 @@ import {
   DropdownMenu,
   Popover,
   Input,
+  ProjectIcon,
 } from '@dovo/studio-ui'
 import { RepositoryDialog } from './repository-dialog'
 import { RepositoryCheckouts } from './repository-checkouts'
@@ -176,6 +177,8 @@ export function ProjectsMenu({
           >
             {project?.kind === 'scratch' ? (
               <MessageCircleDashed className="size-3.5 shrink-0" />
+            ) : project ? (
+              <ProjectIcon repository={project} className="size-4" />
             ) : (
               <FolderGit2 className="size-3.5 shrink-0" />
             )}
@@ -253,19 +256,11 @@ export function ProjectsMenu({
                           setMenuOpen(false)
                         }}
                       >
-                        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-[0.625rem] font-semibold text-muted-foreground">
-                          {repo.kind === 'scratch' ? (
-                            <MessageCircleDashed className="size-4" />
-                          ) : (
-                            group.name
-                              .split(/[^a-zA-Z0-9]+/)
-                              .filter(Boolean)
-                              .slice(-2)
-                              .map((part) => part[0])
-                              .join('')
-                              .toUpperCase()
-                          )}
-                        </span>
+                        {repo.kind === 'scratch' ? (
+                          <MessageCircleDashed className="size-4" />
+                        ) : (
+                          <ProjectIcon repository={repo} className="size-6 rounded-md" />
+                        )}
                         <span className="truncate">{group.name}</span>
                       </button>
                       <span

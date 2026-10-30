@@ -10,6 +10,7 @@ import { WebSocket } from 'ws'
 import { RTCPeerConnection } from 'werift'
 import {
   AccountClient,
+  internetPublicKey,
   createPeerPipe,
   decode,
   peerSocketUrl,
@@ -835,3 +836,361 @@ it('rejects expired, cancelled and mismatched installation or session grants', a
   expect((await result).status).toBe(401)
   expect(f.runtime.services.peers.internet.status().enabled).toBe(false)
 })
+
+it.each([
+  ['provisioning', 503],
+  ['answer', 503],
+  ['provisioning', 401],
+] as const)(
+  'renews authorization while %s is stalled, then fails closed on HTTP %s',
+  async (phase, failureStatus) => {
+    const f = await fixture()
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    cleanup.push(() => {
+      vi.useRealTimers()
+    })
+    expect((await f.request({ enabled: true, accountToken: f.owner })).status).toBe(200)
+    await vi.waitFor(() => expect(f.runtime.services.peers.internet.status().connected).toBe(true))
+    const { login, token } = f.accounts.createLogin()
+    f.accounts.approve(login, { id: 'same-account', name: 'Second phone' })
+    f.internet.request(token, f.runtime.services.runtimeId, internetPublicKey(randomBytes(32)))
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let stalled = 0
+    let reads = 0
+    let outage = false
+    const originalFetch = fetch
+    const enable = f.runtime.services.peers.enable.bind(f.runtime.services.peers)
+    if (phase === 'provisioning')
+      vi.spyOn(f.runtime.services.peers, 'enable').mockImplementation(async (...args) => {
+        stalled++
+        await pending
+        return enable(...args)
+      })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url, options) => {
+        const address = new URL(url instanceof Request ? url.url : url)
+        if (address.origin === f.origin && address.pathname === '/v1/internet/host') {
+          if (!options?.method || options.method === 'GET') {
+            if (outage) {
+              reads++
+              return Response.json({}, { status: failureStatus })
+            }
+            const response = await originalFetch(url, options)
+            const body: unknown = await response.json()
+            reads++
+            return Response.json(body, { status: response.status })
+          }
+          if (phase === 'answer' && options?.method === 'POST') {
+            stalled++
+            await pending
+          }
+        }
+        return originalFetch(url, options)
+      }),
+    )
+    try {
+      await vi.advanceTimersByTimeAsync(3000)
+      await vi.waitFor(() => expect(stalled).toBe(1))
+      const device = f.runtime.services.devices
+        .list()
+        .find((item) => item.name === 'Dovo Connect')!.id
+      // Cross the entire 12-second lease while the same pass remains blocked.
+      for (let tick = 0; tick < 5; tick++) {
+        const before = reads
+        await vi.advanceTimersByTimeAsync(3000)
+        await vi.waitFor(() => expect(reads).toBeGreaterThan(before))
+        await vi.waitFor(() =>
+          expect(f.runtime.services.peers.internet.status().connected).toBe(true),
+        )
+        expect(f.runtime.services.peers.internet.authorized(device)).toBe(true)
+      }
+      expect(stalled).toBe(1) // no overlapping provisioning / mutation replay
+      outage = true
+      for (let tick = 0; tick < 5; tick++) {
+        await vi.advanceTimersByTimeAsync(3000)
+        await new Promise<void>((resolve) => setImmediate(resolve))
+      }
+      await vi.waitFor(() =>
+        expect({
+          enabled: f.runtime.services.peers.internet.status().enabled,
+          connected: f.runtime.services.peers.internet.status().connected,
+          accessRevoked:
+            failureStatus === 401
+              ? !!f.runtime.services.devices.list().find((item) => item.id === device)?.revokedAt
+              : !f.runtime.services.peers.internet.authorized(device),
+        }).toEqual({ enabled: failureStatus !== 401, connected: false, accessRevoked: true }),
+      )
+      release()
+    } finally {
+      release()
+      vi.useRealTimers()
+    }
+  },
+  30000,
+)
+
+it('stops restoring devices when the lease expires during enable and denies the existing tunnel', async () => {
+  const f = await fixture()
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  cleanup.push(() => {
+    vi.useRealTimers()
+  })
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  cleanup.push(() => {
+    release()
+  })
+  try {
+    expect((await f.request({ enabled: true, accountToken: f.owner })).status).toBe(200)
+    const peers = f.runtime.services.peers
+    await vi.waitFor(() => expect(peers.internet.status().connected).toBe(true))
+    // Seed two previously answered devices so this pass exercises only room restoration.
+    const other = f.accounts.createLogin()
+    f.accounts.approve(other.login, { id: 'same-account', name: 'Other phone' })
+    const tokens = ['first-restored-account-device', 'second-restored-account-device']
+    const deviceIds = [f.phone, other.token].map((session, index) => {
+      const { id } = f.internet.request(
+        session,
+        f.runtime.services.runtimeId,
+        internetPublicKey(randomBytes(32)),
+      )
+      f.accounts.db.prepare("UPDATE internet_requests SET answer='{}' WHERE id=?").run(id)
+      const device = f.runtime.services.devices.add('Restored account phone', tokens[index]!)
+      f.runtime.services.db
+        .prepare('INSERT INTO account_internet_devices VALUES(?,?,?,?)')
+        .run(id, device, '{}', createHash('sha256').update(session).digest('base64url'))
+      return device
+    })
+    let config: PeerConfig | undefined
+    const enable = peers.enable.bind(peers)
+    const restoring = vi.spyOn(peers, 'enable').mockImplementation(async (...args) => {
+      config = await enable(...args)
+      await pending
+      return config
+    })
+    await vi.advanceTimersByTimeAsync(3000)
+    await vi.waitFor(() => expect(config).toBeDefined())
+    if (!config) throw new Error('First device did not reach signaling readiness')
+    const peer = await tunnel(config)
+    const request = () =>
+      fetch(peer.address + '/api/snapshot', {
+        headers: { Authorization: 'Bearer ' + tokens[0]! },
+      })
+    expect((await request()).status).toBe(200)
+    const internals = peers as unknown as {
+      rooms: Map<string, { origin: { readonly active: boolean } }>
+      timer?: ReturnType<typeof setInterval>
+    }
+    const origin = internals.rooms.get(peerRoom(config))!.origin
+    expect(origin.active).toBe(true)
+    // Isolate per-request authorization from eventual room cleanup, even on a slow CI host.
+    clearInterval(internals.timer)
+    // Move the lease clock without running another inbox poll.
+    vi.setSystemTime(Date.now() + 13000)
+    expect(peers.internet.authorized(deviceIds[0]!)).toBe(false)
+    expect(origin.active).toBe(false)
+    expect((await request()).status).toBe(403)
+    release()
+    await peers.internet.drain()
+    expect(restoring).toHaveBeenCalledTimes(1)
+    expect(peers.enabled(deviceIds[1]!)).toBe(false)
+  } finally {
+    release()
+    vi.useRealTimers()
+  }
+}, 15000)
+
+it('does not publish credentials from provisioning withdrawn by a newer inbox', async () => {
+  const f = await fixture()
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  cleanup.push(() => {
+    vi.useRealTimers()
+  })
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const enable = f.runtime.services.peers.enable.bind(f.runtime.services.peers)
+  const provisioning = vi
+    .spyOn(f.runtime.services.peers, 'enable')
+    .mockImplementation(async (...args) => {
+      await pending
+      return enable(...args)
+    })
+  try {
+    expect((await f.request({ enabled: true, accountToken: f.owner })).status).toBe(200)
+    await vi.waitFor(() => expect(f.runtime.services.peers.internet.status().connected).toBe(true))
+    const { id } = f.internet.request(
+      f.phone,
+      f.runtime.services.runtimeId,
+      internetPublicKey(randomBytes(32)),
+    )
+    await vi.advanceTimersByTimeAsync(3000)
+    await vi.waitFor(() => expect(provisioning).toHaveBeenCalledTimes(1))
+    f.accounts.revoke(f.phone)
+    await vi.advanceTimersByTimeAsync(3500)
+    await vi.waitFor(() =>
+      expect(
+        f.runtime.services.devices
+          .list()
+          .filter((item) => item.name === 'Dovo Connect' && !item.revokedAt),
+      ).toEqual([]),
+    )
+    release()
+    await vi.waitFor(() => expect(provisioning.mock.settledResults[0]?.type).toBe('rejected'))
+    expect(
+      f.accounts.db.prepare('SELECT id FROM internet_requests WHERE id=?').get(id),
+    ).toBeUndefined()
+    expect(f.runtime.services.peers.diagnostics().active).toBe(0)
+  } finally {
+    release()
+    vi.useRealTimers()
+  }
+}, 15000)
+
+it.each(['resolve', 'reject'] as const)(
+  'drains deferred provisioning before SQLite closes when enable later %ss',
+  async (outcome) => {
+    const f = await fixture()
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    cleanup.push(() => {
+      vi.useRealTimers()
+    })
+    let release!: () => void
+    let reject!: (error: Error) => void
+    const pending = new Promise<void>((resolve, fail) => {
+      release = resolve
+      reject = fail
+    })
+    cleanup.push(() => {
+      release()
+    })
+    const peers = f.runtime.services.peers
+    const enable = peers.enable.bind(peers)
+    let deferred = false
+    vi.spyOn(peers, 'enable').mockImplementation(async (...args) => {
+      const config = await enable(...args)
+      deferred = true
+      await pending
+      return config
+    })
+    const drain = vi.spyOn(peers.internet, 'drain')
+    const revoke = vi.spyOn(f.runtime.services.devices, 'revoke')
+    const closeDatabase = vi.spyOn(f.runtime.services.db, 'close')
+    let closing: Promise<void> | undefined
+    let closed = false
+    try {
+      expect((await f.request({ enabled: true, accountToken: f.owner })).status).toBe(200)
+      await vi.waitFor(() => expect(peers.internet.status().connected).toBe(true))
+      f.internet.request(f.phone, f.runtime.services.runtimeId, internetPublicKey(randomBytes(32)))
+      await vi.advanceTimersByTimeAsync(3000)
+      await vi.waitFor(() => expect(deferred).toBe(true))
+      vi.useRealTimers()
+      closing = f.runtime.close().then(() => {
+        closed = true
+      })
+      await vi.waitFor(() => expect(drain).toHaveBeenCalledTimes(1))
+      expect(closed).toBe(false)
+      expect(closeDatabase).not.toHaveBeenCalled()
+      expect(f.runtime.services.db.open).toBe(true)
+      if (outcome === 'resolve') release()
+      else reject(new Error('Deferred native signaling failed during shutdown'))
+      await closing
+      expect(f.runtime.services.db.open).toBe(false)
+      expect(revoke).toHaveBeenCalled()
+      expect(revoke.mock.invocationCallOrder.at(-1)).toBeLessThan(
+        closeDatabase.mock.invocationCallOrder[0]!,
+      )
+    } finally {
+      release()
+      vi.useRealTimers()
+      await closing
+    }
+  },
+  15000,
+)
+
+it('finishes old-generation cleanup before provisioning a re-enabled account', async () => {
+  const f = await fixture()
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  cleanup.push(() => {
+    vi.useRealTimers()
+  })
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  cleanup.push(() => {
+    release()
+  })
+  const peers = f.runtime.services.peers
+  const enable = peers.enable.bind(peers)
+  let deferred = false
+  let concurrent = 0
+  let maximum = 0
+  const provisioning = vi.spyOn(peers, 'enable').mockImplementation(async (...args) => {
+    concurrent++
+    maximum = Math.max(maximum, concurrent)
+    try {
+      const config = await enable(...args)
+      if (!deferred) {
+        deferred = true
+        await pending
+      }
+      return config
+    } finally {
+      concurrent--
+    }
+  })
+  try {
+    expect((await f.request({ enabled: true, accountToken: f.owner })).status).toBe(200)
+    await vi.waitFor(() => expect(peers.internet.status().connected).toBe(true))
+    f.internet.request(f.phone, f.runtime.services.runtimeId, internetPublicKey(randomBytes(32)))
+    await vi.advanceTimersByTimeAsync(3000)
+    await vi.waitFor(() => expect(deferred).toBe(true))
+    const oldDevice = provisioning.mock.calls[0]![0]
+    vi.useRealTimers()
+    await peers.internet.disable()
+    expect((await f.request({ enabled: true, accountToken: f.owner })).status).toBe(200)
+    await vi.waitFor(() => expect(peers.internet.status().connected).toBe(true))
+    const { id } = f.internet.request(
+      f.phone,
+      f.runtime.services.runtimeId,
+      internetPublicKey(randomBytes(32)),
+    )
+    // Let the replacement generation renew and encounter its new request while the old
+    // native completion is still deferred. It must not start a second provisioning pass.
+    await new Promise<void>((resolve) => setTimeout(resolve, 3500))
+    expect(peers.internet.status().connected).toBe(true)
+    expect(provisioning).toHaveBeenCalledTimes(1)
+    release()
+    await vi.waitFor(() => expect(concurrent).toBe(0))
+    await vi.waitFor(() => expect(provisioning.mock.calls.length).toBeGreaterThan(1), {
+      timeout: 6000,
+    })
+    await vi.waitFor(() =>
+      expect(
+        f.accounts.db
+          .prepare('SELECT answer FROM internet_requests WHERE id=? AND answer IS NOT NULL')
+          .get(id),
+      ).toBeDefined(),
+    )
+    const device = provisioning.mock.calls[1]![0]
+    expect(device).not.toBe(oldDevice)
+    expect(maximum).toBe(1)
+    expect(
+      f.runtime.services.devices.list().find((item) => item.id === oldDevice)?.revokedAt,
+    ).toBeTruthy()
+    expect(peers.internet.contains(device)).toBe(true)
+    expect(peers.enabled(device)).toBe(true)
+  } finally {
+    release()
+    vi.useRealTimers()
+  }
+}, 15000)

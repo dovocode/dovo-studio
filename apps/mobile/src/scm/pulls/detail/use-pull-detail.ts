@@ -108,7 +108,9 @@ function usePullSection(
         { repositoryId, number, connectionId, refresh, section, revision },
         pullDetailSchema,
       ).pipe(
-        Effect.map((value) => retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value)),
+        Effect.map((value) =>
+          retainNewerPullSnapshot(stateRef.current.detail ?? undefined, value, refresh),
+        ),
         Effect.tap((value) =>
           Effect.sync(() => {
             if (!stopped) {

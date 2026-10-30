@@ -1,9 +1,14 @@
+/// <reference types="node" />
+import { connect, createServer, type Socket } from 'node:net'
+import { once } from 'node:events'
 import { expect, it, vi } from 'vite-plus/test'
 import { createPeerPipe } from './peer-pipe.js'
 
 function fixture(writeError?: Error, sendError?: Error, window?: 8 | 64) {
   let data: (chunk: Uint8Array) => void = () => {},
-    end: () => void = () => {}
+    end: () => void = () => {},
+    closed: (hadError?: boolean) => void = () => {},
+    error: () => void = () => {}
   const writes: Array<{ bytes: Uint8Array; done: (error?: Error | null) => void }> = []
   const send = vi.fn<(value: Uint8Array | string) => void>(() => {
       if (sendError) throw sendError
@@ -21,8 +26,12 @@ function fixture(writeError?: Error, sendError?: Error, window?: 8 | 64) {
       onEnd: (f) => {
         end = f
       },
-      onClose: () => {},
-      onError: () => {},
+      onClose: (f) => {
+        closed = f
+      },
+      onError: (f) => {
+        error = f
+      },
       write: (bytes, done) => {
         if (writeError) throw writeError
         writes.push({ bytes, done })
@@ -39,6 +48,8 @@ function fixture(writeError?: Error, sendError?: Error, window?: 8 | 64) {
     pipe,
     data: (bytes: Uint8Array) => data(bytes),
     end: () => end(),
+    closed: (hadError?: boolean) => closed(hadError),
+    error: () => error(),
     writes,
     send,
     close,
@@ -64,6 +75,159 @@ it('preserves binary bytes and limits send credits until the receiver flushes it
   f.writes[0]!.done()
   expect(f.send.mock.calls.at(-1)?.[0]).toBe('ack')
 })
+
+it.each([8, 64] as const)(
+  'drains the queued tail and waits for every socket-write ACK after graceful close (window %i)',
+  (window) => {
+    const f = fixture(undefined, undefined, window)
+    const head = Uint8Array.from({ length: window * 16384 }, (_, i) => i % 251)
+    const tail = Uint8Array.from({ length: 49152 }, (_, i) => (i + 19) % 251)
+    f.pipe.ready()
+    f.pipe.receive('end')
+    f.data(head)
+    f.data(tail)
+    f.end()
+    f.closed()
+    expect(f.close).not.toHaveBeenCalled()
+    expect(f.destroy).not.toHaveBeenCalled()
+    for (let i = 0; i < window + 2; i++) {
+      f.pipe.receive('ack')
+      expect(f.close).not.toHaveBeenCalled()
+    }
+    const frames = f.send.mock.calls.map(([frame]) => frame)
+    const data = frames.filter((frame): frame is Uint8Array => frame instanceof Uint8Array)
+    expect(Buffer.concat(data)).toEqual(Buffer.concat([head, tail]))
+    expect(frames.at(-1)).toBe('end')
+    expect(frames.filter((frame) => frame === 'end')).toHaveLength(1)
+    f.pipe.receive('ack')
+    expect(f.close).toHaveBeenCalledOnce()
+    expect(f.destroy).toHaveBeenCalledOnce()
+    f.closed()
+    expect(f.close).toHaveBeenCalledOnce()
+  },
+)
+
+it.each(['error', 'stop', 'abort', 'error-close'] as const)(
+  'keeps %s teardown immediate while outbound frames await ACKs',
+  (reason) => {
+    const f = fixture()
+    f.pipe.ready()
+    f.data(new Uint8Array(16384 * 9))
+    if (reason !== 'abort') {
+      f.pipe.receive('end')
+      f.end()
+      if (reason !== 'error-close') {
+        f.closed()
+      }
+    }
+    expect(f.close).not.toHaveBeenCalled()
+    if (reason === 'error') f.error()
+    else if (reason === 'stop') f.pipe.stop()
+    else if (reason === 'error-close') f.closed(true)
+    else f.closed()
+    expect(f.close).toHaveBeenCalledOnce()
+    expect(f.destroy).toHaveBeenCalledOnce()
+    const count = f.send.mock.calls.length
+    f.pipe.receive('ack')
+    expect(f.send).toHaveBeenCalledTimes(count)
+  },
+)
+
+it('finishes an already acknowledged transfer when the socket closes', () => {
+  const f = fixture()
+  f.pipe.ready()
+  f.pipe.receive('end')
+  f.data(new Uint8Array([42]))
+  f.end()
+  f.pipe.receive('ack')
+  expect(f.close).not.toHaveBeenCalled()
+  f.closed()
+  expect(f.close).toHaveBeenCalledOnce()
+  expect(f.destroy).toHaveBeenCalledOnce()
+})
+
+it.each([8, 64] as const)(
+  'preserves a real TCP response after early remote END until its final ACK (window %i)',
+  async (window) => {
+    const payload = Buffer.from(Uint8Array.from({ length: 1024 * 1024 }, (_, i) => i % 251))
+    const serverErrors: Error[] = []
+    let source: Socket | undefined
+    const server = createServer({ allowHalfOpen: true }, (socket) => {
+      source = socket
+      socket.on('error', (error) => serverErrors.push(error))
+      socket.end(payload)
+    })
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('No TCP listener')
+    const socket = connect({ host: '127.0.0.1', port: address.port, allowHalfOpen: true })
+    const frames: Uint8Array[] = []
+    const close = vi.fn<() => void>()
+    let ended = false,
+      sentBytes = 0
+    const pipe = createPeerPipe({
+      window,
+      stream: {
+        onData: (f) => {
+          socket.on('data', f)
+        },
+        onEnd: (f) => {
+          socket.on('end', f)
+        },
+        onClose: (f) => {
+          socket.on('close', f)
+        },
+        onError: (f) => {
+          socket.on('error', f)
+        },
+        write: (bytes, done) => {
+          socket.write(bytes, done)
+        },
+        pause: () => {
+          socket.pause()
+        },
+        resume: () => {
+          socket.resume()
+        },
+        end: () => {
+          socket.end()
+        },
+        destroy: () => {
+          socket.destroy()
+        },
+      },
+      send: (frame) => {
+        if (frame instanceof Uint8Array) {
+          frames.push(frame)
+          sentBytes += frame.byteLength
+          // Model receiver backpressure, retaining the final ACK until local TCP close.
+          if (sentBytes < payload.length) setImmediate(() => pipe.receive('ack'))
+        } else if (frame === 'end') ended = true
+      },
+      close,
+    })
+    try {
+      const closed = once(socket, 'close')
+      pipe.ready()
+      pipe.receive('end')
+      await closed
+      expect(ended).toBe(true)
+      expect(Buffer.concat(frames)).toEqual(payload)
+      expect(serverErrors).toEqual([])
+      expect(close).not.toHaveBeenCalled()
+      pipe.receive('ack')
+      expect(close).toHaveBeenCalledOnce()
+    } finally {
+      pipe.stop()
+      socket.destroy()
+      source?.destroy()
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      )
+    }
+  },
+)
 it('closes only the pipe when a native socket write throws during teardown', () => {
   const f = fixture(new Error('Socket is closed.'))
   f.pipe.ready()

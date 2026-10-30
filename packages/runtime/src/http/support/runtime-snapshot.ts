@@ -5,8 +5,9 @@ import { hostname } from 'node:os'
 import { Effect } from 'effect'
 import {
   forgePullIdentity,
-  sharedProjectIcon,
+  sharedProjectPresentation,
   migrateProjectIcons,
+  canonicalSharedSettings,
   RUNTIME_PROTOCOL_VERSION,
   runtimeDefaultsSchema,
   decode,
@@ -101,11 +102,15 @@ export function runtimeSnapshot(
   settledLimit?: number,
 ) {
   return Effect.gen(function* () {
-    const migrated = migrateProjectIcons(s.defaults.get(), s.store.get().repositories, {
-      updatedAt: Date.now(),
-      changeId: randomUUID(),
-    })
-    if (migrated) s.defaults.save(migrated, false)
+    const defaults = s.defaults.get()
+    const scoped = defaults.scopedSettings
+    if (scoped) {
+      const shared = canonicalSharedSettings(scoped.shared, (identity) =>
+        s.git.canonicalRepositoryIdentity(identity),
+      )
+      if (shared !== scoped.shared)
+        s.defaults.save({ ...defaults, scopedSettings: { ...scoped, shared } }, false)
+    }
     const revision = s.store.version()
     const preferences = s.preferences.get()
     const acpInstallations = s.acpInstallations.list()
@@ -155,6 +160,8 @@ export function runtimeSnapshot(
           const connection = binding && forgeConnections.get(binding.connectionId)
           const repo = {
             ...storedRepository,
+            presentationIdentity:
+              storedRepository.presentationIdentity ?? storedRepository.gitIdentity,
             pullIdentity:
               connection && binding ? forgePullIdentity(connection, binding.repository) : undefined,
           }
@@ -180,19 +187,47 @@ export function runtimeSnapshot(
             }
           return yield* serviceResult(cached).pipe(
             Effect.map((gitIdentity) => {
-              if (repo.gitIdentity !== gitIdentity)
+              // Migrate legacy overrides only after resolving the remote, never across a retarget.
+              const canonicalPrevious =
+                repo.presentationIdentity &&
+                s.git.canonicalRepositoryIdentity(repo.presentationIdentity)
+              const retargeted = !!canonicalPrevious && canonicalPrevious !== gitIdentity
+              const confirmed = {
+                ...repo,
+                gitIdentity,
+                presentationIdentity: gitIdentity,
+                iconOverride: retargeted ? undefined : repo.iconOverride,
+                gitIdentityError: undefined,
+              }
+              const migrated = migrateProjectIcons(s.defaults.get(), [confirmed], {
+                updatedAt: Date.now(),
+                changeId: randomUUID(),
+              })
+              if (migrated) s.defaults.save(migrated, false)
+              const sharedIcon =
+                gitIdentity &&
+                s.defaults
+                  .get()
+                  .scopedSettings?.shared.find((entry) => entry.key === `project:${gitIdentity}`)
+                  ?.value.projectIcon !== undefined
+              const iconOverride = retargeted || sharedIcon ? undefined : repo.iconOverride
+              if (
+                repo.gitIdentity !== gitIdentity ||
+                repo.presentationIdentity !== gitIdentity ||
+                repo.iconOverride !== iconOverride
+              )
                 s.store.update((workspace) => ({
                   ...workspace,
                   repositories: workspace.repositories.map((item) =>
-                    item.id === repo.id ? { ...item, gitIdentity } : item,
+                    item.id === repo.id
+                      ? { ...item, gitIdentity, presentationIdentity: gitIdentity, iconOverride }
+                      : item,
                   ),
                 }))
               return {
-                ...repo,
+                ...confirmed,
                 discoveredIcon,
-                gitIdentity,
-                iconOverride: sharedProjectIcon(s.defaults.get(), { ...repo, gitIdentity }),
-                gitIdentityError: undefined,
+                iconOverride,
               }
             }),
             Effect.catch(() =>
@@ -201,7 +236,13 @@ export function runtimeSnapshot(
                   s.store.update((workspace) => ({
                     ...workspace,
                     repositories: workspace.repositories.map((item) =>
-                      item.id === repo.id ? { ...item, gitIdentity: undefined } : item,
+                      item.id === repo.id
+                        ? {
+                            ...item,
+                            gitIdentity: undefined,
+                            presentationIdentity: repo.presentationIdentity,
+                          }
+                        : item,
                     ),
                   }))
                 return {
@@ -216,7 +257,11 @@ export function runtimeSnapshot(
         }),
       { concurrency: 4 },
     )
-    const enrichedWorkspace = projectWorkspace(s, storedWorkspace, repositories)
+    const enrichedWorkspace = projectWorkspace(
+      s,
+      storedWorkspace,
+      repositories.map((repository) => sharedProjectPresentation(s.defaults.get(), repository)),
+    )
     const selectedWorkspace = enrichedWorkspace
     return yield* serviceResult({
       ...(taskIds ? { detailTaskIds: [...taskIds] } : {}),

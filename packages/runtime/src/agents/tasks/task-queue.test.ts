@@ -1074,6 +1074,25 @@ it('rejects duplication of delivering or archived messages, collisions and overf
     }))
     const queue = new TaskQueue(store)
     expect(() => queue.duplicate('task', 'source', 'copy')).toThrow('being delivered')
+    const before = store.task('task')
+    for (const action of [
+      () => queue.edit('task', 'source', 'Edited', 'Input'),
+      () => queue.change('task', 'remove', 'source'),
+      () => queue.change('task', 'restore', 'source'),
+      () =>
+        queue.restore('task', {
+          requestId: 'restore-delivering',
+          messageId: 'source',
+          expectedText: 'Input',
+          expectedTurnSettings: null,
+          expectedDraftTurnSettings: null,
+          expectedAttachmentIds: [],
+        }),
+    ])
+      expect(action).toThrow(expect.objectContaining({ status: 409 }))
+    expect(store.task('task')).toEqual(before)
+    expect(db.prepare('SELECT * FROM queue_restore_receipts').all()).toEqual([])
+
     store.updateTask('task', (t) => ({
       ...t,
       queue: t.queue?.map((m) => ({ ...m, steering: false })),
@@ -1095,9 +1114,9 @@ it('rejects duplication of delivering or archived messages, collisions and overf
         })),
       ],
     }))
-    const before = store.task('task')
+    const full = store.task('task')
     expect(() => queue.duplicate('task', 'source', 'copy')).toThrow('Queue is full')
-    expect(store.task('task')).toEqual(before)
+    expect(store.task('task')).toEqual(full)
     expect(store.taskSubmission('task', 'copy')).toBeUndefined()
   } finally {
     db.close()

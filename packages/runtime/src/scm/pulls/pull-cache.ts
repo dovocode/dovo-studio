@@ -55,7 +55,10 @@ type PullReader = {
   feedback?: (cwd: string, number: number) => ReturnType<PullRequests['detail']>
 }
 export class PullCache {
-  private pending = new Map<string, Fiber.Fiber<unknown, RuntimeFailure>>()
+  private pending = new Map<
+    string,
+    { fiber: Fiber.Fiber<unknown, RuntimeFailure>; forced: boolean }
+  >()
   private executor = ManagedRuntime.make(Layer.empty)
   private invalidated = new Set<string>()
   private missing = new Map<string, { at: number; error: RuntimeFailure }>()
@@ -133,13 +136,17 @@ export class PullCache {
           )
       }
       if (cached && acceptCached && !acceptCached(cached)) cached = undefined
-      const refresh = Effect.suspend(() => {
+      const refresh: Effect.Effect<T, RuntimeFailure> = Effect.suspend(() => {
         if (this.stopped) return Effect.fail(runtimeFailure(new Error('Pull cache is closed')))
         const existing = this.pending.get(key)
-        if (existing)
-          return Fiber.join(existing).pipe(
+        if (existing) {
+          // A manual refresh must not reuse the background snapshot it is replacing.
+          if (force && !existing.forced)
+            return Fiber.await(existing.fiber).pipe(Effect.andThen(refresh))
+          return Fiber.join(existing.fiber).pipe(
             Effect.flatMap((value) => runtimeOperation(() => decode(schema, value))),
           )
+        }
         const worker = Effect.gen({ self: this }, function* () {
           // Register ownership before a synchronous SDK failure can finish this worker.
           yield* Effect.yieldNow
@@ -195,7 +202,7 @@ export class PullCache {
           Effect.uninterruptible,
         )
         const fiber = this.executor.runFork(worker)
-        this.pending.set(key, fiber)
+        this.pending.set(key, { fiber, forced: force })
         return Fiber.join(fiber)
       })
       const stale = !!cached?.stale || (!!row && Date.now() - row.updated >= ttl)
@@ -580,11 +587,16 @@ export class PullCache {
       }),
     )
   }
-  invalidate(cwd: string, number?: number) {
+  invalidateAll() {
+    this.invalidate()
+  }
+  invalidate(cwd?: string, number?: number) {
     // Worktree aliases survive a runtime restart, even before this checkout is read again.
     const saved = decode(
       mutableArray(mutableStruct({ scope: Schema.String })),
-      this.db.prepare('SELECT scope FROM pull_cache_aliases WHERE cwd=?').all(cwd),
+      cwd === undefined
+        ? []
+        : this.db.prepare('SELECT scope FROM pull_cache_aliases WHERE cwd=?').all(cwd),
     )
     const scopes = new Set([cwd, ...saved.map((entry) => entry.scope)])
     const matches = (key: string) => {
@@ -597,7 +609,7 @@ export class PullCache {
         )
         return (
           parsed.success &&
-          scopes.has(parsed.data[1]) &&
+          (cwd === undefined || scopes.has(parsed.data[1])) &&
           (parsed.data[0] === 'list' ||
             ((parsed.data[0] === 'section' ||
               parsed.data[0] === 'detail' ||
@@ -646,7 +658,9 @@ export class PullCache {
   disposeEffect() {
     return Effect.gen({ self: this }, function* () {
       this.stopped = true
-      yield* Effect.forEach(this.pending.values(), (fiber) => Fiber.await(fiber), { discard: true })
+      yield* Effect.forEach(this.pending.values(), ({ fiber }) => Fiber.await(fiber), {
+        discard: true,
+      })
       yield* runtimeOperation(() => this.executor.dispose())
     }).pipe(Effect.uninterruptible)
   }

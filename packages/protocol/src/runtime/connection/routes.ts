@@ -33,6 +33,43 @@ type RuntimeRoutes = Selection & {
   streamCooldowns?: Map<string, number>
 }
 const routes = new Map<string, RuntimeRoutes>()
+type DiscoveryGuard = { valid: boolean; readers: number }
+// Entries live only while endpoint resolution is in flight. Invalidated readers retain
+// their own guard, so replacing an entry can never make an old discovery valid again.
+const discoveries = new Map<string, DiscoveryGuard>()
+class RouteChangedError extends Error {
+  constructor() {
+    super('Runtime route metadata changed during discovery')
+  }
+}
+function clearRoutes(id: string) {
+  const discovery = discoveries.get(id)
+  if (discovery) discovery.valid = false
+  discoveries.delete(id)
+  const saved = routes.get(id)
+  saved?.probe?.controller.abort(new RouteChangedError())
+  saved?.stream?.probe?.controller.abort(new RouteChangedError())
+  routes.delete(id)
+  const changed = internetRoutes.delete(id + 'http') || internetRoutes.has(id + 'stream')
+  internetRoutes.delete(id + 'stream')
+  if (saved?.selected || saved?.stream?.selected || changed) publish()
+}
+/** Replace cached routes when the owner accepts new pairing metadata. Discovery is cancelled
+ * before any later operation selects an endpoint; already dispatched requests are not replayed. */
+export function reconcileRuntimeRoutes(previous: RuntimeConnection, next: RuntimeConnection) {
+  if (previous.address !== next.address || previous.token !== next.token)
+    throw new Error('Cannot reconcile routes for a different pairing')
+  if (previous.runtimeId && next.runtimeId && previous.runtimeId !== next.runtimeId)
+    throw new Error('This address belongs to a different runtime. Pair it again.')
+  const oldKey = key(previous)
+  const nextKey = key(next)
+  const saved = routes.get(oldKey)
+  if (saved && next.runtimeId && saved.runtimeId !== next.runtimeId)
+    throw new Error('This address belongs to a different runtime. Pair it again.')
+  clearRoutes(oldKey)
+  if (nextKey !== oldKey) clearRoutes(nextKey)
+}
+
 const key = (connection: RuntimeConnection) =>
   JSON.stringify([new URL(connection.address).origin, connection.token, connection.internet])
 function origin(address: string) {
@@ -60,7 +97,7 @@ export function learnRuntimeRoutes(
   }
   if (connection.runtimeId && connection.runtimeId !== snapshot.runtimeId)
     throw new Error('This address belongs to a different runtime. Pair it again.')
-  const addresses = [
+  let addresses = [
     ...new Set(
       (snapshot.runtimeAddresses ?? []).flatMap((address) => {
         try {
@@ -75,7 +112,16 @@ export function learnRuntimeRoutes(
   if (previous) {
     if (previous.runtimeId !== snapshot.runtimeId)
       throw new Error('This address belongs to a different runtime. Pair it again.')
-    previous.addresses = addresses
+    if (
+      previous.addresses.length === addresses.length &&
+      previous.addresses.every((address) => addresses.includes(address))
+    ) {
+      // Interface enumeration order can change without changing available routes.
+      addresses = previous.addresses
+    } else {
+      clearRoutes(key(connection))
+      routes.set(key(connection), { runtimeId: snapshot.runtimeId, addresses, checkedAt: 0 })
+    }
   } else {
     routes.set(key(connection), { runtimeId: snapshot.runtimeId, addresses, checkedAt: 0 })
   }
@@ -274,59 +320,78 @@ export async function resolveRuntimeEndpoint(
   purpose: RoutePurpose = 'http',
 ) {
   if (signal.aborted) throw signal.reason
-  const internet = connection.internet
-  if (!internet)
-    return {
-      address: await resolveDirectRoute(connection, signal, purpose),
-      token: connection.token,
-    }
-  if (
-    !connection.runtimeId ||
-    connection.runtimeId !== internet.runtimeId ||
-    internet.address !== peerAddress(internet.peer)
-  )
-    throw new Error('Internet fallback belongs to another computer')
-  const id = key(connection) + purpose
-  const saved = internetRoutes.get(id)
-  if (saved) {
-    if (Date.now() - saved.checkedAt >= 10000) {
-      // Reconsider LAN/VPN without stopping traffic on the existing internet route.
-      // One bounded background reader shares discovery with foreground readers;
-      // cancellation or invalidation cannot resurrect a superseded selection.
-      saved.checkedAt = Date.now()
-      void resolveDirectRoute(connection, AbortSignal.timeout(3500), purpose).then(
-        () => {
-          if (internetRoutes.get(id) !== saved) return
-          internetRoutes.delete(id)
-          publish()
-        },
-        () => {
-          // Unreachable LAN routes are expected while away; retain the fallback.
-        },
-      )
-    }
-    const address = await resolvePeerTransport(internet.address, internet.peer, signal)
-    // This operation keeps its endpoint and credential together even if discovery
-    // selected LAN in the meantime. Only subsequent operations switch routes.
-    if (internetRoutes.get(id) === saved && saved.address !== address) {
-      saved.address = address
-      publish()
-    }
-    return { address, token: internet.token }
+  const routeKey = key(connection)
+  let guard = discoveries.get(routeKey)
+  if (!guard) {
+    guard = { valid: true, readers: 0 }
+    discoveries.set(routeKey, guard)
+  }
+  guard.readers++
+  const active = guard
+  const checkGeneration = () => {
+    if (!active.valid) throw new RouteChangedError()
   }
   try {
-    const address = await resolveDirectRoute(connection, signal, purpose)
-    if (internetRoutes.delete(id)) publish()
-    return { address, token: connection.token }
-  } catch (error) {
-    if (signal.aborted) throw error
+    const internet = connection.internet
+    if (!internet) {
+      const address = await resolveDirectRoute(connection, signal, purpose)
+      checkGeneration()
+      return { address, token: connection.token }
+    }
+    if (
+      !connection.runtimeId ||
+      connection.runtimeId !== internet.runtimeId ||
+      internet.address !== peerAddress(internet.peer)
+    )
+      throw new Error('Internet fallback belongs to another computer')
+    const id = key(connection) + purpose
+    const saved = internetRoutes.get(id)
+    if (saved) {
+      if (Date.now() - saved.checkedAt >= 10000) {
+        // Reconsider LAN/VPN without stopping traffic on the existing internet route.
+        // One bounded background reader shares discovery with foreground readers;
+        // cancellation or invalidation cannot resurrect a superseded selection.
+        saved.checkedAt = Date.now()
+        void resolveDirectRoute(connection, AbortSignal.timeout(3500), purpose).then(
+          () => {
+            if (internetRoutes.get(id) !== saved) return
+            internetRoutes.delete(id)
+            publish()
+          },
+          () => {
+            // Unreachable LAN routes are expected while away; retain the fallback.
+          },
+        )
+      }
+      const address = await resolvePeerTransport(internet.address, internet.peer, signal)
+      checkGeneration()
+      // This operation keeps its endpoint and credential together even if discovery
+      // selected LAN in the meantime. Only subsequent operations switch routes.
+      if (internetRoutes.get(id) === saved && saved.address !== address) {
+        saved.address = address
+        publish()
+      }
+      return { address, token: internet.token }
+    }
+    try {
+      const address = await resolveDirectRoute(connection, signal, purpose)
+      checkGeneration()
+      if (internetRoutes.delete(id)) publish()
+      return { address, token: connection.token }
+    } catch (error) {
+      if (signal.aborted || error instanceof RouteChangedError) throw error
+      checkGeneration()
+    }
+    const address = await resolvePeerTransport(internet.address, internet.peer, signal)
+    checkGeneration()
+    internetRoutes.set(id, {
+      address,
+      peerAddress: internet.address,
+      checkedAt: Date.now(),
+    })
+    publish()
+    return { address, token: internet.token }
+  } finally {
+    if (--active.readers === 0 && discoveries.get(routeKey) === active) discoveries.delete(routeKey)
   }
-  const address = await resolvePeerTransport(internet.address, internet.peer, signal)
-  internetRoutes.set(id, {
-    address,
-    peerAddress: internet.address,
-    checkedAt: Date.now(),
-  })
-  publish()
-  return { address, token: internet.token }
 }

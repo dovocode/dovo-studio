@@ -114,7 +114,52 @@ export class GitLabForge implements ForgeAdapter {
   async list(state: 'open' | 'closed' | 'all', page: number) {
     if (!['open', 'closed', 'all'].includes(state))
       throw new HttpError(400, 'Choose a valid merge request state.')
-    // GitLab's `closed` excludes merged MRs; fetch all and filter to retain Dovo's closed semantics.
+    pageNumber(page)
+    if (state === 'closed') {
+      if (page > 100)
+        throw new HttpError(
+          400,
+          'GitLab closed results are limited to 100 pages. Open older requests on GitLab.',
+        )
+      const end = page * SIZE
+      // Page the union itself. Filtering an all-state page can hide closed MRs behind open MRs.
+      const prefix = async (selected: 'closed' | 'merged') => {
+        const values: MergeRequest[] = []
+        for (let sourcePage = 1; values.length <= end; sourcePage++) {
+          const rows = decode(
+            mutableArray(gitlabMergeRequest),
+            await this.http.json(
+              `${this.path}/merge_requests?state=${selected}&order_by=updated_at&sort=desc&per_page=${SIZE}&page=${sourcePage}`,
+            ),
+          )
+          values.push(...rows)
+          if (rows.length < SIZE) break
+        }
+        return values
+      }
+      const [closed, merged, viewer] = await Promise.all([
+        prefix('closed'),
+        prefix('merged'),
+        this.http.json('/api/v4/user').then((value) => decode(gitlabUser, value)),
+      ])
+      // Preserve each provider stream's order for ties, or deeper prefixes can reshuffle old pages.
+      const rows = [
+        ...new Map(
+          [...closed, ...merged]
+            .filter((pull) => pull.state !== 'opened')
+            .map((pull) => [pull.iid, pull]),
+        ).values(),
+      ].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      return decode(pullPageSchema, {
+        pulls: rows.slice(end - SIZE, end).map((pull) => this.summary(pull, viewer.username)),
+        page,
+        hasMore: page < 100 && rows.length > end,
+        paginationNotice:
+          page === 100 && rows.length > end
+            ? 'Showing the newest 5,000 requests. Open older requests on GitLab.'
+            : undefined,
+      })
+    }
     const selected = state === 'open' ? 'opened' : 'all'
     const [rows, viewer] = await Promise.all([
       this.http
@@ -125,9 +170,7 @@ export class GitLabForge implements ForgeAdapter {
       this.http.json('/api/v4/user').then((value) => decode(gitlabUser, value)),
     ])
     return decode(pullPageSchema, {
-      pulls: rows
-        .filter((pull) => state !== 'closed' || pull.state !== 'opened')
-        .map((pull) => this.summary(pull, viewer.username)),
+      pulls: rows.map((pull) => this.summary(pull, viewer.username)),
       page,
       hasMore: rows.length === SIZE,
     })

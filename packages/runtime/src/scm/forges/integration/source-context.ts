@@ -164,6 +164,7 @@ export async function verifySourceContext(
       return { account: String(user.id), login: user.login }
     })
     account = (await verification.value).account
+    git.confirmGithubHost(new URL(connection?.baseUrl ?? `https://${host}`).host)
   } else {
     if (!connection) throw new HttpError(409, 'Connect this provider account before continuing.')
     if (refresh) connections.forgetCredentials(connection.id)

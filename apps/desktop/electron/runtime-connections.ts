@@ -1,5 +1,6 @@
 import {
   createRuntimeClient,
+  reconcileRuntimeRoutes,
   startRuntimeSync,
   watchRuntimeTask,
   watchRuntimeSettled,
@@ -73,7 +74,7 @@ export class RuntimeConnections {
     if (previous && previous !== pool) this.unsubscribe(id)
     if (!pool) {
       pool = {
-        connection: input.connection,
+        connection: { ...input.connection },
         subscribers: new Map(),
         tasks: new Map(),
         scopes: new Map(),
@@ -88,7 +89,34 @@ export class RuntimeConnections {
       this.pools.set(poolKey, pool)
     }
     const old = pool.subscribers.get(id)
-    const subscriber: Subscriber = { input, publish, sequence: old?.sequence }
+    // The stream retains this object, so reconcile optional route metadata in place.
+    // Address and token identify the pool and cannot change here.
+    const metadataChanged =
+      JSON.stringify(pool.connection) !== JSON.stringify(input.connection) &&
+      !!old &&
+      JSON.stringify(old.input.connection) !== JSON.stringify(input.connection)
+    if (metadataChanged) {
+      reconcileRuntimeRoutes(pool.connection, input.connection)
+      Object.assign(pool.connection, {
+        ...input.connection,
+        internet: input.connection.internet,
+        accountSession: input.connection.accountSession,
+        peer: input.connection.peer,
+        runtimeId: input.connection.runtimeId,
+        alternateAddresses: input.connection.alternateAddresses,
+      })
+      pool.request?.abort()
+      pool.live?.retry()
+    }
+    const selectionChanged =
+      old &&
+      (JSON.stringify(old.input.tasks) !== JSON.stringify(input.tasks) ||
+        old.input.settledLimit !== input.settledLimit)
+    const subscriber: Subscriber = {
+      input,
+      publish,
+      sequence: selectionChanged ? undefined : old?.sequence,
+    }
     pool.subscribers.set(id, subscriber)
     this.subscriptions.set(id, pool)
     this.watch(pool)
@@ -147,7 +175,11 @@ export class RuntimeConnections {
   }
   private publishSnapshot(pool: Pool, snapshot: RuntimeSnapshot) {
     const previous = pool.snapshot
-    if (previous === snapshot) return
+    if (previous === snapshot) {
+      for (const subscriber of pool.subscribers.values())
+        if (subscriber.sequence !== pool.sequence) this.baseline(pool, subscriber)
+      return
+    }
     const restarted = previous && previous.runtimeInstanceId !== snapshot.runtimeInstanceId
     if (restarted) {
       pool.epoch = crypto.randomUUID()

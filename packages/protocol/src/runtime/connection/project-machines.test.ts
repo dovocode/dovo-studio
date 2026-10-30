@@ -10,6 +10,31 @@ import { runtimeDefaultsSchema } from './runtime-setup'
 import { taskMachineDraft } from '../../tasks/task-machine-draft'
 import { decode } from '../../shared/schema'
 import { taskSchema, defaultTaskHarness } from '../../workspace'
+it('prefers an explicit shared name even when it equals that computer’s local label', () => {
+  const repository = {
+    id: 'one',
+    name: 'Customer Portal',
+    localName: 'Customer Portal',
+    sharedName: 'Customer Portal',
+    path: '/one',
+    branch: 'main',
+    gitIdentity: 'github.com/team/app',
+  }
+  const groups = projectMachineGroups([
+    { repository, runtimeId: 'mac' },
+    {
+      repository: {
+        ...repository,
+        id: 'two',
+        name: 'app',
+        localName: 'app',
+        sharedName: undefined,
+      },
+      runtimeId: 'linux',
+    },
+  ])
+  expect(groups[0].name).toBe('Customer Portal')
+})
 it('matches SSH and HTTPS without publishing credentials or merging different hosts', () => {
   expect(gitRemoteIdentity('git@github.com:Owner/Repo.git')).toBe('github.com/owner/repo')
   expect(gitRemoteIdentity('https://user:secret@github.com/Owner/Repo.git?token=secret')).toBe(

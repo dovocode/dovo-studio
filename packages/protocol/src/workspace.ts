@@ -193,6 +193,8 @@ export const projectIconSchema = maxValue(
 
 /** Settings that can inherit across computers and projects. */
 export const scopedSettingsValueSchema = mutableStruct({
+  /** Null returns to the checkout's local name. */
+  projectName: Schema.optional(Schema.NullOr(maxValue(minValue(Schema.String, 1), 200))),
   /** Null resets custom icons across computers without resurrecting local overrides. */
   projectIcon: Schema.optional(Schema.NullOr(projectIconSchema)),
   agents: Schema.optional(maxValue(mutableArray(agentPresetSchema), 100)),
@@ -202,14 +204,29 @@ export const scopedSettingsValueSchema = mutableStruct({
   prompts: Schema.optional(maxValue(mutableArray(savedPromptSchema), 40)),
 })
 export type ScopedSettingsValue = Schema.Schema.Type<typeof scopedSettingsValueSchema>
-export const sharedSettingsEntrySchema = mutableStruct({
-  key: maxValue(minValue(Schema.String, 1), 600),
+const settingsRevisionSchema = mutableStruct({
   updatedAt: Schema.Number.pipe(
     Schema.check(Schema.isFinite()),
     Schema.check(Schema.isInt()),
     Schema.check(Schema.isGreaterThanOrEqualTo(0)),
   ),
   changeId: maxValue(minValue(Schema.String, 1), 100),
+})
+export const sharedSettingsEntrySchema = mutableStruct({
+  key: maxValue(minValue(Schema.String, 1), 600),
+  ...settingsRevisionSchema.fields,
+  /** A missing map uses the legacy whole-entry revision. A missing category was never edited. */
+  revisions: Schema.optional(
+    mutableStruct({
+      projectName: Schema.optional(settingsRevisionSchema),
+      projectIcon: Schema.optional(settingsRevisionSchema),
+      agents: Schema.optional(settingsRevisionSchema),
+      taskDefaults: Schema.optional(settingsRevisionSchema),
+      taskBehavior: Schema.optional(settingsRevisionSchema),
+      resources: Schema.optional(settingsRevisionSchema),
+      prompts: Schema.optional(settingsRevisionSchema),
+    }),
+  ),
   value: scopedSettingsValueSchema,
 })
 export const sharedSettingsSchema = maxValue(mutableArray(sharedSettingsEntrySchema), 300)
@@ -227,6 +244,12 @@ export const scopedSettingsSchema = mutableStruct({
 })
 export const SCRATCH_PROJECT_ID = 'dovo:scratch'
 export const repositorySchema = mutableStruct({
+  /** Shared display label, projected independently of the local checkout name. */
+  sharedName: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  /** Last confirmed identity for presentation while a checkout is unavailable. */
+  presentationIdentity: Schema.optional(Schema.String),
+  /** Local checkout label, retained when the snapshot projects a shared name. */
+  localName: Schema.optional(Schema.String),
   /** Missing means a Git project, preserving existing workspaces. */
   kind: Schema.optional(Schema.Literals(['folder', 'scratch'])),
   /** User-selected project icon, stored as a small PNG for every client. */

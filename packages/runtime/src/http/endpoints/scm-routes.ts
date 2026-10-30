@@ -114,6 +114,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
         const input = decode(
           mutableStruct({
             repositoryId: idSchema,
+            expectedGitIdentity: Schema.optional(Schema.String),
             data: Schema.optional(
               maxValue(
                 Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9+/=]+$/))),
@@ -131,6 +132,12 @@ export function scmRoute(request: IncomingMessage, path: string) {
         const gitIdentity = isGitProject
           ? yield* serviceResult(s.git.repositoryIdentity(repository.path, true))
           : undefined
+        if (
+          (input.expectedGitIdentity !== undefined && input.expectedGitIdentity !== gitIdentity) ||
+          ((repository.presentationIdentity ?? repository.gitIdentity) !== undefined &&
+            (repository.presentationIdentity ?? repository.gitIdentity) !== gitIdentity)
+        )
+          throw new HttpError(409, 'The project remote changed. Refresh before choosing its icon.')
         repository = { ...repository, gitIdentity }
         let iconOverride: string | undefined
         if (input.data) {
@@ -173,7 +180,14 @@ export function scmRoute(request: IncomingMessage, path: string) {
         s.store.update((workspace) => ({
           ...workspace,
           repositories: workspace.repositories.map((repo) =>
-            repo.id === input.repositoryId ? { ...repo, gitIdentity, iconOverride } : repo,
+            repo.id === input.repositoryId
+              ? {
+                  ...repo,
+                  gitIdentity,
+                  presentationIdentity: gitIdentity,
+                  iconOverride: entry ? undefined : iconOverride,
+                }
+              : repo,
           ),
         }))
         return yield* serviceResult({ ok: true })

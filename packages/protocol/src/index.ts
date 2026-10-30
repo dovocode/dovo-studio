@@ -235,6 +235,7 @@ export {
 
 export {
   learnRuntimeRoutes,
+  reconcileRuntimeRoutes,
   runtimeTransportAddress,
   runtimePeerAddress,
   runtimeRouteVersion,

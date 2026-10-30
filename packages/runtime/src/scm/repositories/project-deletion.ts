@@ -2,7 +2,6 @@ import {
   decode,
   deleteProjectSchema,
   SCRATCH_PROJECT_ID,
-  sharedProjectKey,
   taskFamilyIds,
   type Automation,
 } from '@dovo/protocol'
@@ -121,29 +120,8 @@ export function deleteProjectEffect(s: Services, value: unknown) {
 
           // Tasks linked to the deleted project remain intact, with only the dangling checkout
           // reference removed. Repository and worktree paths are never passed to a remover here.
-          const sharedKey = sharedProjectKey(repository)
-          const settings = s.defaults.get()
-          if (
-            sharedKey &&
-            !s.store
-              .get()
-              .repositories.some(
-                (entry) => entry.id !== repositoryId && sharedProjectKey(entry) === sharedKey,
-              )
-          ) {
-            const scoped = settings.scopedSettings
-            if (scoped?.shared.some((entry) => entry.key === sharedKey))
-              s.defaults.save(
-                {
-                  ...settings,
-                  scopedSettings: {
-                    ...scoped,
-                    shared: scoped.shared.filter((entry) => entry.key !== sharedKey),
-                  },
-                },
-                false,
-              )
-          }
+          // Removing this checkout must not delete metadata shared with other machines.
+          // Explicit settings resets retain their per-category tombstones through sync.
 
           const deleted = new Set(deletedTaskIds)
           s.store.transaction(() => {

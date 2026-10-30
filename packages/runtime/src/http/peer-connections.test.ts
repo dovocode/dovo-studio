@@ -830,7 +830,11 @@ it('accepts a broker relay only for the phone-signed provider, pinned hosts and 
 })
 
 type Internals = {
-  rooms: Map<string, { sessions: Set<string>; peers: Map<RTCPeerConnection, () => void> }>
+  port?: number
+  rooms: Map<
+    string,
+    { sessions: Set<string>; peers: Map<RTCPeerConnection, () => void>; socket?: WebSocket }
+  >
   origins: Map<number, unknown>
 }
 it('preserves live runtime sockets during a transient disconnect and bounds persistent outages', async () => {
@@ -1451,7 +1455,7 @@ it('detects half-open signaling, rejects stale pongs and recovers without waitin
   try {
     const invited = f.invite()
     await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1))
-    await invited
+    const config = await invited
     await vi.advanceTimersByTimeAsync(5000)
     // An unrelated/stale pong must not indefinitely keep this broken socket online.
     await vi.advanceTimersByTimeAsync(10000)
@@ -1460,11 +1464,13 @@ it('detects half-open signaling, rejects stale pongs and recovers without waitin
     await vi.advanceTimersByTimeAsync(500)
     await vi.waitFor(() => expect(hosts).toHaveLength(2))
     await vi.waitFor(() => expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1))
-    // A responsive replacement remains stable over multiple watchdog periods.
+    // Real socket delivery must finish before advancing the fake watchdog clock again.
+    const internals = f.runtime.services.peers as unknown as Internals
+    const socket = internals.rooms.get(peerRoom(config))!.socket!
     for (let i = 0; i < 5; i++) {
+      const pong = once(socket, 'pong')
       await vi.advanceTimersByTimeAsync(5000)
-      await new Promise<void>((resolve) => setImmediate(resolve))
-      await new Promise<void>((resolve) => setImmediate(resolve))
+      await pong
     }
     expect(hosts).toHaveLength(2)
     expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1)
@@ -1475,3 +1481,140 @@ it('detects half-open signaling, rejects stale pongs and recovers without waitin
     vi.useRealTimers()
   }
 }, 15000)
+
+it('proves an advertised identity in direct mode without consenting to TURN', async () => {
+  let approved: string[] = []
+  const f = await admissionBroker(() => approved)
+  approved = [f.runtime.services.peers.relayIdentity().publicKey]
+  f.runtime.services.peers.setConnectionMode('webrtc')
+  const config = await f.runtime.services.peers.invitation(
+    new Date(Date.now() + 120000).toISOString(),
+    'dovo',
+  )
+  expect(await f.join(config)).toEqual({ type: 'ready', relayUnavailable: 'dovo' })
+  expect(f.issue).not.toHaveBeenCalled()
+  expect(f.runtime.services.peers.diagnostics().signaling.online).toBe(1)
+})
+
+it.each([false, true])(
+  'settles all peer cleanup and clears the listener port after drain failure (peer failure: %s)',
+  async (peerFails) => {
+    const f = await fixture()
+    const peers = f.runtime.services.peers
+    const device = f.runtime.services.devices.add('Disposal test phone', 'disposal-test-token')
+    const config = await peers.enable(device)
+    await f.tunnel(config, true)
+    await f.tunnel(config, true)
+    const internals = peers as unknown as Internals
+    const room = internals.rooms.get(peerRoom(config))!
+    expect(room.peers.size).toBe(2)
+    const [first, second] = [...room.peers.keys()]
+    if (!first || !second) throw new Error('Expected two negotiated runtime peers')
+    const drainError = new Error('Authorization drain failed')
+    const peerError = new Error('First peer close failed')
+    const drain = vi.spyOn(peers.internet, 'drain').mockRejectedValue(drainError)
+    const closeFirst = vi.spyOn(first, 'close').mockImplementation(async () => {
+      if (peerFails) throw peerError
+    })
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const closeSecond = vi.spyOn(second, 'close').mockReturnValue(pending)
+    cleanup.push(async () => {
+      drain.mockRestore()
+      closeFirst.mockRestore()
+      closeSecond.mockRestore()
+      await Promise.all([first.close(), second.close()])
+    })
+    let finished = false
+    const disposing = peers.dispose().then(
+      () => {
+        finished = true
+        return undefined
+      },
+      (error: unknown) => {
+        finished = true
+        return error
+      },
+    )
+    try {
+      await vi.waitFor(() => expect(closeSecond).toHaveBeenCalledTimes(1))
+      expect(closeFirst).toHaveBeenCalledTimes(1)
+      expect(finished).toBe(false)
+      release()
+      const result = await disposing
+      expect(internals.port).toBeUndefined()
+      expect(internals.rooms.size).toBe(0)
+      const errors: unknown[] = result instanceof AggregateError ? result.errors : [result]
+      expect(result instanceof AggregateError).toBe(peerFails)
+      expect(errors).toEqual(peerFails ? [drainError, peerError] : [drainError])
+      expect(errors[0]).toBe(drainError)
+      expect(errors.at(-1)).toBe(peerFails ? peerError : drainError)
+    } finally {
+      release()
+      await disposing
+    }
+  },
+)
+
+it('never sends delayed answers or ICE through a replacement signaling socket', async () => {
+  const f = await scriptedBroker()
+  const hosts: WebSocket[] = []
+  const outputs: Array<{ socket: WebSocket; type?: string; role?: string }> = []
+  f.script((socket) => {
+    hosts.push(socket)
+    socket.on('message', (raw) => {
+      const message = JSON.parse(Buffer.from(raw as Buffer).toString()) as {
+        type?: string
+        role?: string
+      }
+      outputs.push({ socket, ...message })
+    })
+    socket.send(JSON.stringify({ type: 'ready' }))
+  })
+  const config = await f.invite()
+  const client = new RTCPeerConnection({ iceServers: [], iceUseIpv6: false })
+  cleanup.push(() => client.close())
+  client.createDataChannel('dovo-ready-v1')
+  await client.setLocalDescription(await client.createOffer())
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const local = vi
+    .spyOn(RTCPeerConnection.prototype, 'setLocalDescription')
+    .mockImplementationOnce(async function (this: RTCPeerConnection, ...args) {
+      await pending
+      local.mockRestore()
+      return this.setLocalDescription(...args)
+    })
+  const sdp = client.localDescription!.sdp
+  const signal = signPeerSignal(config, {
+    session: randomBytes(32).toString('hex'),
+    role: 'offer',
+    offer: peerDigest(sdp),
+    sdp,
+    trickle: true,
+  })
+  hosts[0]!.send(JSON.stringify({ type: 'offer', signal }))
+  await expect.poll(() => local.mock.calls.length).toBe(1)
+  const internals = f.runtime.services.peers as unknown as Internals
+  const pc = [...internals.rooms.get(peerRoom(config))!.peers.keys()][0]!
+  try {
+    f.runtime.services.peers.setConnectionMode('webrtc')
+    await expect.poll(() => hosts.length).toBe(2)
+    await expect.poll(() => f.runtime.services.peers.diagnostics().signaling.online).toBe(1)
+    // A native gatherer can emit candidates even after signaling was replaced.
+    pc.onIceCandidate.execute(undefined)
+    release()
+    await expect.poll(() => f.runtime.services.peers.diagnostics().active).toBe(0)
+    expect(
+      outputs.filter(
+        (value) => value.socket === hosts[1] && (value.role === 'answer' || value.type === 'ice'),
+      ),
+    ).toEqual([])
+  } finally {
+    release()
+  }
+}, 30000)

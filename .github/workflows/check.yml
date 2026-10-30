@@ -30,6 +30,8 @@ jobs:
       - run: node scripts/check-runtime-sync.mjs
       # Native config errors (plugins, bundle identifiers, entitlements) fail here, not at build.
       - run: pnpm --filter @dovo/mobile exec expo config --type public > /dev/null
+      # Exercise ordered native TCP half-closes against actual Android socket client code.
+      - run: pnpm test:peer-half-close:native -- --android-only
       # Execute bundled dependencies: a successful export alone misses startup require failures.
       - run: node scripts/check-mobile-metro-modules.mjs
       # All packages were compiled above; the local test command intentionally builds first.
@@ -64,8 +66,12 @@ jobs:
       - name: Verify TURN cutoff in an isolated network namespace
         run: |
           sudo apt-get update
-          sudo apt-get install -y nftables iproute2
+          sudo apt-get install -y nftables iproute2 coturn
           python3 apps/connect-server/turn/budget/check_kernel.py
+      - name: Verify forced TURN UDP, TCP and TLS connections
+        env:
+          DOVO_TEST_TURN_BINARY: /usr/bin/turnserver
+        run: node scripts/check-peer-connection-browser.mjs
       - run: node --test scripts/packaging/*.test.mjs scripts/ci/*.test.mjs
   # Bounded browser gate for shared hooks that render in both desktop and mobile bundles.
   browser:

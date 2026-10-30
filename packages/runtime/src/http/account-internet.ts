@@ -44,9 +44,12 @@ const stateSchema = Schema.Struct({
 export class AccountInternet {
   private state?: typeof stateSchema.Type
   private timer?: ReturnType<typeof setTimeout>
-  private controller?: AbortController
+  private controllers = new Set<AbortController>()
+  private provisioning?: Promise<void>
+  private polling = new Set<Promise<void>>()
   private generation = 0
   private lease = 0
+  private activeRequests = new Set<string>()
   private running = false
   private enabling = false
   private setups = new Map<
@@ -293,18 +296,17 @@ export class AccountInternet {
       this.devices.revoke(item.device)
     }
   }
-  private async poll() {
+  private poll() {
+    const pending = this.refresh().finally(() => this.polling.delete(pending))
+    this.polling.add(pending)
+    return pending
+  }
+  private async refresh() {
     if (!this.running || !this.state) return
     if (this.timer) clearTimeout(this.timer)
     const generation = this.generation,
       state = this.state
     try {
-      for (const row of this.db.prepare('SELECT session FROM account_internet_blocks').all()) {
-        const { session } = decode(Schema.Struct({ session: Schema.String }), row)
-        await this.request('/v1/internet/host/block', state.grant, 'POST', { session })
-        if (generation !== this.generation) return
-        this.db.prepare('DELETE FROM account_internet_blocks WHERE session=?').run(session)
-      }
       const inbox = decode(inboxSchema, await this.request('/v1/internet/host', state.grant))
       if (generation !== this.generation) return
       if (
@@ -319,75 +321,21 @@ export class AccountInternet {
         inbox.organizationRelay ? { ...inbox.organizationRelay, lease: this.lease } : undefined,
       )
       this.error = ''
-      this.removeExcept(new Set(inbox.active))
-      if (this.peers.relay.connectionMode() === 'lan') return
-      for (const request of inbox.requests) {
-        if (generation !== this.generation) return
-        if (
-          this.db
-            .prepare('SELECT session FROM account_internet_blocks WHERE session=?')
-            .get(request.session)
-        )
-          continue
-        const previous = this.db
-          .prepare('SELECT device,answer FROM account_internet_devices WHERE request=?')
-          .get(request.id)
-        let box: typeof internetBoxSchema.Type
-        if (previous)
-          box = decode(
-            internetBoxSchema,
-            JSON.parse(decode(Schema.Struct({ answer: Schema.String }), previous).answer),
-          )
-        else {
-          const token = randomBytes(32).toString('base64url')
-          const device = this.devices.add('Dovo Connect', token)
-          // Store provenance before creating the room, so this token is never valid over LAN.
-          this.db
-            .prepare('INSERT INTO account_internet_devices VALUES(?,?,?,?)')
-            .run(request.id, device, '{}', request.session)
-          try {
-            const peer: PeerConfig = await this.peers.enable(device, 'dovo', state.grant)
-            if (generation !== this.generation) {
-              this.peers.disable(device)
-              this.devices.revoke(device)
-              return
-            }
-            box = sealInternet(
-              {
-                requestId: request.id,
-                runtimeId: state.runtimeId,
-                connection: { address: peerAddress(peer), token, runtimeId: state.runtimeId, peer },
-              },
-              request.publicKey,
-              this.privateKey,
-              randomBytes(24),
-            )
-            this.db
-              .prepare('UPDATE account_internet_devices SET answer=? WHERE request=?')
-              .run(JSON.stringify(box), request.id)
-          } catch (error) {
-            this.peers.disable(device)
-            this.db.prepare('DELETE FROM account_internet_devices WHERE request=?').run(request.id)
-            this.devices.revoke(device)
-            throw error
-          }
-        }
-        await this.request('/v1/internet/host', state.grant, 'POST', { id: request.id, box })
-      }
-      if (generation !== this.generation) return
-      for (const row of this.db.prepare('SELECT device FROM account_internet_devices').all()) {
-        const { device } = decode(Schema.Struct({ device: Schema.String }), row)
-        await this.peers.enable(device, 'dovo', state.grant)
+      this.activeRequests = new Set(inbox.active)
+      this.removeExcept(this.activeRequests)
+      // Authentication has its own cadence: signaling setup and broker writes must never
+      // consume the short authorization lease. Keep one pass even across disable/re-enable:
+      // an old generation must finish its device cleanup before its replacement provisions.
+      if (!this.provisioning) {
+        const pending = this.provision(inbox, state, generation)
+          .catch((error: unknown) => this.failed(error, generation))
+          .finally(() => {
+            if (this.provisioning === pending) this.provisioning = undefined
+          })
+        this.provisioning = pending
       }
     } catch (error) {
-      if (generation !== this.generation) return
-      this.error =
-        'Dovo Connect is unavailable. Internet access pauses when its authorization lease expires.'
-      if (error instanceof InternetAuthError) {
-        await this.disable()
-        this.error = 'Account access was revoked. Sign in and enable Dovo Connect again.'
-        return
-      }
+      await this.failed(error, generation)
     } finally {
       if (this.running && this.state && generation === this.generation) {
         this.timer = setTimeout(() => void this.poll(), 3000)
@@ -395,12 +343,118 @@ export class AccountInternet {
       }
     }
   }
+  private async failed(error: unknown, generation: number) {
+    if (generation !== this.generation) return
+    this.error =
+      'Dovo Connect is unavailable. Internet access pauses when its authorization lease expires.'
+    if (error instanceof InternetAuthError) {
+      await this.disable()
+      this.error = 'Account access was revoked. Sign in and enable Dovo Connect again.'
+    }
+  }
+  private async provision(
+    inbox: typeof inboxSchema.Type,
+    state: typeof stateSchema.Type,
+    generation: number,
+  ) {
+    const blocked = new Set(
+      this.db
+        .prepare('SELECT session FROM account_internet_blocks')
+        .all()
+        .map((row) => decode(Schema.Struct({ session: Schema.String }), row).session),
+    )
+    for (const session of blocked) {
+      await this.request('/v1/internet/host/block', state.grant, 'POST', { session })
+      if (generation !== this.generation) return
+      this.db.prepare('DELETE FROM account_internet_blocks WHERE session=?').run(session)
+    }
+    if (this.peers.relay.connectionMode() === 'lan') return
+    for (const request of inbox.requests) {
+      if (generation !== this.generation) return
+      if (!this.activeRequests.has(request.id) || this.lease <= Date.now()) continue
+      if (
+        blocked.has(request.session) ||
+        this.db
+          .prepare('SELECT session FROM account_internet_blocks WHERE session=?')
+          .get(request.session)
+      )
+        continue
+      const previous = this.db
+        .prepare('SELECT device,answer FROM account_internet_devices WHERE request=?')
+        .get(request.id)
+      let box: typeof internetBoxSchema.Type
+      if (previous)
+        box = decode(
+          internetBoxSchema,
+          JSON.parse(decode(Schema.Struct({ answer: Schema.String }), previous).answer),
+        )
+      else {
+        const token = randomBytes(32).toString('base64url')
+        const device = this.devices.add('Dovo Connect', token)
+        // Store provenance before creating the room, so this token is never valid over LAN.
+        this.db
+          .prepare('INSERT INTO account_internet_devices VALUES(?,?,?,?)')
+          .run(request.id, device, '{}', request.session)
+        try {
+          const peer: PeerConfig = await this.peers.enable(device, 'dovo', state.grant)
+          if (
+            generation !== this.generation ||
+            !this.authorized(device) ||
+            !this.db
+              .prepare('SELECT request FROM account_internet_devices WHERE request=? AND device=?')
+              .get(request.id, device)
+          ) {
+            this.peers.disable(device)
+            this.db
+              .prepare('DELETE FROM account_internet_devices WHERE request=? AND device=?')
+              .run(request.id, device)
+            this.devices.revoke(device)
+            return
+          }
+          box = sealInternet(
+            {
+              requestId: request.id,
+              runtimeId: state.runtimeId,
+              connection: { address: peerAddress(peer), token, runtimeId: state.runtimeId, peer },
+            },
+            request.publicKey,
+            this.privateKey,
+            randomBytes(24),
+          )
+          this.db
+            .prepare('UPDATE account_internet_devices SET answer=? WHERE request=?')
+            .run(JSON.stringify(box), request.id)
+        } catch (error) {
+          this.peers.disable(device)
+          this.db
+            .prepare('DELETE FROM account_internet_devices WHERE request=? AND device=?')
+            .run(request.id, device)
+          this.devices.revoke(device)
+          throw error
+        }
+      }
+      if (generation !== this.generation || this.lease <= Date.now()) return
+      if (
+        !this.db
+          .prepare('SELECT request FROM account_internet_devices WHERE request=?')
+          .get(request.id)
+      )
+        continue
+      await this.request('/v1/internet/host', state.grant, 'POST', { id: request.id, box })
+    }
+    if (generation !== this.generation) return
+    for (const row of this.db.prepare('SELECT device FROM account_internet_devices').all()) {
+      const { device } = decode(Schema.Struct({ device: Schema.String }), row)
+      if (generation !== this.generation || this.lease <= Date.now()) return
+      await this.peers.enable(device, 'dovo', state.grant)
+    }
+  }
   private async request(path: string, token: string, method = 'GET', body?: unknown) {
     // Optional Connect configuration must not affect ordinary LAN/VPN startup.
     // Validate its HTTPS (or loopback test) origin before sending any credential.
     decode(peerConfigSchema.fields.origin, this.origin)
     const controller = new AbortController()
-    this.controller = controller
+    this.controllers.add(controller)
     const timer = setTimeout(() => controller.abort(), 5000)
     try {
       const response = await fetch(this.origin + path, {
@@ -415,18 +469,28 @@ export class AccountInternet {
       return (await response.json()) as unknown
     } finally {
       clearTimeout(timer)
-      if (this.controller === controller) this.controller = undefined
+      this.controllers.delete(controller)
     }
   }
+  /** Stop admission synchronously. Peer disposal then closes rooms to release pending enable()
+   * calls and awaits drain() before the runtime may close SQLite. */
   stop() {
     this.peers.relay.setOrganization(undefined)
     this.running = false
     this.generation++
     this.setups.clear()
     this.lease = 0
-    this.controller?.abort()
+    this.activeRequests.clear()
+    for (const controller of this.controllers) controller.abort()
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
+  }
+  async drain() {
+    const pending = [...this.polling]
+    if (this.provisioning) pending.push(this.provisioning)
+    // Observe every owned continuation even if another one fails during shutdown.
+    const settled = await Promise.allSettled(pending)
+    for (const result of settled) if (result.status === 'rejected') throw result.reason
   }
 }
 class InternetAuthError extends Error {}

@@ -1,14 +1,47 @@
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { projectIcon, projectIconChoices, sharedProjectKey } from '@dovo/protocol'
+import {
+  projectIcon,
+  projectIconChoices,
+  sharedProjectKey,
+  scopedSettingsResultSchema,
+} from '@dovo/protocol'
+import { useEffect } from 'react'
 import { useWorkspace, type Repository } from '@dovo/studio-core'
-import { Button, Popover, ProjectIcon } from '@dovo/studio-ui'
+import { Button, Input, Popover, ProjectIcon } from '@dovo/studio-ui'
 
 export function ProjectIconSettings({ repository }: { repository: Repository }) {
   const { request, connected, refreshRuntime, runtimes, activeRuntimeId } = useWorkspace()
   const [error, setError] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [picker, setPicker] = useApplicationState(false)
+  const [name, setName] = useApplicationState(repository.name)
+  useEffect(() => setName(repository.name), [repository.id, repository.name])
+  const saveName = async (reset = false) => {
+    const profile = runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile
+    if (!profile) return
+    setBusy(true)
+    setError('')
+    try {
+      const scope = { scope: 'project', repositoryId: repository.id }
+      const current = await request('/api/agents/settings/read', scope, scopedSettingsResultSchema)
+      await request(
+        '/api/agents/settings/save',
+        {
+          ...scope,
+          projectKey: sharedProjectKey(repository),
+          before: current.value,
+          after: { ...current.value, projectName: reset ? null : name.trim() },
+        },
+        scopedSettingsResultSchema,
+      )
+      await refreshRuntime(profile)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
   const save = async (iconOverride: string | undefined) => {
     const profile = runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile
     if (!profile) return
@@ -17,7 +50,11 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
     try {
       await request(
         '/api/scm/repositories/icon',
-        { repositoryId: repository.id, data: iconOverride?.split(',')[1] },
+        {
+          repositoryId: repository.id,
+          expectedGitIdentity: repository.gitIdentity,
+          data: iconOverride?.split(',')[1],
+        },
         Schema.Struct({ ok: Schema.Literal(true) }),
       )
       await refreshRuntime(profile)
@@ -53,94 +90,143 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
     }
   }
   return (
-    <section className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
-      <ProjectIcon repository={repository} className="size-9 rounded-lg text-sm" />
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium">Project icon</p>
-        <p className="text-xs text-muted-foreground">
-          Used for every task in this project.{' '}
-          {sharedProjectKey(repository)
-            ? 'Icons sync across paired computers with the same Git remote.'
-            : 'This project’s icon stays on this computer.'}{' '}
-          {repository.iconOverride
-            ? 'Custom image.'
-            : projectIcon(repository)
-              ? 'Detected from the checkout.'
-              : 'No local icon found.'}
-        </p>
-        {error && (
-          <p role="alert" className="text-xs text-destructive">
-            {error}
+    <section className="flex flex-col gap-3 rounded-lg border p-3">
+      {sharedProjectKey(repository) && (
+        <div className="flex w-full flex-wrap items-center gap-2">
+          <label className="flex w-full min-w-0 flex-col gap-1 text-xs">
+            Project name
+            <Input
+              aria-label="Shared project name"
+              value={name}
+              maxLength={200}
+              disabled={!connected || busy}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <Button
+            size="sm"
+            disabled={!connected || busy || !name.trim()}
+            onClick={() => void saveName()}
+          >
+            Save name
+          </Button>
+          {repository.sharedName && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!connected || busy}
+              onClick={() => void saveName(true)}
+            >
+              Use local name
+            </Button>
+          )}
+          <p className="w-full break-words text-xs text-muted-foreground">
+            Shared across paired computers with the same Git remote. Local checkout:{' '}
+            {repository.localName ?? repository.name}.
           </p>
+        </div>
+      )}
+      <div className="flex w-full items-start gap-3">
+        <ProjectIcon repository={repository} className="size-9 rounded-lg text-sm" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium">Project icon</p>
+          <p className="text-xs text-muted-foreground">
+            Used for every task in this project.{' '}
+            {sharedProjectKey(repository)
+              ? 'Icons sync across paired computers with the same Git remote.'
+              : 'This project’s icon stays on this computer.'}{' '}
+            {repository.iconOverride
+              ? 'Custom image.'
+              : projectIcon(repository)
+                ? 'Detected from the checkout.'
+                : 'No local icon found.'}
+          </p>
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Popover.Root open={picker} onOpenChange={setPicker}>
+          <Popover.Trigger asChild>
+            <Button size="sm" variant="outline" disabled={!connected || busy}>
+              Icon or emoji
+            </Button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              align="end"
+              sideOffset={8}
+              aria-label="Choose project icon"
+              className="z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl border bg-popover p-3 shadow-lg"
+            >
+              {(['icon', 'emoji'] as const).map((kind) => (
+                <div key={kind} className="mb-3 last:mb-0">
+                  <p className="mb-2 text-xs font-medium">{kind === 'icon' ? 'Icons' : 'Emoji'}</p>
+                  <div className="grid grid-cols-8 gap-1">
+                    {projectIconChoices
+                      .filter((choice) => choice.kind === kind)
+                      .map((choice) => (
+                        <Button
+                          key={choice.id}
+                          size="icon"
+                          variant="ghost"
+                          className="size-8"
+                          aria-label={`${kind === 'icon' ? 'Icon' : 'Emoji'}: ${choice.label}`}
+                          disabled={busy || !connected}
+                          onClick={() => void save(choice.data)}
+                        >
+                          <img src={choice.data} alt="" className="size-7" />
+                        </Button>
+                      ))}
+                  </div>
+                </div>
+              ))}
+              {error && (
+                <p role="alert" className="mt-2 text-xs text-destructive">
+                  {error}
+                </p>
+              )}
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+        <label className="cursor-pointer rounded-md border px-2 py-1.5 text-xs hover:bg-accent">
+          Choose image
+          <input
+            type="file"
+            disabled={!connected || busy}
+            accept="image/png,image/jpeg,image/webp"
+            className="sr-only"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) void upload(file)
+              event.target.value = ''
+            }}
+          />
+        </label>
+        {!repository.iconOverride && repository.discoveredIcon && sharedProjectKey(repository) && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!connected || busy}
+            onClick={() => void save(repository.discoveredIcon)}
+          >
+            Share detected icon
+          </Button>
+        )}
+        {repository.iconOverride && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!connected || busy}
+            onClick={() => void save(undefined)}
+          >
+            Reset
+          </Button>
         )}
       </div>
-      <Popover.Root open={picker} onOpenChange={setPicker}>
-        <Popover.Trigger asChild>
-          <Button size="sm" variant="outline" disabled={!connected || busy}>
-            Icon or emoji
-          </Button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            align="end"
-            sideOffset={8}
-            aria-label="Choose project icon"
-            className="z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl border bg-popover p-3 shadow-lg"
-          >
-            {(['icon', 'emoji'] as const).map((kind) => (
-              <div key={kind} className="mb-3 last:mb-0">
-                <p className="mb-2 text-xs font-medium">{kind === 'icon' ? 'Icons' : 'Emoji'}</p>
-                <div className="grid grid-cols-8 gap-1">
-                  {projectIconChoices
-                    .filter((choice) => choice.kind === kind)
-                    .map((choice) => (
-                      <Button
-                        key={choice.id}
-                        size="icon"
-                        variant="ghost"
-                        className="size-8"
-                        aria-label={`${kind === 'icon' ? 'Icon' : 'Emoji'}: ${choice.label}`}
-                        disabled={busy || !connected}
-                        onClick={() => void save(choice.data)}
-                      >
-                        <img src={choice.data} alt="" className="size-7" />
-                      </Button>
-                    ))}
-                </div>
-              </div>
-            ))}
-            {error && (
-              <p role="alert" className="mt-2 text-xs text-destructive">
-                {error}
-              </p>
-            )}
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
-      <label className="cursor-pointer rounded-md border px-2 py-1.5 text-xs hover:bg-accent">
-        Choose image
-        <input
-          type="file"
-          disabled={!connected || busy}
-          accept="image/png,image/jpeg,image/webp"
-          className="sr-only"
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) void upload(file)
-            event.target.value = ''
-          }}
-        />
-      </label>
-      {repository.iconOverride && (
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!connected || busy}
-          onClick={() => void save(undefined)}
-        >
-          Reset
-        </Button>
-      )}
     </section>
   )
 }

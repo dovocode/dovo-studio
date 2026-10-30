@@ -34,6 +34,9 @@ export function stopOwnedChild(child: ChildProcess): Promise<void> {
         return true
       } catch (error) {
         if (error instanceof Error && 'code' in error && error.code === 'ESRCH') return false
+        // macOS reports EPERM for a group whose last process is being reaped.
+        // This is not proof of exit: keep observing until ESRCH or the deadline.
+        if (error instanceof Error && 'code' in error && error.code === 'EPERM') return true
         throw error
       }
     }
@@ -117,7 +120,14 @@ export function stopOwnedChild(child: ChildProcess): Promise<void> {
       try {
         process.kill(pid, kind)
       } catch (error) {
-        if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error
+        if (
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            (error.code === 'ESRCH' || error.code === 'EPERM')
+          )
+        )
+          throw error
       }
     }
     try {
@@ -127,9 +137,7 @@ export function stopOwnedChild(child: ChildProcess): Promise<void> {
         try {
           if (!alive()) finish()
         } catch (error) {
-          // macOS may report EPERM while a killed group is being reaped. Keep
-          // waiting for ESRCH; the deadline still rejects an unconfirmed exit.
-          if (!(error instanceof Error && 'code' in error && error.code === 'EPERM')) finish(error)
+          finish(error)
         }
       }, 25)
       escalation = setTimeout(() => {

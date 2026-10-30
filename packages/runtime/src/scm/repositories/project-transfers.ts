@@ -1,6 +1,7 @@
 import {
   PROJECT_TRANSFER_MANIFEST_BYTES,
   createRuntimeClient,
+  isPeerAddress,
   decode,
   mutableStruct,
   projectTransferActive,
@@ -192,11 +193,15 @@ export class ProjectTransfers {
       .map((value) => value.job)
       .sort((a, b) => a.updatedAt - b.updatedAt)
   }
-  targets() {
+  targets(device?: string) {
     return this.services()
-      .retrievalPeers.list()
+      .retrievalPeers.list(false, device)
       .filter((peer) => peer.connection.runtimeId !== this.services().runtimeId)
-      .map((peer) => ({ id: peer.connection.runtimeId ?? peer.id, name: peer.name }))
+      .map((peer) => ({
+        id: peer.connection.runtimeId ?? peer.id,
+        name: peer.name,
+        directSupported: !isPeerAddress(peer.connection.address),
+      }))
   }
   async inspect(repositoryId: string, worktreePath?: string) {
     const source = await inspectTransfer(this.services(), repositoryId, undefined, worktreePath)
@@ -211,14 +216,23 @@ export class ProjectTransfers {
   destination(project: typeof projectTransferProjectSchema.Type) {
     return transferDestinations(this.services(), project)
   }
-  async plan(input: typeof projectTransferPlanInputSchema.Type, authorize: () => void) {
+  async plan(
+    input: typeof projectTransferPlanInputSchema.Type,
+    authorize: () => void,
+    device?: string,
+  ) {
     await this.ready
     const s = this.services()
     const peer = s.retrievalPeers
-      .list()
+      .list(false, device)
       .find((peer) => peer.connection.runtimeId === input.targetId)
     if (!peer || input.targetId === s.runtimeId)
       throw new HttpError(409, 'Reconnect the destination computer and try again')
+    if (!input.ssh && isPeerAddress(peer.connection.address))
+      throw new HttpError(
+        409,
+        'This destination requires an SSH tunnel or a LAN/VPN pairing for project copies.',
+      )
     const project = await transferProject(s, input.repositoryId)
     let tunnel: Awaited<ReturnType<typeof openTunnel>> | undefined
     try {
@@ -233,8 +247,13 @@ export class ProjectTransfers {
         })
       const client = createRuntimeClient(
         tunnel
-          ? { ...peer.connection, address: tunnel.address, alternateAddresses: [] }
-          : peer.connection,
+          ? {
+              ...peer.connection,
+              address: tunnel.address,
+              alternateAddresses: [],
+              internet: undefined,
+            }
+          : { ...peer.connection, internet: undefined },
       )
       const options = { method: 'POST' as const, ...(input.ssh ? { route: 'http' as const } : {}) }
       const status = await client.request(
@@ -282,10 +301,15 @@ export class ProjectTransfers {
       return existing.job
     if (this.outgoing.size) throw new HttpError(409, 'Wait for the current project copy to finish')
     const peer = s.retrievalPeers
-      .list()
+      .list(false, device)
       .find((peer) => (peer.connection.runtimeId ?? peer.id) === input.targetId)
     if (!peer?.connection.runtimeId || peer.connection.runtimeId === s.runtimeId)
       throw new HttpError(409, 'Reconnect the destination computer and try again')
+    if (!input.ssh && isPeerAddress(peer.connection.address))
+      throw new HttpError(
+        409,
+        'This destination requires an SSH tunnel or a LAN/VPN pairing for project copies.',
+      )
     if (
       !s.store
         .get()
@@ -313,12 +337,12 @@ export class ProjectTransfers {
         s.db.prepare('DELETE FROM project_transfers WHERE id=?').run(id)
       }
     const controller = new AbortController()
-    const pending = this.send(input, peer.connection, controller.signal, () => {
+    const pending = this.send(input, peer.connection, controller.signal, Boolean(existing), () => {
       authorize()
       const current = s.retrievalPeers
-        .list()
+        .list(false, device)
         .find((peer) => peer.connection.runtimeId === input.targetId)
-      if (!current || current.connection.token !== peer.connection.token)
+      if (!current || JSON.stringify(current.connection) !== JSON.stringify(peer.connection))
         throw new HttpError(403, 'Pairing changed during the copy. Reconnect and try again.')
     })
       // Publish terminal state only after cleanup has released the copy lock.
@@ -343,10 +367,12 @@ export class ProjectTransfers {
     input: ProjectTransferStart,
     peer: RuntimeConnection,
     signal: AbortSignal,
+    retrying: boolean,
     authorize: () => void,
   ) {
     let tunnel: Awaited<ReturnType<typeof openTunnel>> | undefined
-    let connection = peer
+    // The runtime cannot initiate native WebRTC; keep this copy on its chosen HTTP route.
+    let connection = { ...peer, internet: undefined }
     const s = this.services(),
       folder = join(this.root, `out-${input.id}`)
     const call = <T extends Schema.Codec<unknown, unknown>>(
@@ -388,7 +414,12 @@ export class ProjectTransfers {
           runtimeAddress: `http://127.0.0.1:${input.ssh.runtimePort}`,
           agentAccess: false,
         })
-        connection = { ...peer, address: tunnel.address, alternateAddresses: [] }
+        connection = {
+          ...peer,
+          address: tunnel.address,
+          alternateAddresses: [],
+          internet: undefined,
+        }
       }
       const status = await call('status', { id: input.id }, statusSchema)
       if ((input.worktreePath || input.thread) && !status.worktreesSupported)
@@ -398,6 +429,12 @@ export class ProjectTransfers {
         )
       if (status.result) {
         return complete(status.result)
+      }
+      if (retrying) {
+        // A prior attempt may have lost its cleanup response. Wait for any commit
+        // and reconcile its receipt before starting a new receiving session.
+        const discarded = await call('discard', { id: input.id }, discardSchema)
+        if (discarded.result) return complete(discarded.result)
       }
       if (input.worktreePath && !status.linkedWorktreesSupported)
         throw new HttpError(409, 'Update the destination computer to copy linked worktrees')

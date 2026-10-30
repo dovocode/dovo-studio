@@ -8,9 +8,11 @@ import {
   projectIconInitials,
   projectIconChoices,
   sharedProjectKey,
+  scopedSettingsResultSchema,
   type Repository,
 } from '@dovo/protocol'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Field } from '../../ui/controls/field'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
 import { SettingsAction as Action } from '../../screens/settings-controls'
@@ -24,11 +26,29 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
   const { call, refresh, connected } = useRuntime()
   const { busy, error, act } = useAction()
   const [picker, setPicker] = useState(false)
+  const [name, setName] = useState(repository.name)
+  useEffect(() => setName(repository.name), [repository.id, repository.name])
+  const saveName = (reset = false) =>
+    act(async () => {
+      const scope = { scope: 'project', repositoryId: repository.id }
+      const current = await call('/api/agents/settings/read', scope, scopedSettingsResultSchema)
+      await call(
+        '/api/agents/settings/save',
+        {
+          ...scope,
+          projectKey: sharedProjectKey(repository),
+          before: current.value,
+          after: { ...current.value, projectName: reset ? null : name.trim() },
+        },
+        scopedSettingsResultSchema,
+      )
+      await refresh()
+    })
   const save = (data?: string) =>
     act(async () => {
       await call(
         '/api/scm/repositories/icon',
-        { repositoryId: repository.id, data },
+        { repositoryId: repository.id, expectedGitIdentity: repository.gitIdentity, data },
         Schema.Struct({ ok: Schema.Literal(true) }),
       )
       await refresh()
@@ -45,7 +65,11 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
       if (file.size > 2 * 1024 * 1024) throw new Error('Choose an image smaller than 2 MB.')
       await call(
         '/api/scm/repositories/icon',
-        { repositoryId: repository.id, data: await file.base64() },
+        {
+          repositoryId: repository.id,
+          expectedGitIdentity: repository.gitIdentity,
+          data: await file.base64(),
+        },
         Schema.Struct({ ok: Schema.Literal(true) }),
       )
       await refresh()
@@ -53,6 +77,36 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
   const icon = projectIcon(repository)
   return (
     <View style={{ gap: 8 }}>
+      {sharedProjectKey(repository) && (
+        <View style={{ gap: 8 }}>
+          <Field
+            label="Shared project name"
+            value={name}
+            maxLength={200}
+            onChangeText={setName}
+            editable={connected && !busy}
+          />
+          <Text style={styles.muted}>
+            Shared across paired computers with the same Git remote. Local checkout:{' '}
+            {repository.localName ?? repository.name}.
+          </Text>
+          <View style={styles.row}>
+            <Action
+              label="Save name"
+              disabled={!connected || busy || !name.trim()}
+              onPress={() => saveName()}
+            />
+            {repository.sharedName && (
+              <Action
+                secondary
+                label="Use local name"
+                disabled={!connected || busy}
+                onPress={() => saveName(true)}
+              />
+            )}
+          </View>
+        </View>
+      )}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         {icon ? (
           <Image source={{ uri: icon }} style={{ width: 32, height: 32, borderRadius: 7 }} />
@@ -81,6 +135,14 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
       </Text>
       <View style={styles.row}>
         <Action secondary label="Choose image" disabled={!connected || busy} onPress={choose} />
+        {!repository.iconOverride && repository.discoveredIcon && sharedProjectKey(repository) && (
+          <Action
+            secondary
+            label="Share detected icon"
+            disabled={!connected || busy}
+            onPress={() => save(repository.discoveredIcon?.split(',')[1])}
+          />
+        )}
         <Action
           secondary
           label="Icon or emoji"

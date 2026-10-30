@@ -78,7 +78,7 @@ const request=async(path,input)=>{window.calls.push({path,input});
 if(path==='/api/scm/worktrees/read')return {root:'/worktrees',worktrees:window.missingWorktree?[]:[{path:'/worktrees/feature',repositoryId:'project',branch:'feature',taskId:'owner',threadIds:['owner','reused'],prunable:false}]};
 if(path.endsWith('/choices'))return {worktrees:[{path:'/worktrees/feature',branch:'feature',dirty:true}]};
 if(path.endsWith('/plan')){if(window.planError)throw new Error('Update the destination computer to copy linked worktrees');return {repositories:window.noDestinationProject?[]:[{id:'destination-project',name:'Existing project',path:'/projects/main'}],worktreesRoot:'/custom/worktrees'};}
-if(path.endsWith('/targets'))return [{id:'machine-b',name:'Desktop'}];
+if(path.endsWith('/targets'))return [{id:'machine-b',name:'Desktop',directSupported:!window.internetOnly}];
 if(path.endsWith('/inspect')){if(window.failInspect)throw new Error('Inspection failed');return {files:3,bytes:1500,skippedLinks:1,ignoredFilesTruncated:window.truncated,ignoredFiles:[{path:'.env.local',bytes:12},{path:'private.key',bytes:7}]};}
 if(path.endsWith('/start')){if(window.fail)throw new Error('Destination is offline');current={...input,targetName:'Desktop',state:'copying',transport:input.ssh?'ssh':'p2p',bytes:100,totalBytes:1000,updatedAt:Date.now()};setJob(current);return current}
 if(path.endsWith('/retry')){window.setJob({state:'preparing',error:undefined});return {...current,state:'preparing'}}
@@ -148,6 +148,30 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     )
     assert.equal(await page.getByLabel('Destination computer').inputValue(), 'machine-b')
     assert.equal(await page.getByLabel('Project copy connection').inputValue(), 'p2p')
+    await page.evaluate(() => {
+      window.internetOnly = true
+    })
+    await page
+      .getByRole('button', { name: mobile ? 'Refresh copy options' : 'Refresh', exact: true })
+      .click()
+    await page
+      .getByText('This destination requires an SSH tunnel or a LAN/VPN pairing for project copies.')
+      .waitFor()
+    assert.equal(await copy.isDisabled(), true)
+    await page.getByLabel('Project copy connection').selectOption('ssh')
+    assert.equal(await copy.isDisabled(), false)
+    await page.evaluate(() => {
+      window.internetOnly = false
+    })
+    await page
+      .getByRole('button', { name: mobile ? 'Refresh copy options' : 'Refresh', exact: true })
+      .click()
+    await page.getByLabel('Project copy connection').selectOption('p2p')
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('button')].some(
+        (button) => button.textContent === 'Copy project' && !button.disabled,
+      ),
+    )
     if (mobile)
       await page.getByRole('button', { name: 'Ignored or private files (0 selected)' }).click()
     else await page.locator('summary').click()

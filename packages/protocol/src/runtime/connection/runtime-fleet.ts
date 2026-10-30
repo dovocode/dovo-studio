@@ -55,6 +55,7 @@ export type PairingProof = Schema.Schema.Type<typeof pairingProofSchema>
 export const pendingRuntimePairingSchema = mutableStruct({
   profile: profileSchema,
   proof: pairingProofSchema,
+  claimAddress: Schema.optional(connectionSchema.fields.address),
   previousConnection: Schema.optional(Schema.NullOr(connectionSchema)),
 })
 export type PendingRuntimePairing = Schema.Schema.Type<typeof pendingRuntimePairingSchema>

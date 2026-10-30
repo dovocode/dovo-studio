@@ -3,6 +3,8 @@ import { opencodeNative } from './opencode-native.js'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
+import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 import { mcpServerEnvironment, mcpHeaders } from '../../configuration/mcp-settings.js'
 import { isImageAttachment } from '@dovo/protocol'
 import { Schema } from 'effect'
@@ -94,6 +96,8 @@ const remoteAdapter: AgentAdapter = {
     const api = lease.value
     const registered: string[] = []
     let ephemeralSessionId: string | undefined
+    let interruption: Promise<void> | undefined
+    let removeAbortListener: (() => void) | undefined
     try {
       const namespace = `dovo_${createHash('sha256')
         // Attempt bindings change each turn; reuse the same managed MCP registration name.
@@ -245,8 +249,9 @@ const remoteAdapter: AgentAdapter = {
       const eventsController = new AbortController()
       const abort = () => {
         eventsController.abort()
-        void api.session
-          .abort(
+        if (interruption) return
+        interruption = (async () => {
+          const stopped = await api.session.abort(
             {
               sessionID,
               directory: run.cwd,
@@ -256,11 +261,26 @@ const remoteAdapter: AgentAdapter = {
               signal: AbortSignal.timeout(5000),
             },
           )
-          .catch((error) => run.onActivity(`Could not interrupt OpenCode: ${String(error)}`))
+          if (!stopped.data) throw new Error('OpenCode did not accept the interruption')
+          // Aborting the HTTP prompt does not prove that the server-side worker stopped.
+          const signal = AbortSignal.timeout(5000)
+          while (true) {
+            const states = await api.session.status(
+              { directory: run.cwd },
+              { throwOnError: true, signal },
+            )
+            const state = states.data[sessionID]
+            if (!state || state.type === 'idle') return
+            await delay(100, undefined, { signal })
+          }
+        })()
+        // The outer finalizer owns this rejection, including event subscription failures.
+        void interruption.catch(() => undefined)
       }
       run.signal.addEventListener('abort', abort, {
         once: true,
       })
+      removeAbortListener = () => run.signal.removeEventListener('abort', abort)
       if (run.signal.aborted) abort()
       const native = opencodeNative(
         run,
@@ -530,7 +550,7 @@ const remoteAdapter: AgentAdapter = {
         throw error
       } finally {
         try {
-          await native.close(!succeeded)
+          await native.close(!succeeded, () => interruption)
         } finally {
           eventsController.abort()
         }
@@ -540,33 +560,49 @@ const remoteAdapter: AgentAdapter = {
         })
       }
     } finally {
-      try {
-        const results = await Promise.allSettled(
-          registered.map((name) =>
-            api.mcp.disconnect(
-              {
-                name,
-                directory: run.cwd,
-              },
-              {
-                throwOnError: true,
-                signal: AbortSignal.timeout(5000),
-              },
+      const finalize = async () => {
+        let shutdownError: OwnedProcessShutdownError | undefined
+        removeAbortListener?.()
+        if (interruption)
+          await interruption.catch((cause: unknown) => {
+            shutdownError = new OwnedProcessShutdownError(
+              'OpenCode shutdown was not confirmed. Review its session before continuing.',
+              { cause },
+            )
+          })
+        try {
+          const results = await Promise.allSettled(
+            registered.map((name) =>
+              api.mcp.disconnect(
+                {
+                  name,
+                  directory: run.cwd,
+                },
+                {
+                  throwOnError: true,
+                  signal: AbortSignal.timeout(5000),
+                },
+              ),
             ),
-          ),
-        )
-        results.forEach((result, index) => {
-          if (result.status === 'rejected')
-            run.onActivity(`Could not disconnect managed MCP server ${registered[index]}`)
-        })
-        if (ephemeralSessionId)
-          await api.session.delete(
-            { sessionID: ephemeralSessionId, directory: run.cwd },
-            { signal: AbortSignal.timeout(5000), throwOnError: true },
           )
-      } finally {
-        lease.release()
+          results.forEach((result, index) => {
+            if (result.status === 'rejected')
+              run.onActivity(`Could not disconnect managed MCP server ${registered[index]}`)
+          })
+          if (ephemeralSessionId && !shutdownError)
+            await api.session.delete(
+              { sessionID: ephemeralSessionId, directory: run.cwd },
+              { signal: AbortSignal.timeout(5000), throwOnError: true },
+            )
+        } catch (error) {
+          // Preserve the error that keeps checkout ownership when cleanup also fails.
+          if (!shutdownError) throw error
+        } finally {
+          lease.release()
+        }
+        if (shutdownError) throw shutdownError
       }
+      await finalize()
     }
   },
 }

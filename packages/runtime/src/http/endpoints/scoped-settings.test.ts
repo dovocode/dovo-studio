@@ -16,6 +16,7 @@ import {
   scopedSettingsResultSchema,
   type SettingsScope,
   type ScopedSettingsValue,
+  updateSharedSettingsEntry,
 } from '@dovo/protocol'
 
 async function fixture() {
@@ -72,6 +73,82 @@ async function fixture() {
     },
   }
 }
+
+it('syncs independently edited names and defaults across clones and retains local checkout labels', async () => {
+  const a = await fixture(),
+    b = await fixture()
+  try {
+    await a.read('project')
+    await b.read('project')
+    b.runtime.services.store.update((workspace) => ({
+      ...workspace,
+      repositories: workspace.repositories.map((repo) => ({ ...repo, name: 'app' })),
+    }))
+    expect((await a.save('project', { projectName: 'Customer Portal' })).status).toBe(200)
+    expect(
+      (await b.save('project', { taskDefaults: { setupCommand: 'pnpm install' } })).status,
+    ).toBe(200)
+    const aShared = a.runtime.services.defaults.get().scopedSettings!.shared
+    const bShared = b.runtime.services.defaults.get().scopedSettings!.shared
+    expect((await a.call('settings/sync', { shared: bShared })).status).toBe(200)
+    expect((await b.call('settings/sync', { shared: aShared })).status).toBe(200)
+    for (const [f, local] of [
+      [a, 'Project'],
+      [b, 'app'],
+    ] as const) {
+      expect((await f.read('project')).value).toMatchObject({
+        projectName: 'Customer Portal',
+        taskDefaults: { setupCommand: 'pnpm install' },
+      })
+      const snapshot = await Effect.runPromise(
+        runtimeSnapshot(f.runtime.services, { id: 'owner', owner: true }),
+      )
+      expect(snapshot.workspace.repositories.find((repo) => repo.id === 'project')).toMatchObject({
+        name: 'Customer Portal',
+        localName: local,
+      })
+      expect(f.runtime.services.store.get().repositories[0].name).toBe(local)
+    }
+    expect(
+      (await a.save('project', { ...(await a.read('project')).value, projectName: null })).status,
+    ).toBe(200)
+    expect(
+      (
+        await b.call('settings/sync', {
+          shared: a.runtime.services.defaults.get().scopedSettings!.shared,
+        })
+      ).status,
+    ).toBe(200)
+    const reset = await Effect.runPromise(
+      runtimeSnapshot(b.runtime.services, { id: 'owner', owner: true }),
+    )
+    expect(reset.workspace.repositories.find((repo) => repo.id === 'project')?.name).toBe('app')
+  } finally {
+    await a.close()
+    await b.close()
+  }
+})
+
+it('rejects stale icon saves after the project remote changes', async () => {
+  const f = await fixture()
+  try {
+    await f.read('project')
+    await f.runtime.services.git.command(f.directory, [
+      'remote',
+      'set-url',
+      'origin',
+      'https://github.com/team/different.git',
+    ])
+    const response = await f.icon({
+      repositoryId: 'project',
+      expectedGitIdentity: 'github.com/team/project',
+    })
+    expect(response.status).toBe(409)
+    expect(f.runtime.services.defaults.get().scopedSettings?.shared).toBeUndefined()
+  } finally {
+    await f.close()
+  }
+})
 
 it('exposes built-in profiles before setup, saves only overrides and keeps existing task launches intact', async () => {
   const f = await fixture()
@@ -726,12 +803,14 @@ it('persists, syncs and clears the default server without replacing other projec
     expect(
       (
         await f.call('settings/sync', {
-          shared: shared.map((entry) => ({
-            ...entry,
-            updatedAt: entry.updatedAt + 1,
-            changeId: 'reset',
-            value: { ...entry.value, taskDefaults: { setupCommand: 'pnpm install' } },
-          })),
+          shared: shared.map((entry) =>
+            updateSharedSettingsEntry(
+              entry.key,
+              entry,
+              { ...entry.value, taskDefaults: { setupCommand: 'pnpm install' } },
+              { updatedAt: entry.updatedAt + 1, changeId: 'reset' },
+            ),
+          ),
         })
       ).status,
     ).toBe(200)

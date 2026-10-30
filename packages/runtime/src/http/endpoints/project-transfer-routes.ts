@@ -34,7 +34,7 @@ export function projectTransferRoute(
       )
       switch (path.slice('/api/scm/project-transfer/'.length)) {
         case 'targets':
-          return transfers.targets()
+          return transfers.targets(device)
         case 'inspect': {
           const source = decode(projectTransferSourceSchema, input)
           return yield* serviceResult(transfers.inspect(source.repositoryId, source.worktreePath))
@@ -45,9 +45,13 @@ export function projectTransferRoute(
           })
         case 'plan':
           return yield* serviceResult(
-            transfers.plan(decode(projectTransferPlanInputSchema, input), () => {
-              s.devices.authenticate(token)
-            }),
+            transfers.plan(
+              decode(projectTransferPlanInputSchema, input),
+              () => {
+                s.devices.authenticate(token)
+              },
+              device,
+            ),
           )
         case 'destination':
           return yield* serviceResult(

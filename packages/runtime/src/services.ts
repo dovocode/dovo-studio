@@ -158,6 +158,16 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
       (connectionId, remote, cwd) => forges.gitAuthorization(connectionId, remote, cwd),
       (cwd) => pulls.githubEnvironment(cwd),
       (common, directory) => store.rememberWorktree(common, directory),
+      (identity) => {
+        const host = identity.split('/')[0]
+        const connections = forges
+          .list()
+          .filter((connection) => new URL(connection.baseUrl).host.toLowerCase() === host)
+        return connections.length &&
+          connections.every((connection) => connection.provider === 'github')
+          ? 'github'
+          : undefined
+      },
     ),
     pulls: ForgePullRequests = new ForgePullRequests(git, forges, store),
     terminals = new Terminals(
@@ -308,7 +318,8 @@ export function createServices(db: Database.Database, ownerToken: string): Servi
   forgeWork.retrieval = retrieval
   retrieval.onInvalidate = () => {
     forgeWork.invalidateShared()
-    for (const repo of store.get().repositories) pullCache.invalidate(repo.path)
+    // Include bound URLs and worktrees which may no longer have a workspace row.
+    pullCache.invalidateAll()
   }
   const pipelineWatch = new PipelineWatch(db, {
     pulls,

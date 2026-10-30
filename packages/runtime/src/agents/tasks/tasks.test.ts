@@ -2178,6 +2178,23 @@ it.each(['accept', 'reject'] as const)(
     expect(
       s.store.task(task.id).messages.filter((message) => message.text === 'New direction'),
     ).toHaveLength(0)
+    const before = s.store.task(task.id)
+    const blocked = [
+      () => s.tasks.queue.edit(task.id, 'queued-input', 'Edited direction', 'New direction'),
+      () => s.tasks.queue.change(task.id, 'remove', 'queued-input'),
+      () => s.tasks.queue.change(task.id, 'restore', 'queued-input'),
+      () =>
+        s.tasks.queue.restore(task.id, {
+          requestId: 'restore-during-steering',
+          messageId: 'queued-input',
+          expectedText: 'New direction',
+          expectedTurnSettings: null,
+          expectedDraftTurnSettings: null,
+          expectedAttachmentIds: [],
+        }),
+    ]
+    for (const action of blocked) expect(action).toThrow('being delivered')
+    expect(s.store.task(task.id)).toEqual(before)
     // A lost HTTP response retried during acknowledgement must not reinject the message.
     await runClientEffect(s.tasks.steerQueuedEffect(task.id, 'queued-input', runId))
     acknowledge()
@@ -2858,4 +2875,193 @@ it('keeps manual compaction available for an exhausted session after accepted in
     await s.tasks.start(task.id)
   ).done
   expect(runs[2]).toMatchObject({ compact: true, prompt: '/compact', sessionId: 'full-session' })
+})
+
+it('aborts Stop and completes checkpoint cleanup even when its durable interrupt write fails', async () => {
+  const s = await setup()
+  let provider: AgentRun | undefined
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      provider = run
+      await run.approve('Wait', 'Cancellation persistence failure')
+      run.signal.throwIfAborted()
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Stop storage failure',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Wait',
+  })
+  const execution = await s.tasks.start(task.id)
+  await waitForTask(() => expect(s.approvals.list()).toHaveLength(1))
+  const cancelQuestions = vi.spyOn(s.questions, 'cancelTask')
+  vi.spyOn(s.store, 'updateTask').mockImplementationOnce(() => {
+    throw new Error('interrupt disk failure')
+  })
+  expect(() => s.tasks.cancel(task.id)).toThrow('Could not persist all task cancellation state')
+  expect(provider?.signal.aborted).toBe(true)
+  expect(cancelQuestions).toHaveBeenCalledWith(task.id)
+  await expect(execution.done).rejects.toThrow('Cancelled by user')
+  expect(s.approvals.list()).toHaveLength(0)
+  expect(s.store.task(task.id).turns?.at(-1)?.checkpoint?.after).toBeTruthy()
+})
+
+it('aborts and drains every worker before reporting a shutdown persistence failure', async () => {
+  const s = await setup()
+  const providers: AgentRun[] = []
+  let release = () => {}
+  const cleanup = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      providers.push(run)
+      await run.approve('Wait', 'Shutdown persistence failure')
+      await cleanup
+      run.signal.throwIfAborted()
+    },
+  })
+  const executions = []
+  for (const title of ['First', 'Second']) {
+    const task = s.tasks.create({
+      title,
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Wait',
+      execution: 'worktree',
+    })
+    executions.push(await s.tasks.start(task.id))
+  }
+  await waitForTask(() => expect(providers).toHaveLength(2))
+  vi.spyOn(s.store, 'updateTask').mockImplementationOnce(() => {
+    throw new Error('restart marker disk failure')
+  })
+  let settled = false
+  const closing = s.tasks.dispose().finally(() => {
+    settled = true
+  })
+  const result = closing.catch((error: unknown) => error)
+  try {
+    await waitForTask(() => expect(providers.every((run) => run.signal.aborted)).toBe(true))
+    expect(settled).toBe(false)
+  } finally {
+    release()
+  }
+  expect(await result).toMatchObject({
+    message: expect.stringContaining('restart marker disk failure'),
+  })
+  await Promise.all(
+    executions.map(({ done }) => expect(done).rejects.toThrow('Runtime shutting down')),
+  )
+  expect(s.approvals.list()).toHaveLength(0)
+})
+
+it('recovers unrelated checkouts while an approval retains the first checkout reservation', async () => {
+  const s = await setup()
+  const other = await fixture()
+  cleanups.push(other.cleanup)
+  s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [...workspace.repositories, { ...other.workspace.repositories[0], id: 'other' }],
+  }))
+  const tasks = ['repo', 'other', 'repo'].map((repositoryId, index) =>
+    s.tasks.create({
+      title: `Recovery ${index}`,
+      repositoryId,
+      agentId: 'agent',
+      objective: 'Continue',
+    }),
+  )
+  for (const task of tasks)
+    s.store.updateTask(task.id, (current) => ({
+      ...current,
+      status: 'failed',
+      restartRecovery: { kind: 'turn', automatic: true },
+    }))
+  const invoked: string[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      invoked.push(run.taskId!)
+      if (run.taskId === tasks[0].id) {
+        await run.approve('Wait', 'Recovery approval')
+        run.signal.throwIfAborted()
+      }
+      run.onText('Recovered')
+    },
+  })
+  s.tasks.continueAfterRestart(() => true)
+  await waitForTask(() => {
+    expect(s.approvals.list().some((item) => item.taskId === tasks[0].id)).toBe(true)
+    expect(s.store.task(tasks[1].id).status).toBe('review')
+    expect(s.store.task(tasks[2].id)).toMatchObject({
+      status: 'failed',
+      queuePaused: true,
+      restartRecovery: { kind: 'turn', automatic: false },
+      error: expect.stringContaining('Another task is running'),
+    })
+  })
+  expect(invoked).toEqual(expect.arrayContaining([tasks[0].id, tasks[1].id]))
+  expect(invoked).not.toContain(tasks[2].id)
+  s.tasks.cancel(tasks[0].id)
+})
+
+it('drains delayed scheduler discovery and stops admitting the remaining scheduled messages', async () => {
+  const { Effect } = await import('effect')
+  const { ModelSelection } = await import('./model-selection')
+  const s = await setup()
+  const task = s.tasks.create({
+    title: 'Delayed scheduled discovery',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Wait',
+  })
+  s.store.updateTask(task.id, (current) => ({
+    ...current,
+    scheduledMessages: ['first', 'second'].map((id) => ({
+      id,
+      text: id,
+      at: new Date(0).toISOString(),
+    })),
+  }))
+  let entered = false,
+    release = () => {}
+  const discovered = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  vi.spyOn(ModelSelection.prototype, 'resolveEffect').mockImplementation((id) =>
+    Effect.promise(async () => {
+      entered = true
+      await discovered
+      s.store.updateTask(id, (current) => ({ ...current, draft: 'discovery finished' }))
+    }),
+  )
+  const run = vi.fn<AgentAdapter['run']>(async () => {})
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const scheduled = s.tasks.runScheduled()
+  await waitForTask(() => expect(entered).toBe(true))
+  let closed = false
+  const closing = s.tasks.dispose().then(() => {
+    closed = true
+  })
+  try {
+    // An executor handoff gives an incorrectly untracked tick time to escape shutdown.
+    await Effect.runPromise(Effect.yieldNow)
+    await Effect.runPromise(Effect.yieldNow)
+    expect(closed).toBe(false)
+  } finally {
+    release()
+  }
+  await Promise.all([closing, scheduled])
+  expect(s.store.task(task.id)).toMatchObject({
+    draft: 'discovery finished',
+    queue: [{ id: 'first' }],
+    scheduledMessages: [{ id: 'second' }],
+  })
+  expect(run).not.toHaveBeenCalled()
+  await s.tasks.runScheduled()
+  expect(s.store.task(task.id).scheduledMessages).toHaveLength(1)
 })

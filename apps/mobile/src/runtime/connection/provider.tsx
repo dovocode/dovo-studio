@@ -751,7 +751,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     })
   }, [profile, refreshProfileEffect])
   const connectEffect = useCallback(
-    (value: RuntimeConnection, name?: string, proof?: PairingProof, replaceId?: string) => {
+    (
+      value: RuntimeConnection,
+      name?: string,
+      proof?: PairingProof,
+      replaceId?: string,
+      claimAddress?: string,
+    ) => {
       return mobileWorkflow(function* () {
         if (!registryWritable.current)
           return yield* Effect.fail(
@@ -799,7 +805,11 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             Effect.suspend(() =>
               saveRuntimePairing(
                 current.current,
-                { profile: next, proof },
+                {
+                  profile: next,
+                  proof,
+                  ...(claimAddress ? { claimAddress: new URL(claimAddress).origin } : {}),
+                },
                 persistRegistryEffect,
                 beforeReplace,
               ),

@@ -330,3 +330,94 @@ it('combines paged window limits and restores complete summaries for a full-list
   await vi.advanceTimersByTimeAsync(1500)
   expect(f.read.mock.calls.at(-1)?.[1]).toContain('settled=50')
 })
+
+it('delivers an unchanged resumed baseline to a window opened during an outage', async () => {
+  const f = fixture(),
+    popout: DesktopSyncEvent[] = []
+  f.manager.subscribe('main', f.input('main'), () => {})
+  await vi.advanceTimersByTimeAsync(0)
+  const stream = f.options.get('http://paired.lan:8787')!
+  const baseline = f.snapshot(['thread'])
+  stream.onSnapshot(baseline)
+  stream.onStatus?.('reconnecting')
+  f.read.mockRejectedValue(new Error('Offline'))
+  f.manager.subscribe('popout', f.input('popout'), (event) => popout.push(event))
+  expect(popout.some((event) => event.type === 'snapshot')).toBe(false)
+  f.online.add('http://paired.lan:8787')
+  stream.onStatus?.('live')
+  stream.onSnapshot(baseline)
+  expect(popout.filter((event) => event.type === 'snapshot')).toHaveLength(1)
+  stream.onSnapshot(baseline)
+  expect(popout.filter((event) => event.type === 'snapshot')).toHaveLength(1)
+})
+
+it('reconciles route metadata on the connection retained by the shared stream and poller', async () => {
+  const f = fixture()
+  const initial = f.input('main')
+  initial.connection.runtimeId = 'runtime-one'
+  initial.connection.alternateAddresses = ['http://old.lan']
+  f.manager.subscribe('main', initial, () => {})
+  const retained = f.start.mock.calls[0]![0]
+  const next = {
+    ...initial,
+    connection: {
+      ...initial.connection,
+      alternateAddresses: ['http://vpn.lan'],
+      accountSession: 'new-session',
+    },
+  }
+  f.manager.subscribe('main', next, () => {})
+  expect(retained.alternateAddresses).toEqual(['http://vpn.lan'])
+  expect(retained.accountSession).toBe('new-session')
+  expect(f.start).toHaveBeenCalledOnce()
+  await vi.advanceTimersByTimeAsync(1100)
+  expect(f.read.mock.calls.at(-1)?.[0].alternateAddresses).toEqual(['http://vpn.lan'])
+})
+
+it('does not replace newer route metadata with an unchanged subscription update from another window', () => {
+  const f = fixture()
+  const main = f.input('main')
+  const popout = f.input('popout')
+  f.manager.subscribe('main', main, () => {})
+  f.manager.subscribe('popout', popout, () => {})
+  f.manager.subscribe(
+    'main',
+    {
+      ...main,
+      connection: {
+        ...main.connection,
+        runtimeId: 'new-runtime',
+        alternateAddresses: ['http://new-route.lan'],
+      },
+    },
+    () => {},
+  )
+  f.manager.subscribe('popout', { ...popout, tasks: ['another-thread'] }, () => {})
+  expect(f.start.mock.calls[0]![0]).toMatchObject({
+    runtimeId: 'new-runtime',
+    alternateAddresses: ['http://new-route.lan'],
+  })
+})
+
+it('does not revert current metadata when a new window subscribes with an older connection', () => {
+  const f = fixture()
+  const main = f.input('main')
+  f.manager.subscribe('main', main, () => {})
+  f.manager.subscribe(
+    'main',
+    {
+      ...main,
+      connection: {
+        ...main.connection,
+        runtimeId: 'runtime-new',
+        alternateAddresses: ['http://current.vpn'],
+      },
+    },
+    () => {},
+  )
+  f.manager.subscribe('popout', f.input('popout'), () => {})
+  expect(f.start.mock.calls[0]![0]).toMatchObject({
+    runtimeId: 'runtime-new',
+    alternateAddresses: ['http://current.vpn'],
+  })
+})

@@ -1,4 +1,5 @@
 import { PairingField } from './pairing-field'
+import { finalizePairing } from './pair-finalization'
 import { PairingScanner } from './pairing-scanner'
 import { PeerRelayChoice } from './peer-relay-choice'
 import { preparePeerConnection, forgetPeerConnection } from './peer-transport'
@@ -67,6 +68,12 @@ export function PairComputer({
   }, [busy, pending, finishing, onBusyChange])
   const [scanning, setScanning] = useApplicationState(false)
   const pairingPhase = useRef<'waiting' | 'cancelled' | 'saving'>('waiting')
+  const bootstrap = useRef<string | undefined>(undefined)
+  const forgetBootstrap = () => {
+    if (bootstrap.current) forgetPeerConnection(bootstrap.current)
+    bootstrap.current = undefined
+  }
+  useEffect(() => () => forgetBootstrap(), [])
   const connectRef = useRef(connect)
   connectRef.current = connect
   const paired = useRef(onPaired)
@@ -84,14 +91,14 @@ export function PairComputer({
     pairingPhase.current = 'waiting'
     let stopped = false
     const poll = mobileWorkflow(function* () {
-      if (AppState.currentState !== 'active') return
+      if (AppState.currentState !== 'active' || pairingPhase.current !== 'waiting') return
       if (Date.parse(pending.expiresAt) <= Date.now()) {
+        forgetBootstrap()
         setPending(null)
         return yield* Effect.fail(
           new Error('Pairing expired. Generate a new code on the computer.'),
         )
       }
-      if (pairingPhase.current !== 'waiting') return
       const result = yield* runtimeRequestEffect(
         null,
         address,
@@ -105,6 +112,7 @@ export function PairComputer({
       if (stopped || pairingPhase.current !== 'waiting') return
       setPairError('')
       if (result.status === 'denied') {
+        forgetBootstrap()
         setPending(null)
         return yield* Effect.fail(new Error('The computer declined this device'))
       }
@@ -112,40 +120,53 @@ export function PairComputer({
         pairingPhase.current = 'saving'
         setFinishing(true)
         const token = result.token
-        // Replace the two-minute QR capability with a per-device capability, issued
-        // over the authenticated encrypted tunnel and revoked with this pairing.
-        const enabled = peer
-          ? yield* createRuntimeClient({ address, token, peer }).requestEffect(
-              '/api/runtime/peer/enable',
-              {},
-              peerConfigSchema,
+        yield* finalizePairing(
+          mobileWorkflow(function* () {
+            // The bootstrap capability is replaced only after approval.
+            const enabled = peer
+              ? yield* createRuntimeClient({ address, token, peer }).requestEffect(
+                  '/api/runtime/peer/enable',
+                  {},
+                  peerConfigSchema,
+                )
+              : undefined
+            const permanent = enabled
+              ? { ...enabled, ...(peer?.relay ? { relay: peer.relay } : {}) }
+              : undefined
+            if (permanent) preparePeerConnection(permanent)
+            yield* nativeEffect(() =>
+              connectRef.current(
+                {
+                  address: permanent ? peerAddress(permanent) : address,
+                  token,
+                  ...(permanent ? { peer: permanent } : {}),
+                },
+                computerName.trim() || undefined,
+                pending,
+                replaceId,
+                address,
+              ),
             )
-          : undefined
-        const permanent = enabled
-          ? { ...enabled, ...(peer?.relay ? { relay: peer.relay } : {}) }
-          : undefined
-        if (permanent) preparePeerConnection(permanent)
-        yield* Effect.tryPromise({
-          try: () =>
-            connectRef.current(
-              {
-                address: permanent ? peerAddress(permanent) : address,
-                token,
-                ...(permanent ? { peer: permanent } : {}),
-              },
-              computerName.trim() || undefined,
-              pending,
-              replaceId,
-            ),
-          catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-        }).pipe(Effect.uninterruptible)
-        if (peer) forgetPeerConnection(address)
-        pairingPhase.current = 'waiting'
-        if (!stopped) {
-          setFinishing(false)
-          setPending(null)
-          paired.current?.()
-        }
+            forgetBootstrap()
+            pairingPhase.current = 'waiting'
+            if (!stopped) {
+              setFinishing(false)
+              setPending(null)
+              paired.current?.()
+            }
+          }),
+          (error) => {
+            // The enable or save may have reached the computer. Require an explicit
+            // cancellation/new pairing rather than replaying an uncertain mutation.
+            pairingPhase.current = 'cancelled'
+            if (!stopped) {
+              setFinishing(false)
+              setPairError(
+                `Could not finish pairing: ${error.message} Check your saved computers before cancelling or trying a new code.`,
+              )
+            }
+          },
+        )
       }
     })
     const start = () =>
@@ -179,7 +200,7 @@ export function PairComputer({
         Keyboard.dismiss()
         setPairError('')
         const target = pairingAddress(address)
-        if (peer) preparePeerConnection(peer)
+        if (peer) bootstrap.current = preparePeerConnection(peer)
         setAddress(target)
         setPending(
           yield* nativeEffect(() =>
@@ -194,7 +215,7 @@ export function PairComputer({
               },
               responses.pairRequest,
             ),
-          ),
+          ).pipe(Effect.tapError(() => Effect.sync(forgetBootstrap))),
         )
       }),
     )
@@ -326,14 +347,16 @@ export function PairComputer({
               act(() =>
                 mobileWorkflow(function* () {
                   if (pairingPhase.current === 'saving') return
+                  const previousPhase = pairingPhase.current
                   pairingPhase.current = 'cancelled'
                   yield* nativeEffect(() => cancelPairing(address, pending)).pipe(
                     Effect.tapError(() =>
                       Effect.sync(() => {
-                        pairingPhase.current = 'waiting'
+                        pairingPhase.current = previousPhase
                       }),
                     ),
                   )
+                  forgetBootstrap()
                   setPending(null)
                 }),
               )

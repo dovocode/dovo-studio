@@ -430,7 +430,11 @@ export class BitbucketForge implements ForgeAdapter {
         ),
       ),
       page,
-      hasMore: !!result.next,
+      hasMore: page < 100 && !!result.next,
+      paginationNotice:
+        page === 100 && result.next
+          ? 'Showing the newest 5,000 requests. Open older requests on Bitbucket.'
+          : undefined,
     }
   }
   private get(number: number) {

@@ -42,7 +42,7 @@ async function bundle(isMobile) {
         '../runtime/connection/provider': `export const useRuntime=()=>({overviews:window.sources.map(source=>({profile:source.profile})),cacheForRuntime:()=>({})});`,
         '../shell/navigation': `export const useNavigation=()=>({focused:true});`,
         '../shell/source-route': `export const pullHref=(runtime,repo,number)=>'/'+runtime+'/pull/'+number;`,
-        '../scm/pulls/list/use-pulls': `export const usePulls=(repositoryId)=>({sources:window.sources,pages:window.pages().filter(page=>!repositoryId||page.sourceKey===repositoryId),busy:false,connected:window.sources.some(source=>source.connected),refresh:()=>{},more:async key=>{window.retried=key},chooseSource:async()=>{}});`,
+        '../scm/pulls/list/use-pulls': `export const usePulls=(repositoryId)=>({sources:window.sources,pages:window.pages().filter(page=>!repositoryId||page.sourceKey===repositoryId),busy:false,connected:window.sources.some(source=>source.connected),refresh:()=>{window.refreshed=true},more:async key=>{window.retried=key},chooseSource:async()=>{}});`,
         '../runtime/state/collection-sources': `export const collectionSources=()=>window.sources;`,
         '../ui/layout/use-list-scroll': `export const useListScroll=()=>({retainPosition:()=>{}});`,
         '../scm/pulls/list/add-to-thread': `export const AddPullsToThread=()=>null;`,
@@ -76,7 +76,7 @@ async function bundle(isMobile) {
         '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
         '@dovo/studio-core': `export * from '@dovo/protocol';export const useStudioHost=()=>({navigate:target=>window.opened=target});export const useWorkspace=()=>({activeRuntimeId:'mac',runtimes:window.sources.map(source=>({profile:source.profile})),workspace:{repositories:[],tasks:[]}});export const WorkspaceRuntimeScope=({children})=>children;export const repositorySourceKey=()=>'';export const formatDateTime=value=>'Oct 23';`,
         '@dovo/studio-ui': `export const MessageResponse=()=>null;export {PageHeader} from '${ui}page-header';export * from '${ui}sidebar-header';export {Button} from '${ui}components/ui/button';export {Input} from '${ui}components/ui/input';export {Badge} from '${ui}components/ui/badge';export * from '${ui}components/ui/dialog';export {ChoicePicker} from '${ui}choice-picker';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
-        './use-pulls': `export const usePulls=()=>({sources:window.sources,pages:window.pages(),busy:!!window.refreshing,connected:window.sources.some(source=>source.connected),refresh:()=>{},more:async key=>{window.retried=key}});`,
+        './use-pulls': `export const usePulls=()=>({sources:window.sources,pages:window.pages(),busy:!!window.refreshing,connected:window.sources.some(source=>source.connected),refresh:()=>{window.refreshed=true},more:async key=>{window.retried=key}});`,
         './add-to-thread': `export const AddPullsToThread=()=>null;`,
         '../detail/detail': `export const PullDetail=()=>null;`,
         './create': `export const CreatePull=()=>null;`,
@@ -193,6 +193,10 @@ try {
       })
       await expectRows(4, 'A failed source preserves healthy results')
       const failure = page.getByText('Dovo Studio · MacBook: Forge access expired', { exact: true })
+      assert.equal(await failure.isVisible(), false, 'Transient source errors stay collapsed')
+      if (isMobile)
+        await page.getByRole('button', { name: 'Sources · 1 pending', exact: true }).click()
+      else await page.locator('summary').filter({ hasText: 'Sources · 1 pending' }).click()
       await failure.waitFor()
       assert.ok(
         (await failure.boundingBox()).y < (await first.boundingBox()).y,
@@ -201,7 +205,7 @@ try {
       const retry = page.getByRole('button', { name: 'Retry · Dovo Studio · MacBook', exact: true })
       assert.equal(await retry.count(), 1, 'Retry is not duplicated below the list')
       await retry.click()
-      assert.equal(await page.evaluate(() => window.retried), 'backup')
+      assert.equal(await page.evaluate(() => window.refreshed), true)
       await page.evaluate(() => {
         window.sourceErrors.mac = 'Network unavailable'
         window.emptySources = ['mac', 'backup']
@@ -209,12 +213,9 @@ try {
       })
       await expectRows(0)
       await page
-        .getByText(
-          isMobile
-            ? 'Couldn’t load pull requests'
-            : 'Couldn’t load pull requests. Retry the sources above.',
-          { exact: true },
-        )
+        .getByText(isMobile ? 'Waiting for project sources' : 'Waiting for project sources.', {
+          exact: true,
+        })
         .waitFor()
       await page.evaluate(() => {
         window.sources[1].connected = false

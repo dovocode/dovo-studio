@@ -205,7 +205,7 @@ try {
       const expected = palette[scheme]
       const effects = await page.evaluate((primary) => {
         const probe = document.createElement('span')
-        probe.style.color = 'color-mix(in srgb, ' + primary + ' 16%, transparent)'
+        probe.style.color = 'color-mix(in srgb, ' + primary + ' 8%, transparent)'
         document.body.append(probe)
         const glow = getComputedStyle(probe).color
         probe.remove()
@@ -222,7 +222,7 @@ try {
           glow,
         }
       }, expected.primary)
-      assert.equal(effects.intensity, '1')
+      assert.equal(effects.intensity, '0.5')
       assert.equal(effects.gradients, 'true')
       assert.equal(effects.primary, expected.primary)
       assert.match(effects.tab, /linear-gradient/)

@@ -24,6 +24,19 @@ function setup() {
   })
   return { db, store, pulls, cache }
 }
+it('invalidates every destination alias, including URL and worktree views with distinct bindings', async () => {
+  const { db, pulls, store } = setup()
+  const cache = new PullCache(db, pulls, store, async (cwd) => `binding:${cwd}`)
+  cleanup.push(() => cache.dispose())
+  const load = vi.spyOn(pulls, 'list').mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+  for (const cwd of ['/repo', '/worktree', 'https://github.com/team/app'])
+    await cache.list(cwd, 'open', 1)
+  expect(load).toHaveBeenCalledTimes(3)
+  cache.invalidateAll()
+  const rows = db.prepare('SELECT value FROM pull_cache').all()
+  expect(rows).toHaveLength(3)
+  for (const row of rows) expect(row).toEqual({ value: expect.stringContaining('"stale":true') })
+})
 it('shares PR feedback across worktrees and accounts correctly, invalidates it on actions and coalesces refreshes', async () => {
   const { cache, pulls, db, store } = setup()
   const detail: PullDetail = {
@@ -222,6 +235,30 @@ it('does not bypass freshness when background watching follows a foreground refr
   await cache.list('/repo', 'open', 1)
   await vi.advanceTimersByTimeAsync(30000)
   expect(load).toHaveBeenCalledTimes(1)
+})
+
+it('fetches again when explicit refresh arrives during an older background read', async () => {
+  const { cache, pulls } = setup()
+  let finish: (value: { pulls: []; page: number; hasMore: boolean }) => void = () => {
+    throw new Error('Not started')
+  }
+  const load = vi
+    .spyOn(pulls, 'list')
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    .mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+  const background = cache.list('/repo', 'open', 1)
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+  const forced = cache.list('/repo', 'open', 1, true)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  finish({ pulls: [], page: 1, hasMore: true })
+  expect((await background).hasMore).toBe(true)
+  expect((await forced).hasMore).toBe(false)
+  expect(load).toHaveBeenCalledTimes(2)
 })
 
 it('persists mutation invalidation without discarding cached data or its fetched time', async () => {

@@ -11,6 +11,8 @@ import {
   sharedProjectKey,
   taskBehaviorOrigin,
   resourceOrigin,
+  updateSharedSettingsEntry,
+  canonicalSharedSettings,
 } from './scoped-settings'
 import { resourceSettingsSchema } from '../../shared/resources'
 
@@ -27,6 +29,69 @@ const entry = (
   setupCommand: string,
   changeId = 'a',
 ): SharedSettingsEntry => ({ key, updatedAt, changeId, value: { taskDefaults: { setupCommand } } })
+
+it('merges independent offline categories in both orders and syncs equal-header partial histories', () => {
+  const base = entry('project:host/team/app', 1, 'old')
+  const icon = updateSharedSettingsEntry(
+    base.key,
+    base,
+    { ...base.value, projectIcon: 'data:image/png;base64,YQ==' },
+    { updatedAt: 2, changeId: 'icon' },
+  )
+  const defaults = updateSharedSettingsEntry(
+    base.key,
+    base,
+    { taskDefaults: { setupCommand: 'new' } },
+    { updatedAt: 3, changeId: 'defaults' },
+  )
+  const [merged] = mergeSharedSettings([icon], [defaults])
+  expect(merged.value).toEqual({
+    projectIcon: 'data:image/png;base64,YQ==',
+    taskDefaults: { setupCommand: 'new' },
+  })
+  expect(mergeSharedSettings([defaults], [icon])).toEqual([merged])
+  expect(pendingSharedSettings([merged], [defaults])).toEqual([merged])
+  expect(pendingSharedSettings([defaults], [merged])).toEqual([])
+  expect(mergeSharedSettings([merged], [icon], [base])).toEqual([merged])
+})
+
+it('retains category reset tombstones when unrelated offline edits arrive later', () => {
+  const base = entry('global', 1, 'old')
+  const reset = updateSharedSettingsEntry('global', base, {}, { updatedAt: 2, changeId: 'reset' })
+  const rename = updateSharedSettingsEntry(
+    'global',
+    base,
+    { ...base.value, projectName: 'Customer Portal' },
+    { updatedAt: 3, changeId: 'name' },
+  )
+  const [merged] = mergeSharedSettings([reset], [rename])
+  expect(merged.value).toEqual({ projectName: 'Customer Portal' })
+  expect(mergeSharedSettings([merged], [base])[0].value).toEqual(merged.value)
+})
+it('merges only provider-confirmed identity aliases without changing category revisions', () => {
+  const name = updateSharedSettingsEntry(
+    'project:github.internal/Team/App',
+    undefined,
+    { projectName: 'Customer Portal' },
+    { updatedAt: 2, changeId: 'name' },
+  )
+  const defaults = updateSharedSettingsEntry(
+    'project:github.internal/team/app',
+    undefined,
+    { taskDefaults: { setupCommand: 'pnpm install' } },
+    { updatedAt: 3, changeId: 'defaults' },
+  )
+  const sensitive = entry('project:git.internal/Team/App', 1, 'case-sensitive')
+  const shared = canonicalSharedSettings([name, defaults, sensitive], (identity) =>
+    identity.startsWith('github.internal/') ? identity.toLowerCase() : identity,
+  )
+  expect(shared).toHaveLength(2)
+  expect(shared.find((entry) => entry.key === defaults.key)?.value).toEqual({
+    projectName: 'Customer Portal',
+    taskDefaults: { setupCommand: 'pnpm install' },
+  })
+  expect(shared.find((entry) => entry.key === sensitive.key)).toBe(sensitive)
+})
 
 it('resolves all four scopes field by field, including explicit empty commands and false flags', () => {
   const runtime = decode(runtimeDefaultsSchema, {

@@ -427,6 +427,16 @@ export function startRuntimeSync(
     resumeStarted = undefined
     previous?.close()
   }
+  const sendResume = () => {
+    if (!socket || socket.readyState !== 1) return
+    try {
+      socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
+    } catch {
+      failHandshake()
+      closeSocket()
+      reconnect()
+    }
+  }
   const failHandshake = () => {
     if (socketRoute && !socketEstablished) failRuntimeStreamingRoute(connection, socketRoute)
   }
@@ -495,8 +505,8 @@ export function startRuntimeSync(
           current.close()
           return
         }
-        current.send(JSON.stringify({ type: 'resume', epoch, sequence }))
-        sendWatch()
+        sendResume()
+        if (current === socket) sendWatch()
       }
       current.onmessage = (event) => {
         if (stopped || current !== socket) return
@@ -653,7 +663,7 @@ export function startRuntimeSync(
               resumeWaited >= resumeDeadline() / 2
             ) {
               resumeResent = true
-              socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
+              sendResume()
             }
             if (!socket && !retry) void connect()
           }),
@@ -673,7 +683,7 @@ export function startRuntimeSync(
         // the server's resume acknowledgement instead of waiting for a heartbeat timeout.
         if (resumeStarted === undefined) resumeResent = false
         resumeStarted ??= Date.now()
-        socket.send(JSON.stringify({ type: 'resume', epoch, sequence }))
+        sendResume()
       } else if (!connecting) {
         if (retry) Effect.runFork(Fiber.interrupt(retry))
         retry = undefined

@@ -79,3 +79,39 @@ it('persists local Studio grants without allowing retrieval registrations to gra
     db.close()
   }
 })
+
+it('prefers the requesting device and otherwise uses the most recently changed registration', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const devices = new Devices(db, 'owner')
+    const first = devices.add('First', 'first-token')
+    const second = devices.add('Second', 'second-token')
+    const peers = new RetrievalPeers(db, devices)
+    const registration = (address: string) => ({
+      sessionId: 'session',
+      peers: [
+        {
+          id: 'peer',
+          name: 'Peer',
+          connection: {
+            address,
+            token: 'paired-computer-token-at-least-20-characters',
+            runtimeId: 'runtime',
+          },
+        },
+      ],
+    })
+    peers.register(first, registration('http://first:4317'))
+    peers.register(second, registration('http://second:4317'))
+    expect(peers.list()[0]?.connection.address).toBe('http://second:4317')
+    expect(peers.list(false, first)[0]?.connection.address).toBe('http://first:4317')
+    peers.register(first, registration('http://new-first:4317'))
+    expect(new RetrievalPeers(db, devices).list()[0]?.connection.address).toBe(
+      'http://new-first:4317',
+    )
+    devices.revoke(first)
+    expect(peers.list(false, first)[0]?.connection.address).toBe('http://second:4317')
+  } finally {
+    db.close()
+  }
+})

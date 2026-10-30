@@ -95,6 +95,7 @@ export class Tasks {
   onStopChildren?: (parentId: string) => void
   private scheduleTimer?: ReturnType<typeof setInterval>
   private checkingSchedule = false
+  private scheduleWork?: Promise<void>
   private readonly executor = ManagedRuntime.make(Layer.empty)
   private stopping = false
   private restartLease: { id: string; expiresAt: number; resumeInterrupted?: boolean } | undefined
@@ -277,9 +278,16 @@ export class Tasks {
     this.scheduleTimer = setInterval(tick, 5000)
     tick()
   }
-  async runScheduled() {
-    if (this.checkingSchedule || this.stopping) return
+  runScheduled() {
+    if (this.checkingSchedule || this.stopping) return Promise.resolve()
     this.checkingSchedule = true
+    const work = this.runScheduledTick().finally(() => {
+      if (this.scheduleWork === work) this.scheduleWork = undefined
+    })
+    this.scheduleWork = work
+    return work
+  }
+  private async runScheduledTick() {
     try {
       this.deliverCompletions()
       const now = Date.now()
@@ -316,6 +324,7 @@ export class Tasks {
           }
         }
         for (const message of task.scheduledMessages ?? []) {
+          if (this.stopping) break
           if (message.failed || Date.parse(message.at) > now) continue
           try {
             await this.send(task.id, message.id, message.text)
@@ -339,7 +348,7 @@ export class Tasks {
             }))
           }
         }
-        if (!task.startAfter || task.status !== 'draft') continue
+        if (this.stopping || !task.startAfter || task.status !== 'draft') continue
         const source = this.store.get().tasks.find((item) => item.id === task.startAfter?.taskId)
         if (
           !source ||
@@ -1710,37 +1719,58 @@ export class Tasks {
     if (!run) throw new HttpError(409, 'Task is not running')
     if (expectedRunId !== undefined && run.id !== expectedRunId)
       throw new HttpError(409, 'This run ended. Refresh before stopping the current run.')
-    runCredentials(this.store).revokeTask(id)
-    this.disposeDelegation(id)
-    this.stopChildren(id)
+    const errors: unknown[] = []
+    const attempt = (action: () => void) => {
+      try {
+        action()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    // Capture owners before persistence: a failed child update must not leave
+    // that child (or later siblings) executing after Stop.
+    const family = taskFamilyIds(this.store.get().tasks, id)
+    const runs = [...this.running].filter(([taskId]) => family.has(taskId))
+    attempt(() => runCredentials(this.store).revokeTask(id))
+    attempt(() => this.disposeDelegation(id))
+    attempt(() => this.stopChildren(id))
     void this.stopNativeFamily(id).catch((error: unknown) =>
       console.error('Could not stop native agents:', error),
     )
     this.steering.delete(id)
-    this.store.updateTask(
-      id,
-      (t) => ({
-        ...t,
-        status: run.shutdownUnconfirmed ? 'cancelled' : t.status,
-        queue: t.queue?.map((message) => ({ ...message, steering: undefined })),
-        queuePaused: true,
-        subagentInbox: [],
-        runAttempt: t.runAttempt ? { ...t.runAttempt, subagentInputs: undefined } : undefined,
-        restartRecovery: undefined,
-      }),
-      undefined,
-      {
-        id: `interrupt:${run.id}`,
-        taskId: id,
-        attemptId: run.id,
-        kind: 'interrupt',
-        state: run.shutdownUnconfirmed ? 'uncertain' : 'dispatched',
-      },
+    attempt(() =>
+      this.store.updateTask(
+        id,
+        (t) => ({
+          ...t,
+          status: run.shutdownUnconfirmed ? 'cancelled' : t.status,
+          queue: t.queue?.map((message) => ({ ...message, steering: undefined })),
+          queuePaused: true,
+          subagentInbox: [],
+          runAttempt: t.runAttempt ? { ...t.runAttempt, subagentInputs: undefined } : undefined,
+          restartRecovery: undefined,
+        }),
+        undefined,
+        {
+          id: `interrupt:${run.id}`,
+          taskId: id,
+          attemptId: run.id,
+          kind: 'interrupt',
+          state: run.shutdownUnconfirmed ? 'uncertain' : 'dispatched',
+        },
+      ),
     )
-    this.questions.cancelTask(id)
-    this.mcpApps?.cancelTask(id)
-    run.controller.abort(new Error('Cancelled by user'))
+    attempt(() => this.questions.cancelTask(id))
+    attempt(() => this.mcpApps?.cancelTask(id))
+    for (const [, owner] of runs)
+      attempt(() => owner.controller.abort(new Error('Cancelled by user')))
+    if (errors.length)
+      throw new AggregateError(
+        errors,
+        `Could not persist all task cancellation state. ${errors.map(errorMessage).join('; ')}`,
+      )
   }
+
   /** Shared non-blocking forms: native message questions and the regular MCP tool. */
   askQuestion(id: string, runId: string, prompt: QuestionPrompt, requestId?: string) {
     const run = this.running.get(id)
@@ -2694,6 +2724,37 @@ export class Tasks {
           const interruptedTurn = task.restartRecovery.kind === 'turn'
           const pendingInput = nextQueuedMessage(task)?.id
           this.activity?.add('task', id, 'Continuing after runtime restart')
+          const recordFailure = Effect.catchCause((cause) =>
+            Effect.try(() => {
+              if (Cause.hasInterruptsOnly(cause)) return
+              const error = Cause.squash(cause)
+              const current = this.store.get().tasks.find((task) => task.id === id)
+              // Deleted meanwhile, stopping, or stopped by the user: nothing to record.
+              if (this.stopping || !current || current.status === 'cancelled') return
+              // A failed startup stays actionable; it must not silently retry forever.
+              this.store.updateTaskHistory(id, (task) => ({
+                ...task,
+                status:
+                  task.runPhase === 'finalizing' && task.turns?.at(-1)?.status === 'completed'
+                    ? 'review'
+                    : 'failed',
+                queuePaused: true,
+                restartRecovery: {
+                  kind:
+                    interruptedTurn || !task.queue?.some((message) => message.id === pendingInput)
+                      ? 'turn'
+                      : 'queue',
+                  automatic: false,
+                },
+                error: `Could not continue after restart. ${errorMessage(error)}`,
+              }))
+            }).pipe(
+              // Recording the failure must not stop recovery of the remaining tasks.
+              Effect.catch((error) =>
+                Effect.logError('Could not record a restart recovery failure', error),
+              ),
+            ),
+          )
           yield* this.startEffect(
             id,
             true,
@@ -2705,39 +2766,13 @@ export class Tasks {
               this.store.taskSummary(id).restartRecovery?.automatic === true &&
               !this.store.taskSummary(id).archived,
           ).pipe(
-            Effect.flatMap((run) => run.completion),
-            // Catch defects too: one task's failure must not stop recovery of the rest.
-            Effect.catchCause((cause) =>
-              Effect.try(() => {
-                if (Cause.hasInterruptsOnly(cause)) return
-                const error = Cause.squash(cause)
-                const current = this.store.get().tasks.find((task) => task.id === id)
-                // Deleted meanwhile, stopping, or stopped by the user: nothing to record.
-                if (this.stopping || !current || current.status === 'cancelled') return
-                // A failed startup stays actionable; it must not silently retry forever.
-                this.store.updateTaskHistory(id, (task) => ({
-                  ...task,
-                  status:
-                    task.runPhase === 'finalizing' && task.turns?.at(-1)?.status === 'completed'
-                      ? 'review'
-                      : 'failed',
-                  queuePaused: true,
-                  restartRecovery: {
-                    kind:
-                      interruptedTurn || !task.queue?.some((message) => message.id === pendingInput)
-                        ? 'turn'
-                        : 'queue',
-                    automatic: false,
-                  },
-                  error: `Could not continue after restart. ${errorMessage(error)}`,
-                }))
-              }).pipe(
-                // Recording the failure must not stop recovery of the remaining tasks.
-                Effect.catch((error) =>
-                  Effect.logError('Could not record a restart recovery failure', error),
-                ),
-              ),
-            ),
+            Effect.flatMap((run) => {
+              // Admission reserves the checkout; an approval must not block recovery
+              // of unrelated tasks. Both lifetimes remain owned by this executor.
+              this.executor.runFork(run.completion.pipe(recordFailure))
+              return Effect.void
+            }),
+            recordFailure,
           )
         }
       }),
@@ -2745,43 +2780,65 @@ export class Tasks {
   }
   disposeEffect() {
     return Effect.gen({ self: this }, function* () {
-      this.unsubscribePolicy()
+      const errors: unknown[] = []
+      const attempt = (action: () => void) => {
+        try {
+          action()
+        } catch (error) {
+          errors.push(error)
+        }
+      }
+      attempt(() => this.unsubscribePolicy())
       this.stopping = true
       if (this.scheduleTimer) clearInterval(this.scheduleTimer)
       this.scheduleTimer = undefined
       this.steering.clear()
       const running = [...this.running.values()]
       for (const [id, run] of this.running) {
-        const task = this.store.taskSummary(id)
-        if (
-          !run.controller.signal.aborted &&
-          task.status === 'running' &&
-          task.runPhase !== 'finalizing'
-        )
-          this.store.updateTask(id, (task) => ({
-            ...task,
-            restartRecovery: {
-              kind:
-                task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length
-                  ? 'queue'
-                  : 'turn',
-              automatic:
-                !(task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length) &&
-                !task.queuePaused,
-              ...(this.restartLease &&
-              this.restartLease.expiresAt > Date.now() &&
-              this.restartLease.resumeInterrupted !== undefined
-                ? { resumeRequested: this.restartLease.resumeInterrupted }
-                : {}),
-            },
-          }))
-        run.controller.abort(new Error('Runtime shutting down'))
+        attempt(() => {
+          const task = this.store.taskSummary(id)
+          if (
+            !run.controller.signal.aborted &&
+            task.status === 'running' &&
+            task.runPhase !== 'finalizing'
+          )
+            this.store.updateTask(id, (task) => ({
+              ...task,
+              restartRecovery: {
+                kind:
+                  task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length
+                    ? 'queue'
+                    : 'turn',
+                automatic:
+                  !(task.runPhase === 'preparing' && !task.runAttempt && task.queue?.length) &&
+                  !task.queuePaused,
+                ...(this.restartLease &&
+                this.restartLease.expiresAt > Date.now() &&
+                this.restartLease.resumeInterrupted !== undefined
+                  ? { resumeRequested: this.restartLease.resumeInterrupted }
+                  : {}),
+              },
+            }))
+        })
+        attempt(() => run.controller.abort(new Error('Runtime shutting down')))
       }
       yield* Effect.forEach(running, (run) => (run.fiber ? Fiber.await(run.fiber) : Effect.void), {
         concurrency: 'unbounded',
         discard: true,
       })
-      yield* Effect.promise(() => this.executor.dispose())
+      // A scheduler tick can be awaiting model discovery outside the executor.
+      // Keep storage alive until that tick has finished its durable bookkeeping.
+      const scheduled = yield* Effect.exit(runtimeOperation(() => this.scheduleWork))
+      if (Exit.isFailure(scheduled)) errors.push(Cause.squash(scheduled.cause))
+      const disposed = yield* Effect.exit(runtimeOperation(() => this.executor.dispose()))
+      if (Exit.isFailure(disposed)) errors.push(Cause.squash(disposed.cause))
+      yield* runtimeOperation(() => {
+        if (errors.length)
+          throw new AggregateError(
+            errors,
+            `Could not persist all task shutdown state. ${errors.map(errorMessage).join('; ')}`,
+          )
+      })
     })
   }
   dispose() {

@@ -594,48 +594,66 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                 </p>
               )}
               <p role="status" className="mb-3 min-h-4 text-xs text-muted-foreground">
-                {!connected
-                  ? pulls.length
-                    ? 'Offline · showing saved pull requests.'
-                    : 'Connect to the runtime to load pull requests.'
-                  : busy
+                {unavailable
+                  ? ''
+                  : !connected
                     ? pulls.length
-                      ? 'Updating pull requests…'
-                      : 'Loading pull requests…'
-                    : pages.some((page) => page.stale)
-                      ? 'Showing saved results where fresh data is unavailable.'
-                      : ''}
+                      ? 'Offline · showing saved pull requests.'
+                      : 'Connect to the runtime to load pull requests.'
+                    : busy
+                      ? pulls.length
+                        ? 'Updating pull requests…'
+                        : 'Loading pull requests…'
+                      : pages.some((page) => page.stale)
+                        ? 'Showing saved results where fresh data is unavailable.'
+                        : ''}
               </p>
-              {failedPages.map((page) => (
-                <div key={page.source.key} className="mb-3 space-y-1 rounded-lg border p-3">
-                  <p
-                    role="alert"
-                    className="break-words text-xs text-destructive [overflow-wrap:anywhere]"
-                  >
-                    {page.source.repository.name} · {page.source.runtimeName}: {page.error}
-                  </p>
-                  {!page.reader.connected && (
-                    <p className="text-xs text-muted-foreground">Reconnect this source to retry.</p>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="max-w-full"
-                    disabled={busy || !page.reader.connected}
-                    onClick={() => void more(page.source.key)}
-                  >
-                    <span className="min-w-0 truncate">
-                      Retry · {page.source.repository.name} · {page.source.runtimeName}
-                    </span>
-                  </Button>
-                </div>
-              ))}
-              {!busy && connected && !pulls.length && (
+              {!!failedPages.length && (
+                <details className="mb-3 text-xs text-muted-foreground">
+                  <summary className="cursor-pointer py-1">
+                    Sources · {failedPages.length} pending
+                  </summary>
+                  {failedPages.map((page) => (
+                    <div key={page.source.key} className="mb-3 space-y-1 rounded-lg border p-3">
+                      <p
+                        role="alert"
+                        className="break-words text-xs text-destructive [overflow-wrap:anywhere]"
+                      >
+                        {page.source.repository.name} · {page.source.runtimeName}: {page.error}
+                      </p>
+                      {!sources.some(
+                        (source) => source.key === page.reader.key && source.connected,
+                      ) && (
+                        <p className="text-xs text-muted-foreground">
+                          Reconnect this source to retry.
+                        </p>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="max-w-full"
+                        disabled={
+                          busy ||
+                          !sources.some(
+                            (source) => source.key === page.reader.key && source.connected,
+                          )
+                        }
+                        onClick={refresh}
+                      >
+                        <span className="min-w-0 truncate">
+                          Retry · {page.source.repository.name} · {page.source.runtimeName}
+                        </span>
+                      </Button>
+                    </div>
+                  ))}
+                </details>
+              )}
+              {!busy && (connected || unavailable) && !pulls.length && (
                 <p className="rounded-md border border-border/60 bg-background/30 px-3 py-4 text-xs text-muted-foreground">
                   {unavailable
-                    ? 'Couldn’t load pull requests. Retry the sources above.'
+                    ? 'Waiting for project sources.'
                     : failedPages.length
-                      ? 'No matching PRs in available results. Retry the sources above to check the rest.'
+                      ? 'No matching PRs in available results.'
                       : 'No matching PRs in loaded results.'}
                   {!sources.length ? ' Add a project from the Projects menu in Tasks.' : ''}
                 </p>
@@ -681,6 +699,11 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               </div>
               {pages.map((page) => (
                 <div key={page.source.key} className="mt-3">
+                  {page.paginationNotice && (
+                    <p className="text-xs text-muted-foreground">
+                      {page.source.repository.name} · {page.paginationNotice}
+                    </p>
+                  )}
                   {page.hasMore && !page.error && (
                     <Button
                       size="sm"

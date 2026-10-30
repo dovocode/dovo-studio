@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { Schema, Struct } from 'effect'
 import { mutableStruct } from '../../shared/schema.js'
 import { mergeResources } from '../../shared/resources.js'
 import {
@@ -73,26 +73,113 @@ export function sharedProjectKey(repository: Repository | undefined) {
     ? `project:${repository.gitIdentity}`
     : undefined
 }
-const newerEntry = (entry: SharedSettingsEntry, current: SharedSettingsEntry | undefined) =>
-  !current ||
-  entry.updatedAt > current.updatedAt ||
-  (entry.updatedAt === current.updatedAt && entry.changeId > current.changeId)
+type Revision = Pick<SharedSettingsEntry, 'updatedAt' | 'changeId'>
+const categories = Struct.keys(scopedSettingsValueSchema.fields)
+const newerEntry = (entry: Revision | undefined, current: Revision | undefined) =>
+  !!entry &&
+  (!current ||
+    entry.updatedAt > current.updatedAt ||
+    (entry.updatedAt === current.updatedAt && entry.changeId > current.changeId))
 
 export function pendingSharedSettings(
   shared: readonly SharedSettingsEntry[],
   known: readonly SharedSettingsEntry[],
 ) {
   const byKey = new Map(known.map((entry) => [entry.key, entry]))
-  return shared.filter((entry) => newerEntry(entry, byKey.get(entry.key)))
+  return shared.filter((entry) => {
+    const current = byKey.get(entry.key)
+    return (
+      !current ||
+      categories.some((key) =>
+        newerEntry(categoryRevision(entry, key), categoryRevision(current, key)),
+      )
+    )
+  })
+}
+function categoryRevision(entry: SharedSettingsEntry, key: keyof ScopedSettingsValue) {
+  return entry.revisions
+    ? entry.revisions[key]
+    : { updatedAt: entry.updatedAt, changeId: entry.changeId }
+}
+
+/** Stamp only edited categories. Unchanged and removed values keep their own causal history. */
+export function updateSharedSettingsEntry(
+  key: string,
+  previous: SharedSettingsEntry | undefined,
+  value: ScopedSettingsValue,
+  revision: Revision,
+): SharedSettingsEntry {
+  return {
+    key,
+    ...revision,
+    value,
+    revisions: Object.fromEntries(
+      categories.flatMap((category) => {
+        const next =
+          JSON.stringify(previous?.value[category]) !== JSON.stringify(value[category])
+            ? revision
+            : previous
+              ? categoryRevision(previous, category)
+              : undefined
+        return next ? [[category, next] as const] : []
+      }),
+    ),
+  }
 }
 export function mergeSharedSettings(...sources: readonly (readonly SharedSettingsEntry[])[]) {
   const values = new Map<string, SharedSettingsEntry>()
   for (const source of sources)
     for (const entry of source) {
       const current = values.get(entry.key)
-      if (newerEntry(entry, current)) values.set(entry.key, entry)
+      if (!current || (!entry.revisions && !current.revisions)) {
+        if (newerEntry(entry, current)) values.set(entry.key, entry)
+        continue
+      }
+      const newest = newerEntry(entry, current) ? entry : current
+      const winners = categories.map(
+        (key) =>
+          [
+            key,
+            newerEntry(categoryRevision(entry, key), categoryRevision(current, key))
+              ? entry
+              : current,
+          ] as const,
+      )
+      values.set(entry.key, {
+        key: entry.key,
+        updatedAt: newest.updatedAt,
+        changeId: newest.changeId,
+        value: Object.fromEntries(
+          winners
+            .filter(([key, winner]) => winner.value[key] !== undefined)
+            .map(([key, winner]) => [key, winner.value[key]]),
+        ),
+        revisions: Object.fromEntries(
+          winners.flatMap(([key, winner]) => {
+            const revision = categoryRevision(winner, key)
+            return revision ? [[key, revision] as const] : []
+          }),
+        ),
+      })
     }
   return [...values.values()].sort((a, b) => a.key.localeCompare(b.key))
+}
+
+/** Caller supplies only provider-confirmed aliases; arbitrary remote retargets are never aliases. */
+export function canonicalSharedSettings(
+  shared: SharedSettingsEntry[],
+  canonicalize: (identity: string) => string,
+) {
+  let changed = false
+  const entries = shared.map((entry) => {
+    const key = entry.key.startsWith('project:')
+      ? `project:${canonicalize(entry.key.slice(8))}`
+      : entry.key
+    if (key === entry.key) return entry
+    changed = true
+    return { ...entry, key }
+  })
+  return changed ? mergeSharedSettings(entries) : shared
 }
 export function settingsAtScope(
   runtime: RuntimeDefaults | undefined,

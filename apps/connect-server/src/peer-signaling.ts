@@ -46,6 +46,14 @@ const helloSchema = Schema.Union([
   }),
 ])
 const equal = (a: string, b: string) => timingSafeEqual(Buffer.from(a), Buffer.from(b))
+/** A phone may cancel or finish signaling while the computer is still gathering trickle
+ * candidates on its shared host socket. Retired exchanges keep that exchange's identity and
+ * ICE bookkeeping for a bounded time so late, correctly sequenced host frames are consumed
+ * instead of being treated as abuse that closes every other pending negotiation. */
+const RETIRED_EXCHANGE_LIMIT = 16
+const RETIRED_EXCHANGE_TTL = 60000
+type RetiredExchange = { answerSequence: number; answerEnded: boolean; expiresAt: number }
+const retiredKey = (session: string, offer: string) => `${session}:${offer}`
 
 /** Only bounded, short-lived ICE/SDP metadata crosses Connect. No HTTP proxy, TURN,
  * runtime credentials or application frames are accepted here. Peers authenticate the
@@ -92,8 +100,38 @@ export function attachPeerSignaling(
         }
       >
       pendingRelays: Map<string, (box?: typeof internetBoxSchema.Type) => void>
+      retired: Map<string, RetiredExchange>
     }
   >()
+  type Room = NonNullable<ReturnType<typeof rooms.get>>
+  const retireExchange = (room: Room, session: string) => {
+    const exchange = room.exchanges.get(session)
+    room.exchanges.delete(session)
+    // Only trickle exchanges carry host frames after the answer; nothing else is tolerated.
+    if (!exchange?.trickle) return
+    const now = Date.now()
+    for (const [key, entry] of room.retired) if (entry.expiresAt <= now) room.retired.delete(key)
+    while (room.retired.size >= RETIRED_EXCHANGE_LIMIT) {
+      const oldest = room.retired.keys().next()
+      if (oldest.done) break
+      room.retired.delete(oldest.value)
+    }
+    room.retired.set(retiredKey(session, exchange.offer), {
+      answerSequence: exchange.answerSequence,
+      answerEnded: exchange.answerEnded,
+      expiresAt: now + RETIRED_EXCHANGE_TTL,
+    })
+  }
+  const retiredExchange = (room: Room, session: string, offer: string) => {
+    const key = retiredKey(session, offer)
+    const entry = room.retired.get(key)
+    if (!entry) return undefined
+    if (entry.expiresAt <= Date.now()) {
+      room.retired.delete(key)
+      return undefined
+    }
+    return { key, entry }
+  }
   const authorized = (room: { accountGrant?: string; relayIdentity?: string }) =>
     !room.accountGrant ||
     (!!room.relayIdentity && !!accountAdmission?.(room.accountGrant, room.relayIdentity))
@@ -164,7 +202,7 @@ export function attachPeerSignaling(
           for (const joined of room.clients.values()) joined.close(1012, 'Computer disconnected')
         } else if (hello.type === 'client' && room?.clients.get(hello.session) === client) {
           room.clients.delete(hello.session)
-          room.exchanges.delete(hello.session)
+          retireExchange(room, hello.session)
           if (room.customRelay && room.host.readyState === WebSocket.OPEN)
             room.host.send(JSON.stringify({ type: 'relay-cancel', session: hello.session }))
           room.pendingRelays.get(hello.session)?.()
@@ -208,6 +246,7 @@ export function attachPeerSignaling(
                 pendingRelays: new Map(),
                 trickle: input.trickle === true,
                 exchanges: new Map(),
+                retired: new Map(),
               })
             } else {
               if (
@@ -220,6 +259,7 @@ export function attachPeerSignaling(
                 throw new Error('Computer is unavailable')
               existing.clients.set(input.session, client)
               // This socket is only needed for one offer/answer, never application traffic.
+              // Its expiry or cancellation retires the exchange rather than forgetting it.
               const expiry = setTimeout(() => client.close(1000, 'Signaling complete'), 45000)
               expiry.unref()
               client.once('close', () => clearTimeout(expiry))
@@ -360,9 +400,26 @@ export function attachPeerSignaling(
           if (value && typeof value === 'object' && 'type' in value && value.type === 'ice') {
             const signal = decode(peerIceSignalSchema, value)
             const room = availableRoom()
-            const exchange = room?.exchanges.get(signal.session)
+            if (!room) throw new Error('Unexpected ICE candidate')
+            const exchange = room.exchanges.get(signal.session)
+            if (hello.type === 'host' && (!exchange || exchange.offer !== signal.offer)) {
+              // Late host frames for a retired exchange are consumed in strict order and
+              // never forwarded; the phone's socket is gone. Anything else is still abuse.
+              const retired = retiredExchange(room, signal.session, signal.offer)
+              if (
+                !retired ||
+                signal.role !== 'answer' ||
+                retired.entry.answerEnded ||
+                signal.sequence !== retired.entry.answerSequence ||
+                (signal.candidate && signal.sequence >= PEER_ICE_LIMIT)
+              )
+                throw new Error('Unexpected ICE candidate')
+              retired.entry.answerSequence++
+              retired.entry.answerEnded = signal.candidate === null
+              if (retired.entry.answerEnded) room.retired.delete(retired.key)
+              return
+            }
             if (
-              !room ||
               !exchange?.trickle ||
               signal.offer !== exchange.offer ||
               signal.role !== (hello.type === 'client' ? 'offer' : 'answer') ||
@@ -408,8 +465,19 @@ export function attachPeerSignaling(
           } else {
             if (signal.role !== 'answer') throw new Error('Unexpected answer')
             const target = room.clients.get(signal.session)
-            if (!target || target.readyState !== WebSocket.OPEN) return
             const exchange = room.exchanges.get(signal.session)
+            if (!target || target.readyState !== WebSocket.OPEN) {
+              // The phone already left or is closing. Record a correctly bound answer so the
+              // computer's trailing trickle frames are consumed instead of treated as abuse.
+              if (
+                exchange &&
+                !exchange.answered &&
+                exchange.offer === signal.offer &&
+                !!signal.trickle === exchange.trickle
+              )
+                exchange.answered = true
+              return
+            }
             if (
               !exchange ||
               exchange.answered ||

@@ -8,6 +8,19 @@ import {
   pullReferencesInText,
   threadPullLink,
 } from './pull-links'
+it('matches mixed-case GHE clone identities only with confirmed GitHub provider semantics', () => {
+  const url = 'https://github.internal/team/project/pull/7'
+  expect(
+    forgePullTarget(url, [{ provider: 'github', identity: 'github.internal/Team/Project' }])
+      ?.identity,
+  ).toBe('github.internal/team/project')
+  expect(forgePullTarget(url, [{ identity: 'github.internal/Team/Project' }])).toBeNull()
+  expect(
+    forgePullTarget('https://git.internal/team/project/pulls/7', [
+      { provider: 'gitea', identity: 'git.internal/Team/Project' },
+    ]),
+  ).toBeNull()
+})
 it('extracts normalized PR links from Markdown and prose across supported forge URL shapes', () => {
   expect(
     pullReferencesInText(

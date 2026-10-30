@@ -3,6 +3,32 @@ import { readFile, writeFile, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fixture } from '../../testing/fixture'
 import { GitService } from './git'
+it('normalizes GHE clone path case only on a configured GitHub host', async () => {
+  const f = await fixture()
+  const git = new GitService(undefined, undefined, undefined, undefined, undefined, (identity) =>
+    identity.startsWith('github.internal/') ? 'github' : undefined,
+  )
+  try {
+    await git.command(f.directory, [
+      'remote',
+      'add',
+      'origin',
+      'git@github.internal:Team/Project.git',
+    ])
+    expect(await git.repositoryIdentity(f.directory)).toBe('github.internal/team/project')
+    await git.command(f.directory, [
+      'remote',
+      'set-url',
+      'origin',
+      'https://git.internal/Team/Project.git',
+    ])
+    expect(await git.repositoryIdentity(f.directory, true)).toBe('git.internal/Team/Project')
+    git.confirmGithubHost('git.internal')
+    expect(await git.repositoryIdentity(f.directory)).toBe('git.internal/team/project')
+  } finally {
+    await f.cleanup()
+  }
+})
 it('serializes concurrent draft saves through canonical paths across service instances', async () => {
   const f = await fixture()
   try {
@@ -185,6 +211,31 @@ it('bounds identity retention, expires unused paths and coalesces pending reads'
     expect(git.repositoryIdentity('pending')).toBe(pending)
     resolve('origin\n')
     expect(await pending).toBe('github.com/owner/repository')
+  } finally {
+    command.mockRestore()
+    clock.mockRestore()
+  }
+})
+it('retains unavailable identities briefly while allowing explicit recovery immediately', async () => {
+  const git = new GitService()
+  const command = vi.spyOn(git, 'command').mockRejectedValue(new Error('Checkout unavailable'))
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+  try {
+    await expect(git.repositoryIdentity('/unavailable')).rejects.toThrow('Checkout unavailable')
+    await expect(git.cachedRepositoryIdentity('/unavailable')).rejects.toThrow(
+      'Checkout unavailable',
+    )
+    await expect(git.repositoryIdentity('/unavailable')).rejects.toThrow('Checkout unavailable')
+    expect(command).toHaveBeenCalledOnce()
+    command.mockImplementation(async (_cwd, args) =>
+      args.length === 1 ? 'origin\n' : 'https://github.com/team/app',
+    )
+    expect(await git.repositoryIdentity('/unavailable', true)).toBe('github.com/team/app')
+    command.mockRejectedValue(new Error('Offline again'))
+    await expect(git.repositoryIdentity('/unavailable', true)).rejects.toThrow('Offline again')
+    clock.mockReturnValue(16001)
+    await expect(git.repositoryIdentity('/unavailable')).rejects.toThrow('Offline again')
+    expect(command).toHaveBeenCalledTimes(5)
   } finally {
     command.mockRestore()
     clock.mockRestore()

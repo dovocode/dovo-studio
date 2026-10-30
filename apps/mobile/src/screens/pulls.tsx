@@ -107,6 +107,7 @@ export default function PullsScreen() {
     setAttention(false)
   }
   const [filters, setFilters] = useApplicationState(false)
+  const [sourceStatus, setSourceStatus] = useApplicationState(false)
   const { pages, sources, busy, connected, more, refresh, chooseSource } = usePulls(
     repositoryId,
     state,
@@ -360,22 +361,33 @@ export default function PullsScreen() {
                 ]}
               />
             </View>
-            {failedPages.map((page) => (
-              <View key={page.sourceKey} style={{ paddingVertical: 8, gap: 4 }}>
-                <Text accessibilityRole="alert" style={styles.error}>
-                  {page.name} · {page.runtimeName}: {page.error}
-                </Text>
-                {!page.readConnected && (
-                  <Text style={styles.muted}>Reconnect this source to retry.</Text>
-                )}
-                <Action
-                  secondary
-                  label={`Retry · ${page.name} · ${page.runtimeName}`}
-                  disabled={busy || !page.readConnected}
-                  onPress={() => void more(page.sourceKey)}
-                />
-              </View>
-            ))}
+            {!!failedPages.length && (
+              <Action
+                secondary
+                label={`Sources · ${failedPages.length} pending`}
+                onPress={() => setSourceStatus(!sourceStatus)}
+              />
+            )}
+            {sourceStatus &&
+              failedPages.map((page) => (
+                <View key={page.sourceKey} style={{ paddingVertical: 8, gap: 4 }}>
+                  <Text accessibilityRole="alert" style={styles.error}>
+                    {page.name} · {page.runtimeName}: {page.error}
+                  </Text>
+                  {!sources.some((source) => source.key === page.sourceKey && source.connected) && (
+                    <Text style={styles.muted}>Reconnect this source to retry.</Text>
+                  )}
+                  <Action
+                    secondary
+                    label={`Retry · ${page.name} · ${page.runtimeName}`}
+                    disabled={
+                      busy ||
+                      !sources.some((source) => source.key === page.sourceKey && source.connected)
+                    }
+                    onPress={refresh}
+                  />
+                </View>
+              ))}
           </View>
         }
         data={pulls}
@@ -599,7 +611,7 @@ export default function PullsScreen() {
               icon="pulls"
               title={
                 unavailable
-                  ? 'Couldn’t load pull requests'
+                  ? 'Waiting for project sources'
                   : filtersActive
                     ? 'No matching pull requests'
                     : connected
@@ -608,9 +620,9 @@ export default function PullsScreen() {
               }
               description={
                 unavailable
-                  ? 'Retry the sources above, or reconnect their computers.'
+                  ? 'Sources refresh automatically. Pull down to check again.'
                   : failedPages.length
-                    ? 'No matches in the available results. Retry the sources above to check the rest.'
+                    ? 'No matches in the available results.'
                     : filtersActive
                       ? 'Try another search or clear your filters.'
                       : connected
@@ -631,6 +643,11 @@ export default function PullsScreen() {
           >
             {pages.map((page) => (
               <View key={page.sourceKey}>
+                {page.paginationNotice && (
+                  <Text style={styles.muted}>
+                    {page.name} · {page.paginationNotice}
+                  </Text>
+                )}
                 {page.hasMore && !page.error && (
                   <Action
                     secondary

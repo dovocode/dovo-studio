@@ -3,6 +3,7 @@ import { Schema } from 'effect'
 import { MonitorUp, ChevronDown, Info } from 'lucide-react'
 import {
   randomUUID,
+  isPeerAddress,
   parseSshAddress,
   decodeResult,
   validationMessages,
@@ -98,14 +99,15 @@ export function ProjectTransferSettings({
     setRuntimePort('')
     if (target) {
       const url = new URL(target.profile.connection.address)
-      setSshHost(url.hostname)
+      if (!isPeerAddress(url.href)) setSshHost(url.hostname)
       if (target.snapshot?.sshAddress) {
         const ssh = parseSshAddress(target.snapshot.sshAddress)
         setSshHost(ssh.sshHost)
         setSshUser(ssh.sshUser)
         setSshPort(String(ssh.sshPort))
       }
-      setRuntimePort(url.protocol === 'https:' ? '5235' : url.port || '80')
+      if (!isPeerAddress(url.href))
+        setRuntimePort(url.protocol === 'https:' ? '5235' : url.port || '80')
     }
   }
   const sourceResolved = useRef(false)
@@ -186,6 +188,8 @@ export function ProjectTransferSettings({
         .catch((error) => setError(error instanceof Error ? error.message : String(error)))
     }
   }, [job, store.runtimes, store.refreshRuntime])
+  const directUnavailable =
+    targets.find((target) => target.id === targetId)?.directSupported === false
   const planInput = {
     repositoryId: repository.id,
     worktreePath: worktreePath || undefined,
@@ -216,7 +220,8 @@ export function ProjectTransferSettings({
     (!!plan &&
       ('repositoryId' in destination ? !!destination.repositoryId : !!destination.parentDirectory))
   useEffect(() => {
-    if (!open || !worktreePath || !targetId || active) return
+    if (!open || !worktreePath || !targetId || active || (directUnavailable && transport !== 'ssh'))
+      return
     let cancelled = false
     setDestinationError(null)
     setDestinationPlan(null)
@@ -253,7 +258,7 @@ export function ProjectTransferSettings({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [open, worktreePath, targetId, planKey, active, planRevision])
+  }, [open, worktreePath, targetId, planKey, active, planRevision, directUnavailable, transport])
   if (repository.kind === 'scratch') return null
   if (!store.snapshot?.projectTransfersSupported)
     return (
@@ -477,7 +482,12 @@ export function ProjectTransferSettings({
                 ))}
               </select>
             </FormField>
-            {!!worktreePath && (
+            {directUnavailable && transport !== 'ssh' && (
+              <p role="alert" className="text-destructive">
+                This destination requires an SSH tunnel or a LAN/VPN pairing for project copies.
+              </p>
+            )}
+            {!!worktreePath && !(directUnavailable && transport !== 'ssh') && (
               <div className="space-y-2 text-xs">
                 {!plan && !planError && (
                   <p className="text-muted-foreground">Checking destination project…</p>
@@ -656,7 +666,14 @@ export function ProjectTransferSettings({
         <div className="project-transfer-actions flex flex-wrap gap-2">
           <Button
             size="sm"
-            disabled={busy || !inspection || !targetId || !store.connected || !destinationReady}
+            disabled={
+              busy ||
+              !inspection ||
+              !targetId ||
+              !store.connected ||
+              !destinationReady ||
+              (directUnavailable && transport !== 'ssh')
+            }
             onClick={() => void start()}
           >
             {busy

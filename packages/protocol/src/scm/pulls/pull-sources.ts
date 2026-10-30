@@ -46,6 +46,20 @@ export function pullRepositoryKey(repository: Repository, sourceKey: string) {
   return pullRepositoryIdentity(repository) || sourceKey
 }
 
+/** Offline rows belong to a target and verified reader, not just a checkout path. */
+export function pullListCacheKey(repository: Repository, state: string, readerIdentity?: string) {
+  return JSON.stringify([
+    'pulls',
+    'list-v2',
+    repository.id,
+    repository.path,
+    state,
+    pullRepositoryIdentity(repository),
+    repository.forge,
+    readerIdentity,
+  ])
+}
+
 /** One remote read per repository. Keep a stable owner until it disconnects; an explicit
  * project filter belongs before this selection so actions retain that project's account. */
 export function selectPullSources<
@@ -80,7 +94,10 @@ export function publicPullSummaries(pulls: readonly PullSummary[]): PullSummary[
 /** A disconnected gateway must not replace newer results with its older offline copy. */
 export function retainNewerPullSnapshot<
   T extends { cachedAt?: string; stale?: boolean; refreshError?: string },
->(previous: T | undefined, incoming: T): T {
+>(previous: T | undefined, incoming: T, refreshed = false): T {
+  // An explicit provider refresh must recover from a clock correction on the owner.
+  // Failed or stale refreshes still retain the newer saved snapshot.
+  if (refreshed && incoming.stale === false && !incoming.refreshError) return incoming
   if (
     previous?.cachedAt &&
     incoming.cachedAt &&

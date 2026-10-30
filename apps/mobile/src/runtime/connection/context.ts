@@ -74,6 +74,7 @@ export type Runtime = {
     name?: string,
     proof?: PairingProof,
     replaceId?: string,
+    claimAddress?: string,
   ) => Effect.Effect<void, Error>
   selectRuntimeEffect: (id: string) => Effect.Effect<void, Error>
   forgetRuntimeEffect: (id: string) => Effect.Effect<void, Error>
@@ -94,6 +95,7 @@ export type Runtime = {
     name?: string,
     proof?: PairingProof,
     replaceId?: string,
+    claimAddress?: string,
   ) => Promise<void>
   selectRuntime: (id: string) => Promise<void>
   forgetRuntime: (id: string) => Promise<void>

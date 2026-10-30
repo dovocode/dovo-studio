@@ -11,5 +11,6 @@ for (const key of [
   'DOVO_RUNTIME_ENV_FILE',
   'DOVO_OWNER_TOKEN',
   'DOVO_DATABASE_PATH',
+  'DOVO_DATA_ROOT',
 ])
   delete process.env[key]

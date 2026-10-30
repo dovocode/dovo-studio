@@ -230,10 +230,10 @@ it('creates drafts and preserves GitLab closed/merged list semantics', async () 
       mergeRequest,
       { ...mergeRequest, iid: 43, state: 'merged' },
       { ...mergeRequest, iid: 44, state: 'closed' },
-    ]
+    ].filter((pull) => pull.state === url.searchParams.get('state'))
   })
   const result = await pulls.list('closed', 1)
-  expect(result.pulls.map((pull) => pull.state)).toEqual(['merged', 'closed'])
+  expect(result.pulls.map((pull) => pull.state)).toEqual(['closed', 'merged'])
   expect(result.pulls[0].authorAvatarUrl).toBe(user.avatar_url)
   await pulls.create({ title: 'Change', head: 'topic', base: 'main', body: 'Body', draft: true })
   expect(requests.at(-1)?.request?.body).toBe(
@@ -244,6 +244,72 @@ it('creates drafts and preserves GitLab closed/merged list semantics', async () 
       target_branch: 'main',
     }),
   )
+})
+it('pages the closed/merged union without scanning intervening open requests or losing either state', async () => {
+  const { pulls, requests } = setup((url) => {
+    if (url.pathname === '/api/v4/user') return user
+    const state = url.searchParams.get('state')
+    const page = Number(url.searchParams.get('page'))
+    const rows = Array.from({ length: state === 'closed' ? 70 : 40 }, (_, index) => ({
+      ...mergeRequest,
+      iid: (state === 'closed' ? 100 : 200) + index,
+      state,
+      updated_at: new Date(
+        Date.UTC(2026, 9, 30, 0, (state === 'closed' ? 2 : 1) * index),
+      ).toISOString(),
+    }))
+    return rows
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .slice((page - 1) * 50, page * 50)
+  })
+  const first = await pulls.list('closed', 1)
+  const second = await pulls.list('closed', 2)
+  const third = await pulls.list('closed', 3)
+  expect([first.pulls.length, second.pulls.length, third.pulls.length]).toEqual([50, 50, 10])
+  expect([first.hasMore, second.hasMore, third.hasMore]).toEqual([true, true, false])
+  expect(
+    new Set([...first.pulls, ...second.pulls, ...third.pulls].map((pull) => pull.number)).size,
+  ).toBe(110)
+  expect(
+    requests
+      .filter(({ url }) => url.pathname !== '/api/v4/user')
+      .every(({ url }) => ['closed', 'merged'].includes(url.searchParams.get('state') ?? '')),
+  ).toBe(true)
+})
+it('bounds closed pagination and explains the provider limit', async () => {
+  const { pulls } = setup((url) => {
+    if (url.pathname === '/api/v4/user') return user
+    if (url.searchParams.get('state') === 'merged') return []
+    const page = Number(url.searchParams.get('page'))
+    return Array.from({ length: page === 101 ? 1 : 50 }, (_, index) => ({
+      ...mergeRequest,
+      state: 'closed',
+      iid: (page - 1) * 50 + index + 1,
+    }))
+  })
+  const page = await pulls.list('closed', 100)
+  expect(page.pulls).toHaveLength(50)
+  expect(page.hasMore).toBe(false)
+  expect(page.paginationNotice).toContain('Open older requests on GitLab')
+})
+it('keeps equal-timestamp source order stable as later closed pages load', async () => {
+  const { pulls } = setup((url) => {
+    if (url.pathname === '/api/v4/user') return user
+    const state = url.searchParams.get('state')
+    const page = Number(url.searchParams.get('page'))
+    return Array.from({ length: 120 }, (_, index) => ({
+      ...mergeRequest,
+      state,
+      iid: (state === 'closed' ? 100 : 1000) + index,
+    })).slice((page - 1) * 50, page * 50)
+  })
+  const rows = (await Promise.all([1, 2, 3].map((page) => pulls.list('closed', page)))).flatMap(
+    (page) => page.pulls,
+  )
+  expect(rows).toHaveLength(150)
+  expect(new Set(rows.map((pull) => pull.number)).size).toBe(150)
+  expect(rows.slice(0, 120).every((pull) => pull.state === 'closed')).toBe(true)
+  expect(rows[120].number).toBe(1000)
 })
 it('preserves issue revision checks, resolves assignees, and clears assignees explicitly', async () => {
   const { work, requests } = setup((url) => (url.pathname === '/api/v4/users' ? [user] : issue))

@@ -5,6 +5,7 @@ import {
   settingsAtScope,
   initializeScopedSettings,
   mergeSharedSettings,
+  updateSharedSettingsEntry,
 } from './scoped-settings.js'
 
 /** Shared resets deliberately suppress old per-computer custom images. */
@@ -21,10 +22,31 @@ export function sharedProjectIconEntry(
 ) {
   const key = sharedProjectKey(repository)
   if (!key) return undefined
-  return {
+  return updateSharedSettingsEntry(
     key,
-    ...revision,
-    value: { ...settingsAtScope(runtime, repository, 'project'), projectIcon: icon ?? null },
+    runtime.scopedSettings?.shared.find((entry) => entry.key === key),
+    { ...settingsAtScope(runtime, repository, 'project'), projectIcon: icon ?? null },
+    revision,
+  )
+}
+
+/** Presentation may use last-confirmed identity without granting reads or executable settings. */
+export function sharedProjectPresentation(
+  runtime: RuntimeDefaults,
+  repository: Repository,
+): Repository {
+  const identity = repository.gitIdentity ?? repository.presentationIdentity
+  const value =
+    !repository.kind && identity
+      ? runtime.scopedSettings?.shared.find((entry) => entry.key === `project:${identity}`)?.value
+      : undefined
+  return {
+    ...repository,
+    localName: repository.localName ?? repository.name,
+    sharedName: value?.projectName ?? undefined,
+    name: value?.projectName ?? repository.localName ?? repository.name,
+    iconOverride:
+      value?.projectIcon === undefined ? repository.iconOverride : (value.projectIcon ?? undefined),
   }
 }
 

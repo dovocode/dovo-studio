@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Schema } from 'effect'
 import {
   learnRuntimeRoutes,
+  reconcileRuntimeRoutes,
   resolveRuntimeEndpoint,
   runtimeTransportAddress,
   invalidateRuntimeRoute,
@@ -483,4 +484,170 @@ it('invalidates in-flight discovery and never lets a late result overwrite its r
   await Promise.resolve()
   await Promise.resolve()
   expect(runtimeTransportAddress(connection)).toBe(connection.alternateAddresses[0])
+})
+
+it('removes obsolete selections and verifies replacement routes before using credentials', async () => {
+  const old = {
+    address: 'http://reconcile-primary.local',
+    token,
+    runtimeId: 'paired-runtime',
+    alternateAddresses: ['http://reconcile-old.local'],
+  }
+  const next = { ...old, alternateAddresses: ['http://reconcile-new.local'] }
+  const calls: string[] = []
+  const healthHeaders: Array<HeadersInit | undefined> = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(async (input, options) => {
+      const url = new URL(
+        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
+      )
+      calls.push(url.href)
+      if (url.pathname === '/health') {
+        healthHeaders.push(options?.headers)
+        if (url.origin === old.address) throw new Error('Offline')
+        return Response.json({ service: 'dovo-runtime', runtimeId: 'paired-runtime' })
+      }
+      return Response.json({ ok: true })
+    }),
+  )
+  const signal = new AbortController().signal
+  expect(await resolveAddress(old, signal)).toBe(old.alternateAddresses[0])
+  expect(await resolveAddress(old, signal, 'stream')).toBe(old.alternateAddresses[0])
+  reconcileRuntimeRoutes(old, next)
+  expect(runtimeTransportAddress(next)).toBe(next.address)
+  expect(runtimeTransportAddress(next, 'stream')).toBe(next.address)
+  calls.length = 0
+  expect(await resolveAddress(next, signal)).toBe(next.alternateAddresses[0])
+  expect(calls.some((url) => url.includes('reconcile-old.local'))).toBe(false)
+  expect(healthHeaders.length).toBeGreaterThan(0)
+  expect(healthHeaders.every((headers) => headers === undefined)).toBe(true)
+})
+
+it('cancels superseded discovery and rejects changed runtime identity without sending a mutation', async () => {
+  const old = {
+    address: 'http://reconcile-pending.local',
+    token,
+    runtimeId: 'paired-runtime',
+    alternateAddresses: ['http://reconcile-pending-old.local'],
+  }
+  const next = { ...old, alternateAddresses: ['http://reconcile-pending-new.local'] }
+  const finishes: Array<() => void> = []
+  const writes: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(
+        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
+      )
+      if (url.pathname !== '/health') {
+        writes.push(url.href)
+        return Response.json({ ok: true })
+      }
+      return new Promise<Response>((resolve) =>
+        finishes.push(() =>
+          resolve(Response.json({ service: 'dovo-runtime', runtimeId: old.runtimeId })),
+        ),
+      )
+    }),
+  )
+  const pending = runtimeRequest(old, old.address, '/api/tasks/run', {}, Schema.Unknown).catch(
+    (error: unknown) => error,
+  )
+  expect(finishes).toHaveLength(2)
+  expect(() => reconcileRuntimeRoutes(old, { ...next, runtimeId: 'different-runtime' })).toThrow(
+    'different runtime',
+  )
+  reconcileRuntimeRoutes(old, next)
+  reconcileRuntimeRoutes(next, {
+    ...next,
+    alternateAddresses: ['http://reconcile-pending-latest.local'],
+  })
+  expect(await pending).toMatchObject({ kind: 'connection' })
+  for (const finish of finishes) finish()
+  await Promise.resolve()
+  expect(writes).toEqual([])
+  expect(runtimeTransportAddress(next)).toBe(next.address)
+})
+
+it('invalidates a selected route when a later authenticated snapshot removes it', async () => {
+  const old = learnRuntimeRoutes(
+    { address: 'http://snapshot-reconcile.local', token },
+    { ...snapshot, runtimeAddresses: ['http://snapshot-old.local'] },
+  )
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(
+        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
+      )
+      if (url.origin === old.address) throw new Error('Offline')
+      return Response.json({ service: 'dovo-runtime', runtimeId: old.runtimeId })
+    }),
+  )
+  const signal = new AbortController().signal
+  expect(await resolveAddress(old, signal)).toBe('http://snapshot-old.local')
+  const next = learnRuntimeRoutes(old, {
+    ...snapshot,
+    runtimeAddresses: ['http://snapshot-new.local'],
+  })
+  expect(runtimeTransportAddress(next)).toBe(next.address)
+  expect(await resolveAddress(next, signal)).toBe('http://snapshot-new.local')
+})
+
+it('does not replay an already dispatched mutation when route metadata changes', async () => {
+  const old = {
+    address: 'http://reconcile-write.local',
+    token,
+    runtimeId: 'paired-runtime',
+    alternateAddresses: ['http://reconcile-write-old.local'],
+  }
+  const next = { ...old, alternateAddresses: ['http://reconcile-write-new.local'] }
+  const response = Promise.withResolvers<Response>()
+  const writes: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(
+        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
+      )
+      if (url.pathname === '/health')
+        return Response.json({ service: 'dovo-runtime', runtimeId: old.runtimeId })
+      writes.push(url.origin)
+      return response.promise
+    }),
+  )
+  const pending = runtimeRequest(old, old.address, '/api/tasks/run', {}, Schema.Unknown)
+  await vi.waitFor(() => expect(writes).toHaveLength(1))
+  reconcileRuntimeRoutes(old, next)
+  response.reject(new Error('Response lost after dispatch'))
+  await expect(pending).rejects.toMatchObject({ kind: 'connection' })
+  expect(writes).toEqual([old.address])
+})
+
+it('keeps active selections when authenticated snapshots only reorder the same interfaces', async () => {
+  const first = learnRuntimeRoutes(
+    { address: 'http://reordered-primary.local', token },
+    { ...snapshot, runtimeAddresses: ['http://reordered-a.local', 'http://reordered-b.local'] },
+  )
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    const url = new URL(
+      input instanceof Request ? input.url : input instanceof URL ? input.href : input,
+    )
+    if (url.origin === first.address) throw new Error('Offline')
+    return Response.json({ service: 'dovo-runtime', runtimeId: first.runtimeId })
+  })
+  vi.stubGlobal('fetch', fetcher)
+  const signal = new AbortController().signal
+  expect(await resolveAddress(first, signal)).toBe('http://reordered-a.local')
+  expect(await resolveAddress(first, signal, 'stream')).toBe('http://reordered-a.local')
+  fetcher.mockClear()
+  const second = learnRuntimeRoutes(first, {
+    ...snapshot,
+    runtimeAddresses: ['http://reordered-b.local', 'http://reordered-a.local'],
+  })
+  expect(second.alternateAddresses).toEqual(first.alternateAddresses)
+  expect(await resolveAddress(second, signal)).toBe('http://reordered-a.local')
+  expect(await resolveAddress(second, signal, 'stream')).toBe('http://reordered-a.local')
+  expect(fetcher).not.toHaveBeenCalled()
 })
