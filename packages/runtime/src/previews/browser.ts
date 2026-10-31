@@ -1117,10 +1117,19 @@ export class RemoteBrowsers {
     session.captureActiveUntil = Date.now() + 2000
     clearTimeout(session.captureIdle)
     if (!session.visibleListeners.size || session.closing) return
-    session.captureIdle = setTimeout(() => {
+    const idle = () => {
+      // Node timers can wake just before the wall-clock deadline. Keep the
+      // deadline armed until capture can actually switch to its idle rate.
+      const remaining = (session.captureActiveUntil ?? 0) - Date.now()
+      if (remaining > 0) {
+        session.captureIdle = setTimeout(idle, remaining)
+        session.captureIdle.unref()
+        return
+      }
       session.captureIdle = undefined
       void this.syncStream(session).catch((error) => this.report(session, error))
-    }, 2000)
+    }
+    session.captureIdle = setTimeout(idle, 2000)
     session.captureIdle.unref()
   }
   private syncStream(session: Session, restart = false) {
