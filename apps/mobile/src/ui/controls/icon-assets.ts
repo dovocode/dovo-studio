@@ -25,6 +25,7 @@ export const iconAssets = {
   refresh: require('../../../assets/icons/refresh.png'),
   star: require('../../../assets/icons/star.png'),
   moveUp: require('../../../assets/icons/moveUp.png'),
+  drag: require('../../../assets/icons/drag.png'),
   moveDown: require('../../../assets/icons/moveDown.png'),
   trash: require('../../../assets/icons/trash.png'),
   restore: require('../../../assets/icons/restore.png'),

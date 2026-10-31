@@ -448,7 +448,7 @@ export function Composer({
       ? backgroundStartActions
       : [
           ...backgroundStartActions,
-          ...(stageSupported && defaultSendMode !== 'stage'
+          ...(stageSupported
             ? [
                 {
                   title: 'Add without starting',

@@ -123,8 +123,8 @@ const stubs = [
     path: 'react-native-gesture-handler',
     contents: `
 import {useRef} from 'react';export {Pressable} from 'react-native';
-export const Gesture={Pan:()=>{const gesture={callbacks:{},enabled(value){this.active=value;return this},activateAfterLongPress(value){this.delay=value;return this},runOnJS(){return this},onStart(fn){this.callbacks.start=fn;return this},onUpdate(fn){this.callbacks.update=fn;return this},onEnd(fn){this.callbacks.end=fn;return this},onFinalize(fn){this.callbacks.finalize=fn;return this}};return gesture}};
-export const GestureDetector=({gesture,children})=>{const state=useRef(null);return <div style={{display:'flex',flex:1,minWidth:0}} onPointerDown={event=>{if(!gesture.active)return;const target=event.currentTarget;const current={y:event.clientY,dragging:false};state.current=current;current.timer=setTimeout(()=>{current.dragging=true;target.setPointerCapture(event.pointerId);gesture.callbacks.start()},gesture.delay)}} onPointerMove={event=>{const current=state.current;if(!current)return;if(current.dragging)gesture.callbacks.update({translationY:event.clientY-current.y});else if(Math.abs(event.clientY-current.y)>10){clearTimeout(current.timer);state.current=null}}} onPointerUp={()=>{const current=state.current;if(!current)return;clearTimeout(current.timer);if(current.dragging){gesture.callbacks.end();gesture.callbacks.finalize({},true)}}} onPointerCancel={()=>{clearTimeout(state.current?.timer);gesture.callbacks.finalize({},false);state.current=null}} onClickCapture={event=>{if(state.current?.dragging){event.preventDefault();event.stopPropagation()}state.current=null}}>{children}</div>};
+export const Gesture={Pan:()=>{const gesture={callbacks:{},enabled(value){this.active=value;return this},activateAfterLongPress(value){this.delay=value;return this},minDistance(){return this},runOnJS(){return this},onStart(fn){this.callbacks.start=fn;return this},onUpdate(fn){this.callbacks.update=fn;return this},onEnd(fn){this.callbacks.end=fn;return this},onFinalize(fn){this.callbacks.finalize=fn;return this}};return gesture}};
+export const GestureDetector=({gesture,children})=>{const state=useRef(null);return <div style={{display:'flex',flex:children.props.style?.flex,minWidth:0}} onPointerDown={event=>{if(!gesture.active)return;const target=event.currentTarget;const current={y:event.clientY,dragging:false};state.current=current;current.timer=setTimeout(()=>{current.dragging=true;target.setPointerCapture(event.pointerId);gesture.callbacks.start()},gesture.delay)}} onPointerMove={event=>{const current=state.current;if(!current)return;if(current.dragging)gesture.callbacks.update({translationY:event.clientY-current.y});else if(Math.abs(event.clientY-current.y)>10){clearTimeout(current.timer);state.current=null}}} onPointerUp={()=>{const current=state.current;if(!current)return;clearTimeout(current.timer);if(current.dragging){gesture.callbacks.end();gesture.callbacks.finalize({},true)}}} onPointerCancel={()=>{clearTimeout(state.current?.timer);gesture.callbacks.finalize({},false);state.current=null}} onClickCapture={event=>{if(state.current?.dragging){event.preventDefault();event.stopPropagation()}state.current=null}}>{children}</div>};
 `,
   },
   ...[
@@ -335,6 +335,9 @@ try {
         queue: [{ id: 'older', role: 'user', text: 'Older queued prompt' }],
       }),
     )
+    await holdSend()
+    await menu.getByRole('menuitem', { name: 'Add without starting', exact: true }).click()
+    assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stage' })
     await holdSend()
     await menu.getByRole('menuitem', { name: 'Add and run queue', exact: true }).click()
     assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
@@ -1225,11 +1228,12 @@ try {
     node.scrollTop = 0
   })
   await source.scrollIntoViewIfNeeded()
-  const sourceBox = await source.boundingBox()
+  const handle = page.getByTestId('Drag queued message 2')
+  const sourceBox = await handle.boundingBox()
   const targetBox = await row.boundingBox()
   await page.mouse.move(sourceBox.x + 10, sourceBox.y + sourceBox.height / 2)
   await page.mouse.down()
-  await page.waitForTimeout(350)
+  await page.waitForTimeout(20)
   await page.mouse.move(sourceBox.x + 10, targetBox.y + 4, { steps: 4 })
   await page.mouse.up()
   await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'move')

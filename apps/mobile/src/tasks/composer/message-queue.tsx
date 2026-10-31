@@ -343,30 +343,49 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                   : {}),
               }}
             >
-              <Text
-                accessibilityLabel={
-                  pendingMessage
-                    ? pendingMessage.state === 'failed'
-                      ? 'Could not send · Retry from composer'
-                      : 'Waiting for confirmation'
-                    : `Message ${index + 1}${state ? `, ${state}` : ''}`
-                }
-                style={[
-                  styles.muted,
-                  {
-                    width: 24,
-                    height: 24,
-                    lineHeight: 24,
-                    borderRadius: 12,
-                    overflow: 'hidden',
-                    backgroundColor: colors.selection,
-                    textAlign: 'center',
-                    fontSize: 12,
-                  },
-                ]}
-              >
-                {pendingMessage ? (pendingMessage.state === 'failed' ? '!' : '…') : index + 1}
-              </Text>
+              {canDrag && !pendingMessage && !message.steering ? (
+                <QueueDragTarget
+                  handle
+                  enabled
+                  begin={() => drag.begin(message.id)}
+                  update={drag.update}
+                  end={drag.end}
+                  cancel={drag.cancel}
+                >
+                  <View
+                    testID={`Drag queued message ${index + 1}`}
+                    accessible={false}
+                    pointerEvents="none"
+                  >
+                    <Icon name="drag" size={20} color={colors.muted} />
+                  </View>
+                </QueueDragTarget>
+              ) : (
+                <Text
+                  accessibilityLabel={
+                    pendingMessage
+                      ? pendingMessage.state === 'failed'
+                        ? 'Could not send · Retry from composer'
+                        : 'Waiting for confirmation'
+                      : `Message ${index + 1}${state ? `, ${state}` : ''}`
+                  }
+                  style={[
+                    styles.muted,
+                    {
+                      width: 24,
+                      height: 24,
+                      lineHeight: 24,
+                      borderRadius: 12,
+                      overflow: 'hidden',
+                      backgroundColor: colors.selection,
+                      textAlign: 'center',
+                      fontSize: 12,
+                    },
+                  ]}
+                >
+                  {pendingMessage ? (pendingMessage.state === 'failed' ? '!' : '…') : index + 1}
+                </Text>
+              )}
               <View style={{ width: 12, flexShrink: 0 }}>
                 {(paused || blockedBy) && (
                   <Icon

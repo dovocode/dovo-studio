@@ -121,9 +121,11 @@ export function QueueDragTarget({
   update,
   end,
   cancel,
+  handle = false,
 }: {
   children: ReactNode
   enabled: boolean
+  handle?: boolean
   begin: () => void
   update: (translation: number) => void
   end: () => void
@@ -135,7 +137,8 @@ export function QueueDragTarget({
     () =>
       Gesture.Pan()
         .enabled(enabled)
-        .activateAfterLongPress(300)
+        .activateAfterLongPress(handle ? 0 : 300)
+        .minDistance(handle ? 1 : 10)
         .runOnJS(true)
         .onStart(() => latest.current.begin())
         .onUpdate((event) => latest.current.update(event.translationY))
@@ -143,11 +146,18 @@ export function QueueDragTarget({
         .onFinalize((_event, success) => {
           if (!success) latest.current.cancel()
         }),
-    [enabled],
+    [enabled, handle],
   )
   return (
     <GestureDetector gesture={gesture}>
-      <View collapsable={false} style={{ flex: 1, minWidth: 0 }}>
+      <View
+        collapsable={false}
+        style={
+          handle
+            ? { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }
+            : { flex: 1, minWidth: 0 }
+        }
+      >
         {children}
       </View>
     </GestureDetector>
