@@ -233,7 +233,17 @@ export function FolderPicker({
       : 'Choose project'
   const projectControl =
     prominent && onAuto ? (
-      <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%' }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          maxWidth: '100%',
+          borderWidth: 1,
+          borderRadius: 10,
+          borderColor: projectSelected ? colors.accent : colors.border,
+          backgroundColor: projectSelected ? colors.selection : 'transparent',
+        }}
+      >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={
@@ -272,14 +282,15 @@ export function FolderPicker({
           <Text
             numberOfLines={1}
             style={{
-              color: projectSelected ? colors.text : colors.muted,
+              color: projectSelected ? colors.accent : colors.muted,
               fontSize: 13,
-              fontWeight: '500',
+              fontWeight: projectSelected ? '600' : '500',
               flexShrink: 1,
             }}
           >
             {prominentLabel}
           </Text>
+          {projectSelected && <Icon name="check" size={14} color={colors.accent} />}
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -322,6 +333,7 @@ export function FolderPicker({
         accessibilityLabel={prominent ? 'Choose project' : 'Folder'}
         accessibilityValue={{ text: projectLabel }}
         accessibilityState={{
+          selected: prominent && projectSelected,
           disabled: locked,
           expanded: open && mode === 'projects',
         }}
@@ -335,10 +347,14 @@ export function FolderPicker({
             flexWrap: 'nowrap',
             padding: 12,
             minHeight: 44,
-            borderWidth: 0,
+            borderWidth: prominent ? 1 : 0,
             borderColor: projectSelected ? colors.accent : colors.border,
             borderRadius: 12,
-            backgroundColor: prominent ? 'transparent' : colors.surface,
+            backgroundColor: prominent
+              ? projectSelected
+                ? colors.selection
+                : 'transparent'
+              : colors.surface,
             opacity: locked ? 0.45 : 1,
           },
         ]}
@@ -354,6 +370,7 @@ export function FolderPicker({
         <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
           {prominent ? (selectedProject?.name ?? 'Choose project') : projectLabel}
         </Text>
+        {prominent && projectSelected && <Icon name="check" size={14} color={colors.accent} />}
         <Icon name="down" size={14} />
       </Pressable>
     )
