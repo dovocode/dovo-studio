@@ -40,7 +40,8 @@ afterEach(async () => {
 })
 
 async function fixture({ sameRecord = false } = {}) {
-  const directory = mkdtempSync(join(tmpdir(), 'dovo-packaged-recovery-'))
+  // Match the immutable paths recorded by packaged activation, including on macOS.
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'dovo-packaged-recovery-')))
   directories.push(directory)
   const socket = createServer()
   await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve))

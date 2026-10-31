@@ -10,6 +10,7 @@ import {
   writeFileSync,
   symlinkSync,
   readlinkSync,
+  realpathSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
@@ -30,7 +31,8 @@ const RuntimeDatabase: { prototype: { backup: Backup } } = createRequire(
   createRequire(import.meta.url).resolve('@dovo/runtime'),
 )('better-sqlite3')
 function fixture() {
-  const directory = mkdtempSync(join(tmpdir(), 'dovo-activation-'))
+  // Packaged activation pins real paths; macOS temp directories can use /var aliases.
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'dovo-activation-')))
   paths.push(directory)
   const databasePath = join(directory, 'runtime.sqlite')
   const previous = join(directory, 'old/bin/dovo-server')

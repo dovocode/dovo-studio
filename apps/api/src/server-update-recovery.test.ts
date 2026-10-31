@@ -1,7 +1,14 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { spawn, type ChildProcess } from 'node:child_process'
 import * as files from 'node:fs'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
@@ -74,7 +81,8 @@ const candidateSelection = (entrypoint: string) =>
 const previousSelection =
   JSON.stringify({ entrypoint: '/releases/previous/index.js', version: 'previous' }) + '\n'
 async function fixture({ database = true } = {}) {
-  const directory = mkdtempSync(join(tmpdir(), 'dovo-update-recovery-'))
+  // Packaged journals and retained launcher comparisons use canonical paths.
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'dovo-update-recovery-')))
   directories.push(directory)
   const socket = createServer()
   await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve))

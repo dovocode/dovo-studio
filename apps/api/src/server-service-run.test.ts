@@ -7,6 +7,7 @@ import {
   writeFileSync,
   symlinkSync,
   readlinkSync,
+  realpathSync,
 } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'node:os'
@@ -153,7 +154,8 @@ it('restores the previous release and database before a boot launch after a deci
 })
 
 it('delegates a packaged boot rollback to the restored launcher instead of starting the candidate runtime', async () => {
-  directory = mkdtempSync(join(tmpdir(), 'dovo-package-boot-'))
+  // Hand-written packaged journals must use the canonical paths activation records.
+  directory = realpathSync(mkdtempSync(join(tmpdir(), 'dovo-package-boot-')))
   const databasePath = join(directory, 'runtime.sqlite')
   writeFileSync(
     join(directory, 'server.json'),
