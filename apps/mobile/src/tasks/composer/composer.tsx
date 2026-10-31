@@ -69,7 +69,6 @@ import { mutableStruct } from '@dovo/protocol'
 import type { BackgroundStart } from '../conversation/state/use-actions'
 import { useTaskConversation } from '../conversation/state/provider'
 import { Action } from '../../ui/controls/action'
-import { QueueMenu } from './queue-menu'
 import { ComposerField } from './composer-field'
 import { Sheet } from '../../ui/layout/sheet'
 import { useTheme } from '../../ui/theme'
@@ -106,8 +105,7 @@ export function Composer({
   ) => Promise<void>
 }) {
   const { colors, styles, reduceMotion } = useTheme()
-  const { showContextUsage, minimalComposer, showPlanButton, showSendOptions } =
-    useMobilePreferences()
+  const { showContextUsage, minimalComposer, showPlanButton } = useMobilePreferences()
   const motion = reduceMotion ? ReduceMotion.Always : ReduceMotion.System
   const transition = LinearTransition.duration(280)
     .easing(Easing.bezier(0.22, 1, 0.36, 1))
@@ -1369,15 +1367,6 @@ export function Composer({
                       }
                 }
               />
-              {showSendOptions && !editing && stageSupported && task.status !== 'running' && (
-                <QueueMenu
-                  label="More message actions"
-                  actions={messageMenuActions.filter(
-                    (item) =>
-                      item.title === 'Add without starting' || item.title === normalSendLabel,
-                  )}
-                />
-              )}
               <View ref={messageTrigger} collapsable={false} style={{ width: 44, height: 44 }}>
                 <IconButton
                   variant="filled"

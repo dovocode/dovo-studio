@@ -171,7 +171,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);ret
     path: '../../runtime/preferences/app-preferences',
     importer: mobile,
     contents:
-      'export const useCarMode=()=>false;export const useMobilePreferences=()=>({showPlanButton:window.showPlanButton===true,showSendOptions:window.showSendOptions!==false,showContextUsage:window.showContextUsage!==false,minimalComposer:window.minimalComposer!==false});',
+      'export const useCarMode=()=>false;export const useMobilePreferences=()=>({showPlanButton:window.showPlanButton===true,showContextUsage:window.showContextUsage!==false,minimalComposer:window.minimalComposer!==false});',
   },
   { path: './harness-icon', importer: mobile, contents: 'export const HarnessIcon=()=>null;' },
   {
@@ -300,23 +300,30 @@ try {
       window.setTask({ status: 'review', queue: [] })
       window.setDraftText('Queue this prompt')
     })
-    const more = page.getByRole('button', { name: 'More message actions', exact: true })
-    await more.waitFor()
-    const bounds = await more.boundingBox()
+    assert.equal(
+      await page.getByRole('button', { name: 'More message actions', exact: true }).count(),
+      0,
+    )
     const send = page.getByRole('button', { name: 'Send', exact: true })
-    const sendBounds = await send.boundingBox()
-    assert.ok(bounds.width >= 44 && bounds.height >= 44)
-    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320)
-    assert.ok(bounds.x + bounds.width <= sendBounds.x + 1)
-    assert.ok(Math.abs(bounds.y - sendBounds.y) < 1)
+    const holdSend = async () => {
+      const button = page
+        .getByTestId('Composer toolbar')
+        .getByRole('button', { name: /^(Send|Add to queue)$/ })
+      await button.hover()
+      const before = await page.evaluate(() => window.calls.length)
+      await page.mouse.down()
+      await page.getByRole('menu', { name: 'Message actions', exact: true }).waitFor()
+      await page.mouse.up()
+      assert.equal(await page.evaluate(() => window.calls.length), before, 'Holding must not send')
+    }
     const input = page.getByRole('textbox', { name: 'Message', exact: true })
     await input.focus()
-    await more.click()
-    const menu = page.getByRole('menu', { name: 'More message actions', exact: true })
+    await holdSend()
+    const menu = page.getByRole('menu', { name: 'Message actions', exact: true })
     await menu.waitFor()
     await menu.getByRole('menuitem', { name: 'Add to queue', exact: true }).click()
     assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
-    await more.click()
+    await holdSend()
     await menu.getByRole('menuitem', { name: 'Add without starting', exact: true }).click()
     assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'stage' })
     assert.equal(await input.evaluate((node) => node === document.activeElement), true)
@@ -328,17 +335,20 @@ try {
         queue: [{ id: 'older', role: 'user', text: 'Older queued prompt' }],
       }),
     )
-    await more.click()
+    await holdSend()
     await menu.getByRole('menuitem', { name: 'Add and run queue', exact: true }).click()
     assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { mode: 'queue' })
     await page.evaluate(() => {
       window.stageSupported = false
       window.setTask({})
     })
-    await more.waitFor({ state: 'detached' })
+    assert.equal(
+      await page.getByRole('button', { name: 'More message actions', exact: true }).count(),
+      0,
+    )
     assert.deepEqual(errors, [])
     console.log(
-      'Mobile visible message actions: idle capability gate, 44pt trigger beside Send at 320px, automatic Add to queue, explicit Add without starting, preserved input focus and normal Send passed.',
+      'Mobile held Send actions: no extra toolbar button, idle capability gate, automatic Add to queue, explicit Add without starting, preserved input focus and normal Send passed.',
     )
     await browser.close()
     process.exit(0)
