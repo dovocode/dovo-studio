@@ -254,7 +254,10 @@ export function MessageQueue({
       }
       aria-label="Queued follow-ups"
     >
-      <div className="flex items-center justify-end gap-2 px-2 py-1">
+      <div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border/40 px-3 py-1.5">
+        <span className="mr-auto text-muted-foreground">
+          {task.queuePaused || queue[0]?.paused ? 'Paused' : 'Runs after this turn'}
+        </span>
         {awaitingOrder.current && (
           <span role="status">
             {confirmationReleased
@@ -279,7 +282,7 @@ export function MessageQueue({
         )}
         <button
           type="button"
-          className="rounded px-2 py-1 hover:bg-accent disabled:opacity-40"
+          className="shrink-0 rounded-md px-2 py-1.5 font-medium hover:bg-accent disabled:opacity-40"
           disabled={
             !connected ||
             busy ||
@@ -332,7 +335,7 @@ export function MessageQueue({
           </QueueSectionTrigger>
         )}
         <QueueList
-          className="mt-0"
+          className="mt-0 max-h-[180px]"
           onDragLeave={(event) => {
             if (
               !event.currentTarget.contains(
@@ -560,7 +563,7 @@ export function MessageQueue({
                 )}
                 <div
                   data-queue-actions
-                  className={`pointer-events-none absolute right-11 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 rounded-md bg-muted p-1 group-hover/queue-row:pointer-events-auto group-focus-within/queue-row:pointer-events-auto [@media(hover:none)]:pointer-events-auto ${rowActionClass}`}
+                  className={`pointer-events-none relative z-10 flex shrink-0 flex-wrap justify-end items-center gap-1 rounded-md bg-muted p-1 group-hover/queue-row:pointer-events-auto group-focus-within/queue-row:pointer-events-auto [@media(hover:none)]:pointer-events-auto ${rowActionClass}`}
                 >
                   {watchMessage(message) && (
                     <IconButton
