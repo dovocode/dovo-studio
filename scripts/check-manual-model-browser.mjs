@@ -20,9 +20,10 @@ const mocks = {
     export {WorkspaceValueProvider,useWorkspaceSelector,sameWorkspaceFields} from '../studio-core/src/workspace/selector';
     export {useCachedTask} from '../studio-core/src/workspace/use-cached-task';
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
+    export {useCodexSessionImport} from '../studio-core/src/use-codex-session-import';
     export const WorkspaceScope=({children})=>children;
     export const useStudioHost=()=>window.host;
-    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],followUp:'queue'});
+    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],threadInfoSections:{},followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
     export const updateAppPreferences=()=>{};
     export const useResolvedTheme=()=> 'dark';

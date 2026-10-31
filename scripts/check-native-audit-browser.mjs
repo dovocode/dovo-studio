@@ -16,13 +16,15 @@ export const Pressable=({children,onPress,disabled,style,accessibilityLabel,acce
 export const FlatList=({data,renderItem,keyExtractor})=><div>{data.map((item,index)=><div key={keyExtractor?.(item,index)??index}>{renderItem({item,index})}</div>)}</div>;
 export const SectionList=({sections,renderItem,renderSectionHeader,keyExtractor})=><div>{sections.map((section,index)=><section key={section.title??index}>{renderSectionHeader?.({section})}{section.data.map((item,index)=><div key={keyExtractor?.(item,index)??index}>{renderItem({item,index,section})}</div>)}</section>)}</div>;
 export const ScrollView=({children,ref,contentContainerStyle,style,testID})=>{useImperativeHandle(ref,()=>({scrollTo:input=>window.scrolls.push(input)}));return <div data-testid={testID} style={{...flat(style),...flat(contentContainerStyle)}}>{children}</div>};
-export const Platform={OS:'ios'};export const Keyboard={dismiss(){},addListener:()=>({remove(){}})};export const KeyboardAvoidingView=View;export const RefreshControl=()=>null;export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};export const useWindowDimensions=()=>({height:844,width:390});export const Alert={alert:(title,body,actions)=>{window.alerts.push({title,body});actions?.find(a=>a.style==='destructive')?.onPress()}};
+export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input type="checkbox" role="switch" aria-label={accessibilityLabel} checked={value} disabled={disabled} onChange={event=>onValueChange(event.target.checked)}/>;export const Platform={OS:'ios'};export const Keyboard={dismiss(){},addListener:()=>({remove(){}})};export const KeyboardAvoidingView=View;export const RefreshControl=()=>null;export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};export const useWindowDimensions=()=>({height:844,width:390});export const Alert={alert:(title,body,actions)=>{window.alerts.push({title,body});actions?.find(a=>a.style==='destructive')?.onPress()}};
 `
 const swift = `import {useEffect} from 'react';const Wrap=({children})=><div>{children}</div>;export const Host=Wrap,Group=Wrap,NavigationStack=Wrap,RNHostView=Wrap;export const Toolbar=Object.assign(Wrap,{Content:Wrap});export const Button=({children,onPress,testID})=><button aria-label={testID} onClick={onPress}>{children}</button>;export const BottomSheet=({children,isPresented,onDismiss})=>{useEffect(()=>{if(!isPresented){window.events.push('dismissing');window.completeDismiss=()=>{window.events.push('dismissed');onDismiss()}}},[isPresented]);return <section role="dialog" data-presented={isPresented}>{children}</section>};`
 const action = `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`
 const field = `export const Field=({label,value,onChangeText,editable=true,multiline})=><label>{label}{multiline?<textarea aria-label={label} value={value} disabled={!editable} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} disabled={!editable} onChange={e=>onChangeText(e.target.value)}/>}</label>;`
 const searchField = `export const SearchField=({placeholder,value,onChangeText})=><input aria-label={placeholder} placeholder={placeholder} value={value} onChange={e=>onChangeText(e.target.value)}/>;`
 const mocks = {
+  // Model controls have their own browser suite; retain the real project sheet here.
+  './harness-settings': `export const HarnessSettings=()=>{throw Error('Unexpected model controls in navigation audit fixture')};`,
   '@dovo/studio-core': `export {useTaskWaiting} from '${root}/packages/studio-core/src/use-task-waiting.ts';`,
   'react-native': controls,
   'lucide-react-native': `export * from 'lucide-react';`,
@@ -84,8 +86,8 @@ const mocks = {
   '../../review/organize-review': `export const MobileOrganizeReview=()=>null;`,
   '../../review/file-review': `export const MobileFileReview=({files,selected,onSelect})=><select aria-label="Changed file" value={selected} onChange={e=>onSelect(e.target.value)}>{files.map(f=><option key={f.path} value={f.path}>{f.path}</option>)}</select>;`,
   '../../../tasks/preview/diff-view': `export const DiffView=()=>null;`,
-  '../../runtime/preferences/app-preferences': `export const formatTime=()=>'';export const readMobilePreferences=()=>({mergeMethod:'auto'});`,
-  '../../../runtime/preferences/app-preferences': `export const formatTime=()=>'';export const readMobilePreferences=()=>({mergeMethod:'auto'});`,
+  '../../runtime/preferences/app-preferences': `export const formatTime=()=>'';export const readMobilePreferences=()=>({mergeMethod:'auto',threadInfoSections:{}});export const useMobilePreferences=()=>({...readMobilePreferences(),ready:true});export const updateMobilePreferences=()=>{throw Error('Unexpected preference write in native audit fixture')};`,
+  '../../../runtime/preferences/app-preferences': `export const formatTime=()=>'';export const readMobilePreferences=()=>({mergeMethod:'auto',threadInfoSections:{}});export const useMobilePreferences=()=>({...readMobilePreferences(),ready:true});export const updateMobilePreferences=()=>{throw Error('Unexpected preference write in native audit fixture')};`,
   '../../scm/connections/project-icon-settings': `export const ProjectIconSettings=()=>null;`,
   './commit-section': `export const CommitSection=()=>null;`,
   './task-source': `export const TaskSource=()=>null;`,

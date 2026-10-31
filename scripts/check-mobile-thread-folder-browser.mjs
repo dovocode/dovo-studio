@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { chromium } from 'playwright'
 const mocks = {
+  'expo-router': `export const router={push:()=>{throw new Error('Unexpected navigation in thread folder fixture')}};`,
   '../../ui/controls/use-action': `export const useAction=()=>({busy:false,error:'',act:work=>{Promise.resolve(work()).catch(error=>window.transferError=String(error))}});`,
   '../../shell/navigation': `export const useNavigation=()=>({navigate:(...args)=>window.navigation=args});`,
   '../draft/use-draft': `export const saveRuntimeDraft=async(...args)=>{window.savedDraft=args};`,

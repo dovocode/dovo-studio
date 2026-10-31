@@ -11,7 +11,8 @@ const bundle = await bundleBrowser(
       loader: 'tsx',
       contents: `import {createRoot} from 'react-dom/client';import {TaskFiles} from '${detail}task-files.tsx';
 window.fail=true;window.requests=[];window.opened=[];
-const request=async(path,input)=>{window.requests.push({path,input});if((path.endsWith('/directory')||path.endsWith('/search-paths'))&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/directory'))return {entries:['small.txt','large.txt','binary.txt','preview.png','vector.svg'].map(path=>({path,kind:'file'})),truncated:false};if(path.endsWith('/search-paths'))return {files:['small.txt','large.txt','binary.txt','preview.png','vector.svg'].filter(path=>path.includes(input.query)),...(window.listingCompleteness===undefined?{}:{truncated:window.listingCompleteness})};if(path==='/api/tasks/images/read'){if(window.failImage)throw new Error('Image unavailable');return {uri:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHioAAAAASUVORK5CYII='}};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return {path:input.path,contents:input.path==='large.txt'?'é'.repeat(600000):'Small file'}};throw new Error('Unexpected request: '+path)};
+window.projectFile=(path,contents)=>{const size=new TextEncoder().encode(contents).length,complete=size<=256*1024;return {path,contents:complete?contents:contents.slice(0,128*1024),size,complete,truncated:!complete,startLine:1,hasMore:!complete}};
+const request=async(path,input)=>{window.requests.push({path,input});if((path.endsWith('/directory')||path.endsWith('/search-paths'))&&window.failListing)throw new Error('File listing unavailable');if(path.endsWith('/directory'))return {entries:['small.txt','large.txt','binary.txt','preview.png','vector.svg'].map(path=>({path,kind:'file'})),truncated:false};if(path.endsWith('/search-paths'))return {files:['small.txt','large.txt','binary.txt','preview.png','vector.svg'].filter(path=>path.includes(input.query)),...(window.listingCompleteness===undefined?{}:{truncated:window.listingCompleteness})};if(path==='/api/tasks/images/read'){if(window.failImage)throw new Error('Image unavailable');return {uri:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHioAAAAASUVORK5CYII='}};if(path.endsWith('/share'))return {url:'/api/tasks/files/shared/ticket'};if(path.endsWith('/read')){if(window.fail||input.path==='binary.txt')throw new Error('Cannot preview this file');return window.projectFile(input.path,input.path==='large.txt'?'é'.repeat(600000):'Small file')};throw new Error('Unexpected request: '+path)};
 window.runtime={connected:true,connection:{address:'http://runtime.test:7777',token:'paired-token'},request};
 createRoot(document.getElementById('app')).render(<TaskFiles task={{id:'task',files:[]}}/>);`,
     },
@@ -191,10 +192,10 @@ try {
         if (first) {
           first = false
           return new Promise((resolve) => {
-            window.resolveOldRead = () => resolve({ path: 'small.txt', contents: 'Stale A' })
+            window.resolveOldRead = () => resolve(window.projectFile('small.txt', 'Stale A'))
           })
         }
-        return Promise.resolve({ path: 'small.txt', contents: 'Fresh A' })
+        return Promise.resolve(window.projectFile('small.txt', 'Fresh A'))
       }
       return original(path, input)
     }

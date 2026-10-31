@@ -513,7 +513,9 @@ const productionRoot=createRoot(document.getElementById('app'));let instance=0;w
           )
           builder.onResolve({ filter: /^\.\./ }, (args) =>
             args.importer.endsWith('/detail/task-conversation.tsx') &&
-            args.path !== '../chat/artifact-open-context'
+            !['../chat/artifact-open-context', '../chat/conversation-visibility'].includes(
+              args.path,
+            )
               ? { path: args.path, namespace: 'production' }
               : undefined,
           )

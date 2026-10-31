@@ -20,7 +20,7 @@ const bundle = await bundleBrowser(
       if(path.endsWith('/directory'))return {entries:Object.keys(files).map(path=>({path,kind:'file'})),truncated:false};
       if(path.endsWith('/search-paths'))return {files:Object.keys(files).filter(path=>path.includes(input.query)),truncated:false};
       if(path.endsWith('/list')) return {files:Object.keys(files)};
-      if(path.endsWith('/read')) {window.reads.push(input.path);return {path:input.path,contents:files[input.path]};}
+      if(path.endsWith('/read')) {window.reads.push(input.path);return {path:input.path,contents:files[input.path],size:new TextEncoder().encode(files[input.path]).length,complete:true,truncated:false,startLine:1,hasMore:false};}
       if(path.endsWith('/write')) { window.writes.push(input); if(window.fail) throw Error('save failed'); if(window.delay) await new Promise(resolve=>window.resolveWrite=resolve); if(files[input.path]!==input.expectedContents) throw Error('conflict'); files[input.path]=input.contents; return {path:input.path,contents:input.contents}; }
       throw Error(path);
     };
@@ -102,7 +102,10 @@ try {
   await page.getByRole('button', { name: 'a.txt', exact: true }).click()
   await page.evaluate(() => (window.fail = true))
   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
-  await page.getByText('save failed', { exact: true }).waitFor()
+  await page
+    .locator('p[role="alert"]')
+    .filter({ hasText: /^save failed$/ })
+    .waitFor()
   await page.getByRole('button', { name: 'surface', exact: true }).click()
   await page.getByRole('button', { name: 'surface', exact: true }).click()
   await page.getByRole('button', { name: 'a.txt', exact: true }).click()
@@ -149,7 +152,10 @@ try {
   })
   await page.getByRole('button', { name: 'a.txt', exact: true }).click()
   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
-  await page.getByText('conflict', { exact: true }).waitFor()
+  await page
+    .locator('p[role="alert"]')
+    .filter({ hasText: /^conflict$/ })
+    .waitFor()
   assert.equal(await page.evaluate(() => window.files['a.txt']), 'newer external edit')
   await page.getByRole('button', { name: 'Discard', exact: true }).click()
   assert.equal(await page.evaluate(() => window.writes.length), 3)

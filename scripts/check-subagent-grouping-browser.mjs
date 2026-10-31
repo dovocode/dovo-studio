@@ -140,7 +140,7 @@ async function bundle(contents) {
                 navigation:
                   'export const useNavigation=()=>({focused:true,navigate:(view,entityId,runtimeId)=>window.routes.push({view,entityId,runtimeId})});',
                 preferences:
-                  'import {useSyncExternalStore} from "react";export const useCarMode=()=>false;export const useMobilePreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateMobilePreferences=changes=>window.updatePreferences(changes);',
+                  'import {useSyncExternalStore} from "react";export const useCarMode=()=>false;export const useMobilePreferences=()=>useSyncExternalStore(window.subscribePreferences,()=>window.preferences);export const updateMobilePreferences=changes=>window.updatePreferences(changes);export const setMobileThreadSectionCollapsed=(section,value)=>{const collapsed=new Set(window.preferences.collapsedThreadSections);if(value)collapsed.add(section);else collapsed.delete(section);window.updatePreferences({collapsedThreadSections:[...collapsed]})};',
                 workflow:
                   'import {Effect} from "effect";export const mobileWorkflow=Effect.gen;export const nativeEffect=fn=>Effect.tryPromise(fn);',
                 lifecycle:
@@ -998,18 +998,23 @@ try {
           threadSectionOrder: ['active', 'working', 'waiting', 'pinned', 'snoozed', 'settled'],
         }),
       )
-      if (mobile) {
-        await activeHeader.waitFor()
+      await activeHeader.waitFor()
+      if (mobile)
         assert.equal(
           await activeHeader.getAttribute('aria-expanded'),
           'false',
           'Reordering Open to the top preserves its collapsed state',
         )
-        await page.getByText('Active order', { exact: true }).waitFor({ state: 'hidden' })
-        await page.getByText('Working order', { exact: true }).waitFor()
-        await page.getByText('Waiting order', { exact: true }).waitFor()
-        await activeHeader.click()
-      }
+      else
+        assert.equal(
+          await activeHeader.evaluate((element) => element.parentElement.open),
+          false,
+          'Reordering Open to the top preserves its collapsed state',
+        )
+      await page.getByText('Active order', { exact: true }).waitFor({ state: 'hidden' })
+      await page.getByText('Working order', { exact: true }).waitFor()
+      await page.getByText('Waiting order', { exact: true }).waitFor()
+      await activeHeader.click()
       await page.getByText('Active order', { exact: true }).waitFor()
       assert.equal(await activeHeader.count(), 0, 'Expanded Open at the top has no collapse header')
       if (!mobile) await page.waitForFunction(() => window.orders.at(-1).includes('active-order'))
@@ -1019,7 +1024,7 @@ try {
         }),
       )
       await activeHeader.waitFor()
-      if (mobile) await activeHeader.click()
+      await activeHeader.click()
       await page.getByText('Active order', { exact: true }).waitFor({ state: 'hidden' })
 
       assert.equal(

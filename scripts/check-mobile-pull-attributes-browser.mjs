@@ -49,7 +49,7 @@ const stubs = [
     path: '../../review/file-review',
     importer: mobile,
     contents:
-      'export const MobileFileReview=({files,selected,onSelect,onOptions})=><><button onClick={onOptions}>File actions</button><select aria-label="Changed file" value={selected} onChange={event=>onSelect(event.target.value)}>{files.map(file=><option key={file.path} value={file.path}>{file.path}</option>)}</select></>;',
+      'export const MobileFileReview=({files,selected,onSelect,onOptions})=><>{onOptions&&<button onClick={onOptions}>File actions</button>}<select aria-label="Changed file" value={selected} onChange={event=>onSelect(event.target.value)}>{files.map(file=><option key={file.path} value={file.path}>{file.path}</option>)}</select></>;',
   },
   {
     path: '../../../tasks/preview/diff-view',
@@ -64,12 +64,6 @@ const stubs = [
       'export const PullComments=({comments})=><div>{comments.map(comment=><p key={comment.id}>{comment.body}</p>)}</div>;',
   },
   { path: '../../../ui/controls/icon', importer: mobile, contents: 'export const Icon=()=>null;' },
-  {
-    path: '../../../ui/layout/sheet',
-    importer: mobile,
-    contents:
-      'export const Sheet=({title,children,onClose})=><div role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close</button></div>;',
-  },
 ]
 stubs.push(
   {
@@ -211,11 +205,8 @@ try {
   await files.selectOption('normal.ts')
   await page.locator('[data-diff]').waitFor()
   assert.equal(await page.locator('[data-diff]').count(), 1)
-  assert.equal(await page.getByRole('button', { name: 'Organize review', exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'File actions', exact: true }).click()
-  await page.getByRole('dialog', { name: 'File actions' }).waitFor()
   await page.getByRole('button', { name: 'Organize review', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: 'File actions', exact: true }).count(), 0)
   const feedback = page.getByRole('button', { name: 'Feedback on this file (1)', exact: true })
   assert.equal(await feedback.getAttribute('aria-expanded'), 'false')
   assert.equal(await page.getByText('Inline feedback', { exact: true }).count(), 0)

@@ -192,13 +192,16 @@ try {
   await page.waitForFunction(() => window.response)
   assert.equal(await page.evaluate(() => window.requests.at(-1).path), '/api/tasks/message')
   await page.evaluate(() => window.response())
-  // Queue editing shows the stored flag and sends it with its expected value.
-  await page.evaluate(() =>
+  // Publish the accepted queue identity before editing its stored plan flag.
+  await page.evaluate(() => {
+    const { input } = window.requests.at(-1)
     window.setTask((task) => ({
       ...task,
-      queue: [{ id: 'queued', role: 'user', text: 'Queued plan', plan: true, createdAt: '' }],
-    })),
-  )
+      queue: [
+        { id: input.messageId, role: 'user', text: input.text, plan: input.plan, createdAt: '' },
+      ],
+    }))
+  })
   await page.getByText('Plan', { exact: true }).first().waitFor()
   assert.equal(
     await page

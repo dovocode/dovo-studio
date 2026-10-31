@@ -66,6 +66,15 @@ const built = await build({
     {
       name: 'native-adapters',
       setup(b) {
+        // Download transport and OS sharing are native boundaries, outside this fixture.
+        b.onResolve({ filter: /^\.\/browser-download$/ }, ({ importer }) =>
+          importer === mobile + 'tasks/preview/remote-browser.tsx'
+            ? { path: 'browser-download', namespace: 'native-download-fixture' }
+            : undefined,
+        )
+        b.onLoad({ filter: /.*/, namespace: 'native-download-fixture' }, () => ({
+          contents: `export const shareBrowserDownload=async()=>{throw new Error('Unexpected native download in shared browser fixture')};`,
+        }))
         b.onResolve({ filter: /.*/ }, (args) => {
           const p = args.path
           if (

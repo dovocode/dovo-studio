@@ -16,12 +16,14 @@ export const Sheet=({title,children,onClose,busy,headerAction})=><div role="dial
 export const useTheme=()=>({styles:{row:{flexDirection:'row',alignItems:'center',gap:8},text:{color:'#eee',fontSize:14},muted:{color:'#999'}},colors:{surface:'#222'}});
 `
 const mocks = {
+  'expo-router': `export const router={push:()=>{throw new Error('Unexpected navigation in project picker fixture')}};`,
   'react-native': controls,
   '../../ui/content/text': controls,
   '../../ui/controls/action': controls,
   '../../ui/controls/icon': controls,
   '../controls/icon': controls,
   '../../ui/controls/field': controls,
+  '../../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
   '../../ui/layout/sheet': controls,
   '../../ui/theme': controls,
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,

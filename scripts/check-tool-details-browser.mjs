@@ -67,6 +67,18 @@ window.renderDiscovery=(failed=false)=>{
     },
   },
   [
+    // This leaf-row fixture supplies an active owning screen; provider and native
+    // foreground lifecycle coverage lives in the conversation/preview suites.
+    {
+      path: '../state/provider',
+      importer: mobile + 'tasks/conversation/components/',
+      contents: 'export const useConversationSelector=select=>select({visible:true});',
+    },
+    {
+      path: '../../preview/use-preview-active',
+      importer: mobile + 'tasks/conversation/components/',
+      contents: 'export const usePreviewActive=()=>true;',
+    },
     ...[
       'react-native',
       '../../../ui/content/text',

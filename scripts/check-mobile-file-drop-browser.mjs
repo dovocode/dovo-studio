@@ -53,6 +53,10 @@ const result = await bundleBrowser(
       path: 'expo-file-system',
       contents: `export const Paths={cache:'file:///cache'};export class File{constructor(uri){this.uri=uri;this.size=uri.includes('large-image')?8*1024*1024:uri.includes('large')?5*1024*1024+1:uri.includes('boundary')?5*1024*1024:10}async bytes(){return new Uint8Array(20)}async base64(){return btoa(this.uri)}delete(){window.deleted.push(this.uri)}}`,
     },
+    {
+      path: 'expo-clipboard',
+      contents: `export const getImageAsync=async()=>{throw new Error('Unexpected clipboard read in file drop fixture')};`,
+    },
     { path: 'expo-crypto', contents: `export const randomUUID=()=>crypto.randomUUID();` },
     {
       path: 'expo-image-picker',
