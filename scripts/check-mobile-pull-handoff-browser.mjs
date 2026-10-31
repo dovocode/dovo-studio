@@ -6,7 +6,7 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
 const ui = `
-export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
+export const Text=({children,accessibilityRole})=><span role={accessibilityRole==='header'?'heading':accessibilityRole}>{children}</span>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Choice=()=>null;export const Icon=()=>null;export const PullRequestIcon=()=>null;
 export const ScreenHeader=({title,leading,actions})=><header>{title}{leading}{actions}</header>;
@@ -141,7 +141,7 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
   [
     {
       path: 'react-native',
-      contents: `export const Image=({source,style,onError,accessibilityLabel})=><img src={source.uri} style={style} onError={onError} alt={accessibilityLabel}/>;export const View=({children})=><div>{children}</div>;export const ScrollView=({children,refreshControl})=><div>{refreshControl}{children}</div>;export const Pressable=({children,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{children}</button>;export const RefreshControl=({onRefresh})=><button onClick={onRefresh}>Pull to refresh</button>;export const Keyboard={dismiss(){}};export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};`,
+      contents: `export const Image=({source,style,onError,accessibilityLabel})=><img src={source.uri} style={style} onError={onError} alt={accessibilityLabel}/>;export const View=({children})=><div>{children}</div>;export const ScrollView=({children,refreshControl})=><div>{refreshControl}{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const RefreshControl=({onRefresh})=><button onClick={onRefresh}>Pull to refresh</button>;export const Keyboard={dismiss(){}};export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};`,
     },
     { path: 'expo-router', contents: 'export const router={push(){}};' },
   ],
@@ -167,6 +167,25 @@ try {
       'PR requests must stay on the selected machine, even with a same-account peer available',
     )
   await noPeerReads(page)
+  await page.getByRole('button', { name: 'View pull request files', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Files', exact: true }).getAttribute('aria-pressed'),
+    'true',
+  )
+  assert.equal(
+    await page.getByRole('heading', { name: 'PR from origin 0', exact: true }).isVisible(),
+    true,
+  )
+  await page.getByRole('button', { name: 'View pull request checks', exact: true }).click()
+  assert.equal(
+    await page.getByRole('button', { name: 'Checks', exact: true }).getAttribute('aria-pressed'),
+    'true',
+  )
+  assert.equal(
+    await page.getByRole('heading', { name: 'PR from origin 0', exact: true }).isVisible(),
+    true,
+  )
+  await page.getByRole('button', { name: 'Overview', exact: true }).click()
   await page.getByRole('button', { name: 'More PRs', exact: true }).click()
   await page.waitForFunction(() => window.list.pages[0]?.pulls.some((pull) => pull.number === 8))
   const pagination = await page.evaluate(() =>

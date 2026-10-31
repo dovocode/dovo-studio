@@ -132,10 +132,10 @@ export function PullRow({
                         <Icon aria-hidden className="size-3.5" />
                         {pullState(pull).label}
                       </span>
+                      <span className="shrink-0 font-mono tabular-nums">#{pull.number}</span>
                       <span className="min-w-0 flex-1 truncate" title={repository}>
                         {repository}
                       </span>
-                      <span className="shrink-0">#{pull.number}</span>
                     </div>
                     <p
                       className="line-clamp-2 break-words text-sm font-medium leading-5 [overflow-wrap:anywhere]"

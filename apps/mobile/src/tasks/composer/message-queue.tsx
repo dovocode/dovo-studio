@@ -228,7 +228,7 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
       accessibilityLabel={`${queue.length} queued messages, ${queuePaused ? 'paused' : 'after this turn'}`}
       style={
         embedded
-          ? { paddingHorizontal: 10 }
+          ? { paddingHorizontal: 12 }
           : {
               marginHorizontal: 12,
               marginBottom: -16,
@@ -249,25 +249,37 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
       >
         {`${queue.length} queued ${queue.length === 1 ? 'message' : 'messages'}${queuePaused ? ', paused' : ''}`}
       </Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text
-          style={styles.muted}
-        >{`Queue · ${queue.length}${queuePaused ? ' · Paused' : ''}`}</Text>
-        {queuePaused && (
-          <Action
-            label={head?.paused ? 'Resume first prompt' : 'Run queue'}
-            disabled={
-              !connected ||
-              busy ||
-              !!task.archived ||
-              !!task.archivedAt ||
-              !confirmed.length ||
-              pendingQueueSend ||
-              !!head?.steering
-            }
-            onPress={() => (head?.paused ? change('resume-message', head.id) : change('resume'))}
-          />
-        )}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          minHeight: 44,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+        }}
+      >
+        <Text style={styles.muted}>{queuePaused ? 'Paused' : 'Runs after this turn'}</Text>
+        <Action
+          label={
+            head?.paused ? 'Resume first prompt' : task.queuePaused ? 'Run queue' : 'Pause queue'
+          }
+          disabled={
+            !connected ||
+            busy ||
+            !!task.archived ||
+            !!task.archivedAt ||
+            !confirmed.length ||
+            pendingQueueSend ||
+            !!head?.steering
+          }
+          onPress={() =>
+            head?.paused
+              ? change('resume-message', head.id)
+              : change(task.queuePaused ? 'resume' : 'pause')
+          }
+        />
       </View>
       {(busy || pendingQueueSend) && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
@@ -332,7 +344,8 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                   minHeight: 44,
                   flexDirection: 'row',
                   alignItems: 'center',
-                  gap: 4,
+                  gap: 8,
+                  paddingVertical: 6,
                   borderTopWidth: index === 0 ? 0 : 1,
                   borderTopColor: colors.border,
                   ...(highlightedCopy === message.id ? { backgroundColor: colors.selection } : {}),
@@ -346,50 +359,42 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
                     : {}),
                 }}
               >
-                {canDrag && !pendingMessage && !message.steering ? (
-                  <QueueDragTarget
-                    handle
-                    scrollGesture={drag.scrollGesture}
-                    enabled
-                    begin={() => drag.begin(message.id)}
-                    update={drag.update}
-                    end={drag.end}
-                    cancel={drag.cancel}
-                  >
-                    <View
-                      testID={`Drag queued message ${index + 1}`}
-                      accessible={false}
-                      pointerEvents="none"
+                <QueueDragTarget
+                  handle
+                  scrollGesture={drag.scrollGesture}
+                  enabled={canDrag && !pendingMessage && !message.steering}
+                  begin={() => drag.begin(message.id)}
+                  update={drag.update}
+                  end={drag.end}
+                  cancel={drag.cancel}
+                >
+                  <View testID={`Drag queued message ${index + 1}`}>
+                    <Text
+                      accessibilityLabel={
+                        pendingMessage
+                          ? pendingMessage.state === 'failed'
+                            ? 'Could not send · Retry from composer'
+                            : 'Waiting for confirmation'
+                          : `Message ${index + 1}${state ? `, ${state}` : ''}`
+                      }
+                      style={[
+                        styles.muted,
+                        {
+                          width: 24,
+                          height: 24,
+                          lineHeight: 24,
+                          borderRadius: 12,
+                          overflow: 'hidden',
+                          backgroundColor: colors.selection,
+                          textAlign: 'center',
+                          fontSize: 12,
+                        },
+                      ]}
                     >
-                      <Icon name="drag" size={20} color={colors.muted} />
-                    </View>
-                  </QueueDragTarget>
-                ) : (
-                  <Text
-                    accessibilityLabel={
-                      pendingMessage
-                        ? pendingMessage.state === 'failed'
-                          ? 'Could not send · Retry from composer'
-                          : 'Waiting for confirmation'
-                        : `Message ${index + 1}${state ? `, ${state}` : ''}`
-                    }
-                    style={[
-                      styles.muted,
-                      {
-                        width: 24,
-                        height: 24,
-                        lineHeight: 24,
-                        borderRadius: 12,
-                        overflow: 'hidden',
-                        backgroundColor: colors.selection,
-                        textAlign: 'center',
-                        fontSize: 12,
-                      },
-                    ]}
-                  >
-                    {pendingMessage ? (pendingMessage.state === 'failed' ? '!' : '…') : index + 1}
-                  </Text>
-                )}
+                      {pendingMessage ? (pendingMessage.state === 'failed' ? '!' : '…') : index + 1}
+                    </Text>
+                  </View>
+                </QueueDragTarget>
                 <View style={{ width: 12, flexShrink: 0 }}>
                   {(paused || blockedBy) && (
                     <Icon

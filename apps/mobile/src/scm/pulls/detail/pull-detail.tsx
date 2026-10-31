@@ -366,6 +366,126 @@ export function PullDetail({
             }
           >
             <View ref={content} collapsable={false} style={{ gap: 8 }}>
+              <View accessibilityLabel="Pull request summary" style={{ gap: 10, paddingBottom: 8 }}>
+                <Text
+                  selectable
+                  accessibilityRole="header"
+                  style={[
+                    styles.title,
+                    {
+                      fontSize: 20,
+                      lineHeight: 26,
+                    },
+                  ]}
+                >
+                  {detail.pull.title}
+                </Text>
+                <View style={styles.row}>
+                  <PullRequestIcon state={detail.pull.state} draft={detail.pull.draft} />
+                  <Signal signal={pullState(detail.pull)} emphasis />
+                  <Text style={styles.muted}>·</Text>
+                  <AuthorAvatar author={detail.pull.author} url={detail.pull.authorAvatarUrl} />
+                  <Text
+                    style={[
+                      styles.muted,
+                      {
+                        flexShrink: 1,
+                      },
+                    ]}
+                  >
+                    {detail.pull.author}
+                  </Text>
+                </View>
+                <Text style={styles.muted}>Updated {formatDateTime(detail.pull.updatedAt)}</Text>
+                <View style={[styles.row, { flexWrap: 'nowrap', gap: 6 }]}>
+                  <Icon name="changes" size={14} color={colors.muted} />
+                  <Text selectable numberOfLines={1} style={[styles.muted, { flexShrink: 1 }]}>
+                    {detail.pull.base}
+                  </Text>
+                  <Text style={styles.muted}>←</Text>
+                  <Text selectable numberOfLines={1} style={[styles.muted, { flexShrink: 1 }]}>
+                    {detail.pull.head}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    gap: 5,
+                    paddingVertical: 10,
+                    borderTopWidth: 0.5,
+                    borderBottomWidth: 0.5,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <View style={[styles.row, { flexWrap: 'wrap', gap: 12 }]}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="View pull request files"
+                      onPress={() => {
+                        setFragment('')
+                        setTab('changes')
+                        setChangesOpened(true)
+                        body.current?.scrollTo({ y: 0, animated: false })
+                      }}
+                      style={{ minHeight: 44, justifyContent: 'center' }}
+                    >
+                      <Text style={styles.muted}>
+                        {detail.pull.changedFiles == null
+                          ? 'Files'
+                          : `${detail.pull.changedFiles.toLocaleString()} files`}
+                      </Text>
+                    </Pressable>
+                    {detail.pull.additions != null && (
+                      <Text
+                        style={[
+                          styles.muted,
+                          { color: colors.success, fontVariant: ['tabular-nums'] },
+                        ]}
+                      >
+                        +{detail.pull.additions.toLocaleString()}
+                      </Text>
+                    )}
+                    {detail.pull.deletions != null && (
+                      <Text
+                        style={[
+                          styles.muted,
+                          { color: colors.error, fontVariant: ['tabular-nums'] },
+                        ]}
+                      >
+                        −{detail.pull.deletions.toLocaleString()}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <PullSectionStatus label="Status" section={sections.status} />
+                <View style={[styles.row, { flexWrap: 'wrap', gap: 10 }]}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="View pull request checks"
+                    onPress={() => {
+                      setFragment('')
+                      setTab('checks')
+                      body.current?.scrollTo({ y: 0, animated: false })
+                    }}
+                    style={{ minHeight: 44, justifyContent: 'center' }}
+                  >
+                    <Signal
+                      signal={
+                        sections.status.ready || sections.checks.ready
+                          ? pullDetailChecks(detail)
+                          : { label: 'Loading checks…', tone: 'neutral' }
+                      }
+                    />
+                  </Pressable>
+                  <Signal
+                    signal={
+                      sections.status.ready || sections.discussion.ready
+                        ? pullDetailReviews(detail)
+                        : { label: 'Loading review status…', tone: 'neutral' }
+                    }
+                  />
+                  <Signal signal={pullMergeability(detail.pull)} />
+                </View>
+              </View>
               <PullLinkedThreads pull={detail.pull} />
               {!!fragment && !destination?.comment && (
                 <Text style={styles.muted}>
@@ -406,38 +526,7 @@ export function PullDetail({
                     gap: 8,
                   }}
                 >
-                  <Text
-                    selectable
-                    accessibilityRole="header"
-                    style={[
-                      styles.title,
-                      {
-                        fontSize: 20,
-                        lineHeight: 26,
-                      },
-                    ]}
-                  >
-                    {detail.pull.title}
-                  </Text>
-                  <View style={styles.row}>
-                    <PullRequestIcon state={detail.pull.state} draft={detail.pull.draft} />
-                    <Signal signal={pullState(detail.pull)} emphasis />
-                    <Text style={styles.muted}>·</Text>
-                    <AuthorAvatar author={detail.pull.author} url={detail.pull.authorAvatarUrl} />
-                    <Text
-                      style={[
-                        styles.muted,
-                        {
-                          flexShrink: 1,
-                        },
-                      ]}
-                    >
-                      {detail.pull.author}
-                    </Text>
-                  </View>
-                  <Text selectable style={styles.muted}>
-                    {detail.pull.head} → {detail.pull.base}
-                  </Text>
+                  <PullSectionStatus label="Stack" section={sections.stack} />
                   {repository && (detail.stack || detail.pull.state === 'open') && (
                     <View style={[styles.card, { gap: 10 }]}>
                       <View style={styles.row}>
@@ -496,54 +585,6 @@ export function PullDetail({
                       )}
                     </View>
                   )}
-                  <View
-                    style={{
-                      gap: 5,
-                      paddingVertical: 10,
-                      borderTopWidth: 0.5,
-                      borderBottomWidth: 0.5,
-                      borderColor: colors.border,
-                    }}
-                  >
-                    <Text style={styles.text}>
-                      {detail.pull.changedFiles === null
-                        ? 'File count unavailable'
-                        : `${detail.pull.changedFiles} changed files`}
-                      {detail.pull.additions !== null && detail.pull.deletions !== null
-                        ? ` · +${detail.pull.additions} / −${detail.pull.deletions}`
-                        : ''}
-                    </Text>
-                    <Text style={styles.muted}>
-                      Reviewers: {detail.pull.reviewers.join(', ') || 'None requested'}
-                    </Text>
-                    <Text style={styles.muted}>
-                      Assigned to: {detail.pull.assignees.join(', ') || 'Unassigned'}
-                    </Text>
-                    <Text style={styles.muted}>
-                      Updated {formatDateTime(detail.pull.updatedAt)}
-                    </Text>
-                  </View>
-                  <PullSectionStatus label="Status" section={sections.status} />
-                  <PullSectionStatus label="Stack" section={sections.stack} />
-                  <View style={styles.row}>
-                    <Signal
-                      signal={
-                        sections.status.ready || sections.checks.ready
-                          ? pullDetailChecks(detail)
-                          : { label: 'Loading checks…', tone: 'neutral' }
-                      }
-                    />
-                    <Text style={styles.muted}>·</Text>
-                    <Signal
-                      signal={
-                        sections.status.ready || sections.discussion.ready
-                          ? pullDetailReviews(detail)
-                          : { label: 'Loading review status…', tone: 'neutral' }
-                      }
-                    />
-                    <Text style={styles.muted}>·</Text>
-                    <Signal signal={pullMergeability(detail.pull)} />
-                  </View>
                 </View>
                 <View
                   style={{
