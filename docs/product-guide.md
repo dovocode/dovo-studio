@@ -516,6 +516,8 @@ node scripts/verify-mobile.mjs <simulator-uuid>
 node scripts/verify-mobile-resources.mjs <simulator-uuid>
 node scripts/verify-mobile-pulls.mjs <simulator-uuid>
 node scripts/verify-mobile-devices.mjs <simulator-uuid>
+# On an isolated simulator, verify native queue dragging against a disposable LAN runtime:
+node scripts/verify-mobile-queue.mjs <simulator-uuid>
 node scripts/verify-pair-cli.mjs
 # Optional: exercise pairing via a reachable private DNS hostname.
 DOVO_TEST_RUNTIME_HOST=<private-hostname> node scripts/verify-mobile-pulls.mjs <simulator-uuid>

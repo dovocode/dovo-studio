@@ -16,6 +16,7 @@ export function useQueueDrag({
   move: (id: string, beforeMessageId: string | null) => void
 }) {
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null)
+  const scrollGesture = useMemo(() => Gesture.Native(), [])
   const rows = useRef(new Map<string, LayoutRectangle>())
   const viewport = useRef({ height: 0, contentHeight: 0, offset: 0 })
   const active = useRef<{
@@ -111,7 +112,7 @@ export function useQueueDrag({
       active.current = null
     }
   }, [identity, enabled])
-  return { scroll, rows, viewport, drag, begin, update, end, cancel }
+  return { scroll, scrollGesture, rows, viewport, drag, begin, update, end, cancel }
 }
 
 export function QueueDragTarget({
@@ -122,10 +123,12 @@ export function QueueDragTarget({
   end,
   cancel,
   handle = false,
+  scrollGesture,
 }: {
   children: ReactNode
   enabled: boolean
   handle?: boolean
+  scrollGesture: ReturnType<typeof Gesture.Native>
   begin: () => void
   update: (translation: number) => void
   end: () => void
@@ -133,21 +136,22 @@ export function QueueDragTarget({
 }) {
   const latest = useRef({ begin, update, end, cancel })
   latest.current = { begin, update, end, cancel }
-  const gesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .enabled(enabled)
-        .activateAfterLongPress(handle ? 0 : 300)
-        .minDistance(handle ? 1 : 10)
-        .runOnJS(true)
-        .onStart(() => latest.current.begin())
-        .onUpdate((event) => latest.current.update(event.translationY))
-        .onEnd(() => latest.current.end())
-        .onFinalize((_event, success) => {
-          if (!success) latest.current.cancel()
-        }),
-    [enabled, handle],
-  )
+  const gesture = useMemo(() => {
+    const pan = Gesture.Pan()
+      .enabled(enabled)
+      .minDistance(handle ? 1 : 10)
+      // The queue must wait for the row pan to fail before it can scroll.
+      .blocksExternalGesture(scrollGesture)
+      .runOnJS(true)
+      .onStart(() => latest.current.begin())
+      .onUpdate((event) => latest.current.update(event.translationY))
+      .onEnd(() => latest.current.end())
+      .onFinalize((_event, success) => {
+        if (!success) latest.current.cancel()
+      })
+    if (!handle) pan.activateAfterLongPress(300)
+    return pan
+  }, [enabled, handle, scrollGesture])
   return (
     <GestureDetector gesture={gesture}>
       <View

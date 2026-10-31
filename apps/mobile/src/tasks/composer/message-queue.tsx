@@ -13,7 +13,7 @@ import { WatchMessageCard } from '../conversation/components/watch-message'
 import { MessageSource } from '../conversation/components/message-source'
 import { pendingQueue } from './pending-send'
 import { ScrollView, View } from 'react-native'
-import { Pressable } from 'react-native-gesture-handler'
+import { GestureDetector, Pressable } from 'react-native-gesture-handler'
 import { QueueDragTarget, useQueueDrag } from './queue-drag'
 import { Text } from '../../ui/content/text'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -274,282 +274,290 @@ export function MessageQueue({ task, embedded = false }: { task: Task; embedded?
           Waiting for confirmation
         </Text>
       )}
-      <ScrollView
-        ref={drag.scroll}
-        removeClippedSubviews={false}
-        scrollEnabled={!drag.drag}
-        onLayout={({ nativeEvent: { layout } }) => {
-          drag.viewport.current.height = layout.height
-        }}
-        onContentSizeChange={(_width, height) => {
-          drag.viewport.current.contentHeight = height
-        }}
-        onScroll={({ nativeEvent: { contentOffset } }) => {
-          drag.viewport.current.offset = contentOffset.y
-        }}
-        scrollEventThrottle={16}
-        style={{ maxHeight: 180 }}
-        accessibilityLabel="Queued message list"
-        nestedScrollEnabled
-        keyboardShouldPersistTaps="handled"
-      >
-        {queue.map((message, index) => {
-          const reorderIndex = confirmed.findIndex((item) => item.id === message.id)
-          const source = messageSourceFor(message)
-          const pendingMessage = pendingMessages.find((item) => item.message.id === message.id)
-          const paused = message.paused || task.queuePaused
-          const blockedBy = firstPaused >= 0 && firstPaused < index ? firstPaused + 1 : undefined
-          const state = [
-            paused ? 'Paused' : '',
-            blockedBy ? `Waiting behind paused message ${blockedBy}` : '',
-          ]
-            .filter(Boolean)
-            .join(' · ')
-          const preview =
-            watchMessagePreview(message) ||
-            message.attachments?.map((file) => file.name).join(', ') ||
-            ''
-          return (
-            <View
-              key={message.id}
-              testID={`Queued message row ${index + 1}`}
-              accessibilityLabel={
-                highlightedCopy === message.id ? 'Duplicated queued message' : undefined
-              }
-              onLayout={({ nativeEvent: { layout } }) => {
-                drag.rows.current.set(message.id, layout)
-                if (duplicateReceipt?.taskId === task.id && duplicateReceipt.id === message.id) {
-                  drag.scroll.current?.scrollTo({ y: Math.max(0, layout.y - 8), animated: true })
-                  setDuplicateReceipt(null)
+      <GestureDetector gesture={drag.scrollGesture}>
+        <ScrollView
+          ref={drag.scroll}
+          removeClippedSubviews={false}
+          onLayout={({ nativeEvent: { layout } }) => {
+            drag.viewport.current.height = layout.height
+          }}
+          onContentSizeChange={(_width, height) => {
+            drag.viewport.current.contentHeight = height
+          }}
+          onScroll={({ nativeEvent: { contentOffset } }) => {
+            drag.viewport.current.offset = contentOffset.y
+          }}
+          scrollEventThrottle={16}
+          style={{ maxHeight: 180 }}
+          accessibilityLabel="Queued message list"
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+        >
+          {queue.map((message, index) => {
+            const reorderIndex = confirmed.findIndex((item) => item.id === message.id)
+            const source = messageSourceFor(message)
+            const pendingMessage = pendingMessages.find((item) => item.message.id === message.id)
+            const paused = message.paused || task.queuePaused
+            const blockedBy = firstPaused >= 0 && firstPaused < index ? firstPaused + 1 : undefined
+            const state = [
+              paused ? 'Paused' : '',
+              blockedBy ? `Waiting behind paused message ${blockedBy}` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')
+            const preview =
+              watchMessagePreview(message) ||
+              message.attachments?.map((file) => file.name).join(', ') ||
+              ''
+            // Keep a native stacking context before drag styles change; otherwise Fabric
+            // reparents the gesture targets and cancels the active native pan.
+            return (
+              <View
+                key={message.id}
+                collapsable={false}
+                testID={`Queued message row ${index + 1}`}
+                accessibilityLabel={
+                  highlightedCopy === message.id ? 'Duplicated queued message' : undefined
                 }
-                if (highlightedCopy === message.id)
-                  drag.scroll.current?.scrollTo({ y: Math.max(0, layout.y - 8), animated: true })
-              }}
-              style={{
-                minHeight: 44,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 4,
-                borderTopWidth: index === 0 ? 0 : 1,
-                borderTopColor: colors.border,
-                ...(highlightedCopy === message.id ? { backgroundColor: colors.selection } : {}),
-                ...(drag.drag?.id === message.id
-                  ? {
-                      transform: [{ translateY: drag.drag.translation }],
-                      zIndex: 2,
-                      backgroundColor: colors.surface,
-                      opacity: 0.85,
+                onLayout={({ nativeEvent: { layout } }) => {
+                  drag.rows.current.set(message.id, layout)
+                  if (duplicateReceipt?.taskId === task.id && duplicateReceipt.id === message.id) {
+                    drag.scroll.current?.scrollTo({ y: Math.max(0, layout.y - 8), animated: true })
+                    setDuplicateReceipt(null)
+                  }
+                  if (highlightedCopy === message.id)
+                    drag.scroll.current?.scrollTo({ y: Math.max(0, layout.y - 8), animated: true })
+                }}
+                style={{
+                  minHeight: 44,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                  borderTopWidth: index === 0 ? 0 : 1,
+                  borderTopColor: colors.border,
+                  ...(highlightedCopy === message.id ? { backgroundColor: colors.selection } : {}),
+                  ...(drag.drag?.id === message.id
+                    ? {
+                        transform: [{ translateY: drag.drag.translation }],
+                        zIndex: 2,
+                        backgroundColor: colors.surface,
+                        opacity: 0.85,
+                      }
+                    : {}),
+                }}
+              >
+                {canDrag && !pendingMessage && !message.steering ? (
+                  <QueueDragTarget
+                    handle
+                    scrollGesture={drag.scrollGesture}
+                    enabled
+                    begin={() => drag.begin(message.id)}
+                    update={drag.update}
+                    end={drag.end}
+                    cancel={drag.cancel}
+                  >
+                    <View
+                      testID={`Drag queued message ${index + 1}`}
+                      accessible={false}
+                      pointerEvents="none"
+                    >
+                      <Icon name="drag" size={20} color={colors.muted} />
+                    </View>
+                  </QueueDragTarget>
+                ) : (
+                  <Text
+                    accessibilityLabel={
+                      pendingMessage
+                        ? pendingMessage.state === 'failed'
+                          ? 'Could not send · Retry from composer'
+                          : 'Waiting for confirmation'
+                        : `Message ${index + 1}${state ? `, ${state}` : ''}`
                     }
-                  : {}),
-              }}
-            >
-              {canDrag && !pendingMessage && !message.steering ? (
+                    style={[
+                      styles.muted,
+                      {
+                        width: 24,
+                        height: 24,
+                        lineHeight: 24,
+                        borderRadius: 12,
+                        overflow: 'hidden',
+                        backgroundColor: colors.selection,
+                        textAlign: 'center',
+                        fontSize: 12,
+                      },
+                    ]}
+                  >
+                    {pendingMessage ? (pendingMessage.state === 'failed' ? '!' : '…') : index + 1}
+                  </Text>
+                )}
+                <View style={{ width: 12, flexShrink: 0 }}>
+                  {(paused || blockedBy) && (
+                    <Icon
+                      name={paused ? 'pause' : 'history'}
+                      size={12}
+                      color={paused ? colors.warning : colors.muted}
+                    />
+                  )}
+                </View>
+                {drag.drag?.drop?.messageId === message.id && (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      height: 2,
+                      ...(drag.drag.drop.edge === 'before' ? { top: 0 } : { bottom: 0 }),
+                      backgroundColor: colors.accent,
+                    }}
+                  />
+                )}
                 <QueueDragTarget
-                  handle
-                  enabled
+                  scrollGesture={drag.scrollGesture}
+                  enabled={canDrag && !pendingMessage && !message.steering}
                   begin={() => drag.begin(message.id)}
                   update={drag.update}
                   end={drag.end}
                   cancel={drag.cancel}
                 >
-                  <View
-                    testID={`Drag queued message ${index + 1}`}
-                    accessible={false}
-                    pointerEvents="none"
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityHint={`Queued message ${index + 1} of ${queue.length}, ${message.steering ? 'being delivered' : 'not sent'}.${canDrag && !pendingMessage && !message.steering ? ' Touch and hold to reorder.' : ''}`}
+                    accessibilityActions={
+                      canDrag && !pendingMessage && !message.steering
+                        ? [
+                            { name: 'increment', label: 'Move message later' },
+                            { name: 'decrement', label: 'Move message earlier' },
+                          ]
+                        : undefined
+                    }
+                    onAccessibilityAction={({ nativeEvent: { actionName } }) => {
+                      const source = confirmed.findIndex((item) => item.id === message.id)
+                      if (!canDrag || source < 0 || pendingMessage) return
+                      if (actionName === 'decrement' && source > 0)
+                        change('move', message.id, confirmed[source - 1].id)
+                      if (actionName === 'increment' && source < confirmed.length - 1)
+                        change('move', message.id, confirmed[source + 2]?.id ?? null)
+                    }}
+                    accessibilityLabel={`View queued message ${index + 1}: ${preview}${state ? `; ${state}` : ''}${message.turnSettings ? '; custom turn settings' : ''}${message.plan ? '; plan mode' : ''}`}
+                    onPress={() => setSelectedId(message.id)}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: 44,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
                   >
-                    <Icon name="drag" size={20} color={colors.muted} />
-                  </View>
-                </QueueDragTarget>
-              ) : (
-                <Text
-                  accessibilityLabel={
-                    pendingMessage
-                      ? pendingMessage.state === 'failed'
-                        ? 'Could not send · Retry from composer'
-                        : 'Waiting for confirmation'
-                      : `Message ${index + 1}${state ? `, ${state}` : ''}`
-                  }
-                  style={[
-                    styles.muted,
-                    {
-                      width: 24,
-                      height: 24,
-                      lineHeight: 24,
-                      borderRadius: 12,
-                      overflow: 'hidden',
-                      backgroundColor: colors.selection,
-                      textAlign: 'center',
-                      fontSize: 12,
-                    },
-                  ]}
-                >
-                  {pendingMessage ? (pendingMessage.state === 'failed' ? '!' : '…') : index + 1}
-                </Text>
-              )}
-              <View style={{ width: 12, flexShrink: 0 }}>
-                {(paused || blockedBy) && (
-                  <Icon
-                    name={paused ? 'pause' : 'history'}
-                    size={12}
-                    color={paused ? colors.warning : colors.muted}
-                  />
-                )}
-              </View>
-              {drag.drag?.drop?.messageId === message.id && (
-                <View
-                  pointerEvents="none"
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    height: 2,
-                    ...(drag.drag.drop.edge === 'before' ? { top: 0 } : { bottom: 0 }),
-                    backgroundColor: colors.accent,
-                  }}
-                />
-              )}
-              <QueueDragTarget
-                enabled={canDrag && !pendingMessage && !message.steering}
-                begin={() => drag.begin(message.id)}
-                update={drag.update}
-                end={drag.end}
-                cancel={drag.cancel}
-              >
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityHint={`Queued message ${index + 1} of ${queue.length}, ${message.steering ? 'being delivered' : 'not sent'}.${canDrag && !pendingMessage && !message.steering ? ' Touch and hold to reorder.' : ''}`}
-                  accessibilityActions={
-                    canDrag && !pendingMessage && !message.steering
-                      ? [
-                          { name: 'increment', label: 'Move message later' },
-                          { name: 'decrement', label: 'Move message earlier' },
-                        ]
-                      : undefined
-                  }
-                  onAccessibilityAction={({ nativeEvent: { actionName } }) => {
-                    const source = confirmed.findIndex((item) => item.id === message.id)
-                    if (!canDrag || source < 0 || pendingMessage) return
-                    if (actionName === 'decrement' && source > 0)
-                      change('move', message.id, confirmed[source - 1].id)
-                    if (actionName === 'increment' && source < confirmed.length - 1)
-                      change('move', message.id, confirmed[source + 2]?.id ?? null)
-                  }}
-                  accessibilityLabel={`View queued message ${index + 1}: ${preview}${state ? `; ${state}` : ''}${message.turnSettings ? '; custom turn settings' : ''}${message.plan ? '; plan mode' : ''}`}
-                  onPress={() => setSelectedId(message.id)}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    minHeight: 44,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 4,
-                  }}
-                >
-                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                    {source && source.kind !== 'user' && (
+                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                      {source && source.kind !== 'user' && (
+                        <Text
+                          numberOfLines={1}
+                          style={[styles.text, { fontSize: 12, fontWeight: '500' }]}
+                        >
+                          {messageSourceLabel(source)}
+                        </Text>
+                      )}
                       <Text
                         numberOfLines={1}
-                        style={[styles.text, { fontSize: 12, fontWeight: '500' }]}
+                        ellipsizeMode="tail"
+                        style={[styles.text, { fontSize: 14, flex: 1, minWidth: 0 }]}
                       >
-                        {messageSourceLabel(source)}
+                        {preview.replace(/\s+/g, ' ')}
+                        {!!message.text &&
+                          !!message.attachments?.length &&
+                          ` · ${message.attachments.length} files`}
                       </Text>
-                    )}
-                    <Text
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                      style={[styles.text, { fontSize: 14, flex: 1, minWidth: 0 }]}
-                    >
-                      {preview.replace(/\s+/g, ' ')}
-                      {!!message.text &&
-                        !!message.attachments?.length &&
-                        ` · ${message.attachments.length} files`}
-                    </Text>
-                  </View>
-                  {message.plan && <Icon name="checklist" size={12} color={colors.accent} />}
-                  {message.turnSettings && <Icon name="tune" size={12} color={colors.muted} />}
-                </Pressable>
-              </QueueDragTarget>
+                    </View>
+                    {message.plan && <Icon name="checklist" size={12} color={colors.accent} />}
+                    {message.turnSettings && <Icon name="tune" size={12} color={colors.muted} />}
+                  </Pressable>
+                </QueueDragTarget>
 
-              <QueueMenu
-                label={`Actions for queued message ${index + 1}`}
-                actions={[
-                  {
-                    title: 'Move earlier',
-                    label: `Move queued message ${index + 1} earlier`,
-                    icon: 'moveUp',
-                    disabled: !canDrag || reorderIndex <= 0,
-                    onPress: () => change('move', message.id, confirmed[reorderIndex - 1]?.id),
-                  },
-                  {
-                    title: 'Move later',
-                    label: `Move queued message ${index + 1} later`,
-                    icon: 'moveDown',
-                    disabled: !canDrag || reorderIndex < 0 || reorderIndex >= confirmed.length - 1,
-                    onPress: () =>
-                      change('move', message.id, confirmed[reorderIndex + 2]?.id ?? null),
-                  },
-                  {
-                    title: paused ? 'Resume' : 'Pause',
-                    label: `${paused ? 'Resume' : 'Pause'} queued message ${index + 1}`,
-                    icon: paused ? 'play' : 'pause',
-                    disabled:
-                      !connected ||
-                      busy ||
-                      task.archived ||
-                      !!task.archivedAt ||
-                      !!pendingMessage ||
-                      !!message.steering,
-                    onPress: () => change(paused ? 'resume-message' : 'pause-message', message.id),
-                  },
-                  {
-                    title: 'Edit',
-                    label: `Edit queued message ${index + 1}`,
-                    icon: 'edit',
-                    disabled: !canEdit(message),
-                    onPress: () => actions.beginEdit(message),
-                  },
-                  {
-                    title: 'Duplicate',
-                    label: `Duplicate queued message ${index + 1}`,
-                    icon: 'copy',
-                    disabled:
-                      !connected ||
-                      busy ||
-                      task.archived ||
-                      !!task.archivedAt ||
-                      !!pendingMessage ||
-                      !!message.steering ||
-                      queue.length >= 50,
-                    onPress: () => change('duplicate', message.id),
-                  },
-                  {
-                    title: 'Steer now',
-                    label: `Steer with message ${index + 1}`,
-                    icon: 'steer',
-                    disabled: !canSteer(message),
-                    onPress: () => change('steer', message.id),
-                  },
-                  {
-                    title: 'Return to composer',
-                    label: `Return message ${index + 1} to composer`,
-                    icon: 'restore',
-                    disabled: !canEdit(message),
-                    onPress: () => {
-                      void actions.restoreQueuedMessage(message)
+                <QueueMenu
+                  label={`Actions for queued message ${index + 1}`}
+                  actions={[
+                    {
+                      title: 'Move earlier',
+                      label: `Move queued message ${index + 1} earlier`,
+                      icon: 'moveUp',
+                      disabled: !canDrag || reorderIndex <= 0,
+                      onPress: () => change('move', message.id, confirmed[reorderIndex - 1]?.id),
                     },
-                  },
-                ]}
-              />
-              <IconButton
-                icon="steer"
-                label={`Steer with queued message ${index + 1}`}
-                disabled={!canSteer(message)}
-                onPress={() => change('steer', message.id)}
-              />
-            </View>
-          )
-        })}
-      </ScrollView>
+                    {
+                      title: 'Move later',
+                      label: `Move queued message ${index + 1} later`,
+                      icon: 'moveDown',
+                      disabled:
+                        !canDrag || reorderIndex < 0 || reorderIndex >= confirmed.length - 1,
+                      onPress: () =>
+                        change('move', message.id, confirmed[reorderIndex + 2]?.id ?? null),
+                    },
+                    {
+                      title: paused ? 'Resume' : 'Pause',
+                      label: `${paused ? 'Resume' : 'Pause'} queued message ${index + 1}`,
+                      icon: paused ? 'play' : 'pause',
+                      disabled:
+                        !connected ||
+                        busy ||
+                        task.archived ||
+                        !!task.archivedAt ||
+                        !!pendingMessage ||
+                        !!message.steering,
+                      onPress: () =>
+                        change(paused ? 'resume-message' : 'pause-message', message.id),
+                    },
+                    {
+                      title: 'Edit',
+                      label: `Edit queued message ${index + 1}`,
+                      icon: 'edit',
+                      disabled: !canEdit(message),
+                      onPress: () => actions.beginEdit(message),
+                    },
+                    {
+                      title: 'Duplicate',
+                      label: `Duplicate queued message ${index + 1}`,
+                      icon: 'copy',
+                      disabled:
+                        !connected ||
+                        busy ||
+                        task.archived ||
+                        !!task.archivedAt ||
+                        !!pendingMessage ||
+                        !!message.steering ||
+                        queue.length >= 50,
+                      onPress: () => change('duplicate', message.id),
+                    },
+                    {
+                      title: 'Steer now',
+                      label: `Steer with message ${index + 1}`,
+                      icon: 'steer',
+                      disabled: !canSteer(message),
+                      onPress: () => change('steer', message.id),
+                    },
+                    {
+                      title: 'Return to composer',
+                      label: `Return message ${index + 1} to composer`,
+                      icon: 'restore',
+                      disabled: !canEdit(message),
+                      onPress: () => {
+                        void actions.restoreQueuedMessage(message)
+                      },
+                    },
+                  ]}
+                />
+                <IconButton
+                  icon="steer"
+                  label={`Steer with queued message ${index + 1}`}
+                  disabled={!canSteer(message)}
+                  onPress={() => change('steer', message.id)}
+                />
+              </View>
+            )
+          })}
+        </ScrollView>
+      </GestureDetector>
       {selected && (
         <Sheet title={`Queued message ${selectedIndex + 1}`} onClose={() => setSelectedId(null)}>
           {selectedSource && selectedSource.kind !== 'user' && (
