@@ -706,10 +706,25 @@ try {
     await page.getByRole('button', { name: 'Expand composer activity', exact: true }).click()
     const queuedRow = page.locator('[aria-label="Queued follow-ups"] li').first()
     const rowBounds = await queuedRow.boundingBox()
-    // Own queued messages omit the redundant source line above their preview.
-    assert.ok(rowBounds.height <= 56, JSON.stringify(rowBounds))
+    // Narrow panels reserve a second line for actions without squeezing the preview.
+    const secondaryActions = await queuedRow.locator('[data-queue-actions]').boundingBox()
+    const steerControl = await queuedRow
+      .getByRole('button', { name: 'Steer with queued message 1' })
+      .boundingBox()
+    const actionsBelow = secondaryActions.y >= steerControl.y + steerControl.height
+    const extraLineHeight = actionsBelow ? secondaryActions.height + 8 : 0
+    assert.ok(rowBounds.height <= 56 + extraLineHeight, JSON.stringify(rowBounds))
     assert.equal(await queuedRow.getByText('You', { exact: true }).count(), 0)
     const preview = queuedRow.locator('span[title]').first()
+    const ownPreviewBounds = await preview.boundingBox()
+    assert.ok(ownPreviewBounds.width >= 80, JSON.stringify(ownPreviewBounds))
+    assert.ok(
+      Math.abs(
+        ownPreviewBounds.y + ownPreviewBounds.height / 2 - steerControl.y - steerControl.height / 2,
+      ) < 1,
+      'Own queued text stays vertically centered beside Steer',
+    )
+    if (actionsBelow) assert.ok(ownPreviewBounds.y + ownPreviewBounds.height <= secondaryActions.y)
     assert.equal(
       await preview.evaluate((element) => getComputedStyle(element).whiteSpace),
       'nowrap',
@@ -749,7 +764,10 @@ try {
       const bounds = await queuedRow.boundingBox()
       const sourceBounds = await sourceControl.boundingBox()
       const previewBounds = await preview.boundingBox()
-      assert.ok(bounds.height <= 56, JSON.stringify({ source: source.kind, bounds }))
+      assert.ok(
+        bounds.height <= 56 + extraLineHeight,
+        JSON.stringify({ source: source.kind, bounds }),
+      )
       assert.ok(sourceBounds.y + sourceBounds.height <= previewBounds.y + 1)
       assert.equal(
         await sourceControl.evaluate((element) => getComputedStyle(element).whiteSpace),
