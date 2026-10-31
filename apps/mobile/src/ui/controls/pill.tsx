@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
-import { ActivityIndicator, Pressable, type ViewStyle } from 'react-native'
+import { ActivityIndicator, Pressable, View, type ViewStyle } from 'react-native'
 import { designTokens } from '@dovo/design'
 import { Text } from '../content/text'
 import { Icon, type IconName } from './icon'
+import { IconButton } from './icon-button'
 import { useTheme, type MobileColors } from '../theme'
 
 const pillStyle = (pressed: boolean, colors: MobileColors): ViewStyle => ({
@@ -29,6 +30,7 @@ export function Pill({
   busy = false,
   onPress,
   onLongPress,
+  onDismiss,
   accessibilityHint,
   testID,
   children,
@@ -38,32 +40,39 @@ export function Pill({
   busy?: boolean
   onPress: () => void
   onLongPress?: () => void
+  onDismiss?: () => void
   accessibilityHint?: string
   testID?: string
   children?: ReactNode
 }) {
   const { colors } = useTheme()
   return (
-    <Pressable
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={accessibilityHint}
-      accessibilityState={{ busy }}
-      disabled={busy}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      style={({ pressed }) => pillStyle(pressed, colors)}
-    >
-      {busy ? (
-        <ActivityIndicator size="small" color={colors.text} />
-      ) : (
-        icon && <Icon name={icon} size={16} color={colors.text} />
-      )}
-      <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, lineHeight: 20 }}>
-        {label}
-      </Text>
-      {children}
-    </Pressable>
+    <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%' }}>
+      <Pressable
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ busy }}
+        disabled={busy}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        style={({ pressed }) => [pillStyle(pressed, colors), { flexShrink: 1 }]}
+      >
+        {busy ? (
+          <ActivityIndicator size="small" color={colors.text} />
+        ) : (
+          icon && <Icon name={icon} size={16} color={colors.text} />
+        )}
+        <Text
+          numberOfLines={1}
+          style={{ color: colors.text, fontSize: 16, lineHeight: 20, flexShrink: 1 }}
+        >
+          {label}
+        </Text>
+        {children}
+      </Pressable>
+      {onDismiss && <IconButton icon="close" label={`Dismiss ${label}`} onPress={onDismiss} />}
+    </View>
   )
 }

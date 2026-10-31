@@ -3,7 +3,7 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 const root = new URL('../', import.meta.url).pathname.replace(/\/$/, '')
 const mocks = {
-  'react-native': `export const View=({children})=><div>{children}</div>;export const Alert={alert(_title,_message,choices){window.confirmChoice=name=>choices.find(choice=>choice.text===name)?.onPress?.()}};`,
+  'react-native': `export const View=({children})=><div>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const ActivityIndicator=()=>null;export const Alert={alert(_title,_message,choices){window.confirmChoice=name=>choices.find(choice=>choice.text===name)?.onPress?.()}};`,
   'expo-router': 'export const router={navigate(){}};',
   '@dovo/protocol': `export const connectionProgress=e=>[{label:e.connected?'Ready':'Connect',state:e.connected?'done':'failed'}];export const runtimeSyncStatus=c=>c.status;export const runtimeReachability=e=>e.connected?'online':'offline';export const retryRuntimeSync=()=>{};export const runtimeComputerName=e=>e.profile.id;export const attachmentUploadSchema={};export const decodeResult=(_schema,input)=>({success:!!input?.name,data:input});`,
   '../state/application-state': "export {useState as useApplicationState} from 'react';",
@@ -13,8 +13,12 @@ const mocks = {
   '../../ui/content/text': 'export const Text=({children})=><span>{children}</span>;',
   '../../ui/controls/action':
     'export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;',
-  '../../ui/controls/pill':
-    'export const Pill=({label,onPress})=><button onClick={onPress}>{label}</button>;',
+  '@dovo/design': 'export const designTokens={touchTarget:44};',
+  '../content/text': 'export const Text=({children})=><span>{children}</span>;',
+  './icon': 'export const Icon=()=>null;',
+  './icon-button':
+    'export const IconButton=({label,onPress})=><button aria-label={label} onClick={onPress}>Dismiss</button>;',
+  '../theme': 'export const useTheme=()=>({colors:{text:"#222",surface:"#fff",border:"#ccc"}});',
   '../../ui/layout/sheet': 'export const Sheet=({children})=><div>{children}</div>;',
   '../../ui/controls/use-action': 'export const useAction=()=>({busy:false,act:work=>work()});',
   '../../ui/content/format-date': 'export const formatDateTime=value=>value;',
@@ -92,12 +96,21 @@ try {
   assert.equal(await count(), 0)
   await page.clock.runFor(1)
   await page.getByRole('button', { name: 'HTTP updates · Review', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Dismiss HTTP updates · Review', exact: true }).click()
+  assert.equal(await count(), 0)
+  await page.clock.runFor(60_000)
+  assert.equal(await count(), 0, 'A dismissed notice stays hidden while its condition persists')
   // Switching affected computers starts a fresh delay.
   await update({ status: 'reconnecting', id: 'other' })
   assert.equal(await count(), 0)
   await page.clock.runFor(14_999)
   assert.equal(await count(), 0)
   await page.clock.runFor(1)
+  await page.getByRole('button', { name: 'HTTP updates · Review', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Dismiss HTTP updates · Review', exact: true }).click()
+  await update({ status: 'live', id: 'other' })
+  await update({ status: 'reconnecting', id: 'other' })
+  await page.clock.runFor(15_000)
   await page.getByRole('button', { name: 'HTTP updates · Review', exact: true }).waitFor()
   await update({ status: 'reconnecting', id: 'host', connected: false })
   await page.clock.runFor(2499)
@@ -147,7 +160,7 @@ try {
   assert.equal(await count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'Connection pill: 15-second HTTP grace period, recovery, host switching and existing offline/save delays passed',
+    'Connection pill: dismiss control, persistent dismissal, recovery, host switching and existing offline/save delays passed',
   )
 } finally {
   await browser.close()
