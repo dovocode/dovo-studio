@@ -5,9 +5,11 @@ import { Button, Dialog, DialogContent, DialogTitle, DialogDescription } from '@
 export function ImportCodexSession({
   repositoryId,
   disabled,
+  onNavigate,
 }: {
   repositoryId: string
   disabled?: boolean
+  onNavigate?: () => void
 }) {
   const store = useWorkspace()
   const host = useStudioHost()
@@ -16,6 +18,7 @@ export function ImportCodexSession({
   const agents = store.workspace.agents.filter((agent) => agent.provider === 'codex')
   const navigate = (id: string) => {
     setOpen(false)
+    onNavigate?.()
     host.navigate({ viewId: 'tasks', entityId: id })
   }
   return (

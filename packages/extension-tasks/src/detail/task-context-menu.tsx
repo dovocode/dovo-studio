@@ -815,6 +815,7 @@ export function TaskContextMenu({
           {repository && (
             <ProjectSettings
               repository={repository}
+              onNavigate={() => setDialog(null)}
               onDeleted={(refreshError) => {
                 if (refreshError)
                   onError(

@@ -19,7 +19,6 @@ import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { Action } from '../../ui/controls/action'
 import { ProjectTransferDialog } from '../../scm/connections/project-transfer'
 import { AddProject } from '../../screens/repositories'
-import { ImportCodexSession } from './import-codex-session'
 
 export function FolderPicker({
   repositories,
@@ -420,13 +419,6 @@ export function FolderPicker({
           {projectControl}
           {serverControl}
         </View>
-      )}
-      {prominent && !autoProject && selected && selected.kind !== 'scratch' && (
-        <ImportCodexSession
-          key={`${runtime.activeId}:${selected.id}`}
-          repositoryId={selected.id}
-          disabled={locked}
-        />
       )}
       {open && !adding && !transferring && (
         <Sheet

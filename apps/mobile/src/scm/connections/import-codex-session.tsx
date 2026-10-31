@@ -3,7 +3,7 @@ import { View } from 'react-native'
 import { router } from 'expo-router'
 import { useCodexSessionImport } from '@dovo/studio-core'
 import { useRuntime } from '../../runtime/connection/provider'
-import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
+import { Sheet, useSheetNavigation, type SheetHandle } from '../../ui/layout/sheet'
 import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
 import { Text } from '../../ui/content/text'
@@ -21,10 +21,12 @@ export function ImportCodexSession({
   const { styles } = useTheme()
   const [open, setOpen] = useState(false)
   const sheet = useRef<SheetHandle>(null)
+  const navigateFromSettings = useSheetNavigation()
   const picker = useCodexSessionImport(runtime.call, repositoryId, open)
   const navigate = (id: string) => {
     const runtimeId = runtime.profile?.id
-    if (runtimeId) sheet.current?.dismiss(() => router.push(taskHref(runtimeId, id)))
+    if (runtimeId)
+      sheet.current?.dismiss(() => navigateFromSettings(() => router.push(taskHref(runtimeId, id))))
   }
   return (
     <>
