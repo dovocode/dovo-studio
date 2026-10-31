@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { persistRuntimeEnvironment, readRuntimeEnvironment } from './runtime-environment.js'
 import { readServerConfig, setupServer, writePrivateJson } from './server-config.js'
-import { processExists, serverStatus } from './server-manager.js'
+import { processExists, serverStatus, runtimeStartupTimeoutMs } from './server-manager.js'
 import { selectedEntrypoint, updateServer } from './server-update.js'
 import {
   activatePackagedRelease,
@@ -175,8 +175,8 @@ async function control(
     else await run('systemctl', ['--user', action, record.name])
   }
 }
-async function waitForRuntime(directory: string, previousPid?: number) {
-  const deadline = Date.now() + 30000
+export async function waitForRuntime(directory: string, previousPid?: number) {
+  const deadline = Date.now() + runtimeStartupTimeoutMs
   let lastError = 'no authenticated runtime connection yet'
   while (Date.now() < deadline) {
     const status = await serverStatus(directory)
