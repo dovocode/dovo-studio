@@ -1047,13 +1047,11 @@ export function Composer({
                         ? 'Listening…'
                         : task.archivedAt
                           ? 'Restore this archived thread to continue'
-                          : task.archived
-                            ? 'Send a message to reopen this thread…'
-                            : firstMessage
-                              ? 'Send a message…'
-                              : task.status === 'running'
-                                ? 'Add a follow-up…'
-                                : 'Ask a follow-up…'
+                          : firstMessage
+                            ? 'Send a message…'
+                            : task.status === 'running'
+                              ? 'Add a follow-up…'
+                              : 'Ask a follow-up…'
                   }
                   value={draft.text}
                   revision={draft.revision}
