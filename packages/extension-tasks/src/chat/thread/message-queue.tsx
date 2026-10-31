@@ -249,8 +249,8 @@ export function MessageQueue({
     <div
       className={
         embedded
-          ? 'text-xs'
-          : 'relative mx-auto -mb-3 w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] text-xs'
+          ? '@container text-xs'
+          : '@container relative mx-auto -mb-3 w-[calc(100%-24px)] max-w-[calc(var(--chat-max)-1.5rem)] text-xs'
       }
       aria-label="Queued follow-ups"
     >
@@ -364,7 +364,7 @@ export function MessageQueue({
                 ref={message.id === highlightedId ? highlightedRow : undefined}
                 aria-label={`Queued message ${index + 1} of ${queue.length}, ${message.steering ? 'being delivered' : 'not sent'}`}
                 className={[
-                  'group/queue-row relative min-h-11 min-w-0 gap-2 rounded-none px-3 py-1.5 focus-within:bg-muted [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border/40',
+                  'group/queue-row relative min-h-11 min-w-0 gap-2 rounded-none px-3 py-1.5 focus-within:bg-muted @max-xl:flex-wrap [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border/40',
                   message.id === highlightedId
                     ? 'bg-primary/15 ring-1 ring-inset ring-primary'
                     : '',
@@ -512,7 +512,7 @@ export function MessageQueue({
                     </IconButton>
                   </div>
                 )}
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-1">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-1 @max-xl:min-w-20">
                   {source && source.kind !== 'user' && (
                     <div className="min-w-0 [&>*]:font-medium [&>*]:text-foreground">
                       <MessageSource source={source} />
@@ -566,7 +566,7 @@ export function MessageQueue({
                 )}
                 <div
                   data-queue-actions
-                  className={`pointer-events-none relative z-10 flex shrink-0 flex-wrap justify-end items-center gap-1 rounded-md bg-muted p-1 group-hover/queue-row:pointer-events-auto group-focus-within/queue-row:pointer-events-auto [@media(hover:none)]:pointer-events-auto ${rowActionClass}`}
+                  className={`pointer-events-none relative z-10 flex shrink-0 flex-wrap justify-end items-center gap-1 rounded-md bg-muted p-1 group-hover/queue-row:pointer-events-auto group-focus-within/queue-row:pointer-events-auto @max-xl:order-last @max-xl:basis-full [@media(hover:none)]:pointer-events-auto ${rowActionClass}`}
                 >
                   {watchMessage(message) && (
                     <IconButton

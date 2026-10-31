@@ -1112,8 +1112,12 @@ try {
   const screenshotPath = process.env.DOVO_COMPOSER_SCREENSHOTS
   if (screenshotPath) mkdirSync(screenshotPath, { recursive: true })
   await page.getByRole('tab', { name: 'Queue · 2', exact: true }).click()
-  for (const width of [900, 480, 320]) {
+  for (const [width, panelWidth] of [[900], [480], [320], [900, 320]]) {
     await page.setViewportSize({ width, height: 800 })
+    await queued.evaluate((element, panelWidth) => {
+      element.style.width = panelWidth ? `${panelWidth}px` : ''
+      element.style.maxWidth = panelWidth ? '100%' : ''
+    }, panelWidth)
     await input.focus()
     await page.mouse.move(width - 1, 799)
     const row = queued.getByRole('listitem').first()
@@ -1154,6 +1158,10 @@ try {
     if (screenshotPath)
       await page.screenshot({ path: screenshotPath + '/desktop-queue-' + width + '.png' })
   }
+  await queued.evaluate((element) => {
+    element.style.width = ''
+    element.style.maxWidth = ''
+  })
   await page.getByRole('tab', { name: 'Checklist · 1/3', exact: true }).click()
   if (screenshotPath) await page.screenshot({ path: screenshotPath + '/desktop-checklist.png' })
   await page.getByRole('tab', { name: 'Queue · 2', exact: true }).click()
