@@ -35,7 +35,10 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       path: 'react-native',
       contents: `import {forwardRef,useImperativeHandle} from 'react';export const View=forwardRef(({children,accessibilityLabel},ref)=><div aria-label={accessibilityLabel} ref={ref}>{children}</div>);export const ScrollView=forwardRef(({children},ref)=>{useImperativeHandle(ref,()=>({scrollTo:options=>window.scrolls.push(options)}),[]);return <div>{children}</div>});export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;`,
     },
-    { path: 'react-native-gesture-handler', contents: `export {Pressable} from 'react-native';` },
+    {
+      path: 'react-native-gesture-handler',
+      contents: `export {Pressable} from 'react-native';export const GestureDetector=({children})=>children;`,
+    },
     {
       path: '../../runtime/state/application-state',
       contents: `export {useState as useApplicationState} from 'react';`,
