@@ -164,6 +164,17 @@ try {
     assert.deepEqual(captures.at(-1).size, { width: 800, height: 600 })
     const resizedCapture = captures.at(-1)
     await wait(() => resizedCapture.frames > 1, 'Resizing must retain live capture')
+    // Force the timer to observe a clock just before its deadline. It must
+    // remain armed rather than leave this resized stream active indefinitely.
+    const now = Date.now
+    const deadline = captureSession.captureActiveUntil
+    try {
+      Date.now = () => deadline - 1
+      await delay(2100)
+      assert.equal(captures.at(-1)?.fps, 30)
+    } finally {
+      Date.now = now
+    }
     await wait(() => captures.at(-1)?.fps === 15, 'Resized capture must become idle again')
     assert.deepEqual(captures.at(-1).size, { width: 800, height: 600 })
     const resizedIdleCapture = captures.at(-1)
